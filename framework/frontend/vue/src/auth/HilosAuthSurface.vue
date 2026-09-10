@@ -1160,7 +1160,13 @@ onUnmounted(() => {
 
       <!-- The main control is whatever the machine says it is: the submit, a
       passwordless method promoted to the button, or a code channel — for a phone
-      the channel choice IS the send, so there is no separate button. -->
+      the channel choice IS the send, so there is no separate button. Both resume
+      controls act on the reply the reveal is drawn from, and that reply is HELD
+      while a new lookup runs (HIL-646), so they go out for as long as the machine
+      is re-asking about it, exactly as the submit does. Their gate is `disabled`
+      and not `loading`: `pending` is set on the keystroke, before the debounce,
+      and the spinner delay equals that debounce, so a spinner would blink on
+      every pause in typing. -->
       <LoadingButton
         v-if="primaryAction?.kind === 'submit'"
         type="submit"
@@ -1172,25 +1178,27 @@ onUnmounted(() => {
         {{ submitLabel }}
       </LoadingButton>
 
-      <button
+      <LoadingButton
         v-else-if="primaryAction?.kind === 'resume_code'"
         type="button"
-        class="btn btn-primary w-100"
+        class="btn-primary w-100"
+        :disabled="detection.status !== 'resolved'"
         data-id="auth-resume-code"
         @click="resumeHeldRegistration()"
       >
         {{ submitLabel }}
-      </button>
+      </LoadingButton>
 
-      <button
+      <LoadingButton
         v-else-if="primaryAction?.kind === 'resume_password'"
         type="button"
-        class="btn btn-primary w-100"
+        class="btn-primary w-100"
+        :disabled="detection.status !== 'resolved'"
         data-id="auth-resume-password"
         @click="resumeProvenRegistration()"
       >
         {{ submitLabel }}
-      </button>
+      </LoadingButton>
 
       <LoadingButton
         v-else-if="primaryMethod"

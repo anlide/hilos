@@ -219,6 +219,57 @@ function freeIdentifierContext(
   })
 }
 
+/**
+ * A context whose lookup answers a free registrable address the FIRST time and an
+ * address this browser already PROVED afterwards. The pair is what draws the
+ * resume control: a proof is reached by registering, and the control itself is
+ * only ever drawn by a RETURN to the field, which asks the lookup again without
+ * moving the step (HIL-825).
+ *
+ * @returns The context to mount with.
+ */
+function provenOnReturnContext(): HilosAuthContext {
+  let answered = false
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      const identifier = String(payload['identifier'] ?? '')
+      let reply
+      if (action === AUTH_ACTION_DETECT_IDENTIFIER) {
+        reply = {
+          identifier,
+          normalized: identifier,
+          kind: 'email',
+          status: answered ? 'proven' : 'none',
+          methods: [],
+          registerable: answered ? [] : [PASSWORD_METHOD_KEY],
+          registrationBlock: null,
+        }
+        answered = true
+      }
+
+      return {
+        requestId: 'req-proven',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: new ScopeManager(),
+    actions,
+    methods: [PASSWORD_FLOW_METHOD],
+    channels: [],
+    oauthProviders: [],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
+}
+
 function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
@@ -537,6 +588,49 @@ describe('HilosAuthSurface', () => {
     expect(dispatched[2]?.payload).toEqual({ email: 'someone@example.com' })
     expect(byId('auth-code')).not.toBeNull()
     expect(byId('auth-code-expired')).toBeNull()
+  })
+
+  it('takes the resume control out of reach while its reply is re-asked (HIL-646)', async () => {
+    vi.useFakeTimers()
+    render(<HilosAuthSurface context={provenOnReturnContext()} />)
+
+    // A free registrable address goes to the terms screen, and the way back from
+    // it is the plain return to the field — which asks the lookup again, this
+    // time hearing a proof, and stays where it is (HIL-825).
+    type('auth-identifier', 'newcomer@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.submit(document.querySelector('form') as Element)
+    await flush()
+    fireEvent.click(byId('auth-restart') as Element)
+    await flush()
+
+    const resume = byId('auth-resume-password') as HTMLButtonElement | null
+    expect(resume).not.toBeNull()
+    expect(resume?.disabled).toBe(false)
+
+    // Editing the address holds the reply the control is drawn from (HIL-646),
+    // so the control itself must not act on a verdict already being re-asked
+    // about — it stays on screen and goes out of reach until the reply lands.
+    type('auth-identifier', 'newcomer@example.co')
+    await flush()
+
+    expect((byId('auth-resume-password') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+
+    // And the composition changes ONCE, when the reply lands: a typed proof
+    // carries the person on to the password rather than leaving the control
+    // behind (HIL-825), so the held one is never acted on at all.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(byId('auth-resume-password')).toBeNull()
+    expect(byId('auth-new-password')).not.toBeNull()
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

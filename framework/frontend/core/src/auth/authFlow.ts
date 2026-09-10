@@ -17,6 +17,16 @@
 // share one layout — exactly the knowledge that must not spread. The one decided
 // exception is a `pending` reservation, which parks the user on the code screen.
 //
+// THE REVEAL GROWS DOWNWARD, AND IT IS NOT TAKEN AWAY TO ASK AGAIN (HIL-646).
+// Inside the identifier step the reveal is never removed for the duration of a
+// new lookup: `pending` keeps the previous resolved reply, so editing a
+// character across the "account exists ↔ free" border changes the composition
+// ONCE, when the new reply lands, instead of twice. Everything that depends on
+// the detection reply lives BELOW the identifier field; above it lives only the
+// empty-field zone (the icon row, which leaves with the first character). An
+// author adding a method keeps to that rule — a third place above the field
+// brings the jump back the moment the next method is added.
+//
 // This leaf ships the pure core only: no DOM, no wire, no UI strings — the
 // machine emits semantic keys ({@link AuthFlowScreen}, error codes) and the
 // views/backend own all human-facing text. Three seams are delegated to the
@@ -140,7 +150,15 @@ export interface AuthFlowForm {
 /** A form field name, for the view's per-field update calls. */
 export type AuthFlowField = keyof AuthFlowForm
 
-/** Where an icon method renders relative to the identifier/password inputs. */
+/**
+ * Where an icon method renders relative to the identifier/password inputs. The
+ * list is CLOSED, and that is what anchors the layout (HIL-646): `icon_row`
+ * stands above the field and lives only while the field is empty,
+ * `password_adjacent` stands inside the reveal, below the field. Do not add a
+ * third place above the field — anything above it that depends on the detection
+ * reply appears and disappears as the person types, and the jump this leaf
+ * removed comes back with the next method added.
+ */
 export type AuthMethodPlacement = 'icon_row' | 'password_adjacent'
 
 /**
@@ -253,7 +271,12 @@ export type DetectionStatus = 'idle' | 'pending' | 'resolved'
 export interface DetectionState {
   /** The lookup lifecycle status. */
   readonly status: DetectionStatus
-  /** The resolved lookup, or `null` in every non-`resolved` status. */
+  /**
+   * The lookup reply the reveal is drawn from. `null` in `idle`; in `pending`
+   * it carries the PREVIOUS resolved reply when there was one, so the reveal is
+   * not taken away for the duration of a new lookup (HIL-646) — the composition
+   * changes exactly once, when the new reply lands.
+   */
   readonly result: IdentifierDetection | null
 }
 
@@ -665,8 +688,18 @@ const EMPTY_FORM: AuthFlowForm = {
 /** The detection signal before or without a lookup. */
 const IDLE_DETECTION: DetectionState = { status: 'idle', result: null }
 
-/** The detection signal while a lookup is in flight. */
-const PENDING_DETECTION: DetectionState = { status: 'pending', result: null }
+/**
+ * The detection signal while a lookup is in flight, holding on to the reply the
+ * reveal is currently drawn from (HIL-646).
+ *
+ * @param previous The last resolved reply to keep showing, or `null` to reveal
+ *   nothing while the lookup runs.
+ */
+function pendingDetection(
+  previous: IdentifierDetection | null,
+): DetectionState {
+  return { status: 'pending', result: previous }
+}
 
 /**
  * The default identifier (email/phone + password) method — the shared
@@ -908,7 +941,8 @@ export function applicableChannels(
 /**
  * Whether an active step's form is complete enough to submit. Client-side
  * gating for the button state only — the backend stays the source of truth. On
- * the `identifier` step nothing is submittable until the detection resolved: a
+ * the `identifier` step nothing is submittable until the detection resolved —
+ * including while a re-ask is in flight over a held reply (HIL-646): a
  * login submits a non-empty password into the field its account reveals, a
  * password registration submits as soon as the lookup answers that the address
  * is free and registrable — there is no password there to measure since HIL-825,
@@ -930,6 +964,12 @@ export function isFlowSubmittable(
 ): boolean {
   switch (flow.step) {
     case 'identifier': {
+      if (detection.status !== 'resolved') {
+        // The reveal is held across a new lookup (HIL-646), so the held reply
+        // would otherwise make the form submittable on a stale verdict. This is
+        // the one price of the holding, and the only sign of it on screen.
+        return false
+      }
       const result = detection.result
       if (result === null || result.kind !== 'email') {
         return false
@@ -1253,7 +1293,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       return
     }
     const seq = detectSeq
-    detection.set(PENDING_DETECTION)
+    // The reveal stays on the reply it was drawn from until the new one lands:
+    // taking it away for the flight is the flicker this leaf removes (HIL-646).
+    detection.set(pendingDetection(detection.get().result))
     debounceTimer = setTimeout(() => {
       debounceTimer = null
       void runDetect(seq, identifier, kind, moveOnPending)
@@ -1279,7 +1321,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       return
     }
     const seq = detectSeq
-    detection.set(PENDING_DETECTION)
+    // No holding here (HIL-646): showing the verdict that predates leaving the
+    // field is the very defect HIL-651 closed.
+    detection.set(pendingDetection(null))
     void runDetect(seq, identifier, kind, false)
   }
 

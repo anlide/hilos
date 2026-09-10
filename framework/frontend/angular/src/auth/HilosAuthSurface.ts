@@ -466,7 +466,13 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
 
           <!-- The main control is whatever the machine says it is: the submit, a
           passwordless method promoted to the button, or a code channel — for a
-          phone the channel choice IS the send, so there is no separate button. -->
+          phone the channel choice IS the send, so there is no separate button.
+          Both resume controls act on the reply the reveal is drawn from, and that
+          reply is HELD while a new lookup runs (HIL-646), so they go out for as
+          long as the machine is re-asking about it, exactly as the submit does.
+          Their gate is the disabled input and not the loading one: pending is
+          set on the keystroke, before the debounce, and the spinner delay equals
+          that debounce, so a spinner would blink on every pause in typing. -->
           @if (primaryAction()?.kind === 'submit') {
             <button
               hilosLoadingButton
@@ -480,8 +486,10 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             </button>
           } @else if (primaryAction()?.kind === 'resume_code') {
             <button
+              hilosLoadingButton
               type="button"
-              class="btn btn-primary w-100"
+              class="btn-primary w-100"
+              [disabled]="detection().status !== 'resolved'"
               data-id="auth-resume-code"
               (click)="resumeHeldRegistration()"
             >
@@ -489,8 +497,10 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             </button>
           } @else if (primaryAction()?.kind === 'resume_password') {
             <button
+              hilosLoadingButton
               type="button"
-              class="btn btn-primary w-100"
+              class="btn-primary w-100"
+              [disabled]="detection().status !== 'resolved'"
               data-id="auth-resume-password"
               (click)="resumeProvenRegistration()"
             >

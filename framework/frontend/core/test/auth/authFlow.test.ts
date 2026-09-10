@@ -10,7 +10,9 @@
 // it. HIL-419 wires TWO providers through the descriptor factory, so the matrix
 // answers for a row rather than for a single button. HIL-651 adds the lookup a
 // RETURN to the identifier step fires — the held-address screen it draws and the
-// step it deliberately does not move.
+// step it deliberately does not move. HIL-646 adds the reveal a typed re-ask
+// holds on to, the submit that is muted for as long as it does, and the two
+// places that deliberately keep nothing (the return and a failed lookup).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -291,6 +293,16 @@ describe('isFlowSubmittable', () => {
     expect(isFlowSubmittable(flow, form, closed)).toBe(false)
   })
 
+  it('identifier: a held reply does not submit while the re-ask is in flight', () => {
+    // The one price of holding the reveal across a lookup (HIL-646): the form
+    // must not go out on a verdict the machine is already re-asking about.
+    const flow = { ...INITIAL_FLOW, identifierKind: 'email' as const }
+    const form = { ...EMPTY_FORM, identifier: 'a@b.com', password: 'secret-1' }
+    const held: DetectionState = { status: 'pending', result: detected() }
+    expect(isFlowSubmittable(flow, form, held)).toBe(false)
+    expect(isFlowSubmittable(flow, form, resolved(detected()))).toBe(true)
+  })
+
   it('identifier proven: the way on is the primary action, not the submit', () => {
     const flow = {
       ...INITIAL_FLOW,
@@ -489,6 +501,71 @@ describe('detection', () => {
     await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS)
     expect(onDetect).toHaveBeenCalledTimes(2)
     expect(flow.detection.get().status).toBe('resolved')
+  })
+})
+
+describe('the reveal is held across a new lookup (HIL-646)', () => {
+  /** A lookup answering "account" for one address and "free" for any other. */
+  function borderLookup() {
+    return vi.fn(async (identifier: string) =>
+      identifier === 'a@b.com'
+        ? detected({ identifier })
+        : detected({ identifier, status: 'none', methods: [] }),
+    )
+  }
+
+  it('keeps the previous reply on screen until the new one lands', async () => {
+    // The defect itself: editing a character across the "account exists ↔ free"
+    // border used to redraw the form TWICE — once to nothing while the lookup
+    // ran, once to the new composition.
+    const flow = setup({ onDetect: borderLookup() })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.detection.get()).toEqual({
+      status: 'resolved',
+      result: detected({ identifier: 'a@b.com' }),
+    })
+    flow.setField('identifier', 'a@b.co')
+    expect(flow.detection.get()).toEqual({
+      status: 'pending',
+      result: detected({ identifier: 'a@b.com' }),
+    })
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS)
+    expect(flow.detection.get()).toEqual({
+      status: 'resolved',
+      result: detected({ identifier: 'a@b.co', status: 'none', methods: [] }),
+    })
+  })
+
+  it('mutes the submit while the held reveal is being re-asked about', async () => {
+    // A free address submits on the answer alone (HIL-825), so only the status
+    // gate can stop it going out on the held verdict.
+    const flow = setup({ onDetect: borderLookup() })
+    await typeAndDetect(flow, 'free@b.com')
+    expect(flow.submittable.get()).toBe(true)
+    flow.setField('identifier', 'free2@b.com')
+    expect(flow.detection.get().result?.identifier).toBe('free@b.com')
+    expect(flow.submittable.get()).toBe(false)
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS)
+    expect(flow.submittable.get()).toBe(true)
+  })
+
+  it('drops the held reply when the new lookup fails', async () => {
+    // No degraded state (rules-and-violations §A): a reply nobody confirmed
+    // must not keep a reveal alive that the machine can no longer stand behind.
+    let fail = false
+    const flow = setup({
+      onDetect: async (identifier) => {
+        if (fail) {
+          throw new Error('transport down')
+        }
+
+        return detected({ identifier })
+      },
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    fail = true
+    await typeAndDetect(flow, 'a@b.co')
+    expect(flow.detection.get()).toEqual({ status: 'idle', result: null })
   })
 })
 
@@ -1239,6 +1316,22 @@ describe('an address held by this browser (HIL-651)', () => {
     expect(flow.screenKey.get()).toBe('held_identifier')
     expect(flow.flow.get().step).toBe('identifier')
     expect(flow.submittable.get()).toBe(false)
+  })
+
+  it('the return takes the reveal away instead of holding it (HIL-646)', async () => {
+    // The holding of HIL-646 is for a TYPED re-ask only. Here the screen just
+    // changed and nobody is typing: keeping the old verdict on it would draw
+    // exactly the stale answer this describe exists to forbid.
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'pending', methods: [] }),
+    })
+    await typeAndDetect(flow, 'reserved@b.com')
+    expect(flow.flow.get().step).toBe('code')
+    flow.backToIdentifier()
+    expect(flow.detection.get()).toEqual({ status: 'pending', result: null })
+    await settleRefresh()
+    expect(flow.detection.get().status).toBe('resolved')
   })
 
   it('still parks on the code step when the held address is TYPED again', async () => {

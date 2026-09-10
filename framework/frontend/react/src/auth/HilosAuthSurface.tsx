@@ -1121,7 +1121,13 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           {/* The main control is whatever the machine says it is: the submit, a
               passwordless method promoted to the button, or a code channel — for
               a phone the channel choice IS the send, so there is no separate
-              button. */}
+              button. Both resume controls act on the reply the reveal is drawn
+              from, and that reply is HELD while a new lookup runs (HIL-646), so
+              they go out for as long as the machine is re-asking about it,
+              exactly as the submit does. Their gate is `disabled` and not
+              `loading`: `pending` is set on the keystroke, before the debounce,
+              and the spinner delay equals that debounce, so a spinner would
+              blink on every pause in typing. */}
           {primaryAction?.kind === 'submit' ? (
             <LoadingButton
               type="submit"
@@ -1133,23 +1139,25 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
               {submitLabel}
             </LoadingButton>
           ) : primaryAction?.kind === 'resume_code' ? (
-            <button
+            <LoadingButton
               type="button"
-              className="btn btn-primary w-100"
+              className="btn-primary w-100"
+              disabled={detection.status !== 'resolved'}
               data-id="auth-resume-code"
               onClick={resumeHeldRegistration}
             >
               {submitLabel}
-            </button>
+            </LoadingButton>
           ) : primaryAction?.kind === 'resume_password' ? (
-            <button
+            <LoadingButton
               type="button"
-              className="btn btn-primary w-100"
+              className="btn-primary w-100"
+              disabled={detection.status !== 'resolved'}
               data-id="auth-resume-password"
               onClick={resumeProvenRegistration}
             >
               {submitLabel}
-            </button>
+            </LoadingButton>
           ) : primaryMethod ? (
             <LoadingButton
               type="button"
