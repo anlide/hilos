@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-typescript
-description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, and scaffold markers. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
+description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, and where a unit-test file lives. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating or moving the test file of a module. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
 ---
 
 # Hilos Code Style — TypeScript
@@ -27,6 +27,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/cross-layer-field-names.md` | naming a data field that crosses DB → PHP → wire → TypeScript |
 | `docs/agents/code-style/spelling.md` | writing an English identifier, string key, route, UI copy, comment, or TSDoc |
 | `docs/agents/code-style/scaffold-markers.md` | leaving code wired but intentionally uncalled |
+| `docs/agents/frontend/testing-strategy.md` | creating the first test file of a module, or moving one — the section "Where a unit test file lives" |
 
 ## Hard Rules
 
@@ -49,3 +50,6 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   (`spelling.md`).
 - Code left wired but intentionally uncalled carries the marker at the code site,
   not only in the commit message (`scaffold-markers.md`).
+- A test file sits beside its module if and only if that module is a Vue SFC;
+  every other test lives in its package's `test/` mirror, whose shape differs
+  per package (`frontend/testing-strategy.md`).
