@@ -164,8 +164,13 @@ default when nothing is customized.
 Several tier-1 components are part of the contract, so pages never reinvent them:
 
 - the **`HilosLayout`** application shell — the navbar (project brand and nav
-  slots, the admin gear, the live connection indicator) and a footer of the
-  public framework pages, around the routed page content. The shell is a
+  slots, the admin gear, the live connection indicator), a full-width banner
+  region below the nav a project fills with an app-wide status strip (e.g. an
+  impersonation banner) — empty and zero-height otherwise — and a footer of the
+  public framework pages, around the routed page content. The region is the same
+  in all three shells and only its delivery differs: Vue takes it through the
+  `#banner` slot, React through the `banner` prop, Angular through a projected
+  `[banner]` node. The shell is a
   fixed-height viewport column whose main region owns the scroll, so a page
   either scrolls inside it or fills it and scrolls an inner region; the footer
   links come from the framework (`HILOS_FOOTER_LINKS`), so every project shows

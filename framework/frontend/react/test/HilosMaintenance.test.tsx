@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   BACKUP_RESTORE_PROGRESS_SIGNAL,
@@ -185,9 +186,12 @@ function fakeConnection(
   }
 }
 
-function renderShell(connection: HilosConnection): HTMLElement {
+function renderShell(
+  connection: HilosConnection,
+  banner?: ReactNode,
+): HTMLElement {
   return render(
-    <HilosLayout connection={connection}>
+    <HilosLayout connection={connection} banner={banner}>
       <p data-id="page-body">Page</p>
     </HilosLayout>,
   ).container
@@ -664,5 +668,54 @@ describe('HilosLayout under protected mode', () => {
       'Restoring a backup',
     )
     expect(surface(container, 'page-body')).toBeNull()
+  })
+})
+
+describe('HilosLayout banner region', () => {
+  afterEach(cleanup)
+
+  it('keeps an empty banner region in the shell for a project to fill', () => {
+    const container = renderShell(
+      fakeConnection(PROTECTED_MODE_INACTIVE).connection,
+    )
+
+    const region = surface(container, 'app-banner')
+
+    expect(region).not.toBeNull()
+    expect(region?.childElementCount).toBe(0)
+    expect(region?.textContent).toBe('')
+    expect(region?.className).toBe('flex-shrink-0')
+  })
+
+  it('puts the strip a project passes into the banner region', () => {
+    const container = renderShell(
+      fakeConnection(PROTECTED_MODE_INACTIVE).connection,
+      <p data-id="test-banner">Acting for someone else</p>,
+    )
+
+    const region = surface(container, 'app-banner')
+
+    expect(region?.querySelector('[data-id="test-banner"]')).not.toBeNull()
+  })
+
+  it('stands the banner region between the navigation and the content', () => {
+    const container = renderShell(
+      fakeConnection(PROTECTED_MODE_INACTIVE).connection,
+    )
+
+    // Layout is not measurable in jsdom, so the promise "below the nav, above
+    // the content" is read off the shell's child order instead of off heights.
+    const children = Array.from(surface(container, 'app-root')?.children ?? [])
+    const nav = children.findIndex((child) => child.tagName === 'NAV')
+    const region = children.findIndex(
+      (child) => child.getAttribute('data-id') === 'app-banner',
+    )
+    const main = children.findIndex(
+      (child) => child.id === 'hilos-main-content',
+    )
+
+    expect(nav).toBeGreaterThanOrEqual(0)
+    expect(region).toBeGreaterThan(nav)
+    expect(region).toBeLessThan(main)
   })
 })

@@ -3,23 +3,26 @@
 // are projected content and the routed page content is the default slot. It
 // renders the top navigation bar carrying the brand and nav, the framework admin
 // entry (the gear linking to the Hilos dashboard), the live connection indicator
-// the SDK owns (core-and-connection.md), the content, and a footer of the public
-// framework pages (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport
-// column (vh-100): the nav and footer never scroll (flex-shrink-0) and the main
-// region grows and scrolls its own overflow (min-h-0 + overflow-auto), so a page
-// either scrolls inside main or — like the chat page — fills it and scrolls an
-// inner region rather than the whole document. The brand, the gear, and the
-// footer links are HilosLinks — no-refresh navigation that leaves the socket
-// alive — so the shell alone moves between the project home, the admin section,
-// and the public pages. While the connection reports protected mode the shell
-// becomes the maintenance surface (HilosMaintenance) and keeps only the
-// connection indicator — every other region of the shell links to a page the
-// freeze has shut. On the very first frame there is nothing to report yet, and on
-// a browser that has met maintenance here the core holds that frame back
-// (HIL-613): the shell then renders only the hidden hilos-boot-state marker, so a
-// reload into a frozen node never flashes the ordinary layout. Styling is
-// Bootstrap classes only and the shell carries no CSS of its own
-// (styling-rules.md); the status and admin icons are Bootstrap Icons (`bi-*`).
+// the SDK owns (core-and-connection.md), a full-width banner region below the nav
+// a project fills with an app-wide status strip (e.g. an impersonation banner) —
+// empty and zero-height otherwise — through a projected [banner] node, the
+// content, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The
+// shell is a fixed-height viewport column (vh-100): the nav, banner, and footer
+// never scroll (flex-shrink-0) and the main region grows and scrolls its own
+// overflow (min-h-0 + overflow-auto), so a page either scrolls inside main or —
+// like the chat page — fills it and scrolls an inner region rather than the
+// whole document. The brand, the gear, and the footer links are HilosLinks —
+// no-refresh navigation that leaves the socket alive — so the shell alone moves
+// between the project home, the admin section, and the public pages. While the
+// connection reports protected mode the shell becomes the maintenance surface
+// (HilosMaintenance) and keeps only the connection indicator — every other
+// region of the shell links to a page the freeze has shut. On the very first
+// frame there is nothing to report yet, and on a browser that has met
+// maintenance here the core holds that frame back (HIL-613): the shell then
+// renders only the hidden hilos-boot-state marker, so a reload into a frozen
+// node never flashes the ordinary layout. Styling is Bootstrap classes only and
+// the shell carries no CSS of its own (styling-rules.md); the status and admin
+// icons are Bootstrap Icons (`bi-*`).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -157,9 +160,12 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             </div>
           </div>
         </nav>
-        <!-- This shell has no app-banner region to sit in - Angular and React
-        never grew the project banner slot the Vue one has - so the banner brings
-        its own live region, the way that region declares one. -->
+        <!-- The framework strip stands above the app-banner region, not inside
+        it, and so keeps a live region of its own. Moving it in - and dropping
+        that second live region - is HIL-935; until then the "the SDK speaks
+        first" order is held by this block preceding the region rather than by
+        the region's own child order (the Vue shell, where the strip is already
+        the region's first child). -->
         @if (verificationBanner(); as bannerMessage) {
           <div class="flex-shrink-0" role="status" aria-live="polite">
             <div
@@ -180,6 +186,14 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             </div>
           </div>
         }
+        <div
+          class="flex-shrink-0"
+          role="status"
+          aria-live="polite"
+          data-id="app-banner"
+        >
+          <ng-content select="[banner]" />
+        </div>
         <main
           id="hilos-main-content"
           tabindex="-1"
