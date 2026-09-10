@@ -41,7 +41,9 @@ use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
@@ -315,6 +317,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerRtClaimsDTO => $this->onRtClaims($frame),
             $frame instanceof PeerRtClaimsQueryDTO => $this->onRtClaimsQuery($frame),
             $frame instanceof PeerRtClaimRefusedDTO => $this->onRtClaimRefused($frame),
+            $frame instanceof PeerRtSnapshotQueryDTO => $this->onRtSnapshotQuery($frame),
+            $frame instanceof PeerRtReplicaOfferDTO => $this->onRtReplicaOffer($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
@@ -611,6 +615,30 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('RT snapshot');
         $this->server->onRtSnapshotReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received request for a collection to the server so this node answers with what it holds.
+     *
+     * @param PeerRtSnapshotQueryDTO $frame Incoming RT-snapshot-query frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtSnapshotQuery(PeerRtSnapshotQueryDTO $frame): void
+    {
+        $this->requireHandshaked('RT snapshot query');
+        $this->server->onRtSnapshotQueryReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received offer of replica rows to the server for this node's copy to be topped up.
+     *
+     * @param PeerRtReplicaOfferDTO $frame Incoming RT-replica-offer frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtReplicaOffer(PeerRtReplicaOfferDTO $frame): void
+    {
+        $this->requireHandshaked('RT replica offer');
+        $this->server->onRtReplicaOfferReceived($this, $frame);
     }
 
     /**

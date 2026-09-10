@@ -75,6 +75,53 @@ interface RtSyncSink
     public function handOverRtSnapshots(string $nodeId): void;
 
     /**
+     * Asks a node the mesh has just linked to for the collections this one holds nothing of.
+     *
+     * The pair of {@see handOverRtSnapshots()}, called off the same completed handshake and for
+     * the same reason — the link is the first moment a frame can reach the other node. It runs
+     * after the hand-over rather than before it, because the answer is filtered by the reader
+     * map the interest frame ahead of it fills in; asked first, the request would arrive at a
+     * holder that has never heard this node reads anything.
+     *
+     * Which collections are missing is a question only the daemon can answer, so the transport
+     * carries no list: it knows nothing of what this node holds.
+     *
+     * @param string $nodeId Node this one can now reach
+     */
+    public function askRtSnapshotsFromNode(string $nodeId): void;
+
+    /**
+     * Answers another node's request with the rows this one holds of the collections it named.
+     *
+     * The one path on which this node hands RT state to a peer without owning it, and it is the
+     * request that opens the right: the asker holds nothing, so nothing of its can be overwritten
+     * by what comes back. A collection this node holds no rows of is passed over in silence.
+     *
+     * @param string $nodeId Node that asked
+     * @param list<string> $collectionKeys RT collections it asked about
+     */
+    public function answerRtSnapshotQuery(string $nodeId, array $collectionKeys): void;
+
+    /**
+     * Tops this node's copy of one RT collection up with rows it does not hold.
+     *
+     * The other way round from {@see applyRemoteRtSnapshot()}: nothing is replaced and nothing
+     * is removed, because the sender owns none of what it sends and speaks for no scope. A row
+     * already held, or claimed by an agent of this node, is passed over — the offer is a copy of
+     * how things were on the holder, and anything already here is at least as current.
+     *
+     * That is also why the whole frame is never refused. A snapshot overlapping this node's own
+     * claim is the symptom of a split truth source; an offer overlapping it is ordinary, since a
+     * holder keeps replicas of rows this node writes.
+     *
+     * @param string $originNodeId Id of the node that wrote these rows
+     * @param string $collectionKey RT collection being topped up
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as the holder keeps them
+     * @throws HilosException Whatever the applied write of the missing rows raises
+     */
+    public function applyRemoteRtReplicaOffer(string $originNodeId, string $collectionKey, array $rows): void;
+
+    /**
      * Tells the runtime that nothing more will arrive from a node until it links again.
      *
      * The replicas this node holds of that node's rows stop being kept up to date at this

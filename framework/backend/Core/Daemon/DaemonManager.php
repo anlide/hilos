@@ -358,6 +358,9 @@ abstract class DaemonManager extends BaseManager implements
     /** @var ?string What this node owned when it last offered its RT state; null before the first pass */
     private ?string $rtOwnershipSignature = null;
 
+    /** @var bool Whether this node's reader interest moved on this pass and has yet to be asked about */
+    private bool $rtReaderInterestMoved = false;
+
     /** @var int Remote RT frames this node has applied to the copy it holds */
     private int $rtFramesApplied = 0;
 
@@ -811,6 +814,12 @@ abstract class DaemonManager extends BaseManager implements
             // same pass, and doing it in the other order would send them to a node whose interest
             // the mesh had not learned yet.
             $this->announceReaderInterest($this->findPeerServer());
+
+            // And ask them for what this node reads and holds nothing of (HIL-823). After the
+            // announcement rather than before it, and for the same reason it follows the offer:
+            // a holder answers only a node it knows reads the collection, so a query that
+            // overtook the interest frame would be answered by nobody.
+            $this->askRtSnapshotsForMissingCollections($this->findPeerServer());
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -2834,6 +2843,74 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Tops this node's copy of one RT collection up with rows a holder offered it.
+     *
+     * Implements {@see RtSyncSink}. The other way round from {@see applyRemoteRtSnapshot()} in
+     * every respect that matters (HIL-823): the sender owns none of what it sends, speaks for no
+     * scope, and therefore nothing here is replaced and nothing is deleted. Rows already present
+     * are passed over, so several holders answering one query cost nothing after the first, and a
+     * row this node's own workers wrote between the question and the answer survives it.
+     *
+     * Rows an agent of this node has CLAIMED are passed over too, written or not: this node is
+     * their source of truth, and a copy of how they looked elsewhere is not an improvement on
+     * having none yet.
+     *
+     * The whole frame is never refused, and that is the second difference. A snapshot overlapping
+     * this node's own claim is the symptom of a truth source that has split in two; an offer
+     * overlapping it is ordinary, since a holder keeps replicas of the very rows this node
+     * writes. Refusing all ten because one is mine would lose the nine this node came for.
+     *
+     * What lands is a replica of the origin's rows and it is current as of now, so the origin map
+     * is told about it and any freeze on those rows is lifted — an arriving copy IS freshness,
+     * the same reading a hand-over gets (HIL-711).
+     *
+     * @param string $originNodeId Id of the node that wrote these rows
+     * @param string $collectionKey RT collection being topped up
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as the holder keeps them
+     * @throws HilosException Whatever the write of the missing rows raises
+     */
+    public function applyRemoteRtReplicaOffer(string $originNodeId, string $collectionKey, array $rows): void
+    {
+        $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
+        $held = RtSnapshot::heldKeys($collectionKey, array_map(strval(...), array_keys($rows)));
+        $missing = [];
+        foreach ($rows as $stateId => $row) {
+            if (in_array((string)$stateId, $held, true) || $sourceMap->owns($collectionKey, (string)$stateId)) {
+                continue;
+            }
+
+            $missing[(string)$stateId] = $row;
+        }
+
+        if ($missing === []) {
+            return;
+        }
+
+        // Replacement in the bounds of keys this node holds nothing under, which is creation and
+        // nothing else: there is no row inside those bounds for the write to sweep away.
+        $delivered = array_map(strval(...), array_keys($missing));
+        RtSnapshot::replaceScope($collectionKey, $delivered, $missing);
+
+        $this->agentManagerDaemon->rtReplicaOriginMap()->note($originNodeId, $collectionKey, $delivered);
+        $this->clearStaleness($collectionKey, $delivered);
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        // Creations only, and not one deletion: nothing was deleted for a worker to be told about.
+        foreach ($missing as $stateId => $row) {
+            $this->writeFrameToWorkers(
+                $workerServer,
+                new WorkerRtSyncCreatedMessageDTO(new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row)),
+                SourceChange::KIND_RT,
+                $collectionKey,
+            );
+        }
+    }
+
+    /**
      * Offers this node's RT state to every linked peer when what it owns has just changed.
      *
      * The hand-over hangs off the handshake ({@see handOverRtSnapshots()}), which answers "a node
@@ -3074,11 +3151,97 @@ abstract class DaemonManager extends BaseManager implements
     protected function announceReaderInterest(?SourceInterestMesh $mesh): void
     {
         $reads = $this->agentManagerDaemon->consumeChangedReaderInterest();
-        if ($reads === null || $mesh === null) {
+        if ($reads === null) {
+            return;
+        }
+
+        // Remembered for the step right after this one, which asks the mesh for what this node
+        // reads and holds nothing of ({@see askRtSnapshotsForMissingCollections()}). The cue is
+        // taken here because it is consumed here: the answer says whether the interest MOVED, and
+        // reading it a second time would say no.
+        $this->rtReaderInterestMoved = true;
+
+        if ($mesh === null) {
             return;
         }
 
         $mesh->announceSourceInterest($reads[SourceChange::KIND_RT], $reads[SourceChange::KIND_DB]);
+    }
+
+    /**
+     * Asks every linked node for the RT collections this one reads and holds nothing of.
+     *
+     * The second of the two moments a node asks (HIL-823), the first being a completed handshake
+     * ({@see askRtSnapshotsFromNode()}). Between them they cover both orders in which a node and
+     * its workers come up: the link first, or the readers first.
+     *
+     * Hung off a MOVE of this node's reader interest and never off the state itself, which is why
+     * it reads a flag instead of asking again. An empty collection is an ordinary thing to read —
+     * nobody has written to it yet — so a step that looked only at what is missing would broadcast
+     * a query every pass, for a collection nobody is ever going to answer about. There is no timer
+     * and no retry behind it either: the two cues are the two events at which the answer could
+     * have become a different one, and delivery here is best-effort throughout (HIL-183).
+     *
+     * The flag is spent whether or not there is a mesh to tell, the way the interest behind it is
+     * consumed: a node running off-cluster would otherwise ask about a move made long ago on the
+     * first pass a mesh appeared.
+     *
+     * Protected for the reason {@see announceReaderInterest()} is: it is how a subclass sees what
+     * this node asks the mesh for.
+     *
+     * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     */
+    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh): void
+    {
+        if (!$this->rtReaderInterestMoved) {
+            return;
+        }
+
+        $this->rtReaderInterestMoved = false;
+
+        if ($mesh === null) {
+            return;
+        }
+
+        $mesh->broadcastRtSnapshotQuery($this->missingRtCollections());
+    }
+
+    /**
+     * Names the RT collections this node reads, holds nothing of, and does not own outright.
+     *
+     * The list both asks are built from. Four questions, and each of them rules out a way the
+     * question could be pointless. A collection this node's workers do not read has nowhere to be
+     * shown even if a copy arrived, and the copy would be the last thing this node heard about it,
+     * since deltas go only to readers. A collection it already holds rows of is not missing. A
+     * collection it owns whole has no truth above its own, so an empty one is the answer rather
+     * than a gap. And a collection nobody hands over is not asked about for the same reason it is
+     * not offered ({@see isHandedOverInSnapshot()}).
+     *
+     * An owner of named rows is not excluded: it writes some rows of the collection and holds no
+     * more claim on the rest of it than any other node does.
+     *
+     * The reading of the rows is asked last on purpose — it is the only one of the four that
+     * serialises a collection, and it runs in the master.
+     *
+     * @return list<string> Collections this node would take a copy of, each named once
+     */
+    private function missingRtCollections(): array
+    {
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+        $missing = [];
+        foreach ($this->agentManagerDaemon->workerReaderMap()->collections(SourceChange::KIND_RT) as $collectionKey) {
+            if (!self::isHandedOverInSnapshot($collectionKey) || $map->ownsFully($collectionKey)) {
+                continue;
+            }
+
+            if (RtSnapshot::rows($collectionKey) !== []) {
+                continue;
+            }
+
+            $missing[] = $collectionKey;
+        }
+
+        return $missing;
     }
 
     /**
@@ -3195,6 +3358,123 @@ abstract class DaemonManager extends BaseManager implements
         // to that one node, since it is the only one short of the answer, and told whoever it is:
         // a node cannot tell whether the peer that just linked is the one that judges.
         $this->reportRtClaims($nodeId);
+    }
+
+    /**
+     * Asks a node that just linked for the RT collections this one reads and holds nothing of.
+     *
+     * Implements {@see RtSyncSink}. The pair of {@see handOverRtSnapshots()} and the answer to
+     * the case that one cannot reach (HIL-823): while a node's fleet of workers is being
+     * replaced, the collection its rows belong to is claimed by nobody, so every neighbour holds
+     * a full copy and none of them offers it. The node with the empty copy asks instead, and any
+     * holder may answer.
+     *
+     * Sent last of what a handshake produces, behind this node's interest and its own hand-over,
+     * because the answer is filtered by the reader map that interest fills in — see
+     * {@see PeerServer::sendRtReplicaOfferToNode()}.
+     *
+     * @param string $nodeId Node this one can now reach
+     */
+    public function askRtSnapshotsFromNode(string $nodeId): void
+    {
+        $this->sendRtSnapshotQueryToNode($this->findPeerServer(), $nodeId);
+    }
+
+    /**
+     * Asks one node for what this one is missing, over the port it is reachable through.
+     *
+     * Protected for the reason {@see sendRtSnapshotsToNode()} is: it is how a subclass sees what
+     * this node asks the mesh for.
+     *
+     * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     * @param string $nodeId Node being asked
+     */
+    protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId): void
+    {
+        $mesh?->sendRtSnapshotQueryToNode($nodeId, $this->missingRtCollections());
+    }
+
+    /**
+     * Answers a node's request with the rows this node holds of the collections it named.
+     *
+     * Implements {@see RtSyncSink}.
+     *
+     * @param string $nodeId Node that asked
+     * @param list<string> $collectionKeys RT collections it asked about
+     */
+    public function answerRtSnapshotQuery(string $nodeId, array $collectionKeys): void
+    {
+        $this->sendRtReplicaOffersToNode($this->findPeerServer(), $nodeId, $collectionKeys);
+    }
+
+    /**
+     * Offers a node that asked whatever this one holds of the collections it named.
+     *
+     * The one path on which this node hands RT state to a peer without owning it, and it is the
+     * request that opens the right: the asker holds nothing of the collection, so nothing of its
+     * own can be overwritten by what goes back. Everything else stays as it was — a hand-over is
+     * still the owner's to make ({@see sendRtSnapshotsToNode()}).
+     *
+     * The rows are split by the node that WROTE them rather than sent under this one's name.
+     * Staleness is marked per origin ({@see noteNodeUnreachable()}), so an answer signed by the
+     * holder would freeze rows whose owner is up and leave a dead owner's rows looking current.
+     * A row whose origin this node cannot name travels in no frame at all: there is nothing to
+     * sign it with, and a row with no source is one the receiver could never freeze.
+     *
+     * A collection nobody hands over is passed over exactly as it is in a hand-over, and so is
+     * one this node holds no rows of: silence rather than a frame saying nothing.
+     *
+     * Protected for the reason {@see sendRtSnapshotsToNode()} is: it is how a subclass sees what
+     * this node hands over.
+     *
+     * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     * @param string $nodeId Node that asked
+     * @param list<string> $collectionKeys RT collections it asked about
+     */
+    protected function sendRtReplicaOffersToNode(?RtSyncMesh $mesh, string $nodeId, array $collectionKeys): void
+    {
+        if ($mesh === null) {
+            return;
+        }
+
+        $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
+        $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
+        foreach ($collectionKeys as $collectionKey) {
+            if (!self::isHandedOverInSnapshot($collectionKey)) {
+                continue;
+            }
+
+            $ownRows = [];
+            $replicaRows = [];
+            foreach (RtSnapshot::rows($collectionKey) as $stateId => $row) {
+                if ($sourceMap->owns($collectionKey, (string)$stateId)) {
+                    $ownRows[(string)$stateId] = $row;
+                    continue;
+                }
+
+                $originNodeId = $originMap->nodeOfRow($collectionKey, (string)$stateId);
+                if ($originNodeId === null) {
+                    continue;
+                }
+
+                $replicaRows[$originNodeId][(string)$stateId] = $row;
+            }
+
+            // This node's own rows travel unnamed, and the transport signs them, the way it signs
+            // every other frame this node originates. Naming itself is the one thing the daemon
+            // cannot do here: which id this node goes by is the transport's to know.
+            if ($ownRows !== []) {
+                $mesh->sendRtReplicaOfferToNode($nodeId, null, $collectionKey, $ownRows);
+            }
+
+            // The origin is cast back to a string because it spent the loop above as an array key,
+            // and PHP stores a digit-like key as an int. A node id of '3' would come back out of
+            // here as one, and the send would raise a TypeError this node then logs and drops -
+            // losing the whole answer to a node whose only fault is a numeric name.
+            foreach ($replicaRows as $originNodeId => $rows) {
+                $mesh->sendRtReplicaOfferToNode($nodeId, (string)$originNodeId, $collectionKey, $rows);
+            }
+        }
     }
 
     /**

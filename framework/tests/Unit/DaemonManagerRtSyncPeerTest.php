@@ -36,6 +36,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
@@ -1480,6 +1481,370 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The whole point of the leaf (HIL-823): a collection this node's workers read and this node
+     * holds no row of is what the mesh is asked about. Nobody handed it over, because in the
+     * window this covers nobody owns it - and every neighbour holds it in full.
+     */
+    public function testACollectionReadHereAndHeldNowhereHereIsAskedAbout(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+
+        $this->assertSame([[DaemonManagerRtSyncPeerTestRtContext::ROWS]], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * A collection this node already holds a row of is not missing, whoever wrote that row.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testACollectionThisNodeAlreadyHoldsARowOfIsNotAskedAbout(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->writeOwnRow(self::ROW_ID, 'Ada');
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+
+        $this->assertSame([], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * A collection nothing here reads is not asked about: the copy would arrive where nothing
+     * shows it, and it would be the last thing this node ever heard of it, since deltas go only
+     * to readers.
+     */
+    public function testACollectionNoWorkerHereReadsIsNotAskedAbout(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->workerReads(StateHilosSessionRotation::RT_COLLECTION);
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+
+        $this->assertSame([], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * The owner of a whole collection has no truth above its own, so an empty one is its answer
+     * rather than a gap in it.
+     */
+    public function testTheOwnerOfAWholeCollectionAsksNobodyAboutIt(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+
+        $this->assertSame([], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * A member of a fleet owns some rows of the collection and no claim at all on the rest, so
+     * it asks about it like anybody else - and it is the very node this leaf is written for.
+     */
+    public function testAMemberOfAFleetAsksAboutTheCollectionItOwnsRowsOf(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+
+        $this->assertSame([[DaemonManagerRtSyncPeerTestRtContext::ROWS]], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * The rotation store is left out of the request by the same predicate that leaves it out of
+     * the hand-over (P-084): a ticket lives for seconds, and the ones outstanding before this
+     * node came up are of no use to it.
+     */
+    public function testTheRotationStoreIsNotAskedAbout(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountRotationStore();
+        $daemon->workerReads(StateHilosSessionRotation::RT_COLLECTION);
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+
+        $this->assertSame([], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * The tick step hangs off a MOVE of this node's reader interest and never off the state
+     * itself. An empty collection is an ordinary thing to read, so a step that looked only at
+     * what is missing would broadcast a query every pass for as long as it stayed empty.
+     */
+    public function testAPassOnWhichNothingMovedAsksNothing(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->announceInterest();
+        $daemon->askForMissing();
+
+        $daemon->announceInterest();
+        $daemon->askForMissing();
+
+        $this->assertSame(
+            [[DaemonManagerRtSyncPeerTestRtContext::ROWS]],
+            $daemon->mesh->snapshotQueries,
+            'The union did not move, so the question was not asked again',
+        );
+    }
+
+    /**
+     * The handshake asks the peer it just linked to, and asks it the same list.
+     */
+    public function testACompletedHandshakeAsksThatPeerForWhatIsMissing(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+
+        $daemon->askOnHandshake('node-c');
+
+        $this->assertSame(
+            [['nodeId' => 'node-c', 'collectionKeys' => [DaemonManagerRtSyncPeerTestRtContext::ROWS]]],
+            $daemon->mesh->snapshotQueriesByNode,
+        );
+    }
+
+    /**
+     * The leaf's other half: a node that owns nothing of the collection answers anyway, because
+     * the request is what opens that right. Today nothing at all goes back from here.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAHolderThatOwnsNothingStillAnswersTheRequest(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+
+        $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $this->assertSame(
+            [[
+                'nodeId' => 'node-c',
+                'originNodeId' => self::REMOTE_NODE,
+                'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::ROWS,
+                'rows' => [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Grace']],
+            ]],
+            $daemon->mesh->replicaOffers,
+        );
+    }
+
+    /**
+     * One frame per node that WROTE the rows, since staleness is marked by that name: an answer
+     * signed by the holder would freeze live rows and leave a dead owner's rows looking current.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     * @throws InvalidFormatException When the local row is not one the state can be built from
+     */
+    public function testTheAnswerIsSplitByTheNodeThatWroteTheRows(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->receiveFrom('node-d', $daemon->rtSyncCreated('Ada', self::NEIGHBOUR_ROW_ID));
+        $daemon->writeOwnRow(self::OWN_ROW_ID, 'Hedy');
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::OWN_ROW_ID]],
+        );
+
+        $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $this->assertSame(
+            [[self::OWN_ROW_ID], [self::ROW_ID], [self::NEIGHBOUR_ROW_ID]],
+            array_map(
+                static fn(array $offer): array => array_map(strval(...), array_keys($offer['rows'])),
+                $daemon->mesh->replicaOffers,
+            ),
+            'This node\'s own rows first and unnamed, then one frame per remote writer',
+        );
+        $this->assertSame(
+            [null, self::REMOTE_NODE, 'node-d'],
+            array_column($daemon->mesh->replicaOffers, 'originNodeId'),
+        );
+    }
+
+    /**
+     * A node whose id reads as a number is answered like any other. The rows are grouped by
+     * origin in an array, and PHP stores a digit-like key as an int - so without a cast back the
+     * send is handed an int where it declares a string, and this node logs a TypeError and drops
+     * the whole answer over a neighbour whose only fault is a numeric name.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testANeighbourWhoseIdIsANumberIsNamedInTheAnswer(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receiveFrom('3', $daemon->rtSyncCreated('Grace'));
+
+        $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $this->assertSame(['3'], array_column($daemon->mesh->replicaOffers, 'originNodeId'));
+    }
+
+    /**
+     * A holder with none of its own rows of the collection says nothing under its own name, and
+     * says it here rather than leaning on the transport to drop an empty frame a layer down.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAHolderWithNoRowsOfItsOwnSendsNoFrameUnderItsOwnName(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+
+        $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $this->assertSame([self::REMOTE_NODE], array_column($daemon->mesh->replicaOffers, 'originNodeId'));
+    }
+
+    /**
+     * A row this node can name no writer for travels in no frame: there is nothing to sign it
+     * with, and a row with no source is one the receiver could never freeze.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     */
+    public function testARowWithNoKnownWriterIsNotOffered(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->writeOwnRow(self::OWN_ROW_ID, 'Hedy');
+
+        $daemon->answerQuery('node-c', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $this->assertSame([], $daemon->mesh->replicaOffers);
+    }
+
+    /**
+     * The rotation store is not answered about either, by the same predicate that keeps it out
+     * of the hand-over and out of the request.
+     */
+    public function testTheRotationStoreIsNotAnsweredAbout(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $rotations = $daemon->mountRotationStore();
+        $rotations->add(StateHilosSessionRotation::create(self::TICKET, 'session-token', [], 0.0));
+        $daemon->noteOwnAgent('session_agent', [StateHilosSessionRotation::RT_COLLECTION]);
+
+        $daemon->answerQuery('node-c', [StateHilosSessionRotation::RT_COLLECTION]);
+
+        $this->assertSame([], $daemon->mesh->replicaOffers);
+    }
+
+    /**
+     * The receiving half: the missing row is created and the one already held is left alone.
+     * Topping up rather than replacing is what makes several answers to one request harmless,
+     * and what keeps a row this node wrote between the question and the answer.
+     *
+     * @throws InvalidFormatException When the test row is not one the state can be built from
+     * @throws HilosException When the write of the missing rows fails
+     */
+    public function testAnOfferCreatesWhatIsMissingAndLeavesWhatIsHeld(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->writeOwnRow(self::ROW_ID, 'Ada');
+
+        $daemon->receiveOffer(self::REMOTE_NODE, [
+            self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'stale'],
+            self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Grace'],
+        ]);
+
+        $held = $collection->get(self::ROW_ID);
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestState::class, $held);
+        $this->assertSame('Ada', $held->name, 'A row already here is not overwritten by a copy of it');
+        $arrived = $collection->get(self::NEIGHBOUR_ROW_ID);
+        $this->assertInstanceOf(DaemonManagerRtSyncPeerTestState::class, $arrived);
+        $this->assertSame('Grace', $arrived->name);
+    }
+
+    /**
+     * A row an agent of this node has claimed is passed over written or not: this node is its
+     * source of truth, and a copy of how it looked elsewhere is not an improvement on none.
+     *
+     * @throws HilosException When the write of the missing rows fails
+     */
+    public function testAnOfferSkipsARowThisNodesOwnAgentClaimed(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->noteOwnAgent(
+            'worker_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
+        );
+
+        $daemon->receiveOffer(self::REMOTE_NODE, [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'stale']]);
+
+        $this->assertFalse($collection->has(self::ROW_ID), 'The row is this node\'s to write, empty or not');
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * Creations and not one deletion, because nothing was deleted: an offer speaks for no scope,
+     * so there is no row it can say has stopped existing.
+     *
+     * @throws HilosException When the write of the missing rows fails
+     */
+    public function testTheWorkersHearOnlyCreatesFromAnOffer(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+
+        $daemon->receiveOffer(self::REMOTE_NODE, [
+            self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada'],
+            self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Grace'],
+        ]);
+
+        $this->assertSame(
+            [WorkerConstants::MESSAGE_RT_SYNC_CREATED, WorkerConstants::MESSAGE_RT_SYNC_CREATED],
+            $daemon->workerServer->frameTypes(),
+        );
+    }
+
+    /**
+     * What arrived is a replica of the origin's rows and it is current as of now, so the origin
+     * map is told - without it a lost link could freeze neither those rows nor anything else.
+     *
+     * @throws HilosException When the write of the missing rows fails
+     */
+    public function testTheRowsAnOfferBringsAreRememberedAsTheOriginsOwn(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+
+        $daemon->receiveOffer(self::REMOTE_NODE, [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada']]);
+
+        $this->assertSame(
+            self::REMOTE_NODE,
+            $daemon->originMap()->nodeOfRow(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID),
+        );
+    }
+
+    /**
      * The claim itself is what the leader is told, and it is told per agent (HIL-696): the
      * verdict it may reach stops ONE agent, so a node-level answer would name nobody to stop.
      * Both axes travel with it, and the identity a placement frame is addressed with comes off
@@ -1742,6 +2107,50 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function announceInterest(): void
     {
         $this->announceReaderInterest($this->mesh);
+    }
+
+    /**
+     * Runs the loop step that asks the mesh for what this node reads and holds nothing of.
+     */
+    public function askForMissing(): void
+    {
+        $this->askRtSnapshotsForMissingCollections($this->mesh);
+    }
+
+    /**
+     * Asks one node for what this one is missing, the way a completed handshake does.
+     *
+     * @param string $nodeId Node being asked
+     */
+    public function askOnHandshake(string $nodeId): void
+    {
+        $this->askRtSnapshotsFromNode($nodeId);
+    }
+
+    /**
+     * Answers another node's request, the way an arriving frame does.
+     *
+     * @param string $nodeId Node that asked
+     * @param list<string> $collectionKeys RT collections it asked about
+     */
+    public function answerQuery(string $nodeId, array $collectionKeys): void
+    {
+        $this->answerRtSnapshotQuery($nodeId, $collectionKeys);
+    }
+
+    /**
+     * Applies an offer of rows the way an arriving frame does.
+     *
+     * @param string $originNodeId Node that wrote the rows
+     * @param array<string, array<string, mixed>> $rows Rows by state id
+     * @param string $collectionKey RT collection the rows belong to
+     */
+    public function receiveOffer(
+        string $originNodeId,
+        array $rows,
+        string $collectionKey = DaemonManagerRtSyncPeerTestRtContext::ROWS,
+    ): void {
+        $this->applyRemoteRtReplicaOffer($originNodeId, $collectionKey, $rows);
     }
 
     /**
@@ -2097,6 +2506,31 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     }
 
     /**
+     * Redirects the request this node sends on a handshake to the recording mesh, for the reason
+     * given on {@see broadcastRtSyncToPeers()}.
+     *
+     * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
+     * @param string $nodeId Node being asked
+     */
+    protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId): void
+    {
+        parent::sendRtSnapshotQueryToNode($mesh === null ? null : $this->mesh, $nodeId);
+    }
+
+    /**
+     * Redirects the offers this node answers a request with to the recording mesh, for the reason
+     * given on {@see broadcastRtSyncToPeers()}.
+     *
+     * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
+     * @param string $nodeId Node that asked
+     * @param list<string> $collectionKeys RT collections it asked about
+     */
+    protected function sendRtReplicaOffersToNode(?RtSyncMesh $mesh, string $nodeId, array $collectionKeys): void
+    {
+        parent::sendRtReplicaOffersToNode($mesh === null ? null : $this->mesh, $nodeId, $collectionKeys);
+    }
+
+    /**
      * Answers for membership from {@see $departedNodes}, for the reason given on
      * {@see broadcastRtSyncToPeers()}.
      *
@@ -2274,6 +2708,67 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
             'collectionKey' => $collectionKey,
             'rows' => $rows,
             'scopeKeys' => $scopeKeys,
+        ];
+    }
+
+    /** @var list<array{nodeId: string, collectionKeys: list<string>}> Requests addressed to one node, in order */
+    public array $snapshotQueriesByNode = [];
+
+    /** @var list<list<string>> Requests broadcast to the whole mesh, in order */
+    public array $snapshotQueries = [];
+
+    /**
+     * @var list<array{nodeId: string, originNodeId: ?string, collectionKey: string,
+     *     rows: array<string, array<string, mixed>>}> Offers sent, in order
+     */
+    public array $replicaOffers = [];
+
+    /**
+     * Stands in for the transport's own silence on an empty list, which is where that rule lives
+     * ({@see PeerServer::sendRtSnapshotQueryToNode()}). The offer below has no such guard on
+     * purpose: there, staying silent is the DAEMON's rule, so a case must be able to see it break.
+     *
+     * @param string $nodeId Node being asked
+     * @param list<string> $collectionKeys RT collections the asking node holds nothing of
+     */
+    public function sendRtSnapshotQueryToNode(string $nodeId, array $collectionKeys): void
+    {
+        if ($collectionKeys === []) {
+            return;
+        }
+
+        $this->snapshotQueriesByNode[] = ['nodeId' => $nodeId, 'collectionKeys' => $collectionKeys];
+    }
+
+    /**
+     * @param list<string> $collectionKeys RT collections the asking node holds nothing of
+     */
+    public function broadcastRtSnapshotQuery(array $collectionKeys): void
+    {
+        if ($collectionKeys === []) {
+            return;
+        }
+
+        $this->snapshotQueries[] = $collectionKeys;
+    }
+
+    /**
+     * @param string $nodeId Node that asked for the collection
+     * @param ?string $originNodeId Node that wrote these rows, or null when the sender wrote them
+     * @param string $collectionKey RT collection the rows belong to
+     * @param array<string, array<string, mixed>> $rows Rows by state id
+     */
+    public function sendRtReplicaOfferToNode(
+        string $nodeId,
+        ?string $originNodeId,
+        string $collectionKey,
+        array $rows,
+    ): void {
+        $this->replicaOffers[] = [
+            'nodeId' => $nodeId,
+            'originNodeId' => $originNodeId,
+            'collectionKey' => $collectionKey,
+            'rows' => $rows,
         ];
     }
 

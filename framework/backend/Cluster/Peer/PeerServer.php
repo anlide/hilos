@@ -49,7 +49,9 @@ use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
@@ -733,6 +735,15 @@ final class PeerServer extends AbstractServer implements
         Hilos::$cluster?->rtSyncSink()?->noteNodeReachable($remote->nodeId);
 
         Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
+
+        // And ask the peer for the collections this node holds nothing of (HIL-823). The
+        // owner-driven hand-over above cannot cover the window in which a collection is claimed
+        // by nobody - while a fleet of workers is being replaced, every neighbour holds its rows
+        // and none of them owns it - so the node with the empty copy asks, and any holder may
+        // answer. Last of the three frames on purpose: the answer is filtered by the reader map
+        // the interest frame fills in, and the hand-over ahead of it is the cheaper way to the
+        // same rows whenever an owner does exist.
+        Hilos::$cluster?->rtSyncSink()?->askRtSnapshotsFromNode($remote->nodeId);
 
         // And the browser connections it holds (HIL-668), on exactly the same terms: without
         // them the peer resolves every one of this node's clients as unknown and answers them
@@ -2030,6 +2041,84 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
+     * Asks one node for the collections this node holds nothing of.
+     *
+     * Implements {@see RtSyncMesh}. Addressed at the peer whose handshake just completed, and
+     * sent after this node's interest and its own hand-over: the answer is filtered by the same
+     * reader map {@see sendRtSnapshotToNode()} consults, and a request that overtook the
+     * interest frame would reach a holder that has never heard this node reads the collection.
+     *
+     * An empty list is not a frame. It would say nothing a holder could act on — it does not
+     * know what this node is missing — and read generously it would ask for the whole runtime
+     * of every peer.
+     *
+     * @param string $nodeId Node being asked
+     * @param list<string> $collectionKeys RT collections this node holds nothing of
+     */
+    public function sendRtSnapshotQueryToNode(string $nodeId, array $collectionKeys): void
+    {
+        if ($collectionKeys === []) {
+            return;
+        }
+
+        $this->sendToNode($nodeId, new PeerRtSnapshotQueryDTO($this->localIdentity->nodeId, $collectionKeys));
+    }
+
+    /**
+     * Asks every linked node for the collections this node holds nothing of.
+     *
+     * Implements {@see RtSyncMesh}. Through {@see broadcastToNodes()} and deliberately not
+     * through {@see broadcastToNodesHolding()}, although a filter by collection looks like the
+     * closer fit here: what is wanted is a holder, and a holder need not be a reader. A node
+     * that writes a collection without reading it is an ordinary member of this mesh, and the
+     * precise question would drop the very peer most likely to be able to answer.
+     *
+     * @param list<string> $collectionKeys RT collections this node holds nothing of
+     */
+    public function broadcastRtSnapshotQuery(array $collectionKeys): void
+    {
+        if ($collectionKeys === []) {
+            return;
+        }
+
+        $this->broadcastToNodes(new PeerRtSnapshotQueryDTO($this->localIdentity->nodeId, $collectionKeys));
+    }
+
+    /**
+     * Offers a node that asked the rows of one collection, as written by one node.
+     *
+     * Implements {@see RtSyncMesh}. The only send of this class that carries RT state this node
+     * does not own, and the guard that makes it safe is the same one the owner-driven hand-over
+     * uses: the asker must be on record as reading the collection, or the copy would arrive
+     * where no delta ever follows it and stay as current as the second it landed.
+     *
+     * A null origin is this node's own rows, and signing them here is the same thing every other
+     * frame this class sends does: the local id lives on the transport, and the daemon above it
+     * has no name of its own to give.
+     *
+     * @param string $nodeId Node that asked for the collection
+     * @param ?string $originNodeId Node that wrote these rows, or null when this node wrote them
+     * @param string $collectionKey RT collection the rows belong to
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
+     */
+    public function sendRtReplicaOfferToNode(
+        string $nodeId,
+        ?string $originNodeId,
+        string $collectionKey,
+        array $rows,
+    ): void {
+        if ($rows === [] || !$this->nodeReaderMap->holds($nodeId, SourceChange::KIND_RT, $collectionKey)) {
+            return;
+        }
+
+        $this->sendToNode($nodeId, new PeerRtReplicaOfferDTO(
+            $originNodeId ?? $this->localIdentity->nodeId,
+            $collectionKey,
+            $rows,
+        ));
+    }
+
+    /**
      * Announces everything this node's agents own of the RT state to every linked peer.
      *
      * Implements {@see RtClaimMesh}. Announced rather than addressed at the leader, and the
@@ -2140,6 +2229,63 @@ final class PeerServer extends AbstractServer implements
         } catch (Throwable $e) {
             Logger::warning(
                 "Failed to apply peer RT snapshot from node '{$frame->originNodeId}': {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Routes a received request for a collection to the local sink so this node answers it.
+     *
+     * The asker is read off the frame rather than off the link, the way {@see onRtSyncReceived()}
+     * reads the origin: what a node calls itself is what the reader map is keyed by, and the
+     * answer is addressed through that map.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerRtSnapshotQueryDTO $frame Received RT-snapshot-query frame
+     */
+    public function onRtSnapshotQueryReceived(PeerLink $link, PeerRtSnapshotQueryDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->rtSyncSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer RT snapshot query from node '{$frame->nodeId}': no local RT sync sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->answerRtSnapshotQuery($frame->nodeId, $frame->collectionKeys);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to answer peer RT snapshot query from node '{$frame->nodeId}': {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Tops this node's copy of a collection up with the rows a holder offered.
+     *
+     * The receiving twin of {@see sendRtReplicaOfferToNode()}, and it stops here exactly as
+     * {@see onRtSnapshotReceived()} does: what arrives is applied and never announced on.
+     *
+     * @param PeerLink $link Link the offer arrived on
+     * @param PeerRtReplicaOfferDTO $frame Received RT-replica-offer frame
+     */
+    public function onRtReplicaOfferReceived(PeerLink $link, PeerRtReplicaOfferDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->rtSyncSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer RT replica offer from node '{$frame->originNodeId}': no local RT sync sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->applyRemoteRtReplicaOffer($frame->originNodeId, $frame->collectionKey, $frame->rows);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to apply peer RT replica offer from node '{$frame->originNodeId}': {$e->getMessage()}",
             );
         }
     }

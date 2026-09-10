@@ -6,11 +6,14 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Closure;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\PeerLink;
@@ -105,6 +108,118 @@ final class PeerServerRtHandOverTest extends TestCase
         $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
 
         $this->assertSame(['node-b'], $sink->handedOverTo);
+    }
+
+    /**
+     * The other direction of the same cue (HIL-823): the peer is asked for what this node holds
+     * nothing of, and asked after the hand-over rather than before it. The hand-over is the
+     * cheaper route to the same rows wherever an owner exists, and the answer to the request is
+     * filtered by the reader map the interest frame ahead of both fills in.
+     */
+    public function testACompletedHandshakeAlsoAsksThePeerForWhatThisNodeIsMissing(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+
+        $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
+
+        $this->assertSame(['node-b'], $sink->askedOf);
+        $this->assertSame(['node-b'], $sink->handedOverTo, 'The hand-over is not replaced by the request');
+    }
+
+    /**
+     * A request that arrives reaches the daemon, which is the only side that can tell what this
+     * node holds of the collections named.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testARequestThatArrivesReachesTheDaemon(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+
+        $this->feed($link, $far, new PeerRtSnapshotQueryDTO('node-b', ['unitRows']));
+
+        $this->assertSame([['node-b', ['unitRows']]], $sink->answered);
+    }
+
+    /**
+     * An offer that arrives reaches the daemon as a top-up rather than as a replacement, so the
+     * origin it names is the node that WROTE the rows and travels through untouched.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testAnOfferThatArrivesReachesTheDaemonUnderTheOriginItNames(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+
+        $this->feed($link, $far, new PeerRtReplicaOfferDTO('node-c', 'unitRows', ['7' => ['id' => '7']]));
+
+        $this->assertSame([['node-c', 'unitRows', ['7' => ['id' => '7']]]], $sink->offered);
+    }
+
+    /**
+     * The answer obeys the same reader filter the owner's hand-over does, and for the same
+     * reason: a copy sent where no delta follows it stays as current as the second it landed.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testAnOfferIsNotSentToANodeThatNeverSaidItReadsTheCollection(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->attach($server, $link);
+        $this->handshake($link, $far);
+        $link->write();
+        $this->drain($far);
+
+        $server->sendRtReplicaOfferToNode('node-b', 'node-c', 'unitRows', ['7' => ['id' => '7']]);
+        $link->write();
+
+        $this->assertSame([], $this->frameTypesOf($far));
+    }
+
+    /**
+     * And the same node, once it says what it reads, is offered what this one holds — signed with
+     * this node's own id when the rows are its own, since the transport is where that id lives.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testAnOfferOfThisNodesOwnRowsTravelsUnderThisNodesId(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->attach($server, $link);
+        $this->handshake($link, $far);
+        $this->declareInterest($server, $link);
+        $link->write();
+        $this->drain($far);
+
+        $server->sendRtReplicaOfferToNode('node-b', null, 'unitRows', ['7' => ['id' => '7']]);
+        $link->write();
+
+        $frames = $this->framesOf($far);
+        $this->assertCount(1, $frames);
+        $offer = $frames[0];
+        $this->assertInstanceOf(PeerRtReplicaOfferDTO::class, $offer);
+        $this->assertSame('node-a', $offer->originNodeId);
     }
 
     /**
@@ -517,6 +632,45 @@ final class PeerServerRtHandOverTest extends TestCase
     }
 
     /**
+     * Delivers one frame to a handshaked link the way the node on the other end would.
+     *
+     * @param PeerLink $link Accepting side of the pair
+     * @param Socket $far Far end, standing in for the sending node
+     * @param PeerDTO $frame Frame that node sends
+     * @throws SocketException When the pair refuses the frame
+     * @throws HilosException When the frame refuses to become wire input
+     */
+    private function feed(PeerLink $link, Socket $far, PeerDTO $frame): void
+    {
+        socket_write($far, $frame->toJson() . "\n");
+        $link->read();
+    }
+
+    /**
+     * Parses back the frames that have arrived at the far end of a pair, in arrival order.
+     *
+     * The reading twin of {@see frameTypesOf()}, for the cases whose subject is a field inside
+     * the frame rather than the fact that one was sent.
+     *
+     * @param Socket $far Far end of the pair
+     * @return list<PeerDTO> Frames as the receiving node would parse them, oldest first
+     * @throws PeerTransportException When a frame is not one this protocol knows
+     */
+    private function framesOf(Socket $far): array
+    {
+        $frames = [];
+        foreach (explode("\n", $this->drain($far)) as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $frames[] = PeerDTO::fromWire($line);
+        }
+
+        return $frames;
+    }
+
+    /**
      * Names the frame types that have arrived at the far end of a pair, in arrival order.
      *
      * @param Socket $far Far end of the pair
@@ -563,6 +717,15 @@ final class PeerServerRtHandOverTest extends TestCase
             /** @var list<string> Nodes this one was asked to hand its collections to */
             public array $handedOverTo = [];
 
+            /** @var list<string> Nodes this one was asked for what it is missing */
+            public array $askedOf = [];
+
+            /** @var list<array{string, list<string>}> Requests it was asked to answer */
+            public array $answered = [];
+
+            /** @var list<array{string, string, array<string, array<string, mixed>>}> Offers it was handed */
+            public array $offered = [];
+
             /** @var array<string, float> Nodes it was told had become unreachable, and when */
             public array $frozen = [];
 
@@ -603,6 +766,36 @@ final class PeerServerRtHandOverTest extends TestCase
             public function handOverRtSnapshots(string $nodeId): void
             {
                 $this->handedOverTo[] = $nodeId;
+            }
+
+            /**
+             * @param string $nodeId Node this one can now reach
+             */
+            public function askRtSnapshotsFromNode(string $nodeId): void
+            {
+                $this->askedOf[] = $nodeId;
+            }
+
+            /**
+             * @param string $nodeId Node that asked
+             * @param list<string> $collectionKeys RT collections it asked about
+             */
+            public function answerRtSnapshotQuery(string $nodeId, array $collectionKeys): void
+            {
+                $this->answered[] = [$nodeId, $collectionKeys];
+            }
+
+            /**
+             * @param string $originNodeId Id of the node that wrote these rows
+             * @param string $collectionKey RT collection being topped up
+             * @param array<string, array<string, mixed>> $rows Rows by state id
+             */
+            public function applyRemoteRtReplicaOffer(
+                string $originNodeId,
+                string $collectionKey,
+                array $rows,
+            ): void {
+                $this->offered[] = [$originNodeId, $collectionKey, $rows];
             }
 
             /**

@@ -36,7 +36,10 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * ({@see PeerRtClaimsDTO}, {@see PeerRtClaimsQueryDTO}, {@see PeerRtClaimRefusedDTO}) carry the
  * other half of the same subject the RT replication frames carry — not what a node wrote, but
  * the right it holds to write it, reported to the leader and answered only when two nodes claim
- * the same rows; the
+ * the same rows; the ask-for-a-copy frames ({@see PeerRtSnapshotQueryDTO},
+ * {@see PeerRtReplicaOfferDTO}) run the same replication the other way round — a node holding
+ * none of a collection asks for it, and any holder answers with rows to top up rather than
+ * rows to replace, which is the one opening through which a non-owner hands RT state out; the
  * protected-mode frames ({@see PeerProtectedModeEnableDTO}, {@see PeerProtectedModeReadyDTO},
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
@@ -99,6 +102,8 @@ abstract class PeerDTO extends BaseDTO
             PeerRtClaimsDTO::MESSAGE_TYPE => PeerRtClaimsDTO::fromArray($data),
             PeerRtClaimsQueryDTO::MESSAGE_TYPE => PeerRtClaimsQueryDTO::fromArray($data),
             PeerRtClaimRefusedDTO::MESSAGE_TYPE => PeerRtClaimRefusedDTO::fromArray($data),
+            PeerRtSnapshotQueryDTO::MESSAGE_TYPE => PeerRtSnapshotQueryDTO::fromArray($data),
+            PeerRtReplicaOfferDTO::MESSAGE_TYPE => PeerRtReplicaOfferDTO::fromArray($data),
             PeerClientSignalDTO::MESSAGE_TYPE => PeerClientSignalDTO::fromArray($data),
             PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),
             PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),
