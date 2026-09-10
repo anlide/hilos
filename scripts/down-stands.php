@@ -32,8 +32,9 @@ const DOWN_STANDS_RESIDUE = 1;
 const DOWN_STANDS_UNKNOWN_STAND = 2;
 
 $root = dirname(__DIR__);
+require_once $root . '/scripts/stand-registry.php';
 require_once $root . '/scripts/stand-teardown.php';
-$stands = require $root . '/scripts/test-stands.php';
+$stands = standRegistry($root);
 
 exit(downStands($root, $stands, array_slice($argv, 1)));
 

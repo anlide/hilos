@@ -23,6 +23,13 @@ declare(strict_types=1);
  *            does not skip its group-mates.
  *   tags     selectors: `run-test-suite.php frontend` runs everything tagged
  *            `frontend` plus whatever those steps depend on.
+ *   stand    the id of a record in `scripts/test-stands.php`, from which the run's
+ *            snapshot takes the directory to run docker from, the compose file, and
+ *            what narrows that file to this stand's own containers. A step without one
+ *            has no stand at all and is not asked about.
+ *   downsStand  whether this step takes its stand down the moment it ends, at any
+ *            outcome. Separate from `stand` because twelve steps drive one and
+ *            deliberately leave it standing.
  *   seconds  the last measured duration (HIL-733, 2026-08-27), read off a GREEN
  *            single-lane run so it is the step's own cost rather than an overlap
  *            with whoever shared the box. A scheduling HINT only, and a narrow
@@ -82,6 +89,7 @@ $steps = [
         'id' => 'framework',
         'command' => 'composer run test:framework:all',
         'cwd' => '.',
+        'stand' => 'framework',
         'deps' => ['framework-image'],
         'group' => null,
         'tags' => ['framework', 'backend'],
@@ -126,6 +134,7 @@ $steps = [
         'id' => 'cluster',
         'command' => 'composer run test:cluster:all',
         'cwd' => '.',
+        'stand' => 'cluster',
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
@@ -135,7 +144,7 @@ $steps = [
         // chat-e2e into 16m10s against 9m36s and produced fourteen failures that were only the
         // neighbour (HIL-752). Declared here rather than appended to the composer chain because
         // that chain breaks at the first red, and the runner is the one that holds the outcome.
-        'downAfter' => 'cluster',
+        'downsStand' => true,
     ],
 ];
 
@@ -144,6 +153,7 @@ foreach ($demos as $demo => $seconds) {
         'id' => $demo . '-check',
         'command' => 'composer run test:check',
         'cwd' => 'demo/' . $demo,
+        'stand' => $demo,
         // SHARED SDK WORKSPACE INVARIANT — NOT an ordering preference, do not
         // delete it to "free up a lane". Every demo's frontend resolves @hilos/*
         // to framework/frontend, and its prebuild hook runs prebuild-sdk.mjs and
@@ -161,6 +171,7 @@ foreach ($demos as $demo => $seconds) {
         'id' => $demo . '-php',
         'command' => 'composer run test:db-reset && composer run test:phpunit && composer run test:down',
         'cwd' => 'demo/' . $demo,
+        'stand' => $demo,
         // Backend only: no SDK, no built frontend, so it depends on nothing. It is
         // held apart from its demo's other steps by `group`, not by an edge —
         // `test:e2e-full` starts with a `docker compose down` of the whole project,
@@ -174,6 +185,7 @@ foreach ($demos as $demo => $seconds) {
         'id' => $demo . '-e2e',
         'command' => 'composer run test:e2e-full',
         'cwd' => 'demo/' . $demo,
+        'stand' => $demo,
         'deps' => ['fe-build'],
         'group' => $demo,
         'tags' => ['frontend', 'e2e', 'demo'],

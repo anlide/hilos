@@ -167,6 +167,12 @@ services:
   mysql-framework-test:
     image: mariadb:11.4
     container_name: hilos-mysql-framework-test
+    # How the runner's artifact collector finds this container: the stands spell their
+    # database service several ways, so it is asked for by role rather than guessed at by
+    # name (HIL-841). No app container wears the other label here — the framework stand has
+    # no demo cli.php to ask for a migration status, and the snapshot says so in a line.
+    labels:
+      hilos.role: database
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_FRAMEWORK_TEST_HOST_PORT:-33062}:3306"
     environment:

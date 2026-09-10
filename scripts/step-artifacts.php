@@ -30,6 +30,8 @@ declare(strict_types=1);
  * both require it.
  */
 
+require_once __DIR__ . '/stand-registry.php';
+
 /**
  * How long one external command the collector runs may take before it is killed.
  * Docker answers a healthy box in under a second; a probe still silent after half a
@@ -64,14 +66,7 @@ const ARTIFACT_KILL_SIGNAL = 9;
  */
 const ARTIFACT_VALUE_SEPARATOR = '; ';
 
-/**
- * The compose file a demo's stand is defined by, relative to the step's own working
- * directory. There is no registry of demos behind this: the path is the same for all
- * three and is already spelled out that way in each demo's composer scripts.
- */
-const STAND_COMPOSE_FILE = 'docker/docker-compose.test.yml';
-
-/** Where a demo's daemon, workers and agents write, relative to the step's working directory. */
+/** Where a stand's daemon, workers and agents write, relative to the STAND's working directory. */
 const STAND_LOG_DIR = 'data/logs-test';
 
 /**
@@ -239,9 +234,15 @@ const STAND_APP_LABEL = 'hilos.role=app';
  * asked last because it is the one source that can be slow, and starting there
  * would mean not getting the rest.
  *
+ * The stand is resolved once, at the top, out of the registry the step names — never
+ * out of the shape of the step's own directory. Both halves of the answer travel
+ * together that way: the cluster's compose file is spelled relative to `demo/cluster`
+ * while the step itself runs from the repository root, and a resolution that carried
+ * only the file would look right and snapshot nothing.
+ *
  * @param string $root Repository root; the step's `cwd` is relative to it.
  * @param string $id The step the snapshot is about.
- * @param array{cwd: string} $step Its manifest entry.
+ * @param array{cwd: string, stand?: string} $step Its manifest entry.
  * @param array{rc: int, at: string, seconds: float,
  *     unstable: array{count: int, tests: array<int, string>}} $finished How the step went.
  * @param array{lanes: int, logPath: string, neighborsAtStart: array<int, string>,
@@ -249,7 +250,7 @@ const STAND_APP_LABEL = 'hilos.role=app';
  *     and where the step's own captured output is — the triage reads it for the line a
  *     Playwright setup prints when it gives up on the stand.
  * @param string $artifactDir The directory all of this run's snapshots go under.
- * @return array{path: string, reason: string, standUp: bool, missing: array<int, string>}
+ * @return array{path: string, reason: string, standCommand: string|null, missing: array<int, string>}
  */
 function collectStepArtifacts(
     string $root,
@@ -267,36 +268,45 @@ function collectStepArtifacts(
         return [
             'path' => $path,
             'reason' => $reason,
-            'standUp' => false,
+            'standCommand' => null,
             'missing' => ['artifacts: could not create ' . $path],
         ];
     }
 
-    $missing = [];
+    $standId = $step['stand'] ?? null;
+    $stand = $standId === null ? null : standById($root, $standId);
+    $missing = $standId !== null && $stand === null
+        ? ['stand: step names an unknown stand ' . $standId]
+        : [];
     $head = runArtifactCommand('head', 'git rev-parse --short HEAD 2>&1', $root, ARTIFACT_COMMAND_TIMEOUT_SECONDS);
     $status = runArtifactCommand('git-status', 'git status --short 2>&1', $root, ARTIFACT_COMMAND_TIMEOUT_SECONDS);
     $missing = [...$missing, ...$head['missing'], ...$status['missing']];
 
-    $missing = [...$missing, ...copyStandLogs($cwd, $path)];
+    $missing = [...$missing, ...copyStandLogs($root, $stand, $path)];
     foreach (PLAYWRIGHT_OUTPUT_DIRS as $source => $target) {
         $missing = [...$missing, ...copyArtifactTree('playwright', $cwd . '/' . $source, $path . '/' . $target)];
     }
 
-    $composeFile = standComposeFile($root, $step);
-    $stand = artifactBudgetLeft($deadline)
-        ? probeStand($root, $step, $composeFile)
-        : ['state' => 'down', 'raw' => '', 'containers' => [], 'missing' => ['docker: the snapshot ran out of its budget']];
-    $missing = [...$missing, ...$stand['missing']];
-    if ($stand['state'] === 'up' && $composeFile !== null) {
-        $missing = [...$missing, ...collectDockerArtifacts($root, $step, $stand, $path, $deadline)];
-        $missing = [...$missing, ...collectDatabaseArtifacts($root, $step, $composeFile, $stand, $path, $deadline)];
+    $probe = artifactBudgetLeft($deadline)
+        ? probeStand($root, $stand)
+        : [
+            'state' => 'down',
+            'command' => null,
+            'raw' => '',
+            'containers' => [],
+            'missing' => ['docker: the snapshot ran out of its budget'],
+        ];
+    $missing = [...$missing, ...$probe['missing']];
+    if ($probe['state'] === 'up' && $stand !== null) {
+        $missing = [...$missing, ...collectDockerArtifacts($root, $stand, $probe, $path, $deadline)];
+        $missing = [...$missing, ...collectDatabaseArtifacts($root, $stand, $probe, $path, $deadline)];
     }
 
     if (artifactReasonNeedsTriage($reason)) {
         file_put_contents($path . '/' . ARTIFACT_TRIAGE_FILE, artifactTriageText(
             $id,
             $reason,
-            matchTriageSignatures(triageInput($path, readArtifactFile($context['logPath']), $stand['containers'])),
+            matchTriageSignatures(triageInput($path, readArtifactFile($context['logPath']), $probe['containers'])),
         ));
     }
 
@@ -307,7 +317,7 @@ function collectStepArtifacts(
         'started' => $finished['at'],
         'finished' => date('c'),
         'seconds' => sprintf('%.1f', $finished['seconds']),
-        'stand' => $stand['state'],
+        'stand' => $probe['state'],
         'lanes' => (string)$context['lanes'],
         'neighbors-at-start' => implode(ARTIFACT_VALUE_SEPARATOR, $context['neighborsAtStart']),
         'neighbors-at-finish' => implode(ARTIFACT_VALUE_SEPARATOR, $context['neighborsAtFinish']),
@@ -318,7 +328,14 @@ function collectStepArtifacts(
         'missing' => implode(ARTIFACT_VALUE_SEPARATOR, $missing),
     ]);
 
-    return ['path' => $path, 'reason' => $reason, 'standUp' => $stand['state'] === 'up', 'missing' => $missing];
+    return [
+        'path' => $path,
+        'reason' => $reason,
+        'standCommand' => $probe['state'] === 'up' && $stand !== null
+            ? $probe['command'] . ' (from ' . $stand['cwd'] . ')'
+            : null,
+        'missing' => $missing,
+    ];
 }
 
 /**
@@ -356,20 +373,6 @@ function artifactReasonNeedsTriage(string $reason): bool
 }
 
 /**
- * The compose file of the stand this step drives, relative to the step's own
- * working directory, or null for a step that has no stand at all — the framework
- * suite, the frontend build, a demo's type check.
- *
- * @param string $root Repository root.
- * @param array{cwd: string} $step The step's manifest entry.
- * @return string|null
- */
-function standComposeFile(string $root, array $step): ?string
-{
-    return is_file($root . '/' . $step['cwd'] . '/' . STAND_COMPOSE_FILE) ? STAND_COMPOSE_FILE : null;
-}
-
-/**
  * The line printed straight after a step's closing `=== END ... ===`, so that the
  * path to the evidence sits where the verdict is read rather than in a directory
  * someone has to think of looking in.
@@ -378,19 +381,23 @@ function standComposeFile(string $root, array $step): ?string
  * that stand is about to be torn down by whatever runs next: the reader has minutes,
  * and looking up how to ask docker costs some of them.
  *
+ * The command is not composed here: it is the very string the probe ran, carried out
+ * of the collecting. A second builder would drift from the first without a word, and
+ * the reader would walk in on a set of containers other than the one in the snapshot.
+ *
  * @param string $id The step the snapshot is about.
- * @param array{path: string, reason: string, standUp: bool} $result What the collecting produced.
- * @param string $cwd The step's working directory, as the manifest spells it.
+ * @param array{path: string, reason: string, standCommand: string|null} $result What the
+ *     collecting produced.
  * @return string One line, without its newline.
  */
-function artifactPointerLine(string $id, array $result, string $cwd): string
+function artifactPointerLine(string $id, array $result): string
 {
     $line = sprintf('--- artifacts %s (%s): %s', $id, $result['reason'], $result['path']);
-    if (!$result['standUp']) {
+    if ($result['standCommand'] === null) {
         return $line;
     }
 
-    return $line . sprintf(' — stand is UP: docker compose -f %s ps (from %s)', STAND_COMPOSE_FILE, $cwd);
+    return $line . ' — stand is UP: ' . $result['standCommand'];
 }
 
 /**
@@ -657,22 +664,31 @@ function artifactTriageText(string $id, string $reason, array $matched): string
  * may not claim a stand it did not see, and the reason it could not see one is
  * written into `missing` beside it.
  *
+ * The command it ran comes back with the answer, because the pointer line under the
+ * verdict prints that command verbatim and the two must not be built twice.
+ *
  * @param string $root Repository root.
- * @param array{cwd: string} $step The step's manifest entry.
- * @param string|null $composeFile What {@see standComposeFile()} found.
- * @return array{state: string, raw: string, containers: array<int, array<string, mixed>>,
- *     missing: array<int, string>}
+ * @param array{id: string, cwd: string, composeFile: string, mode: string,
+ *     profiles: array<int, string>}|null $stand The record of the stand the step named.
+ * @return array{state: string, command: string|null, raw: string,
+ *     containers: array<int, array<string, mixed>>, missing: array<int, string>}
  */
-function probeStand(string $root, array $step, ?string $composeFile): array
+function probeStand(string $root, ?array $stand): array
 {
-    if ($composeFile === null) {
-        return ['state' => 'none', 'raw' => '', 'containers' => [], 'missing' => []];
+    if ($stand === null) {
+        return ['state' => 'none', 'command' => null, 'raw' => '', 'containers' => [], 'missing' => []];
     }
 
+    $services = standPsServices($root, $stand);
+    if ($services['missing'] !== []) {
+        return ['state' => 'down', 'command' => null, 'raw' => '', 'containers' => [], 'missing' => $services['missing']];
+    }
+
+    $command = standPsCommand($stand, $services['services']);
     $ran = runArtifactCommand(
         'docker',
-        'docker compose -f ' . escapeshellarg($composeFile) . ' --profile "*" ps --all --format json 2>&1',
-        $root . '/' . $step['cwd'],
+        $command . ' --all --format json 2>&1',
+        $root . '/' . $stand['cwd'],
         ARTIFACT_COMMAND_TIMEOUT_SECONDS,
     );
     $containers = $ran['missing'] === [] ? decodeComposePs($ran['output']) : [];
@@ -680,10 +696,85 @@ function probeStand(string $root, array $step, ?string $composeFile): array
 
     return [
         'state' => $running === [] ? 'down' : 'up',
+        'command' => $command,
         'raw' => $ran['output'],
         'containers' => $containers,
         'missing' => $ran['missing'],
     ];
+}
+
+/**
+ * The `docker compose ps` that lists this stand's containers and nobody else's.
+ *
+ * A `project` stand owns its whole compose file, so the project is already the stand and
+ * the wildcard profile only reaches the services that hide behind one. A `profile` stand
+ * shares its file — the framework's holds the owner's preview lane under the same project
+ * name — and is narrowed by NAMING its services: `ps` ignores `--profile` and answers for
+ * the whole project (measured on compose v5.4.0), so the flag would leave three of the
+ * owner's containers in the evidence of every framework step and, worse, report the stand
+ * standing whenever his preview lane is up.
+ *
+ * @param array{composeFile: string, mode: string} $stand The record of the stand.
+ * @param array<int, string> $services What {@see standPsServices()} resolved, empty for a
+ *     `project` stand.
+ * @return string The command, without the flags shaping its output.
+ */
+function standPsCommand(array $stand, array $services): string
+{
+    $file = 'docker compose -f ' . escapeshellarg($stand['composeFile']);
+    if ($stand['mode'] !== 'profile') {
+        return $file . ' --profile "*" ps';
+    }
+
+    return $file . ' ps ' . implode(' ', array_map(escapeshellarg(...), $services));
+}
+
+/**
+ * The compose services a `profile` stand is made of, asked of compose itself.
+ *
+ * Asked rather than declared: the registry deliberately lists profiles and not services, so
+ * that a service added to a profile is covered without an edit there. A `project` stand needs
+ * no list at all and pays for no command.
+ *
+ * An empty answer is a failure and not an empty stand. A `profile` stand that resolved to
+ * nothing would produce a `ps` naming no service — which is the wide one, over the whole
+ * shared project — so the caller is told what went wrong instead, and the stand goes
+ * unclaimed. This is the read-side twin of the guard the teardown puts on a stand that
+ * declared no network.
+ *
+ * The one collector command that does NOT fold stderr into its output, because this output is
+ * a list and every line of it becomes an argument. A warning about an unset variable would
+ * otherwise be read as a service, and the `ps` built from it would fail for a reason that has
+ * nothing to do with the stand. Nothing is lost by dropping it: the text is parsed and never
+ * kept, and a command that failed still arrives as its exit code.
+ *
+ * @param string $root Repository root.
+ * @param array{id: string, cwd: string, composeFile: string, mode: string,
+ *     profiles: array<int, string>} $stand The record of the stand.
+ * @return array{services: array<int, string>, missing: array<int, string>}
+ */
+function standPsServices(string $root, array $stand): array
+{
+    $command = standServicesCommand($stand);
+    if ($command === null) {
+        return ['services' => [], 'missing' => []];
+    }
+
+    $ran = runArtifactCommand(
+        'docker',
+        $command . ' 2>/dev/null',
+        $root . '/' . $stand['cwd'],
+        ARTIFACT_COMMAND_TIMEOUT_SECONDS,
+    );
+    if ($ran['missing'] !== []) {
+        return ['services' => [], 'missing' => $ran['missing']];
+    }
+
+    $services = artifactLines($ran['output']);
+
+    return $services === []
+        ? ['services' => [], 'missing' => ['docker: stand ' . $stand['id'] . ' holds no service to ask about']]
+        : ['services' => $services, 'missing' => []];
 }
 
 /**
@@ -696,23 +787,23 @@ function probeStand(string $root, array $step, ?string $composeFile): array
  * no longer the stand the run failed on.
  *
  * @param string $root Repository root.
- * @param array{cwd: string} $step The step's manifest entry.
- * @param array{raw: string, containers: array<int, array<string, mixed>>} $stand What
+ * @param array{cwd: string} $stand The record of the stand out of the registry.
+ * @param array{raw: string, containers: array<int, array<string, mixed>>} $probe What
  *     {@see probeStand()} found.
  * @param string $path The step's snapshot directory.
  * @param float $deadline When the whole snapshot's budget runs out.
  * @return array<int, string> What could not be collected, with the reason.
  */
-function collectDockerArtifacts(string $root, array $step, array $stand, string $path, float $deadline): array
+function collectDockerArtifacts(string $root, array $stand, array $probe, string $path, float $deadline): array
 {
     if (!makeArtifactDir($path . '/docker/logs')) {
         return ['docker: could not create ' . $path . '/docker/logs'];
     }
-    file_put_contents($path . '/docker/ps.json', $stand['raw']);
+    file_put_contents($path . '/docker/ps.json', $probe['raw']);
 
-    $cwd = $root . '/' . $step['cwd'];
+    $cwd = $root . '/' . $stand['cwd'];
     $missing = [];
-    foreach ($stand['containers'] as $container) {
+    foreach ($probe['containers'] as $container) {
         $id = $container['ID'] ?? null;
         $service = $container['Service'] ?? null;
         if (!is_string($id) || !is_string($service)) {
@@ -748,22 +839,20 @@ function collectDockerArtifacts(string $root, array $step, array $stand, string 
  * precisely whether the rows arrived.
  *
  * @param string $root Repository root.
- * @param array{cwd: string} $step The step's manifest entry.
- * @param string $composeFile The stand's compose file, relative to the step's cwd.
- * @param array{containers: array<int, array<string, mixed>>} $stand What {@see probeStand()} found.
+ * @param array{cwd: string, composeFile: string} $stand The record of the stand out of the registry.
+ * @param array{containers: array<int, array<string, mixed>>} $probe What {@see probeStand()} found.
  * @param string $path The step's snapshot directory.
  * @param float $deadline When the whole snapshot's budget runs out.
  * @return array<int, string> What could not be collected, with the reason.
  */
 function collectDatabaseArtifacts(
     string $root,
-    array $step,
-    string $composeFile,
     array $stand,
+    array $probe,
     string $path,
     float $deadline,
 ): array {
-    $database = labelledStandService($stand['containers'], STAND_DATABASE_LABEL);
+    $database = labelledStandService($probe['containers'], STAND_DATABASE_LABEL);
     if ($database === null) {
         return ['db: no container labelled ' . STAND_DATABASE_LABEL];
     }
@@ -780,8 +869,7 @@ function collectDatabaseArtifacts(
         $missing = [...$missing, ...runStandCommand(
             'db',
             $root,
-            $step,
-            $composeFile,
+            $stand,
             $database,
             'sh -c ' . escapeshellarg($query),
             $path . '/db/' . $file,
@@ -789,7 +877,7 @@ function collectDatabaseArtifacts(
         )];
     }
 
-    $app = labelledStandService($stand['containers'], STAND_APP_LABEL);
+    $app = labelledStandService($probe['containers'], STAND_APP_LABEL);
     if ($app === null) {
         return [...$missing, 'db: no container labelled ' . STAND_APP_LABEL];
     }
@@ -797,8 +885,7 @@ function collectDatabaseArtifacts(
     return [...$missing, ...runStandCommand(
         'db',
         $root,
-        $step,
-        $composeFile,
+        $stand,
         $app,
         'php backend/Bootstrap/cli.php db:migration:status',
         $path . '/db/migration-status.txt',
@@ -813,10 +900,12 @@ function collectDatabaseArtifacts(
  * `exec` and never `run`: `run` would start a container, and with it everything the
  * service depends on, which is the one thing collecting must not do.
  *
+ * The service is named outright, which is all compose needs to find it: a definition sitting
+ * behind a profile nobody enabled still resolves, so `exec` carries no profile flag.
+ *
  * @param string $label What to blame in `missing`.
  * @param string $root Repository root.
- * @param array{cwd: string} $step The step's manifest entry.
- * @param string $composeFile The stand's compose file, relative to the step's cwd.
+ * @param array{cwd: string, composeFile: string} $stand The record of the stand out of the registry.
  * @param string $service The compose service to run it in.
  * @param string $command The command, already quoted for a shell.
  * @param string $target Where its output goes.
@@ -826,8 +915,7 @@ function collectDatabaseArtifacts(
 function runStandCommand(
     string $label,
     string $root,
-    array $step,
-    string $composeFile,
+    array $stand,
     string $service,
     string $command,
     string $target,
@@ -839,9 +927,9 @@ function runStandCommand(
 
     $ran = runArtifactCommand(
         $label,
-        'docker compose -f ' . escapeshellarg($composeFile) . ' exec -T ' . escapeshellarg($service) . ' ' . $command
-            . ' > ' . escapeshellarg($target) . ' 2>&1',
-        $root . '/' . $step['cwd'],
+        'docker compose -f ' . escapeshellarg($stand['composeFile']) . ' exec -T ' . escapeshellarg($service)
+            . ' ' . $command . ' > ' . escapeshellarg($target) . ' 2>&1',
+        $root . '/' . $stand['cwd'],
         ARTIFACT_COMMAND_TIMEOUT_SECONDS,
     );
 
@@ -954,13 +1042,22 @@ function runArtifactCommand(string $label, string $command, string $cwd, int $ti
  * stand directory copies nothing and says nothing about it: having no daemon is not
  * a failure to collect one.
  *
- * @param string $cwd The step's working directory, absolute.
+ * Read from the STAND's directory rather than the step's. For every demo the two are the
+ * same place; for the cluster step, which runs from the repository root against a stand
+ * living in `demo/cluster`, they are not.
+ *
+ * @param string $root Repository root.
+ * @param array{cwd: string}|null $stand The record of the stand the step named, or null.
  * @param string $path The step's snapshot directory.
  * @return array<int, string> What could not be copied, with the reason.
  */
-function copyStandLogs(string $cwd, string $path): array
+function copyStandLogs(string $root, ?array $stand, string $path): array
 {
-    $source = $cwd . '/' . STAND_LOG_DIR;
+    if ($stand === null) {
+        return [];
+    }
+
+    $source = $root . '/' . $stand['cwd'] . '/' . STAND_LOG_DIR;
     if (!is_dir($source)) {
         return [];
     }

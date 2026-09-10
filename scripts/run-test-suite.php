@@ -87,6 +87,7 @@ enum StepOutcome: string
 $root = dirname(__DIR__);
 require_once $root . '/scripts/unstable-line.php';
 require_once $root . '/scripts/step-artifacts.php';
+require_once $root . '/scripts/stand-registry.php';
 require_once $root . '/scripts/stand-teardown.php';
 require_once $root . '/scripts/evidence-sweep.php';
 $options = parseArguments(array_slice($argv, 1));
@@ -452,7 +453,7 @@ function runPlan(
     /** @var array<string, array{handle: resource, since: float, at: string,
      *     neighbors: array<int, string>}> $running */
     $running = [];
-    /** @var array<string, array{path: string, reason: string, standUp: bool,
+    /** @var array<string, array{path: string, reason: string, standCommand: string|null,
      *     missing: array<int, string>}> $artifacts Snapshots taken, by step id. */
     $artifacts = [];
     /** @var array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
@@ -488,7 +489,7 @@ function runPlan(
             $done[$id] = $finished;
             $artifacts[$id] = collectStepArtifacts($root, $id, $manifest[$id], $finished, $context, $artifactDir);
             dropStandAfterStep($root, $manifest[$id]);
-            reportFinish($id, $finished, $logs[$id], $rc, $artifacts[$id], $manifest[$id]['cwd']);
+            reportFinish($id, $finished, $logs[$id], $rc, $artifacts[$id]);
         }
     }
 
@@ -513,7 +514,7 @@ function runPlan(
 function sweepStands(string $root): array
 {
     $survived = [];
-    foreach (tearDownStands($root, require $root . '/scripts/test-stands.php') as $result) {
+    foreach (tearDownStands($root, standRegistry($root)) as $result) {
         fwrite(STDOUT, describeTeardown($result) . "\n");
         if ($result['problem'] !== '' || $result['residue']['containers'] !== [] || $result['residue']['networks'] !== []) {
             $survived[] = $result['id'];
@@ -534,24 +535,34 @@ function sweepStands(string $root): array
  * The caller places this AFTER the step's snapshot was collected. Taking the stand down first
  * would leave the snapshot of a red step empty, which is the one case it exists for.
  *
+ * Which stand comes from the step's `stand` key, the same one the snapshot resolved by; this
+ * only decides WHETHER. The two questions are separate because twelve demo steps drive a stand
+ * they deliberately do not drop, and answering both with one key would have taken them down.
+ *
  * @param string $root Repository root.
- * @param array{id: string, downAfter?: string} $step The manifest entry of the step that ended.
+ * @param array{id: string, stand?: string, downsStand?: bool} $step The manifest entry of the
+ *     step that ended.
  */
 function dropStandAfterStep(string $root, array $step): void
 {
-    $wanted = $step['downAfter'] ?? null;
-    if ($wanted === null) {
+    if (($step['downsStand'] ?? false) === false) {
         return;
     }
 
-    foreach (require $root . '/scripts/test-stands.php' as $stand) {
-        if ($stand['id'] === $wanted) {
-            fwrite(STDOUT, describeTeardown(tearDownStand($root, $stand)) . "\n");
+    $wanted = $step['stand'] ?? null;
+    if ($wanted === null) {
+        fwrite(STDERR, 'stands: step ' . $step['id'] . ' drops a stand it never names' . "\n");
 
-            return;
-        }
+        return;
     }
-    fwrite(STDERR, 'stands: step ' . $step['id'] . ' names an unknown stand ' . $wanted . "\n");
+
+    $stand = standById($root, $wanted);
+    if ($stand === null) {
+        fwrite(STDERR, 'stands: step ' . $step['id'] . ' names an unknown stand ' . $wanted . "\n");
+
+        return;
+    }
+    fwrite(STDOUT, describeTeardown(tearDownStand($root, $stand)) . "\n");
 }
 
 /**
@@ -754,11 +765,10 @@ function skipped(array $step, array $done): array
  *     unstable: array{count: int, tests: array<int, string>}} $finished How it went.
  * @param string $logPath Its output file.
  * @param resource $rc The ledger.
- * @param array{path: string, reason: string, standUp: bool} $artifacts Where the step's
- *     snapshot of the stand went.
- * @param string $cwd The step's working directory, as the manifest spells it.
+ * @param array{path: string, reason: string, standCommand: string|null} $artifacts Where the
+ *     step's snapshot of the stand went.
  */
-function reportFinish(string $id, array $finished, string $logPath, $rc, array $artifacts, string $cwd): void
+function reportFinish(string $id, array $finished, string $logPath, $rc, array $artifacts): void
 {
     fwrite(STDOUT, sprintf("=== START %s %s ===\n", $id, $finished['at']));
     replay($logPath);
@@ -771,7 +781,7 @@ function reportFinish(string $id, array $finished, string $logPath, $rc, array $
     ));
     // Straight under the verdict, because that is where the reader already is, and
     // the stand it points at is about to be torn down by whatever runs next.
-    fwrite(STDOUT, artifactPointerLine($id, $artifacts, $cwd) . "\n");
+    fwrite(STDOUT, artifactPointerLine($id, $artifacts) . "\n");
     fwrite($rc, sprintf("%s rc=%d%s\n", $id, $finished['rc'], unstableLedgerField($finished['unstable'])));
 }
 

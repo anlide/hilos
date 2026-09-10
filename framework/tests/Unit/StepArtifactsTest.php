@@ -10,9 +10,9 @@ require_once __DIR__ . '/../../../scripts/step-artifacts.php';
 
 /**
  * The parts of the step-artifact collector that answer without a stand: the word a
- * snapshot is headed with, whether a step has a stand at all, the two places the run
- * reports a snapshot from, and the hypotheses the triage draws from what was
- * collected.
+ * snapshot is headed with, the docker commands a stand's record turns into, the two
+ * places the run reports a snapshot from, and the hypotheses the triage draws from
+ * what was collected.
  *
  * Everything that talks to docker or copies a live stand's files is deliberately
  * out of scope — proving it would mean standing a demo up, which is the very thing
@@ -28,6 +28,28 @@ final class StepArtifactsTest extends TestCase
 
     /** A step that reported one, which is enough to change the word. */
     private const array FLICKERED = ['count' => 1, 'tests' => ['tests/chat.spec.ts:42']];
+
+    /** A demo stand: the whole compose project is the stand, so all of it may be asked about. */
+    private const array DEMO_STAND = [
+        'id' => 'chat',
+        'cwd' => 'demo/chat',
+        'composeFile' => 'docker/docker-compose.test.yml',
+        'project' => 'hilos-chat-test',
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+    ];
+
+    /** The framework stand: one profile inside a compose file that also holds the preview lane. */
+    private const array PROFILE_STAND = [
+        'id' => 'framework',
+        'cwd' => '.',
+        'composeFile' => 'framework/docker/docker-compose.yml',
+        'project' => 'hilos-framework',
+        'mode' => 'profile',
+        'profiles' => ['test'],
+        'networks' => ['hilos-framework_hilos-framework-test-network'],
+    ];
 
     /** A green step is named green, so that the directory being full says nothing on its own. */
     public function testNamesAGreenStepGreen(): void
@@ -56,22 +78,75 @@ final class StepArtifactsTest extends TestCase
         $this->assertSame('red+flaky', artifactReason(1, self::FLICKERED));
     }
 
-    /** A demo step is found to have a stand by the file that defines it, not by a registry. */
-    public function testFindsTheComposeFileOfADemoStep(): void
+    /**
+     * A stand owning its whole compose project is asked about as a whole, and the wildcard
+     * profile is what reaches the services of it that sit behind one.
+     */
+    public function testAsksAProjectStandForItsWholeProject(): void
     {
         $this->assertSame(
-            'docker/docker-compose.test.yml',
-            standComposeFile($this->repositoryRoot(), ['cwd' => 'demo/chat']),
+            'docker compose -f \'docker/docker-compose.test.yml\' --profile "*" ps',
+            standPsCommand(self::DEMO_STAND, []),
         );
     }
 
     /**
-     * The framework suite and the frontend build run from the repository root and
-     * have no stand at all, which is a different answer from a stand that is down.
+     * A stand sharing its compose file with the owner's preview lane is narrowed by naming
+     * its services. `ps` ignores `--profile` and answers for the whole project, so the flag
+     * would leave three of his containers in the evidence and report the stand standing
+     * whenever his lane is up.
      */
-    public function testFindsNoComposeFileForAStepWithoutAStand(): void
+    public function testNarrowsAProfileStandToItsOwnServices(): void
     {
-        $this->assertNull(standComposeFile($this->repositoryRoot(), ['cwd' => '.']));
+        $command = standPsCommand(self::PROFILE_STAND, ['mysql-framework-test', 'hilos-cli-test']);
+
+        $this->assertSame(
+            'docker compose -f \'framework/docker/docker-compose.yml\''
+                . ' ps \'mysql-framework-test\' \'hilos-cli-test\'',
+            $command,
+        );
+        $this->assertStringNotContainsString('--profile', $command);
+    }
+
+    /** A stand named by a step is the record the registry holds under that id. */
+    public function testFindsTheRecordOfAStandTheRunKnows(): void
+    {
+        $stand = standById($this->repositoryRoot(), 'chat');
+
+        $this->assertNotNull($stand);
+        $this->assertSame('chat', $stand['id']);
+        $this->assertSame('demo/chat', $stand['cwd']);
+    }
+
+    /**
+     * An id nothing answers to comes back as null rather than as an error: the collector has
+     * a line to write about it, and the run has no reason to stop over a snapshot.
+     */
+    public function testFindsNoRecordForAStandTheRunDoesNotKnow(): void
+    {
+        $this->assertNull(standById($this->repositoryRoot(), 'no-such-stand'));
+    }
+
+    /**
+     * Every stand a step names is a stand that exists, and a step that drops one names it.
+     * A typo in the manifest is otherwise found by a snapshot that came out empty, three
+     * quarters of an hour into a run and only if someone reads the `missing` line.
+     */
+    public function testEveryStepNamesAStandTheRegistryHolds(): void
+    {
+        $stands = array_column(require __DIR__ . '/../../../scripts/test-stands.php', 'id');
+        $steps = require __DIR__ . '/../../../scripts/test-suite.php';
+
+        $this->assertNotSame([], $steps);
+        foreach ($steps as $step) {
+            if (($step['downsStand'] ?? false) === true) {
+                $this->assertArrayHasKey('stand', $step, 'step ' . $step['id'] . ' drops a stand it never names');
+            }
+            if (!array_key_exists('stand', $step)) {
+                continue;
+            }
+            $this->assertContains($step['stand'], $stands, 'step ' . $step['id'] . ' names an unknown stand');
+        }
     }
 
     /**
@@ -80,11 +155,11 @@ final class StepArtifactsTest extends TestCase
      */
     public function testPointsAtTheSnapshotOfAStepWhoseStandIsGone(): void
     {
-        $result = ['path' => '/var/test-suite/artifacts/framework', 'reason' => 'red', 'standUp' => false];
+        $result = ['path' => '/var/test-suite/artifacts/framework', 'reason' => 'red', 'standCommand' => null];
 
         $this->assertSame(
             '--- artifacts framework (red): /var/test-suite/artifacts/framework',
-            artifactPointerLine('framework', $result, '.'),
+            artifactPointerLine('framework', $result),
         );
     }
 
@@ -94,12 +169,17 @@ final class StepArtifactsTest extends TestCase
      */
     public function testAddsTheWayInWhenTheStandIsStillUp(): void
     {
-        $result = ['path' => '/var/test-suite/artifacts/chat-e2e', 'reason' => 'red', 'standUp' => true];
+        $result = [
+            'path' => '/var/test-suite/artifacts/chat-e2e',
+            'reason' => 'red',
+            'standCommand' => 'docker compose -f \'docker/docker-compose.test.yml\' --profile "*" ps (from demo/chat)',
+        ];
 
         $this->assertSame(
             '--- artifacts chat-e2e (red): /var/test-suite/artifacts/chat-e2e'
-                . ' — stand is UP: docker compose -f docker/docker-compose.test.yml ps (from demo/chat)',
-            artifactPointerLine('chat-e2e', $result, 'demo/chat'),
+                . ' — stand is UP: docker compose -f \'docker/docker-compose.test.yml\''
+                . ' --profile "*" ps (from demo/chat)',
+            artifactPointerLine('chat-e2e', $result),
         );
     }
 

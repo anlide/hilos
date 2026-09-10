@@ -21,6 +21,8 @@ declare(strict_types=1);
  * require it.
  */
 
+require_once __DIR__ . '/stand-registry.php';
+
 /**
  * The label docker puts on every container and network of a compose project. Asking by label
  * rather than by name is what finds the one-off containers, whose names are generated.
@@ -268,37 +270,6 @@ function standDownCommand(array $stand): string
     }
 
     return 'docker compose -f ' . escapeshellarg($stand['composeFile']) . ' --profile "*" down --remove-orphans';
-}
-
-/**
- * The compose command that names the services a `profile` stand's profiles hold, or null for a
- * `project` stand, whose containers are already narrow enough at the project label.
- *
- * @param array{composeFile: string, mode: string, profiles: array<int, string>} $stand
- */
-function standServicesCommand(array $stand): ?string
-{
-    if ($stand['mode'] !== 'profile') {
-        return null;
-    }
-
-    return 'docker compose -f ' . escapeshellarg($stand['composeFile']) . ' '
-        . standProfileFlags($stand['profiles']) . ' config --services';
-}
-
-/**
- * The `--profile` flags naming what a `profile` stand owns.
- *
- * One flag per profile: compose takes the option repeatedly and has no list form for it.
- *
- * @param array<int, string> $profiles
- */
-function standProfileFlags(array $profiles): string
-{
-    return implode(' ', array_map(
-        static fn(string $profile): string => '--profile ' . escapeshellarg($profile),
-        $profiles,
-    ));
 }
 
 /**

@@ -73,6 +73,11 @@ services:
   cluster-mysql:
     image: mariadb:11.4
     container_name: cluster-mysql
+    # How the runner's artifact collector finds this container: the stands spell their
+    # database service several ways, so it is asked for by role rather than guessed at by
+    # name (HIL-841).
+    labels:
+      hilos.role: database
     environment:
       MYSQL_ROOT_PASSWORD: hilos_root_pass
       MYSQL_DATABASE: hilos-demo-cluster
@@ -135,6 +140,12 @@ services:
   cluster-m1:
     <<: *node-base
     container_name: cluster-m1
+    # Found by role for the same reason the database is (HIL-841), and carried by m1 ALONE:
+    # the five nodes share one schema (HIL-712), the collector takes the first container
+    # wearing the label, and putting it on all five would make which of them answers a
+    # matter of the order docker happened to list them in.
+    labels:
+      hilos.role: app
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m1
