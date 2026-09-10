@@ -51,6 +51,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -480,15 +481,23 @@ const legendOpen = ref(false)
       </p>
       <template v-if="takeoutAddress && takeoutCommand">
         <div class="fw-semibold mb-1">Where it lies</div>
-        <pre
-          class="border rounded-2 p-2 bg-body-tertiary mb-3"
-          data-id="hilos-rotation-takeout-path"
-        ><code>{{ takeoutAddress }}</code></pre>
+        <!-- The spacing below each block is this modal's layout; the block
+        itself is the same bare one every long output gets. -->
+        <div class="mb-3">
+          <HilosLongText
+            kind="output"
+            :text="takeoutAddress"
+            data-id="hilos-rotation-takeout-path"
+          />
+        </div>
         <div class="fw-semibold mb-1">How to take it</div>
-        <pre
-          class="border rounded-2 p-2 bg-body-tertiary mb-3"
-          data-id="hilos-rotation-takeout-command"
-        ><code>{{ takeoutCommand }}</code></pre>
+        <div class="mb-3">
+          <HilosLongText
+            kind="output"
+            :text="takeoutCommand"
+            data-id="hilos-rotation-takeout-command"
+          />
+        </div>
       </template>
       <!-- A node that reported no log root has no address to give, and this
       screen must not offer its own: the page worker knows where ITS logs live,

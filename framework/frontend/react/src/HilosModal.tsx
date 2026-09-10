@@ -2,22 +2,35 @@
 // docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 // fills `header` (defaults to the title), the body (children), and `actions`
 // (which receives `requestClose` so a footer button closes through the confirm
-// guard). The footer exists exactly when `actions` is given: a dialog with no
-// buttons of its own gets no footer element — neither buttons nor the bordered
-// strip — and there is no default footer to opt out of.
+// guard). The footer exists exactly when `actions` is given or a `copyText` is:
+// a dialog with neither gets no footer element — neither buttons nor the
+// bordered strip — and there is no default footer to opt out of.
+// The body is what scrolls, always: the dialog is never taller than the window
+// (modal-dialog-scrollable), the header and the footer stay put, and a short
+// dialog is not changed by it at all. On a narrow screen the dialog becomes a
+// sheet at the bottom edge and its buttons a full-width column, main action on
+// top — inside the modal, so no surface that opens one is touched.
+// Copy is the modal's own button: pass `copyText` and it draws one first in the
+// footer, because a long technical text almost always has to be carried
+// somewhere else, and the rule for showing such a text belongs here rather than
+// to every page that has one (rules-and-violations.md, section E).
 // Open state is controlled (`open` +
 // `onClose`); the dialog portals to <body>, traps Tab focus and returns focus to
 // the opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1).
 // With confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm
 // step instead of discarding a dirty draft. The confirm-step state machine is
 // the core modal controller and the focus trap / scroll lock are core/dom; this
-// view only renders and wires events. Bootstrap classes only.
-import { useEffect, useMemo, useRef } from 'react'
+// view only renders and wires events. Bootstrap classes only, save for the one
+// declaration the Sass layer names — the bottom sheet, which stock Bootstrap
+// has nothing for.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { KeyboardEvent, ReactNode } from 'react'
 import {
   FocusTrap,
+  copyToClipboard,
   createModalController,
+  isClipboardAvailable,
   lockBodyScroll,
   unlockBodyScroll,
 } from '@hilos/core'
@@ -61,6 +74,12 @@ export interface HilosModalProps {
   confirmOkText?: string
   /** Confirm-step keep-editing label. */
   confirmCancelText?: string
+  /**
+   * The text the footer's Copy button writes to the clipboard. Empty means no
+   * such button — and so does a document with no clipboard at all (plain http),
+   * because a button that silently does nothing is worse than none.
+   */
+  copyText?: string
   /** Dismiss the dialog — the parent sets `open` to false. */
   onClose?: () => void
   /** Replace the header (defaults to the title). */
@@ -89,6 +108,7 @@ export function HilosModal({
   confirmMessage = 'You have unsaved changes. Discard them?',
   confirmOkText = 'Discard',
   confirmCancelText = 'Keep editing',
+  copyText = '',
   onClose,
   header,
   children,
@@ -97,6 +117,7 @@ export function HilosModal({
   const dialogRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
   const trap = useRef(new FocusTrap()).current
+  const [copied, setCopied] = useState(false)
 
   // The controller reads its config live through a ref so it is created once.
   const cfg = useRef({ confirmOnClose, closeOnEsc, closeOnBackdrop, onClose })
@@ -119,6 +140,9 @@ export function HilosModal({
       return
     }
     modal.reset()
+    // The label is the only thing the button says, so it starts over with the
+    // dialog: a reopened modal reporting "Copied" is reporting the last visit.
+    setCopied(false)
     lockBodyScroll(document)
     const root = dialogRef.current
     if (root) {
@@ -144,6 +168,12 @@ export function HilosModal({
 
   if (!open) {
     return null
+  }
+
+  const showCopy = copyText !== '' && isClipboardAvailable()
+
+  async function onCopy(): Promise<void> {
+    setCopied(await copyToClipboard(copyText))
   }
 
   function onKeyDown(
@@ -177,7 +207,7 @@ export function HilosModal({
           }
         }}
       >
-        <div className="modal-dialog modal-dialog-centered">
+        <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
           <div className="modal-content">
             <div className="modal-header">
               {header ??
@@ -195,9 +225,22 @@ export function HilosModal({
               />
             </div>
             <div className="modal-body">{children}</div>
-            {actions ? (
-              <div className="modal-footer">
-                {actions({ requestClose: () => modal.requestClose() })}
+            {actions || showCopy ? (
+              <div className="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center">
+                {/* Copy comes first in the markup so the reversed column on a
+                    narrow screen puts it under Close, the main action on top. */}
+                {showCopy ? (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    data-id="modal-copy"
+                    onClick={() => void onCopy()}
+                  >
+                    <i className="bi bi-clipboard me-1" aria-hidden="true" />
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                ) : null}
+                {actions?.({ requestClose: () => modal.requestClose() })}
               </div>
             ) : null}
           </div>
@@ -214,7 +257,7 @@ export function HilosModal({
           data-id="modal-confirm"
           onKeyDown={(event) => onKeyDown(event, confirmRef.current)}
         >
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title mb-0">{confirmTitle}</h5>
@@ -222,7 +265,7 @@ export function HilosModal({
               <div className="modal-body">
                 <p className="mb-0">{confirmMessage}</p>
               </div>
-              <div className="modal-footer">
+              <div className="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center">
                 <button
                   type="button"
                   className="btn btn-secondary"

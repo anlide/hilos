@@ -128,3 +128,36 @@
 .hilos-toast-stack-top {
   top: 0;
 }
+
+// WHY: Bootstrap's white-space utilities stop at .text-wrap (normal) and
+// .text-nowrap (nowrap) — there is none for pre-wrap, and a <pre> without it
+// wraps a long line nowhere at all: pre breaks only where the text already
+// carries a newline, and a reason written as one sentence carries none.
+// WHAT: the `output` kind of HilosLongText — what a process printed, its
+// indentation kept and its long line taken to the next row.
+.hilos-pre-wrap {
+  white-space: pre-wrap;
+}
+
+// WHY: Bootstrap has no bottom sheet, and its nearest stock thing —
+// .modal-fullscreen-sm-down — stretches the window over the whole screen, so a
+// short reason hangs at the top while Close walks down to the bottom edge of
+// the phone. That is a different picture from the drawn one
+// (mockups/components/modal, the narrow-screen node).
+// WHAT: the dialog on a narrow screen — pinned to the bottom edge, full width,
+// no margin, and no rounding where it meets that edge.
+.hilos-modal-sheet {
+  // 767.98px is Bootstrap's `md` breakpoint less a hair, the same number the
+  // toast stack flips on above — the SDK keeps one idea of what a phone is.
+  @media (max-width: 767.98px) {
+    margin: 0;
+    max-width: none;
+    min-height: 100%;
+    align-items: flex-end;
+
+    .modal-content {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
+}

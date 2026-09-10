@@ -49,7 +49,6 @@ import {
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
-  copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   HILOS_BACKUP_CIRCLE_COPY,
@@ -74,6 +73,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -433,20 +433,10 @@ async function submitCircleRemove(): Promise<void> {
 // CLI instruction dialog: what the production surface offers instead of a button.
 const cliOpen = ref(false)
 const cliRow = ref<HilosBackupRow | null>(null)
-const cliCopied = ref(false)
 
 function openCli(row: HilosBackupRow): void {
   cliRow.value = row
-  cliCopied.value = false
   cliOpen.value = true
-}
-
-async function copyCliCommand(): Promise<void> {
-  const row = cliRow.value
-  if (!row) {
-    return
-  }
-  cliCopied.value = await copyToClipboard(formatRestoreCliCommand(row))
 }
 
 // Restore-outcome dialog: how the last restore of this archive ended, read from the
@@ -876,12 +866,11 @@ function openOutcome(row: HilosBackupRow): void {
       v-model="detailsOpen"
       :title="detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'"
     >
-      <pre
-        class="mb-0 small text-break"
-        style="max-height: 60vh; overflow-y: auto"
+      <HilosLongText
+        kind="prose"
+        :text="detailsRow?.failureReason ?? ''"
         data-id="hilos-backup-details-text"
-        >{{ detailsRow?.failureReason }}</pre
-      >
+      />
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -959,16 +948,17 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="cliOpen"
       :title="cliRow ? `How to restore · ${cliRow.id}` : 'How to restore'"
+      :copy-text="cliRow ? formatRestoreCliCommand(cliRow) : ''"
     >
       <p class="mb-2 text-body-secondary">
         Restoring is not offered from the browser on this environment. Run this
         on the machine that hosts the installation:
       </p>
-      <pre
-        class="mb-0 small text-break"
+      <HilosLongText
+        kind="output"
+        :text="cliRow ? formatRestoreCliCommand(cliRow) : ''"
         data-id="hilos-backup-restore-cli-text"
-        >{{ cliRow ? formatRestoreCliCommand(cliRow) : '' }}</pre
-      >
+      />
       <!-- The same lines the button's title carries where there is a button: an
       operator on production learns of an incompatible archive here, not from the
       command refusing after they have walked to the terminal. -->
@@ -982,14 +972,6 @@ function openOutcome(row: HilosBackupRow): void {
         </li>
       </ul>
       <template #actions="{ requestClose }">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          data-id="hilos-backup-restore-cli-copy"
-          @click="copyCliCommand"
-        >
-          {{ cliCopied ? 'Copied' : 'Copy' }}
-        </button>
         <button type="button" class="btn btn-primary" @click="requestClose">
           Close
         </button>
@@ -1009,12 +991,11 @@ function openOutcome(row: HilosBackupRow): void {
       <p v-if="outcomeRow?.restoreDatabaseTouched" class="mb-2">
         The database was already being replaced when this run ended.
       </p>
-      <pre
-        class="mb-0 small text-break"
-        style="max-height: 60vh; overflow-y: auto"
+      <HilosLongText
+        kind="prose"
+        :text="outcomeRow?.restoreFailureReason || 'No failure recorded.'"
         data-id="hilos-backup-restore-outcome-text"
-        >{{ outcomeRow?.restoreFailureReason || 'No failure recorded.' }}</pre
-      >
+      />
       <template #actions="{ requestClose }">
         <button type="button" class="btn btn-secondary" @click="requestClose">
           Close

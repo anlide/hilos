@@ -1,13 +1,35 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import HilosModal from './HilosModal.vue'
 
 // HilosModal teleports to <body>, so assertions query the document, not the wrapper.
+const realClipboard = navigator.clipboard
+const written: string[] = []
+
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
+  setClipboard(realClipboard)
+  written.length = 0
 })
+
+/** Put a clipboard in the document, or take it away — plain http has none. */
+function setClipboard(clipboard: Clipboard | undefined): void {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+}
+
+/** A clipboard that records what was written to it. */
+function recordingClipboard(): void {
+  setClipboard({
+    writeText: async (text: string) => {
+      written.push(text)
+    },
+  } as unknown as Clipboard)
+}
 
 describe('HilosModal', () => {
   it('renders nothing when closed', () => {
@@ -75,6 +97,83 @@ describe('HilosModal', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
     expect(wrapper.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('gives both dialogs a scrollable body and a narrow-screen sheet', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await wrapper.vm.$nextTick()
+
+    const dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs).toHaveLength(2)
+    dialogs.forEach((dialog) => {
+      expect(dialog.classList.contains('modal-dialog-scrollable')).toBe(true)
+      expect(dialog.classList.contains('hilos-modal-sheet')).toBe(true)
+    })
+  })
+
+  it('draws a footer with just the copy button when there are no actions', () => {
+    recordingClipboard()
+    mount(HilosModal, {
+      props: { modelValue: true, copyText: 'hilos restore --archive x' },
+    })
+    const footer = document.querySelector('.modal-footer')
+    expect(footer).not.toBeNull()
+    expect(footer?.querySelectorAll('button')).toHaveLength(1)
+    expect(footer?.querySelector('[data-id="modal-copy"]')).not.toBeNull()
+  })
+
+  it('draws no copy button when there is nothing to copy', () => {
+    recordingClipboard()
+    mount(HilosModal, { props: { modelValue: true } })
+    expect(document.querySelector('[data-id="modal-copy"]')).toBeNull()
+  })
+
+  it('draws no copy button when the document has no clipboard', () => {
+    // Over plain http there is none, and a button that silently does nothing
+    // is worse than no button at all.
+    setClipboard(undefined)
+    mount(HilosModal, {
+      props: { modelValue: true, copyText: 'hilos restore --archive x' },
+    })
+    expect(document.querySelector('[data-id="modal-copy"]')).toBeNull()
+  })
+
+  it('writes the text to the clipboard and says it did', async () => {
+    recordingClipboard()
+    mount(HilosModal, {
+      props: { modelValue: true, copyText: 'hilos restore --archive x' },
+    })
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-id="modal-copy"]',
+    )
+    expect(button?.textContent?.trim()).toBe('Copy')
+
+    button?.click()
+    await flushPromises()
+    expect(written).toEqual(['hilos restore --archive x'])
+    expect(
+      document.querySelector('[data-id="modal-copy"]')?.textContent?.trim(),
+    ).toBe('Copied')
+  })
+
+  it('says Copy again the next time the dialog is opened', async () => {
+    recordingClipboard()
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, copyText: 'hilos restore --archive x' },
+    })
+    document.querySelector<HTMLButtonElement>('[data-id="modal-copy"]')?.click()
+    await flushPromises()
+
+    await wrapper.setProps({ modelValue: false })
+    await wrapper.setProps({ modelValue: true })
+    expect(
+      document.querySelector('[data-id="modal-copy"]')?.textContent?.trim(),
+    ).toBe('Copy')
   })
 
   it('raises a confirm step before closing a dirty modal, then discards', async () => {

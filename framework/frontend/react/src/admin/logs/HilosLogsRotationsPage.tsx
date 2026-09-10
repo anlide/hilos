@@ -52,6 +52,7 @@ import type {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -530,19 +531,23 @@ export function HilosLogsRotationsPage({
         {takeoutAddress && takeoutCommand ? (
           <>
             <div className="fw-semibold mb-1">Where it lies</div>
-            <pre
-              className="border rounded-2 p-2 bg-body-tertiary mb-3"
-              data-id="hilos-rotation-takeout-path"
-            >
-              <code>{takeoutAddress}</code>
-            </pre>
+            {/* The spacing below each block is this modal's layout; the block
+                itself is the same bare one every long output gets. */}
+            <div className="mb-3">
+              <HilosLongText
+                kind="output"
+                text={takeoutAddress}
+                dataId="hilos-rotation-takeout-path"
+              />
+            </div>
             <div className="fw-semibold mb-1">How to take it</div>
-            <pre
-              className="border rounded-2 p-2 bg-body-tertiary mb-3"
-              data-id="hilos-rotation-takeout-command"
-            >
-              <code>{takeoutCommand}</code>
-            </pre>
+            <div className="mb-3">
+              <HilosLongText
+                kind="output"
+                text={takeoutCommand}
+                dataId="hilos-rotation-takeout-command"
+              />
+            </div>
           </>
         ) : (
           // A node that reported no log root has no address to give, and this

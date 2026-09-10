@@ -54,7 +54,6 @@ import {
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
-  copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -77,6 +76,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -435,19 +435,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   // CLI instruction dialog: what the production surface offers instead of a button.
   const [cliOpen, setCliOpen] = useState(false)
   const [cliRow, setCliRow] = useState<HilosBackupRow | null>(null)
-  const [cliCopied, setCliCopied] = useState(false)
 
   function openCli(row: HilosBackupRow): void {
     setCliRow(row)
-    setCliCopied(false)
     setCliOpen(true)
-  }
-
-  async function copyCliCommand(): Promise<void> {
-    if (!cliRow) {
-      return
-    }
-    setCliCopied(await copyToClipboard(formatRestoreCliCommand(cliRow)))
   }
 
   // Restore-outcome dialog: how the last restore of this archive ended, read from
@@ -881,13 +872,11 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </button>
         )}
       >
-        <pre
-          className="mb-0 small text-break"
-          style={{ maxHeight: '60vh', overflowY: 'auto' }}
-          data-id="hilos-backup-details-text"
-        >
-          {detailsRow?.failureReason}
-        </pre>
+        <HilosLongText
+          kind="prose"
+          text={detailsRow?.failureReason ?? ''}
+          dataId="hilos-backup-details-text"
+        />
       </HilosModal>
 
       <HilosModal
@@ -961,37 +950,27 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       <HilosModal
         open={cliOpen}
         title={cliRow ? `How to restore · ${cliRow.id}` : 'How to restore'}
+        copyText={cliRow ? formatRestoreCliCommand(cliRow) : ''}
         onClose={() => setCliOpen(false)}
         actions={({ requestClose }) => (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              data-id="hilos-backup-restore-cli-copy"
-              onClick={() => void copyCliCommand()}
-            >
-              {cliCopied ? 'Copied' : 'Copy'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={requestClose}
-            >
-              Close
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={requestClose}
+          >
+            Close
+          </button>
         )}
       >
         <p className="mb-2 text-body-secondary">
           Restoring is not offered from the browser on this environment. Run
           this on the machine that hosts the installation:
         </p>
-        <pre
-          className="mb-0 small text-break"
-          data-id="hilos-backup-restore-cli-text"
-        >
-          {cliRow ? formatRestoreCliCommand(cliRow) : ''}
-        </pre>
+        <HilosLongText
+          kind="output"
+          text={cliRow ? formatRestoreCliCommand(cliRow) : ''}
+          dataId="hilos-backup-restore-cli-text"
+        />
         {/* The same lines the button's title carries where there is a button: an
         operator on production learns of an incompatible archive here, not from the
         command refusing after they have walked to the terminal. */}
@@ -1032,13 +1011,11 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             The database was already being replaced when this run ended.
           </p>
         ) : null}
-        <pre
-          className="mb-0 small text-break"
-          style={{ maxHeight: '60vh', overflowY: 'auto' }}
-          data-id="hilos-backup-restore-outcome-text"
-        >
-          {outcomeRow?.restoreFailureReason || 'No failure recorded.'}
-        </pre>
+        <HilosLongText
+          kind="prose"
+          text={outcomeRow?.restoreFailureReason || 'No failure recorded.'}
+          dataId="hilos-backup-restore-outcome-text"
+        />
       </HilosModal>
 
       <HilosModal

@@ -61,6 +61,7 @@ import type {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -87,6 +88,7 @@ const RETENTION_CLASS: Record<string, string> = {
     HilosActionError,
     HilosAdminPage,
     HilosLink,
+    HilosLongText,
     HilosModal,
     HilosViewportTable,
     LoadingButton,
@@ -298,15 +300,23 @@ const RETENTION_CLASS: Record<string, string> = {
         </p>
         @if (takeoutAddress() && takeoutCommand()) {
           <div class="fw-semibold mb-1">Where it lies</div>
-          <pre
-            class="border rounded-2 p-2 bg-body-tertiary mb-3"
-            data-id="hilos-rotation-takeout-path"
-          ><code>{{ takeoutAddress() }}</code></pre>
+          <!-- The spacing below each block is this modal's layout; the block
+          itself is the same bare one every long output gets. -->
+          <div class="mb-3">
+            <hilos-long-text
+              kind="output"
+              [text]="takeoutAddress() ?? ''"
+              dataId="hilos-rotation-takeout-path"
+            />
+          </div>
           <div class="fw-semibold mb-1">How to take it</div>
-          <pre
-            class="border rounded-2 p-2 bg-body-tertiary mb-3"
-            data-id="hilos-rotation-takeout-command"
-          ><code>{{ takeoutCommand() }}</code></pre>
+          <div class="mb-3">
+            <hilos-long-text
+              kind="output"
+              [text]="takeoutCommand() ?? ''"
+              dataId="hilos-rotation-takeout-command"
+            />
+          </div>
         } @else {
           <!-- A node that reported no log root has no address to give, and this
           screen must not offer its own: the page worker knows where ITS logs live,

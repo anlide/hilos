@@ -8,9 +8,10 @@
 // the sign the framework held something back: a refusal written for a person is
 // already shown in full, so it carries no detail. The panel is a hilos-modal over
 // the modal the action was sent from; like every Angular hilos-modal it renders
-// in place and overlays through Bootstrap's fixed positioning. Bootstrap classes
-// only, save the one pre-wrap declaration the mockup calls for because Bootstrap
-// has no utility for it.
+// in place and overlays through Bootstrap's fixed positioning. The original text
+// is drawn by hilos-long-text and copied by the panel's own copyText, so neither
+// the wrapping of a long line nor the Copy button is written here a second time
+// (rules-and-violations.md, section E). Bootstrap classes only.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -19,8 +20,8 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { copyToClipboard, isClipboardAvailable } from '@hilos/core'
 
+import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
 import type { HilosTrackedAction } from './hilosTrackedAction.js'
 
@@ -28,7 +29,7 @@ import type { HilosTrackedAction } from './hilosTrackedAction.js'
 @Component({
   selector: 'hilos-action-error',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosModal],
+  imports: [HilosLongText, HilosModal],
   template: `
     @if (action().error(); as message) {
       <div
@@ -67,24 +68,14 @@ import type { HilosTrackedAction } from './hilosTrackedAction.js'
       [open]="detailOpen()"
       (openChange)="detailOpen.set($event)"
       [title]="errorType() ?? ''"
+      [copyText]="errorDetail() ?? ''"
     >
-      <pre
-        class="mb-0 small text-break"
-        style="white-space: pre-wrap; max-height: 60vh; overflow-y: auto"
-        data-id="hilos-action-error-detail"
-        >{{ errorDetail() }}</pre
-      >
+      <hilos-long-text
+        kind="output"
+        [text]="errorDetail() ?? ''"
+        dataId="hilos-action-error-detail"
+      />
       <ng-template #modalActions let-requestClose="requestClose">
-        @if (canCopy) {
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            data-id="hilos-action-error-copy"
-            (click)="copyDetail()"
-          >
-            <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy
-          </button>
-        }
         <button
           type="button"
           class="btn btn-secondary"
@@ -104,9 +95,6 @@ export class HilosActionError {
   /** The type badge, in both the clickable and the inert form. */
   protected readonly badgeClass =
     'badge rounded-pill bg-danger-subtle text-danger-emphasis border border-danger-subtle d-inline-flex align-items-center gap-1 flex-shrink-0'
-
-  /** Whether a clipboard exists to copy the detail into; no clipboard, no button. */
-  protected readonly canCopy = isClipboardAvailable()
 
   protected readonly detailOpen = signal(false)
 
@@ -134,10 +122,5 @@ export class HilosActionError {
         this.detailOpen.set(false)
       }
     })
-  }
-
-  /** Put the original text where an administrator can paste it into a ticket. */
-  protected copyDetail(): void {
-    void copyToClipboard(this.errorDetail() ?? '')
   }
 }

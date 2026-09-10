@@ -194,10 +194,28 @@ Topic documents are referenced by filename; several are still being authored.
   refusal reason, the output of a command — a surface that only shows something
   carries a single secondary `Close` in the footer, going through
   `requestClose`, plus the header's own X. `HilosModal` has no default footer:
-  the footer element exists exactly when the parent declared its buttons, so a
-  dialog that declares none renders no footer at all. Do not offer a
+  the footer element exists exactly when the parent declared its buttons or
+  handed the modal a `copyText` — which is a declared button too, drawn by the
+  modal — so a dialog that does neither renders no footer at all. Do not offer a
   confirm-and-dismiss pair where there is nothing to confirm. See
   [conflict-resolution.md](conflict-resolution.md).
+- **A long technical text is drawn by `HilosLongText`, never by hand.** There
+  are two kinds and the one who opens the modal names which, because the kind is
+  known to the source and not to the component: a reason in words is `prose`, an
+  ordinary paragraph wrapping between words; what a process printed is `output`,
+  monospaced with its indentation kept but wrapping (`pre-wrap`, not `pre`). A
+  plain `<pre>` wraps nothing at all when the text carries no newline, and a
+  wrapping class on it changes nothing — writing either by hand is how the rule
+  is lost. **A modal never scrolls sideways**: the end of the sentence is where
+  the real reason lives, and a horizontal scrollbar puts it furthest away and
+  covers the text besides. The height and the vertical scroll belong to the body
+  of the modal — every `HilosModal` dialog is `modal-dialog-scrollable`, whatever
+  it holds — and never to the text, which carries no border, no backing and no
+  height of its own. Both kinds are copied from the modal's own `copyText`
+  button, so no surface writes a Copy button, a copied state or a clipboard call
+  of its own. The block takes focus so the arrow keys reach the scroll it sits
+  in, and takes no name: the dialog is named already. See
+  [accessibility.md](accessibility.md).
 
 ## F. View layer, SDK, and components
 

@@ -1,16 +1,45 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 
 import { HilosModal } from '../src/HilosModal.js'
 
 // HilosModal portals to <body>, so assertions query the document, not the render.
+const realClipboard = navigator.clipboard
+const written: string[] = []
+
 afterEach(() => {
   cleanup()
   document.body.classList.remove('modal-open')
+  setClipboard(realClipboard)
+  written.length = 0
 })
 
 function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
+}
+
+/** Put a clipboard in the document, or take it away — plain http has none. */
+function setClipboard(clipboard: Clipboard | undefined): void {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+}
+
+/** A clipboard that records what was written to it. */
+function recordingClipboard(): void {
+  setClipboard({
+    writeText: async (text: string) => {
+      written.push(text)
+    },
+  } as unknown as Clipboard)
+}
+
+/** Wait out the microtasks a clipboard write resolves through. */
+async function settled(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve()
+  })
 }
 
 describe('HilosModal', () => {
@@ -93,6 +122,65 @@ describe('HilosModal', () => {
     // nothing (docs/agents/frontend/accessibility.md).
     render(<HilosModal open ariaLabel="Sign in" />)
     expect(document.querySelector('.modal-title')).toBeNull()
+  })
+
+  it('gives both dialogs a scrollable body and a narrow-screen sheet', () => {
+    render(<HilosModal open confirmOnClose />)
+    fireEvent.click(byId('modal-close') as Element)
+
+    const dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs).toHaveLength(2)
+    dialogs.forEach((dialog) => {
+      expect(dialog.classList.contains('modal-dialog-scrollable')).toBe(true)
+      expect(dialog.classList.contains('hilos-modal-sheet')).toBe(true)
+    })
+  })
+
+  it('draws a footer with just the copy button when there are no actions', () => {
+    recordingClipboard()
+    render(<HilosModal open copyText="hilos restore --archive x" />)
+    const footer = document.querySelector('.modal-footer')
+    expect(footer).not.toBeNull()
+    expect(footer?.querySelectorAll('button')).toHaveLength(1)
+    expect(footer?.querySelector('[data-id="modal-copy"]')).not.toBeNull()
+  })
+
+  it('draws no copy button when there is nothing to copy', () => {
+    recordingClipboard()
+    render(<HilosModal open />)
+    expect(byId('modal-copy')).toBeNull()
+  })
+
+  it('draws no copy button when the document has no clipboard', () => {
+    // Over plain http there is none, and a button that silently does nothing
+    // is worse than no button at all.
+    setClipboard(undefined)
+    render(<HilosModal open copyText="hilos restore --archive x" />)
+    expect(byId('modal-copy')).toBeNull()
+  })
+
+  it('writes the text to the clipboard and says it did', async () => {
+    recordingClipboard()
+    render(<HilosModal open copyText="hilos restore --archive x" />)
+    expect(byId('modal-copy')?.textContent?.trim()).toBe('Copy')
+
+    fireEvent.click(byId('modal-copy') as Element)
+    await settled()
+    expect(written).toEqual(['hilos restore --archive x'])
+    expect(byId('modal-copy')?.textContent?.trim()).toBe('Copied')
+  })
+
+  it('says Copy again the next time the dialog is opened', async () => {
+    recordingClipboard()
+    const view = render(
+      <HilosModal open copyText="hilos restore --archive x" />,
+    )
+    fireEvent.click(byId('modal-copy') as Element)
+    await settled()
+
+    view.rerender(<HilosModal open={false} copyText="hilos restore x" />)
+    view.rerender(<HilosModal open copyText="hilos restore --archive x" />)
+    expect(byId('modal-copy')?.textContent?.trim()).toBe('Copy')
   })
 
   it('raises a confirm step before closing a dirty modal, then discards', () => {

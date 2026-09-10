@@ -61,7 +61,6 @@ import {
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
-  copyToClipboard,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -86,6 +85,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -128,6 +128,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
   imports: [
     HilosAdminPage,
     HilosViewportTable,
+    HilosLongText,
     HilosModal,
     HilosActionError,
     LoadingButton,
@@ -616,12 +617,11 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         (openChange)="detailsOpen.set($event)"
         [title]="detailsTitle()"
       >
-        <pre
-          class="mb-0 small text-break"
-          style="max-height: 60vh; overflow-y: auto"
-          data-id="hilos-backup-details-text"
-          >{{ detailsRow()?.failureReason }}</pre
-        >
+        <hilos-long-text
+          kind="prose"
+          [text]="detailsRow()?.failureReason ?? ''"
+          dataId="hilos-backup-details-text"
+        />
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -706,16 +706,17 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [open]="cliOpen()"
         (openChange)="cliOpen.set($event)"
         [title]="cliTitle()"
+        [copyText]="cliCommand()"
       >
         <p class="mb-2 text-body-secondary">
           Restoring is not offered from the browser on this environment. Run
           this on the machine that hosts the installation:
         </p>
-        <pre
-          class="mb-0 small text-break"
-          data-id="hilos-backup-restore-cli-text"
-          >{{ cliCommand() }}</pre
-        >
+        <hilos-long-text
+          kind="output"
+          [text]="cliCommand()"
+          dataId="hilos-backup-restore-cli-text"
+        />
         <!-- The same lines the button's title carries where there is a button: an
         operator on production learns of an incompatible archive here, not from the
         command refusing after they have walked to the terminal. -->
@@ -732,14 +733,6 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           }
         }
         <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            data-id="hilos-backup-restore-cli-copy"
-            (click)="copyCliCommand()"
-          >
-            {{ cliCopied() ? 'Copied' : 'Copy' }}
-          </button>
           <button
             type="button"
             class="btn btn-primary"
@@ -764,14 +757,11 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             The database was already being replaced when this run ended.
           </p>
         }
-        <pre
-          class="mb-0 small text-break"
-          style="max-height: 60vh; overflow-y: auto"
-          data-id="hilos-backup-restore-outcome-text"
-          >{{
-            outcomeRow()?.restoreFailureReason || 'No failure recorded.'
-          }}</pre
-        >
+        <hilos-long-text
+          kind="prose"
+          [text]="outcomeRow()?.restoreFailureReason || 'No failure recorded.'"
+          dataId="hilos-backup-restore-outcome-text"
+        />
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -889,7 +879,6 @@ export class HilosBackupPage {
   // CLI instruction dialog: what the production surface offers instead of a button.
   protected readonly cliOpen = signal(false)
   protected readonly cliRow = signal<HilosBackupRow | null>(null)
-  protected readonly cliCopied = signal(false)
   protected readonly cliTitle = computed(() => {
     const row = this.cliRow()
 
@@ -1119,17 +1108,12 @@ export class HilosBackupPage {
 
   protected openCli(row: HilosBackupRow): void {
     this.cliRow.set(row)
-    this.cliCopied.set(false)
     this.cliOpen.set(true)
   }
 
   protected openOutcome(row: HilosBackupRow): void {
     this.outcomeRow.set(row)
     this.outcomeOpen.set(true)
-  }
-
-  protected async copyCliCommand(): Promise<void> {
-    this.cliCopied.set(await copyToClipboard(this.cliCommand()))
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`

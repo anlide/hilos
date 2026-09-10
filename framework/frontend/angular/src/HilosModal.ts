@@ -3,9 +3,18 @@
 // fills `[modalHeader]` (defaults to the title), the body (default content), and
 // an `<ng-template #modalActions>` (which receives `requestClose` so a footer
 // button closes through the confirm guard). The footer exists exactly when that
-// template is declared: a dialog with no buttons of its own gets no footer
-// element — neither buttons nor the bordered strip — and there is no default
-// footer to opt out of. Open
+// template is declared or a `copyText` is given: a dialog with neither gets no
+// footer element — neither buttons nor the bordered strip — and there is no
+// default footer to opt out of.
+// The body is what scrolls, always: the dialog is never taller than the window
+// (modal-dialog-scrollable), the header and the footer stay put, and a short
+// dialog is not changed by it at all. On a narrow screen the dialog becomes a
+// sheet at the bottom edge and its buttons a full-width column, main action on
+// top — inside the modal, so no surface that opens one is touched.
+// Copy is the modal's own button: pass `copyText` and it draws one first in the
+// footer, because a long technical text almost always has to be carried
+// somewhere else, and the rule for showing such a text belongs here rather than
+// to every page that has one (rules-and-violations.md, section E). Open
 // state is two-way (`[(open)]`); it traps Tab focus and returns focus to the
 // opener on close, and is keyboard- and ARIA-labelled (a11y ships in v1). With
 // confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
@@ -15,24 +24,29 @@
 // (createPortal) views, this renders in place — Bootstrap's `.modal` is
 // position:fixed, so it overlays the viewport without a portal; a project needing
 // to escape a transformed-ancestor stacking context wraps it in a CDK overlay.
-// Bootstrap classes only.
+// Bootstrap classes only, save for the one declaration the Sass layer names —
+// the bottom sheet, which stock Bootstrap has nothing for.
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  computed,
   contentChild,
   effect,
   inject,
   input,
   model,
   output,
+  signal,
   viewChild,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
 import {
   FocusTrap,
+  copyToClipboard,
   createModalController,
+  isClipboardAvailable,
   lockBodyScroll,
   unlockBodyScroll,
 } from '@hilos/core'
@@ -67,7 +81,9 @@ export interface ModalActionsContext {
         (keydown)="onKeydown($event, dialog)"
         (click)="onClick($event, dialog)"
       >
-        <div class="modal-dialog modal-dialog-centered">
+        <div
+          class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+        >
           <div class="modal-content">
             <div class="modal-header">
               <ng-content select="[modalHeader]">
@@ -88,12 +104,29 @@ export interface ModalActionsContext {
               ></button>
             </div>
             <div class="modal-body"><ng-content /></div>
-            @if (actions(); as tpl) {
-              <div class="modal-footer">
-                <ng-container
-                  [ngTemplateOutlet]="tpl"
-                  [ngTemplateOutletContext]="{ requestClose: requestClose }"
-                />
+            @if (actions() || showCopy()) {
+              <div
+                class="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center"
+              >
+                <!-- Copy comes first in the markup so the reversed column on a
+                narrow screen puts it under Close, the main action on top. -->
+                @if (showCopy()) {
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary"
+                    data-id="modal-copy"
+                    (click)="copy()"
+                  >
+                    <i class="bi bi-clipboard me-1" aria-hidden="true"></i>
+                    {{ copied() ? 'Copied' : 'Copy' }}
+                  </button>
+                }
+                @if (actions(); as tpl) {
+                  <ng-container
+                    [ngTemplateOutlet]="tpl"
+                    [ngTemplateOutletContext]="{ requestClose: requestClose }"
+                  />
+                }
               </div>
             }
           </div>
@@ -110,7 +143,9 @@ export interface ModalActionsContext {
           data-id="modal-confirm"
           (keydown)="onKeydown($event, confirmDialog)"
         >
-          <div class="modal-dialog modal-dialog-centered">
+          <div
+            class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+          >
             <div class="modal-content">
               <div class="modal-header">
                 <h5 class="modal-title mb-0">{{ confirmTitle() }}</h5>
@@ -118,7 +153,9 @@ export interface ModalActionsContext {
               <div class="modal-body">
                 <p class="mb-0">{{ confirmMessage() }}</p>
               </div>
-              <div class="modal-footer">
+              <div
+                class="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center"
+              >
                 <button
                   type="button"
                   class="btn btn-secondary"
@@ -179,6 +216,12 @@ export class HilosModal {
   readonly confirmOkText = input('Discard')
   /** Confirm-step keep-editing label. */
   readonly confirmCancelText = input('Keep editing')
+  /**
+   * The text the footer's Copy button writes to the clipboard. Empty means no
+   * such button — and so does a document with no clipboard at all (plain http),
+   * because a button that silently does nothing is worse than none.
+   */
+  readonly copyText = input('')
   /** The dialog was dismissed. */
   readonly cancel = output<void>()
 
@@ -198,6 +241,10 @@ export class HilosModal {
     },
   })
   protected readonly confirmVisible = hilosSignal(this.modal.confirmVisible)
+  protected readonly copied = signal(false)
+  protected readonly showCopy = computed(
+    () => this.copyText() !== '' && isClipboardAvailable(),
+  )
   protected readonly actions =
     contentChild<TemplateRef<ModalActionsContext>>('modalActions')
   protected readonly requestClose = (): void => {
@@ -212,6 +259,9 @@ export class HilosModal {
         return
       }
       this.modal.reset()
+      // The label is the only thing the button says, so it starts over with the
+      // dialog: a reopened modal reporting "Copied" is reporting the last visit.
+      this.copied.set(false)
       lockBodyScroll(this.doc)
       this.trap.activate(root)
       onCleanup(() => {
@@ -231,6 +281,10 @@ export class HilosModal {
         this.trap.refocus(root)
       }
     })
+  }
+
+  protected async copy(): Promise<void> {
+    this.copied.set(await copyToClipboard(this.copyText()))
   }
 
   protected onKeydown(event: KeyboardEvent, root: HTMLElement): void {

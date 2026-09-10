@@ -130,12 +130,17 @@ utilities — the Sass layer above) becomes a **framework** concern, not a
 per-project one. A project still themes at runtime with `data-bs-theme` and
 CSS-variable overrides. The view layer imports Bootstrap's **compiled**
 stylesheet directly and loads a thin Sass layer (`hilos-styles.scss`) **after**
-it for the few documented declarations stock utilities cannot express — today
-only `.min-h-0` (`min-height: 0`), the lever a flex child needs to own its own
-scroll (the app shell's main region and the chat message list), which Bootstrap
-ships no utility for. A full Sass re-compile of Bootstrap (overriding its
-variable and map defaults) stays deferred until a theme actually needs it; the
-thin layer covers the exceptions without it. Components otherwise depend only on
+it for the few documented declarations stock utilities cannot express. The layer
+holds several of them and will hold more; each states in the file itself WHY no
+stock utility reaches it and WHAT it is for, and that comment — not a list kept
+somewhere else — is where a reader learns what lives there. Two of them belong
+to the modal: `.hilos-pre-wrap` (`white-space: pre-wrap`), which Bootstrap's
+white-space utilities stop short of, and `.hilos-modal-sheet`, the bottom sheet a
+narrow screen turns the dialog into, for which the nearest stock thing
+(`.modal-fullscreen-sm-down`) stretches the window over the whole screen instead.
+A full Sass re-compile of Bootstrap (overriding its variable and map defaults)
+stays deferred until a theme actually needs it; the thin layer covers the
+exceptions without it. Components otherwise depend only on
 stock Bootstrap classes, never on declarations a consumer would supply.
 
 **Angular delivers the layer consumer-side.** Because `@hilos/angular` cannot

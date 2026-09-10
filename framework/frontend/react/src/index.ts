@@ -125,6 +125,7 @@ export {
   type HilosPushDeviceToggleProps,
 } from './HilosPushDeviceToggle.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
+export { HilosLongText, type HilosLongTextProps } from './HilosLongText.js'
 export {
   HilosActionError,
   type HilosActionErrorProps,

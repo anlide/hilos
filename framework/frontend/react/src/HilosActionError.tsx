@@ -8,11 +8,13 @@
 // the sign the framework held something back: a refusal written for a person is
 // already shown in full, so it carries no detail. The panel is a HilosModal over
 // the modal the action was sent from; stacking is the portal DOM order, not a
-// hand-set z-index. Bootstrap classes only, save the one pre-wrap declaration
-// the mockup calls for because Bootstrap has no utility for it.
+// hand-set z-index. The original text is drawn by HilosLongText and copied by
+// the panel's own copyText, so neither the wrapping of a long line nor the Copy
+// button is written here a second time (rules-and-violations.md, section E).
+// Bootstrap classes only.
 import { useEffect, useState } from 'react'
-import { copyToClipboard, isClipboardAvailable } from '@hilos/core'
 
+import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
 import type { TrackedAction } from './useTrackedAction.js'
 
@@ -91,41 +93,24 @@ export function HilosActionError({ action }: HilosActionErrorProps) {
       <HilosModal
         open={detailOpen}
         title={errorType}
+        copyText={errorDetail ?? ''}
         onClose={() => setDetailOpen(false)}
         actions={({ requestClose }) => (
-          <>
-            {isClipboardAvailable() && (
-              <button
-                type="button"
-                className="btn btn-outline-secondary"
-                data-id="hilos-action-error-copy"
-                onClick={() => void copyToClipboard(errorDetail ?? '')}
-              >
-                <i className="bi bi-clipboard me-1" aria-hidden="true"></i>Copy
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-secondary"
-              data-id="hilos-action-error-close"
-              onClick={requestClose}
-            >
-              Close
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-id="hilos-action-error-close"
+            onClick={requestClose}
+          >
+            Close
+          </button>
         )}
       >
-        <pre
-          className="mb-0 small text-break"
-          style={{
-            whiteSpace: 'pre-wrap',
-            maxHeight: '60vh',
-            overflowY: 'auto',
-          }}
-          data-id="hilos-action-error-detail"
-        >
-          {errorDetail}
-        </pre>
+        <HilosLongText
+          kind="output"
+          text={errorDetail ?? ''}
+          dataId="hilos-action-error-detail"
+        />
       </HilosModal>
     </>
   )

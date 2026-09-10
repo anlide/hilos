@@ -2,22 +2,34 @@
 docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 fills #header (defaults to the title), the body (default slot), and #actions
 (which receives `requestClose` so a footer button closes through the confirm
-guard). The footer exists exactly when #actions is declared: a dialog with no
-buttons of its own gets no footer element — neither buttons nor the bordered
-strip — and there is no default footer to opt out of.
+guard). The footer exists exactly when #actions is declared or a copyText is
+given: a dialog with neither gets no footer element — neither buttons nor the
+bordered strip — and there is no default footer to opt out of.
+The body is what scrolls, always: the dialog is never taller than the window
+(modal-dialog-scrollable), the header and the footer stay put, and a short
+dialog is not changed by it at all. On a narrow screen the dialog becomes a
+sheet at the bottom edge and its buttons a full-width column, main action on
+top — inside the modal, so no surface that opens one is touched.
+Copy is the modal's own button: pass `copyText` and it draws one first in the
+footer, because a long technical text almost always has to be carried somewhere
+else, and the rule for showing such a text belongs here rather than to every
+page that has one (docs/agents/frontend/rules-and-violations.md, section E).
 Open state is v-model (`v-model="open"`); the dialog
 teleports to <body>, traps Tab focus and returns focus to the opener on close,
 and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md). With
 confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
 instead of discarding a dirty draft. The confirm-step state machine is the core
 modal controller and the focus trap / scroll lock are core/dom; this view only
-renders and wires events. Bootstrap classes only — no CSS of its own; stacking is
-the teleport DOM order, not a hand-set z-index. -->
+renders and wires events. Bootstrap classes only, save for the one declaration
+the Sass layer names — the bottom sheet, which stock Bootstrap has nothing for;
+stacking is the teleport DOM order, not a hand-set z-index. -->
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   FocusTrap,
+  copyToClipboard,
   createModalController,
+  isClipboardAvailable,
   lockBodyScroll,
   unlockBodyScroll,
 } from '@hilos/core'
@@ -61,6 +73,12 @@ const props = withDefaults(
     confirmOkText?: string
     /** Confirm-step keep-editing label. */
     confirmCancelText?: string
+    /**
+     * The text the footer's Copy button writes to the clipboard. Empty means no
+     * such button — and so does a document with no clipboard at all (plain
+     * http), because a button that silently does nothing is worse than none.
+     */
+    copyText?: string
   }>(),
   {
     title: '',
@@ -73,6 +91,7 @@ const props = withDefaults(
     confirmMessage: 'You have unsaved changes. Discard them?',
     confirmOkText: 'Discard',
     confirmCancelText: 'Keep editing',
+    copyText: '',
   },
 )
 
@@ -96,6 +115,13 @@ const modal = createModalController({
 })
 const confirmVisible = useSignal(modal.confirmVisible)
 
+const copied = ref(false)
+const showCopy = computed(() => props.copyText !== '' && isClipboardAvailable())
+
+async function onCopy(): Promise<void> {
+  copied.value = await copyToClipboard(props.copyText)
+}
+
 function activeRoot(): HTMLElement | undefined {
   return confirmVisible.value ? confirmDialog.value : dialog.value
 }
@@ -104,6 +130,9 @@ watch(
   () => props.modelValue,
   (open) => {
     modal.reset()
+    // The label is the only thing the button says, so it starts over with the
+    // dialog: a reopened modal reporting "Copied" is reporting the last visit.
+    copied.value = false
     if (open) {
       lockBodyScroll(document)
       void nextTick(() => {
@@ -155,7 +184,9 @@ function onTab(event: KeyboardEvent): void {
         @keydown.tab="onTab"
         @click.self="modal.onBackdrop()"
       >
-        <div class="modal-dialog modal-dialog-centered">
+        <div
+          class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+        >
           <div class="modal-content">
             <div class="modal-header">
               <slot name="header">
@@ -176,7 +207,22 @@ function onTab(event: KeyboardEvent): void {
             <div class="modal-body">
               <slot />
             </div>
-            <div v-if="$slots.actions" class="modal-footer">
+            <div
+              v-if="$slots.actions || showCopy"
+              class="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center"
+            >
+              <!-- Copy comes first in the markup so the reversed column on a
+              narrow screen puts it under Close, the main action on top. -->
+              <button
+                v-if="showCopy"
+                type="button"
+                class="btn btn-outline-secondary"
+                data-id="modal-copy"
+                @click="onCopy"
+              >
+                <i class="bi bi-clipboard me-1" aria-hidden="true"></i>
+                {{ copied ? 'Copied' : 'Copy' }}
+              </button>
               <slot name="actions" :request-close="modal.requestClose" />
             </div>
           </div>
@@ -194,7 +240,9 @@ function onTab(event: KeyboardEvent): void {
         @keydown.esc.prevent="modal.onEsc()"
         @keydown.tab="onTab"
       >
-        <div class="modal-dialog modal-dialog-centered">
+        <div
+          class="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet"
+        >
           <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title mb-0">{{ confirmTitle }}</h5>
@@ -202,7 +250,9 @@ function onTab(event: KeyboardEvent): void {
             <div class="modal-body">
               <p class="mb-0">{{ confirmMessage }}</p>
             </div>
-            <div class="modal-footer">
+            <div
+              class="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center"
+            >
               <button
                 type="button"
                 class="btn btn-secondary"

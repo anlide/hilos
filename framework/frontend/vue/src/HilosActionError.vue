@@ -8,12 +8,14 @@ detail panel with a Copy button (HIL-779). Their presence is the sign the
 framework held something back: a refusal written for a person is already shown in
 full, so it carries no detail. The panel is a HilosModal over the modal the
 action was sent from; stacking is the teleport DOM order, not a hand-set z-index.
-Bootstrap classes only, save the one pre-wrap declaration the mockup calls for
-because Bootstrap has no utility for it (styling-rules.md). -->
+The original text is drawn by HilosLongText and copied by the panel's own
+copyText, so neither the wrapping of a long line nor the Copy button is written
+here a second time (rules-and-violations.md, section E).
+Bootstrap classes only. -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { copyToClipboard, isClipboardAvailable } from '@hilos/core'
 
+import HilosLongText from './HilosLongText.vue'
 import HilosModal from './HilosModal.vue'
 import type { TrackedAction } from './useTrackedAction.js'
 
@@ -27,7 +29,6 @@ const BADGE_CLASS =
   'badge rounded-pill bg-danger-subtle text-danger-emphasis border border-danger-subtle d-inline-flex align-items-center gap-1 flex-shrink-0'
 
 const detailOpen = ref(false)
-const canCopy = isClipboardAvailable()
 const errorType = computed(() => props.action.failure.value?.errorType)
 const errorDetail = computed(() => props.action.failure.value?.errorDetail)
 // An empty message leaves nothing to open the panel with, and the type is then
@@ -44,10 +45,6 @@ watch(
     }
   },
 )
-
-function copyDetail(): void {
-  void copyToClipboard(errorDetail.value ?? '')
-}
 </script>
 
 <template>
@@ -80,23 +77,17 @@ function copyDetail(): void {
     </span>
   </div>
 
-  <HilosModal v-model="detailOpen" :title="errorType">
-    <pre
-      class="mb-0 small text-break"
-      style="white-space: pre-wrap; max-height: 60vh; overflow-y: auto"
+  <HilosModal
+    v-model="detailOpen"
+    :title="errorType"
+    :copy-text="errorDetail ?? ''"
+  >
+    <HilosLongText
+      kind="output"
+      :text="errorDetail ?? ''"
       data-id="hilos-action-error-detail"
-      >{{ errorDetail }}</pre
-    >
+    />
     <template #actions="{ requestClose }">
-      <button
-        v-if="canCopy"
-        type="button"
-        class="btn btn-outline-secondary"
-        data-id="hilos-action-error-copy"
-        @click="copyDetail"
-      >
-        <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy
-      </button>
       <button
         type="button"
         class="btn btn-secondary"

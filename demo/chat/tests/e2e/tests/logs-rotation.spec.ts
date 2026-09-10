@@ -304,6 +304,28 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     page.getByTestId('hilos-rotation-takeout-command'),
   ).not.toBeEmpty()
 
+  // The promise of HIL-657, measured where it is hardest to keep: on a phone.
+  // A block that reaches sideways scrolls wider than it shows, and a modal that
+  // scrolls sideways hides the end of the line — which is where a path and a
+  // command say what they are about. The body may scroll down; it may never
+  // scroll across.
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+  for (const id of [
+    'hilos-rotation-takeout-path',
+    'hilos-rotation-takeout-command',
+  ]) {
+    const block = await page
+      .getByTestId(id)
+      .evaluate((el) => [el.scrollWidth, el.clientWidth])
+    expect(block[0]).toBeLessThanOrEqual(block[1])
+  }
+  const body = await page
+    .locator('[data-id="modal"] .modal-body')
+    .evaluate((el) => [el.scrollWidth, el.clientWidth])
+  expect(body[0]).toBeLessThanOrEqual(body[1])
+  await page.setViewportSize(desktop)
+
   // The confirmation is answered by the node that owns the directory, and the
   // modal closes on that answer rather than on the click.
   await page.getByTestId('hilos-rotation-takeout-confirm').click()
