@@ -55,16 +55,19 @@ export type IdentifierKind = 'email' | 'phone' | 'unknown'
  * CHANGE OF SCREEN. `identifier` is the single entry field (password and all
  * reveal live inside it); `consent` is the registration terms screen; `code`
  * collects a one-time code (identifier confirmation, phone sign-in, recovery);
- * `second_factor` is the two-step verification code after a successful
- * credential and before the session upgrade (contract here, mechanism
- * HIL-494); `set_password` chooses a new password (recovery); `external` parks
- * while an icon method's ceremony runs (HIL-418/419); `done` is a real terminal
- * screen with a Continue action.
+ * `code_expired` is that same screen after its countdown ran out — the field is
+ * gone and one button offers a new code (HIL-828), a step of its own rather
+ * than a flag because a step IS a screen here; `second_factor` is the two-step
+ * verification code after a successful credential and before the session
+ * upgrade (contract here, mechanism HIL-494); `set_password` chooses a new
+ * password (recovery); `external` parks while an icon method's ceremony runs
+ * (HIL-418/419); `done` is a real terminal screen with a Continue action.
  */
 export type AuthStep =
   | 'identifier'
   | 'consent'
   | 'code'
+  | 'code_expired'
   | 'second_factor'
   | 'set_password'
   | 'external'
@@ -440,9 +443,15 @@ export interface AuthFlow {
   /**
    * The LOCAL epoch-ms moment the code on screen stops being good, or `null`
    * when nothing is counting down. Of the same nature as
-   * {@link resendAvailableAt} and drawn the same way; the machine does not act
-   * on it, because what a code is worth is the server's answer and the screen
-   * reaching zero is only what the person sees.
+   * {@link resendAvailableAt} and drawn the same way.
+   *
+   * The machine acts on it in exactly one way (HIL-828): when it passes, the
+   * code step becomes `code_expired`. That is a statement about the SCREEN and
+   * not about the code — what a code is worth stays the server's answer, and a
+   * code typed a second before zero is still judged by the backend. The flip is
+   * local because for a phone sign-in nothing on the server marks the moment at
+   * all, and the one event that exists for a registration arrives on a cron rule
+   * up to a minute late.
    */
   readonly expiresAt: ReadonlySignal<number | null>
   /**
@@ -499,6 +508,22 @@ export interface AuthFlow {
    * `resendAt`. A no-op while pending.
    */
   resend(): Promise<void>
+  /**
+   * Order a new code from the `code_expired` screen (HIL-828).
+   *
+   * Not a re-send: the code ran out, and for a registration the hold on the
+   * address died with it by design, so there is nothing left to top up and the
+   * address is TAKEN AGAIN. What this dispatches is therefore the send that
+   * STARTED the flow — a registration, a phone code, a magic link, a recovery
+   * request — which for the last three is byte-identical to what their re-send
+   * already dispatches.
+   *
+   * The send gate still rules it: it belongs to the address and outlives the
+   * code, so this is a silent no-op inside the cooldown, exactly like
+   * {@link resend}, and the screen draws that countdown instead of the button.
+   * A no-op while pending.
+   */
+  renewCode(): Promise<void>
   /**
    * Hand off to an icon method's ceremony; parks the flow in `external` (a
    * magic link parks the same way — its screen differs by key). A no-op for an
@@ -891,7 +916,8 @@ export function applicableChannels(
  * from this step (its channel choice is the send), a passwordless registration
  * goes through its method's ceremony rather than submit, and a `proven` address
  * offers its primary action instead — all three mirrored by the primary action.
- * `external` is never submittable; `done` always is (its Continue).
+ * `external` and `code_expired` are never submittable (the second has no field
+ * left to fill); `done` always is (its Continue).
  *
  * @param flow The current flow state.
  * @param form The current form values.
@@ -928,6 +954,10 @@ export function isFlowSubmittable(
     case 'code':
     case 'second_factor':
       return form.code.trim() !== ''
+    case 'code_expired':
+      // The screen has no field at all (HIL-828): its one control is the button
+      // that orders a new code, and that is not a submit of this step.
+      return false
     case 'set_password':
       return form.newPassword.length >= PASSWORD_MIN_LENGTH
     case 'external':
@@ -995,11 +1025,16 @@ export function screenKeyOf(
     case 'consent':
       return 'terms'
     case 'code':
+    case 'code_expired':
       // The heading must not change under the person when the letter goes out
       // (HIL-606): they asked for a letter and they are still waiting on it, so
       // the screen stays `check_inbox` and merely grows a field. Every other
       // code screen is named by its intent, which a magic link has no use for —
       // one letter serves both signing in and registering.
+      //
+      // A code running out changes the controls and not the errand (HIL-828), so
+      // the expired screen keeps the heading its code screen had: the person is
+      // still confirming the same address.
       return flow.methodKey === MAGIC_LINK_METHOD_KEY
         ? 'check_inbox'
         : CODE_SCREENS[flow.intent]
@@ -1088,6 +1123,11 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     switch (state.step) {
       case 'external':
         return null
+      case 'code_expired':
+        // Not a submit and not a method: the one control of this screen orders a
+        // new code through {@link AuthFlow.renewCode}, which no primary action
+        // names (HIL-828).
+        return null
       case 'identifier': {
         const result = detection.get().result
         if (result === null) {
@@ -1173,6 +1213,11 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   // The icon ceremony currently owning the external step, so a cancel can reach
   // INTO it (abort its signal) instead of only forgetting it.
   let ceremony: CeremonyRun | null = null
+  // The one timer that turns a code screen into the expired one (HIL-828). It
+  // lives here rather than in the three views for the reason every rule does:
+  // Vue, React and Angular would each hold a copy of it, and their clocks tick
+  // for the m:ss text alone.
+  let expiryTimer: ReturnType<typeof setTimeout> | null = null
 
   function cancelDetect(): void {
     detectSeq += 1
@@ -1353,7 +1398,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       resendAvailableAt.set(toLocal(outcome.resendAt))
     }
     if (outcome.expiresAt !== undefined) {
-      expiresAt.set(toLocal(outcome.expiresAt))
+      const moment = toLocal(outcome.expiresAt)
+      expiresAt.set(moment)
+      armExpiry(moment)
     }
   }
 
@@ -1464,6 +1511,55 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     return availableAt !== null && Date.now() < availableAt
   }
 
+  /** Drop any standing expiry timer — the code it was counting is gone. */
+  function disarmExpiry(): void {
+    if (expiryTimer !== null) {
+      clearTimeout(expiryTimer)
+      expiryTimer = null
+    }
+  }
+
+  /**
+   * (Re)arm the flip for a code's deadline, replacing whatever stood before.
+   *
+   * A moment already in the past is not a special case: `setTimeout` treats a
+   * non-positive delay as "as soon as possible", which is exactly right for a
+   * tab restored onto a code that died while it was closed.
+   *
+   * @param moment The LOCAL epoch-ms deadline, or `null` to arm nothing.
+   */
+  function armExpiry(moment: number | null): void {
+    disarmExpiry()
+    if (moment === null) {
+      return
+    }
+    expiryTimer = setTimeout(expireCode, moment - Date.now())
+  }
+
+  /**
+   * Turn the code screen into the expired one (HIL-828).
+   *
+   * The typed code goes with it — a code typed for a challenge that is over must
+   * not reappear in the next one — and so does the inline error, which was about
+   * that same dead challenge. The cooldown and the deadline are left alone: the
+   * send gate belongs to the ADDRESS and keeps running across the flip, and the
+   * deadline is what the screen is standing on. Nothing is dispatched; expiry is
+   * not news the backend needs.
+   */
+  function expireCode(): void {
+    expiryTimer = null
+    if (flow.get().step !== 'code') {
+      // A flow that moved on does not own this timer. It fires anyway on the
+      // paths that leave the code step without clearing the moment (an accepted
+      // code opens the password screen on the SAME deadline), and there it must
+      // do nothing at all.
+      return
+    }
+    form.set({ ...form.get(), code: '' })
+    error.set(null)
+    flow.set({ ...flow.get(), step: 'code_expired' })
+  }
+
   return {
     flow,
     form,
@@ -1491,6 +1587,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       })
       form.set({ ...form.get(), identifier: pending.identifier })
       expiresAt.set(pending.expiresAt)
+      // A code that died while the tab was closed flips at once (HIL-828), which
+      // is the whole of what a past moment means here.
+      armExpiry(pending.expiresAt)
     },
     setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void {
       if (field === 'identifier') {
@@ -1518,6 +1617,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         error.set(null)
         resendAvailableAt.set(null)
         expiresAt.set(null)
+        disarmExpiry()
         scheduleDetect(identifier, kind, true)
 
         return
@@ -1597,6 +1697,33 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       await dispatch(() => options.onSubmit('resend', flow.get(), form.get()))
+    },
+    async renewCode(): Promise<void> {
+      if (pending.get() || isResendBlocked()) {
+        return
+      }
+      // The action name stays `resend` and no new wire string appears: the STEP
+      // is what selects the branch, and from `code_expired` that branch is the
+      // flow's FIRST send rather than a re-send into a hold that is gone.
+      const outcome = await dispatch(() =>
+        options.onSubmit('resend', flow.get(), form.get()),
+      )
+      if (outcome === undefined || !outcome.ok || outcome.next !== undefined) {
+        // Orphaned, refused, or already told where to go. A refusal that names
+        // nowhere - the send cap - deliberately leaves the person here, with the
+        // sentence and the button under the gate.
+        return
+      }
+      if (flow.get().step !== 'code_expired') {
+        return
+      }
+      // A send that named no step is not silence: a magic link and a recovery
+      // both answer `sent()` with a life and a gate and nothing else, because
+      // where their letter lands has always been the CORE's to decide (HIL-606)
+      // - the method picks the screen on a first send, and this is that same
+      // send again. A registration and a phone code name the step themselves and
+      // were obeyed above.
+      flow.set({ ...flow.get(), step: 'code' })
     },
     async chooseMethod(key: string): Promise<void> {
       if (pending.get()) {
@@ -1710,6 +1837,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       error.set(null)
       resendAvailableAt.set(null)
       expiresAt.set(null)
+      disarmExpiry()
       // The recovery challenge starts clean: a code or new password lingering
       // from another challenge must not pre-fill it as already-submittable
       // (input preservation protects the identifier and password, not a
@@ -1728,6 +1856,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       error.set(null)
       resendAvailableAt.set(null)
       expiresAt.set(null)
+      disarmExpiry()
       // Back to the single field with everything typed preserved — the form is
       // NOT cleared (only an identifier edit clears it).
       flow.set({
@@ -1806,6 +1935,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       error.set(null)
       resendAvailableAt.set(null)
       expiresAt.set(null)
+      disarmExpiry()
     },
   }
 }

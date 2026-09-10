@@ -136,11 +136,14 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
-     * A code that is no longer live rolls the surface back instead of accusing a typo.
+     * A code that is no longer live says so instead of accusing a typo.
+     *
+     * A recovery code behaves like every other code (HIL-828): the screen it was typed on
+     * becomes the one that says the code expired and offers a new one.
      *
      * @throws HilosException When setup or reset handling fails
      */
-    public function testAnExpiredChallengeRollsTheSurfaceBackToTheAddress(): void
+    public function testAnExpiredChallengeMovesTheSurfaceToTheExpiredCodeScreen(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -155,7 +158,7 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
 
             $this->assertFalse($outcome->ok);
             $this->assertSame(AuthFlowOutcome::CODE_RESET_CODE_EXPIRED, $outcome->code);
-            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowStep::CODE_EXPIRED, $outcome->step);
             $this->assertSame(AuthFlowIntent::RECOVERY, $outcome->intent);
         } finally {
             $this->cleanUp();

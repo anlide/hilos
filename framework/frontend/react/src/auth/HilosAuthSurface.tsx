@@ -149,8 +149,7 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
  */
 const CODE_MESSAGES: Record<string, string> = {
   identifier_taken: 'That address already has an account — sign in instead.',
-  reservation_expired:
-    'That registration expired. Start again from the address.',
+  reservation_expired: 'That registration expired. Ask for a new code.',
   reset_code_expired: 'That reset code has expired. Ask for a new one.',
   password_already_changed:
     'The password was already changed on another device. Sign in with the new one.',
@@ -165,14 +164,17 @@ const CODE_MESSAGES: Record<string, string> = {
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
 /**
- * The two sentences the screen hard-codes in its markup. They live here because
- * the live region says them a second time, and two copies of a sentence drift.
- * The letter's line is split around the address the visible block prints in bold.
+ * The sentences the screen hard-codes in its markup. They live here because the
+ * live region says them a second time, and two copies of a sentence drift. The
+ * letter's line is split around the address the visible block prints in bold;
+ * the expired one is the SCREEN's news rather than a refusal of anything the
+ * person did, which is why the calm region is where it is said (HIL-828).
  */
 const LINK_PROMPT_MESSAGE =
   'That email already has an account. Sign in to finish linking it.'
 const LINK_SENT_LEAD = "We've sent a sign-in link to"
 const LINK_SENT_TAIL = 'Open it to continue.'
+const CODE_EXPIRED_MESSAGE = 'That code has expired.'
 
 /**
  * How the code screen says where the code has got to (HIL-826). The states
@@ -476,6 +478,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     if (progress !== null && state.step === 'code') {
       news.push({ key: 'send_progress', text: progress.text })
     }
+    if (state.step === 'code_expired') {
+      news.push({ key: 'code_expired', text: CODE_EXPIRED_MESSAGE })
+    }
 
     return news
   }, [
@@ -704,6 +709,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       identifier: identifierInput,
       consent: consentInput,
       code: codeInput,
+      // The expired screen has no field left to focus (HIL-828); its one control
+      // is the button that orders a new code.
+      code_expired: null,
       set_password: newPasswordInput,
       second_factor: codeInput,
       external: null,
@@ -1396,6 +1404,67 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </button>
           )}
         </form>
+      ) : null}
+
+      {/* The same screen after its countdown ran out (HIL-828). The heading and
+          the address block above do not move - the person is still doing the
+          thing they came to do - and what changes is everything under them: no
+          field, no Confirm, one line saying the code is dead and one button
+          offering a new one. Not a form: there is nothing here to submit. */}
+      {state.step === 'code_expired' ? (
+        <div>
+          <div className="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary">
+            <i
+              className="bi bi-envelope text-body-secondary"
+              aria-hidden="true"
+            />
+            <span className="small fw-semibold flex-grow-1">
+              {form.identifier}
+            </span>
+            {state.intent === 'register' ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-link p-0 small"
+                data-id="auth-restart"
+                onClick={abandon}
+              >
+                Not that address?
+              </button>
+            ) : null}
+          </div>
+
+          <div
+            className="alert alert-warning small py-2 mb-3"
+            data-id="auth-code-expired"
+          >
+            <i className="bi bi-clock-history me-1" aria-hidden="true" />
+            {CODE_EXPIRED_MESSAGE}
+          </div>
+
+          {/* The gate outlives the code it was armed for: it belongs to the
+              address, so a person cannot spend a code, watch it expire and
+              re-take the address inside the cooldown the gate exists to hold. */}
+          {resendIn ? (
+            <div
+              className="small text-body-secondary text-center"
+              data-id="auth-resend-in"
+            >
+              <i className="bi bi-clock me-1" aria-hidden="true" />
+              Send a new code in {resendIn}
+            </div>
+          ) : (
+            <LoadingButton
+              type="button"
+              className="btn-primary w-100 mb-2"
+              loading={pending}
+              data-id="auth-code-renew"
+              onClick={() => void auth.renewCode()}
+            >
+              <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
+              Send a new code
+            </LoadingButton>
+          )}
+        </div>
       ) : null}
 
       {/* One screen for two endings (HIL-825): a recovery writes the new

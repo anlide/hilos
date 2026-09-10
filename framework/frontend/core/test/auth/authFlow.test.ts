@@ -36,6 +36,7 @@ import {
   type DetectionState,
   type IdentifierDetection,
 } from '../../src/auth/authFlow.js'
+import { toFlowPatch } from '../../src/auth/authActions.js'
 
 /** One second in ms — the scale a backend `resendAt` moment is built in here. */
 const SECOND_MS = 1000
@@ -1992,5 +1993,253 @@ describe('the phone code screen opens at once (HIL-826, Design D7)', () => {
     // The send was ordered from the terms screen, so that is where a refusal
     // returns - going to the field would drop an accepted consent.
     expect(flow.flow.get().step).toBe('consent')
+  })
+})
+
+describe('a code that ran out says so itself (HIL-828)', () => {
+  /** A backend answer that opens a code screen with a deadline on it. */
+  function sentCode(lifetimeMs: number): AuthFlowSubmitOutcome {
+    return {
+      ok: true,
+      next: { step: 'code' as const, intent: 'register' as const },
+      expiresAt: Date.now() + lifetimeMs,
+    }
+  }
+
+  it('moves the code step to the expired screen when the countdown reaches zero', async () => {
+    const flow = setup({ onSubmit: async () => sentCode(10 * SECOND_MS) })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    flow.setField('code', '123456')
+    expect(flow.flow.get().step).toBe('code')
+
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    expect(flow.flow.get().step).toBe('code_expired')
+    // A code typed for a dead challenge must not carry into the next one, and
+    // "that code is wrong" was about a challenge that no longer exists.
+    expect(flow.form.get().code).toBe('')
+    expect(flow.error.get()).toBeNull()
+  })
+
+  it('keeps the heading and the countdown the code screen had', async () => {
+    const flow = setup({ onSubmit: async () => sentCode(10 * SECOND_MS) })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    const deadline = flow.expiresAt.get()
+
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    // The person is still confirming the same address, so the screen key does
+    // not move; the deadline is what the screen stands on and is not cleared.
+    expect(flow.screenKey.get()).toBe('confirm_identifier')
+    expect(flow.expiresAt.get()).toBe(deadline)
+    expect(flow.submittable.get()).toBe(false)
+    expect(flow.primaryAction.get()).toBeNull()
+  })
+
+  it('flips at once on a tab restored onto a code that died while it was closed', async () => {
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'code',
+      channel: null,
+      expiresAt: Date.now() - SECOND_MS,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(flow.flow.get().step).toBe('code_expired')
+  })
+
+  it('does not flip a flow that left the code step before its old timer fired', async () => {
+    // The accepted code opens the password screen on the SAME deadline (HIL-825),
+    // so the timer outlives the step it was armed for and must own nothing there.
+    const flow = setup({ onSubmit: async () => sentCode(10 * SECOND_MS) })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    flow.applyExternal({ step: 'set_password', intent: 'register' })
+
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    expect(flow.flow.get().step).toBe('set_password')
+  })
+
+  it('disarms the timer when the identifier is edited', async () => {
+    const flow = setup({ onSubmit: async () => sentCode(10 * SECOND_MS) })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    flow.setField('identifier', 'other@b.com')
+
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('dispatches the first send of the flow when the new-code button is pressed', async () => {
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockImplementation(async () => sentCode(10 * SECOND_MS))
+    const flow = setup({ onSubmit })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+    expect(flow.flow.get().step).toBe('code_expired')
+
+    await flow.renewCode()
+
+    // The step is what selects the branch below, so the action name it travels
+    // under is unchanged and no new wire string appears.
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      'resend',
+      expect.objectContaining({ step: 'code_expired' }),
+      expect.anything(),
+    )
+    // The answer is an ordinary send: the code screen is back, with a field and
+    // a countdown armed again.
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.expiresAt.get()).toBe(Date.now() + 10 * SECOND_MS)
+  })
+
+  it('re-arms the countdown of the code the button just ordered', async () => {
+    const flow = setup({ onSubmit: async () => sentCode(10 * SECOND_MS) })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+    await flow.renewCode()
+    expect(flow.flow.get().step).toBe('code')
+
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    expect(flow.flow.get().step).toBe('code_expired')
+  })
+
+  it('is a silent no-op inside the send cooldown', async () => {
+    const onSubmit = vi
+      .fn<AuthFlowOptions['onSubmit']>()
+      .mockImplementation(async () => ({
+        ok: true,
+        next: { step: 'code' as const, intent: 'register' as const },
+        resendAt: Date.now() + 30 * SECOND_MS,
+        expiresAt: Date.now() + 10 * SECOND_MS,
+      }))
+    const flow = setup({ onSubmit })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+    expect(flow.flow.get().step).toBe('code_expired')
+
+    await flow.renewCode()
+
+    // The gate belongs to the address and outlives the code: a person could
+    // otherwise spend a code, watch it die and re-take the address inside the
+    // very cooldown the gate exists to hold.
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(flow.flow.get().step).toBe('code_expired')
+  })
+
+  it('leaves the expired screen where a refusal that names a step sends it', async () => {
+    let sends = 0
+    const flow = setup({
+      onSubmit: async () => {
+        sends += 1
+
+        return sends === 1
+          ? sentCode(10 * SECOND_MS)
+          : {
+              ok: false,
+              next: { step: 'identifier' as const, intent: 'login' as const },
+              message: 'That address already has an account',
+            }
+      },
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    await flow.renewCode()
+
+    // Somebody claimed the address in those seconds: the ordinary
+    // identifier_taken refusal of a first submit, from a different screen.
+    expect(flow.flow.get()).toMatchObject({
+      step: 'identifier',
+      intent: 'login',
+    })
+    expect(flow.error.get()?.message).toBe(
+      'That address already has an account',
+    )
+  })
+
+  it('stays put on a refusal that names nowhere else', async () => {
+    let sends = 0
+    const flow = setup({
+      onSubmit: async () => {
+        sends += 1
+
+        return sends === 1
+          ? sentCode(10 * SECOND_MS)
+          : { ok: false, message: 'Too many codes for now' }
+      },
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    await flow.renewCode()
+
+    // The send cap refuses out loud without moving anyone, so the screen keeps
+    // the sentence and keeps offering the button under the gate.
+    expect(flow.flow.get().step).toBe('code_expired')
+    expect(flow.error.get()?.message).toBe('Too many codes for now')
+  })
+
+  it('returns to the code screen when the send it ordered names no step', async () => {
+    // A magic link and a recovery both answer `sent()` with a life and a gate and
+    // nothing else: where their letter lands has always been the core's to say.
+    let sends = 0
+    const flow = setup({
+      onSubmit: async () => {
+        sends += 1
+
+        return sends === 1
+          ? sentCode(10 * SECOND_MS)
+          : { ok: true, expiresAt: Date.now() + 10 * SECOND_MS }
+      },
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+    expect(flow.flow.get().step).toBe('code_expired')
+
+    await flow.renewCode()
+
+    expect(flow.flow.get().step).toBe('code')
+  })
+
+  it('lets a converge name the expired step over the wire', () => {
+    // Without the step in the list the sweep frame would be dropped as unknown,
+    // and the browser swept off the screen it had just flipped to.
+    expect(toFlowPatch('code_expired', 'register')).toEqual({
+      step: 'code_expired',
+      intent: 'register',
+    })
+  })
+
+  it('accepts a converge that names the expired step, and a local flip agrees with it', async () => {
+    const flow = setup({ onSubmit: async () => sentCode(10 * SECOND_MS) })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+
+    // The sweep's converge lands BEFORE this browser's own clock reaches zero.
+    flow.applyExternal({ step: 'code_expired', intent: 'register' })
+    expect(flow.flow.get().step).toBe('code_expired')
+
+    await vi.advanceTimersByTimeAsync(10 * SECOND_MS)
+
+    // The timer then finds a step it does not own and does nothing: which of the
+    // two arrives first stops mattering.
+    expect(flow.flow.get().step).toBe('code_expired')
   })
 })

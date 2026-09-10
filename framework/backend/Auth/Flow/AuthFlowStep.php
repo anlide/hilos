@@ -29,6 +29,9 @@ final class AuthFlowStep
     /** A one-time code: identifier confirmation, phone sign-in, recovery. */
     public const string CODE = 'code';
 
+    /** A one-time code that ran out: the field is gone and the screen offers a new code. */
+    public const string CODE_EXPIRED = 'code_expired';
+
     /** Two-step verification after a good credential and before the session upgrade. */
     public const string SECOND_FACTOR = 'second_factor';
 

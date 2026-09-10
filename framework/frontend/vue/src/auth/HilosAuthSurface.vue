@@ -163,8 +163,7 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
  */
 const CODE_MESSAGES: Record<string, string> = {
   identifier_taken: 'That address already has an account — sign in instead.',
-  reservation_expired:
-    'That registration expired. Start again from the address.',
+  reservation_expired: 'That registration expired. Ask for a new code.',
   reset_code_expired: 'That reset code has expired. Ask for a new one.',
   password_already_changed:
     'The password was already changed on another device. Sign in with the new one.',
@@ -179,14 +178,17 @@ const CODE_MESSAGES: Record<string, string> = {
 const GENERIC_ERROR = 'That did not work. Please try again.'
 
 /**
- * The two sentences the screen hard-codes in its markup. They live here because
- * the live region says them a second time, and two copies of a sentence drift.
- * The letter's line is split around the address the visible block prints in bold.
+ * The sentences the screen hard-codes in its markup. They live here because the
+ * live region says them a second time, and two copies of a sentence drift. The
+ * letter's line is split around the address the visible block prints in bold;
+ * the expired one is the SCREEN's news rather than a refusal of anything the
+ * person did, which is why the calm region is where it is said (HIL-828).
  */
 const LINK_PROMPT_MESSAGE =
   'That email already has an account. Sign in to finish linking it.'
 const LINK_SENT_LEAD = "We've sent a sign-in link to"
 const LINK_SENT_TAIL = 'Open it to continue.'
+const CODE_EXPIRED_MESSAGE = 'That code has expired.'
 
 /**
  * How the code screen says where the code has got to (HIL-826). The states
@@ -360,6 +362,9 @@ const announcedNews = computed(() => {
   const progress = sendProgress.value
   if (progress !== null && state.value.step === 'code') {
     news.push({ key: 'send_progress', text: progress.text })
+  }
+  if (state.value.step === 'code_expired') {
+    news.push({ key: 'code_expired', text: CODE_EXPIRED_MESSAGE })
   }
 
   return news
@@ -672,6 +677,12 @@ function resend(): void {
   void auth.resend()
 }
 
+// The one control of the expired screen (HIL-828). Not the re-send above: the
+// hold on the address died with the code, so this takes the address again.
+function renewCode(): void {
+  void auth.renewCode()
+}
+
 /**
  * Hand off to an icon method's ceremony.
  *
@@ -807,6 +818,9 @@ function focusStep(): void {
     identifier: identifierInput,
     consent: consentInput,
     code: codeInput,
+    // The expired screen has no field left to focus (HIL-828); its one control
+    // is the button that orders a new code.
+    code_expired: null,
     set_password: newPasswordInput,
     second_factor: codeInput,
     external: null,
@@ -1404,6 +1418,60 @@ onUnmounted(() => {
         Send a new code
       </button>
     </form>
+
+    <!-- The same screen after its countdown ran out (HIL-828). The heading and
+    the address block above do not move - the person is still doing the thing
+    they came to do - and what changes is everything under them: no field, no
+    Confirm, one line saying the code is dead and one button offering a new one.
+    Not a form: there is nothing here to submit. -->
+    <div v-else-if="state.step === 'code_expired'">
+      <div
+        class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+      >
+        <i class="bi bi-envelope text-body-secondary" aria-hidden="true" />
+        <span class="small fw-semibold flex-grow-1">{{ form.identifier }}</span>
+        <button
+          v-if="state.intent === 'register'"
+          type="button"
+          class="btn btn-sm btn-link p-0 small"
+          data-id="auth-restart"
+          @click="abandon()"
+        >
+          Not that address?
+        </button>
+      </div>
+
+      <div
+        class="alert alert-warning small py-2 mb-3"
+        data-id="auth-code-expired"
+      >
+        <i class="bi bi-clock-history me-1" aria-hidden="true" />
+        {{ CODE_EXPIRED_MESSAGE }}
+      </div>
+
+      <!-- The gate outlives the code it was armed for: it belongs to the
+      address, so a person cannot spend a code, watch it expire and re-take the
+      address inside the cooldown the gate exists to hold. -->
+      <div
+        v-if="resendIn"
+        class="small text-body-secondary text-center"
+        data-id="auth-resend-in"
+      >
+        <i class="bi bi-clock me-1" aria-hidden="true" />
+        Send a new code in {{ resendIn }}
+      </div>
+      <LoadingButton
+        v-else
+        type="button"
+        class="btn-primary w-100 mb-2"
+        :loading="pending"
+        data-id="auth-code-renew"
+        @click="renewCode()"
+      >
+        <i class="bi bi-arrow-clockwise me-1" aria-hidden="true" />
+        Send a new code
+      </LoadingButton>
+    </div>
 
     <!-- One screen for two endings (HIL-825): a recovery writes the new password
     of an account that exists, a registration CREATES the account on the address

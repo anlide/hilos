@@ -3250,12 +3250,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Rolls ONE browser's expired registration back to the identifier step (HIL-415).
+     * Moves ONE browser's expired registration onto the expired-code screen (HIL-415).
      *
-     * What an expired hold owes the person waiting on it. The step goes BACK rather than
-     * the code being refused: they are about to type a code into a registration that no
-     * longer exists, and "invalid code" would read as their mistake. The reason travels
-     * with the step so the surface can say what actually happened.
+     * What an expired hold owes the person waiting on it. They are about to type a code
+     * into a registration that no longer exists, and "invalid code" would read as their
+     * mistake - so the step is named for them rather than the code being refused, and the
+     * reason travels with it so the surface can say what actually happened.
+     *
+     * The step used to go BACK to the address field, and since HIL-828 it goes FORWARD to
+     * the screen that says the code is dead and offers a new one. Without that this
+     * converge would undo the feature inside its own first minute: the browser flips to
+     * the expired screen the moment its own countdown reaches zero, and a frame arriving
+     * seconds later on the cron rule would sweep it off that screen, button and all.
+     * Landing both on ONE state is what makes the order of the two stop mattering.
      *
      * Only the owning session is rolled back (HIL-608). The identifier may still be held
      * by another browser whose own code is perfectly good, and taking that browser off its
@@ -3293,7 +3300,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 new AuthConvergeSignalData(
                     $acceptKey,
                     $identifier,
-                    AuthFlowStep::IDENTIFIER,
+                    AuthFlowStep::CODE_EXPIRED,
                     AuthFlowIntent::REGISTER,
                     AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
                 ),

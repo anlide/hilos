@@ -90,6 +90,7 @@ const FLOW_STEPS: readonly AuthStep[] = [
   'identifier',
   'consent',
   'code',
+  'code_expired',
   'second_factor',
   'set_password',
   'external',
@@ -320,6 +321,11 @@ function submitAuthFlow(
           })
     case 'code':
       return submitCode(context, action, flow, form)
+    case 'code_expired':
+      // The expired screen sends only one thing, whatever the caller names it
+      // (HIL-828): the flow's first send again, because the code is over and
+      // with it, for a registration, the hold this address was kept under.
+      return startCodeFlow(context, flow, form)
     case 'set_password':
       // One screen, two endings (HIL-825): a recovery writes the password of an
       // account that exists, a registration CREATES the account on the address it
@@ -563,6 +569,52 @@ function submitCode(
         email: form.identifier,
         code: form.code,
       })
+}
+
+/**
+ * Dispatch the send that STARTED this flow, for a code screen whose code ran out
+ * (HIL-828).
+ *
+ * Three of its four arms are what the same flow's re-send already dispatches
+ * ({@link submitCode}); the fourth is the difference the whole leaf turns on. An
+ * email registration's re-send ({@link AUTH_ACTION_REQUEST_REGISTER_CONFIRM})
+ * begins by demanding a live hold of this browser on the address and refuses
+ * without one — and the hold died at the same instant as the code, deliberately,
+ * because an address freed under a live code or held after a dead one would both
+ * be bugs nobody could configure their way out of. So there is nothing to top up
+ * and the address is taken AGAIN: an ordinary registration on the same address,
+ * byte-identical to what the terms screen sends. Since HIL-825 that carries the
+ * address alone, so a reloaded tab holding no password can order it too.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @param flow The current flow state (the intent, kind and method that name the
+ *   send).
+ * @param form The current form values (the identifier).
+ * @returns The outcome the machine applies — the code step again, with a fresh
+ *   gate and a fresh deadline.
+ */
+function startCodeFlow(
+  context: HilosAuthContext,
+  flow: AuthFlowState,
+  form: AuthFlowForm,
+): Promise<AuthFlowSubmitOutcome> {
+  if (flow.identifierKind === 'phone') {
+    return sendPhoneCode(context, flow, form)
+  }
+  if (flow.methodKey === MAGIC_LINK_METHOD_KEY) {
+    return dispatchFlow(context, AUTH_ACTION_REQUEST_MAGIC_LINK, {
+      email: form.identifier,
+    })
+  }
+  if (flow.intent === 'recovery') {
+    return dispatchFlow(context, AUTH_ACTION_REQUEST_PASSWORD_RESET, {
+      email: form.identifier,
+    })
+  }
+
+  return dispatchFlow(context, AUTH_ACTION_REGISTER, {
+    email: form.identifier,
+  })
 }
 
 /**

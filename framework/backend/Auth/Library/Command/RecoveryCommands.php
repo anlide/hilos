@@ -101,11 +101,13 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * behind it when the second submit arrives ({@see completePasswordReset()}).
      *
      * Three answers, and the middle one is why the code screen is not a dead end: a
-     * recovery whose code is no longer live rolls the surface back to the address field
-     * with a reason of its own, while a wrong code is an inline error that leaves the
-     * person exactly where they are to try again. The order matters - a challenge that is
-     * already gone is answered before a code is judged against it, so a stale screen is
-     * never told it made a typo.
+     * recovery whose code is no longer live moves the surface to the screen that says the
+     * code expired and offers a new one (HIL-828), while a wrong code is an inline error
+     * that leaves the person exactly where they are to try again. A recovery code behaves
+     * here like every other code; the expired GRANT of the new-password screen below does
+     * not, there being no code and no code screen to stand on. The order matters - a
+     * challenge that is already gone is answered before a code is judged against it, so a
+     * stale screen is never told it made a typo.
      *
      * The grant is written for THIS address only - a session with a second tab parked on
      * another address must not have that one opened by a code proven here - and it is
@@ -133,7 +135,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
         if (!$recovery->hasLiveCode($email)) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESET_CODE_EXPIRED,
-                AuthFlowStep::IDENTIFIER,
+                AuthFlowStep::CODE_EXPIRED,
                 AuthFlowIntent::RECOVERY,
                 AuthMessages::RESET_CODE_EXPIRED,
             );

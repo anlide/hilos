@@ -28,10 +28,10 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * Two cases produce it, and the difference is entirely in the fields: a confirmed
  * registration sends {@see AuthFlowStep::DONE} with no code (the session is signed
  * in as the new account by then), and an expired reservation sends
- * {@see AuthFlowStep::IDENTIFIER} under {@see AuthFlowIntent::REGISTER} with
- * {@see AuthFlowOutcome::CODE_RESERVATION_EXPIRED}, so the surface rolls the person
- * back to the address field instead of rejecting the code they were about to type
- * with an error that would read as "wrong code".
+ * {@see AuthFlowStep::CODE_EXPIRED} under {@see AuthFlowIntent::REGISTER} with
+ * {@see AuthFlowOutcome::CODE_RESERVATION_EXPIRED}, so the surface says the code is
+ * dead and offers a new one instead of rejecting the code the person was about to
+ * type with an error that would read as "wrong code" (HIL-828).
  */
 final class AuthConvergeSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {

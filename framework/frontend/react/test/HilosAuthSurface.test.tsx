@@ -110,6 +110,66 @@ function contextAnswering(
 }
 
 /**
+ * A context whose magic-link send answers with a code screen that has a LIFE on
+ * it — the one thing the expired screen needs to exist (HIL-828). The cooldown is
+ * armed in the past, so the button rather than the countdown is what it offers.
+ *
+ * @param lifetimeMs How long the code the backend answers with is good for.
+ * @returns The context to mount with, and the dispatch log to assert on.
+ */
+function expiringLetterContext(lifetimeMs: number): {
+  context: HilosAuthContext
+  dispatched: Dispatched
+} {
+  const dispatched: Dispatched = []
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'active',
+              methods: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
+              registerable: [],
+              registrationBlock: null,
+            }
+          : {
+              ok: true,
+              resendAt: Date.now() - 1,
+              expiresAt: Date.now() + lifetimeMs,
+            }
+
+      return {
+        requestId: `req-${dispatched.length}`,
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    dispatched,
+    context: createHilosAuthContext({
+      connection,
+      scopes: new ScopeManager(),
+      actions,
+      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
+      channels: [],
+      oauthProviders: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+  }
+}
+
+/**
  * A context whose lookup answers a FREE address that cannot be registered, and
  * names why (HIL-830). Both reasons produce the same empty `registerable`, which
  * is exactly why the surface is not allowed to guess between them.
@@ -408,6 +468,75 @@ describe('HilosAuthSurface', () => {
     expect(byId('auth-identifier-hint')?.textContent).toBe(
       'No account for this, and registration is closed.',
     )
+  })
+
+  it('the code screen turns itself into the expired one when the countdown runs out', async () => {
+    vi.useFakeTimers()
+    const { context } = expiringLetterContext(10_000)
+    const { container } = render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.click(byId('auth-icon-magic-link') as Element)
+    await flush()
+    expect(byId('auth-code')).not.toBeNull()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+    await flush()
+
+    // Nobody is made to type a code that is known to be dead in order to hear
+    // that it is dead: the field and its Confirm go, and one button is left.
+    expect(byId('auth-code')).toBeNull()
+    expect(byId('auth-submit')).toBeNull()
+    expect(byId('auth-code-expired')?.textContent).toContain(
+      'That code has expired.',
+    )
+    expect(byId('auth-code-renew')).not.toBeNull()
+    // The errand has not changed, so neither has the heading (HIL-606).
+    expect(container.textContent).toContain('Check your inbox')
+    // The screen's own news, said calmly - it is not a refusal of anything the
+    // person did.
+    expect(byId('auth-live-polite')?.textContent).toContain(
+      'That code has expired.',
+    )
+    expect(byId('auth-live-assertive')?.textContent).toBe('')
+  })
+
+  it('the button on the expired screen orders the first send of the flow again', async () => {
+    vi.useFakeTimers()
+    const { context, dispatched } = expiringLetterContext(10_000)
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.click(byId('auth-icon-magic-link') as Element)
+    await flush()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+    await flush()
+
+    fireEvent.click(byId('auth-code-renew') as Element)
+    await flush()
+
+    // The send that STARTED this flow, dispatched again - and the code screen
+    // comes back with a field and a countdown of its own.
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      AUTH_ACTION_REQUEST_MAGIC_LINK,
+      AUTH_ACTION_REQUEST_MAGIC_LINK,
+    ])
+    expect(dispatched[2]?.payload).toEqual({ email: 'someone@example.com' })
+    expect(byId('auth-code')).not.toBeNull()
+    expect(byId('auth-code-expired')).toBeNull()
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

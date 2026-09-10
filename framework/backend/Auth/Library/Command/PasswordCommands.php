@@ -180,10 +180,12 @@ final class PasswordCommands extends AbstractLibraryCommands
      *
      * The resend button on the code screen (HIL-415). It is not a second registration:
      * THIS BROWSER's hold on the address is what decides whether there is anything to
-     * re-send (HIL-608), and when it is gone the surface is rolled back to the identifier
-     * step under a code of its own rather than told "no". A resend inside the cooldown
-     * sends nothing and answers with the seconds still to wait - the countdown the screen
-     * draws.
+     * re-send (HIL-608), and when it is gone the surface is sent to the screen that says
+     * the code is dead and offers a new one (HIL-828), under a code of its own rather than
+     * told "no". It is not sent BACK to the address field: the way out of a code that ran
+     * out is one button, and the address is still the one the person came with. A resend
+     * inside the cooldown sends nothing and answers with the seconds still to wait - the
+     * countdown the screen draws.
      *
      * The hold is pushed out only when a code actually went out, so a button mashed
      * inside the cooldown moves nothing. What stops the patient caller - the one that
@@ -212,7 +214,7 @@ final class PasswordCommands extends AbstractLibraryCommands
         if ($reservations->findActiveForSession($acting->sessionToken)?->identifier !== $email) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
-                AuthFlowStep::IDENTIFIER,
+                AuthFlowStep::CODE_EXPIRED,
                 AuthFlowIntent::REGISTER,
                 AuthMessages::RESERVATION_EXPIRED,
             );
@@ -264,8 +266,9 @@ final class PasswordCommands extends AbstractLibraryCommands
      *
      * Four answers, and the difference between the middle two is the whole point of the
      * design: a wrong code is an inline error that leaves the person on the code screen
-     * to try again, while a hold that ran out is not their mistake at all and rolls the
-     * surface back to the address field with a reason of its own.
+     * to try again, while a hold that ran out is not their mistake at all and moves the
+     * surface to the screen that says so and offers a new code (HIL-828), with a reason
+     * of its own.
      *
      * The hold that has to be there is THIS BROWSER's, on THIS address (HIL-608). A code
      * typed where no such hold stands proves nothing, whoever is registering the address
@@ -306,7 +309,7 @@ final class PasswordCommands extends AbstractLibraryCommands
         if ($reservations->findActiveForSession($acting->sessionToken)?->identifier !== $email) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
-                AuthFlowStep::IDENTIFIER,
+                AuthFlowStep::CODE_EXPIRED,
                 AuthFlowIntent::REGISTER,
                 AuthMessages::RESERVATION_EXPIRED,
             );
@@ -333,7 +336,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             // The truthful answer is the one an expired hold gets.
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
-                AuthFlowStep::IDENTIFIER,
+                AuthFlowStep::CODE_EXPIRED,
                 AuthFlowIntent::REGISTER,
                 AuthMessages::RESERVATION_EXPIRED,
             );

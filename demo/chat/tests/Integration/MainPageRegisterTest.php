@@ -684,6 +684,15 @@ final class MainPageRegisterTest extends IntegrationTestCase
                 'A rolled-back waiter is released, not left parked on a hold that is gone',
             );
 
+            // The frame names the expired-code screen and not the address field (HIL-828):
+            // a browser that flipped there on its own countdown is told what it already
+            // shows, instead of being swept off it a minute later, button and all.
+            $converge = $this->drainConvergeSignals()['expired-ak'] ?? null;
+            $this->assertNotNull($converge, 'The browser waiting on the hold is told');
+            $this->assertSame(AuthFlowStep::CODE_EXPIRED, $converge->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $converge->intent);
+            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $converge->code);
+
             // The address is free again: a fresh submit reserves it rather than converging.
             $this->openSession($agent, 'reopened-ak');
             $outcome = $this->register($agent, 'reopened-ak', $email);
@@ -697,11 +706,52 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * A confirm against an expired hold rolls the surface back instead of blaming the code.
+     * The button on the expired screen takes the same address again, in the same session.
+     *
+     * What the new-code button dispatches is the flow's FIRST send (HIL-828), because the
+     * hold died with the code and a re-send has nothing to top up. So the proof owed here
+     * is that a register submit from the session that just lost its hold mints a new one
+     * and a new code - and that the row it replaces cannot come back to haunt it, the
+     * insert releasing this session's standing row before writing its own.
+     *
+     * @throws HilosException When setup or register handling fails
+     */
+    public function testTakingTheAddressAgainAfterTheHoldDiedMintsANewCode(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'renew-ak');
+        $this->register($agent, 'renew-ak', $email);
+
+        $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
+
+        try {
+            $this->ageReservationOut($email);
+            $this->ageSendsOutOfTheCooldown($email, $cooldown + 1);
+
+            $outcome = $this->register($agent, 'renew-ak', $email);
+
+            $this->assertTrue($outcome->ok, 'The address is taken again rather than refused');
+            $this->assertSame(AuthFlowStep::CODE, $outcome->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
+            $this->assertNotNull($outcome->expiresAt, 'The code screen comes back with a life on it');
+            $this->assertSame($email, $this->holdOf('renew-ak')?->identifier);
+            $this->assertSame(1, $this->reservationRowCount($email), 'The dead row is replaced, not added to');
+            $this->assertSame(2, $this->sendRowCount($email), 'A second letter really goes out');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A confirm against an expired hold says the code is dead instead of blaming it.
+     *
+     * The screen the person is standing on becomes the one that offers a new code
+     * (HIL-828), rather than the address field they never asked to go back to.
      *
      * @throws HilosException When setup or confirm handling fails
      */
-    public function testConfirmOnAnExpiredReservationRollsBack(): void
+    public function testConfirmOnAnExpiredReservationMovesToTheExpiredCodeScreen(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -715,7 +765,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
             $this->assertFalse($outcome->ok);
             $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
-            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowStep::CODE_EXPIRED, $outcome->step);
             $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
             $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email));
         } finally {
@@ -936,11 +986,14 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * A resend for an address nobody holds rolls back instead of issuing a code.
+     * A resend for an address nobody holds says the code is dead instead of issuing one.
+     *
+     * There is nothing to re-send into: the hold died with the code, so the honest screen
+     * is the one that offers to take the address again (HIL-828).
      *
      * @throws HilosException When setup or resend handling fails
      */
-    public function testResendWithoutAReservationRollsBack(): void
+    public function testResendWithoutAReservationMovesToTheExpiredCodeScreen(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -951,7 +1004,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
             $this->assertFalse($outcome->ok);
             $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
-            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowStep::CODE_EXPIRED, $outcome->step);
             $this->assertNull($this->activeChallenge($email), 'No code is issued for an address nobody holds');
         } finally {
             $this->cleanUp();

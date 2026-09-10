@@ -33,7 +33,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The submitted identifier already belongs to a live account: register turns into sign-in. */
     public const string CODE_IDENTIFIER_TAKEN = 'identifier_taken';
 
-    /** The registration hold on the identifier ran out: the surface rolls back to the identifier step. */
+    /** The registration hold on the identifier ran out: the surface moves to the expired-code step. */
     public const string CODE_RESERVATION_EXPIRED = 'reservation_expired';
 
     /**
@@ -47,7 +47,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** Too many codes went to this address inside the window: the surface stays put and says so. */
     public const string CODE_SEND_CAP_REACHED = 'send_cap_reached';
 
-    /** No recovery code is live for the address any more: the surface rolls back to the identifier step. */
+    /** No recovery code is live for the address any more: the surface moves to the expired-code step. */
     public const string CODE_RESET_CODE_EXPIRED = 'reset_code_expired';
 
     /** Another session finished the recovery this one was on: the password is already the new one. */
