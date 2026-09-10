@@ -717,53 +717,43 @@ class Database
             return $sql;
         }
 
+        $positions = SqlPlaceholders::positions($sql);
+        $placeholderCount = count($positions);
+        $paramCount = count($params);
+
+        if ($placeholderCount < $paramCount) {
+            throw new DatabaseParamsException(
+                "Too many parameters provided for query: {$placeholderCount} placeholders found, {$paramCount} parameters given",
+            );
+        }
+
+        if ($placeholderCount > $paramCount) {
+            throw new DatabaseParamsException(
+                "Not enough parameters provided for query: {$placeholderCount} placeholders found, {$paramCount} parameters given",
+            );
+        }
+
         $parsedSql = '';
-        $paramIndex = 0;
-        $length = strlen($sql);
-        $inString = false;
-        $stringChar = '';
+        $copiedUpTo = 0;
 
-        for ($i = 0; $i < $length; $i++) {
-            $char = $sql[$i];
+        foreach ($positions as $paramIndex => $position) {
+            $param = $params[$paramIndex];
+            $value = $param->value;
+            $parsedSql .= substr($sql, $copiedUpTo, $position - $copiedUpTo);
 
-            // Handle string literals
-            if (($char === '"' || $char === "'") && ($i === 0 || $sql[$i - 1] !== '\\')) {
-                if (!$inString) {
-                    $inString = true;
-                    $stringChar = $char;
-                } elseif ($char === $stringChar) {
-                    $inString = false;
-                }
-                $parsedSql .= $char;
-                continue;
-            }
-
-            // Replace ? with parameter value
-            if ($char === '?' && !$inString) {
-                $param = $params[$paramIndex]
-                    ?? throw new DatabaseParamsException("Not enough parameters provided for query");
-                $value = $param->value;
-
-                // Escape value
-                if ($value === null) {
-                    $parsedSql .= DatabaseSql::SQL_NULL;
-                } elseif ($param->type->isNumeric()) {
-                    $parsedSql .= $value;
-                } else {
-                    $parsedSql .= "'" . mysqli_real_escape_string($mysqli, (string)$value) . "'";
-                }
-
-                $paramIndex++;
+            // Escape value
+            if ($value === null) {
+                $parsedSql .= DatabaseSql::SQL_NULL;
+            } elseif ($param->type->isNumeric()) {
+                $parsedSql .= $value;
             } else {
-                $parsedSql .= $char;
+                $parsedSql .= "'" . mysqli_real_escape_string($mysqli, (string)$value) . "'";
             }
+
+            $copiedUpTo = $position + 1;
         }
 
-        if ($paramIndex !== count($params)) {
-            throw new DatabaseParamsException("Too many parameters provided for query");
-        }
-
-        return $parsedSql;
+        return $parsedSql . substr($sql, $copiedUpTo);
     }
 
     /**

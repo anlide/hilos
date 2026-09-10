@@ -181,4 +181,23 @@ final class DatabaseWorkflowIntegrationTest extends FrameworkIntegrationTestCase
         Database::sql("DROP TABLE IF EXISTS `{$child}`");
         Database::sql("DROP TABLE IF EXISTS `{$parent}`");
     }
+
+    /**
+     * Asserts both parameters of a statement carrying a literal that ends with a backslash are substituted.
+     *
+     * No table is involved: what is asked is that the parameter binding reads the boundaries of that literal
+     * the way the server does, and that the text it assembles is one the server accepts.
+     *
+     * @throws DatabaseException On SQL or connection errors from the database layer.
+     */
+    #[Depends('testInsertUpdateDelete')]
+    public function testParametersOnBothSidesOfALiteralEndingWithABackslashAreSubstituted(): void
+    {
+        Database::sql("SELECT ? AS `head`, '\\\\' AS `escape_character`, ? AS `tail`", ['left-of-it', 'right-of-it']);
+
+        $row = Database::row();
+        $this->assertNotNull($row);
+        $this->assertSame('left-of-it', $row['head']);
+        $this->assertSame('right-of-it', $row['tail']);
+    }
 }
