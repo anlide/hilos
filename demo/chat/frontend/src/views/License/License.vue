@@ -1,13 +1,16 @@
 <!-- The public License page (HilosPages.LICENSE). A framework-declared static
-page; this project supplies the content. See views/About/About.vue. -->
+page; this project supplies the content — the licence prose below, and the
+build-time inventory the framework page draws under it. See views/About/About.vue. -->
 <script setup lang="ts">
-import { HilosStaticPage } from '@hilos/vue'
+import { HilosLicensePage } from '@hilos/vue'
+
+import { hilosLicenseInventory } from '../../generated/hilosLicenseInventory'
 
 defineOptions({ name: 'LicensePage' })
 </script>
 
 <template>
-  <HilosStaticPage title="License">
+  <HilosLicensePage :inventory="hilosLicenseInventory">
     <p>The Hilos framework is released under the MIT license.</p>
     <p>
       Permission is hereby granted, free of charge, to any person obtaining a
@@ -18,5 +21,5 @@ defineOptions({ name: 'LicensePage' })
     <p class="mb-0">
       The software is provided “as is”, without warranty of any kind.
     </p>
-  </HilosStaticPage>
+  </HilosLicensePage>
 </template>

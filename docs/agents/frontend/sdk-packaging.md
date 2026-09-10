@@ -151,9 +151,9 @@ its data as an input, never as a fetch from inside the page: `HilosLicensePage`
 takes the inventory as a prop, and the project passes the snapshot its own build
 produced ([build-and-docker.md](build-and-docker.md), *SSG and the public
 surface*). Each page is created by the leaf that first needs it:
-`HilosLicensePage` (not in the code yet — HIL-838), `HilosPrivacyPage` (not in
-the code yet — HIL-839), `HilosAboutPage` (not in the code yet — HIL-840),
-`HilosTermsPage` (not in the code yet — HIL-501).
+`HilosLicensePage`, `HilosPrivacyPage` (not in the code yet — HIL-839),
+`HilosAboutPage` (not in the code yet — HIL-840), `HilosTermsPage` (not in the
+code yet — HIL-501).
 
 The mechanism across both tiers is the same — slots + scoped slots + shared
 composables, no mixins — and "empty inheritance" (a one-line re-export) is the

@@ -3,5 +3,8 @@ dist/
 dist-prerender/
 package-lock.json
 
+# The license inventory snapshot is written by a generator, not by hand.
+src/generated/
+
 # Markdown docs are hand-authored to the repo's documentation style, not Prettier's.
 **/*.md

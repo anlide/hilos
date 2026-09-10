@@ -107,6 +107,16 @@ export {
 export { FocusTrap, focusableElements, focusInitial } from './dom/focusTrap.js'
 export { lockBodyScroll, unlockBodyScroll } from './dom/scrollLock.js'
 export { copyToClipboard, isClipboardAvailable } from './dom/clipboard.js'
+export { downloadTextFile } from './dom/downloadTextFile.js'
+export {
+  filterLicenseEntries,
+  type HilosLicenseEntry,
+  type HilosLicenseFilter,
+  type HilosLicenseInventory,
+  licenseFilterOptions,
+  licenseLanguageLabel,
+  renderLicenseCsv,
+} from './license/licenseInventory.js'
 export {
   PageSubscription,
   type PageSubscriptionConnection,

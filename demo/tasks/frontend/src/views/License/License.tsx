@@ -1,10 +1,13 @@
 // The public License page (HilosPages.LICENSE). A framework-declared static
-// page; this project supplies the content. See views/About/About.tsx.
-import { HilosStaticPage } from '@hilos/react'
+// page; this project supplies the content — the licence prose below, and the
+// build-time inventory the framework page draws under it. See views/About/About.tsx.
+import { HilosLicensePage } from '@hilos/react'
+
+import { hilosLicenseInventory } from '../../generated/hilosLicenseInventory'
 
 export default function License() {
   return (
-    <HilosStaticPage title="License">
+    <HilosLicensePage inventory={hilosLicenseInventory}>
       <p>The Hilos framework is released under the MIT license.</p>
       <p>
         Permission is hereby granted, free of charge, to any person obtaining a
@@ -15,6 +18,6 @@ export default function License() {
       <p className="mb-0">
         The software is provided “as is”, without warranty of any kind.
       </p>
-    </HilosStaticPage>
+    </HilosLicensePage>
   )
 }

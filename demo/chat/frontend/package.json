@@ -5,10 +5,12 @@
   "type": "module",
   "description": "Chat demo — an end project that consumes the Hilos frontend SDK (@hilos/vue).",
   "scripts": {
+    "predev": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
     "dev": "vite",
-    "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs vue",
+    "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs vue && node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
     "build": "vite build && vite build --ssr scripts/prerenderEntry.ts --outDir dist-prerender && node dist-prerender/prerenderEntry.js",
     "preview": "vite preview",
+    "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
     "check": "vue-tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

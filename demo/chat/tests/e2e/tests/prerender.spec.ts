@@ -18,6 +18,19 @@ test('a public page is prerendered with its content and title', async ({
   expect(html).toMatch(/<title>About[^<]*<\/title>/)
 })
 
+test('the license page is prerendered with the build inventory in it', async ({
+  request,
+}) => {
+  const res = await request.get('/license')
+  expect(res.status()).toBe(200)
+  const html = await res.text()
+  // The inventory is a build-time snapshot handed to the page as a prop, so the
+  // rows are in the served HTML before any JavaScript runs — and one of them is
+  // the framework itself, read from this project's own composer.lock.
+  expect(html).toContain('data-id="license-row"')
+  expect(html).toContain('anlide/hilos')
+})
+
 test('robots.txt and sitemap.xml advertise the public surface', async ({
   request,
 }) => {

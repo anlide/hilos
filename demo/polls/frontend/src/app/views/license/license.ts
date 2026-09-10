@@ -1,13 +1,16 @@
 // The public License page (HilosPages.LICENSE). A framework-declared static
-// page; this project supplies the content. See views/about/about.ts.
+// page; this project supplies the content — the licence prose below, and the
+// build-time inventory the framework page draws under it. See views/about/about.ts.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
-import { HilosStaticPage } from '@hilos/angular'
+import { HilosLicensePage } from '@hilos/angular'
+
+import { hilosLicenseInventory } from '../../../generated/hilosLicenseInventory'
 
 @Component({
   selector: 'app-license',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosStaticPage],
-  template: `<hilos-static-page title="License">
+  imports: [HilosLicensePage],
+  template: `<hilos-license-page [inventory]="inventory">
     <p>The Hilos framework is released under the MIT license.</p>
     <p>
       Permission is hereby granted, free of charge, to any person obtaining a
@@ -18,6 +21,9 @@ import { HilosStaticPage } from '@hilos/angular'
     <p class="mb-0">
       The software is provided “as is”, without warranty of any kind.
     </p>
-  </hilos-static-page>`,
+  </hilos-license-page>`,
 })
-export class License {}
+export class License {
+  /** The build-time snapshot this project's own build produced. */
+  protected readonly inventory = hilosLicenseInventory
+}

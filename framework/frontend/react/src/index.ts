@@ -40,6 +40,10 @@ export {
   HilosStaticPage,
   type HilosStaticPageProps,
 } from './HilosStaticPage.js'
+export {
+  HilosLicensePage,
+  type HilosLicensePageProps,
+} from './public/HilosLicensePage.js'
 export { LoadingButton, type LoadingButtonProps } from './LoadingButton.js'
 export {
   HilosBreadcrumb,

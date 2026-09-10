@@ -7,6 +7,12 @@ vendor/
 # Node
 node_modules/
 
+# Build-time snapshots written into a project's source tree by a framework
+# generator: the license inventory each demo's prebuild/predev/precheck hook
+# writes from that project's own lockfiles (HIL-838). Generated, never edited,
+# and never committed — the truth is the lockfile it is read from.
+demo/*/frontend/src/generated/
+
 # IDE
 .vscode/
 .idea/

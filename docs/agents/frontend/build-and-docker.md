@@ -194,6 +194,14 @@ the page for the line. Three rules follow, and every public page keeps them:
   changes when dependencies change and dependencies change by rebuilding; and it
   would have the daemon parse `composer.lock` and `package.json` per request and
   then cache it — the same snapshot, built later and in the wrong process.
+  It is written by `framework/frontend/scripts/generate-license-inventory.mjs`
+  into the project's `src/generated/hilosLicenseInventory.ts`, out of that
+  project's own two lockfiles (`composer.lock` and `frontend/package-lock.json`)
+  — and a `link:`-ed SDK package in the latter is a door rather than a row, so
+  what the SDK itself brings in is read out of
+  `framework/frontend/package-lock.json`. The hook is `prebuild`, `predev` and
+  `precheck`, so the file exists before a build, a dev start or a type check
+  reads it.
 
 What each static file contains: /about the prose, the support block and the
 modal in its closed state; /privacy the prose and the erase block, button
