@@ -41,6 +41,10 @@ export {
   type HilosStaticPageProps,
 } from './HilosStaticPage.js'
 export {
+  HilosAboutPage,
+  type HilosAboutPageProps,
+} from './public/HilosAboutPage.js'
+export {
   HilosLicensePage,
   type HilosLicensePageProps,
 } from './public/HilosLicensePage.js'

@@ -10,8 +10,9 @@ use Hilos\Pages\AbstractHilosAboutPage;
 /**
  * AboutPage - About page implementation for the chat demo.
  *
- * Static, content-only: the framework page sends no payload; the visible
- * content is the frontend view. Only the owning agent type is bound here.
+ * The framework page sends no payload; what is on screen is the frontend view -
+ * this project's prose with the framework's support block at the end of it. Only
+ * the owning agent type is bound here.
  */
 final class AboutPage extends AbstractHilosAboutPage
 {

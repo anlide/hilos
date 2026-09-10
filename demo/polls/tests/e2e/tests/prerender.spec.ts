@@ -15,6 +15,9 @@ test('a public page is prerendered with its content and title', async ({
   const html = await res.text()
   // The About prose is in the served HTML, before any JavaScript runs.
   expect(html).toContain('Hilos Polls is a demonstration')
+  // The support block is behaviour, and it is in the served HTML too: the plate
+  // and its button render on a machine with no browser, inert until the SPA mounts.
+  expect(html).toContain('Support the project')
   expect(html).toMatch(/<title>About[^<]*<\/title>/)
 })
 

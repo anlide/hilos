@@ -1,12 +1,13 @@
 // The public About page (HilosPages.ABOUT). A framework-declared static page:
-// the framework owns the route and the HilosStaticPage frame, this project owns
-// the content. The page subscribes like any other but the framework page sends
-// no payload, so nothing here depends on the socket.
-import { HilosStaticPage } from '@hilos/react'
+// the framework owns the route, the frame, the heading and the support block at
+// the end of the text (HilosAboutPage), and this project owns the content. The
+// page subscribes like any other but the framework page sends no payload, so
+// nothing here depends on the socket.
+import { HilosAboutPage } from '@hilos/react'
 
 export default function About() {
   return (
-    <HilosStaticPage title="About">
+    <HilosAboutPage>
       <p className="lead">
         Hilos Tasks is a demonstration of the Hilos framework — a real-time,
         no-refresh WebSocket application whose React view layer is driven by a
@@ -21,6 +22,6 @@ export default function About() {
         framework owns its route and layout, while this project supplies the
         text.
       </p>
-    </HilosStaticPage>
+    </HilosAboutPage>
   )
 }

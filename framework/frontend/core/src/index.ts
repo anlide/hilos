@@ -439,6 +439,13 @@ export {
   type HilosFooterLink,
 } from './routing/hilosPages.js'
 export {
+  HILOS_SUPPORT_TIERS,
+  HILOS_SUPPORT_DEFAULT_TIER,
+  HILOS_SUPPORT_REFUSAL,
+  type HilosSupportTier,
+  type HilosSupportTierKey,
+} from './public/supportTiers.js'
+export {
   resolveHilosPath,
   hilosCrumbLinks,
   hilosChildLinks,
