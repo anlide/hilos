@@ -1,13 +1,13 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
 // connection by its (page, tableKey) address. A table's controller only ever sees
-// the windows, deltas, counts, appends, and own-creates addressed to it — there is
-// no central switchboard holding every table and handing each its data
-// (table-subscription.md). The binder subscribes the connection's table_window /
-// table_viewport_delta / table_viewport_count / table_viewport_append /
-// table_viewport_own_create signals, drops everything not addressed to this table
-// or whose page is no longer current, normalizes the rows into the page scope, and
-// feeds the sink. The returned unbind drops every subscription on the view's
-// unmount.
+// the windows, deltas, counts, appends, own-creates, and announcements addressed
+// to it — there is no central switchboard holding every table and handing each its
+// data (table-subscription.md). The binder subscribes the connection's table_window
+// / table_viewport_delta / table_viewport_count / table_viewport_append /
+// table_viewport_own_create / table_viewport_announce signals, drops everything not
+// addressed to this table or whose page is no longer current, normalizes the rows
+// into the page scope, and feeds the sink. The returned unbind drops every
+// subscription on the view's unmount.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../protocol/constants.js'
@@ -176,6 +176,24 @@ export function bindTableViewport(
     },
   )
 
+  // No page scope is asked for here, as none is asked for by the count: the frame
+  // carries no row body, so there is nothing to normalize into a store.
+  const unsubscribeAnnounce = connection.on(
+    'tableViewportAnnounce',
+    (signal) => {
+      const data = signal.data
+      if (data.tableKey !== address.tableKey || data.page !== address.page) {
+        return
+      }
+      sink.ingestAnnounce(
+        data.rowKey,
+        data.placement,
+        data.totalCount,
+        data.totalExact,
+      )
+    },
+  )
+
   return () => {
     unsubscribeWindow()
     unsubscribePageWindow()
@@ -183,6 +201,7 @@ export function bindTableViewport(
     unsubscribeCount()
     unsubscribeAppend()
     unsubscribeOwnCreate()
+    unsubscribeAnnounce()
     connection.unregisterTableWindow(address.tableKey)
   }
 }

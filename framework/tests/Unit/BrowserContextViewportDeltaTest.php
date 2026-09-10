@@ -26,13 +26,16 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableRowPlacement;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -497,7 +500,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
-    public function testARowSortedAboveADescendingWindowIsOnlyCounted(): void
+    public function testARowSortedAboveADescendingWindowIsAnnounced(): void
     {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
@@ -518,8 +521,14 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
 
         // The table this leaf was written for: newest first, so the new row's place is the top
-        // of the first page. The window has room at its tail, and that is not where it belongs.
-        $this->assertSame(3, $this->nextCount()->totalCount);
+        // of the first page. The window has room at its tail, and that is not where it belongs -
+        // so the row is not put in, and the window is told it exists.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Above, $announce->placement);
+        $this->assertSame('zeta', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
+        $this->assertTrue($announce->totalExact);
+        $this->assertSame(1, $announce->pageCount);
         $this->assertFalse($viewport->hasRow('zeta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
@@ -576,7 +585,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
-    public function testARowBetweenTheBoundariesIsOnlyCounted(): void
+    public function testARowBetweenTheBoundariesIsAnnounced(): void
     {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
@@ -597,8 +606,12 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
 
         // Inserting it would move every row under it down one line, which is the one thing a
-        // window standing under someone's eyes does not do on its own.
-        $this->assertSame(3, $this->nextCount()->totalCount);
+        // window standing under someone's eyes does not do on its own. Saying nothing is no
+        // better: the window would go on showing a set it no longer matches.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Inside, $announce->placement);
+        $this->assertSame('beta', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
         $this->assertFalse($viewport->hasRow('beta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
@@ -664,6 +677,139 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $append = $this->nextAppend();
         $this->assertSame(1, $append->totalCount);
         $this->assertTrue($viewport->hasRow('alpha'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnEmptyWindowReachedBackwardsTakesNoRowOfItsOwn(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 10,
+            anchor: self::anchorAt('alpha'),
+            anchorDirection: TableAnchorDirection::Before,
+        );
+        $viewport->recordWindow([], 0, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('beta', 'Beta')], $viewport);
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // The client asked for the rows before its anchor and got none, every one of them having
+        // been deleted by then. Such a window is empty in the middle of the set, not at the end
+        // of it, so the new row can lie anywhere - and a window that cannot say where does not
+        // take the row at all.
+        $this->assertSame(1, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTheAuthorOfARowOnAnotherPageIsToldAboutIt(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 2,
+            pageIndex: 1,
+        );
+        $viewport->recordWindow(self::windowOf(['gamma', 'zeta']), 3, true, self::anchorAt('gamma'), self::anchorAt('zeta'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-1',
+            'req-1',
+        ));
+        $context->flushToSignalRouter();
+
+        // The author's own road ends where its row lands on a page it is not looking at. The ban
+        // on a second road was there to keep a row from being sent twice and to keep a row out of
+        // a filter that excludes it; an announcement sends no row, and no filtered window is ever
+        // announced to, so the author is told the same thing everyone else is.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Above, $announce->placement);
+        $this->assertSame('beta', $announce->rowKey);
+        $this->assertSame(4, $announce->totalCount);
+        $this->assertSame(2, $announce->pageCount);
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAWindowWhoseCountStoppedAtItsCeilingIsStillAnnouncedTo(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_DESC),
+            limit: 10,
+        );
+        $viewport->recordWindow(
+            self::windowOf(['gamma', 'beta']),
+            TableConstants::COUNT_CEILING,
+            true,
+            self::anchorAt('gamma'),
+            self::anchorAt('beta'),
+        );
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The count path goes silent past the ceiling because one more row makes "at least 500"
+        // no truer. This one is not about the number: a row the window is not showing exists
+        // whatever the pager can say, so the word goes out with the ceiling and no page count.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Above, $announce->placement);
+        $this->assertSame(TableConstants::COUNT_CEILING, $announce->totalCount);
+        $this->assertFalse($announce->totalExact);
+        $this->assertNull($announce->pageCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAnAnnouncedRowIsNotOneTheWindowRemembers(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 10,
+        );
+        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, true, self::anchorAt('alpha'), self::anchorAt('gamma'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+            ],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+        $this->assertSame(TableRowPlacement::Inside, $this->nextAnnounce()->placement);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta II']));
+        $context->flushToSignalRouter();
+
+        // Announcing a row puts nothing into the window: it holds what the connection has been
+        // shown, and this row was not. So the next edit of it is an edit of a row this window
+        // never had, and nothing follows from it.
+        $this->assertFalse($viewport->hasRow('beta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -996,6 +1142,24 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
         $this->assertInstanceOf(TableViewportAppendDTO::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
+     * Asserts the next queued signal is an addressed table viewport announcement and returns it.
+     *
+     * @return TableViewportAnnounceDTO The announce payload
+     */
+    private function nextAnnounce(): TableViewportAnnounceDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_ANNOUNCE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportAnnounceDTO::class, $signal->data->data);
 
         return $signal->data->data;
     }

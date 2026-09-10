@@ -10,15 +10,16 @@ namespace Hilos\Core\Table;
  * This is the whole answer to "may this row arrive on its own": a window is only left standing
  * by a row that lands at its tail with room to hold it, so Tail is the one outcome delivered as
  * a row. The other three say the set moved under the window without any of the shown rows
- * moving, and today all three travel the same way, as a count.
+ * moving.
  *
- * They are told apart here anyway. The frame that shows the difference to a person — the strip
- * that announces rows the window is not showing — belongs to the next leaf, and it takes this
- * decision made rather than making it again over the same boundaries.
+ * They part ways after that. Above and Inside are announced to the window — the row is one it
+ * cannot show and one it would be wrong to stay silent about, since the window would otherwise
+ * drift away from the set with only a reload telling the truth. Below is a count and nothing
+ * more: a row on a later page was never shown and is not missing from anything.
  *
- * The cases are backed by strings for that same reason: the doctrine already names above and
- * inside as the two sides of that future announcement, so each case is worth a name that
- * survives leaving the server.
+ * The cases are backed by strings for that same reason: above and inside are the two sides of
+ * the announcement and leave the server under those names, so each case is worth a name that
+ * survives the trip.
  */
 enum TableRowPlacement: string
 {

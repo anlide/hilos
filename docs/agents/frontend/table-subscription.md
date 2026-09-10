@@ -597,7 +597,7 @@ an address does not:
 | opening each of a page's windows as it is subscribed | `framework/backend/Core/Browser/Context/BrowserContext.php` (`subscribeSnapshot`, `subscribeTableWindow`, `buildTableWindow`) |
 | what the first window of a table is | `framework/backend/Core/Table/Definition/TableDefinition.php` (`windowSize`, `defaultSort`) |
 | the windows a tab is holding, and the frame that reports them | `framework/frontend/core/src/connection/HilosConnection.ts`, `framework/frontend/core/src/subscription/PageSubscription.ts` |
-| judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportAppend`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
+| judging a mutation against a window, and emitting the live frames | `framework/backend/Core/Browser/Context/BrowserContext.php` (`viewportPlacement`, `tryEmitViewportArrival`, `emitViewportAppend`, `emitViewportAnnounce`, `viewportTotalAfterMutation`, `rowDeltaForMutation`) |
 | placing one row against a window boundary, in the table's own key names | `framework/backend/Core/Table/Definition/ViewportTable.php` (`placeRowAgainst`) |
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |

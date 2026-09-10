@@ -207,6 +207,34 @@ export type TableViewportCountSignalData = z.infer<
 >
 
 /**
+ * Payload of the framework table viewport announcement
+ * (`type: 'table_viewport_announce'`, PHP `TableViewportAnnounceDTO`): word that a
+ * row was created which this window cannot show, and where it fell — `above` the
+ * window or `inside` it. The row body does not travel; `rowKey` does, so the same
+ * row announced twice is counted once. The counts ride along because an
+ * announcement is also a count.
+ *
+ * `placement` names only the two places a window cannot show. A tail row arrives as
+ * itself and a row below the window is a count, so neither is announceable, and a
+ * frame naming one of them is refused rather than counted.
+ *
+ * `pageCount` is absent when `totalExact` is false, exactly as on the count signal.
+ */
+export const tableViewportAnnounceSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  rowKey: z.string(),
+  placement: z.enum(['above', 'inside']),
+  totalCount: z.number().int(),
+  totalExact: z.boolean(),
+  pageCount: z.number().int().optional(),
+})
+
+export type TableViewportAnnounceSignalData = z.infer<
+  typeof tableViewportAnnounceSignalDataSchema
+>
+
+/**
  * Payload of the framework table viewport append (`type: 'table_viewport_append'`,
  * PHP `TableViewportAppendDTO`): the addressed live row to add at the tail of one
  * table's window, plus the new counts. Sent only when the window is the last page

@@ -362,6 +362,32 @@ describe('parseSignal', () => {
     }
   })
 
+  it('parses a table_viewport_announce frame', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_announce","data":{"page":"p","tableKey":"t","rowKey":"x","placement":"above","totalCount":4,"totalExact":true,"pageCount":1}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportAnnounce') {
+      expect(result.signal.data).toMatchObject({
+        rowKey: 'x',
+        placement: 'above',
+        totalCount: 4,
+        totalExact: true,
+        pageCount: 1,
+      })
+    }
+  })
+
+  it('rejects a table_viewport_announce frame naming a place the window can show', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_announce","data":{"page":"p","tableKey":"t","rowKey":"x","placement":"tail","totalCount":4,"totalExact":true,"pageCount":1}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure.kind).toBe('invalid-signal-data')
+    }
+  })
+
   it('parses a table_viewport_count frame that carries no page count', () => {
     const result = parseSignal(
       '{"type":"table_viewport_count","data":{"page":"p","tableKey":"t","totalCount":500,"totalExact":false}}',

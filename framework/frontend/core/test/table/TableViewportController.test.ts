@@ -719,6 +719,82 @@ describe('TableViewportController', () => {
     expect(controller.pendingCount.get()).toBe(0)
   })
 
+  it('counts an announced row under its place and takes its counts', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestAnnounce('b', 'above', 2, true)
+    controller.ingestAnnounce('c', 'inside', 3, true)
+
+    expect(controller.announced.get()).toEqual({
+      above: 1,
+      inside: 1,
+      total: 2,
+    })
+    expect(controller.totalCount.get()).toBe(3)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('counts a row announced twice once, wherever the repeat places it', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestAnnounce('b', 'above', 2, true)
+    controller.ingestAnnounce('b', 'above', 2, true)
+    controller.ingestAnnounce('b', 'inside', 2, true)
+
+    expect(controller.announced.get()).toEqual({
+      above: 1,
+      inside: 0,
+      total: 1,
+    })
+  })
+
+  it('forgets what was announced when any window arrives', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestAnnounce('b', 'above', 2, true)
+
+    // The window nobody asked for: a refresh, or a re-subscribe after a broken socket.
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+
+    expect(controller.announced.get()).toEqual({
+      above: 0,
+      inside: 0,
+      total: 0,
+    })
+  })
+
+  it('shows what was announced by asking for the window again at the same address', () => {
+    const { controller, sent, open } = makeController()
+    // Three pages of ten, so the page the reader is standing on is one it can stand on.
+    open([{ rowKey: 'a', slots: {} }], 25, true, null, null)
+    controller.setPage(2)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'gone',
+    })
+    controller.ingestAnnounce('b', 'above', 26, true)
+    const before = sent.length
+
+    controller.show()
+
+    expect(controller.announced.get().total).toBe(0)
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(sent).toHaveLength(before + 1)
+    expect(sent[sent.length - 1]?.pageIndex).toBe(2)
+  })
+
   it('appends a live tail row at once and bumps the total', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)

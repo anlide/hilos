@@ -38,6 +38,7 @@ import {
   type ProjectSignalSchemas,
   type ProtectedModeSignal,
   type SessionRotateSignal,
+  type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
   type TableViewportOwnCreateSignal,
   type TableViewportCountSignal,
@@ -219,6 +220,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableViewportAppend: TableViewportAppendSignal
   /** The receiver's own new row (`table_viewport_own_create`), already placed at its index. */
   tableViewportOwnCreate: TableViewportOwnCreateSignal
+  /** Word of a created row the window cannot show (`table_viewport_announce`): its key and its place. */
+  tableViewportAnnounce: TableViewportAnnounceSignal
   /** A signal the core has no concrete schema for; tolerated and observable. */
   unknownSignal: UnknownSignal
   /** A frame that violated the envelope contract; reported, never fatal. */
@@ -899,6 +902,9 @@ export class HilosConnection {
         break
       case 'tableViewportOwnCreate':
         this.emitter.emit('tableViewportOwnCreate', signal)
+        break
+      case 'tableViewportAnnounce':
+        this.emitter.emit('tableViewportAnnounce', signal)
         break
       case 'unknown':
         this.emitter.emit('unknownSignal', signal)

@@ -14,9 +14,12 @@
 // from the next page). Two live signals bypass the pending gate
 // because they disrupt nothing: table_viewport_count updates the total/page count
 // (navigation metadata), and table_viewport_append adds a row at the tail when the
-// window is the last page with room. An explicit window change discards pending
-// instead, since the new window the server returns is authoritative. The
-// controller owns no rendering and no DOM.
+// window is the last page with room. A third accumulates without waiting on
+// apply(): table_viewport_announce is word of a created row the window cannot show,
+// and it is counted per place rather than queued — there is no row to apply, and
+// the only way to see it is show(), which asks for the window again. An explicit
+// window change discards pending and announced alike, since the new window the
+// server returns is authoritative. The controller owns no rendering and no DOM.
 
 import {
   type TableAnchor,
@@ -159,6 +162,22 @@ type LiveViewportDelta = Extract<
   { kind: 'row_updated' | 'row_moved' | 'row_removed' }
 >
 
+/** The place of an announced row against the window: the two a window cannot show. */
+export type TableAnnouncePlacement = 'above' | 'inside'
+
+/**
+ * How many created rows this window has been told about and cannot show, by place.
+ *
+ * `total` is summed here rather than by each view because three views adding two
+ * numbers is three chances to add them differently, and the strip that reads it is
+ * drawn once per framework.
+ */
+export interface TableViewportAnnounced {
+  readonly above: number
+  readonly inside: number
+  readonly total: number
+}
+
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
 export interface TableViewportRow<R> {
   readonly rowKey: string
@@ -215,6 +234,12 @@ export interface TableWindowSink {
     totalCount: number,
     totalExact: boolean,
     requestId?: string | null,
+  ): void
+  ingestAnnounce(
+    rowKey: string,
+    placement: TableAnnouncePlacement,
+    totalCount: number,
+    totalExact: boolean,
   ): void
 }
 
@@ -316,6 +341,13 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly pendingCountSignal = createSignal(0)
 
+  /** Counts of the rows announced to this window, by place; rebuilt from the two sets below. */
+  private readonly announcedSignal = createSignal<TableViewportAnnounced>({
+    above: 0,
+    inside: 0,
+    total: 0,
+  })
+
   /** Request id of the last own-create ingested, or null when it was not tracked. */
   private readonly ownCreateRequestIdSignal = createSignal<string | null>(null)
 
@@ -357,6 +389,18 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Pending removals by row key (value is the reason) — become placeholders on apply(). */
   private readonly pendingRemoved = new Map<string, string>()
+
+  /**
+   * Keys of the rows announced above this window, and of those announced inside it.
+   *
+   * Keys rather than a running number, because the same row can be announced twice — the
+   * frame is sent per foreign write and nothing recalls one — and a person told twice about
+   * one row would be told wrong. A key lands in one set only: the place it was first
+   * announced at is the place it keeps until a window arrives and settles everything.
+   */
+  private readonly announcedAbove = new Set<string>()
+
+  private readonly announcedInside = new Set<string>()
 
   /** Per-row pending kind ('move' | 'remove') driving the row marking; rebuilt on every pending change. */
   private readonly pendingKindSignal = createSignal<
@@ -403,6 +447,15 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
+
+  /**
+   * Counts of the created rows this window has been told about and cannot show.
+   *
+   * The two places are kept apart because they are two different things to say — a row
+   * above the window is one an earlier page now holds, a row inside it is one between rows
+   * on the screen — and what the strip says about each is the view's to decide.
+   */
+  readonly announced: ReadonlySignal<TableViewportAnnounced>
 
   /** False until the first window has been ingested — the view shows "loading" rather than "empty". */
   readonly loaded: ReadonlySignal<boolean>
@@ -462,6 +515,7 @@ export class TableViewportController<R> implements TableWindowSink {
         : this.pageSignal.get() < pageCount - 1
     })
     this.pendingCount = this.pendingCountSignal
+    this.announced = this.announcedSignal
     this.loaded = this.loadedSignal
     const declaration = options.frame ?? null
     const filterViews = computedSignal<readonly HilosTableFilterView[]>(() => {
@@ -624,6 +678,19 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   refresh(): void {
     this.send()
+  }
+
+  /**
+   * Show what the window has been told about but cannot show: ask for the window again.
+   *
+   * The press behind the announcement strip, and deliberately nothing of its own — this is
+   * the same window change a filter, an order or a page turn makes, at the same address. So
+   * the reader keeps the place it was standing at, and what comes back is exactly what a
+   * reload would have given: pending, placeholders, highlights, marks and the announcements
+   * themselves all go, and the server's answer is the whole truth again.
+   */
+  show(): void {
+    this.changeWindow()
   }
 
   /**
@@ -875,6 +942,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.loadedSignal.set(true)
     this.clearHighlights()
     this.clearPending()
+    this.clearAnnounced()
     // A window also arrives where nobody changed one — a refresh a page asked for,
     // a re-subscribe after a broken socket — and there the marks stay: the raw keys
     // are narrowed to the rows that came, and the condition is untouched, being about
@@ -942,6 +1010,41 @@ export class TableViewportController<R> implements TableWindowSink {
   ingestCount(totalCount: number, totalExact: boolean): void {
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+  }
+
+  /**
+   * Ingest word of a created row this window cannot show
+   * (`table_viewport_announce`): count it under its place and take the counts.
+   *
+   * The counts are taken the way {@link ingestCount} takes them, because that is what
+   * they are — the announcement carries the same total shift the count would have. What
+   * is new is the key: a row already announced under either place is counted once, so a
+   * repeat of the frame moves nothing.
+   *
+   * Nothing is shown by this. The row has no body here and never enters the window; the
+   * only way to see it is {@link show}, which asks the server for the window again.
+   *
+   * @param rowKey Key of the created row the window cannot show.
+   * @param placement Where the row falls against the window — above it or inside it.
+   * @param totalCount Total rows matching the filter.
+   * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
+   */
+  ingestAnnounce(
+    rowKey: string,
+    placement: TableAnnouncePlacement,
+    totalCount: number,
+    totalExact: boolean,
+  ): void {
+    this.ingestCount(totalCount, totalExact)
+    if (this.announcedAbove.has(rowKey) || this.announcedInside.has(rowKey)) {
+      return
+    }
+    if (placement === 'above') {
+      this.announcedAbove.add(rowKey)
+    } else {
+      this.announcedInside.add(rowKey)
+    }
+    this.refreshAnnouncedSignal()
   }
 
   /**
@@ -1502,8 +1605,32 @@ export class TableViewportController<R> implements TableWindowSink {
     this.placeholderKeysSignal.set(new Set())
     this.clearHighlights()
     this.clearPending()
+    this.clearAnnounced()
     this.clearSelection()
     this.send()
+  }
+
+  /**
+   * Forget everything announced: a window has arrived, and it holds the truth.
+   *
+   * Called from both places a window comes from, because the two are not the same event.
+   * A window CHANGE is a press, and the announcements go with the press; a window that
+   * simply ARRIVES — a refresh the page asked for, a re-subscribe after a broken socket —
+   * was announced to nobody, and leaving its counts standing would leave a strip on the
+   * screen naming rows the reader is already looking at.
+   */
+  private clearAnnounced(): void {
+    this.announcedAbove.clear()
+    this.announcedInside.clear()
+    this.refreshAnnouncedSignal()
+  }
+
+  private refreshAnnouncedSignal(): void {
+    this.announcedSignal.set({
+      above: this.announcedAbove.size,
+      inside: this.announcedInside.size,
+      total: this.announcedAbove.size + this.announcedInside.size,
+    })
   }
 
   private clearPending(): void {

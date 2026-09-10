@@ -96,6 +96,9 @@ final class SignalTypeConstants
     /** @var string Table viewport own-create signal type (server-to-client live placed insert of the author's own row) */
     public const string TABLE_VIEWPORT_OWN_CREATE = 'table_viewport_own_create';
 
+    /** @var string Table viewport announce signal type (server-to-client live word of a created row the window cannot show) */
+    public const string TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 

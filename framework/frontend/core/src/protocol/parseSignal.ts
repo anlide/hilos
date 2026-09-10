@@ -11,6 +11,7 @@ import {
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_SESSION_ROTATE,
+  SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
   SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE,
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
@@ -25,6 +26,7 @@ import {
   tableWindowSignalDataSchema,
   tableViewportDeltaSignalDataSchema,
   tableViewportCountSignalDataSchema,
+  tableViewportAnnounceSignalDataSchema,
   tableViewportAppendSignalDataSchema,
   tableViewportOwnCreateSignalDataSchema,
   sessionRotateSignalDataSchema,
@@ -32,6 +34,7 @@ import {
   type TableWindowSignalData,
   type TableViewportDeltaSignalData,
   type TableViewportCountSignalData,
+  type TableViewportAnnounceSignalData,
   type TableViewportAppendSignalData,
   type TableViewportOwnCreateSignalData,
 } from './envelope.js'
@@ -122,6 +125,11 @@ export type ParsedSignal =
       data: TableViewportOwnCreateSignalData
       envelope: SignalEnvelope
     }
+  | {
+      kind: 'tableViewportAnnounce'
+      data: TableViewportAnnounceSignalData
+      envelope: SignalEnvelope
+    }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
@@ -156,6 +164,10 @@ export type TableViewportAppendSignal = Extract<
 export type TableViewportOwnCreateSignal = Extract<
   ParsedSignal,
   { kind: 'tableViewportOwnCreate' }
+>
+export type TableViewportAnnounceSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableViewportAnnounce' }
 >
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
@@ -440,6 +452,31 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableViewportCount',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE: {
+      const data = tableViewportAnnounceSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableViewportAnnounce',
           data: data.data,
           envelope: envelope.data,
         },

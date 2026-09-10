@@ -70,6 +70,8 @@ export {
   type TableViewportControllerOptions,
   type TableViewportRow,
   type TableViewportDelta,
+  type TableAnnouncePlacement,
+  type TableViewportAnnounced,
 } from './table/TableViewportController.js'
 export {
   type HilosTableColumn,

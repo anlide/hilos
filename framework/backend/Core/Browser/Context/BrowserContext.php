@@ -61,6 +61,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
@@ -2009,9 +2010,10 @@ abstract class BrowserContext
      *
      * A change yields one or two addressed signals. A create whose row belongs at the tail of
      * this window is appended live (table_viewport_append, counts included) and nothing else is
-     * sent. Otherwise a live table_viewport_count carries any total shift (navigation metadata
-     * the frontend applies at once), and a pending table_viewport_delta carries an in-window row
-     * edit or removal.
+     * sent; a create whose row belongs above the window or inside it is announced live
+     * (table_viewport_announce, the same counts) and nothing else is sent either. Otherwise a
+     * live table_viewport_count carries any total shift (navigation metadata the frontend applies
+     * at once), and a pending table_viewport_delta carries an in-window row edit or removal.
      *
      * The originator is distinguished here: the delta is tagged `own` when the
      * grouped change's origin equals this receiver's accept key, so its own edit
@@ -2021,10 +2023,14 @@ abstract class BrowserContext
      * into one grouped change whose origin is the later writer's, so exactly one
      * author gets `own` and the loser gates against the winning value.
      *
-     * The author of a CREATE takes one road and only one: its own, placed where the
-     * live sort puts it. The tail append is deliberately out of reach there — reached
-     * as a fallback it would send the same row a second time when the placed insert
-     * succeeded, and show a row the author's filter excludes when it did not.
+     * The author of a CREATE takes its own road first: the row placed where the live sort puts
+     * it. Failing that, it falls through to the same arrival road as everyone else, and both
+     * dangers that once kept it out are gone — a succeeded placed insert ends the judging with
+     * its own return, so the row cannot be sent twice, and a row outside the author's filter is
+     * turned back by the classifier itself, a window with a filter map being one whose place
+     * cannot be read. What reaches the author that way is an announcement rather than a row: the
+     * one thing the failure of its own road means, with no filter in play, is that its row landed
+     * on another page.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
@@ -2077,7 +2083,9 @@ abstract class BrowserContext
             )) {
                 return;
             }
-        } elseif ($this->tryEmitViewportAppend($table, $viewport, $mutation, $acceptKey, $page, $browserKey)) {
+        }
+
+        if ($this->tryEmitViewportArrival($table, $viewport, $mutation, $acceptKey, $page, $browserKey)) {
             return;
         }
 
@@ -2097,8 +2105,9 @@ abstract class BrowserContext
      * the window is re-selected with the live filter, search, sort and page
      * ({@see self::viewportQuery()} builds the very query the window was built from), and
      * the row is looked up among the keys that come back. Missing from them means the row
-     * belongs to another page or falls outside the filter, and then this window gets only
-     * a count — announcing a row it cannot show is HIL-794's job, not this one's.
+     * belongs to another page or falls outside the filter, and then the author goes on to the
+     * road every other window takes ({@see self::tryEmitViewportArrival()}), which announces the
+     * row to it or leaves it with a count.
      *
      * The whole-window re-select is the expensive road, taken because the event is one
      * person's single press rather than a stream of foreign writes, and it stays: the
@@ -2200,18 +2209,23 @@ abstract class BrowserContext
     }
 
     /**
-     * Appends a created row to the tail of a window it belongs at, or returns false.
+     * Sends a created row to one window, as the row itself or as word of it, or returns false.
      *
-     * The frozen-viewport rule: a new row arrives on its own only where its arrival shifts
-     * nothing already shown, which is the tail of a window that reaches the end of the set and
-     * has a free slot — {@see self::viewportPlacement()} is what decides that, and the tail is
-     * the one of its four answers this path serves. The append carries the new total and page
-     * count, so no separate count signal is sent. Every other placement, and every window whose
-     * place cannot be read at all, falls through to the count path.
+     * This is the one place a foreign create is judged against one window, and it asks the
+     * classifier ({@see self::viewportPlacement()}) exactly once. Five answers come back and each
+     * has its road:
      *
-     * The row is delivered whatever the count says. A window whose total has stopped at its
-     * ceiling still gets its new row; what it does not get is a page count, and its total
-     * travels as the ceiling with the word that it is not exact.
+     * - the tail of a window that reaches the end of the set and has a free slot: the row arrives
+     *   on its own ({@see self::emitViewportAppend()}), because its arrival shifts nothing shown;
+     * - above the window, or between two rows it is showing: the row is announced and not sent
+     *   ({@see self::emitViewportAnnounce()}) - putting it in would shift everything below it,
+     *   and saying nothing would let the window drift away from the set unnoticed;
+     * - below the window, and a window whose place cannot be read at all: nothing here, and the
+     *   count path takes it as it always did. What such a window is missing is a number, not a
+     *   row: a row on a later page was never shown and never will be until the page is turned.
+     *
+     * Both roads carry the new total and page count themselves, so no separate count signal
+     * follows either of them.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
@@ -2219,10 +2233,10 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
-     * @return bool Whether the row was appended (and no further signal is needed)
+     * @return bool Whether the row was sent or announced (and no further signal is needed)
      * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
      */
-    private function tryEmitViewportAppend(
+    private function tryEmitViewportArrival(
         ViewportTable $table,
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
@@ -2238,10 +2252,50 @@ abstract class BrowserContext
         }
         $query = $this->viewportQuery($viewport);
         $placement = $this->viewportPlacement($table, $viewport, $mutation, $query);
-        if ($placement !== TableRowPlacement::Tail) {
-            return false;
+        if ($placement === TableRowPlacement::Tail) {
+            $this->emitViewportAppend($table, $viewport, $mutation, $query, $acceptKey, $page, $browserKey);
+
+            return true;
+        }
+        if ($placement === TableRowPlacement::Above || $placement === TableRowPlacement::Inside) {
+            $this->emitViewportAnnounce($viewport, $mutation, $placement, $acceptKey, $page, $browserKey);
+
+            return true;
         }
 
+        return false;
+    }
+
+    /**
+     * Appends a created row to the tail of the window it belongs at.
+     *
+     * The frozen-viewport rule: a new row arrives on its own only where its arrival shifts
+     * nothing already shown, which is the tail of a window that reaches the end of the set and
+     * has a free slot. That the window is such a one is settled before this is called; the query
+     * comes in as an argument for the same reason, the caller having built it to ask.
+     *
+     * The row is delivered whatever the count says. A window whose total has stopped at its
+     * ceiling still gets its new row; what it does not get is a page count, and its total
+     * travels as the ceiling with the word that it is not exact.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param TableQueryDTO $query Query this window was served by
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
+     */
+    private function emitViewportAppend(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        TableQueryDTO $query,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
         $counted = $this->countedTotal($viewport, $viewport->totalCount() + 1);
         $totalCount = $counted[TableConstants::RESULT_KEY_TOTAL_COUNT];
         $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
@@ -2261,8 +2315,59 @@ abstract class BrowserContext
             ),
             $acceptKey,
         );
+    }
 
-        return true;
+    /**
+     * Announces a created row the window cannot show, without sending it.
+     *
+     * The window is told that the set grew under it and where the new row fell - above it or
+     * between the rows it holds - and that is all: the key travels so the same row announced
+     * twice counts once, the row body does not travel at all. Nothing is written into the
+     * window's memory either, an announced row not being part of it; the next edit of that row
+     * is therefore a change to a row this window never had, and no frame follows from it.
+     *
+     * The table is not asked anything here - no row for the wire, no anchor. This runs on every
+     * foreign create in every window of every connection, and it makes no request of the source.
+     *
+     * The count arithmetic is the append's, and it is legitimate for the append's reason: a
+     * window with a filter map never reaches this road, the classifier answering it "cannot say",
+     * so with no filter one create is one more row in the set. A window whose count stopped at
+     * its ceiling is announced to all the same - the early return the count path takes on an
+     * inexact total is no model here, that one being about a number where this is about a row.
+     *
+     * @param TableViewportSubscription $viewport Connection's window; its total is updated in place
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param TableRowPlacement $placement Where the row falls against the window, above it or inside it
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     */
+    private function emitViewportAnnounce(
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        TableRowPlacement $placement,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
+        $counted = $this->countedTotal($viewport, $viewport->totalCount() + 1);
+        $totalCount = $counted[TableConstants::RESULT_KEY_TOTAL_COUNT];
+        $totalExact = $counted[TableConstants::RESULT_KEY_TOTAL_EXACT];
+        $viewport->recordTotal($totalCount, $totalExact);
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_VIEWPORT_ANNOUNCE,
+            new TableViewportAnnounceDTO(
+                $page,
+                $browserKey,
+                (string) $mutation->rowKey,
+                $placement,
+                $totalCount,
+                $totalExact,
+                $this->pageCount($totalCount, $viewport->limit, $totalExact),
+            ),
+            $acceptKey,
+        );
     }
 
     /**
@@ -2305,9 +2410,13 @@ abstract class BrowserContext
         $firstAnchor = $viewport->firstAnchor();
         $lastAnchor = $viewport->lastAnchor();
         if ($firstAnchor === null || $lastAnchor === null) {
-            // An empty window shifts nothing by definition, and it reaches the end of the set
-            // by holding all of it, so the first row of the set arrives on its own.
-            return TableRowPlacement::Tail;
+            // An empty window shifts nothing by definition, but not every empty window holds the
+            // end of the set: one that arrived at emptiness backwards - the client asked for the
+            // rows before its anchor and they had all been deleted by then - is holding a hole in
+            // the middle, and {@see TableViewportSubscription::reachesEnd()} says so by refusing
+            // any anchor direction but After. Its new row can lie anywhere in the set, so this
+            // window cannot say where, and a place it cannot read is not a place at its tail.
+            return $this->viewportIsLastPageWithRoom($viewport) ? TableRowPlacement::Tail : null;
         }
 
         $againstFirst = $table->placeRowAgainst($row, $firstAnchor, $query);

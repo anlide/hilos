@@ -11,11 +11,13 @@ import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import {
+  type TableAnnouncePlacement,
   type TableSortOrder,
   type TableViewportDelta,
   type TableWindowSink,
 } from '../../src/table/TableViewportController.js'
 import {
+  type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
   type TableViewportCountSignal,
   type TableViewportOwnCreateSignal,
@@ -24,7 +26,7 @@ import {
   type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting the five table signals, with real unsubscribe. */
+/** A connection double emitting the six table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
@@ -32,6 +34,9 @@ function fakeConnection() {
   const appendListeners = new Set<(signal: TableViewportAppendSignal) => void>()
   const ownCreateListeners = new Set<
     (signal: TableViewportOwnCreateSignal) => void
+  >()
+  const announceListeners = new Set<
+    (signal: TableViewportAnnounceSignal) => void
   >()
   const projectListeners = new Set<(signal: ProjectSignal) => void>()
   const registered = new Map<string, TableWindowDescriptorSource>()
@@ -77,6 +82,14 @@ function fakeConnection() {
           ownCreateListeners.add(typed)
 
           return () => ownCreateListeners.delete(typed)
+        }
+        case 'tableViewportAnnounce': {
+          const typed = listener as unknown as (
+            signal: TableViewportAnnounceSignal,
+          ) => void
+          announceListeners.add(typed)
+
+          return () => announceListeners.delete(typed)
         }
         default: {
           const typed = listener as unknown as (
@@ -130,10 +143,15 @@ function fakeConnection() {
         listener({ data } as unknown as TableViewportOwnCreateSignal)
       }
     },
+    emitAnnounce(data: TableViewportAnnounceSignal['data']): void {
+      for (const listener of announceListeners) {
+        listener({ data } as unknown as TableViewportAnnounceSignal)
+      }
+    },
   }
 }
 
-/** A controller double recording the windows, deltas, counts, appends and own creates fed to it. */
+/** A controller double recording the windows, deltas, counts, appends, own creates and announcements fed to it. */
 function fakeSink(): TableWindowSink & {
   windows: Array<{
     rows: readonly TableRow[]
@@ -153,6 +171,12 @@ function fakeSink(): TableWindowSink & {
     totalCount: number
     totalExact: boolean
     requestId?: string | null
+  }>
+  announcements: Array<{
+    rowKey: string
+    placement: TableAnnouncePlacement
+    totalCount: number
+    totalExact: boolean
   }>
 } {
   const windows: Array<{
@@ -178,6 +202,12 @@ function fakeSink(): TableWindowSink & {
     totalExact: boolean
     requestId?: string | null
   }> = []
+  const announcements: Array<{
+    rowKey: string
+    placement: TableAnnouncePlacement
+    totalCount: number
+    totalExact: boolean
+  }> = []
 
   return {
     windows,
@@ -185,6 +215,7 @@ function fakeSink(): TableWindowSink & {
     counts,
     appends,
     ownCreates,
+    announcements,
     ingestWindow(
       rows,
       totalCount,
@@ -234,6 +265,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestOwnCreate(row, position, totalCount, totalExact, requestId): void {
       ownCreates.push({ row, position, totalCount, totalExact, requestId })
+    },
+    ingestAnnounce(rowKey, placement, totalCount, totalExact): void {
+      announcements.push({ rowKey, placement, totalCount, totalExact })
     },
   }
 }
@@ -651,6 +685,78 @@ describe('bindTableViewport', () => {
     })
 
     expect(sink.counts).toEqual([{ totalCount: 9, totalExact: true }])
+  })
+
+  it('routes an announcement addressed to the table, dropping other tables', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitAnnounce({
+      page: 'main',
+      tableKey: 'other',
+      rowKey: 'x',
+      placement: 'above',
+      totalCount: 9,
+      totalExact: true,
+      pageCount: 1,
+    })
+    connection.emitAnnounce({
+      page: 'main',
+      tableKey: 'settings',
+      rowKey: 'x',
+      placement: 'above',
+      totalCount: 9,
+      totalExact: true,
+      pageCount: 1,
+    })
+
+    expect(sink.announcements).toEqual([
+      { rowKey: 'x', placement: 'above', totalCount: 9, totalExact: true },
+    ])
+  })
+
+  it('drops an announcement addressed to another page', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitAnnounce({
+      page: 'other',
+      tableKey: 'settings',
+      rowKey: 'x',
+      placement: 'inside',
+      totalCount: 9,
+      totalExact: true,
+      pageCount: 1,
+    })
+
+    expect(sink.announcements).toEqual([])
+  })
+
+  it('stops routing announcements after unbind', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    const unbind = bind(connection, scopes, sink)
+
+    unbind()
+    connection.emitAnnounce({
+      page: 'main',
+      tableKey: 'settings',
+      rowKey: 'x',
+      placement: 'above',
+      totalCount: 9,
+      totalExact: true,
+      pageCount: 1,
+    })
+
+    expect(sink.announcements).toEqual([])
   })
 
   it('routes an own create addressed to the table, normalizing the row', () => {
