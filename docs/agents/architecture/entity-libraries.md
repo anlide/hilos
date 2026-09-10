@@ -262,6 +262,17 @@ edits a row it already wrote** (owner's decision, 2026-08-24) - the standard
 behaviour of a library rather than a switch each project throws, and the whole of
 the rule is that one override.
 
+**A library may hold the write and no reading at all** (HIL-946). Where the
+collection stands in `DbContext::processWideReadCollections()`, the whole copy is
+already in every process, so reading a row is a local read wherever it happens —
+in a subscriber, in a table, in a page. Such a library preloads nothing and serves
+no list: `SettingsLibraryAgent` owns every write to `settings` and answers no read,
+because a holder that also answered reads would turn every setting lookup in the
+installation into a trip to another worker, and settings are read everywhere. This
+is a real case and not an exemption: the rest of this page reads as though the
+holder of the set were also the supplier of it, and for a process-wide read
+collection it is not.
+
 **Sign-in is the case that proves a library writes** (owner's decision,
 2026-08-21). It has no instance owner to address, and the reason is structural
 rather than historical: the person is not named until the command succeeds, the
@@ -361,6 +372,27 @@ tell the person "the owner did not answer" rather than "it expired". Where the
 owner does always answer, a second deadline is worse than none: the re-hydrate
 wait carried one on top of the daemon's until HIL-694, and the two together let a
 verdict of a finished restore close the wait of the next one.
+
+*On several gatekeepers to one writer* (HIL-946). Nothing says the pair is one to
+one, and settings are the case where it is not: three admin screens write the same
+collection — the general settings screen, a communications channel, a presets
+section. Then **the name to answer under travels in the ask** rather than being
+pinned to the name of the ask: `SettingWriteSignalData::$replySignal` and its three
+siblings carry it, beside the accept key and the request id that are already the
+caller's own. A fixed pair of names would make the writer know every screen by name,
+and the next screen that writes the collection would edit the writer's body to be
+let in.
+
+Two things follow, and both are the reason the shape is written down here rather
+than re-derived. The reply name must be **unique per gatekeeper**, because the map
+of page-owned signals holds one entry per name
+(`SignalRouteConfig::getPageForSignal()`,
+`framework/backend/Core/Page/SignalRouteConfig.php:33`): two pages declaring one
+name overwrite each other without a word, and the topology validator catches a
+duplicate between agents and between page-owned and agent-owned, but not between
+two pages. And the asks are cut **by kind of write, not by button**: eight calls
+across the three screens came down to four asks, because two buttons that end in
+the same idempotent write are one ask with two callers.
 
 **Worked example** —
 `framework/backend/Pages/Communications/AbstractHilosCommunicationsDeliveriesPage.php`.
@@ -564,6 +596,7 @@ each piece lands:
 | HIL-629 | delivering a signal to an agent that is not up yet — a library needs it for the same reason an owner does |
 | HIL-630 | the instance owner as the writer of its row |
 | HIL-632 | the instance-owner rule in docs and skills; that document and this one are neighbours and reference each other |
+| HIL-946 | the settings library: one writer for a collection three admin screens write, and the first library that holds a write without holding a read |
 
 Also outside it: the library base class and any framework code; the splitting of
 the leadership flag (HIL-667, landed); the cross-node return path to a client (HIL-668);

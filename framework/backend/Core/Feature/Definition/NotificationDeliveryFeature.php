@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature\Definition;
 
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
@@ -44,13 +45,15 @@ final class NotificationDeliveryFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The deliveries page with its table binding, the channel registry,
-     *     the channel and journal catalog fragments, and the delivery table
+     * @return FeatureRequirements The deliveries page with its table binding, the settings library its
+     *     channels are configured through, the channel registry, the channel and journal catalog
+     *     fragments, and the delivery table
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredPages: [AbstractHilosCommunicationsDeliveriesPage::class],
+            requiredSharedAgents: [HilosAgentType::HILOS_SETTINGS_LIBRARY],
             requiredTables: [HilosNotificationDeliveriesTable::class],
             requiredPageTables: [
                 AbstractHilosCommunicationsDeliveriesPage::class => HilosNotificationDeliveriesTable::class,

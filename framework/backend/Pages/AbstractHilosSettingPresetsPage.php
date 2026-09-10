@@ -5,23 +5,27 @@ declare(strict_types=1);
 namespace Hilos\Pages;
 
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Database\Settings\Exception\SettingPresetUnknownException;
-use Hilos\Database\Settings\Exception\SettingValueRefusedException;
+use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
 use Hilos\Database\Settings\Preset\SettingPresetGroup;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
@@ -35,9 +39,16 @@ use Hilos\Pages\Logs\AbstractHilosLogsPage;
 /**
  * Base class for an admin page offering the presets of its section (HIL-762).
  *
- * The whole of the mechanism lives here, and a section costs one subclass that declares three
- * things: its page key, its subscription signal, and the provider of its group. Nothing else — a
- * section page that had to carry behavior of its own would mean the mechanism was never general.
+ * The whole of the mechanism lives here, and a section costs one subclass that declares four
+ * things: its page key, its subscription signal, the provider of its group, and — since HIL-946,
+ * when the write moved to {@see SettingsLibraryAgent} — the name the library answers it under.
+ * Nothing else — a section page that had to carry behavior of its own would mean the mechanism
+ * was never general.
+ *
+ * The reply name is the section's and not this class's because the map of page-owned signals
+ * holds one entry per name: two sections under one name would overwrite each other without a
+ * word, and the topology validator catches that between agents but not between two pages. So
+ * the contract is declared here and the name is read off the subclass.
  *
  * State arrives by event and not by polling. A settings row written anywhere in the cluster is
  * announced on the source bus, {@see SettingPresetChangeSubscriber} turns that announcement into
@@ -150,9 +161,9 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      *     sentence the success is spoken with rides the tracked reply the framework builds after
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
-     * @throws TableActionException When the preset is unknown or one of its values is refused
-     * @throws HilosException When the group declaration is unusable, the applied preset cannot be
-     *     read, or a settings write fails
+     * @throws LogicException When the page names no provider of a preset group or no reply signal
+     * @throws InvalidArgumentException When the apply frame cannot be named or queued
+     * @throws HilosException When the applied preset cannot be read
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -163,7 +174,7 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
             throw new InvalidActionPayloadException($action, SettingPresetApplyActionDTO::class, $dto);
         }
 
-        $this->handleApply($dto);
+        $this->handleApply($acceptKey, $dto);
 
         return null;
     }
@@ -268,40 +279,132 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
     }
 
     /**
-     * Applies the named preset of this page's group.
+     * Asks the owner of the settings collection to apply the named preset of this page's group.
      *
-     * Both refusals are re-raised as a table action failure so the initiator is told what was
-     * wrong in words meant for them: the unknown-preset one is otherwise withheld at the wire gate
-     * as an internal fault, and one refusal class from one action is easier to answer than two.
+     * The whole operation crosses, its checking included: the resolver judges every value before
+     * it writes the first, and splitting that would rewrite the mechanism. Both refusals come
+     * back as text rather than as a throw, which is why the re-raise that used to stand here is
+     * gone - the library speaks them, and the unknown-preset one is carried past the wire gate
+     * there for the reason it was re-raised here.
      *
-     * The success is spoken, and the sentence depends on which of the screen's two gestures this
-     * was. Applying a preset that is already the selected one is the "put the values back" button,
-     * and it is told apart by what was selected BEFORE the write - afterwards both gestures leave
-     * the same selection behind. The name is therefore read first, off the resolver the apply then
-     * uses, rather than by building a second one over the same group.
+     * The one reading that stays is the selection, and it stays because it has to happen BEFORE
+     * the write. Applying a preset that is already the selected one is the "put the values back"
+     * button, and afterwards both gestures leave the same selection behind - so the sentence is
+     * chosen here and echoed back, rather than composed by a library that cannot tell the two
+     * gestures apart.
      *
      * Spoken at all, though the card lights up on its own: on the way back the card was lit
      * already, and all the screen has to show for the work is a border that changed shade.
      *
+     * @param string $acceptKey WebSocket accept key of the requesting administrator
      * @param SettingPresetApplyActionDTO $dto Apply action payload
-     * @throws TableActionException When the preset is unknown or one of its values is refused
-     * @throws HilosException When the group declaration is unusable, the applied preset cannot be
-     *     read, or a settings write fails
+     * @throws LogicException When the page names no provider of a preset group or no reply signal
+     * @throws InvalidArgumentException When the apply frame cannot be named or queued
+     * @throws HilosException When the applied preset cannot be read
      */
-    private function handleApply(SettingPresetApplyActionDTO $dto): void
+    private function handleApply(string $acceptKey, SettingPresetApplyActionDTO $dto): void
     {
-        $resolver = new SettingPresetResolver(static::presetGroup());
-        $selectedBefore = $resolver->selectedName();
+        $selectedBefore = new SettingPresetResolver(static::presetGroup())->selectedName();
 
-        try {
-            $resolver->apply($dto->preset);
-        } catch (SettingPresetUnknownException | SettingValueRefusedException $e) {
-            throw new TableActionException($e->getMessage(), previous: $e);
+        $this->agent->sendToAgent(
+            HilosSignalConstants::HILOS_SETTING_PRESET_APPLY,
+            new SettingPresetApplySignalData(
+                replySignal: static::replySignalName(),
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::SETTING_PRESET_APPLY,
+                successMessage: $selectedBefore === $dto->preset
+                    ? "The mode's values are back."
+                    : 'The mode is applied.',
+                groupProvider: static::GROUP_PROVIDER,
+                preset: $dto->preset,
+            ),
+        );
+
+        if ($this->currentActionRequestId() !== null) {
+            $this->deferActionReply();
+        }
+    }
+
+    /**
+     * Answers the administrator whose preset the library has applied or refused (HIL-946).
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not the one this section declares
+     * @throws LogicException When the page names no reply signal, or the payload is not the one
+     *     its name promises
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        if ($name !== static::replySignalName()) {
+            throw new AgentUnknownSignalException($name);
         }
 
-        $this->setActionSuccessMessage(
-            $selectedBefore === $dto->preset ? "The mode's values are back." : 'The mode is applied.',
+        if (!$data->data instanceof SettingWriteDoneSignalData) {
+            throw new LogicException($name . ' payload must be ' . SettingWriteDoneSignalData::class);
+        }
+
+        $this->answerApply($data->data);
+    }
+
+    /**
+     * Turns the library's outcome into the ack the administrator's submit is waiting on.
+     *
+     * @param SettingWriteDoneSignalData $done Whom to answer, on which action, and why it was refused
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    private function answerApply(SettingWriteDoneSignalData $done): void
+    {
+        if ($done->requestId !== null) {
+            if ($done->error === null) {
+                if ($done->successMessage !== null) {
+                    $this->setActionSuccessMessage($done->successMessage);
+                }
+                $this->sendActionSuccess($done->acceptKey, $done->action, $done->requestId);
+
+                return;
+            }
+
+            $this->sendActionFail($done->acceptKey, $done->action, $done->requestId, $done->error);
+
+            return;
+        }
+
+        if ($done->error === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            SignalConstants::ACTION_ERROR,
+            $done->acceptKey,
+            new PageActionErrorSignalData($done->action, $done->error),
         );
+    }
+
+    /**
+     * Returns the name this section is answered under.
+     *
+     * Declared by the subclass in SIGNALS, exactly as the subscription signal is declared in
+     * BROWSER and the group in GROUP_PROVIDER, and exactly one of them: the ack of one action
+     * has one way home, and a section naming two would leave this class picking.
+     *
+     * @return string Agent-signal name the library reports this section's applies under
+     * @throws LogicException When the section names no reply signal, or names more than one
+     */
+    protected static function replySignalName(): string
+    {
+        $names = array_keys(static::SIGNALS[SignalTypeConstants::AGENT_SIGNAL] ?? []);
+        if (count($names) !== 1 || !is_string($names[0]) || $names[0] === '') {
+            throw new LogicException(
+                'Page ' . static::PAGE . ' must name exactly one reply signal under '
+                . SignalTypeConstants::AGENT_SIGNAL . ' in SIGNALS',
+            );
+        }
+
+        return $names[0];
     }
 
     /**

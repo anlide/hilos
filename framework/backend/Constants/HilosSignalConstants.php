@@ -28,6 +28,11 @@ use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
+use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
@@ -1051,6 +1056,83 @@ final class HilosSignalConstants
      * {@see DeliveryRetryDoneSignalData}.
      */
     public const string HILOS_DELIVERY_RETRY_DONE = 'hilos_delivery_retry_done';
+
+    // ── Hilos settings: gatekeeper screens ↔ settings library routes (agent signals) ──
+
+    /**
+     * A settings gatekeeper → the settings library: put this value under this key (HIL-946).
+     *
+     * The four asks below are cut by kind of write and not by the button that made them: the
+     * eight calls the screens used to make come down to four things a settings row can have
+     * done to it. This one is the whole of "a cataloged key now stands at this value" - the add
+     * and the edit of the settings screen, switching a communications channel on, and filling a
+     * field of one - because the settings table answers all four the same idempotent way.
+     *
+     * The names of the browser actions behind them are untouched and do not collide with these:
+     * those are what a client presses, these are what one process asks another. Carried by
+     * {@see SettingWriteSignalData}.
+     */
+    public const string HILOS_SETTING_WRITE = 'hilos_setting_write';
+
+    /**
+     * A settings gatekeeper → the settings library: put this key back to its default (HIL-946).
+     *
+     * Undoing an override, whichever screen spells it: the reset of the general settings screen
+     * and the reset of one field of a communications channel. Whether the key is cataloged at
+     * all - an orphan has no default to return to - is judged where the row is written. Carried
+     * by {@see SettingResetSignalData}.
+     */
+    public const string HILOS_SETTING_RESET = 'hilos_setting_reset';
+
+    /**
+     * The settings screen → the settings library: drop this orphan row (HIL-946).
+     *
+     * Apart from the reset rather than a flag inside it, because only an orphan is ever deleted
+     * and only a cataloged key is ever reset; the settings table refuses each in the other's
+     * place. Carried by {@see SettingDeleteSignalData}.
+     */
+    public const string HILOS_SETTING_DELETE = 'hilos_setting_delete';
+
+    /**
+     * A presets section → the settings library: apply this preset of this group (HIL-946).
+     *
+     * The whole operation crosses, its checking included: the resolver judges every value of
+     * the preset before writing the first, and a preset half applied is the one state its
+     * screen cannot explain. The group travels as the class name of its provider, which is how
+     * the section already holds it. Carried by {@see SettingPresetApplySignalData}.
+     */
+    public const string HILOS_SETTING_PRESET_APPLY = 'hilos_setting_preset_apply';
+
+    /**
+     * The settings library → the general settings screen: your write is done, or refused
+     * (HIL-946).
+     *
+     * One of three ways back, and there are three rather than one because the map of page-owned
+     * signals holds one entry per name: two screens under one name would overwrite each other
+     * without a word, and the topology validator catches that between agents but not between
+     * two pages. Carried by {@see SettingWriteDoneSignalData}, as all three are.
+     */
+    public const string HILOS_SETTING_WRITE_DONE = 'hilos_setting_write_done';
+
+    /**
+     * The settings library → the communications channel screen: your write is done, or refused
+     * (HIL-946).
+     *
+     * The channel screen's own way back. It writes settings through the same four asks, and it
+     * needs a name of its own for the same reason the general screen does. Carried by
+     * {@see SettingWriteDoneSignalData}.
+     */
+    public const string HILOS_CHANNEL_SETTING_WRITE_DONE = 'hilos_channel_setting_write_done';
+
+    /**
+     * The settings library → the log modes screen: your preset is applied, or refused (HIL-946).
+     *
+     * The way back for the one presets section that exists today. The name belongs to the
+     * section and not to the base class of presets pages: the base declares the contract that a
+     * section must name one, and reads it off the subclass. Carried by
+     * {@see SettingWriteDoneSignalData}.
+     */
+    public const string HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE = 'hilos_logs_settings_preset_apply_done';
 
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */

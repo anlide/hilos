@@ -37,7 +37,10 @@ the recipe before generating code.
    by copying another project. The engine — table merge, page subscribe, action
    lifecycle — stays in the framework base.
 3. Configure-only: generate a catalog provider, register the `final` framework
-   table, add a thin subscription-owner page, mount the SDK view.
+   table, add a thin subscription-owner page, register `SettingsLibraryAgent` and
+   `SettingsLibraryAgentDaemon` in `AGENTS` with `PLACEMENT => POLICY` (the single
+   writer of the settings collection; one entry, shared with the `LOGS` and
+   `NOTIFICATION_DELIVERY` features), mount the SDK view.
 4. Bound: generate in dependency order — DB entity → RT presence source
    (implements `HilosPresenceSource`) → table subclass (the abstract hooks) →
    thin page → topology + SDK view mount.

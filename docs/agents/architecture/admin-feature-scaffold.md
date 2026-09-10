@@ -79,7 +79,24 @@ The framework owns everything mechanical. Generate, in any order:
    context the settings page answers a subscription with nothing; the base
    context delivers the table's snapshot through the self-snapshot path
    ([admin-features.md](admin-features.md), *Browser delivery*).
-6. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
+6. Register the settings library in `AGENTS`:
+   `Hilos\Database\Settings\Library\SettingsLibraryAgent::AGENT_TYPE` with
+   `WORKER => SettingsLibraryAgent::class`, `DAEMON =>
+   SettingsLibraryAgentDaemon::class` and `PLACEMENT => AgentPlacement::POLICY`.
+   Both classes are framework-owned and concrete: register them directly, with no
+   project subclass. This is the single writer of the settings collection
+   (HIL-946) — the admin screens check the caller and forward, and nothing else
+   may write a settings row.
+   **The step is shared with `LOGS` and `NOTIFICATION_DELIVERY`** and is done once:
+   all three declare the library under `requiredSharedAgents`, so a project holding
+   any of them needs this entry, and a project holding all three still needs only
+   the one.
+   The library is monopolistic, so raise `WORKER_MIN_MONOPOLISTIC` by one in the
+   stack's compose when this entry is the project's first claim on it. The pool
+   does not grow on demand: one short and the agent's first start throws
+   `NoSuitableWorkerException` and kills the daemon
+   ([new-project/README.md](../../new-project/README.md), *Worker pool*).
+7. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
    `@hilos/{vue,react,angular}` `admin/settings/HilosSettingsPage`, through a thin
    project wrapper that binds the `HilosSettingsContext` (`{ scopes, actions }`
    from the project session + connection). The view, the row model, and the

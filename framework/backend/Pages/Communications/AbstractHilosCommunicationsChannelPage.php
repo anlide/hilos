@@ -6,20 +6,30 @@ namespace Hilos\Pages\Communications;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Settings\Exception\SettingAccessorUnavailableException;
+use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
-use Hilos\HilosException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
@@ -27,8 +37,6 @@ use Hilos\Notification\NotificationDraft;
 use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
 use Hilos\Pages\Communications\DTO\HilosChannelSettingUpdateActionDTO;
 use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
-use Hilos\Tables\Settings\HilosSettingsTable;
-use LogicException;
 
 /**
  * AbstractHilosCommunicationsChannelPage - single delivery-channel configuration (HIL-200).
@@ -42,10 +50,14 @@ use LogicException;
  * served by the same admin agent, so the redraw fans over the tables regardless of
  * which tab triggered the write.
  *
- * Writes go through the framework settings table's actions (the same override store the
- * settings page uses), and the resolver/table reactively redraw the affected rows. Test
- * send resolves the acting admin's address for the channel and emits a channel-narrowed
- * notification, exercising the real delivery path (HIL-201) rather than a bespoke ping.
+ * Writes go through {@see SettingsLibraryAgent}, the single owner of the settings collection
+ * (HIL-946), and the resolver/table reactively redraw the affected rows off the same source-bus
+ * announcement as before. The two config writes run in two steps: this page keeps the ADMIN
+ * level and everything it can judge without reading a row — the channel, the field, the secret
+ * flag, the type and the descriptor's validator — and the library writes. Test send does not
+ * move: it writes no settings. It resolves the acting admin's address for the channel and emits
+ * a channel-narrowed notification, exercising the real delivery path (HIL-201) rather than a
+ * bespoke ping.
  *
  * The page is an admin surface: the ADMIN access level inherited from
  * AbstractHilosPage closes its subscription and every action, replacing the
@@ -65,6 +77,19 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
         HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => HilosChannelTestActionDTO::class,
     ];
 
+    /**
+     * The library's answer to whichever config write this page forwarded (HIL-946).
+     *
+     * A name of this page's own, not shared with the general settings screen: the map of
+     * page-owned signals holds one entry per name, and two pages under one name would overwrite
+     * each other without a word.
+     */
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => SettingWriteDoneSignalData::class,
+        ],
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL,
     ];
@@ -81,11 +106,9 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the target channel/field is unknown, secret, or invalid
-     * @throws DatabaseException When a settings write or address lookup fails
-     * @throws SettingAccessorUnavailableException When the settings accessor is not initialized
-     * @throws HilosException When settings catalog validation or persistence fails
+     * @throws DatabaseException When the test-send address lookup fails
+     * @throws InvalidArgumentException When a config write cannot be handed to the library
      * @throws EmptyValueException When the test notification draft is empty
-     * @throws LogicException When the notifications collection is unavailable during a test send
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -95,7 +118,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
                 if (!$dto instanceof HilosChannelSettingUpdateActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosChannelSettingUpdateActionDTO::class, $dto);
                 }
-                $this->handleSet($dto);
+                $this->handleSet($acceptKey, $dto);
 
                 break;
 
@@ -103,7 +126,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
                 if (!$dto instanceof HilosChannelSettingResetActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosChannelSettingResetActionDTO::class, $dto);
                 }
-                $this->handleReset($dto);
+                $this->handleReset($acceptKey, $dto);
 
                 break;
 
@@ -123,25 +146,27 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
     }
 
     /**
-     * Writes one channel field's settings override (or the global enablement toggle).
+     * Asks the owner of the settings collection for one channel field (or the enablement toggle).
      *
-     * The `enabled` pseudo-field writes the channel's boolean enablement key; any other
-     * field is validated by type and its descriptor validator before the override is
-     * persisted. A secret field is never writable.
+     * Everything judged before the ask stays here, and it is everything that can be judged
+     * without reading a settings row: the channel, the field, the secret flag, the type and the
+     * descriptor's own validator. What crosses is the pair the library writes idempotently.
      *
+     * The sentence is composed here too, and echoed back: it names the channel's label and the
+     * field's caption, which the owner of the collection has no business learning.
+     *
+     * @param string $acceptKey WebSocket accept key of the requesting administrator
      * @param HilosChannelSettingUpdateActionDTO $dto Set action payload
      * @throws TableActionException When the channel/field is unknown, secret, or fails validation
-     * @throws DatabaseException When the settings write fails
-     * @throws SettingAccessorUnavailableException When the settings accessor is not initialized
-     * @throws HilosException When settings catalog validation or persistence fails
+     * @throws InvalidArgumentException When the write frame cannot be named or queued
      */
-    private function handleSet(HilosChannelSettingUpdateActionDTO $dto): void
+    private function handleSet(string $acceptKey, HilosChannelSettingUpdateActionDTO $dto): void
     {
         $descriptor = $this->requireChannel($dto->channel);
 
         if ($dto->field === DeliveryChannelSettings::ENABLED_FIELD) {
             // No success sentence here: the toggle answers for itself by switching on screen.
-            $this->settingsTable()->actions->add($descriptor->enabledSettingKey(), (bool) $dto->value);
+            $this->write($acceptKey, $descriptor->enabledSettingKey(), (bool) $dto->value, null);
 
             return;
         }
@@ -159,26 +184,26 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             }
         }
 
-        $this->settingsTable()->actions->add(
+        $this->write(
+            $acceptKey,
             DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
             $value,
+            "{$descriptor->label()} setting \"{$field->label}\" saved.",
         );
-        $this->setActionSuccessMessage("{$descriptor->label()} setting \"{$field->label}\" saved.");
     }
 
     /**
-     * Resets one channel field to its env/default value by dropping the override row.
+     * Asks the owner of the settings collection to put one channel field back to its default.
      *
-     * The settings row for the field is removed, which the resolver reads as env/default:
-     * a cataloged key with no row of its own is on its catalog default.
+     * The override row for the field is dropped, which the resolver reads as env/default: a
+     * cataloged key with no row of its own is on its catalog default.
      *
+     * @param string $acceptKey WebSocket accept key of the requesting administrator
      * @param HilosChannelSettingResetActionDTO $dto Reset action payload
      * @throws TableActionException When the channel/field is unknown or secret
-     * @throws DatabaseException When the settings write fails
-     * @throws SettingAccessorUnavailableException When the settings accessor is not initialized
-     * @throws HilosException When settings catalog validation or persistence fails
+     * @throws InvalidArgumentException When the reset frame cannot be named or queued
      */
-    private function handleReset(HilosChannelSettingResetActionDTO $dto): void
+    private function handleReset(string $acceptKey, HilosChannelSettingResetActionDTO $dto): void
     {
         $descriptor = $this->requireChannel($dto->channel);
         $field = $this->requireField($descriptor, $dto->field);
@@ -186,10 +211,120 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             throw new TableActionException("Field '{$field->key}' is a secret and has no settings override");
         }
 
-        $this->settingsTable()->actions->reset(
-            DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
+        $this->forward(
+            HilosSignalConstants::HILOS_SETTING_RESET,
+            new SettingResetSignalData(
+                replySignal: HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
+                successMessage: "{$descriptor->label()} setting \"{$field->label}\" is back to its default.",
+                key: DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),
+            ),
         );
-        $this->setActionSuccessMessage("{$descriptor->label()} setting \"{$field->label}\" is back to its default.");
+    }
+
+    /**
+     * Asks the owner of the settings collection to put one value under one key.
+     *
+     * @param string $acceptKey WebSocket accept key of the requesting administrator
+     * @param string $key Setting key the value stands under
+     * @param mixed $value Value to store as the override
+     * @param ?string $successMessage Sentence to speak on success, or null for the toggle that has none
+     * @throws InvalidArgumentException When the write frame cannot be named or queued
+     */
+    private function write(string $acceptKey, string $key, mixed $value, ?string $successMessage): void
+    {
+        $this->forward(
+            HilosSignalConstants::HILOS_SETTING_WRITE,
+            new SettingWriteSignalData(
+                replySignal: HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET,
+                successMessage: $successMessage,
+                key: $key,
+                value: $value,
+            ),
+        );
+    }
+
+    /**
+     * Hands one ask to the owner of the settings collection and stops owing the caller an answer.
+     *
+     * @param string $name Agent-signal name the ask travels under
+     * @param SignalDataInterface $ask The ask, carrying whom to answer and what to write
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    private function forward(string $name, SignalDataInterface $ask): void
+    {
+        $this->agent->sendToAgent($name, $ask);
+
+        if ($this->currentActionRequestId() !== null) {
+            $this->deferActionReply();
+        }
+    }
+
+    /**
+     * Answers the administrator whose config write the library has finished (HIL-946).
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not one this page declares
+     * @throws LogicException When the payload is not the one its name promises
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        if ($name !== HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE) {
+            throw new AgentUnknownSignalException($name);
+        }
+
+        if (!$data->data instanceof SettingWriteDoneSignalData) {
+            throw new LogicException($name . ' payload must be ' . SettingWriteDoneSignalData::class);
+        }
+
+        $this->answerWrite($data->data);
+    }
+
+    /**
+     * Turns the library's outcome into the ack the administrator's submit is waiting on.
+     *
+     * Three shapes, as everywhere this form is used: a tracked submit is correlated by its
+     * request id and answered on it, and an untracked one has nothing to correlate, so its
+     * refusal rides the uncorrelated action-error frame. The sentence is set immediately before
+     * the success, because that is the slot the success reads.
+     *
+     * @param SettingWriteDoneSignalData $done Whom to answer, on which action, and why it was refused
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    private function answerWrite(SettingWriteDoneSignalData $done): void
+    {
+        if ($done->requestId !== null) {
+            if ($done->error === null) {
+                if ($done->successMessage !== null) {
+                    $this->setActionSuccessMessage($done->successMessage);
+                }
+                $this->sendActionSuccess($done->acceptKey, $done->action, $done->requestId);
+
+                return;
+            }
+
+            $this->sendActionFail($done->acceptKey, $done->action, $done->requestId, $done->error);
+
+            return;
+        }
+
+        if ($done->error === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            SignalConstants::ACTION_ERROR,
+            $done->acceptKey,
+            new PageActionErrorSignalData($done->action, $done->error),
+        );
     }
 
     /**
@@ -200,7 +335,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
      * @throws TableActionException When the channel is unknown, the caller is unresolved, or has no address
      * @throws DatabaseException When the recipient address lookup fails
      * @throws EmptyValueException When the notification draft is empty
-     * @throws LogicException When the notifications collection is unavailable
+     * @throws InvalidArgumentException When the emit signal cannot be named or queued
      */
     private function handleTest(string $acceptKey, HilosChannelTestActionDTO $dto): void
     {
@@ -288,21 +423,5 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
                 ? (string) $value
                 : throw new TableActionException('Value must be text'),
         };
-    }
-
-    /**
-     * Resolves the framework settings table from the table context.
-     *
-     * @return HilosSettingsTable Registered settings table definition
-     * @throws TableActionException When the settings table is not registered in the table context
-     */
-    private function settingsTable(): HilosSettingsTable
-    {
-        $table = Hilos::$table?->get(HilosSettingsTable::TABLE);
-        if (!$table instanceof HilosSettingsTable) {
-            throw new TableActionException('Settings table is not registered in the table context');
-        }
-
-        return $table;
     }
 }

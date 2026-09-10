@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature\Definition;
 
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
@@ -29,12 +30,14 @@ final class SettingsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements Settings page, its table binding, the settings catalog and the settings table
+     * @return FeatureRequirements Settings page, its table binding, the settings library, the settings
+     *     catalog and the settings table
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredPages: [AbstractHilosSettingsPage::class],
+            requiredSharedAgents: [HilosAgentType::HILOS_SETTINGS_LIBRARY],
             requiredTables: [HilosSettingsTable::class],
             requiredPageTables: [AbstractHilosSettingsPage::class => HilosSettingsTable::class],
             requiredCatalogConstant: 'SETTINGS_CATALOG',

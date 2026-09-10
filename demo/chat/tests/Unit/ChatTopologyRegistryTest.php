@@ -102,6 +102,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
+use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
+use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
@@ -231,17 +235,19 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The three libraries, the delivery shards and the log aggregator: one instance
+        // The four libraries, the delivery shards and the log aggregator: one instance
         // cluster-wide (per shard index, for the shards), on the node policy picks. An entity
-        // library is placed rather than pinned by rule, and each of the three has a reason of
+        // library is placed rather than pinned by rule, and each of the four has a reason of
         // its own besides: minting an account is a claim one process holds wherever it sits,
-        // every handshake touches sessions, every worker emits into notifications, and the
-        // leader has enough to do. The aggregator is placed so that one holder of the merged
-        // log picture survives a re-election instead of dying with the term.
+        // every handshake touches sessions, every worker emits into notifications, every admin
+        // screen writes settings through one hand, and the leader has enough to do. The
+        // aggregator is placed so that one holder of the merged log picture survives a
+        // re-election instead of dying with the term.
         $this->assertSame([
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosAgentType::HILOS_SETTINGS_LIBRARY,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
             AgentType::HILOS_PUSH,
@@ -380,8 +386,13 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
                 ChatSignalConstants::USER_ADMIN_RENAME_DONE => PageConstants::ADMIN_USERS,
+                HilosSignalConstants::HILOS_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SETTINGS,
+                HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE
+                    => HilosPageConstants::HILOS_LOGS_SETTINGS,
                 HilosSignalConstants::HILOS_IMPERSONATE_DONE => HilosPageConstants::HILOS_USERS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => PageConstants::HILOS_USER,
+                HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE
+                    => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
             ],
@@ -395,8 +406,11 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
                 ChatSignalConstants::USER_ADMIN_RENAME_DONE => AgentType::CHAT,
+                HilosSignalConstants::HILOS_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_IMPERSONATE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
             ],
         ], Hilos::getPageSignalAgentRoutes());
@@ -428,6 +442,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
@@ -555,6 +573,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
+            HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
+            HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
+            HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,
+            HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,

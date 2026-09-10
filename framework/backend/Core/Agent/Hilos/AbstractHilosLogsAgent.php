@@ -11,8 +11,6 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
-use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Log\ClusterLogIndexMirror;
@@ -71,27 +69,6 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      * @var list<string>
      */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
-
-    /**
-     * Settings, because the modes screen of this section writes them.
-     *
-     * The right belongs to the process the write lands in, and that process is this agent's: the
-     * screen offering the logging modes ({@see AbstractHilosLogsSettingsPage}) is served here, so
-     * applying a mode writes its rows from this worker. The same arrangement one section over,
-     * where {@see AbstractHilosIndexAgent} holds the settings the general screen it serves writes;
-     * two owners of one collection are two writers in two processes, and neither reaches into the
-     * other's.
-     *
-     * Adding and updating, and not removing: a mode writes the value of every key it names,
-     * whether that key has a row yet or not. Clearing a key back to its default is the general
-     * settings screen's gesture, and it is refused here on purpose - a section that could delete
-     * settings rows could undo a neighbouring screen's work by touching its own.
-     *
-     * @var array<string, list<TruthSourceOperation>>
-     */
-    public const array OWNS_DB = [
-        HilosDbContext::settings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
-    ];
 
     /**
      * @var float Seconds after which the claim is repeated though nothing about it changed

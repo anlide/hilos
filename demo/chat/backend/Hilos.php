@@ -158,6 +158,8 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
@@ -349,6 +351,11 @@ final class Hilos extends HilosFacade
         NotificationsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
             AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        SettingsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LibraryAgent::AGENT_TYPE => [

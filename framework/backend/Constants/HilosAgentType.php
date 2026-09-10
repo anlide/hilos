@@ -55,6 +55,9 @@ final class HilosAgentType
     /** @var string Hilos notifications library agent (owner of the notification set, its preferences, deliveries and push endpoints) */
     public const string HILOS_NOTIFICATIONS_LIBRARY = 'hilos_notifications_library';
 
+    /** @var string Hilos settings library agent (single writer of the settings collection) */
+    public const string HILOS_SETTINGS_LIBRARY = 'hilos_settings_library';
+
     /** @var string Hilos log store agent (per-node monopolistic owner of the log directory and of the node's log index) */
     public const string HILOS_LOG_STORE = 'hilos_log_store';
 

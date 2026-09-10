@@ -180,14 +180,19 @@ dashboard, owned by the monopolistic `hilos_index` agent (a concrete
 `AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
 demo/tasks). The app agent plus the dashboard therefore needs
 `WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: tasks and polls use 10
-on every stack, chat 16 for its larger agent roster.
+it in compose regardless, so the pool is explicit: tasks and polls use 13 on
+every stack, chat 19 for its larger agent roster. Both numbers are one worker per
+monopolistic agent of that demo's `AGENTS` registry plus two spare, and the count
+is read off the registry — every entry whose daemon answers true to
+`requiresMonopolisticProcess()` — rather than estimated.
 
 Every framework feature a project activates can raise that floor, and the logs
 feature is one of them: it requires TWO monopolistic agents — `hilos_log_store`,
 which owns the directory (HIL-753), and `hilos_log_carrier`, which moves rotated
 batches into the archive (HIL-870) — so activating it costs two more monopolistic
-workers. The symptom of forgetting is not a warning but a crash loop —
+workers. Settings costs one: `hilos_settings_library`, the single writer of the
+settings collection every screen of the section now asks (HIL-946). The symptom
+of forgetting is not a warning but a crash loop —
 `NoSuitableWorkerException` in the daemon loop, and every page stuck at
 `data-state="loading"` because no daemon is left to answer the subscription.
 

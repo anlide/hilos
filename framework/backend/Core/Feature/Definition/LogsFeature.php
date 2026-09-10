@@ -42,7 +42,7 @@ final class LogsFeature extends FeatureDefinition
 
     /**
      * @return FeatureRequirements The five log pages, the overview, store, carrier and aggregator
-     *     agents, and the log settings fragment
+     *     agents, the settings library its modes are written through, and the log settings fragment
      */
     public function requirements(): FeatureRequirements
     {
@@ -60,6 +60,7 @@ final class LogsFeature extends FeatureDefinition
                 HilosAgentType::HILOS_LOG_CARRIER,
                 HilosAgentType::HILOS_LOG_AGGREGATOR,
             ],
+            requiredSharedAgents: [HilosAgentType::HILOS_SETTINGS_LIBRARY],
             requiredCatalogFragments: [LogSettingsCatalog::class],
         );
     }

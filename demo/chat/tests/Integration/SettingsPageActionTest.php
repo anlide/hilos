@@ -9,12 +9,17 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\SettingsPage;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
@@ -27,9 +32,18 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * Drives {@see SettingsPage::onAction()} directly against the real catalog and DB:
  * the page routing + handler layer is not exercised by the actions-level
- * {@see SettingsBrowserStateTest}. Success cases assert the resulting DB state;
- * error cases assert the caller-facing exception a direct onAction() call raises
- * (no ack sink is needed when the page method is called directly).
+ * {@see SettingsBrowserStateTest}. Success cases assert the resulting DB state.
+ *
+ * Since HIL-946 an action is two steps, and so is a case here: the page checks the caller and
+ * sends a frame, {@see SettingsLibraryAgent} writes the row and answers. So the fixture carries
+ * the frame across ({@see self::submit()}) and both halves run in this one process — which is
+ * exactly what the seam needs proving over a real database, and the reason this file was not
+ * left asserting a write the page no longer performs.
+ *
+ * The refusals moved with the write, and their shape moved with them: what the page still
+ * throws is what it can judge on its own — an empty key, a payload of the wrong type, an
+ * unknown action — and what depends on a row now comes back as the sentence the library put in
+ * its answer. Same words, other door.
  */
 final class SettingsPageActionTest extends IntegrationTestCase
 {
@@ -41,12 +55,20 @@ final class SettingsPageActionTest extends IntegrationTestCase
     /** @var string A second catalog key (no seeded override) for the update-missing case. */
     private const string UNSEEDED_CATALOG_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The harness runs no worker, so nothing has queued the router the page hands its frame to.
+        Hilos::$sr = new SignalRouter();
+    }
+
     public function testAddActionCreatesCatalogOverride(): void
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::CATALOG_KEY);
 
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'add-ok-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'from-page-action'),
@@ -60,7 +82,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::CATALOG_KEY);
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'add-dup-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'first'),
@@ -68,7 +90,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             // Snapshot before the second add: the row must be updated, not replaced.
             $createdId = Hilos::$db->settings[self::CATALOG_KEY]?->id;
 
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'add-dup-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'second'),
@@ -83,13 +105,13 @@ final class SettingsPageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::CATALOG_KEY);
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'update-ok-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'before'),
             );
 
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'update-ok-ak',
                 HilosSignalConstants::SETTING_UPDATE,
                 new HilosSettingUpdateActionDTO(self::CATALOG_KEY, 'after'),
@@ -99,18 +121,30 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }, [self::CATALOG_KEY]);
     }
 
-    public function testUpdateActionRejectsMissingSetting(): void
+    /**
+     * Update on a key with no row writes it, and no longer refuses (HIL-946).
+     *
+     * The two buttons became one idempotent write when the write moved: putting a value under a
+     * cataloged key is one thing to do to the collection, however the screen spells it. What is
+     * lost is a refusal nobody could reach on purpose - the edit is only offered over a row that
+     * is on screen - and what is gained is the answer to the case that IS reachable: a second
+     * administrator reset the key between the click and the write, and the edit lands anyway
+     * instead of failing on a race.
+     */
+    public function testUpdateActionOnAKeyWithoutARowWritesIt(): void
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::UNSEEDED_CATALOG_KEY);
 
-            $this->expectException(TableActionException::class);
-            $this->settingsPage()->onAction(
+            $error = $this->submit(
                 'update-missing-ak',
                 HilosSignalConstants::SETTING_UPDATE,
-                new HilosSettingUpdateActionDTO(self::UNSEEDED_CATALOG_KEY, 'no-row'),
+                new HilosSettingUpdateActionDTO(self::UNSEEDED_CATALOG_KEY, '42'),
             );
-        }, []);
+
+            $this->assertNull($error);
+            $this->assertSame('42', Hilos::$db->settings[self::UNSEEDED_CATALOG_KEY]?->value);
+        }, [self::UNSEEDED_CATALOG_KEY]);
     }
 
     public function testDeleteActionRemovesOrphan(): void
@@ -120,7 +154,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
             $this->createOrphanSetting($orphanKey, 'to-remove');
             $this->assertNotNull(Hilos::$db->settings[$orphanKey]);
 
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'delete-orphan-ak',
                 HilosSignalConstants::SETTING_DELETE,
                 new HilosSettingDeleteActionDTO($orphanKey),
@@ -134,18 +168,20 @@ final class SettingsPageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::CATALOG_KEY);
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'delete-catalog-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'override'),
             );
 
-            $this->expectException(TableActionException::class);
-            $this->settingsPage()->onAction(
+            $error = $this->submit(
                 'delete-catalog-ak',
                 HilosSignalConstants::SETTING_DELETE,
                 new HilosSettingDeleteActionDTO(self::CATALOG_KEY),
             );
+
+            $this->assertSame('Only orphan settings (not in catalog) can be deleted', $error);
+            $this->assertNotNull(Hilos::$db->settings[self::CATALOG_KEY]);
         }, [self::CATALOG_KEY]);
     }
 
@@ -153,14 +189,14 @@ final class SettingsPageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::CATALOG_KEY);
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'reset-ok-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'to-reset'),
             );
             $this->assertNotNull(Hilos::$db->settings[self::CATALOG_KEY]);
 
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'reset-ok-ak',
                 HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO(self::CATALOG_KEY),
@@ -180,7 +216,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             // Idempotent on purpose: a second admin may have reset first, and the race
             // must not turn into an error on this one's screen.
-            $this->settingsPage()->onAction(
+            $this->submit(
                 'reset-absent-ak',
                 HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO(self::UNSEEDED_CATALOG_KEY),
@@ -198,12 +234,17 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             // An orphan has no catalog default to return to. The screen never sends
             // this, but hiding a gesture is not securing it.
-            $this->expectException(TableActionException::class);
-            $this->settingsPage()->onAction(
+            $error = $this->submit(
                 'reset-orphan-ak',
                 HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO($orphanKey),
             );
+
+            $this->assertSame(
+                "Setting '{$orphanKey}' is an orphan and has no catalog default to reset to",
+                $error,
+            );
+            $this->assertNotNull(Hilos::$db->settings[$orphanKey]);
         }, [$orphanKey]);
     }
 
@@ -235,6 +276,56 @@ final class SettingsPageActionTest extends IntegrationTestCase
             'setting_nonexistent_action',
             new HilosSettingDeleteActionDTO(self::CATALOG_KEY),
         );
+    }
+
+    /**
+     * Runs one settings action end to end: the page checks and forwards, the library writes.
+     *
+     * Both halves in one process, which is what makes this a test of the seam and not of one
+     * side of it. The frame is taken off the router the page queued it on and handed to the
+     * library by hand, because a real router would carry it to another worker and there is
+     * none here.
+     *
+     * @param string $acceptKey Connection accept key the action arrives on
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?string Sentence the library refused with, or null when the write went through
+     */
+    private function submit(string $acceptKey, string $action, ActionPayloadDTO $dto): ?string
+    {
+        $this->settingsPage()->onAction($acceptKey, $action, $dto);
+
+        $asks = array_keys(SettingsLibraryAgent::AGENT_SIGNALS);
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            // The queue also carries the DB-sync frames the fixture's own writes announced;
+            // what is wanted is the one frame the page addressed to the library.
+            if (!in_array($signal->signalName->getName(), $asks, true)) {
+                continue;
+            }
+
+            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+            new SettingsLibraryAgent()->onSignalAgent($signal->data, 'agent', $signal->signalName->getName());
+
+            return $this->answeredError();
+        }
+
+        $this->fail('The page owes the library a frame for every write it takes');
+    }
+
+    /**
+     * Reads back the outcome the library sent to the page.
+     *
+     * @return ?string Sentence the write was refused with, or null when it went through
+     */
+    private function answeredError(): ?string
+    {
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SettingWriteDoneSignalData) {
+                return $signal->data->data->error;
+            }
+        }
+
+        $this->fail('An ask that arrived as a frame is answered or it hangs');
     }
 
     /**

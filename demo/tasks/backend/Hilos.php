@@ -57,6 +57,8 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
@@ -146,6 +148,11 @@ final class Hilos extends HilosFacade
         NotificationsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => NotificationsLibraryAgent::class,
             AgentRegistryKey::DAEMON => NotificationsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        SettingsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
