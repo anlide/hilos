@@ -18,8 +18,9 @@ import {
   nameFromEmail,
   openSignIn,
   register,
-  submitCode,
+  submitFirstPassword,
   submitRegistration,
+  submitRegistrationCode,
   typeInto,
   uniqueEmail,
   waitAuthSettled,
@@ -84,7 +85,8 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
-  await submitCode(page, await readRegisterCode(email))
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await submitFirstPassword(page)
   await continueFromDone(page)
 
   // The account exists in this demo's own users table and the session carries
@@ -232,10 +234,11 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
 
     await openSignIn(page)
 
-    // A free address: the lookup turns the one field into a registration, and
-    // the envelope beside the password is the passwordless way through it.
+    // A free address: the lookup turns the one field into a registration, and the
+    // envelope is the passwordless way through it. No password field stands beside
+    // it any more — a registration is asked for one after the code (HIL-825).
     await typeInto(page.getByTestId('auth-identifier'), email)
-    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await expect(page.getByTestId('auth-password')).toHaveCount(0)
     await page.getByTestId('auth-icon-magic-link').click()
 
     // Nothing is sent before the terms: accepting them is what mails the letter.
@@ -266,7 +269,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await openSignIn(page)
 
     await typeInto(page.getByTestId('auth-identifier'), email)
-    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
     await page.getByTestId('auth-consent-accept').check()
     await clickSubmit(page.getByTestId('auth-submit'))
@@ -301,7 +304,7 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
 
     await openSignIn(page)
     await typeInto(page.getByTestId('auth-identifier'), email)
-    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
     await page.getByTestId('auth-consent-accept').check()
     await clickSubmit(page.getByTestId('auth-submit'))

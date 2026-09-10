@@ -284,8 +284,9 @@ theirs to document; these are signposts only.
   and its companion code answer independently, and answering either voids the other
   (`Hilos\Auth\MagicLink\MagicLinkService`).
 - **One registration in flight per browser** — a submitted registration holds its
-  identifier for the session that started it, and the first proof of the address
-  wins it (`Hilos\Auth\Registration\RegistrationReservationService`).
+  identifier for the session that started it, several browsers may prove one
+  address, and the first to save a password wins it
+  (`Hilos\Auth\Registration\RegistrationReservationService`).
 
 ## Workflow: Guarding A New Action
 

@@ -12,13 +12,13 @@
 -- identifier). Uniqueness is on `session_token` (HIL-608): one browser leads one
 -- registration at a time, and a submit of another address evicts its own previous
 -- hold. `identifier` carries a plain index instead, because several browsers may
--- legitimately be registering the same address at once - the first to prove it
--- wins the account and the rest are told the address is taken. That key is also
--- what makes the hold OWNED: a reservation is landed by the session that started
--- it, so a letter answered in another browser can never land somebody else's
--- password into the account it creates. The same question - "which registration
--- is this browser running" - is answered the same way by the pending-registration
--- columns of hilos_session.
+-- legitimately be registering the same address at once - the first to SAVE A
+-- PASSWORD on it wins the account and the rest are told the address is taken
+-- (HIL-825). That key is also what makes the hold OWNED: a reservation is landed
+-- by the session that started it, so a letter answered in another browser can
+-- never finish somebody else's registration. The same question - "which
+-- registration is this browser running" - is answered the same way by the
+-- pending-registration columns of hilos_session.
 --
 -- No DB-level foreign key to the project `user` table: framework stubs never FK
 -- across the framework/project boundary, and here there is nothing to point at —
@@ -28,19 +28,20 @@
 -- `identifier` and `session_token` use utf8mb4_bin so both compare exactly; the
 -- writing leaf lowercases the identifier before insert.
 --
--- `secret` (bcrypt hash of the password chosen at submit; NULL for the methods
--- that carry no credential) is intentionally NOT mapped in the Entity ORM layer
--- (see @object-exclude on the RegistrationReservation entity): it is written at
--- reserve time and read once, when the confirmed reservation becomes an identity,
--- so the hash never crosses the object, view, frontend, or cross-worker sync
--- boundary.
+-- `code_accepted_at` is the mark that the address was proved (HIL-825). The hold
+-- carries no credential at all: the password is asked for AFTER the code, and the
+-- account, its identity and its password are written together when that password
+-- is saved. What the hold remembers is only that the code came back, and it
+-- remembers it durably - a browser that proved an address keeps the right to
+-- finish it across a reload, a closed tab and a daemon restart. NULL while the
+-- hold is still waiting for its code.
 
 CREATE TABLE `hilos_registration_reservation` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `type` ENUM('password', 'magic_link', 'sms') NOT NULL,
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `session_token` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-    `secret` VARCHAR(255) DEFAULT NULL,
+    `code_accepted_at` TIMESTAMP NULL DEFAULT NULL,
     `expires_at` TIMESTAMP NOT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

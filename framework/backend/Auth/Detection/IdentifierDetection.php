@@ -19,12 +19,18 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
  * Two things about the shape are load-bearing. The identifier is echoed VERBATIM
  * next to its normalized form, because the surface matches a reply to the field by
  * what it asked - normalizing a phone to E.164 would otherwise orphan the answer
- * that phone's own keystroke asked for. And the three statuses carry different
+ * that phone's own keystroke asked for. And the four statuses carry different
  * slots, which is why the constructor is private and each status has its own
- * factory: `pending` says nothing about methods (the surface parks on the code
- * screen without reading them), `active` names what the account can sign in with,
- * `none` names what it could be registered with. A detection with both filled in
- * does not exist and cannot be built here.
+ * factory: `pending` and `proven` say nothing about methods (the surface goes
+ * straight to the step they name), `active` names what the account can sign in
+ * with, `none` names what it could be registered with. A detection with both
+ * filled in does not exist and cannot be built here.
+ *
+ * `proven` is a state of its own rather than a flag inside `pending` (HIL-825).
+ * `pending` means "go to the code screen" in five places of the sign-in machine,
+ * and a sub-field would have obliged every one of them to learn a second meaning;
+ * one place left unchanged would send somebody who has already proved their
+ * address back to type a code that is already spent.
  *
  * `kind` has no `unknown`: an identifier that classifies as neither an address nor
  * a number is a validation error of the action, not a detection result.
@@ -51,6 +57,9 @@ final class IdentifierDetection extends ActionReplyDTO
 
     /** A registration hold whose code is already out: the surface parks on the code step. */
     public const string STATUS_PENDING = 'pending';
+
+    /** A registration hold this browser has already proved: the surface goes to the password step. */
+    public const string STATUS_PROVEN = 'proven';
 
     /** An account exists behind the identifier: the surface signs in. */
     public const string STATUS_ACTIVE = 'active';
@@ -136,6 +145,25 @@ final class IdentifierDetection extends ActionReplyDTO
     public static function held(string $identifier, string $normalized, string $kind): static
     {
         return new static($identifier, $normalized, $kind, self::STATUS_PENDING, [], []);
+    }
+
+    /**
+     * Builds the answer for an identifier this browser's hold has already proved (HIL-825).
+     *
+     * Carries neither method list, for the reason {@see held()} carries neither: the
+     * surface goes straight to the password step, and the account this address will get
+     * does not exist yet, so there is nothing to name a way into. It is only ever built
+     * for the ASKING browser's own hold - somebody else's proof leaves the address free
+     * to everyone, and the race is settled by whoever saves a password first.
+     *
+     * @param string $identifier Identifier exactly as it was submitted
+     * @param string $normalized Identifier in its canonical form
+     * @param string $kind Classification (see self::KIND_*)
+     * @return static Detection with status `proven`
+     */
+    public static function proven(string $identifier, string $normalized, string $kind): static
+    {
+        return new static($identifier, $normalized, $kind, self::STATUS_PROVEN, [], []);
     }
 
     /**

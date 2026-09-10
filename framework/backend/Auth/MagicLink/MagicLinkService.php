@@ -100,7 +100,7 @@ final class MagicLinkService
         $identifier = mb_strtolower(trim($email));
 
         if ($this->identities()->findAccountIdByEmail($identifier) === null) {
-            new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $sessionToken, $identifier, null);
+            new RegistrationReservationService()->hold(IdentityType::MAGIC_LINK, $sessionToken, $identifier);
         }
 
         return new VerificationService()->issue(

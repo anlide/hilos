@@ -12,8 +12,9 @@ import {
   nameFromEmail,
   openSignIn,
   register,
-  submitCode,
+  submitFirstPassword,
   submitRegistration,
+  submitRegistrationCode,
   typeInto,
   uniqueEmail,
   waitAuthSettled,
@@ -66,7 +67,8 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
-  await submitCode(page, await readRegisterCode(email))
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await submitFirstPassword(page)
   await continueFromDone(page)
 
   // The account exists in this demo's own users table and the session carries

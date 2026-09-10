@@ -10,6 +10,7 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
@@ -25,7 +26,6 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -141,7 +141,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         $this->openSession($agent, 'conv-second-ak');
 
         try {
-            $outcome = $this->register($agent, 'conv-second-ak', $email, self::OTHER_PASSWORD);
+            $outcome = $this->register($agent, 'conv-second-ak', $email);
 
             $this->assertTrue($outcome->ok);
             $this->assertSame(AuthFlowStep::CODE, $outcome->step);
@@ -209,28 +209,42 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * A password under the policy length is refused before anything is held or mailed.
+     * A password under the policy length is refused at the save, which is where it is asked.
      *
-     * @throws HilosException When setup or register handling fails
+     * The check moved here with the field (HIL-825): the submit that holds the address
+     * carries no password at all, so there was nothing to measure a step earlier. What a
+     * refusal must not do is undo the proof - the person is standing on the password
+     * screen and gets to try again, so the hold and its mark stay exactly as they were.
+     *
+     * @throws HilosException When setup or the handling fails
      */
-    public function testRegisterRefusesAShortPassword(): void
+    public function testSavingRefusesAShortPassword(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
         $this->openSession($agent, 'short-pw-ak');
+        $this->register($agent, 'short-pw-ak', $email);
+        $this->seedKnownCode($email);
+        $this->confirm($agent, 'short-pw-ak', $email, self::CODE);
 
         try {
             $refused = false;
             try {
-                $this->register($agent, 'short-pw-ak', $email, str_repeat('a', PasswordPolicy::MIN_LENGTH - 1));
+                $this->complete($agent, 'short-pw-ak', str_repeat('a', PasswordPolicy::MIN_LENGTH - 1));
             } catch (ValidationException $exception) {
                 $refused = true;
                 $this->assertStringContainsString((string)PasswordPolicy::MIN_LENGTH, $exception->getMessage());
             }
 
             $this->assertTrue($refused, 'A short password must be refused');
-            $this->assertNull($this->holdOf('short-pw-ak'), 'A refused submit holds nothing');
-            $this->assertNull($this->activeChallenge($email), 'A refused submit mails nothing');
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'A refused save creates no account',
+            );
+            $this->assertTrue(
+                $this->holdOf('short-pw-ak')?->isProven() ?? false,
+                'And costs nothing already proved: the person tries again on the same screen',
+            );
         } finally {
             $this->cleanUp();
         }
@@ -300,63 +314,187 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * The right code creates the verified account, announces it, and signs the session in.
+     * The right code proves the address and opens the password step, creating nothing.
+     *
+     * The decision this leaf is (HIL-825): an account made here would stand between the
+     * code and a password with a proven address and no way to sign in, and in an
+     * installation whose only registration method is a password the surface would offer
+     * it no control at all. So the code buys a mark on the hold and a screen, and the
+     * account is born on the next submit.
      *
      * @throws HilosException When setup or confirm handling fails
      */
-    public function testConfirmCreatesTheVerifiedAccountAndSignsTheSessionIn(): void
+    public function testConfirmProvesTheAddressAndOpensThePasswordStep(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
         $this->openSession($agent, 'confirm-ak');
         $this->register($agent, 'confirm-ak', $email);
         $this->seedKnownCode($email);
+        $heldUntil = $this->holdOf('confirm-ak')?->expiresAt;
 
         try {
             $outcome = $this->confirm($agent, 'confirm-ak', $email, self::CODE);
 
             $this->assertTrue($outcome->ok);
-            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $outcome->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
 
-            $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
-            $this->assertNotNull($identity, 'The confirmed registration must create the identity');
-            $this->assertTrue($identity->verified, 'The code is the proof of ownership');
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'The code creates no account: there would be no way into it',
+            );
+            $this->assertNull($this->sessionOf('confirm-ak')?->userId, 'And signs nobody in');
 
-            $userId = $identity->userId;
-            $this->assertNotNull($userId);
-            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
-
-            // The credential travelled from the reservation, so the password typed at the
-            // submit is the one the account has.
-            $storedHash = $this->readIdentitySecret($email);
-            $this->assertIsString($storedHash);
-            $this->assertTrue(password_verify(self::PASSWORD, $storedHash));
-
-            $this->assertSame($userId, $this->sessionOf('confirm-ak')?->userId);
-            $this->assertSame($userId, Hilos::$rt->connections['confirm-ak']->userId);
-            $this->assertNull($this->holdOf('confirm-ak'), 'The hold is released on success');
-            $this->assertSame(0, $this->reservationRowCount($email));
-            $this->assertNull(Hilos::$rt->hilosRegistrationWaiters['confirm-ak'], 'The confirming waiter is released');
+            $hold = $this->holdOf('confirm-ak');
+            $this->assertNotNull($hold, 'The hold is what the proof is written on');
+            $this->assertTrue($hold->isProven(), 'The proof outlives the code, which is now spent');
+            $this->assertGreaterThan(
+                (string)$heldUntil,
+                $hold->expiresAt,
+                'From here the hold keeps the address while a password is chosen',
+            );
+            $this->assertNull($this->activeChallenge($email), 'The code is single-use, proof or no proof');
+            $this->assertNotNull(
+                Hilos::$rt->hilosRegistrationWaiters['confirm-ak'],
+                'The wait is not over: the converge still has to reach this browser',
+            );
         } finally {
             $this->cleanUp();
         }
     }
 
     /**
-     * A confirmation moves every OTHER TAB of the browser that made it to the done step.
+     * The saved password creates the verified account, announces it, and signs the session in.
      *
-     * One browser, one registration: the tabs of the session that confirmed were all
-     * waiting on the same attempt, so they are moved forward with it rather than told the
-     * address is taken. The tab that typed the code is answered by its own action reply
-     * and skipped here.
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testSavingThePasswordCreatesTheVerifiedAccountAndSignsTheSessionIn(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'complete-ak');
+        $this->register($agent, 'complete-ak', $email);
+        $this->seedKnownCode($email);
+        $this->confirm($agent, 'complete-ak', $email, self::CODE);
+
+        try {
+            $outcome = $this->complete($agent, 'complete-ak');
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
+
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
+            $this->assertNotNull($identity, 'The saved password must create the identity');
+            $this->assertTrue($identity->verified, 'The code that came before it is the proof of ownership');
+
+            $userId = $identity->userId;
+            $this->assertNotNull($userId);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+
+            // The plaintext came in with this very submit and was hashed into the identity
+            // here, so no hash for an account that did not exist was ever stored anywhere.
+            $storedHash = $this->readIdentitySecret($email);
+            $this->assertIsString($storedHash);
+            $this->assertTrue(password_verify(self::PASSWORD, $storedHash));
+
+            $this->assertSame($userId, $this->sessionOf('complete-ak')?->userId);
+            $this->assertSame($userId, Hilos::$rt->connections['complete-ak']->userId);
+            $this->assertNull($this->holdOf('complete-ak'), 'The hold is released on success');
+            $this->assertSame(0, $this->reservationRowCount($email));
+            $this->assertNull(Hilos::$rt->hilosRegistrationWaiters['complete-ak'], 'The saving waiter is released');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A save with no proved hold behind it rolls the surface back to the address field.
+     *
+     * Not the person's mistake, so not an error to retype: the hold ran out while they
+     * were thinking of a password, or this browser never had one. The address field under
+     * the register intent is the only honest place left (HIL-825).
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testSavingWithoutAProvedHoldRollsBack(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'unproved-ak');
+        $this->register($agent, 'unproved-ak', $email);
+
+        try {
+            $outcome = $this->complete($agent, 'unproved-ak');
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'A hold that was never proved buys no account',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * An address that becomes somebody's while a password is being chosen sends to sign-in.
+     *
+     * The same question the submit and the code both asked, asked once more at the last
+     * moment it can matter: the hold keeps a second REGISTRATION off the address, not an
+     * account arriving by another road while the person was typing.
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testSavingOnAnAddressTakenMeanwhileAnswersIdentifierTaken(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'taken-late-ak');
+        $this->register($agent, 'taken-late-ak', $email);
+        $this->seedKnownCode($email);
+        $this->confirm($agent, 'taken-late-ak', $email, self::CODE);
+
+        $elsewhere = Hilos::$db->users->actions->createWithName('elsewhere');
+        Hilos::$db->identities->createMagicLinkIdentity((int)$elsewhere->id, $email);
+
+        try {
+            $outcome = $this->complete($agent, 'taken-late-ak');
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $outcome->code);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'No second account is built for an address that already has one',
+            );
+            $this->assertNull($this->sessionOf('taken-late-ak')?->userId, 'Nobody is signed in');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Every OTHER TAB of the browser follows it twice: onto the password step, then to done.
+     *
+     * One browser, one registration: the tabs of the session that answered the code were
+     * all waiting on the same attempt, so they move forward with it rather than being told
+     * the address is taken. The tab that acted is answered by its own action reply and
+     * skipped here. Two moves since HIL-825, because the flow has two endings to share -
+     * without the first one, a second window would still be asking for a code that has
+     * already been spent.
      *
      * What they are NOT is signed in inline: the sign-in rotates the session token
      * (HIL-582), so the other tabs are dropped and come back into the rotated session with
      * the new cookie. The step change is the whole of what this seam owes them.
      *
-     * @throws HilosException When setup or confirm handling fails
+     * @throws HilosException When setup or the handling fails
      */
-    public function testConfirmConvergesEveryTabOfTheConfirmingBrowser(): void
+    public function testEveryTabOfTheRegisteringBrowserFollowsItToBothSteps(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -371,15 +509,27 @@ final class MainPageRegisterTest extends IntegrationTestCase
             ExecutionContext::setCurrentAcceptKey('both-first-ak');
             $this->confirm($agent, 'both-first-ak', $email, self::CODE);
 
+            $proved = $this->drainConvergeSignals()['both-second-ak'] ?? null;
+            $this->assertNotNull($proved, 'The other tab is moved off the code screen with its sibling');
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $proved->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $proved->intent);
+            $this->assertNull($proved->code, 'A tab of this browser is not told the address is taken');
+            $this->assertNotNull(
+                Hilos::$rt->hilosRegistrationWaiters['both-second-ak'],
+                'It stays parked: the wait is over only when the account exists',
+            );
+
+            $this->complete($agent, 'both-first-ak');
+
             $userId = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)?->userId;
             $this->assertNotNull($userId);
             $this->assertSame($userId, Hilos::$rt->connections['both-first-ak']->userId);
 
-            $converge = $this->drainConvergeSignals()['both-second-ak'] ?? null;
-            $this->assertNotNull($converge, 'The other tab of the confirming browser is told where it goes');
-            $this->assertSame(AuthFlowStep::DONE, $converge->step);
-            $this->assertSame(AuthFlowIntent::REGISTER, $converge->intent);
-            $this->assertNull($converge->code, 'A tab of the winning browser is not told the address is taken');
+            $landed = $this->drainConvergeSignals()['both-second-ak'] ?? null;
+            $this->assertNotNull($landed, 'And is told where it goes when the account is made');
+            $this->assertSame(AuthFlowStep::DONE, $landed->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $landed->intent);
+            $this->assertNull($landed->code);
             $this->assertNull(Hilos::$rt->hilosRegistrationWaiters['both-second-ak'], 'Converged waiters are released');
         } finally {
             $this->cleanUp();
@@ -387,38 +537,52 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * The browser that lost the race is told the address is taken, and signed into nothing.
+     * The race is settled by the SAVE, and the loser is told the address is taken.
      *
-     * The capture HIL-608 closes, seen from the losing side. Two browsers were registering
-     * one address; the first to prove it gets the account, and the second must be sent back
-     * to the identifier field under the sign-in intent - never subscribed into an account
-     * it never proved anything about, which is what the address-keyed converge did to
-     * whoever happened to be parked.
+     * The capture HIL-608 closes, seen from the losing side, and the moment it is settled
+     * moved with the account (HIL-825): proving an address takes nothing from anybody,
+     * because the address is still nobody's until a password is saved. So both browsers
+     * may reach the password screen, the first to save wins, and the second is sent back to
+     * the identifier field under the sign-in intent - never subscribed into an account it
+     * proved nothing about, which is what the address-keyed converge did to whoever
+     * happened to be parked.
      *
-     * @throws HilosException When setup or confirm handling fails
+     * @throws HilosException When setup or the handling fails
      */
-    public function testConfirmTellsTheLosingBrowserTheAddressIsTaken(): void
+    public function testTheSaveSettlesTheRaceAndTellsTheLoserTheAddressIsTaken(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
         $this->openSession($agent, 'race-winner-ak');
         $this->register($agent, 'race-winner-ak', $email);
         $this->openSession($agent, 'race-loser-ak');
-        $this->register($agent, 'race-loser-ak', $email, self::OTHER_PASSWORD);
+        $this->register($agent, 'race-loser-ak', $email);
         $this->seedKnownCode($email);
 
         try {
             $this->drainConvergeSignals();
 
-            ExecutionContext::setCurrentAcceptKey('race-winner-ak');
+            // Both browsers answer the same letter, one code each: the challenge is per
+            // address, so the loser re-seeds its own to reach the password screen too.
             $this->confirm($agent, 'race-winner-ak', $email, self::CODE);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'race-loser-ak', $email, self::CODE);
+
+            $this->assertTrue($this->holdOf('race-loser-ak')?->isProven() ?? false, 'Proving takes nothing away');
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'Two proved holds and still no account: the address is nobody\'s until it is saved',
+            );
+
+            $this->drainConvergeSignals();
+            $this->complete($agent, 'race-winner-ak');
 
             $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
             $userId = $identity?->userId;
             $this->assertNotNull($userId);
 
-            // The password that landed is the winner's: the loser's hold carried its own,
-            // and nothing of it reaches the account somebody else proved.
+            // The password that landed is the winner's: it came in with the winner's save,
+            // and the loser's own is still unsent.
             $storedHash = $this->readIdentitySecret($email);
             $this->assertIsString($storedHash);
             $this->assertTrue(password_verify(self::PASSWORD, $storedHash));
@@ -430,10 +594,18 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertNull($this->holdOf('race-loser-ak'), 'The losing hold is dropped, not left to expire');
 
             $converge = $this->drainConvergeSignals()['race-loser-ak'] ?? null;
-            $this->assertNotNull($converge, 'The loser is told out loud, not left on a code screen');
+            $this->assertNotNull($converge, 'The loser is told out loud, not left on a password screen');
             $this->assertSame(AuthFlowStep::IDENTIFIER, $converge->step);
             $this->assertSame(AuthFlowIntent::LOGIN, $converge->intent);
             $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $converge->code);
+
+            $late = $this->complete($agent, 'race-loser-ak', self::OTHER_PASSWORD);
+            $this->assertFalse($late->ok, 'And saving anyway buys nothing');
+            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $late->code);
+            $this->assertTrue(
+                password_verify(self::PASSWORD, (string)$this->readIdentitySecret($email)),
+                'Nothing of the loser reaches the account somebody else made',
+            );
         } finally {
             $this->cleanUp();
         }
@@ -468,8 +640,8 @@ final class MainPageRegisterTest extends IntegrationTestCase
         $this->seedKnownCode($email);
 
         try {
-            ExecutionContext::setCurrentAcceptKey('confirmer-ak');
             $this->confirm($agent, 'confirmer-ak', $email, self::CODE);
+            $this->complete($agent, 'confirmer-ak');
 
             $newUserId = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)?->userId;
             $this->assertNotNull($newUserId);
@@ -589,40 +761,40 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * A landing that fails for any other reason leaves no half-made account either.
+     * A refused save leaves no half-made account behind.
      *
      * The mint and the identity are one transaction because an account nobody can sign
-     * into is worse than no account (Flow p.12), and the lost race is only the failure
-     * that was foreseen. The hold seeded below is a `password` one carrying no credential
-     * - a shape only a broken row can have - so the landing raises AFTER the user row is
-     * inserted, which is exactly the moment the transaction has to end. It is asserted
-     * through the row rather than through the connection state on purpose: an unrolled
-     * transaction is invisible from the outside but its own uncommitted row is not, and
-     * that row is what a later BEGIN would eventually commit.
+     * into is worse than no account (Flow p.12). Until HIL-825 this case forced the
+     * transaction open by seeding a `password` hold that carried no credential - a shape
+     * only a broken row could have - and letting the landing raise after the user row was
+     * inserted. That shape stopped existing with the credential itself: the password now
+     * arrives WITH the landing, so every failure the surface can still reach is answered
+     * by a guard in front of the transaction rather than inside it. What is left to pin is
+     * the guarantee itself, asserted through the row rather than the connection state: an
+     * unrolled transaction is invisible from the outside, but the user row it would have
+     * left is not.
      *
-     * @throws HilosException When setup or confirm handling fails
+     * @throws HilosException When setup or the handling fails
      */
-    public function testALandingThatFailsLeavesNoAccountBehind(): void
+    public function testARefusedSaveLeavesNoAccountBehind(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
-        $token = $this->openSession($agent, 'broken-ak');
+        $this->openSession($agent, 'broken-ak');
+        $this->register($agent, 'broken-ak', $email);
+        $this->seedKnownCode($email);
+        $this->confirm($agent, 'broken-ak', $email, self::CODE);
+
+        $elsewhere = Hilos::$db->users->actions->createWithName('elsewhere');
+        Hilos::$db->identities->createMagicLinkIdentity((int)$elsewhere->id, $email);
 
         try {
-            $this->reservations()->createReservation(IdentityType::PASSWORD, $token, $email, null, self::TTL_SECONDS);
-            $this->seedKnownCode($email);
-
-            try {
-                $this->confirm($agent, 'broken-ak', $email, self::CODE);
-                $this->fail('A hold with no credential to land cannot end in an account');
-            } catch (LogicException) {
-                // The refusal is the point; what it leaves behind is what is asserted.
-            }
+            $this->assertFalse($this->complete($agent, 'broken-ak')->ok);
 
             $this->assertSame(
                 0,
                 EntityUser::count([EntityUser::name => $this->localPart($email)]),
-                'The user minted inside the failed landing must be rolled back, not left pending',
+                'A refused save must leave no user row at all, not even an uncommitted one',
             );
             $this->assertNull($this->sessionOf('broken-ak')?->userId, 'And nobody is signed into it');
         } finally {
@@ -806,9 +978,9 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
         try {
             $this->reservations()
-                ->createReservation(IdentityType::PASSWORD, $token, $first, self::PASSWORD, self::TTL_SECONDS);
+                ->createReservation(IdentityType::PASSWORD, $token, $first, self::TTL_SECONDS);
             $this->reservations()
-                ->createReservation(IdentityType::PASSWORD, $token, $second, self::OTHER_PASSWORD, self::TTL_SECONDS);
+                ->createReservation(IdentityType::PASSWORD, $token, $second, self::TTL_SECONDS);
 
             $this->assertSame(0, $this->reservationRowCount($first), 'The replaced address is no longer held');
             $this->assertSame(
@@ -839,44 +1011,13 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
         try {
             $this->reservations()
-                ->createReservation(IdentityType::PASSWORD, $mine, $email, self::PASSWORD, self::TTL_SECONDS);
+                ->createReservation(IdentityType::PASSWORD, $mine, $email, self::TTL_SECONDS);
             $this->reservations()
-                ->createReservation(IdentityType::PASSWORD, $theirs, $email, self::OTHER_PASSWORD, self::TTL_SECONDS);
+                ->createReservation(IdentityType::PASSWORD, $theirs, $email, self::TTL_SECONDS);
 
             $this->assertSame(2, $this->reservationRowCount($email), 'One browser is one hold, not one address');
             $this->assertSame($email, $this->reservations()->findActiveForSession($mine)?->identifier);
             $this->assertSame($email, $this->reservations()->findActiveForSession($theirs)?->identifier);
-        } finally {
-            $this->cleanUp();
-        }
-    }
-
-    /**
-     * Re-holding the address a browser already holds keeps the credential it carries.
-     *
-     * What "the password does not vanish" is built on (HIL-608, Design p.6): a person who
-     * submitted an address with a password and then asked for a sign-in link is re-holding
-     * their OWN attempt, and the link's hold carries no credential of its own - so the one
-     * already stored has to survive, or proving the address would quietly build an account
-     * they cannot sign into with the password they chose.
-     *
-     * @throws HilosException When setup or the reservation write fails
-     */
-    public function testReHoldingTheSameAddressKeepsTheCredential(): void
-    {
-        $this->bootAgent();
-        $email = $this->uniqueEmail();
-        $token = RandomHelper::hex(16);
-
-        try {
-            $this->reservations()
-                ->createReservation(IdentityType::PASSWORD, $token, $email, self::PASSWORD, self::TTL_SECONDS);
-            $reHeld = $this->reservations()
-                ->createReservation(IdentityType::MAGIC_LINK, $token, $email, null, self::TTL_SECONDS);
-
-            $carried = $reHeld->readSecretHash();
-            $this->assertIsString($carried, 'The credential follows the address inside one browser');
-            $this->assertTrue(password_verify(self::PASSWORD, $carried));
         } finally {
             $this->cleanUp();
         }
@@ -1066,6 +1207,49 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
+     * A tab opened on an unfinished registration is handed the step that hold stands on.
+     *
+     * The rails are HIL-648's and the choice is this leaf's (HIL-825): what a returning
+     * browser is owed is decided by the hold, not by where any tab happens to stand, and
+     * the hold knows both - it names the address and says whether its code has come back.
+     * An unproved one owes the code screen, a proved one owes the password screen, and
+     * sending a proved registration back to the code would ask for something already spent.
+     *
+     * @throws HilosException When setup or the handshake fails
+     */
+    public function testAReconnectIsHandedTheStepItsHoldStandsOn(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'resume-code-ak');
+
+        try {
+            $this->register($agent, 'resume-code-ak', $email);
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'resume-code-new', $token);
+            $waiting = $this->drainHandshakeResponses()['resume-code-new']?->pendingAuthStep;
+            $this->assertNotNull($waiting, 'A live registration is owed its step');
+            $this->assertSame(AuthFlowStep::CODE, $waiting[HandshakeResponseSignalData::step]);
+            $this->assertSame(AuthFlowIntent::REGISTER, $waiting[HandshakeResponseSignalData::intent]);
+            $this->assertSame($email, $waiting[HandshakeResponseSignalData::identifier]);
+
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'resume-code-ak', $email, self::CODE);
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'resume-password-new', $token);
+            $proved = $this->drainHandshakeResponses()['resume-password-new']?->pendingAuthStep;
+            $this->assertNotNull($proved, 'And a proved one still is');
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $proved[HandshakeResponseSignalData::step]);
+            $this->assertSame(AuthFlowIntent::REGISTER, $proved[HandshakeResponseSignalData::intent]);
+            $this->assertSame($email, $proved[HandshakeResponseSignalData::identifier]);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * Empties the signal queue and returns the handshake responses it held, by target.
      *
      * @return array<string, HandshakeResponseSignalData> Handshake payload by target accept key
@@ -1169,21 +1353,16 @@ final class MainPageRegisterTest extends IntegrationTestCase
      * @param ChatAgent $agent Agent owning the page
      * @param string $acceptKey Acting connection accept key
      * @param string $email Submitted email
-     * @param string $password Submitted password
      * @return AuthFlowOutcome The outcome the surface is answered with
      * @throws HilosException When the register handler rejects the action
      */
-    private function register(
-        ChatAgent $agent,
-        string $acceptKey,
-        string $email,
-        string $password = self::PASSWORD,
-    ): AuthFlowOutcome {
+    private function register(ChatAgent $agent, string $acceptKey, string $email): AuthFlowOutcome
+    {
         ExecutionContext::setCurrentAcceptKey($acceptKey);
         $reply = $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email, $password),
+            new RegisterActionDTO($email),
         );
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;
@@ -1233,6 +1412,33 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, $code),
+        );
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
+
+        return $outcome;
+    }
+
+    /**
+     * Dispatches the password save that creates the account, for one connection.
+     *
+     * @param ChatAgent $agent Agent owning the page
+     * @param string $acceptKey Acting connection accept key
+     * @param string $password Password the account is created with
+     * @return AuthFlowOutcome The outcome the surface is answered with
+     * @throws HilosException When the complete handler rejects the action
+     */
+    private function complete(
+        ChatAgent $agent,
+        string $acceptKey,
+        string $password = self::PASSWORD,
+    ): AuthFlowOutcome {
+        ExecutionContext::setCurrentAcceptKey($acceptKey);
+        $reply = $this->usersLibrary()->onAgentAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
+            new CompleteRegistrationActionDTO($password),
         );
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;

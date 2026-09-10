@@ -13,6 +13,7 @@ use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
@@ -501,6 +502,9 @@ final class HilosSignalConstants
     /** Client → server: save the new password of an accepted recovery (public, anonymous-reachable, HIL-416). */
     public const string HILOS_COMPLETE_PASSWORD_RESET = 'hilos_complete_password_reset';
 
+    /** Client → server: save the first password of a proved registration, which creates the account (public, anonymous-reachable, HIL-825). */
+    public const string HILOS_COMPLETE_REGISTRATION = 'hilos_complete_registration';
+
     /**
      * Client → server: send a one-time login code to a phone over a chosen channel
      * (public, anonymous-reachable, HIL-492).
@@ -772,6 +776,16 @@ final class HilosSignalConstants
      * Carried by {@see AuthRecoveryGrantedSignalData}.
      */
     public const string HILOS_AUTH_RECOVERY_GRANTED = 'hilos_auth_recovery_granted';
+
+    /**
+     * Users library → the session holder: this registration's address is proved, move its tabs along.
+     *
+     * The registration counterpart of {@see HILOS_AUTH_RECOVERY_GRANTED} (HIL-825): the
+     * code was proved in the library and no account exists yet, so what changes is only
+     * which screen the tabs of that browser are on. Carried by
+     * {@see AuthRegistrationProvenSignalData}.
+     */
+    public const string HILOS_AUTH_REGISTRATION_PROVEN = 'hilos_auth_registration_proven';
 
     /**
      * Users library → the session holder: this browser now recovers THAT address.

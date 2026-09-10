@@ -103,6 +103,22 @@ async function waitRegisterSettled(page: Page): Promise<void> {
 }
 
 /**
+ * Wait for a registration code to SETTLE: the password step is up, or the code
+ * was refused inline. The code proves the address and creates nothing (HIL-825),
+ * so what says the reply landed is the field the next screen asks for.
+ *
+ * @param page The page whose auth surface is submitting.
+ */
+async function waitPasswordStepSettled(page: Page): Promise<void> {
+  await expect(async () => {
+    const passwordField = page.getByTestId('auth-new-password')
+    const onPasswordStep = (await passwordField.count()) > 0
+    const failed = (await page.getByTestId('auth-error').count()) > 0
+    expect(onPasswordStep || failed).toBeTruthy()
+  }).toPass()
+}
+
+/**
  * Wait for a flow to reach its done screen, or be refused inline. A flow that
  * ends by signing somebody in does not close the surface on its own (HIL-422) —
  * it says what was achieved and waits for Continue.
@@ -155,21 +171,20 @@ export async function continueFromDone(page: Page): Promise<void> {
 }
 
 /**
- * Fill and submit the register form; the surface lands on its code step.
+ * Submit the register form; the surface lands on its code step.
  *
- * The account does NOT exist afterwards: the submit reserves the address and has
- * one code mailed to it (HIL-415).
+ * The address is all it asks for (HIL-825), and the account does NOT exist
+ * afterwards: the submit reserves the address and has one code mailed to it
+ * (HIL-415).
  *
  * @param page The page with the auth surface mounted.
  * @param email The address to register.
- * @param password The password the new account is created with.
  */
 export async function submitRegistration(
   page: Page,
   email: string,
-  password: string = PASSWORD,
 ): Promise<void> {
-  await enterIdentifierAndPassword(page, email, password)
+  await typeInto(page.getByTestId('auth-identifier'), email)
   // Nothing was chosen: the lookup found no account for the address, so the one
   // screen turned itself into a registration.
   await expect(page.getByTestId('auth-heading')).toHaveText(
@@ -184,21 +199,42 @@ export async function submitRegistration(
 }
 
 /**
- * Submit a code on the step that is asking for one.
+ * Submit a registration code; the surface lands on the password step.
  *
- * @param page The page sitting on a code step.
+ * A valid code proves the address and creates nothing (HIL-825), so unlike a
+ * recovery code this one settles on the screen that asks for a password.
+ *
+ * @param page The page sitting on the registration code step.
  * @param code The code to type.
  */
-export async function submitCode(page: Page, code: string): Promise<void> {
+export async function submitRegistrationCode(
+  page: Page,
+  code: string,
+): Promise<void> {
   await typeInto(page.getByTestId('auth-code'), code)
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitPasswordStepSettled(page)
+}
+
+/**
+ * Submit the password that creates the account, on the registration password step.
+ *
+ * @param page The page sitting on the registration password step.
+ * @param password The password the account is created with.
+ */
+export async function submitFirstPassword(
+  page: Page,
+  password: string = PASSWORD,
+): Promise<void> {
+  await typeInto(page.getByTestId('auth-new-password'), password)
   await clickSubmit(page.getByTestId('auth-submit'))
   await waitDoneSettled(page)
 }
 
 /**
  * Register an account end to end on the currently mounted auth surface: submit
- * the form, read the code out of the delivered letter, confirm it, and
- * acknowledge the finished panel.
+ * the address, read the code out of the delivered letter, confirm it, choose a
+ * password, and acknowledge the finished panel.
  *
  * @param page The page with the auth surface mounted.
  * @param email The address to register.
@@ -209,8 +245,9 @@ export async function register(
   email: string,
   password: string = PASSWORD,
 ): Promise<void> {
-  await submitRegistration(page, email, password)
-  await submitCode(page, await readRegisterCode(email))
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await submitFirstPassword(page, password)
   await continueFromDone(page)
 }
 

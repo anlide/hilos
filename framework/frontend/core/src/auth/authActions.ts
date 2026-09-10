@@ -57,6 +57,7 @@ import {
 import {
   AUTH_ACTION_ABANDON_REGISTRATION,
   AUTH_ACTION_COMPLETE_PASSWORD_RESET,
+  AUTH_ACTION_COMPLETE_REGISTRATION,
   AUTH_ACTION_CONFIRM_MAGIC_LINK,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_CONFIRM_PASSWORD_RESET,
@@ -316,17 +317,24 @@ function submitAuthFlow(
         ? sendPhoneCode(context, flow, form)
         : dispatchFlow(context, AUTH_ACTION_REGISTER, {
             email: form.identifier,
-            password: form.password,
           })
     case 'code':
       return submitCode(context, action, flow, form)
     case 'set_password':
-      // The address is deliberately absent from the payload: the backend reads it
-      // off the grant the accepted code left on this session, so a payload cannot
-      // name an account other than the one whose mailbox was just proven.
-      return dispatchFlow(context, AUTH_ACTION_COMPLETE_PASSWORD_RESET, {
-        password: form.newPassword,
-      })
+      // One screen, two endings (HIL-825): a recovery writes the password of an
+      // account that exists, a registration CREATES the account on the address it
+      // just proved. The address is deliberately absent from both payloads: the
+      // backend reads it off what the accepted code left on this session — a
+      // grant for the recovery, the proved hold for the registration — so a
+      // payload cannot name an account other than the one whose mailbox was just
+      // proven.
+      return dispatchFlow(
+        context,
+        flow.intent === 'register'
+          ? AUTH_ACTION_COMPLETE_REGISTRATION
+          : AUTH_ACTION_COMPLETE_PASSWORD_RESET,
+        { password: form.newPassword },
+      )
     case 'done':
       // Continue: the announcement is cleared on the server, the gate releases
       // the resume it was holding, and the surface closes.

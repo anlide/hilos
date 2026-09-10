@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Hilos;
+use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
@@ -256,9 +257,10 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     /**
      * Registers an account through the main page to seed a password identity.
      *
-     * Two actions, because a submit reserves and only the code registers (HIL-415).
-     * The mailed code is unknowable here, so the challenge is re-seeded with a known
-     * one — the same way MainPageRegisterTest does it — and confirmed.
+     * Three actions, because a submit reserves, the code only proves the address and
+     * the password is what creates the account (HIL-415, HIL-825). The mailed code is
+     * unknowable here, so the challenge is re-seeded with a known one — the same way
+     * MainPageRegisterTest does it — and confirmed.
      *
      * @param ChatAgent $agent Agent owning the page
      * @param string $acceptKey Acting connection accept key
@@ -270,7 +272,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email, self::PASSWORD),
+            new RegisterActionDTO($email),
         );
         $this->deliverLibraryFrames($agent);
 
@@ -293,6 +295,13 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, self::CODE),
+        );
+        $this->deliverLibraryFrames($agent);
+
+        $this->usersLibrary()->onAgentAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
+            new CompleteRegistrationActionDTO(self::PASSWORD),
         );
         $this->deliverLibraryFrames($agent);
     }

@@ -120,11 +120,13 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
   sign_in: 'Sign in',
   create_account: 'Create your account',
   held_identifier: 'You already have a code',
+  proven_identifier: 'Your address is confirmed',
   terms: 'Terms and privacy',
   confirm_identifier: 'Confirm your email',
   enter_code: 'Enter the code',
   reset_code: 'Reset your password',
   choose_password: 'Choose a new password',
+  set_first_password: 'Choose a password',
   two_step: 'Two-step verification',
   waiting_external: 'Sign in',
   check_inbox: 'Check your inbox',
@@ -138,11 +140,13 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
   sign_in: 'Sign in',
   create_account: 'Create account',
   held_identifier: 'Enter the code',
+  proven_identifier: 'Choose a password',
   terms: 'Create account',
   confirm_identifier: 'Confirm',
   enter_code: 'Continue',
   reset_code: 'Continue',
   choose_password: 'Save password',
+  set_first_password: 'Save password',
   two_step: 'Verify',
   waiting_external: '',
   check_inbox: 'Continue',
@@ -303,6 +307,19 @@ const heading = computed(() =>
 
 const submitLabel = computed(() => SUBMIT_LABELS[screenKey.value])
 
+// The password screen says which of its two endings this is. A recovery is
+// replacing a password that exists; a registration is about to create the
+// account, and the sentence has to say so before the button does (HIL-825).
+const setPasswordLead = computed(() =>
+  state.value.intent === 'register'
+    ? 'Your address is confirmed. Choose a password — your account is created when you save it.'
+    : 'The code was accepted. Choose a new password.',
+)
+
+const newPasswordLabel = computed(() =>
+  state.value.intent === 'register' ? 'Password' : 'New password',
+)
+
 // The inline refusal: the backend's own sentence when it sent one, its semantic
 // code turned into ours when it did not.
 const errorMessage = computed(() => {
@@ -358,10 +375,10 @@ const adjacentIcons = computed(() =>
   icons.value.filter((method) => method.placement === 'password_adjacent'),
 )
 
-// The password reveals INSIDE the identifier step as a function of the reply: an
-// account that signs in with one asks for it, a free address that may be
-// registered with one offers it, and everything else (a phone, a passwordless
-// account) never shows the field at all.
+// The password reveals INSIDE the identifier step for one reply only: an account
+// that signs in with one. A free address does not offer it any more (HIL-825) —
+// a registration asks for a password after the code, on the screen that creates
+// the account, so nobody invents a credential for an inbox they have not proved.
 const showPassword = computed(() => {
   const result = detection.value.result
   if (
@@ -372,10 +389,32 @@ const showPassword = computed(() => {
     return false
   }
 
-  return result.status === 'active'
-    ? result.methods.includes(PASSWORD_METHOD_KEY)
-    : result.status === 'none' &&
-        result.registerable.includes(PASSWORD_METHOD_KEY)
+  return (
+    result.status === 'active' && result.methods.includes(PASSWORD_METHOD_KEY)
+  )
+})
+
+// The row that carries the main way in and the ways past it. It outlives the
+// password field (HIL-825): a free address is registered without one, but the
+// envelope beside it is still the passwordless way to register that address, and
+// dropping it with the field would have taken the magic link's only entrance on
+// this screen. So the row stands wherever the main way IS a password - the one
+// this account signs in with, or the one this registration will ask for after
+// the code.
+const showPasswordRow = computed(() => {
+  if (showPassword.value) {
+    return true
+  }
+  const result = detection.value.result
+
+  return (
+    adjacentIcons.value.length > 0 &&
+    state.value.step === 'identifier' &&
+    result !== null &&
+    result.kind === 'email' &&
+    result.status === 'none' &&
+    result.registerable.includes(PASSWORD_METHOD_KEY)
+  )
 })
 
 // The recovery key sits beside the password and only for an account that HAS one:
@@ -434,6 +473,11 @@ const identifierHint = computed(() => {
     return result.kind === 'phone'
       ? 'A code is already on its way to this number.'
       : 'A code is already on its way to this address.'
+  }
+  // A proved one has no code left either: what is owed is the password that
+  // creates the account (HIL-825).
+  if (result.status === 'proven') {
+    return 'You confirmed this address. Choose a password to finish.'
   }
 
   return showPassword.value ? null : 'This account has no password.'
@@ -667,6 +711,13 @@ function abandon(): void {
 // flight, so nothing is sent and no second letter is ordered.
 function resumeHeldRegistration(): void {
   auth.resumeHeldRegistration()
+}
+
+// And the way on from a return to an address this browser already PROVED. Local
+// for the same reason: the proof is on the hold, so nothing is sent and no code
+// is spent (HIL-825).
+function resumeProvenRegistration(): void {
+  auth.resumeProvenRegistration()
 }
 
 // The consent screen's way back. Nothing was reserved yet, so unlike "not that
@@ -1031,21 +1082,31 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- The password lives inside this step, revealed by the reply. Beside it
-      stand the ways past it: the envelope for an account that would rather have
-      a link, the key for one that forgot the password. -->
-      <div v-if="showPassword" class="mb-3">
-        <label class="form-label small fw-semibold" for="auth-password">
+      <!-- The password lives inside this step, revealed by the reply — and only for
+      an account that HAS one, since HIL-825 (a registration is asked for its
+      password after the code), which is why the autofill hint is unconditional.
+      Beside it stand the ways past it: the envelope for an account that would
+      rather have a link, the key for one that forgot the password. The envelope
+      outlives the field: on a free address it is the way to register WITHOUT a
+      password, and there is nowhere else on this screen for it to stand. -->
+      <div v-if="showPasswordRow" class="mb-3">
+        <label
+          v-if="showPassword"
+          class="form-label small fw-semibold"
+          for="auth-password"
+        >
           Password
         </label>
-        <div class="d-flex align-items-center gap-2">
+        <div
+          class="d-flex align-items-center gap-2"
+          :class="{ 'justify-content-center': !showPassword }"
+        >
           <input
+            v-if="showPassword"
             id="auth-password"
             type="password"
             class="form-control"
-            :autocomplete="
-              state.intent === 'register' ? 'new-password' : 'current-password'
-            "
+            autocomplete="current-password"
             data-id="auth-password"
             :value="form.password"
             @input="updatePassword($event)"
@@ -1103,6 +1164,16 @@ onUnmounted(() => {
         class="btn btn-primary w-100"
         data-id="auth-resume-code"
         @click="resumeHeldRegistration()"
+      >
+        {{ submitLabel }}
+      </button>
+
+      <button
+        v-else-if="primaryAction?.kind === 'resume_password'"
+        type="button"
+        class="btn btn-primary w-100"
+        data-id="auth-resume-password"
+        @click="resumeProvenRegistration()"
       >
         {{ submitLabel }}
       </button>
@@ -1334,21 +1405,34 @@ onUnmounted(() => {
       </button>
     </form>
 
-    <!-- The new password of a recovery. The address is not asked for again: the
-    accepted code left a grant on this session, and that is what names the
-    account. -->
+    <!-- One screen for two endings (HIL-825): a recovery writes the new password
+    of an account that exists, a registration CREATES the account on the address
+    it just proved. The address is not asked for again either way — what the
+    accepted code left on this session is what names it. -->
     <form
       v-else-if="state.step === 'set_password'"
       novalidate
       @submit.prevent="submit()"
     >
       <p class="text-body-secondary small mb-3">
-        The code was accepted. Choose a new password.
+        {{ setPasswordLead }}
       </p>
+
+      <!-- The address, for the password manager and for nobody else: a saved
+      entry with no login against it is an entry its owner cannot use. Hidden
+      rather than absent, because what the manager files the password under is
+      the field beside it. -->
+      <input
+        type="text"
+        hidden
+        autocomplete="username"
+        data-id="auth-username"
+        :value="form.identifier"
+      />
 
       <div class="mb-3">
         <label class="form-label small fw-semibold" for="auth-new-password">
-          New password
+          {{ newPasswordLabel }}
         </label>
         <input
           id="auth-new-password"
@@ -1376,6 +1460,20 @@ onUnmounted(() => {
       >
         {{ submitLabel }}
       </LoadingButton>
+
+      <!-- The way out. This screen has no address field and no step behind it,
+      so without the same link the code screen carries, whoever changed their
+      mind here would be shut in (HIL-825). -->
+      <div v-if="state.intent === 'register'" class="text-center mt-3">
+        <button
+          type="button"
+          class="btn btn-sm btn-link p-0 small"
+          data-id="auth-restart"
+          @click="abandon()"
+        >
+          Not that address?
+        </button>
+      </div>
     </form>
 
     <!-- Parked on a ceremony. A link waits on the inbox, everything else waits on

@@ -381,7 +381,7 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
     private function holdNumber(string $acceptKey, string $phone): void
     {
         new RegistrationReservationService()
-            ->hold(IdentityType::SMS, Hilos::$rt->connections[$acceptKey]->sessionToken, $phone, null);
+            ->hold(IdentityType::SMS, Hilos::$rt->connections[$acceptKey]->sessionToken, $phone);
     }
 
     /**

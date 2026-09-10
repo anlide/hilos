@@ -17,6 +17,7 @@ use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -193,6 +194,65 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
             $this->assertSame(IdentifierDetection::STATUS_PENDING, $detection->status);
             $this->assertSame([], $detection->methods);
             $this->assertSame([], $detection->registerable);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * An address this browser has already proved is `proven`, with neither list.
+     *
+     * The fourth state (HIL-825), and the reason it is a state and not a flag inside
+     * `pending`: `pending` means "go to the code screen" everywhere in the sign-in
+     * machine, and this address's code is spent. Neither list is named because the
+     * account it will get does not exist yet and there is nothing to name a way into -
+     * the surface has one thing to offer, the password screen.
+     *
+     * @throws HilosException When setup or lookup handling fails
+     */
+    public function testProvedHoldIsProvenAndNamesNothing(): void
+    {
+        $agent = $this->bootAgent();
+        $token = $this->openSession($agent, 'proven-ak');
+        $email = $this->uniqueEmail();
+        $this->register($agent, 'proven-ak', $email);
+        $this->proveHold($token, $email);
+
+        try {
+            $detection = $this->detect($agent, 'proven-ak', $email);
+
+            $this->assertSame(IdentifierDetection::STATUS_PROVEN, $detection->status);
+            $this->assertSame([], $detection->methods);
+            $this->assertSame([], $detection->registerable);
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Another browser's PROVED hold still leaves the address free to everyone else.
+     *
+     * The address belongs to nobody until a password is saved (HIL-825), so proving it
+     * moves the race rather than ending it. Answering anything else here would tell a
+     * stranger that somebody is one screen away from taking the address - the very
+     * oracle the browser-owned hold was built to close.
+     *
+     * @throws HilosException When setup or lookup handling fails
+     */
+    public function testAnotherBrowsersProvedHoldStillLeavesTheAddressFree(): void
+    {
+        $agent = $this->bootAgent();
+        $token = $this->openSession($agent, 'proven-holder-ak');
+        $email = $this->uniqueEmail();
+        $this->register($agent, 'proven-holder-ak', $email);
+        $this->proveHold($token, $email);
+        $this->openSession($agent, 'proven-onlooker-ak');
+
+        try {
+            $detection = $this->detect($agent, 'proven-onlooker-ak', $email);
+
+            $this->assertSame(IdentifierDetection::STATUS_NONE, $detection->status);
+            $this->assertSame([AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK], $detection->registerable);
         } finally {
             $this->cleanUp();
         }
@@ -456,9 +516,25 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email, self::PASSWORD),
+            new RegisterActionDTO($email),
         );
         $this->deliverLibraryFrames($agent);
+    }
+
+    /**
+     * Marks this browser's hold on an address as proved, the way an accepted code does.
+     *
+     * The service rather than the confirm action, because the mailed code is unknowable
+     * here and re-seeding a challenge would test the verification layer instead of the
+     * detection this case is about.
+     *
+     * @param string $sessionToken Session cookie token of the browser leading the registration
+     * @param string $email Address the hold names
+     * @throws HilosException When the reservation write fails
+     */
+    private function proveHold(string $sessionToken, string $email): void
+    {
+        new RegistrationReservationService()->markProven($sessionToken, $email);
     }
 
     /**

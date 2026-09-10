@@ -230,6 +230,12 @@ abstract class AbstractLibraryCommands
      * into would be the only trace of it. The loser is answered exactly as a taken address
      * is, which is what it now is.
      *
+     * WHAT the account signs in with is the caller's to say (HIL-825). A password
+     * registration ends on a password screen and hands the plaintext through to be hashed
+     * into the identity here, at the moment the account comes into being; a link and a
+     * phone code carry none, and the hold's own type names the secret-less identity they
+     * earn.
+     *
      * The sign-in, the marks on the sockets and the word to the losers are all one frame to
      * the session holder ({@see AbstractUsersLibraryAgent::announceRegistrationLanded()}):
      * the library has no session to raise and no parked socket to reach.
@@ -237,6 +243,7 @@ abstract class AbstractLibraryCommands
      * @param ActingSession $acting Browser the proof arrived on
      * @param string $identifier Normalized identifier the proof just settled (lowercased email or E.164)
      * @param string $displayName Name the new account is created with
+     * @param ?string $plainPassword Password the account signs in with, or null for a way in that carries none
      * @return ?AuthFlowOutcome The taken-address rollback to answer with, or null when the holder answers
      * @throws EmptyValueException When the display name is empty
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
@@ -247,12 +254,13 @@ abstract class AbstractLibraryCommands
         ActingSession $acting,
         string $identifier,
         string $displayName,
+        ?string $plainPassword = null,
     ): ?AuthFlowOutcome {
         Database::transactionStart();
         try {
             $userId = $this->library->createUser($displayName);
             $losers = new RegistrationReservationService()
-                ->confirmProvenAddress($acting->sessionToken, $identifier, $userId);
+                ->confirmProvenAddress($acting->sessionToken, $identifier, $userId, $plainPassword);
             Database::transactionCommit();
         } catch (DuplicateValueException) {
             $this->endFailedLanding();

@@ -265,26 +265,47 @@ describe('isFlowSubmittable', () => {
     )
   })
 
-  it('identifier register: the password needs the minimum length', () => {
+  it('identifier register: the answer about the address is the whole gate', () => {
+    // No password is measured here since HIL-825 — the step asks for the
+    // address alone, and a password is chosen after the code proves it.
     const flow = {
       ...INITIAL_FLOW,
       intent: 'register' as const,
       identifierKind: 'email' as const,
     }
     const form = { ...EMPTY_FORM, identifier: 'new@b.com' }
-    const state = resolved(
+    const free = resolved(
       detected({ identifier: 'new@b.com', status: 'none', methods: [] }),
     )
-    expect(isFlowSubmittable(flow, { ...form, password: 'short' }, state)).toBe(
-      false,
+    expect(isFlowSubmittable(flow, form, free)).toBe(true)
+    const closed = resolved(
+      detected({
+        identifier: 'new@b.com',
+        status: 'none',
+        methods: [],
+        registerable: [],
+        registrationBlock: 'closed',
+      }),
     )
-    expect(
-      isFlowSubmittable(
-        flow,
-        { ...form, password: 'x'.repeat(PASSWORD_MIN_LENGTH) },
-        state,
-      ),
-    ).toBe(true)
+    expect(isFlowSubmittable(flow, form, closed)).toBe(false)
+  })
+
+  it('identifier proven: the way on is the primary action, not the submit', () => {
+    const flow = {
+      ...INITIAL_FLOW,
+      intent: 'register' as const,
+      identifierKind: 'email' as const,
+    }
+    const form = { ...EMPTY_FORM, identifier: 'proved@b.com' }
+    const state = resolved(
+      detected({
+        identifier: 'proved@b.com',
+        status: 'proven',
+        methods: [],
+        registerable: [],
+      }),
+    )
+    expect(isFlowSubmittable(flow, form, state)).toBe(false)
   })
 
   it('a phone never submits from the identifier step', () => {
@@ -505,6 +526,41 @@ describe('intent derivation from the detection reply', () => {
     expect(flow.primaryAction.get()).toBeNull()
   })
 
+  it('a free address is submittable the moment the lookup answers — no password there any more', async () => {
+    // HIL-825 took the password off the identifier step: registration asks for
+    // one after the code, so there is nothing here to measure and the button
+    // lives on the ANSWER about the address alone.
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    expect(flow.form.get().password).toBe('')
+    expect(flow.submittable.get()).toBe(true)
+    expect(flow.primaryAction.get()).toEqual({ kind: 'submit' })
+  })
+
+  it('a proved reservation goes to the password screen WITHOUT a send', async () => {
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          status: 'proven',
+          methods: [],
+          registerable: [],
+        }),
+    })
+    await typeAndDetect(flow, 'proved@b.com')
+    expect(flow.flow.get()).toMatchObject({
+      step: 'set_password',
+      intent: 'register',
+    })
+    expect(flow.screenKey.get()).toBe('set_first_password')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('pending reservation parks on the code screen WITHOUT a send', async () => {
     const onSubmit = vi.fn(async () => ({ ok: true }))
     const flow = setup({
@@ -519,7 +575,7 @@ describe('intent derivation from the detection reply', () => {
   })
 })
 
-describe('primaryAction — the five shapes', () => {
+describe('primaryAction — the six shapes', () => {
   it('submit: an active email account with a password', async () => {
     const flow = setup()
     await typeAndDetect(flow, 'a@b.com')
@@ -552,6 +608,24 @@ describe('primaryAction — the five shapes', () => {
     expect(flow.primaryAction.get()).toEqual({ kind: 'channel', key: 'sms' })
   })
 
+  it('resume_password: an address this browser has already proved', async () => {
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          status: 'proven',
+          methods: [],
+          registerable: [],
+        }),
+    })
+    await typeAndDetect(flow, 'proved@b.com')
+    flow.backToIdentifier()
+    await settleRefresh()
+    expect(flow.screenKey.get()).toBe('proven_identifier')
+    expect(flow.primaryAction.get()).toEqual({ kind: 'resume_password' })
+    expect(flow.submittable.get()).toBe(false)
+  })
+
   it('null: before the detection resolved', () => {
     const flow = setup()
     expect(flow.primaryAction.get()).toBeNull()
@@ -580,10 +654,11 @@ describe('primaryAction — the five shapes', () => {
   })
 })
 
-describe('screenKey — all fourteen screens', () => {
+describe('screenKey — all sixteen screens', () => {
   it('derives every screen from the axes', () => {
     // The third element is the resolved lookup: only the identifier step
-    // consults one, and only a `pending` reply changes what it draws (HIL-651).
+    // consults one, and only a `pending` (HIL-651) or `proven` (HIL-825) reply
+    // changes what it draws.
     const cases: ReadonlyArray<
       [Partial<AuthFlowState>, AuthFlowScreen, IdentifierDetection?]
     > = [
@@ -593,6 +668,11 @@ describe('screenKey — all fourteen screens', () => {
         { intent: 'register' },
         'held_identifier',
         detected({ status: 'pending', methods: [] }),
+      ],
+      [
+        { intent: 'register' },
+        'proven_identifier',
+        detected({ status: 'proven', methods: [], registerable: [] }),
       ],
       [{ step: 'consent', intent: 'register' }, 'terms'],
       [{ step: 'code', intent: 'register' }, 'confirm_identifier'],
@@ -608,6 +688,7 @@ describe('screenKey — all fourteen screens', () => {
       ],
       [{ step: 'second_factor', intent: 'login' }, 'two_step'],
       [{ step: 'set_password', intent: 'recovery' }, 'choose_password'],
+      [{ step: 'set_password', intent: 'register' }, 'set_first_password'],
       [{ step: 'external', methodKey: 'oauth:github' }, 'waiting_external'],
       [{ step: 'external', methodKey: MAGIC_LINK_METHOD_KEY }, 'check_inbox'],
       [{ step: 'done', intent: 'register' }, 'done_registered'],
@@ -631,7 +712,6 @@ describe('registration: consent is a local step before anything is created', () 
         detected({ identifier, status: 'none', methods: [] }),
     })
     await typeAndDetect(flow, 'new@b.com')
-    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
     await flow.submit()
     expect(flow.flow.get().step).toBe('consent')
     expect(flow.screenKey.get()).toBe('terms')
@@ -650,7 +730,6 @@ describe('registration: consent is a local step before anything is created', () 
         detected({ identifier, status: 'none', methods: [] }),
     })
     await typeAndDetect(flow, 'new@b.com')
-    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
     await flow.submit()
     flow.setField('consentAccepted', true)
     expect(flow.submittable.get()).toBe(true)
@@ -1148,7 +1227,6 @@ describe('an address held by this browser (HIL-651)', () => {
     })
     await typeAndDetect(flow, 'new@b.com')
     expect(flow.screenKey.get()).toBe('create_account')
-    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
     await flow.submit()
     flow.setField('consentAccepted', true)
     await flow.submit()
@@ -1177,6 +1255,35 @@ describe('an address held by this browser (HIL-651)', () => {
     await typeAndDetect(flow, '')
     await typeAndDetect(flow, 'reserved@b.com')
     expect(flow.flow.get()).toMatchObject({ step: 'code', intent: 'register' })
+  })
+
+  it('resumeProvenRegistration goes on to the password, sending nothing and asking nothing', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({
+        identifier,
+        status: 'proven',
+        methods: [],
+        registerable: [],
+      }),
+    )
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const flow = setup({ onDetect, onSubmit })
+    await typeAndDetect(flow, 'proved@b.com')
+    flow.backToIdentifier()
+    await settleRefresh()
+    // Walking back to the field does NOT take the step away again, which is why
+    // the screen offers the way on rather than moving on its own (HIL-825).
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.screenKey.get()).toBe('proven_identifier')
+    const asked = onDetect.mock.calls.length
+    flow.resumeProvenRegistration()
+    expect(flow.flow.get()).toMatchObject({
+      step: 'set_password',
+      intent: 'register',
+    })
+    expect(flow.screenKey.get()).toBe('set_first_password')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onDetect).toHaveBeenCalledTimes(asked)
   })
 
   it('resumeHeldRegistration returns to the code, sending nothing and asking nothing', async () => {
@@ -1468,7 +1575,6 @@ describe('failure surface', () => {
         detected({ identifier, status: 'none', methods: [] }),
     })
     await typeAndDetect(flow, 'new@b.com')
-    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
     await flow.submit()
     expect(flow.flow.get().step).toBe('consent')
     flow.setField('consentAccepted', true)
@@ -1498,7 +1604,6 @@ describe('failure surface', () => {
         detected({ identifier, status: 'none', methods: [] }),
     })
     await typeAndDetect(flow, 'new@b.com')
-    flow.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
     await flow.submit()
     flow.setField('consentAccepted', true)
     await flow.submit()

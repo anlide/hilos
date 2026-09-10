@@ -11,8 +11,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationReservation;
-use Hilos\Database\Object\Collection\Identities;
-use Hilos\Database\Object\Collection\RegistrationReservations;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -20,12 +18,10 @@ use Hilos\Database\SqlParamCollection;
 /**
  * RegistrationReservation object - wraps RegistrationReservation entity.
  *
- * Exposes the reservation's non-secret fields and the hold/extend/read-credential
- * primitives. The `secret` is never exposed as a property, in toArray(), or over
- * the DB sync bus; it is minted by
- * {@see RegistrationReservations::createReservation()} and read only by
- * {@see readSecretHash()}, at the single moment the confirmed reservation becomes
- * an identity.
+ * Exposes the reservation's fields and the hold/extend/prove primitives. The hold
+ * carries no credential (HIL-825): the password is asked for after the code, so
+ * what a proved hold remembers is the moment the code came back, and that is an
+ * ordinary mapped column rather than a secret.
  *
  * @extends Object_<EntityRegistrationReservation>
  *
@@ -33,6 +29,7 @@ use Hilos\Database\SqlParamCollection;
  * @property string $type
  * @property string $identifier
  * @property string $sessionToken
+ * @property-read ?string $codeAcceptedAt
  * @property string $expiresAt
  */
 final class RegistrationReservation extends Object_
@@ -42,6 +39,7 @@ final class RegistrationReservation extends Object_
     public const string type = 'type';
     public const string identifier = 'identifier';
     public const string sessionToken = 'sessionToken';
+    public const string codeAcceptedAt = 'codeAcceptedAt';
     public const string expiresAt = 'expiresAt';
 
     /**
@@ -57,7 +55,7 @@ final class RegistrationReservation extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, type, identifier, sessionToken, expiresAt)
+     * @param string $property Property name (id, type, identifier, sessionToken, codeAcceptedAt, expiresAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known RegistrationReservation field
      */
@@ -68,6 +66,7 @@ final class RegistrationReservation extends Object_
             self::type => $this->entity->type,
             self::identifier => $this->entity->identifier,
             self::sessionToken => $this->entity->session_token,
+            self::codeAcceptedAt => $this->entity->code_accepted_at,
             self::expiresAt => $this->entity->expires_at,
             default => parent::__get($property),
         };
@@ -76,8 +75,8 @@ final class RegistrationReservation extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * The `secret` has no setter here; it is written only through the reservation
-     * layer's mint path ({@see RegistrationReservations::createReservation()}).
+     * The proof mark has no setter here; it is written by {@see markCodeAccepted()},
+     * which is the only place allowed to say an address was proved.
      *
      * @param string $property Property name (type, identifier, sessionToken, expiresAt)
      * @param mixed $value Value to set
@@ -110,43 +109,57 @@ final class RegistrationReservation extends Object_
     }
 
     /**
-     * Reads the credential hash this reservation carries.
+     * Whether the code that proves this hold's address has already come back.
      *
-     * Confirm primitive, symmetric with the identity layer's
-     * {@see Identity::verifyPassword()}: the hash is read with a targeted query
-     * (it is not ORM-mapped) and handed straight to
-     * {@see Identities::createPasswordIdentityWithHash()}, so the credential moves
-     * from the reservation into the identity without ever being re-hashed, held in
-     * plaintext, or crossing the object/view/sync surface. Returns null for an
-     * unpersisted reservation and for a method that reserved without a credential.
+     * The question the password step stands on (HIL-825): a proved hold is what a
+     * returning tab is put back on the password screen by, and an unproved one still
+     * names the code screen. It is asked of the row rather than of a live code
+     * because the code is spent the moment it is accepted - the proof moved onto the
+     * hold precisely so that spending it breaks nothing.
      *
-     * @return ?string Stored bcrypt hash, or null when the reservation carries none
-     * @throws DatabaseException When the secret lookup query fails
+     * @return bool True once {@see markCodeAccepted()} has written the proof
      */
-    public function readSecretHash(): ?string
+    public function isProven(): bool
+    {
+        return $this->entity->code_accepted_at !== null;
+    }
+
+    /**
+     * Marks this hold's address as proved by an accepted code.
+     *
+     * Confirm primitive of the two-step registration (HIL-825): the account is not
+     * created here, the address is only proved, and the proof is durable so the
+     * password step survives a reload, a closed tab and a daemon restart. Written
+     * with a targeted UPDATE and mirrored on the loaded entity, the same split
+     * {@see extendTo()} uses. A no-op for an unpersisted reservation.
+     *
+     * @param string $acceptedAtSql Moment the code was accepted, as an SQL datetime string
+     * @throws DatabaseException When the proof update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function markCodeAccepted(string $acceptedAtSql): void
     {
         if ($this->entity->id === null) {
-            return null;
+            return;
         }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($acceptedAtSql));
         $params->add(SqlParam::int($this->entity->id));
-        $resultSet = Database::sql(
-            'SELECT `' . EntityRegistrationReservation::secret . '` FROM `' . EntityRegistrationReservation::_table
-                . '` WHERE `' . EntityRegistrationReservation::id . '` = ?',
+        Database::sql(
+            'UPDATE `' . EntityRegistrationReservation::_table . '` SET `'
+                . EntityRegistrationReservation::code_accepted_at
+                . '` = ? WHERE `' . EntityRegistrationReservation::id . '` = ?',
             $params,
-        )->first();
-        if ($resultSet === null) {
-            return null;
-        }
+        );
 
-        $row = $resultSet->first();
-        if ($row === null) {
-            return null;
-        }
-        $secret = $row[EntityRegistrationReservation::secret] ?? null;
-
-        return is_string($secret) && $secret !== '' ? $secret : null;
+        $this->entity->code_accepted_at = $acceptedAtSql;
     }
 
     /**
@@ -188,9 +201,9 @@ final class RegistrationReservation extends Object_
     }
 
     /**
-     * Converts the reservation to an associative array (never includes the secret).
+     * Converts the reservation to an associative array.
      *
-     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, expiresAt)
+     * @return array<string, mixed> Reservation data (id, type, identifier, sessionToken, codeAcceptedAt, expiresAt)
      */
     public function toArray(): array
     {
@@ -199,6 +212,7 @@ final class RegistrationReservation extends Object_
             self::type => $this->entity->type,
             self::identifier => $this->entity->identifier,
             self::sessionToken => $this->entity->session_token,
+            self::codeAcceptedAt => $this->entity->code_accepted_at,
             self::expiresAt => $this->entity->expires_at,
         ];
     }

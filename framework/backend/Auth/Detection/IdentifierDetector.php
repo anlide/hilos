@@ -40,6 +40,12 @@ use Hilos\Hilos;
  * address right now" - a question the account lookup below is deliberately open
  * about and this one has no reason to answer at all.
  *
+ * That hold answers with one of two states, and which of them is what puts a
+ * returning tab on the right screen (HIL-825): a hold whose code has come back is
+ * `proven` and sends it to the password step, an unproved one is `pending` and sends
+ * it back to the code. Everybody else still hears `none` on the same address - it
+ * belongs to nobody until a password is saved.
+ *
  * What a project ENABLES is an input, not a decision made here: the constructor
  * takes the method keys this project offers and every answer is intersected with
  * them, so a method switched off (or never wired) cannot be named to a surface
@@ -123,8 +129,11 @@ final class IdentifierDetector
             return IdentifierDetection::owned($identifier, $normalized, $kind, $this->accountMethods($userId, $kind));
         }
 
-        if (new RegistrationReservationService()->findActiveForSession($sessionToken)?->identifier === $normalized) {
-            return IdentifierDetection::held($identifier, $normalized, $kind);
+        $hold = new RegistrationReservationService()->findActiveForSession($sessionToken);
+        if ($hold?->identifier === $normalized) {
+            return $hold->isProven()
+                ? IdentifierDetection::proven($identifier, $normalized, $kind)
+                : IdentifierDetection::held($identifier, $normalized, $kind);
         }
 
         $registerable = $this->registerableMethods($kind, new CodeDeliveryAvailability());

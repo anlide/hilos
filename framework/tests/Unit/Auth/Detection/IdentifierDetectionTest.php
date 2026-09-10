@@ -15,8 +15,9 @@ use PHPUnit\Framework\TestCase;
  * What is guarded here is the shape, not the lookup: the seven keys the frontend
  * `IdentifierDetection` interface declares are always present, the verbatim echo
  * survives normalization, and each status carries only the method list that makes
- * sense for it — a `pending` hold naming a way in, or a `none` naming an account's
- * methods, would both send the surface somewhere the backend refuses to follow. The
+ * sense for it — a `pending` or `proven` hold naming a way in, or a `none` naming an
+ * account's methods, would both send the surface somewhere the backend refuses to
+ * follow. The
  * seventh key is the reason registration is not offered (HIL-830), and it rides
  * `none` alone for the same reason the two lists are kept apart.
  */
@@ -86,6 +87,30 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->methods);
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'A hold is not a refused registration');
+    }
+
+    /**
+     * A proved identifier answers `proven` with both lists empty: the surface goes to the password step.
+     *
+     * The fourth state (HIL-825) carries as little as `pending` does, and for a reason of
+     * its own: the account this address is about to get does not exist yet, so there is no
+     * way in to name, and offering to register it again would deny the proof this very
+     * browser just gave.
+     */
+    public function testProvedIdentifierCarriesNeitherMethodList(): void
+    {
+        $detection = IdentifierDetection::proven(
+            self::TYPED_EMAIL,
+            self::NORMALIZED_EMAIL,
+            IdentifierDetection::KIND_EMAIL,
+        );
+
+        self::assertSame(IdentifierDetection::STATUS_PROVEN, $detection->status);
+        self::assertSame(self::TYPED_EMAIL, $detection->identifier);
+        self::assertSame(self::NORMALIZED_EMAIL, $detection->normalized);
+        self::assertSame([], $detection->methods);
+        self::assertSame([], $detection->registerable);
+        self::assertNull($detection->registrationBlock, 'A proved hold is not a refused registration');
     }
 
     /**

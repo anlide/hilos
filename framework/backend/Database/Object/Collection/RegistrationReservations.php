@@ -10,19 +10,14 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
-use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\RegistrationReservations as EntityRegistrationReservations;
 use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationReservation;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Object\Objects;
-use Hilos\Database\SqlParam;
-use Hilos\Database\SqlParamCollection;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -33,9 +28,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  * out. Every one of them is keyed by the SESSION since HIL-608 - a hold belongs to
  * the browser that started it - and the address is what several holds may share.
  * The orchestration (which method reserves, when a code is issued, what the
- * confirmed hold turns into) lives in {@see RegistrationReservationService}; the
- * credential hash is minted here with a targeted query so it never reaches the ORM
- * columns.
+ * confirmed hold turns into) lives in {@see RegistrationReservationService}. The
+ * hold carries no credential since HIL-825: the password is asked for after the
+ * code, so nothing about it is minted or stored here.
  *
  * @extends Objects<ObjectRegistrationReservation>
  * @method ObjectRegistrationReservation|null current()
@@ -51,15 +46,12 @@ final class RegistrationReservations extends Objects
     public const string COLLECTION_KEY = HilosDbContext::registrationReservations;
 
     /**
-     * Holds an identifier for one browser, storing the credential the account will get.
+     * Holds an identifier for one browser while the code that proves it travels.
      *
-     * Mint write path of the reservation layer, symmetric with the identity layer's
-     * {@see Identities::createPasswordIdentity()}: the plaintext secret is hashed here
-     * and written with a targeted UPDATE, so it is minted and stored entirely inside
-     * the layer and never reaches the ORM columns, the object/view surface, or the
-     * cross-worker sync bus. The row is first inserted through the ORM (which carries
-     * the non-secret columns and assigns the id) and the hash is then set with a
-     * follow-up UPDATE.
+     * Mint write path of the reservation layer. The row carries the address, the
+     * browser leading it and how long the hold lasts, and nothing else: since HIL-825
+     * the password is asked for after the code, so there is no credential to store
+     * and no follow-up write to store it with.
      *
      * The session's previous hold is released first, whatever address it named and
      * whether or not it had expired: a browser leads one registration at a time, so a
@@ -68,23 +60,20 @@ final class RegistrationReservations extends Objects
      * enforces, and losing a race against another socket of the SAME browser is the
      * only way to reach it ({@see DuplicateValueException}).
      *
-     * The credential FOLLOWS THE ADDRESS inside one browser: re-holding an address
-     * this session already holds live, with no new secret, carries the stored hash
-     * onto the new row. That is what makes "submitted a password, then asked for a
-     * link" end in an account with both ways in (HIL-608) instead of silently losing
-     * the password. A hold that has already expired carries nothing - that attempt is
-     * over - and neither does a hold on a different address, whose credential was
-     * chosen for an inbox this one has not proven.
+     * Re-holding an address this session already holds starts the hold over, proof
+     * and all: a fresh row is written and the old one goes with its
+     * `code_accepted_at`. That is right rather than lossy - a new hold means a new
+     * code is on its way, and a proof left standing beside it would let a person
+     * walk past a letter they asked for.
      *
      * @param string $type Reserving method (see IdentityType)
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
-     * @param ?string $plainSecret Plaintext credential to hash and store, or null for a method that carries none
      * @param int $ttlSeconds Seconds the registration stays held
      * @return ObjectRegistrationReservation The created reservation object
      * @throws EmptyValueException When the identifier or the session token is empty
      * @throws DuplicateValueException When another socket of this session inserted a hold meanwhile
-     * @throws DatabaseException If the insert or secret write query fails
+     * @throws DatabaseException If the insert query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -93,7 +82,6 @@ final class RegistrationReservations extends Objects
         string $type,
         string $sessionToken,
         string $identifier,
-        ?string $plainSecret,
         int $ttlSeconds,
     ): ObjectRegistrationReservation {
         if ($identifier === '') {
@@ -103,12 +91,8 @@ final class RegistrationReservations extends Objects
             throw new EmptyValueException('Reservation session token is required');
         }
 
-        $carriedHash = null;
         $standing = $this->findBySessionToken($sessionToken);
         if ($standing !== null) {
-            if ($standing->identifier === $identifier && $standing->isActive(TimeHelper::getSqlDateTime())) {
-                $carriedHash = $standing->readSecretHash();
-            }
             $this->release($standing);
         }
 
@@ -126,13 +110,6 @@ final class RegistrationReservations extends Objects
         $id = $reservation->id;
         if ($id === null) {
             throw new DatabaseException('Reservation insert did not assign an id');
-        }
-
-        $secretHash = $plainSecret !== null && $plainSecret !== ''
-            ? password_hash($plainSecret, PASSWORD_DEFAULT)
-            : $carriedHash;
-        if ($secretHash !== null) {
-            $this->writeSecretHash($id, $secretHash);
         }
 
         $this[$id] = $reservation;
@@ -208,12 +185,13 @@ final class RegistrationReservations extends Objects
     /**
      * Drops every OTHER browser's hold on an identifier and names their sessions.
      *
-     * What the first proof of an address owes the browsers that were racing it
-     * (HIL-608): the address has an account now, so their registrations cannot finish
-     * and must not sit there refusing a second attempt for the whole TTL. The losing
-     * session tokens are RETURNED rather than merely counted - they are the list the
-     * "already taken" converge is built from, and the only place that knows them is
-     * the moment their rows go.
+     * What the browser that FINISHED a registration owes the ones that were racing it
+     * (HIL-608, and since HIL-825 that is the browser which saved a password rather
+     * than the one which proved the address first): the address has an account now, so
+     * their registrations cannot finish and must not sit there refusing a second
+     * attempt for the whole TTL. The losing session tokens are RETURNED rather than
+     * merely counted - they are the list the "already taken" converge is built from,
+     * and the only place that knows them is the moment their rows go.
      *
      * The winner is named by its session and skipped, not by its row: a browser that
      * proved an address it never reserved (a link answered on a fresh tab) holds
@@ -358,40 +336,31 @@ final class RegistrationReservations extends Objects
     }
 
     /**
-     * Returns the cached object for a loaded row, wrapping it on first sight.
+     * Wraps a freshly loaded row, REPLACING whatever this process had cached for it.
+     *
+     * Every lookup here queries the table (there is no other way in), so a cache that
+     * outlived the query would buy nothing and cost freshness - which is exactly what it
+     * cost (HIL-825). Two of this row's columns are written with a targeted UPDATE and
+     * mirrored on the loaded entity ({@see ObjectRegistrationReservation::extendTo()},
+     * {@see ObjectRegistrationReservation::markCodeAccepted()}), and that mirror reaches
+     * only the process that wrote it: the write happens in the users library and the
+     * session holder is another agent, so its copy of the row stayed as it was at first
+     * sight, forever. A browser that had proved its address was handed the code step
+     * again, and a countdown that had been extended still ran out at the old moment.
+     *
+     * Replacing rather than refreshing in place is safe because nothing holds a
+     * reservation across calls: this collection is backend-only, never published, and
+     * every caller uses the object it was just handed.
      *
      * @param EntityRegistrationReservation $entity Loaded row whose id is known to be set
-     * @return ObjectRegistrationReservation Cached reservation object for the row
+     * @return ObjectRegistrationReservation Reservation object carrying the row as it is now
      */
     private function hydrateReservation(EntityRegistrationReservation $entity): ObjectRegistrationReservation
     {
         $id = (int)$entity->id;
-        if (!isset($this->objects[$id])) {
-            $this->hydrate($id, ObjectRegistrationReservation::fromEntity($entity));
-        }
+        $this->hydrate($id, ObjectRegistrationReservation::fromEntity($entity));
 
         return $this->objects[$id];
-    }
-
-    /**
-     * Stores a credential hash on a reservation row without mapping it.
-     *
-     * @param int $id Reservation row id
-     * @param string $secretHash Bcrypt hash to store
-     * @throws DatabaseException If the secret write query fails
-     */
-    private function writeSecretHash(int $id, string $secretHash): void
-    {
-        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, TruthSourceOperation::Update);
-
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($secretHash));
-        $params->add(SqlParam::int($id));
-        Database::sql(
-            'UPDATE `' . EntityRegistrationReservation::_table . '` SET `' . EntityRegistrationReservation::secret
-                . '` = ? WHERE `' . EntityRegistrationReservation::id . '` = ?',
-            $params,
-        );
     }
 
     /**

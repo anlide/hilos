@@ -418,15 +418,19 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     }
 
     /**
-     * A password hold landed by a link keeps the password of whoever reserved first.
+     * A registration that started with a password and finished with a link gets the link.
      *
-     * The hold is landed BY ITS TYPE, so the road the proof came back on does not
-     * change what the account gets: a registration that started with a password and
-     * finished with a link ends with that password.
+     * What HIL-825 made of this case, and it is a consequence of the move rather than a
+     * decision of its own (Flow p.10). The hold used to carry the password chosen at the
+     * submit, so the road the proof came back on did not change what the account got.
+     * There is no password before the code any more - it is asked for on the screen that
+     * creates the account - so a registration re-taken by a link is a registration whose
+     * password was never chosen, and the account it makes signs in by letter. A password
+     * is added from the profile afterwards.
      *
      * @throws HilosException When setup or the confirm handling fails
      */
-    public function testPasswordHoldConfirmedByALinkKeepsTheFirstPassword(): void
+    public function testARegistrationRetakenByALinkGetsTheLinkIdentity(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -441,17 +445,13 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->assertTrue($outcome->ok);
             $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
 
-            $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
-            $this->assertNotNull($identity, 'A password hold lands as a password identity');
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            $this->assertNotNull($identity, 'The link is what proved the address, so the link is the way in');
             $this->assertTrue($identity->verified);
             $this->assertNull(
-                Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email),
-                'The type of the hold decides, not the road the proof took',
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'And no password identity is invented for a password nobody ever typed',
             );
-
-            $storedHash = $this->readIdentitySecret($email);
-            $this->assertIsString($storedHash);
-            $this->assertTrue(password_verify(self::PASSWORD, $storedHash));
         } finally {
             $this->cleanUp();
         }
@@ -1017,7 +1017,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email, self::PASSWORD),
+            new RegisterActionDTO($email),
         );
         $this->deliverLibraryFrames($agent);
     }

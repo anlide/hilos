@@ -18,6 +18,7 @@ import {
   PASSWORD,
   register,
   signUp,
+  submitFirstPassword,
   submitRegistration,
   submitRegistrationCode,
   typeInto,
@@ -184,11 +185,14 @@ test('answers a wrong password inline, and an unknown address with the registrat
 
   // An address with no account is never given a sign-in to fail: the lookup in
   // FRONT of the form answers first, so the same screen becomes the registration
-  // (HIL-414) — which is why there is no "no account found" sentence any more.
-  await enterIdentifierAndPassword(page, uniqueEmail(), PASSWORD)
+  // (HIL-414) — which is why there is no "no account found" sentence any more. It
+  // shows no password field either (HIL-825): a registration is asked for one
+  // after the code, on the screen that creates the account.
+  await typeInto(page.getByTestId('auth-identifier'), uniqueEmail())
   await expect(page.getByTestId('auth-heading')).toHaveText(
     'Create your account',
   )
+  await expect(page.getByTestId('auth-password')).toHaveCount(0)
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
@@ -280,7 +284,8 @@ test('holds the address on submit and creates the account only on the mailed cod
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // Accepting the terms reserves the address and mails one code — it registers
-  // nobody, so the page stays gated and the surface steps to the code screen.
+  // nobody and takes no password, so the page stays gated and the surface steps to
+  // the code screen.
   await submitRegistration(page, email)
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
@@ -296,11 +301,15 @@ test('holds the address on submit and creates the account only on the mailed cod
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // The delivered code creates the account and signs the session in — and the
-  // surface says so instead of vanishing (HIL-422). The gate holds the resume
-  // until that panel is acknowledged, which is why the profile is still gated
-  // here and comes through on Continue.
+  // The delivered code proves the address and hands over the password screen; the
+  // password saved there is what creates the account and signs the session in
+  // (HIL-825) — and the surface says so instead of vanishing (HIL-422). The gate
+  // holds the resume until that panel is acknowledged, which is why the profile is
+  // still gated here and comes through on Continue.
   await submitRegistrationCode(page, code)
+  await expect(page.getByTestId('auth-heading')).toHaveText('Choose a password')
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+  await submitFirstPassword(page, PASSWORD)
   await expect(page.getByTestId('auth-continue')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
@@ -318,9 +327,10 @@ test('registers a stranger by the code that came with the sign-in link', async (
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // A free address: the lookup turns the one field into a registration, and the
-  // envelope beside the password is the passwordless way through it.
+  // envelope is the passwordless way through it. No password field stands beside
+  // it any more — a registration is asked for one after the code (HIL-825).
   await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
   await page.getByTestId('auth-icon-magic-link').click()
 
   // Nothing is sent before the terms: accepting them is what mails the letter.
@@ -402,7 +412,7 @@ test('signs a stranger in by clicking the link in the letter, from a cold load',
   // The other half of the letter (HIL-606 covers the code): this is the person
   // whose mail is open on the same device, who just clicks.
   await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
   await page.getByTestId('auth-icon-magic-link').click()
   await page.getByTestId('auth-consent-accept').check()
   await clickSubmit(page.getByTestId('auth-submit'))
@@ -432,7 +442,7 @@ test('turns a tampered sign-in link down on its own screen', async ({
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-password')).toBeVisible()
+  await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
   await page.getByTestId('auth-icon-magic-link').click()
   await page.getByTestId('auth-consent-accept').check()
   await clickSubmit(page.getByTestId('auth-submit'))
@@ -522,6 +532,7 @@ test('converges a second waiting tab onto the registration the first one confirm
   // ticket inherits one (HIL-423). Tab B comes back on the new token signed in and
   // un-gated, which is exactly what it shows below.
   await submitRegistrationCode(page, await readRegisterCode(email))
+  await submitFirstPassword(page, PASSWORD)
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
@@ -582,9 +593,61 @@ test('offers the held address its own code back, instead of "Create account"', a
   await page.getByTestId('auth-resume-code').click()
   await expect(page.getByTestId('auth-code')).toBeVisible()
   await submitRegistrationCode(page, code)
+  await submitFirstPassword(page, PASSWORD)
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
   expect(await mailsTo(email)).toHaveLength(1)
+})
+
+test('carries a proved registration to its password screen, in every tab, and leaves nothing behind if it is dropped', async ({
+  page,
+  context,
+  browser,
+}) => {
+  // HIL-825, end to end. Three claims in one trip because they are one decision:
+  // the code buys a screen and not an account, that screen belongs to the SESSION
+  // and not to the tab that typed the code, and a registration abandoned on it
+  // leaves neither an account nor a credential.
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
+
+  // The account is not made yet, which is the whole point: between the code and a
+  // password there would stand an account with a proved address and no way in.
+  await expect(page.getByTestId('auth-heading')).toHaveText('Choose a password')
+  await expect(page.getByTestId('auth-new-password')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+  // The hidden login the password manager files the entry under. Absent, it saves
+  // a password with no address against it, and its owner cannot use it later.
+  await expect(page.getByTestId('auth-username')).toHaveValue(email)
+
+  // A second tab of the same browser opens ON that screen, having typed nothing:
+  // the proof is durable on the hold, so the handshake answers every tab of the
+  // session with the step the registration really stands on.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+  await expect(second.getByTestId('auth-new-password')).toBeVisible()
+  await expect(second.getByTestId('auth-code')).toHaveCount(0)
+
+  // Dropped here, on purpose, with nothing saved. Asked from a browser that shares
+  // none of this session's state, the address must read as free — no account was
+  // made, and no credential was stored for one that was not.
+  const stranger = await browser.newContext()
+  const strangerPage = await stranger.newPage()
+  await gotoPage(strangerPage, '/profile')
+  await expect(strangerPage.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(strangerPage.getByTestId('auth-identifier'), email)
+  await expect(strangerPage.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
+  await expect(strangerPage.getByTestId('auth-password')).toHaveCount(0)
+  await stranger.close()
 })
 
 test('opens a fresh tab on the new-password step once the code is accepted', async ({
@@ -713,6 +776,7 @@ test('lowers the standing panel in the other tab when the session logs out', asy
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await submitRegistration(page, email)
   await submitRegistrationCode(page, await readRegisterCode(email))
+  await submitFirstPassword(page, PASSWORD)
   await expect(page.getByTestId('auth-heading')).toHaveText(
     'Your account is ready',
   )
@@ -763,6 +827,7 @@ test('offers a countdown instead of a resend while the cooldown holds', async ({
   // And the first code is still the live one — nothing was minted behind the
   // countdown, so it still opens the account.
   await submitRegistrationCode(page, code)
+  await submitFirstPassword(page, PASSWORD)
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(await mailsTo(email)).toHaveLength(1)
@@ -921,6 +986,7 @@ test('counts the code down and comes back to it, still counting, after a reload'
   // And it is the same registration: the code mailed before the reload is the one
   // this screen still accepts.
   await submitRegistrationCode(page, await readRegisterCode(email))
+  await submitFirstPassword(page, PASSWORD)
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })

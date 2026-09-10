@@ -418,7 +418,7 @@ class AuthCodeAgent extends AbstractAgent
 
         $operation->registration = true;
         new RegistrationReservationService()
-            ->hold(IdentityType::SMS, $operation->request->sessionToken, $identifier, null);
+            ->hold(IdentityType::SMS, $operation->request->sessionToken, $identifier);
     }
 
     /**

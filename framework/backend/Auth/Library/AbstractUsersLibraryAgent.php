@@ -22,9 +22,11 @@ use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
@@ -184,6 +186,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => CompletePasswordResetActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => CompleteRegistrationActionDTO::class,
         HilosSignalConstants::HILOS_ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
@@ -219,6 +222,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
@@ -504,6 +508,38 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Tells the session holder that one browser proved the address it is registering.
+     *
+     * The registration counterpart of {@see announceRecoveryGranted()} (HIL-825), and it
+     * carries no account because there is none yet: the proof is a fact about the BROWSER,
+     * so the holder is the one that can act on it. It moves the session's other tabs onto
+     * the password step and answers the submitting one last.
+     *
+     * @param ActingSession $acting Browser that proved the registration code
+     * @param string $identifier Normalized address that was proved
+     * @param ?AuthFlowOutcome $outcome Where the submitting surface goes next, answered by the holder
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceRegistrationProven(
+        ActingSession $acting,
+        string $identifier,
+        ?AuthFlowOutcome $outcome = null,
+    ): void {
+        $this->handOff(
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_PROVEN,
+            new AuthRegistrationProvenSignalData(
+                $identifier,
+                $acting->sessionToken,
+                $acting->acceptKey,
+                [],
+                $this->currentActionRequestId(),
+                $this->currentAction,
+                $outcome?->toArray(),
+            ),
+        );
+    }
+
+    /**
      * Tells the session holder a recovery finished: the secret is written, take the account back.
      *
      * What the holder then does is the point of resetting a password at all - it signs
@@ -775,6 +811,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 return $this->passwordCommands()->confirmRegister($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_COMPLETE_REGISTRATION:
+                if (!$dto instanceof CompleteRegistrationActionDTO) {
+                    throw new InvalidActionPayloadException($action, CompleteRegistrationActionDTO::class, $dto);
+                }
+
+                return $this->passwordCommands()->completeRegistration($acceptKey, $dto);
 
             case HilosSignalConstants::HILOS_ABANDON_REGISTRATION:
                 if (!$dto instanceof AbandonRegistrationActionDTO) {

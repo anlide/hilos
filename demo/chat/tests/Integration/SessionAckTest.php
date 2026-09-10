@@ -10,6 +10,7 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
@@ -86,7 +87,7 @@ final class SessionAckTest extends IntegrationTestCase
      *
      * @throws HilosException When setup or registration handling fails
      */
-    public function testConfirmingARegistrationMarksTheSessionThatEarnedItAndNoOther(): void
+    public function testFinishingARegistrationMarksTheSessionThatEarnedItAndNoOther(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
@@ -721,19 +722,24 @@ final class SessionAckTest extends IntegrationTestCase
         $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_REGISTER,
-            new RegisterActionDTO($email, self::PASSWORD),
+            new RegisterActionDTO($email),
         );
         $this->deliverLibraryFrames($agent);
     }
 
     /**
-     * Dispatches a registration code submission through the main page.
+     * Finishes a registration through the main page: the code, then the password.
+     *
+     * Two actions since HIL-825, because the code only proves the address and the
+     * account is created by the password saved after it. What these cases are about
+     * is the mark a FINISHED flow leaves, so the helper carries the flow to its end
+     * rather than stopping where the account used to appear.
      *
      * @param ChatAgent $agent Agent owning the page
      * @param string $acceptKey Acting connection accept key
      * @param string $email Submitted email
      * @param string $code Submitted confirmation code
-     * @throws HilosException When the confirm handler rejects the action
+     * @throws HilosException When the confirm or complete handler rejects the action
      */
     private function confirm(ChatAgent $agent, string $acceptKey, string $email, string $code): void
     {
@@ -742,6 +748,14 @@ final class SessionAckTest extends IntegrationTestCase
             $acceptKey,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER,
             new ConfirmRegisterActionDTO($email, $code),
+        );
+        $this->deliverLibraryFrames($agent);
+
+        ExecutionContext::setCurrentAcceptKey($acceptKey);
+        $this->usersLibrary()->onAgentAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
+            new CompleteRegistrationActionDTO(self::PASSWORD),
         );
         $this->deliverLibraryFrames($agent);
     }

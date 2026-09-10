@@ -15,6 +15,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -25,6 +26,7 @@ use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationRese
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
 /**
@@ -37,7 +39,7 @@ use Random\RandomException;
  * that a half-finished one cannot sit in the users table as an account nobody
  * proved they own.
  *
- * It owns only the hold and the credential it carries. The code is the existing
+ * It owns only the hold and the proof standing on it. The code is the existing
  * {@see VerificationService} ({@see VerificationType::REGISTER_CONFIRM}, no owning
  * user yet), which already provides the resend cooldown, the attempt ceiling,
  * single-use, and "one active challenge per identifier" - so "one pending
@@ -50,13 +52,19 @@ use Random\RandomException;
  * registering the same address at once. That is what closes the capture the address
  * key allowed - a letter answered in another browser lands nothing of this one's, so
  * a stranger's password can never end up inside the account the owner of the inbox
- * creates. The first proof of an address wins it; the rest are told it is taken.
+ * creates. Several browsers may prove one address; the first to SAVE A PASSWORD on
+ * it wins it, and the rest are told it is taken (HIL-825).
  *
  * The USER is the project's, always ({@see HilosDbContext} carries no users
  * collection - every Hilos project owns its own). So the split is: the caller mints
- * the user once the code has proven the address, and {@see confirmProvenAddress()}
- * moves the reserved credential into a verified identity for it and drops the holds.
- * The credential never passes through the caller.
+ * the user once the address is proven, and {@see confirmProvenAddress()} gives it a
+ * verified identity and drops the holds.
+ *
+ * A password registration is TWO proofs and not one (HIL-825): the code proves the
+ * address and leaves {@see markProven()} on the hold, and the password submitted
+ * afterwards is what lands the account. So the hold carries no credential at any
+ * point - the plaintext arrives at the landing and is hashed into the identity
+ * there, and an abandoned registration leaves no secret behind for anyone.
  *
  * Sibling leaves reuse this service rather than repeat it: the magic link
  * (HIL-417) reserves on send, phone registration (HIL-486) reserves a number.
@@ -98,20 +106,12 @@ final class RegistrationReservationService
      * "mine" from "somebody else's, joined". A submit of a DIFFERENT address ends
      * this browser's previous registration - one browser, one attempt - and another
      * browser's hold on the same address is not touched at all: they are racing, and
-     * the race is settled by whoever proves the address first, not by who submitted
-     * first.
-     *
-     * The credential is the latest submit of THIS session, not the first submit of
-     * anyone: a person correcting their own password must not be answered with the
-     * one they mistyped. Re-holding the same address with no credential keeps the one
-     * already stored ({@see ObjectRegistrationReservations::createReservation()}), which is
-     * what lets a password submit and a link request end in one account with both
-     * ways in.
+     * the race is settled by whoever finishes the registration first - by saving a
+     * password on the address (HIL-825) - not by who submitted or proved it first.
      *
      * @param string $type Reserving method (see IdentityType)
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
-     * @param ?string $plainSecret Plaintext credential the account will get, or null for a method that carries none
      * @return ObjectRegistrationReservation This browser's hold on the identifier
      * @throws EmptyValueException When identifier or session token is empty
      * @throws DatabaseException When a reservation query fails
@@ -125,7 +125,6 @@ final class RegistrationReservationService
         string $type,
         string $sessionToken,
         string $identifier,
-        ?string $plainSecret,
     ): ObjectRegistrationReservation {
         if ($identifier === '') {
             throw new EmptyValueException('Reservation identifier is required');
@@ -134,7 +133,7 @@ final class RegistrationReservationService
         $collection = $this->collection();
 
         try {
-            return $collection->createReservation($type, $sessionToken, $identifier, $plainSecret, $this->ttlSeconds());
+            return $collection->createReservation($type, $sessionToken, $identifier, $this->ttlSeconds());
         } catch (DuplicateValueException) {
             // Two sockets of one browser inserting at the same instant. There is one
             // registration per browser and this is it, whichever socket wrote it.
@@ -160,7 +159,6 @@ final class RegistrationReservationService
      * @param string $type Reserving method (see IdentityType)
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
-     * @param ?string $plainSecret Plaintext credential the account will get, or null for a method that carries none
      * @param ?string $progressTicket Ticket the transport reports this letter's steps against (HIL-826)
      * @return VerificationSendOutcome Whether the code went out, and the seconds until the next may
      * @throws EmptyValueException When identifier or session token is empty
@@ -178,10 +176,9 @@ final class RegistrationReservationService
         string $type,
         string $sessionToken,
         string $identifier,
-        ?string $plainSecret,
         ?string $progressTicket = null,
     ): VerificationSendOutcome {
-        $this->hold($type, $sessionToken, $identifier, $plainSecret);
+        $this->hold($type, $sessionToken, $identifier);
 
         return new VerificationService()->issue(
             VerificationType::REGISTER_CONFIRM,
@@ -189,6 +186,68 @@ final class RegistrationReservationService
             null,
             $progressTicket,
         );
+    }
+
+    /**
+     * Finds the hold this browser has already proved with a code.
+     *
+     * The read the password step stands on (HIL-825): the address it saves a password
+     * for comes off this row and never off the payload, so a password screen cannot
+     * name an account whose inbox this browser has not proven. A live hold that was
+     * never proved answers null - that browser is still on the code screen.
+     *
+     * @param string $sessionToken Session cookie token of the asking browser
+     * @return ?ObjectRegistrationReservation Proved live hold, or null when this browser holds none
+     * @throws DatabaseException When a reservation query fails
+     * @throws LogicException When the reservations object collection is unavailable
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
+     */
+    public function findProvenForSession(string $sessionToken): ?ObjectRegistrationReservation
+    {
+        $reservation = $this->collection()->findActiveForSession($sessionToken);
+
+        return $reservation?->isProven() === true ? $reservation : null;
+    }
+
+    /**
+     * Marks this browser's hold on an address as proved, and gives it the full TTL again.
+     *
+     * What an accepted registration code now does instead of creating the account
+     * (HIL-825). The proof is written on the hold rather than left on the code, which
+     * is what lets the code be spent in the same breath: the person still has a
+     * password to choose, and a second screen standing on a single-use code would be
+     * a screen that refuses its own submit.
+     *
+     * The extension is not bookkeeping either. Until the code came back the TTL held a
+     * letter in transit; from here it holds the ADDRESS while a person invents a
+     * password, and a hold that ran out on its fourteenth minute would take that
+     * address away one minute into the thinking - a loss caused by us and not by them.
+     *
+     * A session holding nothing, or holding another address, is refused rather than
+     * silently proved: the caller has already checked the hold, so a mismatch here
+     * means it went away in between, and the honest answer is the expired one.
+     *
+     * @param string $sessionToken Session cookie token of the browser that proved the code
+     * @param string $identifier Normalized identifier the code proved (lowercased email)
+     * @return bool True when the hold was marked, false when this browser holds no such live hold
+     * @throws DatabaseException When a reservation query fails
+     * @throws LogicException When the reservations object collection is unavailable
+     * @throws EnvException When the reservation TTL key is missing, outside the catalog, or not an int
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws DbCollectionNotReadableException When nothing here reads the reservations collection, or its readiness is on its way
+     */
+    public function markProven(string $sessionToken, string $identifier): bool
+    {
+        $reservation = $this->collection()->findActiveForSession($sessionToken);
+        if ($reservation === null || $reservation->identifier !== $identifier) {
+            return false;
+        }
+
+        $reservation->markCodeAccepted(TimeHelper::getSqlDateTime());
+        $this->extendTo($sessionToken);
+
+        return true;
     }
 
     /**
@@ -273,11 +332,13 @@ final class RegistrationReservationService
      * the secret-less identity {@see landWithoutHold()} names and none of anybody's
      * password.
      *
-     * WHAT lands is decided by the credential the hold carries, not by its type: a
-     * hold that was made with a password and later re-held for a link still carries
-     * the password, and the person gets both ways in. The identity is created VERIFIED
-     * either way - whatever came back, code or link, is the proof of ownership that
-     * the old "register now, confirm later" flag used to wait for.
+     * WHAT lands is decided by the password the CALLER brings, not by the hold: the
+     * hold carries no credential at all since HIL-825, and a registration that ends on
+     * a password screen hands the plaintext straight through to the identity that is
+     * being written. With no password - a link, a number - the hold's own type names
+     * the secret-less identity instead. The identity is created VERIFIED either way:
+     * whatever came back, code or link, is the proof of ownership that the old
+     * "register now, confirm later" flag used to wait for.
      *
      * The losing holds go here rather than at the caller, in the same breath as the
      * landing: the address has an account now, so their registrations cannot finish,
@@ -288,8 +349,9 @@ final class RegistrationReservationService
      * @param string $sessionToken Session cookie token of the browser that proved the address
      * @param string $identifier Normalized identifier just proven (lowercased email)
      * @param int $userId Freshly minted user the identity belongs to
+     * @param ?string $plainPassword Password the account is being created with, or null for a method that carries none
      * @return list<string> Session tokens whose hold on the identifier this call dropped
-     * @throws LogicException When the landing hold carries neither a credential nor a landable type
+     * @throws LogicException When the landing hold carries neither a password nor a landable type
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
      * @throws EmptyValueException When the identifier is empty
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
@@ -297,14 +359,18 @@ final class RegistrationReservationService
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws DbCollectionNotReadableException When nothing here reads the reservations or identities collection, or its readiness is on its way
      */
-    public function confirmProvenAddress(string $sessionToken, string $identifier, int $userId): array
-    {
+    public function confirmProvenAddress(
+        string $sessionToken,
+        string $identifier,
+        int $userId,
+        ?string $plainPassword = null,
+    ): array {
         $collection = $this->collection();
 
         $reservation = $collection->findActiveForSession($sessionToken);
         $ownHold = $reservation !== null && $reservation->identifier === $identifier ? $reservation : null;
         if ($ownHold !== null) {
-            $this->land($ownHold, $userId);
+            $this->land($ownHold, $userId, $plainPassword);
         } else {
             $this->landWithoutHold($identifier, $userId);
         }
@@ -320,28 +386,28 @@ final class RegistrationReservationService
     /**
      * Turns one browser's proven hold into the identity its account signs in with.
      *
-     * The credential is moved, never re-hashed and never handed to the caller. A hold
-     * carrying one lands a password identity whatever type it was last held under,
-     * which is what makes "password submitted, then a link asked for" end in one
-     * account with both ways in; a hold carrying none lands the secret-less identity
-     * of the method that made it. A hold that is neither is a contradiction - nothing
-     * but a submit could have written it - so it is refused rather than landed into an
-     * account nobody could ever sign into.
+     * A password submitted with the landing lands a password identity, whatever type
+     * the hold was made under: it is hashed here, at the moment the account comes into
+     * being, so no hash for an account that does not exist is ever stored anywhere
+     * (HIL-825). Without one, the hold's own type names the secret-less identity that
+     * method earns. A hold that is neither is a contradiction - nothing but a submit
+     * could have written it - so it is refused rather than landed into an account
+     * nobody could ever sign into.
      *
      * @param ObjectRegistrationReservation $reservation This session's hold, whose proof was just accepted
      * @param int $userId Freshly minted user the identity belongs to
-     * @throws LogicException When the hold carries neither a credential nor a landable type
+     * @param ?string $plainPassword Password the account is being created with, or null for a method that carries none
+     * @throws LogicException When the hold carries neither a password nor a landable type
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
      * @throws EmptyValueException When the reservation holds an empty identifier
      * @throws DatabaseException When an identity or reservation query fails
      * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
-    private function land(ObjectRegistrationReservation $reservation, int $userId): void
+    private function land(ObjectRegistrationReservation $reservation, int $userId, ?string $plainPassword): void
     {
         $identifier = $reservation->identifier;
-        $secretHash = $reservation->readSecretHash();
-        if ($secretHash !== null) {
-            $this->identities()->createPasswordIdentityWithHash($userId, $identifier, $secretHash)->markVerified();
+        if ($plainPassword !== null) {
+            $this->identities()->createPasswordIdentity($userId, $identifier, $plainPassword)->markVerified();
 
             return;
         }
@@ -349,7 +415,7 @@ final class RegistrationReservationService
         match ($reservation->type) {
             IdentityType::MAGIC_LINK => $this->identities()->createMagicLinkIdentity($userId, $identifier),
             IdentityType::SMS => $this->identities()->createSmsIdentity($userId, $identifier),
-            default => throw new LogicException("Reservation for {$identifier} carries no credential"),
+            default => throw new LogicException("Reservation for {$identifier} landed without a password"),
         };
     }
 

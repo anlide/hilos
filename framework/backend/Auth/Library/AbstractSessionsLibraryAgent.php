@@ -18,6 +18,7 @@ use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
@@ -207,7 +208,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
 
     /**
-     * The frames this library is addressed by: seven from the users library, two from the
+     * The frames this library is addressed by: eight from the users library, two from the
      * project holding the sockets, one from anybody with something to say to a browser, and
      * one from a page of the framework's own.
      *
@@ -218,17 +219,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * frame this library SENDS, and the project declares it. So is
      * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT}, the answer to the ninth.
      *
-     * The tenth has no fixed sender at all (HIL-768): a toast addressed to a session may be
+     * The eleventh has no fixed sender at all (HIL-768): a toast addressed to a session may be
      * raised by any agent that finished something a person is waiting on, and it arrives here
      * because the stack it lands on is the session's.
      *
-     * The eleventh is sent by {@see AbstractHilosUsersPage} (HIL-824), which holds the
+     * The twelfth is sent by {@see AbstractHilosUsersPage} (HIL-824), which holds the
      * impersonation action because an ADMIN level is a thing only a page carries, and forwards
      * the write here. {@see HilosSignalConstants::HILOS_IMPERSONATE_DONE} is absent for the
      * same reason the two above are: it is the frame this library sends BACK, and the page
      * declares it.
      *
-     * The twelfth has no fixed sender either (HIL-826): a step of a code send is reported by
+     * The thirteenth has no fixed sender either (HIL-826): a step of a code send is reported by
      * whoever is carrying it - a sign-in command placing the order, the per-channel mail queue,
      * the code agent - and it arrives here because the line it moves is the session's.
      * {@see HilosSignalConstants::HILOS_CODE_SEND_PROGRESS} is absent for the usual reason: it
@@ -236,6 +237,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_PROVEN => AuthRegistrationProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AuthPasswordChangedSignalData::class,
@@ -919,7 +921,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HandshakeResponseSignalData::identifier => $identifier,
             HandshakeResponseSignalData::kind => $kind,
             HandshakeResponseSignalData::intent => AuthFlowIntent::REGISTER,
-            HandshakeResponseSignalData::step => AuthFlowStep::CODE,
+            HandshakeResponseSignalData::step => $reservation->isProven()
+                ? AuthFlowStep::SET_PASSWORD
+                : AuthFlowStep::CODE,
             HandshakeResponseSignalData::channel => $kind === IdentifierDetection::KIND_PHONE
                 ? new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $identifier)
                 : null,
@@ -1948,6 +1952,54 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Opens the password step in the other tabs of a session that just proved its address (HIL-825).
+     *
+     * The registration twin of {@see grantRecoveryToSession()}. A code accepted in one tab
+     * is accepted for the session, so the tabs sitting on the code screen of the same
+     * address move forward with it - otherwise two windows of one browser would disagree
+     * about which screen they are on, and typing the code again in the second would spend
+     * an attempt for nothing.
+     *
+     * Nothing is written on the rows here, unlike the recovery half: the proof of a
+     * registration lives on the hold in the database, so there is no grant to mark on a
+     * socket and nothing to lose when one reconnects. The rows stay parked, and the
+     * answering connection is skipped - its caller answers it with the action reply.
+     *
+     * The recipients are picked out of everyone parked on the ADDRESS rather than out of
+     * everyone parked by the session, because that is the index this collection carries -
+     * several browsers legitimately wait on one address, so the address is what a
+     * registration wait is filed under. The pair (address, session) is the same set either
+     * way round.
+     *
+     * @param string $identifier Normalized address that was proved (lowercased email)
+     * @param string $sessionToken Session token that proved the code
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
+     * @throws HilosException On runtime failure
+     */
+    private function grantRegistrationToSession(
+        string $identifier,
+        string $sessionToken,
+        string $initiatorAcceptKey,
+    ): void {
+        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            if ($waiter->acceptKey === $initiatorAcceptKey || $waiter->sessionToken !== $sessionToken) {
+                continue;
+            }
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $waiter->acceptKey,
+                new AuthConvergeSignalData(
+                    $waiter->acceptKey,
+                    $identifier,
+                    AuthFlowStep::SET_PASSWORD,
+                    AuthFlowIntent::REGISTER,
+                ),
+            );
+        }
+    }
+
+    /**
      * Opens the password step in the other tabs of a session that just proved a code (HIL-416).
      *
      * The push half of session-binding. A code accepted in one tab is accepted for the
@@ -2086,6 +2138,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->settleLandedRegistration($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_PROVEN:
+                if (!$data->data instanceof AuthRegistrationProvenSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRegistrationProvenSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->openRegistrationPasswordStep($data->data);
 
                 return;
 
@@ -3399,6 +3464,45 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->initiatorAcceptKey,
             $frame->winnerSessionToken,
             $frame->losingSessionTokens,
+        );
+    }
+
+    /**
+     * Opens the password step for a browser whose registration address was just proved.
+     *
+     * The registration twin of {@see openRecoveryPasswordStep()} (HIL-825), and the order
+     * is the mechanism there too. The initiator's row is made to say THIS address first: a
+     * browser that reconnected between asking for the code and proving it lost the row it
+     * was parked on, and one whose wait-moved frame never arrived has a row naming the
+     * address it walked away from - and the tabs below are chosen by matching that very
+     * address. Then the neighbouring tabs are moved onto the password step. The answer to
+     * the tab that submitted goes LAST, because it is what opens that step, and a converge
+     * arriving after it would move the siblings past a screen this one has not reached.
+     *
+     * There is no `acceptCodeForSession()` here and there will not be one: the proof of a
+     * registration is DURABLE, written on the hold in the database, so a socket carries
+     * nothing about it and a reconnect inherits it from the row rather than from a mark.
+     * Recovery keeps its runtime grant because what it grants is a right over an EXISTING
+     * account, which no hold of ours stands for.
+     *
+     * @param AuthRegistrationProvenSignalData $frame Address, session, and the answer to give
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a converge or reply frame cannot be named
+     */
+    private function openRegistrationPasswordStep(AuthRegistrationProvenSignalData $frame): void
+    {
+        Hilos::$rt->hilosRegistrationWaiters->actions->repoint(
+            $frame->initiatorAcceptKey,
+            $frame->identifier,
+            $frame->sessionToken,
+        );
+        $this->grantRegistrationToSession($frame->identifier, $frame->sessionToken, $frame->initiatorAcceptKey);
+        $this->answerLibraryAction(
+            $frame->initiatorAcceptKey,
+            $frame->sessionToken,
+            $frame->action,
+            $frame->requestId,
+            $frame->outcome,
         );
     }
 

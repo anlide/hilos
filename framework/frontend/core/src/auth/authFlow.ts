@@ -203,9 +203,11 @@ export interface CodeChannelDescriptor {
 
 /**
  * The result of looking an identifier up — the contract with HIL-414. The
- * detection is THREE-VALUED: `none` (no account — registration if `registerable`
+ * detection is FOUR-VALUED: `none` (no account — registration if `registerable`
  * offers it), `pending` (a reserved registration awaiting its code — the flow
- * parks on the code screen WITHOUT re-sending), `active` (sign in). `methods`
+ * parks on the code screen WITHOUT re-sending), `proven` (a reservation this
+ * browser has already answered the code for — the flow goes to the password
+ * screen that creates the account, HIL-825), `active` (sign in). `methods`
  * carries the account's available method keys — a passwordless account must
  * land on its passwordless method as the primary action, and only `methods` can
  * decide that.
@@ -222,7 +224,7 @@ export interface IdentifierDetection {
   /** How the backend classified it. */
   readonly kind: 'email' | 'phone'
   /** The account status behind the identifier. */
-  readonly status: 'none' | 'pending' | 'active'
+  readonly status: 'none' | 'pending' | 'proven' | 'active'
   /** The method keys available to this account (empty for `none`). */
   readonly methods: readonly string[]
   /** The method keys registration is open with (consulted for `none`). */
@@ -304,14 +306,17 @@ export interface AuthFlowSubmitOutcome {
  * The derived main control of the current screen: the submit button, an icon
  * method promoted to the primary button (a passwordless account's magic link),
  * a code channel (a phone signs in by code, so its channel IS the send), the way
- * back to a code this browser is already holding (`resume_code`, HIL-651), or
- * nothing (`null` — e.g. an empty field or a parked ceremony).
+ * back to a code this browser is already holding (`resume_code`, HIL-651), the
+ * way on to the password of an address this browser has already proved
+ * (`resume_password`, HIL-825), or nothing (`null` — e.g. an empty field or a
+ * parked ceremony).
  */
 export type AuthFlowPrimaryAction =
   | { readonly kind: 'submit' }
   | { readonly kind: 'method'; readonly key: string }
   | { readonly kind: 'channel'; readonly key: string }
   | { readonly kind: 'resume_code' }
+  | { readonly kind: 'resume_password' }
   | null
 
 /**
@@ -324,11 +329,13 @@ export type AuthFlowScreen =
   | 'sign_in'
   | 'create_account'
   | 'held_identifier'
+  | 'proven_identifier'
   | 'terms'
   | 'confirm_identifier'
   | 'enter_code'
   | 'reset_code'
   | 'choose_password'
+  | 'set_first_password'
   | 'two_step'
   | 'waiting_external'
   | 'check_inbox'
@@ -539,6 +546,16 @@ export interface AuthFlow {
    * A no-op nowhere: the screen that offers it is the only place it is drawn.
    */
   resumeHeldRegistration(): void
+  /**
+   * Go on to the password of a registration this browser has already proved —
+   * the `resume_password` primary action of the `proven_identifier` screen. A
+   * purely LOCAL move to the password step under the register intent: nothing is
+   * sent, because the proof is already recorded on the hold and the account is
+   * created by the save that comes next (HIL-825).
+   *
+   * A no-op nowhere: the screen that offers it is the only place it is drawn.
+   */
+  resumeProvenRegistration(): void
   /**
    * Cancel a running ceremony and return to the identifier field: aborts the
    * ceremony's signal and releases the pending guard (an abandoned ceremony may
@@ -866,13 +883,15 @@ export function applicableChannels(
 /**
  * Whether an active step's form is complete enough to submit. Client-side
  * gating for the button state only — the backend stays the source of truth. On
- * the `identifier` step nothing is submittable until the detection resolved and
- * revealed a PASSWORD field to fill: a login submits a non-empty password, a
- * password registration a password of at least {@link PASSWORD_MIN_LENGTH}; a
- * phone never submits from this step (its channel choice is the send), and a
- * passwordless registration goes through its method's ceremony, not through
- * submit (mirrored by the primary action). `external` is never submittable;
- * `done` always is (its Continue).
+ * the `identifier` step nothing is submittable until the detection resolved: a
+ * login submits a non-empty password into the field its account reveals, a
+ * password registration submits as soon as the lookup answers that the address
+ * is free and registrable — there is no password there to measure since HIL-825,
+ * because a registration asks for one only after the code. A phone never submits
+ * from this step (its channel choice is the send), a passwordless registration
+ * goes through its method's ceremony rather than submit, and a `proven` address
+ * offers its primary action instead — all three mirrored by the primary action.
+ * `external` is never submittable; `done` always is (its Continue).
  *
  * @param flow The current flow state.
  * @param form The current form values.
@@ -899,7 +918,7 @@ export function isFlowSubmittable(
         result.status === 'none' &&
         result.registerable.includes(PASSWORD_METHOD_KEY)
       ) {
-        return form.password.length >= PASSWORD_MIN_LENGTH
+        return true
       }
 
       return false
@@ -945,7 +964,14 @@ const DONE_SCREENS: Record<AuthIntent, AuthFlowScreen> = {
  * The identifier step is the one screen a LOOKUP has a say in: an address this
  * browser is already holding a code for earns `held_identifier` instead of the
  * registration offer, because offering to create an account there would deny a
- * reservation the same person just made (HIL-651).
+ * reservation the same person just made (HIL-651), and one it has already proved
+ * earns `proven_identifier` — the code is spent, so sending them back to it would
+ * ask for something that no longer works (HIL-825).
+ *
+ * The password step is the other: one screen serves both the recovery that ends
+ * on it and the registration that is CREATED by it, and the two differ in nothing
+ * but what they say, so the intent names them apart the way it does the code and
+ * done screens.
  *
  * @param flow The current flow state.
  * @param result The resolved lookup behind the field, or `null` when the
@@ -960,6 +986,9 @@ export function screenKeyOf(
     case 'identifier':
       if (result?.status === 'pending') {
         return 'held_identifier'
+      }
+      if (result?.status === 'proven') {
+        return 'proven_identifier'
       }
 
       return flow.intent === 'register' ? 'create_account' : 'sign_in'
@@ -977,7 +1006,9 @@ export function screenKeyOf(
     case 'second_factor':
       return 'two_step'
     case 'set_password':
-      return 'choose_password'
+      return flow.intent === 'register'
+        ? 'set_first_password'
+        : 'choose_password'
     case 'external':
       return flow.methodKey === MAGIC_LINK_METHOD_KEY
         ? 'check_inbox'
@@ -1067,6 +1098,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
           // held address is, and its channel choice would send a SECOND code
           // for a reservation that already has one (HIL-651).
           return { kind: 'resume_code' }
+        }
+        if (result.status === 'proven') {
+          // Judged in the same place and for the same reason (HIL-825): the
+          // address is proved whatever kind it is, and the one thing left to do
+          // with it is choose the password that creates the account.
+          return { kind: 'resume_password' }
         }
         if (result.kind === 'phone') {
           // A phone never reveals a password; its channel choice IS the send —
@@ -1262,6 +1299,17 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     if (result.status === 'pending') {
       if (moveOnPending) {
         flow.set({ ...state, step: 'code', intent: 'register' })
+      }
+
+      return
+    }
+    if (result.status === 'proven') {
+      // The same rule one line up, one step further along: a lookup asked
+      // because the field changed carries the person to where their own
+      // registration stands, and one asked because they walked BACK to the
+      // field may not take that choice away again (HIL-825).
+      if (moveOnPending) {
+        flow.set({ ...state, step: 'set_password', intent: 'register' })
       }
 
       return
@@ -1693,6 +1741,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     },
     resumeHeldRegistration(): void {
       flow.set({ ...flow.get(), step: 'code', intent: 'register' })
+    },
+    resumeProvenRegistration(): void {
+      flow.set({ ...flow.get(), step: 'set_password', intent: 'register' })
     },
     reportSendProgress(progress: CodeSendProgress | null): void {
       flow.set({ ...flow.get(), sendProgress: progress })
