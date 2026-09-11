@@ -574,9 +574,10 @@ export interface AuthFlow {
    */
   startRecovery(): void
   /**
-   * Return to the single identifier field, keeping everything typed. The
-   * mockup's exactly-two return points: "Not that address?" on the registration
-   * code screen, and "Back" on the consent screen. There is NO general back().
+   * Return to the single identifier field, keeping everything typed. The only
+   * way back there is a named one: the way out at the foot of every code screen
+   * — "Cancel registration" under a registration, "Back" under anything else
+   * (HIL-829) — and "Back" on the consent screen. There is NO general back().
    *
    * The field is re-looked-up on arrival, so the screen that greets them states
    * what the address is NOW rather than what it was before they left; the answer

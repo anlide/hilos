@@ -1153,7 +1153,7 @@ describe('the two return points and cancelMethod', () => {
     })
   })
 
-  it('backToIdentifier from the registration code screen ("Not that address?")', async () => {
+  it('backToIdentifier from the registration code screen', async () => {
     const onDetect = vi.fn(async (identifier: string) =>
       detected({ identifier, status: 'pending', methods: [] }),
     )
@@ -1169,6 +1169,40 @@ describe('the two return points and cancelMethod', () => {
     expect(flow.form.get().identifier).toBe('reserved@b.com')
     expect(flow.screenKey.get()).toBe('held_identifier')
     expect(flow.primaryAction.get()).toEqual({ kind: 'resume_code' })
+  })
+
+  it('leaves the code screen whatever intent opened it (HIL-829)', async () => {
+    // The machine half of "every code screen has a way out": what the surface
+    // adds is the wording and the cancel it sends beside this call, and neither
+    // of those reaches here. Register arrives by a held address, recovery by the
+    // key icon, sign-in by a backend that named the step.
+    const register = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'pending', methods: [] }),
+    })
+    await typeAndDetect(register, 'reserved@b.com')
+    const recovery = setup()
+    await typeAndDetect(recovery, 'a@b.com')
+    recovery.startRecovery()
+    const login = setup({
+      onSubmit: async () => ({
+        ok: true,
+        next: { step: 'code' as const, intent: 'login' as const },
+      }),
+    })
+    await typeAndDetect(login, 'a@b.com')
+    login.setField('password', 'x'.repeat(PASSWORD_MIN_LENGTH))
+    await login.submit()
+
+    for (const flow of [register, recovery, login]) {
+      expect(flow.flow.get().step).toBe('code')
+      flow.backToIdentifier()
+      await settleRefresh()
+      expect(flow.flow.get().step).toBe('identifier')
+      // What was typed survives the way out on every one of them: the field is
+      // cleared by an EDIT, never by leaving a screen.
+      expect(flow.form.get().identifier).not.toBe('')
+    }
   })
 
   it('cancelMethod re-asks the lookup too — the ceremony left an old answer behind', async () => {

@@ -635,16 +635,6 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             <span class="small fw-semibold flex-grow-1">
               {{ form().identifier }}
             </span>
-            @if (state().intent === 'register') {
-              <button
-                type="button"
-                class="btn btn-sm btn-link p-0 small"
-                data-id="auth-restart"
-                (click)="abandon()"
-              >
-                Not that address?
-              </button>
-            }
           </div>
 
           @if (deliveredChannel(); as channel) {
@@ -740,6 +730,32 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
               Send a new code
             </button>
           }
+
+          <!-- The way out, and the last thing on the card because it is the
+          answer to "not this, then": a registration says so out loud and in red,
+          and what it cancels is freed - the same address typed again starts
+          over. A sign-in or a recovery has nothing to give back, so it says Back
+          and wears the word the consent step already uses for the same move
+          (HIL-829). -->
+          @if (state().intent === 'register') {
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100 text-danger"
+              data-id="auth-cancel-registration"
+              (click)="cancelRegistration()"
+            >
+              Cancel registration
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100"
+              data-id="auth-restart"
+              (click)="cancelRegistration()"
+            >
+              Back
+            </button>
+          }
         </form>
       } @else if (state().step === 'code_expired') {
         <!-- The same screen after its countdown ran out (HIL-828). The heading
@@ -758,16 +774,6 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             <span class="small fw-semibold flex-grow-1">
               {{ form().identifier }}
             </span>
-            @if (state().intent === 'register') {
-              <button
-                type="button"
-                class="btn btn-sm btn-link p-0 small"
-                data-id="auth-restart"
-                (click)="abandon()"
-              >
-                Not that address?
-              </button>
-            }
           </div>
 
           <div
@@ -800,6 +806,32 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             >
               <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
               Send a new code
+            </button>
+          }
+
+          <!-- The way out, and the last thing on the card because it is the
+          answer to "not this, then": a registration says so out loud and in red,
+          and what it cancels is freed - the same address typed again starts
+          over. A sign-in or a recovery has nothing to give back, so it says Back
+          and wears the word the consent step already uses for the same move
+          (HIL-829). -->
+          @if (state().intent === 'register') {
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100 text-danger"
+              data-id="auth-cancel-registration"
+              (click)="cancelRegistration()"
+            >
+              Cancel registration
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100"
+              data-id="auth-restart"
+              (click)="cancelRegistration()"
+            >
+              Back
             </button>
           }
         </div>
@@ -847,7 +879,7 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
           <button
             hilosLoadingButton
             type="submit"
-            class="btn-primary w-100"
+            class="btn-primary w-100 mb-2"
             [loading]="pending()"
             [disabled]="!submittable()"
             data-id="auth-submit"
@@ -855,20 +887,29 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             {{ submitLabel() }}
           </button>
 
-          <!-- The way out. This screen has no address field and no step behind
-          it, so without the same link the code screen carries, whoever changed
-          their mind here would be shut in (HIL-825). -->
+          <!-- The same way out the code screen carries, for the same reason:
+          this screen has no address field and no step behind it, so whoever
+          changed their mind here would otherwise be shut in (HIL-825). The hold
+          is alive and proved at this point, so on a registration the cancel is
+          the one that really gives the address back. -->
           @if (state().intent === 'register') {
-            <div class="text-center mt-3">
-              <button
-                type="button"
-                class="btn btn-sm btn-link p-0 small"
-                data-id="auth-restart"
-                (click)="abandon()"
-              >
-                Not that address?
-              </button>
-            </div>
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100 text-danger"
+              data-id="auth-cancel-registration"
+              (click)="cancelRegistration()"
+            >
+              Cancel registration
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100"
+              data-id="auth-restart"
+              (click)="cancelRegistration()"
+            >
+              Back
+            </button>
           }
         </form>
       } @else if (state().step === 'external') {
@@ -1751,12 +1792,13 @@ export class HilosAuthSurface {
     void auth.resend()
   }
 
-  // "Not that address?": give up the registration this session started — every
-  // tab of it goes back to the field — while the hold on the address itself is
-  // left alone, so one session cannot free an address another is registering.
-  // What was typed survives; only the reservation is dropped.
-  protected abandon(): void {
-    void this.authActions().abandonRegistration()
+  // The way out of a code screen, whichever intent opened it: every tab of this
+  // session goes back to the field and the server frees what this browser was
+  // holding. One call on every path — the surface names no address, because
+  // which holds exist is something only the server knows. What was typed
+  // survives.
+  protected cancelRegistration(): void {
+    void this.authActions().cancelRegistration()
     this.auth().backToIdentifier()
   }
 

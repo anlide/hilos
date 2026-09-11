@@ -9,12 +9,11 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos;
-use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
-use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
@@ -1158,41 +1157,74 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * "Not that address?" forgets the wait and leaves this browser's hold standing.
+     * Pressing the way out forgets the wait AND frees the address (HIL-829).
      *
-     * The asymmetry is the rule (HIL-415, Flow p.7), and HIL-608 kept it while replacing
-     * its reason: the hold is this browser's own now, and it survives because coming back
-     * to the same address must land on the same code screen without spending a second
-     * letter. It runs out on its own instead.
+     * The asymmetry this used to assert is gone, and what replaced it is the distinction
+     * the leaf is named for: a person who presses cancel has said the registration is not
+     * wanted, so nothing of it is kept. What still keeps a hold is walking away in
+     * silence, which sends no action at all - the case below.
      *
      * @throws HilosException When setup or the request handling fails
      */
-    public function testAbandonForgetsTheWaitAndKeepsTheHold(): void
+    public function testCancelForgetsTheWaitAndFreesTheHold(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
-        $token = $this->openSession($agent, 'abandon-ak');
+        $token = $this->openSession($agent, 'cancel-ak');
 
         try {
-            $this->register($agent, 'abandon-ak', $email);
+            $this->register($agent, 'cancel-ak', $email);
             $this->assertSame($email, $this->waitOf($token));
 
-            ExecutionContext::setCurrentAcceptKey('abandon-ak');
+            ExecutionContext::setCurrentAcceptKey('cancel-ak');
             $reply = $this->usersLibrary()->onAgentAction(
-                'abandon-ak',
-                HilosSignalConstants::HILOS_ABANDON_REGISTRATION,
-                new AbandonRegistrationActionDTO(),
+                'cancel-ak',
+                HilosSignalConstants::HILOS_CANCEL_REGISTRATION,
+                new CancelRegistrationActionDTO(),
             );
             $outcome = $reply ?? $this->deliverLibraryFrames($agent);
 
             $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
             $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
-            $this->assertNull($this->waitOf($token), 'The session stops waiting on the address it walked away from');
-            $this->assertSame(
-                $email,
-                $this->holdOf('abandon-ak')?->identifier,
-                'The hold stays: the way back to this code screen is built on it',
+            $this->assertNull($this->waitOf($token), 'The session stops waiting on the address it canceled');
+            $this->assertNull(
+                $this->holdOf('cancel-ak'),
+                'The hold goes with it: the same address typed again starts a fresh registration',
             );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Canceling on a browser that holds nothing is a no-op, not a failure (HIL-829).
+     *
+     * The way out stands on every code screen now, and some of them are reached with the
+     * hold already swept away - an expired code is the everyday one. The release is asked
+     * for unconditionally because asking first would be the same query twice, so the empty
+     * case has to be silent rather than merely rare.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testCancelOnABrowserHoldingNothingIsAnsweredAllTheSame(): void
+    {
+        $agent = $this->bootAgent();
+        $token = $this->openSession($agent, 'cancel-empty-ak');
+
+        try {
+            $this->assertNull($this->holdOf('cancel-empty-ak'), 'This browser never started a registration');
+
+            ExecutionContext::setCurrentAcceptKey('cancel-empty-ak');
+            $reply = $this->usersLibrary()->onAgentAction(
+                'cancel-empty-ak',
+                HilosSignalConstants::HILOS_CANCEL_REGISTRATION,
+                new CancelRegistrationActionDTO(),
+            );
+            $outcome = $reply ?? $this->deliverLibraryFrames($agent);
+
+            $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertNull($this->waitOf($token), 'And there is still nothing this session waits on');
         } finally {
             $this->cleanUp();
         }
@@ -1221,40 +1253,40 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
-     * A reconnect after "not that address?" is answered with no step at all.
+     * A reconnect after a canceled registration is answered with no step at all.
      *
-     * The promise {@see MainPage::handleAbandonRegistration()} makes, and the reason the
-     * handshake reads the WAIT and not only the hold (HIL-608). Walking away drops the
-     * wait and deliberately keeps the hold - the hold is what puts this browser back on
-     * its own code screen when it types the address again - so a hold on its own must
-     * not resume a code screen the person just left.
+     * What the handshake owes a returning browser is read from the hold and the wait
+     * together (HIL-608), and cancel takes both away (HIL-829) - so there is nothing left
+     * to put this tab back on a code screen, by either road. The case is kept apart from
+     * the one above because it proves the SECOND half: not only that the row went, but
+     * that the reconnect which used to resume the screen now does not.
      *
      * @throws HilosException When setup or the request handling fails
      */
-    public function testAReconnectAfterAbandonIsAnsweredWithNoStep(): void
+    public function testAReconnectAfterCancelIsAnsweredWithNoStep(): void
     {
         $agent = $this->bootAgent();
         $email = $this->uniqueEmail();
-        $token = $this->openSession($agent, 'reconnect-abandon-ak');
+        $token = $this->openSession($agent, 'reconnect-cancel-ak');
 
         try {
-            $this->register($agent, 'reconnect-abandon-ak', $email);
+            $this->register($agent, 'reconnect-cancel-ak', $email);
 
-            ExecutionContext::setCurrentAcceptKey('reconnect-abandon-ak');
+            ExecutionContext::setCurrentAcceptKey('reconnect-cancel-ak');
             $this->usersLibrary()->onAgentAction(
-                'reconnect-abandon-ak',
-                HilosSignalConstants::HILOS_ABANDON_REGISTRATION,
-                new AbandonRegistrationActionDTO(),
+                'reconnect-cancel-ak',
+                HilosSignalConstants::HILOS_CANCEL_REGISTRATION,
+                new CancelRegistrationActionDTO(),
             );
             $this->deliverLibraryFrames($agent);
-            $this->assertNotNull($this->holdOf('reconnect-abandon-ak'), 'The hold is what the lookup answers with');
+            $this->assertNull($this->holdOf('reconnect-cancel-ak'), 'The address is free again');
 
             $this->drainHandshakeResponses();
-            $this->openSession($agent, 'reconnect-abandon-new', $token);
+            $this->openSession($agent, 'reconnect-cancel-new', $token);
 
             $this->assertNull(
-                $this->drainHandshakeResponses()['reconnect-abandon-new']?->pendingAuthStep,
-                'A browser that walked away is not put back on the code screen by its own hold',
+                $this->drainHandshakeResponses()['reconnect-cancel-new']?->pendingAuthStep,
+                'A browser that canceled is not put back on the code screen it left',
             );
         } finally {
             $this->cleanUp();

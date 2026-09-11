@@ -155,9 +155,9 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
     /**
      * Releasing one session forgets its address and says nothing about the others.
      *
-     * The "not that address?" write, and the counterpart of the release by address: it
-     * is the end of a flow as ONE browser experienced it, so a second browser on the
-     * same address keeps its code screen.
+     * The write a canceled registration makes, and the counterpart of the release by
+     * address: it is the end of a flow as ONE browser experienced it, so a second browser
+     * on the same address keeps its code screen.
      *
      * @throws HilosException When the release write fails
      * @throws DatabaseException When seeding or reading the rows fails
@@ -173,7 +173,7 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
 
         $this->assertNull(
             self::waitIdentifier(self::ABANDONED_TOKEN),
-            'The browser that said "not that address?" stops waiting',
+            'The browser that canceled its registration stops waiting',
         );
         $this->assertSame(
             self::IDENTIFIER,

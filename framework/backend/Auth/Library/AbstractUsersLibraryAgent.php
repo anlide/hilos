@@ -16,15 +16,15 @@ use Hilos\Auth\Library\Command\PasskeyCommands;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
-use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
@@ -187,7 +187,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => CompleteRegistrationActionDTO::class,
-        HilosSignalConstants::HILOS_ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
+        HilosSignalConstants::HILOS_CANCEL_REGISTRATION => CancelRegistrationActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
@@ -210,8 +210,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * reservation. Reads are absent, with the one exception that proves the rule:
      * DETECT_IDENTIFIER answers whether an account exists, which is precisely what an
      * enumerator wants, and this list is the whole of what keeps that answer expensive
-     * (HIL-414). Abandoning a registration is absent because it spends nothing and can only
-     * ever undo the caller's own wait.
+     * (HIL-414). Canceling a registration is absent because it spends nothing and can only
+     * ever undo the caller's own registration - its wait and the hold it took (HIL-829).
      */
     public const array THROTTLED_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
@@ -574,25 +574,26 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Tells the session holder one browser walked away from the registration it was on.
+     * Tells the session holder one browser canceled the registration it was on.
      *
      * The holder forgets the wait - the parked sockets and the durable memory alike - so
-     * this session's tabs go back to the identifier field together. The hold on the
-     * address is deliberately NOT dropped, and that is the library's decision rather than
-     * the holder's: it is what puts a returning person back on their own code screen
-     * without spending a second letter.
+     * this session's tabs go back to the identifier field together. The hold on the address
+     * is already gone by then, and dropping it is this library's own move rather than the
+     * holder's: the reservations are declared here and written nowhere else (HIL-829).
+     * What a person who leaves in SILENCE keeps is that same hold, which is why walking
+     * away sends no frame at all and this one means "it was pressed".
      *
-     * @param ActingSession $acting Browser abandoning its registration
+     * @param ActingSession $acting Browser canceling its registration
      * @param ?AuthFlowOutcome $outcome Where the surface goes next, answered by the holder
      * @throws InvalidArgumentException When the frame cannot be named or queued
      */
-    public function announceRegistrationAbandoned(
+    public function announceRegistrationCanceled(
         ActingSession $acting,
         ?AuthFlowOutcome $outcome = null,
     ): void {
         $this->handOff(
-            HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED,
-            new AuthRegistrationAbandonedSignalData(
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_CANCELED,
+            new AuthRegistrationCanceledSignalData(
                 $acting->sessionToken,
                 $acting->acceptKey,
                 $this->currentActionRequestId(),
@@ -819,11 +820,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
                 return $this->passwordCommands()->completeRegistration($acceptKey, $dto);
 
-            case HilosSignalConstants::HILOS_ABANDON_REGISTRATION:
-                if (!$dto instanceof AbandonRegistrationActionDTO) {
-                    throw new InvalidActionPayloadException($action, AbandonRegistrationActionDTO::class, $dto);
+            case HilosSignalConstants::HILOS_CANCEL_REGISTRATION:
+                if (!$dto instanceof CancelRegistrationActionDTO) {
+                    throw new InvalidActionPayloadException($action, CancelRegistrationActionDTO::class, $dto);
                 }
-                $this->passwordCommands()->abandonRegistration($acceptKey, $dto);
+                $this->passwordCommands()->cancelRegistration($acceptKey, $dto);
 
                 return null;
 

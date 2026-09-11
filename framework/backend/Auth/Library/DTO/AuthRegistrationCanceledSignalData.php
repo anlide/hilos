@@ -11,18 +11,20 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * Users library → session holder: this browser walked away from its registration.
+ * Users library → session holder: this browser canceled its registration.
  *
  * Drops the session's pending registration and the waits standing on it
- * ({@see AbstractSessionsLibraryAgent}). The reservation of the
- * identifier is deliberately NOT released: it is what keeps a second person from taking the
- * address while the first is still deciding, and it expires on its own.
+ * ({@see AbstractSessionsLibraryAgent}). The hold on the identifier is NOT dropped here
+ * because it is already gone: the reservations belong to the users library and nobody else
+ * may write them, so the command that took the action releases this session's own hold
+ * before it hands off (HIL-829). Doing it in that order matters - while the hold stands,
+ * any return to the identifier field is answered with the code screen again.
  */
-final class AuthRegistrationAbandonedSignalData extends BaseDTO implements SignalDataInterface
+final class AuthRegistrationCanceledSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
-     * @param string $sessionToken Session token abandoning its registration
-     * @param string $initiatorAcceptKey Accept key of the connection that abandoned it
+     * @param string $sessionToken Session token canceling its registration
+     * @param string $initiatorAcceptKey Accept key of the connection that canceled it
      * @param ?string $requestId Request id of the action that caused this, or null when it was untracked
      * @param ?string $action Action name to answer, or null when nothing is waiting on an answer
      * @param ?array<string, mixed> $outcome Reply the answer carries ({@see AuthFlowOutcome::toArray()}), or null

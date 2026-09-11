@@ -7,7 +7,7 @@ namespace Hilos\Auth\Library\Command;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
-use Hilos\Auth\Library\DTO\AbandonRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
@@ -429,31 +429,40 @@ final class PasswordCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Ends the registration this session was waiting on ("not that address?").
+     * Ends what this session was waiting on, and frees the identifier it was holding.
      *
-     * The way back from a code screen (HIL-486). It forgets the wait - the durable memory
-     * and the parked sockets alike - so this session's tabs go to the identifier field
-     * together, and a reconnect is answered with no step at all.
+     * The way off a code screen (HIL-486), whichever intent opened it. It forgets the wait -
+     * the durable memory and the parked sockets alike - so this session's tabs go to the
+     * identifier field together, and a reconnect is answered with no step at all.
      *
-     * It deliberately does NOT free the hold, and the reason changed with the key
-     * (HIL-608). It used to be that the hold belonged to the address and other sessions
-     * might be waiting on it; the hold is this browser's own now, and keeping it is what
-     * the way BACK is built on - a person who returns to the same address is put back on
-     * their own code screen by the lookup alone, spending no second letter. Releasing it
-     * would delete the `pending` answer that screen stands on. The hold runs out on its
-     * own, and the sweep tells whoever is left.
+     * The hold goes with it (HIL-829), and the two events that used to share this door are
+     * why. PRESSING the way out says the registration is not wanted, so the address is freed
+     * and typing it again starts a fresh one. Walking away in SILENCE says nothing and sends
+     * nothing: that hold stands, the returning browser is put back on its own code screen by
+     * the lookup alone without spending a second letter (HIL-608), and the sweep collects it
+     * when the time runs out.
+     *
+     * Freed HERE rather than in the holder, because the reservations are this library's to
+     * write and the holder declares no ownership of them at all. And BEFORE the hand-off,
+     * because a hold that outlives the return to the identifier field answers the very next
+     * lookup with the code screen again - which reads as a cancel that did not work.
+     *
+     * Only this browser's own hold is touched: another session waiting on the same identifier
+     * is still waiting on it, and a session holding nothing is a no-op.
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @param AbandonRegistrationActionDTO $dto Parsed abandon payload (no fields)
+     * @param CancelRegistrationActionDTO $dto Parsed cancel payload (no fields)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
-     * @throws HilosException When the durable release fails
+     * @throws HilosException When the reservation delete or the durable release fails
      */
-    public function abandonRegistration(string $acceptKey, AbandonRegistrationActionDTO $dto): void
+    public function cancelRegistration(string $acceptKey, CancelRegistrationActionDTO $dto): void
     {
         $acting = $this->acting($acceptKey);
 
-        $this->library->announceRegistrationAbandoned(
+        new RegistrationReservationService()->release($acting->sessionToken);
+
+        $this->library->announceRegistrationCanceled(
             $acting,
             AuthFlowOutcome::moveTo(AuthFlowStep::IDENTIFIER, AuthFlowIntent::REGISTER),
         );

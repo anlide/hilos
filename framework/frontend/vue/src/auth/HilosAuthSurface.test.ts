@@ -217,6 +217,61 @@ function freeIdentifierContext(
 }
 
 /**
+ * A context whose lookup answers `pending` — an address this browser already
+ * holds — which carries the surface straight to the registration code screen
+ * (HIL-608). The shortest road to the one screen this leaf is about.
+ *
+ * @returns The context to mount with, and the dispatch log to assert on.
+ */
+function heldIdentifierContext(): {
+  context: HilosAuthContext
+  dispatched: Dispatched
+} {
+  const dispatched: Dispatched = []
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'pending',
+              methods: [],
+              registerable: [],
+              registrationBlock: null,
+            }
+          : undefined
+
+      return {
+        requestId: `req-${dispatched.length}`,
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    dispatched,
+    context: createHilosAuthContext({
+      connection,
+      scopes: new ScopeManager(),
+      actions,
+      methods: [PASSWORD_FLOW_METHOD],
+      channels: [],
+      oauthProviders: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+  }
+}
+
+/**
  * A gate double: the surface only ever asks it to close, and the test asks the
  * double whether that happened.
  *
@@ -524,6 +579,59 @@ describe('HilosAuthSurface', () => {
 
     expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
       'No account for this, and registration is closed.',
+    )
+  })
+
+  it('ends the registration code screen in a red cancel and clears the address row', async () => {
+    vi.useFakeTimers()
+    const { context } = heldIdentifierContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('reserved@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+
+    // The way out says what it does, in the color that says it is not the safe
+    // choice, and it is the LAST thing on the card (HIL-829).
+    const cancel = wrapper.find('[data-id="auth-cancel-registration"]')
+    expect(cancel.exists()).toBe(true)
+    expect(cancel.text()).toBe('Cancel registration')
+    expect(cancel.classes()).toContain('text-danger')
+    // And the row naming the address is a statement again: no control in it.
+    expect(wrapper.find('[data-id="auth-restart"]').exists()).toBe(false)
+
+    // What the press DOES is asserted in the React peer of this file and in the
+    // chat e2e, not here: a SECOND swap of the step branch throws inside Vue's own
+    // patch under this environment, on the markup that predates this leaf just as
+    // much (P-293, now HIL-994). A real browser makes the same move on every run
+    // of auth.spec.
+    expect(cancel.attributes('type')).toBe('button')
+  })
+
+  it('ends the same screen in a plain Back when a sign-in opened it', async () => {
+    vi.useFakeTimers()
+    const { context } = magicLinkContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
+    await flush(wrapper)
+
+    // Nothing is being given up here, so nothing is said in red: the word is the
+    // one the consent step already uses, and so is the mark it carries.
+    const back = wrapper.find('[data-id="auth-restart"]')
+    expect(back.exists()).toBe(true)
+    expect(back.text()).toBe('Back')
+    expect(back.classes()).not.toContain('text-danger')
+    expect(wrapper.find('[data-id="auth-cancel-registration"]').exists()).toBe(
+      false,
     )
   })
 

@@ -11,6 +11,7 @@
 import {
   ActionError,
   ActionLifecycle,
+  AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LOGIN,
@@ -161,6 +162,61 @@ function expiringLetterContext(lifetimeMs: number): {
       scopes: new ScopeManager(),
       actions,
       methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
+      channels: [],
+      oauthProviders: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+  }
+}
+
+/**
+ * A context whose lookup answers `pending` — an address this browser already
+ * holds — which carries the surface straight to the registration code screen
+ * (HIL-608). The shortest road to the one screen this leaf is about.
+ *
+ * @returns The context to mount with, and the dispatch log to assert on.
+ */
+function heldIdentifierContext(): {
+  context: HilosAuthContext
+  dispatched: Dispatched
+} {
+  const dispatched: Dispatched = []
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'pending',
+              methods: [],
+              registerable: [],
+              registrationBlock: null,
+            }
+          : undefined
+
+      return {
+        requestId: `req-${dispatched.length}`,
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    dispatched,
+    context: createHilosAuthContext({
+      connection,
+      scopes: new ScopeManager(),
+      actions,
+      methods: [PASSWORD_FLOW_METHOD],
       channels: [],
       oauthProviders: [],
       termsPath: '/terms',
@@ -631,6 +687,61 @@ describe('HilosAuthSurface', () => {
 
     expect(byId('auth-resume-password')).toBeNull()
     expect(byId('auth-new-password')).not.toBeNull()
+  })
+
+  it('ends the registration code screen in a red cancel and clears the address row', async () => {
+    vi.useFakeTimers()
+    const { context, dispatched } = heldIdentifierContext()
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'reserved@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    expect(byId('auth-code')).not.toBeNull()
+
+    // The way out says what it does, in the color that says it is not the safe
+    // choice, and it is the LAST thing on the card (HIL-829).
+    const cancel = byId('auth-cancel-registration')
+    expect(cancel).not.toBeNull()
+    expect(cancel?.textContent).toBe('Cancel registration')
+    expect(cancel?.classList.contains('text-danger')).toBe(true)
+    // And the row naming the address is a statement again: no control in it.
+    expect(byId('auth-restart')).toBeNull()
+
+    fireEvent.click(cancel as Element)
+    await flush()
+
+    expect(dispatched.map((call) => call.action)).toContain(
+      AUTH_ACTION_CANCEL_REGISTRATION,
+    )
+    expect(byId('auth-identifier')).not.toBeNull()
+  })
+
+  it('ends the same screen in a plain Back when a sign-in opened it', async () => {
+    vi.useFakeTimers()
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.click(byId('auth-icon-magic-link') as Element)
+    await flush()
+
+    // Nothing is being given up here, so nothing is said in red: the word is the
+    // one the consent step already uses, and so is the mark it carries.
+    const back = byId('auth-restart')
+    expect(back).not.toBeNull()
+    expect(back?.textContent).toBe('Back')
+    expect(back?.classList.contains('text-danger')).toBe(false)
+    expect(byId('auth-cancel-registration')).toBeNull()
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

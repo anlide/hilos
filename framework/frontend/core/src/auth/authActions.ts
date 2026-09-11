@@ -55,7 +55,7 @@ import {
   type IdentifierDetection,
 } from './authFlow.js'
 import {
-  AUTH_ACTION_ABANDON_REGISTRATION,
+  AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_COMPLETE_PASSWORD_RESET,
   AUTH_ACTION_COMPLETE_REGISTRATION,
   AUTH_ACTION_CONFIRM_MAGIC_LINK,
@@ -204,8 +204,8 @@ export interface HilosAuthActions {
     form: AuthFlowForm,
     signal: AbortSignal,
   ): Promise<AuthFlowSubmitOutcome>
-  /** Give up the registration this session was waiting on (HIL-486). */
-  abandonRegistration(): Promise<AuthFlowSubmitOutcome>
+  /** Leave the code screen and free what this session held (HIL-486, HIL-829). */
+  cancelRegistration(): Promise<AuthFlowSubmitOutcome>
   /**
    * Relay a magic-link token the /auth/magic route was opened with.
    *
@@ -237,7 +237,7 @@ export function createAuthActions(context: HilosAuthContext): HilosAuthActions {
       submitAuthFlow(context, action, flow, form),
     onMethodAction: (key, form, signal) =>
       runAuthMethod(context, key, form, signal),
-    abandonRegistration: () => abandonRegistration(context),
+    cancelRegistration: () => cancelRegistration(context),
     confirmMagicLink: (email, token) => confirmMagicLink(context, email, token),
     subscribeCodeChannelUnavailable: (handler) =>
       subscribeCodeChannelUnavailable(context, handler),
@@ -394,12 +394,14 @@ function runAuthMethod(
 }
 
 /**
- * Give up the registration this session started — the "not that address?" way out
- * (HIL-486).
+ * Leave the code screen — the one way out of it, whichever intent opened it
+ * (HIL-486, HIL-829).
  *
- * It drops the session's own memory of the unfinished step and takes every tab of
- * this session back to the identifier field; the hold on the address itself is left
- * alone, so a stranger's session cannot free an address somebody else is registering.
+ * It drops the session's own memory of the unfinished step, takes every tab of this
+ * session back to the identifier field, and frees what THIS browser was holding on
+ * the identifier. The surface sends the same thing on every path and names no
+ * address: what there is to free is decided on the server, which is the only side
+ * that knows a sign-in by link or by phone code holds an unknown one too.
  *
  * Fire-and-forget by design: the surface has already gone back to the identifier
  * step by the time the ack lands, and a failure to forget something is nothing the
@@ -409,10 +411,10 @@ function runAuthMethod(
  * @param context The project auth context the wire dispatches over.
  * @returns The outcome the machine applies once the server has been told.
  */
-function abandonRegistration(
+function cancelRegistration(
   context: HilosAuthContext,
 ): Promise<AuthFlowSubmitOutcome> {
-  return dispatchFlow(context, AUTH_ACTION_ABANDON_REGISTRATION, {})
+  return dispatchFlow(context, AUTH_ACTION_CANCEL_REGISTRATION, {})
 }
 
 /**

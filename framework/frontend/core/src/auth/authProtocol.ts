@@ -53,8 +53,8 @@ export const AUTH_ACTION_CONFIRM_MAGIC_LINK = 'hilos_confirm_magic_link'
 export const AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE =
   'hilos_confirm_magic_link_code'
 
-/** Client→server: give up the registration this session was waiting on (PHP `HilosSignalConstants::HILOS_ABANDON_REGISTRATION`). */
-export const AUTH_ACTION_ABANDON_REGISTRATION = 'hilos_abandon_registration'
+/** Client→server: leave the code screen and free what this session held (PHP `HilosSignalConstants::HILOS_CANCEL_REGISTRATION`). */
+export const AUTH_ACTION_CANCEL_REGISTRATION = 'hilos_cancel_registration'
 
 /** Client→server: begin an OAuth login by minting the provider authorize URL (PHP `HilosSignalConstants::HILOS_OAUTH_START`). */
 export const AUTH_ACTION_OAUTH_START = 'hilos_oauth_start'

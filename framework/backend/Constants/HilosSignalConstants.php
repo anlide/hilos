@@ -11,7 +11,7 @@ use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
@@ -541,14 +541,16 @@ final class HilosSignalConstants
     public const string HILOS_CONFIRM_MAGIC_LINK_CODE = 'hilos_confirm_magic_link_code';
 
     /**
-     * Client → server: "not that address?" on a code screen (public, anonymous-reachable, HIL-486).
+     * Client → server: the way off a code screen, whatever intent opened it (public, anonymous-reachable, HIL-486).
      *
-     * Ends the registration this SESSION was waiting on, in every tab of it at once.
-     * It frees no address: the hold belongs to the identifier and other sessions may
-     * still be waiting on the same one, so a person walking away from a code screen
-     * cannot cancel somebody else's registration.
+     * Ends what this SESSION was waiting on, in every tab of it at once, and frees the hold
+     * this browser took on the identifier: pressing the way out says out loud that this
+     * registration is not wanted, so typing the same address again starts a fresh one
+     * (HIL-829). Only this browser's own hold goes - another session waiting on the same
+     * identifier is still waiting on it. Walking away in silence is the other event and sends
+     * nothing at all: that hold stands until it runs out on its own.
      */
-    public const string HILOS_ABANDON_REGISTRATION = 'hilos_abandon_registration';
+    public const string HILOS_CANCEL_REGISTRATION = 'hilos_cancel_registration';
 
     /** Client → server: begin an OAuth login by minting the provider authorize URL (public, anonymous-reachable). */
     public const string HILOS_OAUTH_START = 'hilos_oauth_start';
@@ -827,14 +829,14 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_PASSWORD_CHANGED = 'hilos_auth_password_changed';
 
     /**
-     * Users library → the session holder: this browser walked away from its registration.
+     * Users library → the session holder: this browser canceled its registration.
      *
      * Drops the pending registration of the session and the waits standing on it. The
-     * reservation is deliberately NOT released - it is what keeps a second person from
-     * taking the identifier while the first one is still deciding.
-     * Carried by {@see AuthRegistrationAbandonedSignalData}.
+     * reservation is already gone by the time this frame is sent: the users library owns
+     * the holds and releases this session's own before it hands off (HIL-829).
+     * Carried by {@see AuthRegistrationCanceledSignalData}.
      */
-    public const string HILOS_AUTH_REGISTRATION_ABANDONED = 'hilos_auth_registration_abandoned';
+    public const string HILOS_AUTH_REGISTRATION_CANCELED = 'hilos_auth_registration_canceled';
 
     // ── Hilos code channels: worker → code agent, code agent → guest browser ──
     /**

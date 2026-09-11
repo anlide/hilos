@@ -16,7 +16,7 @@ use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
-use Hilos\Auth\Library\DTO\AuthRegistrationAbandonedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
@@ -242,7 +242,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED => AuthRegistrationLandedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED => AuthRecoveryGrantedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED => AuthPasswordChangedSignalData::class,
-        HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED => AuthRegistrationAbandonedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_CANCELED => AuthRegistrationCanceledSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED => AuthRegistrationWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
@@ -600,7 +600,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Called from the owning agent's `onTick()`; the rule inside decides whether this
      * tick is the one. Unlike the event-driven releases - a code that came back, a
-     * "not that address?", an expiring hold - nothing here answers a person: this is
+     * canceled registration, an expiring hold - nothing here answers a person: this is
      * what closes the case where the person simply left. Without it a browser returning
      * days later would be served the code screen of a code that expired long ago.
      *
@@ -872,10 +872,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * TWO records have to agree, and they answer different questions (HIL-608). The WAIT
      * on the session row says this browser is sitting on a code screen: it is written by
-     * the flows that put it there and dropped by "not that address?", so a hold with no
-     * wait beside it is a registration nobody is watching a code field for - a mailed
-     * sign-in link, or an attempt its owner walked away from - and resuming either onto a
-     * code screen would ask for a code that was never issued. The HOLD says WHICH
+     * the flows that put it there and dropped when the registration is canceled, so a hold
+     * with no wait beside it is a registration nobody is watching a code field for - a
+     * mailed sign-in link, or an attempt its owner walked away from - and resuming either
+     * onto a code screen would ask for a code that was never issued. The HOLD says WHICH
      * registration and until when, and the address is taken off it rather than off the
      * wait, because a hold made on another address after the wait was written would
      * otherwise be described with the wait's stale identifier.
@@ -2001,23 +2001,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Ends one session's wait on a registration, in every tab of it (HIL-486).
      *
-     * The whole of "not that address?": the session forgets the address it was on, the
-     * sockets parked on it are dropped, and the other tabs of the same session are told to
-     * go back to the identifier field. The initiator is skipped because its own action
-     * reply already moves it - a second order for the same move would race the first.
+     * The session half of the way off a code screen: the session forgets the address it was
+     * on, the sockets parked on it are dropped, and the other tabs of the same session are
+     * told to go back to the identifier field. The initiator is skipped because its own
+     * action reply already moves it - a second order for the same move would race the first.
      *
      * Both halves happen HERE because both are the session's (HIL-622). Until the sign-in
      * commands moved to the users library, the durable half was dropped by the page that
      * took the action; the library that took its place owns no session and cannot.
      *
-     * Only sockets of THIS session are touched. Another session waiting on the same
-     * identifier is still waiting on it, and the hold nobody released still stands.
+     * The HOLD on the identifier is not among them and never was: it belongs to the users
+     * library, which drops this browser's own before it hands off (HIL-829).
      *
-     * @param string $sessionToken Session cookie token walking away from its registration
+     * Only sockets of THIS session are touched. Another session waiting on the same
+     * identifier is still waiting on it.
+     *
+     * @param string $sessionToken Session cookie token canceling its registration
      * @param string $initiatorAcceptKey Accept key that asked, answered by its own action reply
      * @throws HilosException On runtime or database failure
      */
-    private function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
+    private function cancelRegistration(string $sessionToken, string $initiatorAcceptKey): void
     {
         // Two passes for the ordering below, not for the walk: the durable release has to
         // land between reading the waiters and telling them, so the reading finishes first.
@@ -2282,16 +2285,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
-            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_ABANDONED:
-                if (!$data->data instanceof AuthRegistrationAbandonedSignalData) {
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_CANCELED:
+                if (!$data->data instanceof AuthRegistrationCanceledSignalData) {
                     throw new InvalidAgentSignalPayloadException(
                         $name,
-                        AuthRegistrationAbandonedSignalData::class,
+                        AuthRegistrationCanceledSignalData::class,
                         $data->data,
                     );
                 }
 
-                $this->dropAbandonedRegistration($data->data);
+                $this->dropCanceledRegistration($data->data);
 
                 return;
 
@@ -3705,15 +3708,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Forgets the registration one browser walked away from, in every tab of it.
+     * Forgets the registration one browser canceled, in every tab of it.
      *
-     * @param AuthRegistrationAbandonedSignalData $frame Session that walked away and the answer to give
+     * @param AuthRegistrationCanceledSignalData $frame Session that canceled and the answer to give
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When a converge or reply frame cannot be named
      */
-    private function dropAbandonedRegistration(AuthRegistrationAbandonedSignalData $frame): void
+    private function dropCanceledRegistration(AuthRegistrationCanceledSignalData $frame): void
     {
-        $this->abandonRegistration($frame->sessionToken, $frame->initiatorAcceptKey);
+        $this->cancelRegistration($frame->sessionToken, $frame->initiatorAcceptKey);
         $this->answerLibraryAction(
             $frame->initiatorAcceptKey,
             $frame->sessionToken,

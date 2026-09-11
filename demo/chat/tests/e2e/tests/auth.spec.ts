@@ -540,7 +540,7 @@ test('converges a second waiting tab onto the registration the first one confirm
   await expect(second.getByTestId('message-input')).toBeEnabled()
 })
 
-test('puts a held address back on its code step from the lookup alone', async ({
+test('puts a held address back on its code step after a silent walk-away', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -550,23 +550,22 @@ test('puts a held address back on its code step from the lookup alone', async ({
   await submitRegistration(page, email)
   await readRegisterCode(email)
 
-  // "Not that address?" drops what THIS SESSION remembers, but not its hold. Since
-  // HIL-608 the hold belongs to this browser alone, and it survives for the sake of
-  // the return below: the way back to this very code screen is built on it.
-  await page.getByTestId('auth-restart').click()
-  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+  // Leaving in SILENCE — closing the tab, coming back later — says nothing and
+  // sends nothing, so the hold this browser took stands (HIL-608). This is the
+  // half of the old "not that address?" that survived HIL-829: the other half,
+  // pressing the way out, now frees the address instead (the case below).
+  await gotoPage(page, '/profile')
 
-  // So typing it again is answered by that hold: the lookup alone puts the person
-  // back on the code step of the letter already sent, with nothing submitted and
-  // no second letter mailed. Only THIS browser's hold can answer that way — another
-  // browser typing the same address is offered the ways to register it.
-  await typeInto(page.getByTestId('auth-identifier'), email)
+  // And the return is answered with the code step of the letter already sent:
+  // nothing was submitted and no second letter was mailed. Only THIS browser's
+  // hold answers that way — another browser is offered the ways to register it.
   await expect(page.getByTestId('auth-code')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toContainText(email)
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
-test('offers the held address its own code back, instead of "Create account"', async ({
+test('gives the held address its own code back, instead of a second registration', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -576,26 +575,53 @@ test('offers the held address its own code back, instead of "Create account"', a
   await submitRegistration(page, email)
   const code = await readRegisterCode(email)
 
-  // The same return as the case above — but here nobody retypes anything. The
-  // step the return lands on used to be drawn from the answer that came BEFORE
-  // the hold existed, so it offered to create an account on an address this very
-  // browser had just reserved (HIL-651). The return now asks again, and the
-  // answer it gets is the hold.
-  await page.getByTestId('auth-restart').click()
-  await expect(page.getByTestId('auth-heading')).toHaveText(
-    'You already have a code',
-  )
-  await expect(page.getByTestId('auth-identifier')).toHaveValue(email)
+  // The same silent return as the case above, carried through to the end: what
+  // the returning browser is handed is its own unfinished registration, not the
+  // offer to start one on an address it has already reserved (HIL-651). So the
+  // code from the FIRST letter is the one this screen accepts, and no second
+  // letter was ever mailed.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-code')).toBeVisible()
   await expect(page.getByTestId('auth-password')).toHaveCount(0)
 
-  // And the way back is a way back, not a second send: the code already in the
-  // letter is the one this screen accepts.
-  await page.getByTestId('auth-resume-code').click()
-  await expect(page.getByTestId('auth-code')).toBeVisible()
   await submitRegistrationCode(page, code)
   await submitFirstPassword(page, PASSWORD)
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
+test('frees the address when the way out is pressed, and starts over on it', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+  await readRegisterCode(email)
+
+  // Pressed, not walked away from: the person said this registration is not
+  // wanted, so the hold goes with the wait (HIL-829). The control says as much,
+  // at the foot of the card and in red.
+  const wayOut = page.getByTestId('auth-cancel-registration')
+  await expect(wayOut).toHaveText('Cancel registration')
+  await wayOut.click()
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+
+  // The proof the address is free again is what the lookup answers about it: a
+  // free address it offers to register, where a held one would have offered the
+  // standing code back. submitRegistration asserts that heading itself, and
+  // lands on the code step of a SECOND registration.
+  await submitRegistration(page, email)
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+
+  // No second letter, and that is the price of the gate rather than a gap: the
+  // cooldown lives on the ADDRESS and outlives the cancel (HIL-421), or the way
+  // out would be a channel for mailing a stranger without limit. So the new
+  // registration opens under the countdown, and the code already delivered is
+  // the one it accepts.
+  await expect(page.getByTestId('auth-resend-in')).toContainText(/\d+:\d{2}/)
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
