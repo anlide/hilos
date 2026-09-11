@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -422,11 +423,12 @@ final class DriverTestAgent extends AbstractAgent
      * Backdates the wait so the next tick sees the window as expired.
      *
      * Reaches the trait's own property directly - a trait's private members are flattened into
-     * the using class - which is why this needs no reflection.
+     * the using class - which is why this needs no reflection. The window itself is read from
+     * {@see CommandChannelWindows}, where all three of the channel's nested waits are declared.
      */
     public function ageProtectedModeWait(): void
     {
-        $this->protectedModeTestSince -= self::PROTECTED_MODE_TEST_WAIT_SECONDS + 1.0;
+        $this->protectedModeTestSince -= CommandChannelWindows::AGENT_WAIT_SECONDS + 1.0;
     }
 
     public function onStop(): void

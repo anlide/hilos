@@ -40,4 +40,18 @@ interface ProtectedModeAgentFreezer
      * worker gates drop any that no longer belong here. A no-op when no freeze stopped anything.
      */
     public function resumeAgentsForProtectedMode(): void;
+
+    /**
+     * Names the agents this node has asked for and not yet heard back about (HIL-1000).
+     *
+     * Asked before a freeze is entered, and by the same object that snapshots and replays the
+     * roster on purpose: a start it asked for is not a fact until the worker says so, and a
+     * freeze that lands in between deregisters an agent whose start report is already on the
+     * wire. The master then meets that report with a roster that does not name it, kills the
+     * agent as an orphan, and the resume - working from a snapshot taken at that same moment -
+     * brings back a roster one agent shorter than the one it froze.
+     *
+     * @return list<string> Ids of agents registered here whose start has not been reported yet
+     */
+    public function agentsStillStarting(): array;
 }

@@ -50,7 +50,7 @@ final class CommandChannelFailureTextTest extends TestCase
         $printer = new ChannelFailurePrinter();
 
         self::assertSame(
-            'The daemon did not answer test:backup:prune within 5s',
+            'The daemon did not answer test:backup:prune within 15s',
             $printer->failureText(CommandChannelResult::timedOut(self::ADDRESS), self::COMMAND),
         );
     }
@@ -97,7 +97,7 @@ final class CommandChannelFailureTextTest extends TestCase
         );
         self::assertSame(
             [
-                'The daemon did not answer test:backup:prune within 5s',
+                'The daemon did not answer test:backup:prune within 15s',
                 'Refused: no',
             ],
             $printer->written,

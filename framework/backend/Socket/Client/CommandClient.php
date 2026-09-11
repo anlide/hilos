@@ -6,9 +6,11 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -38,7 +40,11 @@ use Hilos\Utils\Logger;
  * check). Any other command is PARKED in the {@see CommandServer} by correlation
  * id and routed to its owning agent as a COMMAND_REQUEST signal; the daemon writes
  * the agent's COMMAND_REPLY back here through {@see writeReply()} once it arrives.
- * A held request that gets no reply within {@see HELD_TIMEOUT_SEC} is failed.
+ * A held request that gets no reply within {@see CommandChannelWindows::CHANNEL_HELD_SECONDS}
+ * is failed. That is the OUTERMOST of the channel's three nested windows, and nothing is meant
+ * to reach it: the agent inside refuses with a reason long before, and the side that asked
+ * gives up between the two. What comes out of here is a wordless "Command timed out", which
+ * is the least informative thing the channel can say and therefore its last resort.
  *
  * Ahead of all of that stands the test-only gate: this is the only place a
  * {@see CommandRequestDTO} enters the backend, so it is the only place from which a
@@ -46,9 +52,6 @@ use Hilos\Utils\Logger;
  */
 class CommandClient extends AbstractClient implements CommandClientInterface
 {
-    /** @var float Max seconds to hold a connection waiting for an agent reply */
-    private const float HELD_TIMEOUT_SEC = 30.0;
-
     /** @var CommandServer Owning server holding the held-request registry */
     private CommandServer $server;
 
@@ -57,6 +60,9 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
     /** @var float Start time (microtime) of the held request */
     private float $heldSince = 0.0;
+
+    /** @var string Command name of the held request, so the trace of a mute one can name it */
+    private string $heldCommand = '';
 
     /**
      * Create command client with socket and owning server.
@@ -276,7 +282,9 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);
+            $this->heldCommand = $request->command;
             $this->server->hold($request->correlationId, $this);
+            Logger::info("Command channel: parked {$request->command} #{$request->correlationId} for its agent");
             Hilos::$sr->queueSignal(
                 signalSource: new SignalSource(SignalSource::DAEMON),
                 signalType: new SignalType(SignalTypeConstants::COMMAND_REQUEST),
@@ -465,16 +473,22 @@ class CommandClient extends AbstractClient implements CommandClientInterface
     /**
      * Write an agent reply to the held connection and clear the held state.
      *
+     * Says how long the round trip took, because that is the one number that separates the two
+     * ways this channel goes wrong: an agent that answered late and an agent that never answered
+     * at all look identical from the far end, where both arrive as silence (HIL-1000).
+     *
      * @param CommandReplyDTO $reply Reply to write
      */
     public function writeReply(CommandReplyDTO $reply): void
     {
+        Logger::info("Command channel: answered {$this->traceOfHeldRequest()}");
         $this->writeBuffer .= $reply->toJson() . "\n";
         $this->heldCorrelationId = null;
+        $this->heldCommand = '';
     }
 
     /**
-     * Fail a held request that has waited longer than HELD_TIMEOUT_SEC.
+     * Fail a held request that has waited longer than {@see CommandChannelWindows::CHANNEL_HELD_SECONDS}.
      */
     public function onTick(): void
     {
@@ -482,8 +496,11 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             return;
         }
 
-        if ((microtime(true) - $this->heldSince) >= self::HELD_TIMEOUT_SEC) {
+        if ((microtime(true) - $this->heldSince) >= CommandChannelWindows::CHANNEL_HELD_SECONDS) {
             $correlationId = $this->heldCorrelationId;
+            // The outermost window, which nothing is meant to reach: whatever the request was
+            // routed to neither answered nor refused inside its own window.
+            Logger::warning("Command channel: gave up holding {$this->traceOfHeldRequest()}");
             $this->server->forget($correlationId);
             $this->writeReply(CommandReplyDTO::error($correlationId, 'Command timed out'));
         }
@@ -491,13 +508,34 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
     /**
      * Drop the held request from the server registry on disconnect.
+     *
+     * A disconnect with a request still held is the caller having given up first, and it is
+     * written down for that reason: from here on the reply, whenever it arrives, has nowhere to
+     * go, and the only account of the request that ever existed is this line.
      */
     protected function onClose(): void
     {
         if ($this->heldCorrelationId !== null) {
+            Logger::warning("Command channel: the caller left while holding {$this->traceOfHeldRequest()}");
             $this->server->forget($this->heldCorrelationId);
             $this->heldCorrelationId = null;
+            $this->heldCommand = '';
         }
+    }
+
+    /**
+     * Names the held request the way every line of the channel's trace names one.
+     *
+     * One spelling for all of them, so a mute command is read by grepping its correlation id and
+     * getting the whole journey in order rather than four phrasings of the same fact.
+     *
+     * @return string Command, correlation id and how long it has been held, in milliseconds
+     */
+    private function traceOfHeldRequest(): string
+    {
+        $heldMs = (int)round((microtime(true) - $this->heldSince) * TimeConstants::MS_PER_SECOND);
+
+        return "{$this->heldCommand} #{$this->heldCorrelationId} after {$heldMs}ms";
     }
 
     /**

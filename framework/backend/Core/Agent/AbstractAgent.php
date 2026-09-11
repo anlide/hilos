@@ -454,11 +454,16 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Queues a COMMAND_REPLY signal carrying the reply; the daemon writes it back
      * to the held CLI connection addressed by the reply's correlation id.
      *
+     * Says so in this agent's journal, on the same line shape the request arrived under: the two
+     * together are what tells a reader whether an agent that looked mute had nothing to say or
+     * said it too late for anyone to still be listening (HIL-1000).
+     *
      * @param CommandReplyDTO $reply Command reply (use CommandReplyDTO::ok() / error())
      * @throws InvalidArgumentException When the reply carries an empty correlation id
      */
     public function replyToCommand(CommandReplyDTO $reply): void
     {
+        $this->logAgentInfo("Command channel: answered #{$reply->correlationId}");
         Hilos::$sr->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),

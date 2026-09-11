@@ -14,10 +14,15 @@ import { randomBytes } from 'node:crypto'
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
-// Comfortably past the agent's own wait window, so a freeze that never takes
-// hold comes back as the agent's stated reason rather than as a socket timeout —
-// which is the whole reason that window is the innermost of the three.
-const REPLY_TIMEOUT_MS = 10_000
+// The MIDDLE of the command channel's three nested windows: how long the side
+// that asked is willing to wait. It is a hand-kept copy of
+// CommandChannelWindows::CALLER_WAIT_SECONDS, and a copy because it has to be —
+// Playwright has no PHP to read the original with, it reaches the command port
+// over TCP. Inside it sits AGENT_WAIT_SECONDS (13.0), which is what makes a
+// freeze that never takes hold come back as the agent's stated reason rather
+// than as a socket timeout; outside it sits CHANNEL_HELD_SECONDS (30.0). Change
+// this and the PHP constant together, or the order stops holding.
+const REPLY_TIMEOUT_MS = 15_000
 
 const ENTER_COMMAND = 'test:protected-mode:enter'
 const OPEN_COMMAND = 'test:protected-mode:open'

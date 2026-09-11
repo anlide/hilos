@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\API\AsyncCommandClient;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
@@ -29,12 +30,14 @@ use Throwable;
  * round-trip with a 2-second budget of their own; the budget a command waits for its daemon is
  * not something a command has an opinion about, and the copies proved it by disagreeing without
  * anyone having decided they should.
+ *
+ * That budget is no longer declared here either, for the same reason one step out: this trait is
+ * the MIDDLE link of the production chain, and the agent inside it has to run out of patience
+ * first or its reason never reaches anyone. {@see CommandChannelWindows} holds all three windows
+ * together and derives the inner one from this one, so the order cannot drift.
  */
 trait CommandChannelClientTrait
 {
-    /** @var float Wall-clock wait budget for a reply in milliseconds */
-    private const float MAX_WAIT_MS = 5000.0;
-
     /** @var string What a refusal is called when the daemon answered with one and worded no reason */
     private const string UNWORDED_REFUSAL = 'unknown error';
 
@@ -63,8 +66,9 @@ trait CommandChannelClientTrait
             $client->startRequest($request);
 
             $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
+            $budgetMs = CommandChannelWindows::CALLER_WAIT_SECONDS * TimeConstants::MS_PER_SECOND;
             while (!$client->hasResult()) {
-                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
+                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > $budgetMs) {
                     return CommandChannelResult::timedOut($address);
                 }
 
@@ -99,7 +103,7 @@ trait CommandChannelClientTrait
      */
     protected function channelFailureText(CommandChannelResult $result, string $command): string
     {
-        $seconds = (int)(self::MAX_WAIT_MS / TimeConstants::MS_PER_SECOND);
+        $seconds = (int)CommandChannelWindows::CALLER_WAIT_SECONDS;
 
         return match ($result->failure) {
             CommandChannelFailure::TIMEOUT => "The daemon did not answer {$command} within {$seconds}s",

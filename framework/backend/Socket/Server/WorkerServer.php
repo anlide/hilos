@@ -51,6 +51,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
@@ -1283,7 +1284,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         // to the still-running initiator goes through the branch below and is untouched.
         if (!$this->agentManager->hasAgent($agentId)) {
             if ($this->protectedModeRefusesStart($parsedAgentType, $parsedAgentIndex)) {
-                Logger::debug("Signal to agent {$agentId} dropped: protected mode holds the node");
+                $this->reportSignalFrozenOut($agentId, $messageDto);
                 return;
             }
             $this->startAgent($parsedAgentType, $parsedAgentIndex);
@@ -1291,7 +1292,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             $agentDaemon = $this->agentManager->getAgent($agentId);
             if ($agentDaemon === null || !$agentDaemon->hasWorkerClient()) {
                 if ($this->protectedModeRefusesStart($parsedAgentType, $parsedAgentIndex)) {
-                    Logger::debug("Signal to agent {$agentId} dropped: protected mode holds the node");
+                    $this->reportSignalFrozenOut($agentId, $messageDto);
                     return;
                 }
                 $this->startAgent($parsedAgentType, $parsedAgentIndex);
@@ -1322,6 +1323,32 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
         // Agent exists and is linked, send message DTO immediately
         $workerClient->send($messageDto->toJson());
+    }
+
+    /**
+     * Writes down a signal the freeze refused to start an agent for.
+     *
+     * Loud for a command request and quiet for everything else, because the two cost different
+     * things (HIL-1000). An ordinary signal dropped here is a fact of the freeze: the agent it
+     * addressed is meant to be stopped, and nobody is waiting on an answer. A command request is
+     * the opposite - somebody IS waiting, on a socket, and this drop is the whole of why they
+     * will get nothing but a timeout. Named with the correlation id so the trace of that caller's
+     * request ends on the reason it ended.
+     *
+     * @param string $agentId Agent the signal was addressed to
+     * @param DaemonAgentMessageDTO $messageDto Message that was not delivered
+     */
+    private function reportSignalFrozenOut(string $agentId, DaemonAgentMessageDTO $messageDto): void
+    {
+        $signalData = $messageDto->signal->data;
+        if ($signalData instanceof CommandRequestDTO) {
+            Logger::warning("Command channel: protected mode dropped {$signalData->command}"
+                . " #{$signalData->correlationId} on its way to agent {$agentId}");
+
+            return;
+        }
+
+        Logger::debug("Signal to agent {$agentId} dropped: protected mode holds the node");
     }
 
     /**
@@ -1389,13 +1416,20 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * Resolves the agent's worker exactly like {@see stopAgent()} but leaves the agent running —
      * a no-op when the agent is not hosted on this node.
      *
+     * Both ways of reaching nobody are written down (HIL-1000). The relay is the only thing that
+     * ever answers an initiator's enter, so an undelivered one is not a frame lost among many: it
+     * is a caller that will now wait out its whole window and be told nothing.
+     *
      * @param string $agentType Initiator agent type
      * @param ?string $agentIndex Initiator agent index, or null for a singleton agent
      */
     public function deliverProtectedModeReady(string $agentType, ?string $agentIndex): void
     {
-        $workerInfo = $this->agentManager->getAgentWorkerInfo($this->buildAgentId($agentType, $agentIndex));
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
         if ($workerInfo === null) {
+            Logger::warning("Protected mode: the ready relay reached nobody - initiator {$agentId} is on no worker");
+
             return;
         }
 
@@ -1404,6 +1438,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             $workerInfo->isMonopolistic,
         ));
         if ($workerClient === null) {
+            Logger::warning("Protected mode: the ready relay reached nobody"
+                . " - the worker hosting initiator {$agentId} has no live link");
+
             return;
         }
 
@@ -1498,6 +1535,28 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             'Protected mode: froze this node for ' . $initiatorAgentId . ', stopped '
             . count($this->protectedModeStoppedAgents) . ' agent(s)',
         );
+    }
+
+    /**
+     * Names the agents this node has asked for and not yet heard back about
+     * ({@see ProtectedModeAgentFreezer::agentsStillStarting()}).
+     *
+     * Read off the roster itself: an agent is here the moment it is registered, and started only
+     * once its worker has reported it. Everything between those two moments is a start in flight,
+     * and a freeze entered on top of one costs the node that agent.
+     *
+     * @return list<string> Ids of agents registered here whose start has not been reported yet
+     */
+    public function agentsStillStarting(): array
+    {
+        $starting = [];
+        foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
+            if (!$this->agentManager->isAgentStarted($agentId)) {
+                $starting[] = $agentId;
+            }
+        }
+
+        return $starting;
     }
 
     /**

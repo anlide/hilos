@@ -136,6 +136,33 @@ refusal rather than as a missing element.
 The same applies to the second window of a two-window spec, and to any helper
 that navigates on a spec's behalf.
 
+### Except where the application navigates itself — then do not navigate at all
+
+There is one page the spec must NOT open, and it is the page the spec is about to
+want: one the application has just told itself to reload. Today there is exactly one
+such moment — the lift of protected mode, where the client calls `location.reload()`
+rather than go on living with rows from before a restore (`createHilosConnection.ts`,
+`onProtectedModeLift`). Every browser holding a socket does it at once, on the frame
+that carries the news.
+
+A `gotoPage` fired into that moment does not fail cleanly. Both navigations carry the
+SAME address — the page reloads to where it already stood — so what Playwright reports
+is `Navigation to "<url>" is interrupted by another navigation to "<url>"`, an address
+against itself, which reads as a browser oddity rather than as the race it is. That
+signature was 16 first-attempt failures of the chat suite across a single week.
+
+What the spec does instead is mark the document before the action and wait for the
+mark to be gone after it (`markDocument` / `expectSelfReload` in the demo's
+`helpers/page.ts`). A mark is indifferent to order: it is equally true if the reload
+has already come and gone, where an event subscription armed a moment too late waits
+out the whole test ceiling. A replaced document says only that the reload finished, so
+a spec that then asserts what is on screen adds `expectPageReady` — and one that needs
+a DIFFERENT address navigates there afterwards, once the reload has landed and there
+is nothing left to collide with.
+
+Waiting for the frozen surface to disappear is NOT a substitute, and was tried: the
+stub goes on the frame that arrives, and the reload follows it.
+
 ## A retried test is reported, and is not automatically your debt
 
 `retries` is 2 in CI, so a test that fails and then passes leaves its step green

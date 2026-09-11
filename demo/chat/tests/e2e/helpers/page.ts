@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 // The one way a spec opens a page. `page.goto` on its own only waits for the
 // document; the page behind it is a live subscription, and its answer — the
@@ -174,4 +174,59 @@ export async function gotoAuthReturn(
 ): Promise<void> {
   await page.goto(pathWithQuery)
   await expect(page.getByTestId(relayId)).toBeAttached()
+}
+
+/**
+ * The property a marked document carries on `window`, and the whole of the
+ * mechanism: it survives anything that leaves the document alone, and nothing
+ * survives the document being replaced.
+ */
+const DOCUMENT_MARK = '__hilosE2eDocumentMark'
+
+/**
+ * Mark the document the page is showing, so a later wait can tell it apart from
+ * the one that replaces it.
+ *
+ * Called BEFORE the action that makes the application reload itself — today the
+ * one case is the lift of protected mode, where the client reloads rather than
+ * live with rows from before a restore. The pair exists instead of
+ * `waitForEvent('load')` because a subscription has to be armed before the
+ * action and kept: arm it too late and the reload has already happened, and the
+ * wait then hangs until the test's own ceiling. A mark is indifferent to the
+ * order — it is equally true when the reload has already come and gone.
+ *
+ * @param page The Playwright page.
+ */
+export async function markDocument(page: Page): Promise<void> {
+  await page.evaluate((mark) => {
+    ;(window as unknown as Record<string, boolean>)[mark] = true
+  }, DOCUMENT_MARK)
+}
+
+/**
+ * Wait until the document {@link markDocument} marked has been replaced.
+ *
+ * That is all it waits for. A replaced document says the reload started and
+ * finished; it says nothing about the page behind it having answered, so a spec
+ * that goes on to assert what is on screen follows this with
+ * {@link expectPageReady} — the same answer {@link gotoPage} waits for, asked
+ * for separately because here nobody navigated.
+ *
+ * The cap is the run's own navigation budget rather than `waitForFunction`'s
+ * default, which is a flat 30s. Every other ceiling in this suite is stretched by
+ * how loaded the host is (`playwright.config.ts` through
+ * `framework/frontend/scripts/timeout-scale.mjs`, a factor of 1.0 to 4.0), and a
+ * fixed one inside the very helper written against a load-sensitive flake would
+ * be the same defect a layer down. It is read off the resolved project config
+ * rather than derived again, because deriving it a second time would reprint the
+ * factor line the config already writes at the top of the step's log.
+ *
+ * @param page The Playwright page.
+ */
+export async function expectSelfReload(page: Page): Promise<void> {
+  await page.waitForFunction(
+    (mark) => (window as unknown as Record<string, boolean>)[mark] !== true,
+    DOCUMENT_MARK,
+    { timeout: test.info().project.use.navigationTimeout },
+  )
 }

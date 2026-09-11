@@ -120,6 +120,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
+use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
@@ -412,6 +413,15 @@ abstract class DaemonManager extends BaseManager implements
     private ProtectedModeLiftAnnouncer $protectedModeLiftAnnouncer;
 
     /**
+     * @var ProtectedModeEntryGate Door a freeze request knocks on, held while the roster settles (HIL-1000).
+     *
+     * Built with the manager because the thing it waits on - a start this node asked for and has
+     * not heard back about - is a fact of the roster rather than of any one freeze, and a gate
+     * rebuilt per request would start each of them believing the node is idle.
+     */
+    private ProtectedModeEntryGate $protectedModeEntryGate;
+
+    /**
      * @var DaemonStatus This daemon's own runtime status, sampled on demand by both status doors.
      *
      * Built with the manager rather than in {@see boot()}: its construction is what starts the
@@ -436,6 +446,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->daemonStatus = new DaemonStatus();
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
         $this->protectedModeLiftAnnouncer = new ProtectedModeLiftAnnouncer();
+        $this->protectedModeEntryGate = new ProtectedModeEntryGate();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
@@ -688,6 +699,9 @@ abstract class DaemonManager extends BaseManager implements
         // single-node one built below and the clustered one the peer transport builds - hold the
         // same one (HIL-771).
         Hilos::$cluster?->registerProtectedModeLiftAnnouncer($this->protectedModeLiftAnnouncer);
+        // And the door a freeze request knocks on, for the same reason: the roster it asks about is
+        // this node's, whichever switch ends up entering the freeze behind it (HIL-1000).
+        Hilos::$cluster?->registerProtectedModeEntryGate($this->protectedModeEntryGate);
         // Expose this daemon as the port an RT replica from another node is applied through: the
         // copy a receiving node holds lives in the master, and the workers are fed from here.
         Hilos::$cluster?->registerRtSyncSink($this);
@@ -796,6 +810,11 @@ abstract class DaemonManager extends BaseManager implements
             // leader gate, unlike the watchdog above: every node announces its OWN lift to its own
             // browsers, so a follower holding one has to be able to release it (HIL-771).
             $this->protectedModeLiftAnnouncer->tick(time());
+
+        // Let a freeze in once the lift before it has finished bringing the agents back. Outside
+        // the leader gate for the plainest reason: a single-node daemon is not a leader of
+        // anything, and it is the one this hold was written for (HIL-1000).
+        $this->protectedModeEntryGate->tick();
 
             // Tell the other nodes which browser connections this node has gained and lost
             // (HIL-668). Ahead of the dispatch on purpose: a signal resolved below is addressed

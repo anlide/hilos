@@ -140,17 +140,23 @@ Reaching a daemon that answers nothing is not the same as reaching no daemon, an
 says so in two sentences rather than one:
 
 - `Cannot reach the daemon command channel at <host>:<port>`
-- `The daemon did not answer <command> within 5s`
+- `The daemon did not answer <command> within 15s`
 
 Both come from `CommandChannelClientTrait::channelFailureText()`, which is the only place
 either is written; a command prints its own SUCCESS, because that is its to word. Both
 answer `ExitCode::ERROR`.
 
+The budget in that sentence is not the trait's own. It is the MIDDLE of three nested waits
+declared together in `Hilos\Constants\CommandChannelWindows`: the agent gives up first and
+says why, the CLI gives up next with the sentence above, and the channel drops a held request
+last of all. Change one of the three there, not here — the innermost is derived from this one
+so that the order cannot be got wrong.
+
 ## When the daemon has nobody to hand the command to
 
 A name that reaches the daemon and finds no agent behind it used to read as the timeout
 above: the router returned an empty destination list, nothing answered, and the operator
-waited out the five-second budget to be told the daemon was silent — which it was not. The
+waited out the whole CLI budget to be told the daemon was silent — which it was not. The
 daemon knows, at the moment it happens, that the work will not be done, so it says so
 (HIL-730). Three sentences, one per way it knows:
 

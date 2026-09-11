@@ -97,8 +97,19 @@ Two properties are worth keeping when this code is touched:
   disable with no freeze and a disable from the wrong agent are all
   log-and-return paths. Reading the row first turns each into a stated reason
   rather than a mute timeout. The agent's wait window is deliberately the
-  innermost of three (agent, then CLI, then the channel's held request), so the
-  informative refusal is the one that fires first.
+  innermost of three, so the informative refusal is the one that fires first.
+- **Three windows, but two chains.** The nesting is agent inside caller inside
+  channel, and the middle link is a different program depending on who is driving:
+  a PHP CLI process for an operator, the Playwright e2e client for the test path —
+  which reaches the command port over TCP, because the runner has no PHP. The two
+  share their innermost and their outermost link and differ only in the middle, so
+  it is one number with two executors. All three are declared together in
+  `Hilos\Constants\CommandChannelWindows`, where the innermost is COMPUTED from
+  the middle less a margin for the refusal to travel — the order cannot be got
+  wrong by editing one file. The e2e client's copy of the middle number is in each
+  demo's `tests/e2e/helpers/protectedMode.ts` and has to be carried by hand.
+  Nothing here scales with the load of the run, unlike Playwright's own ceilings;
+  the reasoning, and the route not taken, are in that class's docblock.
 
 There is deliberately **no production-environment refusal on the agent side**,
 and since HIL-566 there is no need for one: the socket itself refuses a

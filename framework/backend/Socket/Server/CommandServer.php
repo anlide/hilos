@@ -17,6 +17,7 @@ use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\Logger;
 
 /**
  * CommandServer - socket server for the CLI command channel.
@@ -94,6 +95,12 @@ class CommandServer extends AbstractServer
     /**
      * Delivers an agent reply to the held command client and drops it.
      *
+     * A reply for a correlation id nobody holds is written down rather than dropped in silence
+     * (HIL-1000). It is not an error here - the request was dropped by {@see forget()} when its
+     * caller gave up or its window ran out - but it is the far end of exactly the trip that
+     * ended in silence for whoever asked, and without this line that trip has no last entry at
+     * all: the answer arrived, and the account of it stopped where the holder used to be.
+     *
      * @param string $correlationId Correlation id of the originating request
      * @param CommandReplyDTO $reply Agent reply to write
      */
@@ -101,6 +108,8 @@ class CommandServer extends AbstractServer
     {
         $client = $this->heldRequests[$correlationId] ?? null;
         if ($client === null) {
+            Logger::warning("Command channel: reply to #{$correlationId} arrived with nobody holding it");
+
             return;
         }
 

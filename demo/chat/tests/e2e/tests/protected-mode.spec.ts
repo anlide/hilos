@@ -2,7 +2,14 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
-import { gotoAdmitted, gotoMaintenance, gotoPage } from '../helpers/page'
+import {
+  expectPageReady,
+  expectSelfReload,
+  gotoAdmitted,
+  gotoMaintenance,
+  gotoPage,
+  markDocument,
+} from '../helpers/page'
 import { signUpWithVerifiedEmail } from '../helpers/session'
 import {
   closeProtectedMode,
@@ -690,13 +697,22 @@ test('the operator and the admitted verifier both see the verification banner, a
   await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
 
   // The lift, and the banner goes with the mode it describes - for everybody at
-  // once, including the browser that was let in early. Both are re-navigated
-  // rather than asserted where they stand: the client reloads itself on the lift
-  // frame, and an absence asserted into that reload would pass on an empty
-  // document. A load that waited for the page to answer cannot.
+  // once, including the browser that was let in early. Neither browser is
+  // navigated here, and that is the point: on the lift frame the client reloads
+  // ITSELF, to the very address the test would have asked for, so a goto raced a
+  // navigation of its own and was interrupted by it. So both are marked before
+  // the lift and then simply waited on - the document replaced, the page
+  // answered - and only then asked whether the banner is gone.
+  await markDocument(page)
+  await markDocument(stranger)
   expect(await openProtectedMode()).toBe('inactive')
-  await gotoPage(page, BACKUP_URL)
+  await expectSelfReload(page)
+  await expectPageReady(page)
   await expect(page.getByTestId('protected-mode-banner')).toHaveCount(0)
+  // The stranger is steered afterwards rather than instead: they were held on an
+  // administrative url they have no right to, so the document they reload into is a
+  // refusal. Once that reload has landed there is nothing left to collide with.
+  await expectSelfReload(stranger)
   await gotoPage(stranger, '/')
   await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
 
@@ -785,11 +801,14 @@ test('the named circle walks in with the tab it already had open, and nobody els
   // Lifted, and then the other half of the surface: the membership outlived the freeze
   // it was named for - a test drive replaces no database, so the row is still the one
   // the operator typed - and taking somebody out is a click and a confirmation.
-  expect(await openProtectedMode()).toBe('inactive')
   // The lift sends the browsers it had behind the stub back to the application on their
-  // own, so the operator's page is already navigating: wait for that to land before
-  // steering it, or the two navigations collide and the later one is interrupted.
-  await expect(page.getByTestId('maintenance')).toBeHidden()
+  // own, so the operator's page is already navigating and must be let to land before it is
+  // steered anywhere. Waiting for the stub to go was not enough: it goes on the frame that
+  // arrives, and the reload follows AFTER that, so the goto still collided with it. What is
+  // waited for instead is the document itself being replaced.
+  await markDocument(page)
+  expect(await openProtectedMode()).toBe('inactive')
+  await expectSelfReload(page)
   await gotoPage(page, BACKUP_URL)
   await expect(circleRow(page, memberEmail)).toBeVisible()
   await removeFromCircle(page, memberEmail)

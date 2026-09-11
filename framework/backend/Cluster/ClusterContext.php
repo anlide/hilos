@@ -25,6 +25,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
+use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeLeadership;
 use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
@@ -97,6 +98,9 @@ final class ClusterContext
 
     /** @var ?ProtectedModeAgentFreezer Local port that stops this node's agents during the freeze, registered by the daemon at start. */
     private ?ProtectedModeAgentFreezer $protectedModeAgentFreezer = null;
+
+    /** @var ?ProtectedModeEntryGate Door an initiator's freeze request knocks on, null when none is registered */
+    private ?ProtectedModeEntryGate $protectedModeEntryGate = null;
 
     /**
      * @var ?ProtectedModeClientNotifier Local port that tells this node's browser connections about
@@ -559,6 +563,30 @@ final class ClusterContext
     public function protectedModeAgentFreezer(): ?ProtectedModeAgentFreezer
     {
         return $this->protectedModeAgentFreezer;
+    }
+
+    /**
+     * Registers the door an initiator's freeze request knocks on (HIL-1000).
+     *
+     * Registered by the daemon beside the seam above, and for a reason that pairs them: this one
+     * asks that seam whether the roster it last replayed is back before it lets a new freeze take
+     * it down again.
+     *
+     * @param ProtectedModeEntryGate $gate Local hold on freeze requests
+     */
+    public function registerProtectedModeEntryGate(ProtectedModeEntryGate $gate): void
+    {
+        $this->protectedModeEntryGate = $gate;
+    }
+
+    /**
+     * Returns the registered freeze-request door, or null on a node that registered none.
+     *
+     * @return ?ProtectedModeEntryGate Local hold on freeze requests, or null
+     */
+    public function protectedModeEntryGate(): ?ProtectedModeEntryGate
+    {
+        return $this->protectedModeEntryGate;
     }
 
     /**

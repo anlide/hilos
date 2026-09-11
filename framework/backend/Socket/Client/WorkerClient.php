@@ -18,6 +18,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Log\LogWriteLevelApplier;
+use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
@@ -242,6 +243,16 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 => $this->handleSessionCarryOverDoneMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
         };
+
+        // Ask the freeze door whether what just happened lets a held request in (HIL-1000). The
+        // daemon loop asks it too, and that would be the natural single place - but one pass of
+        // that loop spans a whole burst of these frames, and during a freeze a burst takes
+        // SECONDS. A hold released at loop cadence is therefore released at a moment nobody
+        // measured, and the caller waiting on the freeze has a budget that is very much measured:
+        // a hold meant to last five seconds was seen to last sixteen and cost the freeze its
+        // window. Asked here, it is asked at the only cadence that matches what it waits for -
+        // this is where a start report lands.
+        Hilos::$cluster?->protectedModeEntryGate()?->tick();
     }
 
     /**
@@ -574,11 +585,24 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * node on the spot, or enables locally when this node leads a cluster and forwards the request
      * to the current leader otherwise. A node without a switch ignores the request.
      *
+     * It goes through {@see ProtectedModeEntryGate} rather than straight to the switch, so a
+     * freeze asked for while the lift before it is still bringing agents back waits for them
+     * instead of taking the roster down mid-start (HIL-1000). A node that registered no gate is
+     * handed to the switch as before - the gate is the daemon's, and a process without one has no
+     * roster to protect either.
+     *
      * @param WorkerProtectedModeEnableDTO $dto DTO with the initiator identity and operation
      */
     private function handleProtectedModeEnableMessage(WorkerProtectedModeEnableDTO $dto): void
     {
-        Hilos::$cluster?->protectedMode()?->requestEnable($dto->data);
+        $gate = Hilos::$cluster?->protectedModeEntryGate();
+        if ($gate === null) {
+            Hilos::$cluster?->protectedMode()?->requestEnable($dto->data);
+
+            return;
+        }
+
+        $gate->requestEnter($dto->data);
     }
 
     /**

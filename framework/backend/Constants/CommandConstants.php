@@ -105,8 +105,9 @@ final class CommandConstants
      * The cadence belongs to the transport, not to any one command, and it lives
      * here rather than in CommandChannelClientTrait because PHP forbids reading a
      * trait constant without composing the trait — and the commands that poll by
-     * hand do not compose it. The wait BUDGET is a different matter: it is a
-     * property of the command and stays where the command declares it.
+     * hand do not compose it. The wait BUDGET is not a property of the command
+     * either, and no longer pretends to be: it belongs to the LAYER that waits, and
+     * all three layers of it are declared together in {@see CommandChannelWindows}.
      *
      * @var int Poll sleep between client ticks, in microseconds
      */

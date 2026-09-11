@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Hilos;
@@ -69,19 +70,17 @@ use Random\RandomException;
  * moment the freeze started, so anybody else - a colleague reached by phone, an operator on a
  * machine they had not logged in on - has nothing but a key. It is the emergency entrance, and an
  * emergency entrance that answers to no list is the point of one.
+ *
+ * **How long it waits for the row, and why that number is not declared here.** This agent's
+ * window is {@see CommandChannelWindows::AGENT_WAIT_SECONDS}, the same one
+ * {@see ProtectedModeTestDriverTrait} waits out. Three windows are nested, but there are TWO
+ * chains, not one: production runs agent -> CLI process ({@see CommandChannelClientTrait}) ->
+ * channel ({@see CommandClient}), the test stand runs agent -> e2e client -> channel. This
+ * window is the innermost of BOTH, which is what lets an operator read the reason worded below
+ * instead of whichever middle link would otherwise have timed out without one.
  */
 trait ProtectedModeOperatorTrait
 {
-    /**
-     * @var float Seconds this agent waits for the row to move before answering a refusal
-     *
-     * The innermost of three nested windows, exactly as {@see ProtectedModeTestDriverTrait}
-     * sizes its own: the CLI gives up after {@see CommandChannelClientTrait}'s budget and the
-     * channel releases a held request after {@see CommandClient}'s, so the operator reads this
-     * agent's stated reason rather than either mute timeout.
-     */
-    private const float PROTECTED_MODE_OPERATOR_WAIT_SECONDS = 3.0;
-
     /**
      * @var int Byte length of a minted pass
      *
@@ -257,11 +256,11 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
-        if ((microtime(true) - $this->protectedModeOperatorSince) < self::PROTECTED_MODE_OPERATOR_WAIT_SECONDS) {
+        if ((microtime(true) - $this->protectedModeOperatorSince) < CommandChannelWindows::AGENT_WAIT_SECONDS) {
             return;
         }
 
-        $waited = self::PROTECTED_MODE_OPERATOR_WAIT_SECONDS;
+        $waited = CommandChannelWindows::AGENT_WAIT_SECONDS;
         $correlationId = $this->protectedModeOperatorCorrelationId;
         $expired = $this->protectedModeOperatorPassHash !== ''
             ? $this->passWaitExpiredReason($phase)
@@ -284,7 +283,7 @@ trait ProtectedModeOperatorTrait
      */
     private function passWaitExpiredReason(string $phase): string
     {
-        $waited = self::PROTECTED_MODE_OPERATOR_WAIT_SECONDS;
+        $waited = CommandChannelWindows::AGENT_WAIT_SECONDS;
 
         return "protected mode did not record the pass within {$waited}s (phase: {$phase}) — if it lands "
             . 'late it is a pass nobody holds; close the window and open it again to void every pass on the row';

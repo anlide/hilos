@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
@@ -59,19 +60,19 @@ use Throwable;
  * CLI with. That ungated socket path is an existing property of the command channel, shared
  * with `setAdmin` and `test:connection:drop`, and it is recorded here so the next reader does
  * not take its absence for an oversight and "fix" the e2e out of existence.
+ *
+ * **How long it waits for the mode, and why that number is not declared here.** This agent's
+ * window is {@see CommandChannelWindows::AGENT_WAIT_SECONDS}, the same one
+ * {@see ProtectedModeOperatorTrait} waits out. Three windows are nested, but there are TWO
+ * chains, not one, and the one this trait is driven through is the test stand's: agent -> e2e
+ * client -> channel ({@see CommandClient}). The middle link here is Playwright reaching the
+ * command port over TCP, NOT the CLI process ({@see CommandChannelClientTrait}) that stands
+ * there in production - the two are a different program with the same role. This window is the
+ * innermost of both chains, so what comes back to the test is the reason worded below rather
+ * than a mute timeout from the link outside it.
  */
 trait ProtectedModeTestDriverTrait
 {
-    /**
-     * @var float Seconds this agent waits for the mode to move before answering a refusal
-     *
-     * Deliberately the innermost of three nested windows: the CLI gives up after
-     * {@see CommandChannelClientTrait}'s budget and the command channel releases a held request
-     * after {@see CommandClient}'s, both longer than this. So the caller gets this agent's
-     * informative refusal rather than either mute timeout.
-     */
-    private const float PROTECTED_MODE_TEST_WAIT_SECONDS = 3.0;
-
     /** @var ?string Correlation id of the drive command being awaited, or null when idle */
     private ?string $protectedModeTestCorrelationId = null;
 
@@ -214,11 +215,11 @@ trait ProtectedModeTestDriverTrait
             return;
         }
 
-        if ((microtime(true) - $this->protectedModeTestSince) < self::PROTECTED_MODE_TEST_WAIT_SECONDS) {
+        if ((microtime(true) - $this->protectedModeTestSince) < CommandChannelWindows::AGENT_WAIT_SECONDS) {
             return;
         }
 
-        $waited = self::PROTECTED_MODE_TEST_WAIT_SECONDS;
+        $waited = CommandChannelWindows::AGENT_WAIT_SECONDS;
         $target = $this->protectedModeTestAwaitedPhase === ''
             ? 'become ready'
             : "reach '{$this->protectedModeTestAwaitedPhase}'";

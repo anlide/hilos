@@ -932,7 +932,10 @@ abstract class WorkerManager extends BaseManager
     /**
      * Relays the leader's protected-mode ready to the addressed initiator agent on this worker.
      *
-     * A no-op when the agent is not (or no longer) hosted here, mirroring {@see handleAgentStop()}.
+     * A no-op when the agent is not (or no longer) hosted here, mirroring {@see handleAgentStop()},
+     * but a no-op that says so (HIL-1000): this relay is the only thing that ever answers an
+     * initiator's enter, so dropping it here is the difference between a caller being refused and
+     * a caller being told nothing at all.
      *
      * @param ProtectedModeReadyDTO $data Ready relay naming the initiator agent
      */
@@ -944,6 +947,9 @@ abstract class WorkerManager extends BaseManager
 
         $agent = $this->agentManager->getAgent($data->agentId);
         if ($agent === null) {
+            Logger::warning("Protected mode: the ready relay for {$data->agentId} arrived,"
+                . ' but this worker no longer hosts it');
+
             return;
         }
 
@@ -1579,6 +1585,13 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::COMMAND_REQUEST:
                 if ($signalData instanceof CommandRequestDTO) {
+                    // The hop the master cannot see, and the one that says whether a mute command
+                    // was late getting here or late being answered (HIL-1000). Written to the
+                    // agent's own journal, beside the reply it leaves through.
+                    Logger::logAgentInfo(
+                        $agentId,
+                        "Command channel: took {$signalData->command} #{$signalData->correlationId}",
+                    );
                     try {
                         $parsedCommandData = Hilos::$sr?->createCommandPayloadDTO($name, $signalData) ?? $signalData;
                         $agent->onSignalCommand($parsedCommandData, $source, $name);
@@ -2211,7 +2224,9 @@ abstract class WorkerManager extends BaseManager
 
         $agentId = ExecutionContext::currentAgentId();
         $acceptKey = ExecutionContext::currentAcceptKey();
-        $deadline = microtime(true) + self::SOURCE_INTEREST_DEADLINE_SECONDS;
+        $startedAt = microtime(true);
+        $deadline = $startedAt + self::SOURCE_INTEREST_DEADLINE_SECONDS;
+        $putByBefore = count($this->deferredDaemonMessages);
 
         try {
             while (!$this->sourcesReady($collectionKeysByKind)) {
@@ -2223,9 +2238,46 @@ abstract class WorkerManager extends BaseManager
                 usleep(self::SOURCE_INTEREST_POLL_US);
             }
         } finally {
+            $this->reportSourceInterestWait($collectionKeysByKind, $startedAt, $putByBefore);
             ExecutionContext::setCurrentAgentId($agentId);
             ExecutionContext::setCurrentAcceptKey($acceptKey);
         }
+    }
+
+    /**
+     * Says what a wait for source interest cost this worker's whole link, not just its caller.
+     *
+     * A wait here is a pause in ONE queue ({@see pumpDaemonLink()}), so everything else addressed
+     * to this worker - a command request for an agent living here among it - is put by for as
+     * long as the wait lasts, and arrives at its agent that much later than it was asked for.
+     * That is invisible from both ends: the caller sees silence, the agent sees a request it
+     * answers in milliseconds. Hence the two numbers on one line, and hence a line at all
+     * (HIL-1000).
+     *
+     * Only a wait that actually waited is written down; the overwhelmingly common case is state
+     * already in hand, which costs nothing and is worth no line.
+     *
+     * @param array<string, list<string>> $collectionKeysByKind Collections the wait was for
+     * @param float $startedAt Microtime the wait began
+     * @param int $putByBefore Frames already put by when it began
+     */
+    private function reportSourceInterestWait(array $collectionKeysByKind, float $startedAt, int $putByBefore): void
+    {
+        $waitedMs = (int)round((microtime(true) - $startedAt) * TimeConstants::MS_PER_SECOND);
+        if ($waitedMs === 0) {
+            return;
+        }
+
+        $putBy = count($this->deferredDaemonMessages) - $putByBefore;
+        $sources = self::describeSources($collectionKeysByKind);
+        if (!$this->sourcesReady($collectionKeysByKind)) {
+            Logger::warning("Source interest: gave up after {$waitedMs}ms without {$sources},"
+                . " putting {$putBy} frame(s) by");
+
+            return;
+        }
+
+        Logger::info("Source interest: waited {$waitedMs}ms for {$sources}, putting {$putBy} frame(s) by");
     }
 
     /**

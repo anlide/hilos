@@ -30,7 +30,13 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
    surface/dialog closed on success, or the inline error shown — before asserting
    its result. Asserting through an in-flight action races the reply and flakes.
 5. Assert on **state that arrives over the socket**, not on fixed timeouts.
-6. e2e runs the **built artifact** with a booted daemon — rebuild after a
+6. Where the action makes the application **reload itself** — today the lift of
+   protected mode — do not navigate at all: mark the document beforehand with
+   `markDocument`, wait for the mark to go with `expectSelfReload`, then add
+   `expectPageReady` if the spec asserts what is on screen, or a `gotoPage` if it
+   needs a different address. Both navigations carry the same url, so the failure
+   reads as a browser oddity rather than as a race.
+7. e2e runs the **built artifact** with a booted daemon — rebuild after a
    frontend change before the spec exercises it, and reset before re-running a
    data-mutating spec.
 
@@ -41,4 +47,6 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   `pressSequentially`.
 - Never assert an action's result while the action is still in flight — wait for
   it to settle (success or error) first.
+- Never navigate a page the application is about to reload by itself — wait the
+  reload out instead, and steer afterwards if a different address is wanted.
 - Never run `git commit` or `git push`.
