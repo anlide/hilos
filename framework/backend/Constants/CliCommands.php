@@ -89,6 +89,9 @@ final class CliCommands
     /** @var string Command: Reset test database (DROP, migrate, seed) */
     public const string DB_TEST_RESET = 'test:db:reset';
 
+    /** @var string Command: Empty the log root - rotation archive, staging and live files (test-only) */
+    public const string LOGS_TEST_RESET = 'test:logs:reset';
+
     /** @var string Command: Expire an active auth verification challenge (test-only) */
     public const string VERIFICATION_TEST_EXPIRE = 'test:verification:expire';
 
