@@ -74,6 +74,8 @@ export {
   type TableViewportAnnounced,
 } from './table/TableViewportController.js'
 export {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableCardSlot,
   type HilosTableColumn,
   type HilosTableColumnOf,
 } from './table/hilosTableColumn.js'
@@ -90,6 +92,7 @@ export {
   type HilosTableMainAction,
   type HilosTableSearch,
 } from './table/tableFrame.js'
+export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
 export {
   type HilosTableSelectionHeader,
   type HilosTableSelectionState,

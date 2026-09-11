@@ -33,6 +33,7 @@ import {
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
+import { hilosTableCard } from './tableCard.js'
 import {
   type HilosTableBody,
   type HilosTableFilterView,
@@ -545,6 +546,7 @@ export class TableViewportController<R> implements TableWindowSink {
     )
     this.frameState = {
       declaration,
+      card: declaration ? hilosTableCard(declaration.columns) : null,
       filters: filterViews,
       activeFilterCount,
       footer: computedSignal<HilosTableFooter>(() => {
@@ -634,7 +636,8 @@ export class TableViewportController<R> implements TableWindowSink {
    * no frame still has one to read — `declaration` is then null.
    *
    * SCAFFOLD: read by the bar and the footer, which are HIL-801 (Vue) and
-   * HIL-810 (React, Angular).
+   * HIL-810 (React, Angular); its `card` is read by the card a row projects to on
+   * a narrow screen, which is HIL-806 (Vue) and HIL-815 (React, Angular).
    */
   get frame(): HilosTableFrameState {
     return this.frameState

@@ -8,6 +8,7 @@
 
 import { type ReadonlySignal } from '../state/signal.js'
 import { type HilosTableColumn } from './hilosTableColumn.js'
+import { type HilosTableCard } from './tableCard.js'
 
 /**
  * The search box of a table: present means the table searches, absent means it
@@ -212,6 +213,12 @@ export type HilosTableBody = 'loading' | 'empty' | 'empty_filtered' | 'rows'
 export interface HilosTableFrameState {
   /** What the page declared, or null when it declared no frame. */
   readonly declaration: HilosTableFrame | null
+  /**
+   * The card a row projects to on a narrow screen, derived from the declared
+   * columns. Null exactly when `declaration` is — and not wrapped in a signal for
+   * the same reason the columns are not: it follows from the declaration alone.
+   */
+  readonly card: HilosTableCard | null
   /** The declared filters with their current values, in declaration order. */
   readonly filters: ReadonlySignal<readonly HilosTableFilterView[]>
   /**

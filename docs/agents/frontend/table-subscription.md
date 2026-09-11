@@ -163,7 +163,8 @@ skeleton, the announcement and staleness bars. **A page owns the content of a
 cell and nothing around it.**
 
 Three things follow from the declaration and are read off the controller's
-`frame` getter rather than recomputed per view layer:
+`frame` getter rather than recomputed per view layer — the card a row projects to
+on a narrow screen is a fourth and has its own section below:
 
 - **the declared filters with their values** — one filter as declared, the value
   it holds, and whether it is active. A date range holds both bounds under
@@ -176,6 +177,42 @@ Three things follow from the declaration and are read off the controller's
   Deciding this in the core is the point: three view layers deciding it apart
   would drift. A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
+
+### The card a row projects to
+
+On a narrow screen a row is drawn as a card, and the framework builds that card
+from the very columns the page already declared — a project writes no second
+markup for its table, and intervenes only when it wants a layout of its own
+(mockups/components/table section 9). The core answers where each declared column
+goes; the page keeps drawing the content of every cell, on a card exactly as in a
+row. **The card carries the layout of the columns, never their values.**
+
+A card has four places and no fifth: the **title** at the head, the **badge** at
+the right of that head, the **fields** in its body, and the **actions** across
+its foot. Only fields carry a label — the title and the badge are drawn bare, as
+the mockup draws them, and deciding that once in the core is what keeps three
+view layers from labelling them three ways.
+
+By default the layout follows the declaration order: the virtual `actions` column
+goes to the foot, the first remaining column becomes the title, and the rest
+become fields in the order they were declared. **No column becomes the badge by
+default** — which column carries a state is known to the page alone, and a badge
+guessed wrong would quietly lift a column out of the body of the card.
+
+A page that wants otherwise marks the column itself with `card`, the optional
+field of `HilosTableColumn`: `'title'`, `'badge'`, `'field'`, or `'hidden'` for a
+column the card leaves out — a table of eight columns is a scroll on a phone, and
+which of them are secondary is the page's own knowledge. The mark is read in one
+pass over the columns, so a place already taken makes the next claimant a field
+instead; the `actions` key outranks any mark on it, that column having no value
+of its own to title a card with. The mark changes nothing on a wide screen: the
+header, the column order, and sorting never read it.
+
+The layout is derived once, with the rest of the frame, and read off
+`frame.card` — it follows from the declaration alone, which does not change over
+the life of a table, so it is not wrapped in a signal and null exactly when
+`declaration` is. Drawing the card is a view's job: HIL-806 (Vue) and HIL-815
+(React, Angular).
 
 Several filter-map entries are set in one window change with `setFilters()`, and
 `resetFilters()` returns the map to the filters the table opened with —
@@ -602,6 +639,7 @@ an address does not:
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
+| the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
 | the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |
 | the thin view | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
