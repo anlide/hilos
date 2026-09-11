@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../helpers/adminGrant'
 import { signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
@@ -22,6 +23,63 @@ async function openBackups(page: import('@playwright/test').Page): Promise<void>
   await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+}
+
+/**
+ * Name the newest STORED archive, read off a fresh snapshot of the page.
+ *
+ * The row of a run in progress sits above them all and is not an archive at all,
+ * so the newest one is the first row that offers a delete — which is also the
+ * only row a cleanup can aim at. The snapshot is fresh because the page does not
+ * show the row it created itself (HIL-432, see the tests below).
+ */
+async function newestArchiveKey(
+  page: import('@playwright/test').Page,
+): Promise<string> {
+  await gotoPage(page, '/hilos/backup')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  const key = await page
+    .locator('[data-id^="hilos-table-row-"]')
+    .filter({ has: page.locator('[data-id^="hilos-backup-delete-"]') })
+    .first()
+    .getAttribute('data-id')
+  expect(key).toBeTruthy()
+
+  return key ?? ''
+}
+
+/**
+ * Run one schema-only backup from the page's own form, wait for it to land, and
+ * name the row it made. The card a finished run raises is what says the archive
+ * is on disk; scope schema-only keeps the dump small.
+ */
+async function createBackup(
+  page: import('@playwright/test').Page,
+): Promise<string> {
+  await page.getByTestId('hilos-backup-create-scope').selectOption('schema-only')
+  await page.getByTestId('hilos-backup-create').click()
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('is ready.'),
+  ).toBeVisible({ timeout: 60_000 })
+  await dismissToasts(page)
+
+  return newestArchiveKey(page)
+}
+
+/** Delete one archive by its row key and wait for the row to become a placeholder. */
+async function deleteBackup(
+  page: import('@playwright/test').Page,
+  rowKey: string,
+): Promise<void> {
+  await dismissToasts(page)
+  await page
+    .locator(`[data-id="${rowKey}"] [data-id^="hilos-backup-delete-"]`)
+    .click()
+  await page.getByTestId('hilos-backup-delete-confirm').click()
+  await expect(page.locator(`[data-id="${rowKey}"]`)).toContainText('Removed', {
+    timeout: 20_000,
+  })
 }
 
 // HIL-441 acceptance (carried over from HIL-428): the backup page is part of the
@@ -232,6 +290,76 @@ test('agrees between two tabs about the card a finished backup raised', async ({
     'Removed',
     { timeout: 20_000 },
   )
+})
+
+// HIL-803 acceptance. A created row that belongs ABOVE a window is neither shown
+// nor swallowed: the window is told, and the strip is what tells the reader. This
+// is the only table of the demo whose newest row is its first one, so it is the
+// only place a foreign create falls above a window at all — everywhere else it
+// lands at the tail and simply arrives.
+test('raises the strip in another tab for a backup that lands above its window', async ({
+  context,
+}) => {
+  // Two real dumps, one to stand on and one to be announced, do not fit the default
+  // budget — this is the same three-fold headroom the log specs take.
+  test.slow()
+
+  const tabA = await context.newPage()
+  await openBackups(tabA)
+
+  // A window with no rows has no boundary to judge an arriving row against, and the
+  // server appends into such a window instead of announcing to it
+  // (BrowserContext::viewportPlacement). So the strip needs a table that is not
+  // empty: this first backup is the floor tab B will be standing on. The stand
+  // usually carries archives from the tests above as well, and how many it holds is
+  // not this test's business — nothing below counts rows in absolute numbers.
+  const floorKey = await createBackup(tabA)
+
+  const tabB = await context.newPage()
+  await gotoPage(tabB, '/hilos/backup')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabB.getByTestId('hilos-viewport-table')).toBeVisible()
+  const rowsInB = tabB.locator('[data-id^="hilos-table-row-"]')
+  await expect(tabB.locator(`[data-id="${floorKey}"]`)).toBeVisible()
+  const topOfB = await rowsInB.first().getAttribute('data-id')
+
+  // The second backup is started from the other tab, and everything below happens
+  // WHILE IT RUNS: a run puts its own row at the top of this table the moment it
+  // starts, and that row is the create tab B cannot show. Waiting for the run to end
+  // instead would prove nothing about the strip — the page re-subscribes when a run
+  // ends, and a window arriving is exactly what clears an announcement (P-310).
+  await tabA.bringToFront()
+  await tabA.getByTestId('hilos-backup-create-scope').selectOption('schema-only')
+  await tabA.getByTestId('hilos-backup-create').click()
+  await expect(tabA.getByTestId('hilos-toast-error')).toHaveCount(0)
+
+  // Tab B has been told and shown nothing: the strip stands and the top of its window
+  // is the row it was already standing on. The number on the strip is not asserted —
+  // the count of announced rows outlives the rows themselves today (P-309), and a spec
+  // about the strip is not where that number should be pinned.
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toBeVisible()
+  await expect(strip).toContainText(/new rows? above the window/)
+  await expect(rowsInB.first()).toHaveAttribute('data-id', topOfB ?? '')
+
+  // Show is the only road in, and it asks for the window again: what the server
+  // answers is the whole truth, so the top of the window is the new row and the strip
+  // has nothing left to say.
+  await tabB.bringToFront()
+  await dismissToasts(tabB)
+  await tabB.getByTestId('hilos-table-announce-show').click()
+  await expect(rowsInB.first()).not.toHaveAttribute('data-id', topOfB ?? '')
+  await expect(strip).toHaveCount(0)
+
+  // Let the run finish before cleaning up after it: an archive can only be deleted
+  // once it is one. Both this test made go, so the suite stays idempotent on a shared
+  // storage directory.
+  await tabA.bringToFront()
+  await expect(
+    tabA.getByTestId('hilos-toasts').getByText('is ready.'),
+  ).toBeVisible({ timeout: 60_000 })
+  await deleteBackup(tabA, await newestArchiveKey(tabA))
+  await deleteBackup(tabA, floorKey)
 })
 
 test('offers a restore on this stand and holds it behind the typed id', async ({

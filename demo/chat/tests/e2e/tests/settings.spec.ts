@@ -201,8 +201,18 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
   // settings value is inline rather than an entity reference, so this row is the
   // proof the delta itself landed — it could not have changed any other way.
   await expect(rowB).toContainText('xx-test')
+  // And the row says on itself that it just changed (HIL-803): the tint is checked
+  // HERE, immediately behind the text that is the delta arriving, because it runs on
+  // a two-second timer in the controller. Nothing may be awaited in between — no
+  // wait would make this less racy, only later.
+  await expect(rowB).toHaveClass(/table-success/)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
   await expect(rowB).not.toHaveClass(/table-warning/)
+  // A change that landed in place is not a change that waits: no mark stands beside it.
+  await expect(tabB.locator('[data-id^="hilos-table-pending-"]')).toHaveCount(0)
+
+  // And the tint goes by itself, with nobody pressing anything.
+  await expect(rowB).not.toHaveClass(/table-success/, { timeout: 10_000 })
 
   // Reset the key back to its catalog default.
   await page.getByTestId('hilos-settings-edit-chat_bot_language').click()

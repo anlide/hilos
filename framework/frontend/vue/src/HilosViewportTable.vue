@@ -4,9 +4,10 @@ and are sent to the backend (NO local filtering); live changes arrive as pending
 and are resolved with the Apply button. A removed row renders as a placeholder in
 its slot — the layout never collapses. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
-Body cells come from the `#row` slot; the placeholder, header, paging, and the
-pending bar stay framework-owned. (Distinct from HilosTable, the client-side
-view.)
+Body cells come from the `#row` slot, plus one framework-owned cell at the end
+of the row carrying the waiting mark while anything waits; the placeholder,
+header, paging, and the two strips of live change stay framework-owned.
+(Distinct from HilosTable, the client-side view.)
 It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
 when the controller carries a declaration, and from its own props when it does
 not — two epochs of the same table living side by side while the five framework
@@ -18,6 +19,7 @@ import type {
   HilosTableColumn,
   TableSort,
   TableViewportController,
+  TableViewportRow,
 } from '@hilos/core'
 
 import HilosTableBar from './HilosTableBar.vue'
@@ -79,6 +81,7 @@ const totalCount = useSignal(props.controller.totalCount)
 const totalExact = useSignal(props.controller.totalExact)
 const hasNextPage = useSignal(props.controller.hasNextPage)
 const pendingCount = useSignal(props.controller.pendingCount)
+const announced = useSignal(props.controller.announced)
 const loaded = useSignal(props.controller.loaded)
 
 // A table whose count stopped at its ceiling has no page count to compare against, and the
@@ -87,26 +90,52 @@ const paginated = computed(
   () => pageCount.value === null || pageCount.value > 1,
 )
 
+// The mark column stands exactly while the waiting strip does. Header cell and body
+// cell read the SAME condition, so the two cannot drift apart into a row wider than
+// its header.
+const markColumn = computed(() => pendingCount.value > 0)
+
+// Every cell that spans the whole row — the placeholder of a removed row, the empty
+// and loading states — counts the mark column while it stands.
+const bodyColspan = computed(
+  () => props.columns.length + (markColumn.value ? 1 : 0),
+)
+
 // The total reads as "at least this many" when the count stopped at its ceiling, which is
 // what the trailing plus says. Spelling it out in words would say the same thing longer.
 const countLabel = computed(() =>
   totalExact.value ? `${totalCount.value} total` : `${totalCount.value}+ total`,
 )
 
-// A row with an unapplied pending change gets a subtle, theme-aware tint that
-// stands out from the zebra striping: amber for a waiting move, red for a
-// waiting removal. Bootstrap's contextual row classes carry their own dark-mode
-// variants, so they adapt to the active theme with no custom style layer.
-const PENDING_ROW_CLASS: Record<'move' | 'remove', string> = {
-  move: 'table-warning',
-  remove: 'table-danger',
-}
+// The numeral of each strip is chosen here rather than in the template: '1 rows'
+// would stand in the most visible place of the screen.
+const announceLabel = computed(() =>
+  announced.value.above === 1
+    ? '1 new row above the window'
+    : `${announced.value.above} new rows above the window`,
+)
 
-// A row's pending tint, resolved in script: the template `:class` binding does
-// not narrow `view.pending` out of its `| null` union, so the record is indexed
-// here — where the narrowing holds — rather than inline in the template.
-function pendingClass(pending: 'move' | 'remove' | null): string | undefined {
-  return pending ? PENDING_ROW_CLASS[pending] : undefined
+// Only the tail of the waiting sentence is composed here, because the count itself
+// stays a node of its own under `hilos-table-pending` — the handle the outside reads
+// the number by.
+const pendingSuffix = computed(() =>
+  pendingCount.value === 1
+    ? 'row will move or leave'
+    : 'rows will move or leave',
+)
+
+// A row's tint, resolved in the order the mockup resolves it (section 4): amber
+// while a pending change waits on the row — a move and a removal alike — and green
+// for the couple of seconds after a value landed. Waiting outranks the highlight,
+// because it is the one of the two the reader still has to act on. Red belongs to a
+// refused write, not to waiting. Bootstrap's contextual row classes carry their own
+// dark-mode variants, so they adapt to the active theme with no custom style layer.
+function rowClass(view: TableViewportRow<R>): string | undefined {
+  if (view.pending !== null) {
+    return 'table-warning'
+  }
+
+  return view.highlighted ? 'table-success' : undefined
 }
 
 // The arrow a header carries: every column the order runs by gets one, because
@@ -157,14 +186,9 @@ function onSearchInput(event: Event): void {
 
     <!-- SCAFFOLD: the bar a table draws from props, kept while the five
     framework pages still pass them. It goes with the props themselves when
-    those pages move onto the declaration (HIL-819); the Apply button of a
-    declared table belongs to the pending strip (HIL-793). -->
-    <div
-      v-if="!declaration && (searchable || pendingCount > 0)"
-      class="d-flex justify-content-between align-items-center gap-2 mb-3"
-    >
+    those pages move onto the declaration (HIL-819). -->
+    <div v-if="!declaration && searchable" class="mb-3">
       <input
-        v-if="searchable"
         type="search"
         class="form-control"
         :placeholder="searchPlaceholder"
@@ -173,22 +197,46 @@ function onSearchInput(event: Event): void {
         data-id="hilos-table-search"
         @input="onSearchInput"
       />
+    </div>
+
+    <!-- The two strips of live change, in the order of the mockup and outside
+    both epochs of the frame: they speak about what is happening to the rows,
+    not about what the page declared. -->
+    <div
+      v-if="announced.above > 0"
+      class="alert alert-secondary py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
+      role="status"
+      data-id="hilos-table-announce"
+    >
+      <i class="bi bi-arrow-down-circle" aria-hidden="true"></i>
+      <span class="small">{{ announceLabel }}</span>
       <button
-        v-if="pendingCount > 0"
         type="button"
-        class="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-2 ms-auto"
-        :aria-label="`Apply ${pendingCount} pending changes`"
+        class="btn btn-sm btn-outline-secondary ms-auto"
+        data-id="hilos-table-announce-show"
+        @click="controller.show()"
+      >
+        Show
+      </button>
+    </div>
+
+    <div
+      v-if="pendingCount > 0"
+      class="alert alert-warning py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
+      role="status"
+    >
+      <i class="bi bi-pause-circle" aria-hidden="true"></i>
+      <span class="small">
+        <span data-id="hilos-table-pending">{{ pendingCount }}</span>
+        {{ pendingSuffix }}
+      </span>
+      <button
+        type="button"
+        class="btn btn-sm btn-warning ms-auto"
         data-id="hilos-table-apply"
         @click="controller.apply()"
       >
-        Apply changes
-        <span
-          class="badge text-bg-light"
-          data-id="hilos-table-pending"
-          aria-hidden="true"
-        >
-          {{ pendingCount }}
-        </span>
+        Apply
       </button>
     </div>
 
@@ -225,6 +273,9 @@ function onSearchInput(event: Event): void {
               </button>
               <template v-else>{{ column.label }}</template>
             </th>
+            <th v-if="markColumn" scope="col" class="text-end">
+              <span class="visually-hidden">Waiting change</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -232,20 +283,40 @@ function onSearchInput(event: Event): void {
             v-for="view in rows"
             :key="view.rowKey"
             :data-id="`hilos-table-row-${view.rowKey}`"
-            :class="pendingClass(view.pending)"
+            :class="rowClass(view)"
           >
             <td
               v-if="view.placeholder || view.row === null"
-              :colspan="columns.length"
+              :colspan="bodyColspan"
               class="text-center text-muted fst-italic"
               data-id="hilos-table-placeholder"
             >
               {{ placeholderText }}
             </td>
             <slot v-else name="row" :row="view.row" :row-key="view.rowKey" />
+            <td
+              v-if="markColumn && !view.placeholder && view.row !== null"
+              class="text-end text-nowrap"
+            >
+              <span
+                v-if="view.pending === 'move'"
+                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                :data-id="`hilos-table-pending-move-${view.rowKey}`"
+              >
+                <i class="bi bi-arrows-move" aria-hidden="true"></i> Will move
+              </span>
+              <span
+                v-else-if="view.pending === 'remove'"
+                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                :data-id="`hilos-table-pending-remove-${view.rowKey}`"
+              >
+                <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Will
+                leave
+              </span>
+            </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td :colspan="columns.length" class="text-center text-muted py-4">
+            <td :colspan="bodyColspan" class="text-center text-muted py-4">
               <span
                 v-if="!loaded"
                 class="d-inline-flex align-items-center gap-2"

@@ -126,6 +126,234 @@ describe('HilosViewportTable', () => {
     expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(false)
   })
 
+  it('highlights a row whose new value landed in place, with no waiting mark', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-row-a"]').classes()).toContain(
+      'table-success',
+    )
+    expect(wrapper.findAll('[data-id^="hilos-table-pending-"]')).toHaveLength(0)
+  })
+
+  it('marks a waiting row amber and says in words what waits on it', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-row-a"]').classes()).toContain(
+      'table-warning',
+    )
+    expect(wrapper.find('[data-id="hilos-table-pending-move-a"]').text()).toBe(
+      'Will move',
+    )
+    expect(wrapper.find('[data-id="hilos-table-row-b"]').classes()).toContain(
+      'table-warning',
+    )
+    expect(
+      wrapper.find('[data-id="hilos-table-pending-remove-b"]').text(),
+    ).toBe('Will leave')
+  })
+
+  it('lets the waiting outrank the highlight on a row that is both', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    // The value lands and lights the row up; the move that follows is held at the
+    // gate, so the row is highlighted and waiting at the same moment.
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'newer' } },
+    })
+    const wrapper = mountTable(controller)
+
+    const row = wrapper.find('[data-id="hilos-table-row-a"]')
+    expect(row.classes()).toContain('table-warning')
+    expect(row.classes()).not.toContain('table-success')
+  })
+
+  it('grows the mark column with the waiting, header and body at once', async () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    // An applied removal leaves a placeholder behind and nothing waiting, which is
+    // the state where the mark column must not stand.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length)
+    expect(
+      wrapper.find('[data-id="hilos-table-placeholder"]').attributes('colspan'),
+    ).toBe(String(COLUMNS.length))
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length + 1)
+    expect(
+      wrapper.find('[data-id="hilos-table-placeholder"]').attributes('colspan'),
+    ).toBe(String(COLUMNS.length + 1))
+  })
+
+  it('raises the announcement strip for rows above the window and counts them', async () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(
+      false,
+    )
+
+    controller.ingestAnnounce('x', 'above', 2, true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-announce"]').text()).toContain(
+      '1 new row above the window',
+    )
+
+    controller.ingestAnnounce('y', 'above', 3, true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-announce"]').text()).toContain(
+      '2 new rows above the window',
+    )
+  })
+
+  it('leaves the strip down for a row announced inside the window', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    // The strip has one sentence and it names one place; the other outcome is a
+    // design debt (D-041), and drawing it would mean inventing the words.
+    controller.ingestAnnounce('x', 'inside', 2, true)
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('asks for the window again when Show is pressed, and the strip goes', async () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestAnnounce('x', 'above', 2, true)
+    const wrapper = mountTable(controller)
+    const asked = sent.length
+
+    await wrapper.find('[data-id="hilos-table-announce-show"]').trigger('click')
+
+    expect(sent).toHaveLength(asked + 1)
+    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('stands both strips at once when there is new and there is waiting', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestAnnounce('x', 'above', 2, true)
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="hilos-table-pending"]').text()).toBe('1')
+  })
+
   it('renders a placeholder for an applied removal', () => {
     const { controller } = makeController()
     controller.ingestWindow(
@@ -250,7 +478,7 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(wrapper.find('[data-id="hilos-table-page"]').exists()).toBe(false)
   })
 
-  it('leaves the props-driven bar out, Apply button and all', () => {
+  it('leaves the props-driven bar out and keeps Apply in the waiting strip', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -267,7 +495,10 @@ describe('HilosViewportTable with a declared frame', () => {
     })
     const wrapper = mountDeclared(controller)
 
-    expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(false)
+    // One search box, the declared one; and the strips speak in both epochs of the
+    // frame, because they are about the rows and not about what the page declared.
     expect(wrapper.findAll('[data-id="hilos-table-search"]')).toHaveLength(1)
+    expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="hilos-table-pending"]').text()).toBe('1')
   })
 })
