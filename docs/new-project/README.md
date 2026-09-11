@@ -180,11 +180,21 @@ dashboard, owned by the monopolistic `hilos_index` agent (a concrete
 `AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
 demo/tasks). The app agent plus the dashboard therefore needs
 `WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: tasks and polls use 13 on
-every stack, chat 19 for its larger agent roster. Both numbers are one worker per
-monopolistic agent of that demo's `AGENTS` registry plus two spare, and the count
-is read off the registry — every entry whose daemon answers true to
-`requiresMonopolisticProcess()` — rather than estimated.
+it in compose regardless, so the pool is explicit: tasks and polls use 26 on
+every stack, chat 38 for its larger agent roster. The floor each number is built
+on is one worker per monopolistic agent of that demo's `AGENTS` registry plus two
+spare, read off the registry — every entry whose daemon answers true to
+`requiresMonopolisticProcess()` — rather than estimated; the pinned number is that
+floor doubled.
+
+The doubling is headroom, not a second rule, and it is there because the floor is
+exactly as tight as a floor can be: a protected-mode freeze stops the whole roster
+and the lift starts it again, and the worker each agent lands on is picked afresh
+among those holding zero agents. At the floor that re-deal has no slack, so a start
+report still in flight from the freeze before is enough to leave an agent with
+nowhere to go — and an agent with nowhere to go takes the daemon down with it. Until
+the pool grows on demand (HIL-998) and a refused placement stops being fatal
+(HIL-999), the cheap answer is to give the re-deal room.
 
 Every framework feature a project activates can raise that floor, and the logs
 feature is one of them: it requires TWO monopolistic agents — `hilos_log_store`,

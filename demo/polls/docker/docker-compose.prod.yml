@@ -29,7 +29,7 @@ services:
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       # One worker per monopolistic singleton plus two spare, the same thirteen the
       # local and test stacks name; docker-compose.test.yml carries the reasoning.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-13}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-26}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
       # Trust this stand's own nginx, by address, to name the visitor behind it
