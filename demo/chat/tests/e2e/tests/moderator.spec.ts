@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
@@ -49,6 +50,10 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
   await page.getByTestId('admin-moderator-save').click()
   await expect(page.locator('tbody tr', { hasText: text })).toHaveCount(1)
   await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
+  // The save raised a notice over the bottom-right corner, where this table's
+  // own controls are. What it says is the toast specs' business; here it is only
+  // in the way, so it goes before the next row control is aimed at.
+  await dismissToasts(page)
 
   // Edit: change the prompt; the live row re-renders and the dialog closes.
   await page
@@ -61,6 +66,7 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
   await expect(page.locator('tbody tr', { hasText: text })).toHaveCount(0)
   // The authoritative-backend dialog closes on the action's ::success reply.
   await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
+  await dismissToasts(page)
 
   // Delete: the row leaves the live table.
   await page

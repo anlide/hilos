@@ -39,7 +39,7 @@ document.
 | which surface an outcome belongs on — a toast, a banner, or a durable record — and the toast store behind the shell's corner stack | [toasts.md](toasts.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming | [styling-rules.md](styling-rules.md) |
 | accessibility — WCAG 2.1 AA: the four pillars, the app-shell a11y layer, the ARIA / heading / use-of-color patterns, and what Bootstrap covers | [accessibility.md](accessibility.md) |
-| tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | [testing-strategy.md](testing-strategy.md) |
+| tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors, the shared e2e toolbox | [testing-strategy.md](testing-strategy.md) |
 | the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | [build-and-docker.md](build-and-docker.md) |
 
 When a change touches more than one surface, read every matching document
@@ -89,8 +89,9 @@ before editing.
 - [accessibility.md](accessibility.md) — the normative WCAG 2.1 AA checklist: the four pillars,
   the application-shell a11y layer, the per-component ARIA / heading / use-of-color
   patterns, the parts Bootstrap delivers for free, and the new-page checklist.
-- [testing-strategy.md](testing-strategy.md) — the unit and end-to-end strategy and the three e2e
-  categories.
+- [testing-strategy.md](testing-strategy.md) — the unit and end-to-end strategy, the three e2e
+  categories, and the shared toolbox in `framework/frontend/e2e/` a spec looks in
+  first and grows as it goes.
 - [build-and-docker.md](build-and-docker.md) — the build, the environment and test matrix, and the
   Windows-Docker dev-server research.
 

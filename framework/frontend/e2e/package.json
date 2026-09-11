@@ -1,0 +1,7 @@
+{
+  "name": "@hilos/e2e-toolbox",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared e2e helpers the demo Playwright suites import by path. Declared as ESM because Playwright reads the nearest package.json to decide how to transpile a file it pulls in, and the SDK workspace above this folder declares none.",
+  "type": "module"
+}

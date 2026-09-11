@@ -111,6 +111,49 @@ e2e interacts through **stable element ids** only: every interactive element
 carries an id, and tests never use text- or position-based selectors. This keeps
 e2e robust against copy and layout changes.
 
+## The shared toolbox — look there first, leave there what you grow
+
+`framework/frontend/e2e/` holds the e2e helpers that would read the same in any
+demo, because what they drive is the framework's own surface — the toast stack,
+the page outlet, the admin shell. A demo's own `tests/e2e/helpers/` keeps what
+belongs to that demo alone: its login, its fixtures, its command channel.
+
+**Look in the toolbox before writing driving code, and prefer what is already
+there** — a helper that exists has already been argued about once.
+
+**Grow it from the work.** When a spec needs a wait, a sweep or a round trip that
+another demo would need in the same words, put it in the toolbox rather than in a
+fourth local copy. The fourth copy is not hypothetical: `helpers/logs.ts` in chat
+says in its own comment that its command-channel round trip is the fourth copy of
+the one in `adminGrant.ts`, `notifications.ts` and `protectedMode.ts`, written
+that way because a shared helper would have meant editing three files that leaf
+knew nothing about. This folder is where that stops being the cheaper option.
+
+Two rules keep it working:
+
+- **A file here imports from `@playwright/test` with `import type` and nothing
+  else.** The demo suite carries its own installed Playwright, and pulling a
+  second copy out of this folder is refused by the runner itself — *Requiring
+  @playwright/test second time*. A type import is erased before that can happen;
+  everything a helper needs at runtime arrives through the `Page` it is handed.
+- **Demos reach it by relative path**, the way their Playwright configs already
+  reach `framework/frontend/scripts/timeout-scale.mjs`. The runner mounts the
+  whole repository, so no package boundary stands in between, and no install step
+  is added to a suite.
+
+### `dismissToasts(page)` — when the notice is in the way
+
+A toast stands over the bottom-right corner for twenty seconds and takes clicks
+([toasts.md](toasts.md)), so a notice raised by the step just performed can cover
+the control the next step aims at. Playwright then retries that click until the
+card expires on its own, and the spec pays twenty seconds for coverage the toast
+specs already own.
+
+Call `dismissToasts(page)` after a step whose notice is not the subject of the
+spec, before the step that clicks what it may be covering. A spec that **is**
+about a notice asserts on it instead and never calls this — sweeping is how a
+spec says "this step is not about the notices", not a way to hide them.
+
 ## Opening a page — `gotoPage`, never `goto`
 
 A spec opens a page through the demo's **`gotoPage(page, path)`** wrapper, which
