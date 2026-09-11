@@ -63,7 +63,8 @@
         "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test composer update phpunit/phpunit --no-interaction",
         "test:up": [
             "rm -f data/logs-test/protected-mode.state.json*",
-            "docker compose -f docker/docker-compose.test.yml up -d tasks-mysql-test"
+            "docker compose -f docker/docker-compose.test.yml up -d tasks-mysql-test",
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --rm tasks-cli-test sh -c \"php backend/Bootstrap/cli.php test:logs:reset && php backend/Bootstrap/cli.php test:backup:reset\""
         ],
         "test:down": "@php ../../scripts/down-stands.php tasks",
         "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",

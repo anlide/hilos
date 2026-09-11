@@ -260,6 +260,7 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
     working_dir: /app
     environment:
       - APP_ENV=test
