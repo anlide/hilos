@@ -7,6 +7,7 @@ namespace Hilos\Socket\Server;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\HilosException;
+use Hilos\ProtectedMode\FrozenAgentPlacement;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Cluster\Placement\ResourceProfile;
@@ -166,7 +167,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /** @var ?string Cached log directory path */
     private ?string $cachedLogDirectory = null;
 
-    /** @var list<AgentId> Agents stopped for the current protected-mode freeze, replayed on lift; empty outside a freeze */
+    /**
+     * @var list<FrozenAgentPlacement> Agents the current freeze stopped and the workers they
+     *     stood on, replayed on lift; empty outside a freeze
+     */
     private array $protectedModeStoppedAgents = [];
 
     /**
@@ -963,12 +967,17 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param bool $placedByLeader True when this node hosts the agent because placement said so
+     * @param ?int $preferredWorkerId Worker to hand it back to when that worker is still able to take it
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    private function startAgentInternal(string $agentType, ?string $agentIndex, bool $placedByLeader): void
-    {
+    private function startAgentInternal(
+        string $agentType,
+        ?string $agentIndex,
+        bool $placedByLeader,
+        ?int $preferredWorkerId = null,
+    ): void {
         // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
@@ -1035,7 +1044,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         }
 
         // Select appropriate worker
-        $workerClient = $this->selectWorkerForAgent($agentDaemon->requiresMonopolisticProcess());
+        $workerClient = $this->selectWorkerForAgent(
+            $agentDaemon->requiresMonopolisticProcess(),
+            $preferredWorkerId,
+        );
 
         // If no suitable worker available, throw exception
         if ($workerClient === null) {
@@ -1167,10 +1179,19 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * For monopolistic agents: selects from monopolistic workers with exactly 0 agents.
      * For regular agents: selects from regular workers with load balancing (random choice among workers with minimum agent count).
      *
+     * A caller that knows where the agent stood a moment ago may say so, and then the pick is
+     * not a pick at all: if that worker is still linked, still of the right kind and still able
+     * to take the agent, it gets it back. The lift of a protected-mode freeze is the caller this
+     * is for - it restarts a roster it stopped itself, and choosing afresh for every one of them
+     * deals the whole node out again on each freeze, with an agent ending a run of 25 freezes
+     * having lived on a dozen workers. A preference that no longer holds falls through to the
+     * ordinary choice below, so this never keeps an agent off a node it can still run on.
+     *
      * @param bool $requiresMonopolistic True if agent requires monopolistic worker
+     * @param ?int $preferredWorkerId Worker the agent should go back to when that worker can still take it
      * @return ?WorkerClient Selected worker client or null if no suitable worker available
      */
-    private function selectWorkerForAgent(bool $requiresMonopolistic): ?WorkerClient
+    private function selectWorkerForAgent(bool $requiresMonopolistic, ?int $preferredWorkerId = null): ?WorkerClient
     {
         $candidates = [];
         $workerAgentCounts = [];
@@ -1205,6 +1226,19 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         // If no candidates found, return null
         if (empty($candidates)) {
             return null;
+        }
+
+        // Hand it back where it stood, when that worker is among the ones that could take it now.
+        if ($preferredWorkerId !== null) {
+            foreach ($candidates as $candidate) {
+                $candidateId = $this->agentManager->calculateWorkerId(
+                    $candidate->getWorkerIndex(),
+                    $candidate->isMonopolistic(),
+                );
+                if ($candidateId === $preferredWorkerId) {
+                    return $candidate;
+                }
+            }
         }
 
         // For monopolistic: return random candidate (all have 0 agents)
@@ -1525,7 +1559,15 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
                 continue;
             }
 
-            $this->protectedModeStoppedAgents[] = $parsed;
+            // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
+            // it the only record of the worker the lift should hand it back to.
+            $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+            $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
+                $parsed,
+                $workerInfo === null
+                    ? null
+                    : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
+            );
             $this->stopAgent($parsed->type, $parsed->index);
         }
 
@@ -1577,7 +1619,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     public function getProtectedModeStoppedAgents(): array
     {
         return array_map(
-            fn(AgentId $agent): string => $this->buildAgentId($agent->type, $agent->index),
+            fn(FrozenAgentPlacement $stopped): string => $this->buildAgentId(
+                $stopped->agent->type,
+                $stopped->agent->index,
+            ),
             $this->protectedModeStoppedAgents,
         );
     }
@@ -1605,11 +1650,11 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         $stopped = $this->protectedModeStoppedAgents;
         $this->protectedModeStoppedAgents = [];
 
-        foreach ($stopped as $agent) {
+        foreach ($stopped as $frozen) {
             try {
-                $this->startAgentInternal($agent->type, $agent->index, true);
+                $this->startAgentInternal($frozen->agent->type, $frozen->agent->index, true, $frozen->workerId);
             } catch (Throwable $e) {
-                $agentId = $this->buildAgentId($agent->type, $agent->index);
+                $agentId = $this->buildAgentId($frozen->agent->type, $frozen->agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
             }
         }
