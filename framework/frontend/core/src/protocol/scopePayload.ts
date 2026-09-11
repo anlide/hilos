@@ -72,6 +72,26 @@ export const tableSectionSchema = z.preprocess(
 )
 
 /**
+ * One bar of work running on a table, as the `windows` section of a page answer carries it.
+ *
+ * The body of a `table_progress` frame with the address left off — the same keys, read the
+ * same way. The pair `scope` / `rowKey` is not checked here either: the check lives where the
+ * bars are taken in, so that a bar arriving live and a bar arriving with the window are judged
+ * by one rule and not by two.
+ */
+export const tableProgressSectionSchema = z.looseObject({
+  scope: z.enum(['row', 'table', 'bulk']),
+  progressKey: z.string(),
+  rowKey: z.string().optional(),
+  current: z.number().int(),
+  total: z.number().int().optional(),
+  ended: z.boolean().optional(),
+  detail: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type TableProgressWire = z.infer<typeof tableProgressSectionSchema>
+
+/**
  * One table's first window on the wire, as a page subscription answers with it.
  *
  * The same rows and the same coordinates a `table_window` reply carries — it is one window
@@ -79,6 +99,10 @@ export const tableSectionSchema = z.preprocess(
  * for it there and here nobody did. The filter is deliberately absent: on a cold entry it is
  * empty, and on a reconnect the tab sent it and still holds it, so a second source of truth
  * about it could only disagree.
+ *
+ * The work running on the table rides along under `progress`, without an address: the section
+ * already stands under the table's own key. It is absent rather than empty when nothing is
+ * running, for the reason every other empty section is absent.
  */
 export const tableWindowSectionSchema = z.looseObject({
   rows: z.array(tableRowSchema),
@@ -93,6 +117,7 @@ export const tableWindowSectionSchema = z.looseObject({
   totalExact: z.boolean(),
   firstAnchor: z.record(z.string(), z.unknown()).nullable(),
   lastAnchor: z.record(z.string(), z.unknown()).nullable(),
+  progress: z.array(tableProgressSectionSchema).optional(),
 })
 
 export type TableWindowSectionWire = z.infer<typeof tableWindowSectionSchema>

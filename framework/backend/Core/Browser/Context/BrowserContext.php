@@ -59,6 +59,8 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\DTO\TableProgressDTO;
+use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
@@ -578,6 +580,13 @@ abstract class BrowserContext
      * table that could not build its window is left out of the `windows` section entirely,
      * which is the state the tab reads as "the window has not arrived yet" (HIL-781, HIL-943).
      *
+     * The work this table has running rides out with the window, under the section's `progress`
+     * key, so a tab opening in the middle of a run sees the bars at once instead of at the next
+     * stir of a source. The key is written only when there are bars: an empty list would reach
+     * the wire as a JSON array, and a table with no window has no entry to carry it in either.
+     * A table that cannot name its work loses its bars and keeps its rows — a narrower
+     * containment than the window's, because by then there is a window worth showing.
+     *
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param string $tableKey Table key the window is for
@@ -613,7 +622,7 @@ abstract class BrowserContext
             return null;
         }
 
-        return [
+        $section = [
             TableWindowSignalData::rows => $window->rows,
             TableWindowDescriptorDTO::SORT => $viewport->sort?->toArray() ?? [],
             TableWindowSignalData::limit => $window->snapshot->limit,
@@ -622,6 +631,29 @@ abstract class BrowserContext
             TableWindowSignalData::firstAnchor => $window->snapshot->firstAnchor?->toArray(),
             TableWindowSignalData::lastAnchor => $window->snapshot->lastAnchor?->toArray(),
         ];
+
+        try {
+            $progress = $table->progressSnapshot();
+        } catch (Throwable $e) {
+            // Contained apart from the window and narrower than it: the rows are already built
+            // and the table is worth showing without its bars, which the tab reads as nothing
+            // running. Uncontained this would cost the subscriber the whole page for a bar.
+            Logger::error(
+                "Browser window skipped the work a table could not name: table={$tableKey}, "
+                . "page={$page}, error={$e->getMessage()}",
+            );
+
+            return $section;
+        }
+
+        if ($progress !== []) {
+            $section[TableProgressSignalData::progress] = array_map(
+                static fn (TableProgressDTO $bar): array => $bar->toArray(),
+                $progress,
+            );
+        }
+
+        return $section;
     }
 
     /**
@@ -1127,6 +1159,7 @@ abstract class BrowserContext
                 $viewport = Hilos::$sr?->getTableViewport($acceptKey, $browserKey);
                 if ($viewport !== null) {
                     $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $browserKey);
+                    $this->emitTableProgress($viewportTable, $change, $acceptKey, $page, $browserKey);
                 }
                 // A viewport table is delivered only through its window and deltas; with or
                 // without an active viewport it never uses the page_response table fan-out.
@@ -2099,6 +2132,50 @@ abstract class BrowserContext
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
+    }
+
+    /**
+     * Sends one window the work a source change reports on its table, if it reports any.
+     *
+     * This runs beside the delta and not inside it, because a bar is not a row: the change that
+     * moves a bar need move no row at all, and the one that moves a row usually moves no bar.
+     * What the two share is the road, and they share it for the reason there is only one - work
+     * is reported from inside a monopolistic agent, which holds no subscription registry, so a
+     * bar reaches a tab by the agent writing runtime state and this worker fanning the change
+     * out. Broadcasting from the agent would reach every socket on the node, subscribed to this
+     * page or not.
+     *
+     * Nothing of the window's bookkeeping is touched here - no total, no delivered row, no
+     * count. That absence is the whole of "a bar is not in the count and cannot be selected":
+     * it holds by there being no code that puts it there, rather than by a rule somewhere
+     * checking that nobody did.
+     *
+     * The addressees are the windows this page's guard already let through, and the open window
+     * is the whole of the rest of the test: a tab without one is not drawing this table.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param SourceChange $change Source change that may report work on this table
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     */
+    private function emitTableProgress(
+        ViewportTable $table,
+        SourceChange $change,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
+        $progress = $table->buildProgressForSourceEvent($change);
+        if ($progress === null) {
+            return;
+        }
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_PROGRESS,
+            TableProgressSignalData::fromProgress($page, $browserKey, $progress),
+            $acceptKey,
+        );
     }
 
     /**

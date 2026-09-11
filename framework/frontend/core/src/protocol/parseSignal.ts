@@ -11,6 +11,7 @@ import {
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_SESSION_ROTATE,
+  SIGNAL_TYPE_TABLE_PROGRESS,
   SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
   SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE,
@@ -28,6 +29,7 @@ import {
   tableViewportCountSignalDataSchema,
   tableViewportAnnounceSignalDataSchema,
   tableViewportAppendSignalDataSchema,
+  tableProgressSignalDataSchema,
   tableViewportOwnCreateSignalDataSchema,
   sessionRotateSignalDataSchema,
   type SignalEnvelope,
@@ -36,6 +38,7 @@ import {
   type TableViewportCountSignalData,
   type TableViewportAnnounceSignalData,
   type TableViewportAppendSignalData,
+  type TableProgressSignalData,
   type TableViewportOwnCreateSignalData,
 } from './envelope.js'
 import {
@@ -130,6 +133,11 @@ export type ParsedSignal =
       data: TableViewportAnnounceSignalData
       envelope: SignalEnvelope
     }
+  | {
+      kind: 'tableProgress'
+      data: TableProgressSignalData
+      envelope: SignalEnvelope
+    }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
@@ -168,6 +176,10 @@ export type TableViewportOwnCreateSignal = Extract<
 export type TableViewportAnnounceSignal = Extract<
   ParsedSignal,
   { kind: 'tableViewportAnnounce' }
+>
+export type TableProgressSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableProgress' }
 >
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
@@ -477,6 +489,29 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableViewportAnnounce',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_PROGRESS: {
+      const data = tableProgressSignalDataSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_PROGRESS,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableProgress',
           data: data.data,
           envelope: envelope.data,
         },

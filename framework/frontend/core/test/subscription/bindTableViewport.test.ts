@@ -16,7 +16,9 @@ import {
   type TableViewportDelta,
   type TableWindowSink,
 } from '../../src/table/TableViewportController.js'
+import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
 import {
+  type TableProgressSignal,
   type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
   type TableViewportCountSignal,
@@ -26,7 +28,7 @@ import {
   type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting the six table signals, with real unsubscribe. */
+/** A connection double emitting the seven table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
@@ -38,6 +40,7 @@ function fakeConnection() {
   const announceListeners = new Set<
     (signal: TableViewportAnnounceSignal) => void
   >()
+  const progressListeners = new Set<(signal: TableProgressSignal) => void>()
   const projectListeners = new Set<(signal: ProjectSignal) => void>()
   const registered = new Map<string, TableWindowDescriptorSource>()
 
@@ -90,6 +93,14 @@ function fakeConnection() {
           announceListeners.add(typed)
 
           return () => announceListeners.delete(typed)
+        }
+        case 'tableProgress': {
+          const typed = listener as unknown as (
+            signal: TableProgressSignal,
+          ) => void
+          progressListeners.add(typed)
+
+          return () => progressListeners.delete(typed)
         }
         default: {
           const typed = listener as unknown as (
@@ -148,10 +159,15 @@ function fakeConnection() {
         listener({ data } as unknown as TableViewportAnnounceSignal)
       }
     },
+    emitProgress(data: TableProgressSignal['data']): void {
+      for (const listener of progressListeners) {
+        listener({ data } as unknown as TableProgressSignal)
+      }
+    },
   }
 }
 
-/** A controller double recording the windows, deltas, counts, appends, own creates and announcements fed to it. */
+/** A controller double recording the windows, deltas, counts, appends, own creates, announcements and bars fed to it. */
 function fakeSink(): TableWindowSink & {
   windows: Array<{
     rows: readonly TableRow[]
@@ -178,6 +194,8 @@ function fakeSink(): TableWindowSink & {
     totalCount: number
     totalExact: boolean
   }>
+  progress: HilosTableProgressFrame[]
+  snapshots: Array<readonly HilosTableProgressFrame[]>
 } {
   const windows: Array<{
     rows: readonly TableRow[]
@@ -208,6 +226,8 @@ function fakeSink(): TableWindowSink & {
     totalCount: number
     totalExact: boolean
   }> = []
+  const progress: HilosTableProgressFrame[] = []
+  const snapshots: Array<readonly HilosTableProgressFrame[]> = []
 
   return {
     windows,
@@ -216,6 +236,8 @@ function fakeSink(): TableWindowSink & {
     appends,
     ownCreates,
     announcements,
+    progress,
+    snapshots,
     ingestWindow(
       rows,
       totalCount,
@@ -242,7 +264,9 @@ function fakeSink(): TableWindowSink & {
       lastAnchor,
       limit,
       sort,
+      bars,
     ): void {
+      snapshots.push(bars)
       windows.push({
         rows,
         totalCount,
@@ -268,6 +292,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestAnnounce(rowKey, placement, totalCount, totalExact): void {
       announcements.push({ rowKey, placement, totalCount, totalExact })
+    },
+    ingestProgress(frame): void {
+      progress.push(frame)
     },
   }
 }
@@ -716,6 +743,171 @@ describe('bindTableViewport', () => {
     expect(sink.announcements).toEqual([
       { rowKey: 'x', placement: 'above', totalCount: 9, totalExact: true },
     ])
+  })
+
+  it('routes a bar addressed to the table, dropping the ones that are not', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitProgress({
+      page: 'main',
+      tableKey: 'other',
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    connection.emitProgress({
+      page: 'other',
+      tableKey: 'settings',
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    connection.emitProgress({
+      page: 'main',
+      tableKey: 'settings',
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+      detail: { title: 'Nightly' },
+    })
+
+    expect(sink.progress).toEqual([
+      {
+        scope: 'table',
+        progressKey: 'nightly',
+        current: 34,
+        total: 120,
+        ended: undefined,
+        detail: { title: 'Nightly' },
+      },
+    ])
+  })
+
+  it('drops a row bar that names no row, and ignores a row key on the other two', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    // A row bar with no row lies about what it is tied to and has nowhere to be drawn; a
+    // row key beside a table bar is simply not read. The wire schema catches neither: every
+    // schema of the protocol is loose, so a key it does not name is legal there.
+    connection.emitProgress({
+      page: 'main',
+      tableKey: 'settings',
+      scope: 'row',
+      progressKey: 'backup-17',
+      current: 3,
+      total: 11,
+    })
+    connection.emitProgress({
+      page: 'main',
+      tableKey: 'settings',
+      scope: 'bulk',
+      progressKey: 'delete-40',
+      rowKey: 'a',
+      current: 12,
+      total: 40,
+    })
+
+    expect(sink.progress).toEqual([
+      {
+        scope: 'bulk',
+        progressKey: 'delete-40',
+        current: 12,
+        total: 40,
+        ended: undefined,
+        detail: undefined,
+      },
+    ])
+  })
+
+  it('carries the work running on the table in with the page answer', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitPageResponse({
+      page: 'main',
+      payload: {
+        windows: {
+          settings: {
+            rows: [],
+            sort: [],
+            limit: 25,
+            totalCount: 0,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+            progress: [
+              {
+                scope: 'row',
+                progressKey: 'backup-17',
+                rowKey: 'a',
+                current: 3,
+                total: 11,
+              },
+              { scope: 'row', progressKey: 'orphan', current: 1 },
+            ],
+          },
+        },
+      },
+    })
+
+    // The snapshot road and the live road are read by one rule: the row bar with no row is
+    // dropped here too, rather than reaching the controller in a shape it cannot place.
+    expect(sink.snapshots).toEqual([
+      [
+        {
+          scope: 'row',
+          progressKey: 'backup-17',
+          rowKey: 'a',
+          current: 3,
+          total: 11,
+          ended: undefined,
+          detail: undefined,
+        },
+      ],
+    ])
+  })
+
+  it('reads a page answer with no work on the table as an empty snapshot', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitPageResponse({
+      page: 'main',
+      payload: {
+        windows: {
+          settings: {
+            rows: [],
+            sort: [],
+            limit: 25,
+            totalCount: 0,
+            totalExact: true,
+            firstAnchor: null,
+            lastAnchor: null,
+          },
+        },
+      },
+    })
+
+    // An absent key is the server saying nothing is running, which is what takes down a bar
+    // left standing by a socket that broke mid-run.
+    expect(sink.snapshots).toEqual([[]])
   })
 
   it('drops an announcement addressed to another page', () => {

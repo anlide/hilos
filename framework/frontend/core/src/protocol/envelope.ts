@@ -235,6 +235,37 @@ export type TableViewportAnnounceSignalData = z.infer<
 >
 
 /**
+ * Payload of the framework table progress frame (`type: 'table_progress'`, PHP
+ * `TableProgressSignalData`): one bar of work running on a table, and never a row
+ * of its set. `scope` names where it is drawn — under its own row, above the table,
+ * or inside the selection panel — and `progressKey` says whose work it is, so a bar
+ * of a new run replaces the one standing there.
+ *
+ * An absent `total` is the work saying it has no estimate, `ended` absent is a bar
+ * still running, and `detail` is the project's own payload for the content beside
+ * the bar, which the core carries and never reads.
+ *
+ * The pair `scope` / `rowKey` is not checked here. Every schema of this file is
+ * loose by design, so a key it does not name is legal, and the check that a row bar
+ * names a row lives where the frame is taken in.
+ */
+export const tableProgressSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  scope: z.enum(['row', 'table', 'bulk']),
+  progressKey: z.string(),
+  rowKey: z.string().optional(),
+  current: z.number().int(),
+  total: z.number().int().optional(),
+  ended: z.boolean().optional(),
+  detail: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type TableProgressSignalData = z.infer<
+  typeof tableProgressSignalDataSchema
+>
+
+/**
  * Payload of the framework table viewport append (`type: 'table_viewport_append'`,
  * PHP `TableViewportAppendDTO`): the addressed live row to add at the tail of one
  * table's window, plus the new counts. Sent only when the window is the last page

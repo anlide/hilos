@@ -6,6 +6,7 @@ namespace Hilos\Core\Table\Definition;
 
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
@@ -28,8 +29,9 @@ use Hilos\HilosException;
  * source-fanned table (the Hilos users table), independent of how the table
  * delivers its non-viewport page_response rows.
  *
- * getPage(), scopeSearch(), buildMutationForSourceEvent(), containsRow(), placeRowAgainst(),
- * anchorForRow(), windowSize() and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
+ * getPage(), scopeSearch(), buildMutationForSourceEvent(), progressSnapshot(),
+ * buildProgressForSourceEvent(), containsRow(), placeRowAgainst(), anchorForRow(), windowSize()
+ * and defaultSort() are already concrete on TableDefinition, so a TableDefinition subclass
  * satisfies them by inheritance and only browserRow() is feature-specific.
  */
 interface ViewportTable
@@ -168,6 +170,36 @@ interface ViewportTable
      * @return ?TableRowMutationDTO Row mutation to scope into a delta, or null when the table is unaffected
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO;
+
+    /**
+     * Names the work this table has running right now.
+     *
+     * This is what a tab opening in the middle of a run is told, and it is asked once, while the
+     * page's own answer is being built. Without it the tab would see nothing until the next stir
+     * of a source - which for work that reports a phase at a time can be minutes - and a bar is
+     * exactly the thing a person opens the page to look at.
+     *
+     * The list is also the whole truth about this table's bars at that moment: the client puts up
+     * the bars it names and takes down every other, an empty list clearing them all. That is the
+     * one cure for a bar left standing by a connection that dropped before the work ended.
+     *
+     * @return list<TableProgressDTO> Bars running on this table now, empty when none are
+     */
+    public function progressSnapshot(): array;
+
+    /**
+     * Builds the progress bar one source change says to show, if it says to show one.
+     *
+     * The mirror of {@see buildMutationForSourceEvent()} for work rather than for rows: the same
+     * source change arrives, and the table says what follows from it for its bars. The road is
+     * the same one rows travel because it is the only one there is - progress is born inside a
+     * monopolistic agent, which holds no subscription registry, so a bar reaches a tab by the
+     * agent writing runtime state and a worker fanning the change out.
+     *
+     * @param SourceChange $change Source change that may report work on this table
+     * @return ?TableProgressDTO Bar to address to the window's subscribers, or null when the change reports no work
+     */
+    public function buildProgressForSourceEvent(SourceChange $change): ?TableProgressDTO;
 
     /**
      * Serializes one typed row into its internal browser-row envelope.

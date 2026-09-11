@@ -99,6 +99,12 @@ export {
   type HilosTableSelectionTarget,
 } from './table/tableSelection.js'
 export {
+  type HilosTableProgress,
+  type HilosTableProgressFrame,
+  type HilosTableProgressScope,
+  type HilosTableProgressState,
+} from './table/tableProgress.js'
+export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,
   type LoadingButtonState,

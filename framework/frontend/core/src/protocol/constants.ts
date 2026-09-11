@@ -88,6 +88,9 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE = 'table_viewport_own_create'
 /** Server frame `type` announcing a created row a window cannot show (PHP `SignalTypeConstants::TABLE_VIEWPORT_ANNOUNCE`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce'
 
+/** Server frame `type` carrying a bar of work running on a table (PHP `SignalTypeConstants::TABLE_PROGRESS`). */
+export const SIGNAL_TYPE_TABLE_PROGRESS = 'table_progress'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 

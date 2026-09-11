@@ -4,6 +4,7 @@ import {
   type TableViewportDescriptor,
 } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
 import {
   type TableSortOrder,
   TableViewportController,
@@ -25,6 +26,7 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
     totalExact = true,
     firstAnchor: TableAnchor | null = null,
     lastAnchor: TableAnchor | null = null,
+    progress: readonly HilosTableProgressFrame[] = [],
   ): void =>
     controller.ingestSubscriptionWindow(
       rows,
@@ -34,6 +36,7 @@ function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
       lastAnchor,
       pageSize,
       initialOrder,
+      progress,
     )
 
   return { controller, sent, open }
@@ -1208,5 +1211,245 @@ describe('TableViewportController', () => {
     })
 
     expect(controller.applyAndResolve('a')).toBeNull()
+  })
+
+  it('holds the three bars apart, each in its own place', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'delete-40',
+      current: 12,
+      total: 40,
+    })
+
+    expect(controller.progress.rows.get().get('a')?.progressKey).toBe(
+      'backup-17',
+    )
+    expect(controller.progress.table.get()?.progressKey).toBe('nightly')
+    expect(controller.progress.bulk.get()?.progressKey).toBe('delete-40')
+  })
+
+  it('computes the fraction, clamps it, and leaves it out where there is no total', () => {
+    const { controller, open } = makeController()
+    open([], 0, true, null, null)
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 30,
+      total: 120,
+    })
+    expect(controller.progress.table.get()?.fraction).toBe(0.25)
+
+    // A wrong number still has to say that work is running, so it is clamped rather
+    // than thrown away.
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 500,
+      total: 120,
+    })
+    expect(controller.progress.table.get()?.fraction).toBe(1)
+
+    // No total is the indeterminate bar of design debt D-045, not a bar at zero.
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 30,
+    })
+    expect(controller.progress.table.get()?.fraction).toBeNull()
+    expect(controller.progress.table.get()?.total).toBeNull()
+    expect(controller.progress.table.get()?.detail).toEqual({})
+  })
+
+  it('lets a new run replace the bar, and a late end of the old one leave it alone', () => {
+    const { controller, open } = makeController()
+    open([], 0, true, null, null)
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'morning',
+      current: 1,
+      total: 5,
+    })
+    expect(controller.progress.table.get()?.progressKey).toBe('morning')
+
+    // The end of the run that is over must not take down the run that has started:
+    // that is the same break this channel exists to fix, only mirrored.
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 120,
+      total: 120,
+      ended: true,
+    })
+    expect(controller.progress.table.get()?.progressKey).toBe('morning')
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'morning',
+      current: 5,
+      total: 5,
+      ended: true,
+    })
+    expect(controller.progress.table.get()).toBeNull()
+  })
+
+  it('takes a row bar down when its own run ends, and not on another key', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-16',
+      rowKey: 'a',
+      current: 11,
+      total: 11,
+      ended: true,
+    })
+    expect(controller.progress.rows.get().get('a')?.progressKey).toBe(
+      'backup-17',
+    )
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 11,
+      total: 11,
+      ended: true,
+    })
+    expect(controller.progress.rows.get().has('a')).toBe(false)
+  })
+
+  it('leaves every bar standing when the window changes', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'delete-40',
+      current: 12,
+      total: 40,
+    })
+
+    // Unlike the marks, which a window change takes off: the work goes on whichever
+    // page is being looked at, and a bulk operation outlives the window that started it.
+    controller.setSearch('x')
+    expect(controller.progress.rows.get().has('a')).toBe(true)
+    expect(controller.progress.table.get()).not.toBeNull()
+    expect(controller.progress.bulk.get()).not.toBeNull()
+  })
+
+  it('replaces every bar with the snapshot a subscription answer names', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null, [
+      { scope: 'bulk', progressKey: 'delete-40', current: 12, total: 40 },
+    ])
+
+    // The one cure for a bar left standing by a socket that broke mid-run: resubscribing
+    // is the moment the server names the whole truth, and what it does not name is over.
+    expect(controller.progress.bulk.get()?.progressKey).toBe('delete-40')
+    expect(controller.progress.table.get()).toBeNull()
+    expect(controller.progress.rows.get().size).toBe(0)
+
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    expect(controller.progress.bulk.get()).toBeNull()
+  })
+
+  it('takes a row bar down with the word that its row is gone', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+
+    // At once, without waiting for Apply: the row is gone on the server, and the end of
+    // its work may never arrive to take the bar down from under the placeholder.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    expect(controller.progress.rows.get().has('a')).toBe(false)
+    expect(controller.pendingCount.get()).toBe(1)
+  })
+
+  it('moves neither the count nor the marks when a bar arrives', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'b',
+      current: 3,
+      total: 11,
+    })
+
+    // A bar is not a record of the set: it enters no count, takes no checkbox, and the
+    // key it names need not be a row of the window at all.
+    expect(controller.totalCount.get()).toBe(1)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
+    expect(controller.selection.count.get()).toBe(0)
   })
 })

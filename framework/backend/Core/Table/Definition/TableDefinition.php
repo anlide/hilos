@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -176,6 +177,31 @@ abstract class TableDefinition implements ArrayAccess
      * @throws Throwable Whatever the concrete table's row build raises
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Names the work this table has running right now; by default there is none.
+     *
+     * A table with nothing running pays nothing for the channel: it declares no bars here and
+     * builds none below, and the fan-out branch ends at the first of the two. Overriding either
+     * is what a table does when it has work worth showing, and not a duty of every table.
+     *
+     * @return list<TableProgressDTO> Bars running on this table now, empty when none are
+     */
+    public function progressSnapshot(): array
+    {
+        return [];
+    }
+
+    /**
+     * Builds the progress bar one source change says to show; by default a change says nothing.
+     *
+     * @param SourceChange $change Source change that may report work on this table
+     * @return ?TableProgressDTO Bar to fan out, or null when this table reads no work in the change
+     */
+    public function buildProgressForSourceEvent(SourceChange $change): ?TableProgressDTO
     {
         return null;
     }

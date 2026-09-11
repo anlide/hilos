@@ -388,6 +388,48 @@ describe('parseSignal', () => {
     }
   })
 
+  it('parses a table_progress frame', () => {
+    const result = parseSignal(
+      '{"type":"table_progress","data":{"page":"p","tableKey":"t","scope":"row","progressKey":"backup-17","rowKey":"x","current":3,"total":11,"detail":{"caption":"packing"}}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableProgress') {
+      expect(result.signal.data).toMatchObject({
+        scope: 'row',
+        progressKey: 'backup-17',
+        rowKey: 'x',
+        current: 3,
+        total: 11,
+        detail: { caption: 'packing' },
+      })
+      expect(result.signal.data.ended).toBeUndefined()
+    }
+  })
+
+  it('parses a table_progress frame with no estimate and no detail', () => {
+    const result = parseSignal(
+      '{"type":"table_progress","data":{"page":"p","tableKey":"t","scope":"bulk","progressKey":"delete-40","current":12}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableProgress') {
+      expect(result.signal.data.total).toBeUndefined()
+      expect(result.signal.data.detail).toBeUndefined()
+    }
+  })
+
+  it('rejects a table_progress frame naming a place no bar stands in', () => {
+    const result = parseSignal(
+      '{"type":"table_progress","data":{"page":"p","tableKey":"t","scope":"footer","progressKey":"backup-17","current":3}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure).toMatchObject({
+        kind: 'invalid-signal-data',
+        type: 'table_progress',
+      })
+    }
+  })
+
   it('parses a table_viewport_count frame that carries no page count', () => {
     const result = parseSignal(
       '{"type":"table_viewport_count","data":{"page":"p","tableKey":"t","totalCount":500,"totalExact":false}}',

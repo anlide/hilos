@@ -1,18 +1,21 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
 // connection by its (page, tableKey) address. A table's controller only ever sees
-// the windows, deltas, counts, appends, own-creates, and announcements addressed
-// to it — there is no central switchboard holding every table and handing each its
-// data (table-subscription.md). The binder subscribes the connection's table_window
-// / table_viewport_delta / table_viewport_count / table_viewport_append /
-// table_viewport_own_create / table_viewport_announce signals, drops everything not
-// addressed to this table or whose page is no longer current, normalizes the rows
-// into the page scope, and feeds the sink. The returned unbind drops every
-// subscription on the view's unmount.
+// the windows, deltas, counts, appends, own-creates, announcements and progress
+// bars addressed to it — there is no central switchboard holding every table and
+// handing each its data (table-subscription.md). The binder subscribes the
+// connection's table_window / table_viewport_delta / table_viewport_count /
+// table_viewport_append / table_viewport_own_create / table_viewport_announce /
+// table_progress signals, drops everything not addressed to this table or whose
+// page is no longer current, normalizes the rows into the page scope, and feeds
+// the sink. The returned unbind drops every subscription on the view's unmount.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../protocol/constants.js'
 import { type TableViewportDeltaSignalData } from '../protocol/envelope.js'
-import { type PageResponseWire } from '../protocol/scopePayload.js'
+import {
+  type PageResponseWire,
+  type TableProgressWire,
+} from '../protocol/scopePayload.js'
 import {
   normalizeTableRow,
   type NormalizerOptions,
@@ -23,6 +26,7 @@ import {
   type TableViewportDelta,
   type TableWindowSink,
 } from '../table/TableViewportController.js'
+import { type HilosTableProgressFrame } from '../table/tableProgress.js'
 
 /** A table's address on the wire: the page it belongs to and its table key. */
 export interface TableViewportAddress {
@@ -108,6 +112,7 @@ export function bindTableViewport(
       window.lastAnchor,
       window.limit,
       toSortOrder(window.sort),
+      toProgressFrames(window.progress),
     )
   })
 
@@ -194,6 +199,22 @@ export function bindTableViewport(
     },
   )
 
+  // No page scope here either, and for the same reason: a bar carries no row body. What it
+  // does carry is the pair (scope, rowKey), and this is where that pair is judged — a row bar
+  // with no row to hang under is dropped rather than shown somewhere else, and a row key sent
+  // with the other two places is simply not read. The wire schema cannot do it: every schema
+  // of the protocol is loose by design and a key it does not name is legal there.
+  const unsubscribeProgress = connection.on('tableProgress', (signal) => {
+    const data = signal.data
+    if (data.tableKey !== address.tableKey || data.page !== address.page) {
+      return
+    }
+    if (data.scope === 'row' && data.rowKey === undefined) {
+      return
+    }
+    sink.ingestProgress(toProgressFrame(data))
+  })
+
   return () => {
     unsubscribeWindow()
     unsubscribePageWindow()
@@ -202,8 +223,44 @@ export function bindTableViewport(
     unsubscribeAppend()
     unsubscribeOwnCreate()
     unsubscribeAnnounce()
+    unsubscribeProgress()
     connection.unregisterTableWindow(address.tableKey)
   }
+}
+
+/**
+ * Read one bar off the wire, keeping the row key only where a bar is tied to a row.
+ *
+ * @param data The bar as the frame or the window section carried it.
+ * @return The bar the controller takes in.
+ */
+function toProgressFrame(data: TableProgressWire): HilosTableProgressFrame {
+  return {
+    scope: data.scope,
+    progressKey: data.progressKey,
+    ...(data.scope === 'row' ? { rowKey: data.rowKey } : {}),
+    current: data.current,
+    total: data.total,
+    ended: data.ended,
+    detail: data.detail,
+  }
+}
+
+/**
+ * Read the work a subscription answer named, dropping a row bar that names no row.
+ *
+ * An absent list is an empty one here, and the difference matters: an empty snapshot is the
+ * server saying nothing is running, which takes down whatever was left standing.
+ *
+ * @param progress The bars the window section carried, or undefined when it carried none.
+ * @return The bars the controller takes in, in the order they arrived.
+ */
+function toProgressFrames(
+  progress: readonly TableProgressWire[] | undefined,
+): readonly HilosTableProgressFrame[] {
+  return (progress ?? [])
+    .filter((bar) => bar.scope !== 'row' || bar.rowKey !== undefined)
+    .map(toProgressFrame)
 }
 
 /**

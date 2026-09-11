@@ -99,6 +99,9 @@ final class SignalTypeConstants
     /** @var string Table viewport announce signal type (server-to-client live word of a created row the window cannot show) */
     public const string TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce';
 
+    /** @var string Table progress signal type (server-to-client live word of work running on one table) */
+    public const string TABLE_PROGRESS = 'table_progress';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 

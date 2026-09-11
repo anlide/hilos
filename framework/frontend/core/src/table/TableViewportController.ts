@@ -19,7 +19,10 @@
 // and it is counted per place rather than queued — there is no row to apply, and
 // the only way to see it is show(), which asks for the window again. An explicit
 // window change discards pending and announced alike, since the new window the
-// server returns is authoritative. The controller owns no rendering and no DOM.
+// server returns is authoritative. Work in progress (table_progress) neither waits
+// on apply() nor accumulates: a bar goes up, is replaced or comes down as the frames
+// say, and a window change leaves it standing — it does not belong to the window.
+// The controller owns no rendering and no DOM.
 
 import {
   type TableAnchor,
@@ -41,6 +44,11 @@ import {
   type HilosTableFrame,
   type HilosTableFrameState,
 } from './tableFrame.js'
+import {
+  type HilosTableProgress,
+  type HilosTableProgressFrame,
+  type HilosTableProgressState,
+} from './tableProgress.js'
 import {
   type HilosTableSelectionHeader,
   type HilosTableSelectionState,
@@ -99,6 +107,33 @@ function isSameOrder(
         component.direction === other[index]?.direction,
     )
   )
+}
+
+/**
+ * Turn one arriving bar into the bar a view reads, working out the fraction.
+ *
+ * The division is done here and not in the three views, for the reason the core sums the
+ * announced rows: three views dividing the same two numbers each in its own way are three
+ * different bars on one screen. A missing or non-positive total leaves no fraction at all —
+ * that is the indeterminate bar, not a zero one — and a `current` outside the total is clamped
+ * rather than thrown away, a bar with a wrong number still having to say that work is running.
+ *
+ * @param frame The bar as it arrived, live or with the window.
+ * @returns The bar as a view reads it.
+ */
+function toTableProgress(frame: HilosTableProgressFrame): HilosTableProgress {
+  const total = frame.total ?? null
+
+  return {
+    progressKey: frame.progressKey,
+    current: frame.current,
+    total,
+    fraction:
+      total === null || total <= 0
+        ? null
+        : Math.min(1, Math.max(0, frame.current / total)),
+    detail: frame.detail ?? {},
+  }
 }
 
 /**
@@ -224,8 +259,10 @@ export interface TableWindowSink {
     lastAnchor: TableAnchor | null,
     limit: number,
     sort: TableSortOrder | undefined,
+    progress: readonly HilosTableProgressFrame[],
   ): void
   ingestDelta(delta: TableViewportDelta): void
+  ingestProgress(frame: HilosTableProgressFrame): void
   descriptor(): TableViewportDescriptor | null
   ingestCount(totalCount: number, totalExact: boolean): void
   ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
@@ -349,6 +386,20 @@ export class TableViewportController<R> implements TableWindowSink {
     total: 0,
   })
 
+  /** The bar of work running on the table as a whole, or null when none is. */
+  private readonly tableProgressSignal =
+    createSignal<HilosTableProgress | null>(null)
+
+  /** The bar of a bulk action running over the marked rows, or null when none is. */
+  private readonly bulkProgressSignal = createSignal<HilosTableProgress | null>(
+    null,
+  )
+
+  /** The bars of work running over single rows, by row key. */
+  private readonly rowProgressSignal = createSignal<
+    ReadonlyMap<string, HilosTableProgress>
+  >(new Map())
+
   /** Request id of the last own-create ingested, or null when it was not tracked. */
   private readonly ownCreateRequestIdSignal = createSignal<string | null>(null)
 
@@ -466,6 +517,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** The readable selection state, built once over the window signals the same way. */
   private readonly selectionState: HilosTableSelectionState
+
+  /** The readable progress state: the three signals above, under the names a view reads. */
+  private readonly progressState: HilosTableProgressState
 
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.filterSignal = createSignal<Record<string, unknown>>({
@@ -609,6 +663,14 @@ export class TableViewportController<R> implements TableWindowSink {
         return marked === live ? 'all' : 'some'
       }),
     }
+    // Handed over as they are, with no computed in between: unlike the frame and the
+    // selection, a bar is not derived from the window — it IS what arrived, and the
+    // arithmetic on it was done when it was taken in.
+    this.progressState = {
+      table: this.tableProgressSignal,
+      bulk: this.bulkProgressSignal,
+      rows: this.rowProgressSignal,
+    }
   }
 
   /** The current search query (empty string when unset). */
@@ -655,6 +717,24 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   get selection(): HilosTableSelectionState {
     return this.selectionState
+  }
+
+  /**
+   * The work running on this table, in the three places it can be drawn.
+   *
+   * A bar DOES NOT BELONG TO THE WINDOW: paging, filtering and re-sorting leave every one of
+   * these standing, unlike the marks, because the work goes on whichever page is being looked
+   * at. A row bar whose key is not in the current window is simply not drawn, and it comes
+   * back with its row without the server having to say anything again. The one thing that
+   * replaces the lot is the snapshot a subscription answer carries, which is the server naming
+   * the whole truth at once.
+   *
+   * SCAFFOLD: read by the bars themselves, which are HIL-805 (Vue) and HIL-814 (React,
+   * Angular). The sender of the bulk bar is HIL-799, and the backup's run moves onto this
+   * channel in HIL-820.
+   */
+  get progress(): HilosTableProgressState {
+    return this.progressState
   }
 
   /** The current zero-based page index. */
@@ -967,6 +1047,13 @@ export class TableViewportController<R> implements TableWindowSink {
    * nothing on this side would otherwise know what that is. The first one to arrive also
    * settles where a reset of the order goes home to.
    *
+   * It also carries the work running on the table, and that list REPLACES what has been
+   * collected, an empty one clearing it. This is the only cure for a bar left standing by a
+   * socket that broke mid-run: while there was no connection the end could not arrive, and
+   * resubscribing is the moment the server names the truth in full. A window that merely
+   * changes ({@link ingestWindow}) leaves the bars alone — a window has nothing to say about
+   * them.
+   *
    * @param rows The window's rows, in display order.
    * @param totalCount Total rows matching the filter.
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
@@ -974,6 +1061,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param lastAnchor Place the last row sits at, or null when the window is empty.
    * @param limit How many rows the window carries — the size the backend served it at.
    * @param sort The order the window ran in, or undefined when it ran in none.
+   * @param progress The work running on the table, as the answer names it in full.
    */
   ingestSubscriptionWindow(
     rows: readonly TableRow[],
@@ -983,7 +1071,9 @@ export class TableViewportController<R> implements TableWindowSink {
     lastAnchor: TableAnchor | null,
     limit: number,
     sort: TableSortOrder | undefined,
+    progress: readonly HilosTableProgressFrame[],
   ): void {
+    this.replaceProgress(progress)
     this.orderSignal.set(sort)
     if (!this.openingOrderKnown) {
       // Where the sort cycle and a reset come home to: the order the table opened in, which
@@ -1048,6 +1138,63 @@ export class TableViewportController<R> implements TableWindowSink {
       this.announcedInside.add(rowKey)
     }
     this.refreshAnnouncedSignal()
+  }
+
+  /**
+   * Ingest one bar of work (`table_progress`): put it up, move it, or take it down.
+   *
+   * A place holds one bar, and the place is the pair (scope, row key). A frame naming a
+   * different `progressKey` REPLACES what stands there — another run has started — while one
+   * that says `ended` takes the bar down only when the key matches the bar standing. That
+   * asymmetry is the whole of it: without it a late end of the previous run would clear the
+   * bar of the run that has just begun, and a bar would vanish over live work — the same break
+   * this channel exists to fix, only mirrored.
+   *
+   * An `ended` for a place that holds nothing does nothing. There is no bar to take down, and
+   * minting an empty one to clear would put a flicker on the screen for a run that is over.
+   *
+   * @param frame The bar as it arrived.
+   */
+  ingestProgress(frame: HilosTableProgressFrame): void {
+    if (frame.scope === 'row') {
+      const { rowKey } = frame
+      if (rowKey === undefined) {
+        // Not a second rule: a row bar without its row is already dropped where frames are
+        // taken in (bindTableViewport.ts). This is what tells the type system so.
+        return
+      }
+      if (frame.ended === true) {
+        if (
+          this.rowProgressSignal.get().get(rowKey)?.progressKey ===
+          frame.progressKey
+        ) {
+          this.dropRowProgress(rowKey)
+        }
+
+        return
+      }
+      this.rowProgressSignal.set(
+        new Map(this.rowProgressSignal.get()).set(
+          rowKey,
+          toTableProgress(frame),
+        ),
+      )
+
+      return
+    }
+
+    const place: WritableSignal<HilosTableProgress | null> =
+      frame.scope === 'table'
+        ? this.tableProgressSignal
+        : this.bulkProgressSignal
+    if (frame.ended === true) {
+      if (place.get()?.progressKey === frame.progressKey) {
+        place.set(null)
+      }
+
+      return
+    }
+    place.set(toTableProgress(frame))
   }
 
   /**
@@ -1185,6 +1332,11 @@ export class TableViewportController<R> implements TableWindowSink {
         }
         break
       case 'row_removed':
+        // The bar goes at once, whatever the gate decides about the row: the row is gone on
+        // the server, so nobody will cover it with a bar again, and the end of its work may
+        // never arrive at all — leaving the bar hanging under a placeholder with nothing left
+        // to take it down.
+        this.dropRowProgress(delta.rowKey)
         if (this.isInWindow(delta.rowKey)) {
           this.pendingMoves.delete(delta.rowKey)
           this.pendingRemoved.set(delta.rowKey, delta.reason)
@@ -1603,6 +1755,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * goes through here — search, filters, their reset, sort, a declared order, its
    * reset, a page jump and the two neighbours — so the rule cannot be forgotten by
    * whoever adds the next one.
+   *
+   * The bars of running work are deliberately NOT in that list, and their absence is a
+   * decision rather than an oversight: work goes on whichever page is being looked at, so
+   * turning a page is no reason to stop showing it. A row bar off the new window is not
+   * drawn and comes back with its row.
    */
   private changeWindow(): void {
     this.placeholderKeysSignal.set(new Set())
@@ -1626,6 +1783,47 @@ export class TableViewportController<R> implements TableWindowSink {
     this.announcedAbove.clear()
     this.announcedInside.clear()
     this.refreshAnnouncedSignal()
+  }
+
+  /**
+   * Put up exactly the bars a subscription answer named, and take down every other.
+   *
+   * @param frames The work the server says is running on this table, in full.
+   */
+  private replaceProgress(frames: readonly HilosTableProgressFrame[]): void {
+    const rows = new Map<string, HilosTableProgress>()
+    let table: HilosTableProgress | null = null
+    let bulk: HilosTableProgress | null = null
+    for (const frame of frames) {
+      if (frame.scope === 'row') {
+        if (frame.rowKey !== undefined) {
+          rows.set(frame.rowKey, toTableProgress(frame))
+        }
+        continue
+      }
+      if (frame.scope === 'table') {
+        table = toTableProgress(frame)
+        continue
+      }
+      bulk = toTableProgress(frame)
+    }
+    this.rowProgressSignal.set(rows)
+    this.tableProgressSignal.set(table)
+    this.bulkProgressSignal.set(bulk)
+  }
+
+  /**
+   * Take down the bar of one row, if it had one.
+   *
+   * @param rowKey Key of the row whose bar goes.
+   */
+  private dropRowProgress(rowKey: string): void {
+    if (!this.rowProgressSignal.get().has(rowKey)) {
+      return
+    }
+    const rows = new Map(this.rowProgressSignal.get())
+    rows.delete(rowKey)
+    this.rowProgressSignal.set(rows)
   }
 
   private refreshAnnouncedSignal(): void {

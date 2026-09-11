@@ -10,6 +10,7 @@ use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
@@ -21,6 +22,8 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableProgressDTO;
+use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -35,6 +38,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableProgressScope;
 use Hilos\Core\Table\TableRowPlacement;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -899,6 +903,46 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testWorkReportedBySourceReachesTheWindowWithoutTouchingIt(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, true, null, null);
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha')],
+            $viewport,
+            reportsProgress: true,
+        );
+
+        $context->record(SourceChange::rtUpdated(ViewportDeltaUnitTable::PROGRESS_SOURCE_KEY, 'beta', ['step' => 3]));
+        $context->flushToSignalRouter();
+
+        $progress = $this->nextProgress();
+        $this->assertSame(ViewportDeltaUnitTable::PROGRESS_KEY, $progress->progress->progressKey);
+        $this->assertSame('beta', $progress->progress->rowKey);
+        $this->assertSame(3, $progress->progress->current);
+
+        // A bar is not in the count and is not a row of the window: the total stands where it
+        // stood, nothing else was queued, and the key the bar names is one the window does not
+        // hold. That is what keeps it out of Apply, out of the selection and out of the pager.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertSame(1, $viewport->totalCount());
+        $this->assertFalse($viewport->hasRow('beta'));
+    }
+
+    public function testATableThatDeclaresNoWorkIsAskedForNoneAndSendsNothing(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha')]), 1, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha')], $viewport);
+
+        // The same change against the framework default: this table never overrode the
+        // declaration, so the fan-out branch ends at the first of the two questions.
+        $context->record(SourceChange::rtUpdated(ViewportDeltaUnitTable::PROGRESS_SOURCE_KEY, 'beta', ['step' => 3]));
+        $context->flushToSignalRouter();
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
     /**
      * Turns a list of row-id keys into a window of placeholder wire rows.
      *
@@ -1072,6 +1116,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
      * @param TableViewportSubscription $viewport Viewport to register for the connection
      * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
+     * @param bool $reportsProgress Whether the table reads work out of a source change at all
      * @return ViewportDeltaUnitContext Booted browser context
      */
     private function bootWithViewport(
@@ -1079,9 +1124,10 @@ final class BrowserContextViewportDeltaTest extends TestCase
         TableViewportSubscription $viewport,
         ?bool $inSet = null,
         bool $setQuestionFails = false,
+        bool $reportsProgress = false,
     ): ViewportDeltaUnitContext {
         Hilos::$sr = new SignalRouter();
-        Hilos::$table = new ViewportDeltaUnitTableContext($rows, $inSet, $setQuestionFails);
+        Hilos::$table = new ViewportDeltaUnitTableContext($rows, $inSet, $setQuestionFails, $reportsProgress);
         Hilos::$table->configure();
         Hilos::$sr->subscribeToPage(
             ViewportDeltaUnitContext::PAGE,
@@ -1165,6 +1211,24 @@ final class BrowserContextViewportDeltaTest extends TestCase
     }
 
     /**
+     * Asserts the next queued signal is an addressed table progress frame and returns it.
+     *
+     * @return TableProgressSignalData The progress payload
+     */
+    private function nextProgress(): TableProgressSignalData
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_PROGRESS, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableProgressSignalData::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
      * Asserts the next queued signal is an addressed table viewport own create and returns it.
      *
      * @return TableViewportOwnCreateDTO The own-create payload
@@ -1230,11 +1294,13 @@ final class ViewportDeltaUnitTableContext extends TableContext
      * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns
      * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
+     * @param bool $reportsProgress Whether the table reads work out of a source change at all
      */
     public function __construct(
         private readonly array $rows = [],
         private readonly ?bool $inSet = null,
         private readonly bool $setQuestionFails = false,
+        private readonly bool $reportsProgress = false,
     ) {
     }
 
@@ -1242,7 +1308,7 @@ final class ViewportDeltaUnitTableContext extends TableContext
     {
         $this->register(
             ViewportDeltaUnitTable::TABLE,
-            new ViewportDeltaUnitTable($this->rows, $this->inSet, $this->setQuestionFails),
+            new ViewportDeltaUnitTable($this->rows, $this->inSet, $this->setQuestionFails, $this->reportsProgress),
         );
     }
 }
@@ -1252,18 +1318,48 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
     public const string TABLE = 'viewportDeltaTable';
     public const string SLOT = 'viewportDeltaRows';
     public const string SOURCE_KEY = 'viewportDeltaSource';
+    public const string PROGRESS_SOURCE_KEY = 'viewportDeltaProgressSource';
+    public const string PROGRESS_KEY = 'viewportDeltaRun';
 
     /**
      * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns
      * @param ?bool $inSet What this table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
+     * @param bool $reportsProgress Whether this table reads work out of a source change at all
      */
     public function __construct(
         private readonly array $rows = [],
         private readonly ?bool $inSet = null,
         private readonly bool $setQuestionFails = false,
+        private readonly bool $reportsProgress = false,
     ) {
         parent::__construct();
+    }
+
+    /**
+     * Reads work out of a source change of its own, or leaves the answer to the framework.
+     *
+     * The two are the fixture's whole point: a table that declares work reports it from a source
+     * the row path knows nothing of, and a table that declares none takes the default and is
+     * asked for nothing.
+     *
+     * @param SourceChange $change Source change that may report work on this table
+     * @return ?TableProgressDTO Bar for the run source, or whatever the default answers
+     * @throws InvalidArgumentException When the bar is built with a row key its place refuses
+     */
+    public function buildProgressForSourceEvent(SourceChange $change): ?TableProgressDTO
+    {
+        if (!$this->reportsProgress || $change->sourceKey !== self::PROGRESS_SOURCE_KEY) {
+            return parent::buildProgressForSourceEvent($change);
+        }
+
+        return new TableProgressDTO(
+            TableProgressScope::Row,
+            self::PROGRESS_KEY,
+            (string) $change->sourceId,
+            3,
+            11,
+        );
     }
 
     /**

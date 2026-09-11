@@ -25,6 +25,8 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableProgressDTO;
+use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -35,6 +37,7 @@ use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -173,6 +176,88 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testTheWindowCarriesTheWorkRunningOnItsTable(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows(), [
+            new TableProgressDTO(TableProgressScope::Row, 'backup-17', 'a', 3, 11),
+            new TableProgressDTO(TableProgressScope::Table, 'nightly', null, 34, 120, false, ['title' => 'Nightly']),
+        ]);
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        // A tab opening in the middle of a run sees the bars with its first window, rather than
+        // at the next stir of a source - which for work reporting a phase at a time is minutes.
+        $window = self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE);
+        $this->assertSame(
+            [
+                [
+                    TableProgressDTO::scope => TableProgressScope::Row->value,
+                    TableProgressDTO::progressKey => 'backup-17',
+                    TableProgressDTO::current => 3,
+                    TableProgressDTO::rowKey => 'a',
+                    TableProgressDTO::total => 11,
+                ],
+                [
+                    TableProgressDTO::scope => TableProgressScope::Table->value,
+                    TableProgressDTO::progressKey => 'nightly',
+                    TableProgressDTO::current => 34,
+                    TableProgressDTO::total => 120,
+                    TableProgressDTO::detail => ['title' => 'Nightly'],
+                ],
+            ],
+            $window[TableProgressSignalData::progress],
+        );
+    }
+
+    public function testATableWithNothingRunningCarriesNoProgressKeyAtAll(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        // Absent rather than empty: an empty list would reach the wire as a JSON array where
+        // every other bar-carrying answer has a list of objects.
+        $this->assertArrayNotHasKey(
+            TableProgressSignalData::progress,
+            self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE),
+        );
+    }
+
+    public function testATableThatCannotNameItsWorkKeepsItsRowsAndLosesItsBars(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows(), [], true);
+        Hilos::$table->configure();
+
+        ob_start();
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+        $logged = (string) ob_get_clean();
+
+        // Narrower than the window's containment, and deliberately so: by then there is a
+        // window worth showing, and a refusal over the bars must not cost the subscriber the
+        // whole page.
+        $this->assertStringContainsString('Browser window skipped the work', $logged);
+        $window = self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE);
+        $this->assertArrayNotHasKey(TableProgressSignalData::progress, $window);
+        $this->assertCount(2, $window[TableWindowSignalData::rows]);
+    }
+
     public function testATableThatCannotBuildItsWindowIsLeftOutAndSaidSoInTheLog(): void
     {
         Hilos::$sr = new SignalRouter();
@@ -308,14 +393,22 @@ final class SubscribeWindowUnitTableContext extends TableContext
 {
     /**
      * @param list<SubscribeWindowUnitRow> $rows Snapshot rows the table returns
+     * @param list<TableProgressDTO> $progress Bars the table says are running on it
+     * @param bool $progressRefuses Whether naming the work refuses instead of answering
      */
-    public function __construct(private readonly array $rows = [])
-    {
+    public function __construct(
+        private readonly array $rows = [],
+        private readonly array $progress = [],
+        private readonly bool $progressRefuses = false,
+    ) {
     }
 
     public function configure(): void
     {
-        $this->register(SubscribeWindowUnitTable::TABLE, new SubscribeWindowUnitTable($this->rows));
+        $this->register(
+            SubscribeWindowUnitTable::TABLE,
+            new SubscribeWindowUnitTable($this->rows, $this->progress, $this->progressRefuses),
+        );
         $this->register(SubscribeWindowRefusingTable::TABLE, new SubscribeWindowRefusingTable());
     }
 }
@@ -327,10 +420,28 @@ final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnap
 
     /**
      * @param list<SubscribeWindowUnitRow> $rows Snapshot rows the table owns
+     * @param list<TableProgressDTO> $progress Bars the table says are running on it
+     * @param bool $progressRefuses Whether naming the work refuses instead of answering
      */
-    public function __construct(private readonly array $rows = [])
-    {
+    public function __construct(
+        private readonly array $rows = [],
+        private readonly array $progress = [],
+        private readonly bool $progressRefuses = false,
+    ) {
         parent::__construct();
+    }
+
+    /**
+     * @return list<TableProgressDTO> Bars the fixture was built with
+     * @throws InvalidFormatException When the fixture was told to refuse the question
+     */
+    public function progressSnapshot(): array
+    {
+        if ($this->progressRefuses) {
+            throw new InvalidFormatException('This table cannot name its work');
+        }
+
+        return $this->progress;
     }
 
     /**
