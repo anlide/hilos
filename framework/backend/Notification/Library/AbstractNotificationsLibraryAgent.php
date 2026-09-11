@@ -269,14 +269,14 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * Writes what another process asked this library to write.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the notification cannot be written or delivered
      * @throws InvalidArgumentException When the retry answer cannot be named or queued
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_NOTIFICATION_EMIT:

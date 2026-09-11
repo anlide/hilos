@@ -22,6 +22,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -652,12 +653,16 @@ abstract class AbstractPage implements ActionHostInterface
      * Default intentionally ignores the signal. Override when the page owns a
      * specific agent signal workflow while the agent remains the process boundary.
      *
+     * Alone among the onSignal*() handles, the third argument here names the SENDER and not
+     * the kind of source it is: two agents of one type are told apart by it, so it can be
+     * kept as a key of per-sender state. The nine neighbours still receive the kind.
+     *
      * @param AgentSignalData $data Wrapped signal payload
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Signal name
      * @throws HilosException Whatever the concrete page's agent-signal workflow raises
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
     }
 

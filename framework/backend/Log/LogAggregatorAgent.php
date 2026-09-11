@@ -11,6 +11,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Hilos;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsIndexWatchSignalData;
@@ -119,7 +120,7 @@ final class LogAggregatorAgent extends AbstractAgent
     private LogSettingsResolver $resolver;
 
     /**
-     * @var array<string, array{viewers: int, renewedAt: float, sentRevision: int}> Signal source → what it claimed and how far it has been written
+     * @var array<string, array{viewers: int, renewedAt: float, sentRevision: int}> Sender → what it claimed and how far it has been written
      */
     private array $watchers = [];
 
@@ -198,15 +199,15 @@ final class LogAggregatorAgent extends AbstractAgent
      * this agent declared, so all that is left is to unwrap it. A node's report is answered with
      * nothing - it travels one way, and a node that hears back simply sends the next one on its own
      * schedule. A claim of interest is the one thing this agent ever answers, and only the first
-     * non-zero one from a source, which is answered with the whole picture at once.
+     * non-zero one from a sender, which is answered with the whole picture at once.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
      * @throws InvalidArgumentException When the answering frame cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_NODE_INDEX_REPORT:
@@ -218,7 +219,7 @@ final class LogAggregatorAgent extends AbstractAgent
 
             case HilosSignalConstants::LOGS_INDEX_WATCH:
                 if ($data->data instanceof LogsIndexWatchSignalData) {
-                    $this->applyWatch($source, $data->data->viewers, microtime(true));
+                    $this->applyWatch($sender, $data->data->viewers, microtime(true));
                 }
 
                 return;
@@ -250,13 +251,13 @@ final class LogAggregatorAgent extends AbstractAgent
             return;
         }
 
-        foreach ($this->watchers as $source => $watcher) {
+        foreach ($this->watchers as $sender => $watcher) {
             $slots = $this->slotsChangedSince($watcher[self::WATCH_SENT_REVISION]);
             if ($slots === []) {
                 continue;
             }
 
-            $this->sendPortion($source, $slots, false, $now);
+            $this->sendPortion($sender, $slots, false, $now);
         }
     }
 
@@ -347,36 +348,36 @@ final class LogAggregatorAgent extends AbstractAgent
      * here: making the first screen of a page wait half a second for something already in memory
      * would be the window charging for work it did not do.
      *
-     * @param string $source Signal source of the subscriber
+     * @param string $sender Sender of the claim, named in full
      * @param int $viewers Viewers it claims, zero to cancel
      * @param float $now Wall clock of this claim
      * @throws InvalidArgumentException When the answering frame cannot be named
      */
-    private function applyWatch(string $source, int $viewers, float $now): void
+    private function applyWatch(string $sender, int $viewers, float $now): void
     {
         if ($viewers === 0) {
-            if (isset($this->watchers[$source])) {
-                unset($this->watchers[$source]);
-                $this->logAgentInfo("Log aggregator: {$source} stopped watching");
+            if (isset($this->watchers[$sender])) {
+                unset($this->watchers[$sender]);
+                $this->logAgentInfo("Log aggregator: {$sender} stopped watching");
             }
 
             return;
         }
 
-        if (isset($this->watchers[$source])) {
-            $this->watchers[$source][self::WATCH_VIEWERS] = $viewers;
-            $this->watchers[$source][self::WATCH_RENEWED_AT] = $now;
+        if (isset($this->watchers[$sender])) {
+            $this->watchers[$sender][self::WATCH_VIEWERS] = $viewers;
+            $this->watchers[$sender][self::WATCH_RENEWED_AT] = $now;
 
             return;
         }
 
-        $this->watchers[$source] = [
+        $this->watchers[$sender] = [
             self::WATCH_VIEWERS => $viewers,
             self::WATCH_RENEWED_AT => $now,
             self::WATCH_SENT_REVISION => 0,
         ];
-        $this->logAgentInfo("Log aggregator: {$source} started watching, {$viewers} viewer(s)");
-        $this->sendPortion($source, $this->index->nodes(), true, $now);
+        $this->logAgentInfo("Log aggregator: {$sender} started watching, {$viewers} viewer(s)");
+        $this->sendPortion($sender, $this->index->nodes(), true, $now);
     }
 
     /**
@@ -391,9 +392,9 @@ final class LogAggregatorAgent extends AbstractAgent
      */
     private function forgetExpiredWatchers(float $now): void
     {
-        foreach ($this->watchers as $source => $watcher) {
+        foreach ($this->watchers as $sender => $watcher) {
             if ($now - $watcher[self::WATCH_RENEWED_AT] >= self::WATCH_LEASE_SECONDS) {
-                unset($this->watchers[$source]);
+                unset($this->watchers[$sender]);
             }
         }
     }
@@ -425,25 +426,25 @@ final class LogAggregatorAgent extends AbstractAgent
      * the frame and marking it either - a frame is queued, not awaited, and one process handles the
      * arrival and the send.
      *
-     * @param string $source Signal source of the subscriber
+     * @param string $sender Sender of the claim, named in full
      * @param list<ClusterLogNodeSlot> $slots Slots to carry, each one whole
      * @param bool $snapshot Whether the frame replaces that subscriber's whole picture
      * @param float $now Wall clock the window is measured from after this
      * @throws InvalidArgumentException When the frame cannot be named
      */
-    private function sendPortion(string $source, array $slots, bool $snapshot, float $now): void
+    private function sendPortion(string $sender, array $slots, bool $snapshot, float $now): void
     {
         $this->sendToAgent(
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION,
             ClusterLogIndexPortionSignalData::ofSlots($slots, $snapshot),
         );
-        $this->watchers[$source][self::WATCH_SENT_REVISION] = $this->revision;
+        $this->watchers[$sender][self::WATCH_SENT_REVISION] = $this->revision;
         $this->lastFanoutAt = $now;
 
         // DEBUG for the same reason the per-frame line below it is: this agent writes into the very
         // directory it measures, and a line per portion would outgrow what it reports on.
         $this->logAgentDebug(
-            'Log aggregator: ' . ($snapshot ? 'snapshot' : 'portion') . " sent to {$source}, "
+            'Log aggregator: ' . ($snapshot ? 'snapshot' : 'portion') . " sent to {$sender}, "
             . count($slots) . ' node(s)',
         );
     }

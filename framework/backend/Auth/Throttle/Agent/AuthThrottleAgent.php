@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\AuthBlocks;
@@ -116,12 +117,12 @@ final class AuthThrottleAgent extends AbstractAgent
      * Judges one attempt and answers the worker that asked.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is neither of the two it answers
      * @throws InvalidArgumentException When the verdict signal cannot be named or queued
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK:

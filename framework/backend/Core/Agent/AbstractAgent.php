@@ -1332,15 +1332,19 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Child classes can override this method.
      * Use $data->data to access the inner payload (e.g. ModerationRequestSignalData).
      *
+     * Alone among the onSignal*() handles, the third argument here names the SENDER and not
+     * the kind of source it is: two agents of one type are told apart by it, so it can be
+     * kept as a key of per-sender state. The nine neighbours still receive the kind.
+     *
      * @param AgentSignalData $data Signal data (container with inner payload)
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the handler is reached by a signal it does not know
      * @throws HilosException Whatever the concrete agent's agent-signal handler raises
      * @throws InvalidArgumentException When the handler cannot name the signal it answers with
      * @throws RandomException When a concrete agent's handler cannot draw from the CSPRNG
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         // Default: do nothing
     }

@@ -1237,14 +1237,14 @@ class PageSignalRouter
      * this router parked, and no page ever sees that the action waited at all.
      *
      * @param AgentSignalData $data Wrapped agent signal payload
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index
      * @param string $name Signal name
      * @throws AgentException
      * @throws FramePopOrderException When the execution frame is unwound out of order
      * @throws ValidationException When a validation failure cannot be mapped to an action error
      * @throws InvalidArgumentException When the action-error signal cannot be named
      */
-    public function dispatchAgentSignal(AgentSignalData $data, string $source, string $name): void
+    public function dispatchAgentSignal(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name === HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT) {
             if ($data->data instanceof ThrottleVerdictSignalData) {
@@ -1281,7 +1281,7 @@ class PageSignalRouter
         $signalData = $innerPayload === $data->data ? $data : new AgentSignalData($innerPayload);
 
         try {
-            $pageInstance->onSignalAgent($signalData, $source, $name);
+            $pageInstance->onSignalAgent($signalData, $sender, $name);
         } catch (ValidationException $e) {
             $this->dispatchAgentSignalActionException($pageInstance, $signalData, $e);
         }

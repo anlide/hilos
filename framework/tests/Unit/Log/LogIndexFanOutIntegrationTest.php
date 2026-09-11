@@ -241,7 +241,7 @@ final class LogIndexFanOutIntegrationTest extends TestCase
 
             $aggregator->onSignalAgent(
                 new AgentSignalData(data: LogsIndexWatchSignalData::fromArray($signal->data->data->toArray())),
-                'agent',
+                'agent/hilos_logs',
                 HilosSignalConstants::LOGS_INDEX_WATCH,
             );
             $carried++;
@@ -278,7 +278,7 @@ final class LogIndexFanOutIntegrationTest extends TestCase
             $frame = ClusterLogIndexPortionSignalData::fromArray($signal->data->data->toArray());
             $pages->onSignalAgent(
                 new AgentSignalData(data: $frame),
-                'agent',
+                'agent/hilos_logs',
                 HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION,
             );
             $frames[] = $frame;

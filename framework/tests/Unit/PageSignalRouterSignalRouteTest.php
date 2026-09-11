@@ -324,10 +324,10 @@ final class PageSignalRouterTestPage extends AbstractPage
      * Store the routed agent signal so the test can assert the dispatch target.
      *
      * @param AgentSignalData $data Wrapped signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Signal name
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name === 'validation_error') {
             throw new ValidationException('Blocked by validation');
@@ -398,10 +398,10 @@ final class PageSignalRouterTestPageWithDto extends AbstractPage
      * Store the routed agent signal so the test can assert the dispatch target.
      *
      * @param AgentSignalData $data Wrapped signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Signal name
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         $this->agentSignalData = $data;
         $this->agentSignalName = $name;

@@ -108,6 +108,10 @@ Topology parsing happens on the worker before handlers:
 
 Routing-only entries skip parsing and pass the incoming payload through.
 
+The third argument of `onSignalAgent()` names the SENDER in full, in the form
+`source[/type][#index]` - unlike the other `onSignal*()` handles, which receive
+the kind of source. That is what lets a handler keep state per sender.
+
 ## WebSocket → agent
 
 WS frame arrives → server parses → queues signal in `Hilos::$sr` with source `WS` → dispatched to agent.

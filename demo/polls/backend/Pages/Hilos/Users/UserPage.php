@@ -30,6 +30,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalSource;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Users\DTO\AdminRenameDoneSignalData;
@@ -141,13 +142,13 @@ final class UserPage extends AbstractHilosUserPage
      * Answers the admin whose rename the library has finished (HIL-771).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this page declares
      * @throws LogicException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the ack cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE) {
             throw new AgentUnknownSignalException($name);

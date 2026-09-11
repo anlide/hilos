@@ -1656,6 +1656,9 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::AGENT_SIGNAL:
                 if ($signalData instanceof AgentSignalData) {
+                    // Only this branch names the sender in full: the nine others hand out the
+                    // kind of source, and the top-level $source they share has to stay that.
+                    $sender = SignalSource::describe($data->signal->signalSource);
                     if ($apiRequestId !== null) {
                         Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
@@ -1663,14 +1666,14 @@ abstract class WorkerManager extends BaseManager
                     $parsedAgentSignalData = $signalData;
                     try {
                         $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
-                        $agent->onSignalAgent($parsedAgentSignalData, $source, $name);
+                        $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
                     } catch (InvalidAgentSignalPayloadException $e) {
                         Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
                     } catch (AgentException $e) {
                         Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
                     }
                     try {
-                        $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($parsedAgentSignalData, $source, $name);
+                        $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($parsedAgentSignalData, $sender, $name);
                     } catch (ValidationException $e) {
                         Logger::logAgentError($agent->getId(), "Page signal validation failed: {$e->getMessage()}");
                     } catch (AgentException $e) {

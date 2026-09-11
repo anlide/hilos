@@ -23,6 +23,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
@@ -97,17 +98,17 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * a frame, and a throw here would leave the modal waiting forever.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws LogicException When the payload is not the one its name promises
      * @throws HilosException Whatever the framework library's own handler raises
      * @throws InvalidArgumentException When the answer cannot be named or queued
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_USER_ADMIN_RENAME) {
-            parent::onSignalAgent($data, $source, $name);
+            parent::onSignalAgent($data, $sender, $name);
 
             return;
         }

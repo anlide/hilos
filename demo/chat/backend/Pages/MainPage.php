@@ -35,6 +35,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
@@ -143,7 +144,7 @@ final class MainPage extends AbstractPage
      * Routes main-page agent signals to outbound moderation handlers.
      *
      * @param AgentSignalData $data Wrapped moderation result payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Moderation result signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
      * @throws LogicException When the moderation result payload type does not match the signal contract
@@ -151,7 +152,7 @@ final class MainPage extends AbstractPage
      * @throws AgentException When moderation result does not match an active connection
      * @throws HilosException When moderation follow-up exposes storage, database, or runtime failure
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:

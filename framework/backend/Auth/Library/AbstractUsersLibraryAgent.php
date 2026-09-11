@@ -64,6 +64,7 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
@@ -352,14 +353,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * with it.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
      * @throws ValidationException When the payload is not the one its name promises, or OAuth is unwired
      * @throws InvalidArgumentException When a frame the completion sends cannot be named or queued
      * @throws HilosException When the identity lookup, the account, or the project's bookkeeping fails
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name === HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT) {
             return;

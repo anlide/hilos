@@ -26,6 +26,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -138,12 +139,12 @@ class AuthCodeAgent extends AbstractAgent
      * spinner that only a signal can end.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not the code-request handoff
      * @throws InvalidArgumentException When the outcome signal cannot be named or queued
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_AUTH_CODE_SEND) {
             throw new AgentUnknownSignalException($name);

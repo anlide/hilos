@@ -67,6 +67,7 @@ use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ProcessException;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
@@ -1359,7 +1360,7 @@ final class BackupAgent extends AbstractAgent
      * the same release `protected-mode:open` asks for ({@see handleReopenRequest()}).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not a backup list action
      * @throws EnvException When a backup env value is missing or cannot be read as its type
@@ -1367,7 +1368,7 @@ final class BackupAgent extends AbstractAgent
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::BACKUP_AGENT_CREATE:

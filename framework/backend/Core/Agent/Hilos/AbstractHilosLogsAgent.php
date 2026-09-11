@@ -10,6 +10,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -145,11 +146,11 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      * whatever happened to this one.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION:

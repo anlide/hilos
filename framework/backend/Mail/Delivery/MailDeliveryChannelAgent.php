@@ -13,6 +13,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -126,10 +127,10 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * payload (input A) is handed to the base intake unchanged.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($data->data instanceof MailSendSignalData) {
             $this->enqueueRawSend($data->data);
@@ -137,7 +138,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             return;
         }
 
-        parent::onSignalAgent($data, $source, $name);
+        parent::onSignalAgent($data, $sender, $name);
     }
 
     /**

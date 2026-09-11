@@ -52,6 +52,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Verification\VerificationType;
@@ -285,7 +286,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Takes the moderator's verdict on a rename, or hands the name back to the framework.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
      * @throws LogicException When the verdict payload is not the one its name promises
@@ -294,7 +295,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * @throws InvalidArgumentException When a frame the handler sends cannot be named or queued
      * @throws HilosException When the account read, the rename or the log line fails
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         $doneSignal = self::ADMIN_RENAME_ANSWERS[$name] ?? null;
         if ($doneSignal !== null) {
@@ -307,7 +308,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         if ($name !== ChatSignalConstants::RENAME_MODERATION_RESULT) {
-            parent::onSignalAgent($data, $source, $name);
+            parent::onSignalAgent($data, $sender, $name);
 
             return;
         }

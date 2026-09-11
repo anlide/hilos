@@ -23,6 +23,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
@@ -241,7 +242,7 @@ final class TasksAgent extends AbstractAgent
      * Routes the one frame this agent is addressed by.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws InvalidArgumentException When a signal of the answer cannot be named
@@ -249,7 +250,7 @@ final class TasksAgent extends AbstractAgent
      * @throws LogicException On payload type mismatch
      * @throws HilosException On database or runtime failure
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_SESSION_STATE) {
             throw new AgentUnknownSignalException($name);

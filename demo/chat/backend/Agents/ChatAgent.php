@@ -26,6 +26,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
@@ -382,7 +383,7 @@ final class ChatAgent extends AbstractAgent
      * Dispatches chat-owned inter-agent signals and deliberately ignores the page-owned ones.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws InvalidArgumentException When a signal of the session-state answer cannot be named
@@ -390,7 +391,7 @@ final class ChatAgent extends AbstractAgent
      * @throws HilosException On bot message publish failure, or on database or runtime failure
      * @throws LogicException On payload type mismatch, or if event id is null after sync
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_SESSION_STATE:

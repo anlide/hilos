@@ -9,6 +9,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
@@ -165,10 +166,10 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * misconfiguration and must not drive a foreign send).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Signal source (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name (this channel's deliver signal)
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if (!$data->data instanceof NotificationDeliverSignalData) {
             $this->logAgentWarning($name . ' payload must be ' . NotificationDeliverSignalData::class);

@@ -21,6 +21,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
@@ -330,14 +331,14 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      * Answers the administrator whose preset the library has applied or refused (HIL-946).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not the one this section declares
      * @throws LogicException When the page names no reply signal, or the payload is not the one
      *     its name promises
      * @throws InvalidArgumentException When the ack cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== static::replySignalName()) {
             throw new AgentUnknownSignalException($name);

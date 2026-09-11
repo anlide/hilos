@@ -73,6 +73,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\SessionActions;
@@ -2213,7 +2214,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * re-implement it differently.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one of this library's frames
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
@@ -2221,7 +2222,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws InvalidArgumentException When a frame or a reply cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_SESSION_GRANT:

@@ -295,7 +295,7 @@ final class LogIndexPushIntegrationTest extends TestCase
 
             $aggregator->onSignalAgent(
                 new AgentSignalData(data: NodeLogIndexSignalData::fromArray($signal->data->data->toArray())),
-                'test',
+                'agent/hilos_log_store',
                 HilosSignalConstants::LOGS_NODE_INDEX_REPORT,
             );
         }

@@ -22,6 +22,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
@@ -269,13 +270,13 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
      * Answers the administrator whose config write the library has finished (HIL-946).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $source Framework signal source identifier (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this page declares
      * @throws LogicException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the ack cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE) {
             throw new AgentUnknownSignalException($name);

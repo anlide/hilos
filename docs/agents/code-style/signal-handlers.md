@@ -42,7 +42,7 @@ public function onSignalCron(SignalDataInterface $data, string $source, string $
 ```
 
 ```php
-public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
 {
     switch ($name) {
         case ChatSignalConstants::MODERATION_RESULT:

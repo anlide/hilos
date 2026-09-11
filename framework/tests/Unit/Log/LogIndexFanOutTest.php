@@ -35,10 +35,10 @@ final class LogIndexFanOutTest extends TestCase
     private const int T0 = 1_800_000_000;
 
     /** The one subscriber a live cluster has: the agent serving the log pages. */
-    private const string SUBSCRIBER = 'agent';
+    private const string SUBSCRIBER = 'agent/hilos_logs';
 
-    /** A second signal source, for the cases about the register keeping its subscribers apart. */
-    private const string OTHER_SUBSCRIBER = 'agent-other';
+    /** A second instance of that same agent, for the cases about the register keeping subscribers apart. */
+    private const string OTHER_SUBSCRIBER = 'agent/hilos_logs#2';
 
     /** Past the coalescing window, so a change that is waiting becomes a frame. */
     private const float PAST_THE_WINDOW_SECONDS = 0.6;
@@ -280,13 +280,13 @@ final class LogIndexFanOutTest extends TestCase
      *
      * @param LogAggregatorAgent $agent Agent under test
      * @param int $viewers Viewers the subscriber claims, zero to cancel
-     * @param string $source Signal source of that subscriber
+     * @param string $sender Sender of that claim, named in full
      */
-    private function watch(LogAggregatorAgent $agent, int $viewers, string $source = self::SUBSCRIBER): void
+    private function watch(LogAggregatorAgent $agent, int $viewers, string $sender = self::SUBSCRIBER): void
     {
         $agent->onSignalAgent(
             new AgentSignalData(new LogsIndexWatchSignalData($viewers)),
-            $source,
+            $sender,
             HilosSignalConstants::LOGS_INDEX_WATCH,
         );
     }

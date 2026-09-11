@@ -19,6 +19,7 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
@@ -623,14 +624,14 @@ final class LogStoreAgent extends AbstractAgent
      * node-local (HIL-753), so one reader of one directory is exactly what it is for.
      *
      * @param AgentSignalData $data Signal data (container with inner payload)
-     * @param string $source Signal source
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
      * @throws InvalidAgentSignalPayloadException When a frame carries the wrong payload
      * @throws InvalidArgumentException When the answer to the read, the follow, the confirmation
      *     or its withdrawal cannot be named
      */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_AGENT_READ_LINES:

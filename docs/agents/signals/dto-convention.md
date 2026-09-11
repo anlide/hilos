@@ -183,7 +183,7 @@ Named signal handlers must route with `switch ($name)`; see
 
 ```php
 // Agent::AGENT_SIGNALS declares BotMessageSignalData::class
-public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
+public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void {
     switch ($name) {
         case ChatSignalConstants::BOT_MESSAGE:
             $this->handleBotMessage($data->data);
@@ -203,7 +203,7 @@ private function handleBotMessage(BotMessageSignalData $message): void
 For routing-only agent signals without a topology DTO, validate manually:
 
 ```php
-public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
+public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void {
     switch ($name) {
         case ChatSignalConstants::MODERATE_BOT_REQUEST:
             $moderationRequest = $data->data;
