@@ -181,6 +181,9 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      *
      * The title and body are already localized on the notification, so they pass through
      * the generic notification template verbatim (no locale, project default rendering).
+     * The agent resolves no locale of its own: the language of an outgoing message is
+     * decided where the message is ordered, by the rule on MailTemplate
+     * (framework/backend/Mail/Template/MailTemplate.php).
      *
      * @param string $address Resolved recipient email address
      * @param ObjectNotification $notification Notification to render and deliver

@@ -50,7 +50,10 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
      * @param ?string $text Inline message text, or null when a template supplies it
      * @param ?string $templateKey Template key, or null for an inline message
      * @param array<string, mixed> $params Template render params
-     * @param ?string $locale Render locale, or null for the project default
+     * @param ?string $locale Render locale, or null for the project default; filled by the
+     *                        caller that orders the send and never re-resolved in delivery,
+     *                        by the rule on MailTemplate
+     *                        (framework/backend/Mail/Template/MailTemplate.php)
      * @throws ValidationException When the recipient number is blank, or the payload names
      *                             neither a template nor an inline text
      */

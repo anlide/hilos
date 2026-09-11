@@ -35,6 +35,11 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
  * to type. Which shape is being delivered is read off the {@see VerificationDeliverable}
  * and not off the type, so the params can never describe a different letter than the one
  * the service minted.
+ *
+ * This caller passes no locale (HIL-834) — an account carries no recorded language yet and
+ * the ordering session has no resolver — so the letter falls to the project default, which
+ * is the bottom step of the rule stated on MailTemplate
+ * (framework/backend/Mail/Template/MailTemplate.php).
  */
 final class MailVerificationDeliverer implements VerificationDeliverer
 {

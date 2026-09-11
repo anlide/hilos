@@ -178,7 +178,10 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * Renders the notification to one line, clamps it to a segment, and wraps a fresh send.
      *
      * The title and body are already localized on the notification, so they pass through the
-     * generic notification template verbatim (no locale, project default rendering).
+     * generic notification template verbatim (no locale, project default rendering). The agent
+     * resolves no locale of its own: the language of an outgoing message is decided where the
+     * message is ordered, by the rule on MailTemplate
+     * (framework/backend/Mail/Template/MailTemplate.php).
      *
      * @param string $address Resolved recipient number
      * @param ObjectNotification $notification Notification to render and deliver

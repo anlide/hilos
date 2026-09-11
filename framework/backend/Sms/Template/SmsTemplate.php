@@ -15,7 +15,8 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
  * an SMS is a single short line. Templates are resolved by key through
  * {@see SmsTemplateRegistry}, so callers never instantiate one directly. The `$locale`
  * argument is the render seam for the i18n stage (HIL, stage 14); today templates render
- * the project default locale and ignore it.
+ * the project default locale and ignore it. Which locale an outgoing message is written in
+ * is one rule for every channel, and it is stated once on {@see MailTemplate} (HIL-834).
  */
 interface SmsTemplate
 {

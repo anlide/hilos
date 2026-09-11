@@ -9,9 +9,12 @@ namespace Hilos\Notification;
  *
  * Describes one notification to persist and deliver: its recipient, machine type,
  * severity, and the title/body rendered in the default locale at emit time, plus
- * optional structured `data` a later i18n pass can re-render from. It is a plain
- * input VO — persistence, id assignment, and the live signal fan are the
- * notifier's job.
+ * optional structured `data` a later i18n pass can re-render from. Which language an
+ * outgoing message is written in is one rule for every channel, stated on MailTemplate
+ * (framework/backend/Mail/Template/MailTemplate.php): the reader it names is this
+ * notification's recipient user, and the default locale above is that rule's bottom
+ * step today, not a decision of this class. It is a plain input VO — persistence, id
+ * assignment, and the live signal fan are the notifier's job.
  *
  * {@see $channels} optionally narrows channel delivery (HIL-196): null delivers to
  * every enabled channel (the default), while a non-empty list restricts delivery to

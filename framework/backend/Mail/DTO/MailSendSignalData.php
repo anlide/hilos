@@ -60,7 +60,10 @@ final class MailSendSignalData extends BaseDTO implements SignalDataInterface
      * @param ?string $html Inline HTML body, or null
      * @param ?string $templateKey Template key, or null for an inline message
      * @param array<string, mixed> $params Template render params
-     * @param ?string $locale Render locale, or null for the project default
+     * @param ?string $locale Render locale, or null for the project default; filled by the
+     *                        caller that orders the send and never re-resolved in delivery,
+     *                        by the rule on MailTemplate
+     *                        (framework/backend/Mail/Template/MailTemplate.php)
      * @param ?string $progressTicket Ticket the send's steps are reported against, or null when
      *                                nobody is watching this letter (HIL-826)
      * @throws ValidationException When the recipient address is blank, or the payload names
