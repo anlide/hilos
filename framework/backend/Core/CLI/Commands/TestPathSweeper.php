@@ -21,6 +21,17 @@ namespace Hilos\Core\CLI\Commands;
  */
 final class TestPathSweeper
 {
+    /**
+     * @var list<string> Names the sweep never removes, whatever directory it meets them in
+     *
+     * These are not content, they are what makes an otherwise empty directory exist at all: the
+     * data roots of a demo are in git as a `.gitignore` or a `.gitkeep` and nothing else, so a
+     * sweep that took them would delete a tracked file and leave the next checkout without the
+     * directory the stand writes into. Found the plain way - the first run of the backup reset
+     * took `demo/chat/data/backup/.gitignore` with it.
+     */
+    private const array KEPT_NAMES = ['.gitignore', '.gitkeep'];
+
     /** @var int Paths removed so far, directories counted as one each */
     private int $removed = 0;
 
@@ -43,7 +54,7 @@ final class TestPathSweeper
         }
 
         foreach (scandir($directory) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..') {
+            if ($entry === '.' || $entry === '..' || in_array($entry, self::KEPT_NAMES, true)) {
                 continue;
             }
 
@@ -59,6 +70,10 @@ final class TestPathSweeper
     public function removeMatching(string $pattern): void
     {
         foreach (glob($pattern) ?: [] as $path) {
+            if (in_array(basename($path), self::KEPT_NAMES, true)) {
+                continue;
+            }
+
             $this->removeTree($path);
         }
     }
@@ -100,6 +115,14 @@ final class TestPathSweeper
 
         $this->emptyDirectory($path);
 
+        // A directory that still holds something is not a failure to report: what stayed is
+        // either a name the sweep keeps on purpose, and then the directory around it has to stay
+        // as well, or a file already named in `failed` - and saying so twice would make one
+        // undeletable file read as two.
+        if (!self::isEmptyDirectory($path)) {
+            return;
+        }
+
         if (rmdir($path)) {
             $this->removed++;
 
@@ -107,5 +130,22 @@ final class TestPathSweeper
         }
 
         $this->failed[] = $path;
+    }
+
+    /**
+     * Says whether a directory holds nothing at all.
+     *
+     * @param string $path Directory to look into
+     * @return bool Whether the directory is empty
+     */
+    private static function isEmptyDirectory(string $path): bool
+    {
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry !== '.' && $entry !== '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
