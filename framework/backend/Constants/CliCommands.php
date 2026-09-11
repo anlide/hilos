@@ -128,6 +128,9 @@ final class CliCommands
     /** @var string Command: Force a scheduled backup through the live agent (test-only) */
     public const string BACKUP_TEST_RUN_SCHEDULE = 'test:backup:run-schedule';
 
+    /** @var string Command: Empty the backup root, so the history starts at nothing (test-only) */
+    public const string BACKUP_TEST_RESET = 'test:backup:reset';
+
     /** @var string Command: Force-close a live WebSocket connection by acceptKey (test-only) */
     public const string CONNECTION_TEST_DROP = 'test:connection:drop';
 
