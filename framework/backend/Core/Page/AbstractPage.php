@@ -10,6 +10,7 @@ use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -151,12 +152,40 @@ abstract class AbstractPage implements ActionHostInterface
     public const array READS_DB = [];
 
     /**
+     * @var list<string> RT collection keys this page reads BEYOND the ones its tables are built
+     *     from. The browser config above already names what the page draws its rows out of, and
+     *     it is read off the topology; this list is for a collection the page depends on without
+     *     showing a single row of it.
+     *
+     *     What asks first is not an action but the frozen-replica mark: it is addressed to a page
+     *     by the RT collections that page is interested in
+     *     ({@see WorkerManager::notifyStalenessToPages()}), so a page drawing its picture out of
+     *     something a collection stands behind - a mirror, a cache, a file index - is told the
+     *     source went quiet only if it names that collection here. That is the difference from
+     *     READS_DB above, whose first reader is a page's own actions: a read behind a submit that
+     *     no table names would otherwise be refused at the moment the user pressed the button.
+     *
+     *     The two lists add up. A collection already named by a table does not need repeating
+     *     here, and repeating it is harmless: interest is held per collection, not per mention.
+     *
+     *     A subclass declaring this REPLACES what its parent declared, so one extending a page
+     *     that has a list of its own carries it: `[...parent::READS_RT, …]`. Nothing complains
+     *     if it does not.
+     *
+     *     What this list CANNOT cover is a page nobody subscribes to, for the same reason
+     *     READS_DB cannot: it is taken up when a connection subscribes to the page and let go
+     *     when it unsubscribes, so on a page that only hosts actions it would sit unread. The
+     *     PAGE-REACH guard reports that shape.
+     */
+    public const array READS_RT = [];
+
+    /**
      * Whether the browser navigates to this page, or it only hosts actions.
      *
      * PageReach::ROUTE says a person can be on this page, so a subscription takes up
      * what it reads; PageReach::ACTION_HOST says nobody navigates here and its actions
      * arrive while the person is looking at something else, which is exactly when
-     * READS_DB above is never taken up. UNDECLARED is the value of this root alone —
+     * READS_DB and READS_RT above are never taken up. UNDECLARED is the value of this root alone —
      * an answer here would declare every page in the repository at once.
      *
      * Nothing reads this at runtime: it is a declaration the PAGE-REACH guard judges,

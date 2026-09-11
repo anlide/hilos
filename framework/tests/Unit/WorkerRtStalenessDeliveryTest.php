@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Database\Context\DbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
 use Hilos\Runtime\RtStaleness;
@@ -37,7 +42,7 @@ use RuntimeException;
 final class WorkerRtStalenessDeliveryTest extends TestCase
 {
     /** @var string RT collection these cases freeze rows of */
-    private const string COLLECTION = 'workerStatuses';
+    public const string COLLECTION = 'workerStatuses';
 
     /** @var float Microtime the rows froze at */
     private const float FROZE_AT = 1000.5;
@@ -67,6 +72,7 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
         SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::ACCEPT_KEY));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent('unit_rt_staleness:1'));
         Hilos::$sr = null;
+        Hilos::resetBrowser();
 
         parent::tearDown();
     }
@@ -287,6 +293,49 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
     }
 
     /**
+     * A page is told about a collection its topology names nowhere, when the page declares it
+     * itself. This is what {@see AbstractPage::READS_RT} is for, and the logs section is its
+     * first reader: that section draws its picture out of the cluster log mirror, so no table of
+     * its own is built from the collection whose freeze it has to show (HIL-876).
+     *
+     * @throws InvalidArgumentException When the staleness signal cannot be named
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testAPageIsToldAboutTheCollectionOnlyItsOwnDeclarationNames(): void
+    {
+        $worker = new WorkerRtStalenessDeliveryTestManager();
+        WorkerRtStalenessDeliveryTestHilos::initBrowser(new WorkerRtStalenessDeliveryTestBrowserContext());
+        $this->pageSubscribes($worker, WorkerRtStalenessDeliveryTestPage::PAGE);
+
+        $worker->handleDaemonMessage(
+            new WorkerRtStalenessMessageDTO(self::COLLECTION, ['row-1'], self::FROZE_AT),
+        );
+
+        $signal = $this->lastQueuedStaleness();
+        $this->assertNotNull($signal);
+        $this->assertTrue($signal->stale);
+    }
+
+    /**
+     * Takes up what one page reads, as its subscription would, and on the same path.
+     *
+     * @param WorkerManager $worker Worker under test
+     * @param string $page Page being subscribed to
+     */
+    private function pageSubscribes(WorkerManager $worker, string $page): void
+    {
+        $takeUp = Closure::bind(
+            static function (WorkerManager $manager, string $pageName, string $acceptKey): void {
+                $manager->takeUpPageSources($pageName, $acceptKey);
+            },
+            null,
+            WorkerManager::class,
+        );
+
+        $takeUp($worker, $page, self::ACCEPT_KEY);
+    }
+
+    /**
      * Records what the page under test reads, as its subscription would.
      *
      * @param string ...$collectionKeys RT collections that page reads
@@ -392,5 +441,52 @@ final class WorkerRtStalenessDeliveryTestAgentManager extends AgentManager
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         throw new RuntimeException('not used in test');
+    }
+}
+
+/**
+ * The page of these cases: it shows no row of the collection it names, exactly as the screens of
+ * the logs section do.
+ */
+final class WorkerRtStalenessDeliveryTestPage extends AbstractPage
+{
+    public const string PAGE = 'unit_rt_staleness_page';
+
+    public const array READS_RT = [WorkerRtStalenessDeliveryTest::COLLECTION];
+}
+
+/**
+ * Browser context standing in for a real one: its topology knows no page at all, which is what
+ * makes the declaration the only thing the take-up can have read.
+ */
+final class WorkerRtStalenessDeliveryTestBrowserContext extends BrowserContext
+{
+}
+
+/**
+ * Project facade standing in for a real one: it registers the one test page and nothing else.
+ */
+final class WorkerRtStalenessDeliveryTestHilos extends Hilos
+{
+    public const array PAGES = [
+        WorkerRtStalenessDeliveryTestPage::PAGE => WorkerRtStalenessDeliveryTestPage::class,
+    ];
+
+    /**
+     * @return DbContext Test DB context, for the abstract facade contract alone
+     */
+    protected static function createDb(): DbContext
+    {
+        return new WorkerRtStalenessDeliveryTestDbContext();
+    }
+}
+
+/**
+ * No-op DB configuration: these cases touch no database.
+ */
+final class WorkerRtStalenessDeliveryTestDbContext extends DbContext
+{
+    public function configure(): void
+    {
     }
 }

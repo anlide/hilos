@@ -12,4 +12,6 @@ abstract class AbstractPage
     public const PageReach REACH = PageReach::UNDECLARED;
 
     public const array READS_DB = [];
+
+    public const array READS_RT = [];
 }

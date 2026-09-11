@@ -174,7 +174,9 @@ Reading does not merge. A subclass declaring `READS_DB` replaces what its
 parent declared, so one whose parent has a list of its own carries it:
 `[...parent::READS_DB, …]`. The trap is silent — nothing complains, and the
 reads the parent needed are refused at the moment they happen, in whatever
-action reached for them.
+action reached for them. The rule is the same on every reading constant, the
+agent's `READS_RT` and a page's own two alike: whichever one a subclass
+writes, it replaces rather than adds to.
 
 The two rules differ because the two misses cost differently. A lost read is
 refused at the moment of the read, in the action that reached for it, and that
@@ -290,11 +292,11 @@ The rule of admission is the process, not the reader. A seam belongs here when
 it answers a question in any process at all and so is named by nothing that
 takes interest up and lets it go — a page subscription, an agent's start. A
 page nobody subscribes to reads the same way and belongs here for the same
-reason: its `READS_DB` would be taken up on a subscription that never comes
-([subscriptions.md](../signals/subscriptions.md)). The interest is never given
-back — a seam has no end the way a subscription or an agent does; it stops being
-read when the process stops. And the list is named rather than derived: nothing
-in a mounted collection says who reads it.
+reason: its `READS_DB` — and its `READS_RT` beside it — would be taken up on a
+subscription that never comes ([subscriptions.md](../signals/subscriptions.md)).
+The interest is never given back — a seam has no end the way a subscription or
+an agent does; it stops being read when the process stops. And the list is named
+rather than derived: nothing in a mounted collection says who reads it.
 
 The guard on reading stands wherever the application reads.
 `DbContext::assertReadable()` refuses a mounted collection nobody here reads, and

@@ -40,6 +40,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
@@ -48,6 +49,7 @@ use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
@@ -69,6 +71,9 @@ use RuntimeException;
  */
 final class DaemonManagerRtSyncPeerTest extends TestCase
 {
+    /** @var string Node these cases run on, and the id its own cluster-router row carries */
+    public const string LOCAL_NODE = 'node-a';
+
     /** @var string Node the replicas in these cases arrive from */
     public const string REMOTE_NODE = 'node-b';
 
@@ -1418,6 +1423,96 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The row of the node that went away freezes beside the replicas, and this is the half of
+     * the mark nothing else would ever put there (HIL-876). The cluster router is node-local:
+     * this master writes every row of it out of its own registry observation, so no origin map
+     * mentions the departing node - while the node is exactly what can no longer be heard from,
+     * and every batch it last reported is exactly as old as the link is broken.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testALostLinkFreezesTheRouterRowOfTheNodeThatWentAway(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertSame(
+            self::FROZE_AT,
+            RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, self::REMOTE_NODE),
+        );
+        $this->assertNull(
+            RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, 'node-c'),
+            'A node still linked is still being heard from',
+        );
+        $this->assertNull(
+            RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, self::LOCAL_NODE),
+            'This node never stops hearing itself',
+        );
+    }
+
+    /**
+     * And the link coming back thaws it, on the same cue that thaws the replicas: one event
+     * each way, no expiry and no poll.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testTheLinkComingBackThawsTheRouterRowOfThatNode(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $daemon->noteNodeReachable(self::REMOTE_NODE);
+
+        $this->assertNull(RtStaleness::staleSince(StateHilosClusterNode::RT_COLLECTION, self::REMOTE_NODE));
+    }
+
+    /**
+     * The router row travels to the workers as its own frame, because a frame is per collection
+     * and this one belongs to no origin map: a worker reading both is told about both.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAWorkerReadingTheClusterRouterIsToldItsRowFroze(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->workerReads(DaemonManagerRtSyncPeerTestRtContext::ROWS, StateHilosClusterNode::RT_COLLECTION);
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->workerServer->forgetFrames();
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertSame(
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS, StateHilosClusterNode::RT_COLLECTION],
+            $daemon->workerServer->frozenCollections(),
+        );
+    }
+
+    /**
+     * A worker that does not read the router is told nothing about it, on the same interest
+     * filter every other frame rides - most workers hold no copy of it.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAWorkerNotReadingTheClusterRouterIsToldNothingAboutIt(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->workerServer->forgetFrames();
+
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+
+        $this->assertSame(
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            $daemon->workerServer->frozenCollections(),
+        );
+    }
+
+    /**
      * The lift travels the same way, and only when something was actually frozen: both cues that
      * reach it run whether or not anything ever froze, and a frame saying nothing changed is a
      * socket write per worker for no reader at all.
@@ -2053,7 +2148,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
         $this->peerServer = new PeerServer(
             '127.0.0.1',
             0,
-            NodeIdentity::of('node-a', NodeRole::Master, []),
+            NodeIdentity::of(DaemonManagerRtSyncPeerTest::LOCAL_NODE, NodeRole::Master, []),
             [],
         );
         $this->registerServer($this->peerServer);
@@ -2837,6 +2932,21 @@ final class DaemonManagerRtSyncPeerTestWorkerServer extends WorkerServer
     }
 
     /**
+     * @return list<string> Collection named by each freshness frame written to the pool, in order
+     */
+    public function frozenCollections(): array
+    {
+        $collectionKeys = [];
+        foreach ($this->clients as $client) {
+            if ($client instanceof DaemonManagerRtSyncPeerTestWorkerClient) {
+                $collectionKeys = [...$collectionKeys, ...$client->frozenCollections()];
+            }
+        }
+
+        return $collectionKeys;
+    }
+
+    /**
      * Drops what has been written so far, so a case can assert on what one step wrote.
      *
      * The freezing cases need a replica in place before they cut the link, and putting it there
@@ -2909,6 +3019,29 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
         }
 
         return $types;
+    }
+
+    /**
+     * The same frames read for WHAT froze rather than for what kind of frame it was: one freeze
+     * now writes a frame per collection, and the type alone no longer tells them apart.
+     *
+     * @return list<string> Collection named by each freshness frame written here, in order
+     */
+    public function frozenCollections(): array
+    {
+        $collectionKeys = [];
+        foreach ($this->written as $frame) {
+            $decoded = json_decode($frame, true);
+            if (!is_array($decoded) || ($decoded[WorkerDTO::TYPE] ?? null) !== WorkerConstants::MESSAGE_RT_STALENESS) {
+                continue;
+            }
+            $collectionKey = $decoded[WorkerRtStalenessMessageDTO::FIELD_COLLECTION_KEY] ?? null;
+            if (is_string($collectionKey)) {
+                $collectionKeys[] = $collectionKey;
+            }
+        }
+
+        return $collectionKeys;
     }
 }
 

@@ -25,10 +25,17 @@ use Hilos\TruthSource\RtReplicaOriginMap;
  * list of exceptions is the shape HIL-589 named as the cue to move to tombstones, and there is
  * nothing here that needs one.
  *
+ * What is marked is a row whose SOURCE has gone quiet, which is a wider set than the replicas
+ * this store began with (HIL-876). The row of a departed node in the node-local cluster router
+ * is marked too, and this node wrote that row itself: its source is the node it describes, not
+ * the master that recorded the observation. So the question a mark answers is about the subject
+ * of the row, never about who put the row here.
+ *
  * The store lives in BOTH processes and is read the same way in both. In the master it is filled
- * from the origin map ({@see RtReplicaOriginMap}) when a link drops; in a worker it is filled by
- * the frame the master sends. Static for the reason {@see RtSnapshot} is: there is one runtime
- * per process, and this is a fact about that process's copy of it.
+ * when a link drops - from the origin map ({@see RtReplicaOriginMap}), and from the id of the
+ * node that went away; in a worker it is filled by the frame the master sends. Static for the
+ * reason {@see RtSnapshot} is: there is one runtime per process, and this is a fact about that
+ * process's copy of it.
  *
  * Time is measured by the receiver's clock. Node clocks are not synchronised, and the reader's
  * question is "how long have I been unable to hear about this", not "when did the owner last

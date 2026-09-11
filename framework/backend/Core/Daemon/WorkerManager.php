@@ -2052,9 +2052,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Takes up what one page reads on behalf of its connection, and holds the frame until it lands.
      *
-     * The page names its collections in topology and not by reading them, so the interest can be
-     * raised before the page instance is touched - which is the only order that works, since the
-     * reading is exactly what has to wait.
+     * The page names its collections in topology and on its own class, and not by reading them,
+     * so the interest can be raised before the page instance is touched - which is the only order
+     * that works, since the reading is exactly what has to wait.
      *
      * No verdict is returned or logged here. Whether the state made it in time is asked again,
      * of the state itself, where the subscription is judged
@@ -2068,7 +2068,7 @@ abstract class WorkerManager extends BaseManager
     private function takeUpPageSources(string $page, string $acceptKey): void
     {
         $reads = [
-            SourceChange::KIND_RT => Hilos::$browser?->rtSourceKeysOfPage($page) ?? [],
+            SourceChange::KIND_RT => $this->pageReadsRt($page),
             SourceChange::KIND_DB => $this->pageReadsDb($page),
         ];
         $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $reads);
@@ -2366,6 +2366,38 @@ abstract class WorkerManager extends BaseManager
         $collectionKeys = Hilos::$browser?->dbSourceKeysOfPage($page) ?? [];
         foreach (is_string($pageClass) && is_subclass_of($pageClass, AbstractPage::class)
             ? $pageClass::READS_DB
+            : [] as $collectionKey) {
+            if (!in_array($collectionKey, $collectionKeys, true)) {
+                $collectionKeys[] = $collectionKey;
+            }
+        }
+
+        return $collectionKeys;
+    }
+
+    /**
+     * Names everything one page reads out of the runtime: its tables, and what stands behind them.
+     *
+     * The runtime twin of {@see self::pageReadsDb()}, added up the same way and for the same
+     * reason: topology says what the page SHOWS, and the class constant says what it depends on
+     * without showing - a collection a mirror is kept from, a verdict its picture is only true
+     * while somebody answers for. The second half is what the frozen-replica mark is addressed
+     * by ({@see self::notifyStalenessToPages()}), so a page leaving it out is never told its
+     * picture stopped moving.
+     *
+     * An unregistered page reads nothing rather than raising, for the reason
+     * {@see self::agentReadsRt()} gives: a page the topology does not know is refused where
+     * subscriptions are judged, and answering that here would put the refusal in the wrong place.
+     *
+     * @param string $page Page being subscribed to
+     * @return list<string> RT collections it reads, each named once
+     */
+    private function pageReadsRt(string $page): array
+    {
+        $pageClass = Hilos::appClass()::PAGES[$page] ?? null;
+        $collectionKeys = Hilos::$browser?->rtSourceKeysOfPage($page) ?? [];
+        foreach (is_string($pageClass) && is_subclass_of($pageClass, AbstractPage::class)
+            ? $pageClass::READS_RT
             : [] as $collectionKey) {
             if (!in_array($collectionKey, $collectionKeys, true)) {
                 $collectionKeys[] = $collectionKey;

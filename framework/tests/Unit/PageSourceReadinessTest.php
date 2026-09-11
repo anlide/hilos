@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
@@ -13,6 +16,8 @@ use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\PageRouteParams;
@@ -20,8 +25,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Database\Context\DbContext;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * A page is answered out of the state this process holds, or it is not answered yet (HIL-717).
@@ -38,11 +45,14 @@ use PHPUnit\Framework\TestCase;
  */
 final class PageSourceReadinessTest extends TestCase
 {
-    /** @var string RT collection the test page draws its rows from */
-    private const string COLLECTION = 'unitPageSourceRows';
+    /** @var string RT collection the test page draws its rows from; the fixtures below name it too */
+    public const string COLLECTION = 'unitPageSourceRows';
 
     /** @var string Second RT collection, for the case about a page reading several */
-    private const string OTHER_COLLECTION = 'unitPageSourceOther';
+    public const string OTHER_COLLECTION = 'unitPageSourceOther';
+
+    /** @var string Third RT collection, named by an heir instead of what its parent named */
+    public const string HEIR_COLLECTION = 'unitPageSourceHeir';
 
     /** @var string Consumer standing in for the subscribing connection */
     private const string ACCEPT_KEY = 'ak-page-source';
@@ -194,15 +204,141 @@ final class PageSourceReadinessTest extends TestCase
 
         $this->assertSame([], $context->rtSourceKeysOfPage('some_other_page'));
     }
+
+    /**
+     * What a page READS is topology plus its own declaration, which is a wider thing than what
+     * it SHOWS: a screen drawn out of a mirror depends on the collection behind that mirror
+     * without putting a single row of it on the page (HIL-876).
+     */
+    public function testAPageReadsItsTablesAndWhatItDeclaresBeyondThem(): void
+    {
+        $manager = $this->managerReading([self::COLLECTION]);
+
+        $this->assertSame(
+            [self::COLLECTION, self::OTHER_COLLECTION],
+            $this->pageReadsRt($manager, PageSourceReadinessTestBrowserContext::PAGE),
+        );
+    }
+
+    public function testAPageDeclaringNothingReadsItsTablesAlone(): void
+    {
+        $manager = $this->managerReading([self::COLLECTION]);
+
+        $this->assertSame(
+            [self::COLLECTION],
+            $this->pageReadsRt($manager, PageSourceReadinessTestBrowserContext::PLAIN_PAGE),
+        );
+    }
+
+    /**
+     * Declaring REPLACES, it does not add: an heir with a list of its own carries its parent's
+     * entries only by writing them out, exactly as READS_DB behaves one constant above.
+     */
+    public function testAnHeirDeclaringItsOwnListReplacesItsParents(): void
+    {
+        $manager = $this->managerReading([self::COLLECTION]);
+
+        $this->assertSame(
+            [self::COLLECTION, self::HEIR_COLLECTION],
+            $this->pageReadsRt($manager, PageSourceReadinessTestBrowserContext::HEIR_PAGE),
+        );
+    }
+
+    /**
+     * The refusal gate stays on what the page's answer is BUILT from, and a collection named
+     * only by the declaration is not that (Flow F6). Refusing the whole section because the
+     * mark about one of its sources had not landed would be worse than the staleness the mark
+     * exists to report - and it is the same asymmetry READS_DB already has, which is waited for
+     * and never refused.
+     */
+    public function testACollectionNamedOnlyByTheDeclarationDoesNotRefuseTheSubscription(): void
+    {
+        $context = $this->bindFacade([self::COLLECTION]);
+        SourceInterestRegistry::register(
+            SourceChange::KIND_RT,
+            self::COLLECTION,
+            SourceConsumer::page(self::ACCEPT_KEY),
+        );
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, self::COLLECTION);
+
+        // OTHER_COLLECTION is declared by the page and has not landed; the page is answered anyway.
+        $context->assertSubscriptionAccess(
+            PageSourceReadinessTestBrowserContext::PAGE,
+            self::ACCEPT_KEY,
+            new PageRouteParams([]),
+        );
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * Puts the test topology and the test page registry where the worker looks for them.
+     *
+     * @param list<string> $rtCollectionKeys RT collections the bound source projects rows from
+     * @return PageSourceReadinessTestBrowserContext The bound context, for the cases that ask it
+     *     questions of their own
+     */
+    private function bindFacade(array $rtCollectionKeys): PageSourceReadinessTestBrowserContext
+    {
+        $context = new PageSourceReadinessTestBrowserContext($rtCollectionKeys);
+        PageSourceReadinessTestHilos::initBrowser($context);
+
+        return $context;
+    }
+
+    /**
+     * @param list<string> $rtCollectionKeys RT collections the bound source projects rows from
+     * @return WorkerManager Worker standing where the take-up happens
+     */
+    private function managerReading(array $rtCollectionKeys): WorkerManager
+    {
+        $this->bindFacade($rtCollectionKeys);
+
+        return new PageSourceReadinessTestManager();
+    }
+
+    /**
+     * Asks the worker what one page reads out of the runtime, which is what a take-up raises
+     * interest over.
+     *
+     * @param WorkerManager $manager Worker under test
+     * @param string $page Page being subscribed to
+     * @return list<string> RT collections it reads, each named once
+     */
+    private function pageReadsRt(WorkerManager $manager, string $page): array
+    {
+        $read = Closure::bind(
+            static fn(WorkerManager $worker, string $pageName): array => $worker->pageReadsRt($pageName),
+            null,
+            WorkerManager::class,
+        );
+
+        return $read($manager, $page);
+    }
 }
 
 final class PageSourceReadinessTestBrowserContext extends BrowserContext
 {
     public const string PAGE = 'page_source_readiness_page';
+
+    /** Same topology, and no declaration of its own. */
+    public const string PLAIN_PAGE = 'page_source_readiness_plain_page';
+
+    /** Same topology, and a declaration written over its parent's. */
+    public const string HEIR_PAGE = 'page_source_readiness_heir_page';
+
     public const string SIGNAL = 'page_source_readiness_signal';
 
     /** @var string Browser key the test page binds, and the only one this fixture knows */
     private const string BROWSER_KEY = 'pageSourceReadinessList';
+
+    /**
+     * The pages this fixture draws the same topology for, so the three declarations differ in
+     * nothing but what their classes say.
+     *
+     * @var array<int, string>
+     */
+    private const array PAGES = [self::PAGE, self::PLAIN_PAGE, self::HEIR_PAGE];
 
     /**
      * @param list<string> $rtCollectionKeys RT collections the bound source projects rows from
@@ -224,7 +360,7 @@ final class PageSourceReadinessTestBrowserContext extends BrowserContext
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
-        if ($page !== self::PAGE) {
+        if (!in_array($page, self::PAGES, true)) {
             return null;
         }
 
@@ -241,7 +377,7 @@ final class PageSourceReadinessTestBrowserContext extends BrowserContext
      */
     protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
-        if ($page !== self::PAGE) {
+        if (!in_array($page, self::PAGES, true)) {
             return BrowserPageBindings::empty();
         }
 
@@ -284,5 +420,102 @@ final class PageSourceReadinessTestBrowserContext extends BrowserContext
                 BrowserSourceKey::KEY => $collectionKey,
             ],
         ];
+    }
+}
+
+/**
+ * A page that names a runtime collection no table of its own draws from.
+ */
+class PageSourceReadinessTestReadingPage extends AbstractPage
+{
+    public const string PAGE = PageSourceReadinessTestBrowserContext::PAGE;
+
+    public const array READS_RT = [PageSourceReadinessTest::OTHER_COLLECTION];
+}
+
+/**
+ * A page that declares nothing and reads its tables alone.
+ */
+final class PageSourceReadinessTestPlainPage extends AbstractPage
+{
+    public const string PAGE = PageSourceReadinessTestBrowserContext::PLAIN_PAGE;
+}
+
+/**
+ * An heir writing its own list over the one its parent declared.
+ */
+final class PageSourceReadinessTestHeirPage extends PageSourceReadinessTestReadingPage
+{
+    public const string PAGE = PageSourceReadinessTestBrowserContext::HEIR_PAGE;
+
+    public const array READS_RT = [PageSourceReadinessTest::HEIR_COLLECTION];
+}
+
+/**
+ * Project facade standing in for a real one: it registers the three test pages and nothing else.
+ */
+final class PageSourceReadinessTestHilos extends Hilos
+{
+    public const array PAGES = [
+        PageSourceReadinessTestReadingPage::PAGE => PageSourceReadinessTestReadingPage::class,
+        PageSourceReadinessTestPlainPage::PAGE => PageSourceReadinessTestPlainPage::class,
+        PageSourceReadinessTestHeirPage::PAGE => PageSourceReadinessTestHeirPage::class,
+    ];
+
+    /**
+     * @return DbContext Test DB context, for the abstract facade contract alone
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PageSourceReadinessTestDbContext();
+    }
+}
+
+/**
+ * No-op DB configuration: these cases touch no database.
+ */
+final class PageSourceReadinessTestDbContext extends DbContext
+{
+    public function configure(): void
+    {
+    }
+}
+
+/**
+ * Worker manager standing in for a real one: it opens no connection and starts no agent, and
+ * what these cases ask it is one declaration reader.
+ */
+final class PageSourceReadinessTestManager extends WorkerManager
+{
+    public function __construct()
+    {
+        parent::__construct(1);
+    }
+
+    protected function createSignalRouter(): SignalRouter
+    {
+        return new SignalRouter();
+    }
+
+    protected function createAgentManager(): AgentManager
+    {
+        return new PageSourceReadinessTestAgentManager();
+    }
+}
+
+/**
+ * Agent manager standing in for a real one: these cases start no agent.
+ */
+final class PageSourceReadinessTestAgentManager extends AgentManager
+{
+    /**
+     * @param string $agentType Agent type that was asked for
+     * @param ?string $agentIndex Agent index that was asked for
+     * @return AgentInterface Never returned; these cases start no agent
+     * @throws RuntimeException Always
+     */
+    protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
+    {
+        throw new RuntimeException('not used in test');
     }
 }

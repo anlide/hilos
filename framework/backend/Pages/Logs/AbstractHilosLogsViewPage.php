@@ -34,6 +34,7 @@ use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
  * AbstractHilosLogsViewPage - Abstract base for Hilos logs viewer page.
@@ -66,6 +67,13 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,
     ];
+
+    /**
+     * The section draws its picture out of the cluster log mirror, so a node that stopped
+     * answering leaves its last word on the screen looking current. The router of cluster nodes
+     * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
+     */
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     public const array ACTIONS = [
         HilosSignalConstants::LOGS_READ_LINES => LogsReadLinesActionDTO::class,

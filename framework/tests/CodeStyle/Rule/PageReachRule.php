@@ -12,13 +12,15 @@ use Hilos\Tests\CodeStyle\Violation;
 /**
  * Enforces the reach declaration of subscriptions.md: every page says out loud
  * whether the browser navigates to it, and a page that says it does not may not lean
- * on READS_DB.
+ * on READS_DB or READS_RT.
  *
- * The defect behind it is invisible in one file. Interest in a DB collection is taken
- * up on a page subscription and let go on unsubscribe, while an action is routed by a
+ * The defect behind it is invisible in one file. Interest in a collection is taken up
+ * on a page subscription and let go on unsubscribe, while an action is routed by a
  * global action-to-page map and its frame carries no page name — so an action of a
  * page nobody subscribed to in this worker runs where its READS_DB was never taken up
- * and is refused, at the moment the user pressed the button. Nothing in the page's own
+ * and is refused, at the moment the user pressed the button. The runtime half fails
+ * more quietly still: READS_RT is what the frozen-replica mark is addressed by, and on
+ * a page nobody subscribes to the mark simply never arrives. Nothing in the page's own
  * file says which of the two kinds it is, which is why the answer is declared rather
  * than guessed and why the check is cross-file: the answer is usually inherited.
  *
@@ -38,8 +40,11 @@ final class PageReachRule implements CrossFileRule
     /** Constant the reach is declared through. */
     private const string REACH = 'REACH';
 
-    /** Constant naming the collections a page reads beyond what its tables name. */
+    /** Constant naming the database collections a page reads beyond what its tables name. */
     private const string READS_DB = 'READS_DB';
+
+    /** Constant naming the runtime collections a page reads beyond what its tables name. */
+    private const string READS_RT = 'READS_RT';
 
     /** The one case a page may not keep, spelled as it stands in the source. */
     private const string UNDECLARED = 'PageReach::UNDECLARED';
@@ -49,6 +54,20 @@ final class PageReachRule implements CrossFileRule
 
     /** Value text of a list that names nothing. */
     private const string EMPTY_LIST = '[]';
+
+    /**
+     * The two reading lists an ACTION_HOST may not lean on, each with the tail of the sentence
+     * it earns. The complaint is the same in both halves - the list is taken up on a page
+     * subscription and this page has none - and only the way out differs: a process-wide read
+     * has somewhere else to be declared, while a runtime collection named for the frozen-replica
+     * mark has nowhere to go, because there is no screen to mark.
+     *
+     * @var array<string, string>
+     */
+    private const array ACTION_HOST_READS = [
+        self::READS_DB => 'so these reads belong in DbContext::processWideReadCollections()',
+        self::READS_RT => 'which never comes here',
+    ];
 
     /**
      * The two common roots of the page hierarchy, which may carry nothing but
@@ -193,7 +212,8 @@ final class PageReachRule implements CrossFileRule
      * @param SourceIndex $index Indexed source tree
      * @param ClassRecord $class Page whose reach resolved to something
      * @param string $reach Raw value text the reach resolved to
-     * @return array<int, Violation> The hit, or nothing when the page is navigable or reads nothing
+     * @return array<int, Violation> One hit per list it fills, or nothing when the page is
+     *     navigable or reads nothing
      */
     private function judgeActionHost(SourceIndex $index, ClassRecord $class, string $reach): array
     {
@@ -201,18 +221,23 @@ final class PageReachRule implements CrossFileRule
             return [];
         }
 
-        $reads = $index->resolveConstant($class->name, self::READS_DB);
-        if ($reads === null || $reads === self::EMPTY_LIST) {
-            return [];
+        $violations = [];
+        foreach (self::ACTION_HOST_READS as $constant => $remedy) {
+            $reads = $index->resolveConstant($class->name, $constant);
+            if ($reads === null || $reads === self::EMPTY_LIST) {
+                continue;
+            }
+
+            $violations[] = new Violation(
+                self::ID,
+                $class->path,
+                $class->line,
+                $class->shortName() . " is an ACTION_HOST and still fills {$constant}: that list is only taken up"
+                    . ' on a page subscription, ' . $remedy,
+            );
         }
 
-        return [new Violation(
-            self::ID,
-            $class->path,
-            $class->line,
-            $class->shortName() . ' is an ACTION_HOST and still fills READS_DB: that list is only taken up on a'
-                . ' page subscription, so these reads belong in DbContext::processWideReadCollections()',
-        )];
+        return $violations;
     }
 
     /**

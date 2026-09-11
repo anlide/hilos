@@ -3462,6 +3462,13 @@ abstract class DaemonManager extends BaseManager implements
      * here: the reader's question is how long IT has been unable to hear about the row, and node
      * clocks are not synchronised well enough to answer any other one.
      *
+     * Beside the replicas, the departing node's own row in the node-local router is frozen too
+     * (HIL-876). This master writes that row itself, out of its own registry observation, so no
+     * origin map mentions it - and it is stale all the same, because what the mark answers is
+     * whether the row's SUBJECT can still be heard from, and the subject is the node that just
+     * went away. The mark goes on unconditionally, exactly as it does for the replicas: a node
+     * this one held a link to is in the registry, and therefore in the published collection.
+     *
      * @param string $nodeId Node that can no longer be reached
      * @param float $at Microtime of this node's clock when the link closed
      */
@@ -3479,6 +3486,19 @@ abstract class DaemonManager extends BaseManager implements
                 );
             }
         }
+
+        // A step of its own rather than a row added to the loop above: the origin map answers for
+        // replicas, and teaching it about a collection this node publishes itself would be the
+        // one place where it stopped meaning what its name says.
+        RtStaleness::mark(StateHilosClusterNode::RT_COLLECTION, [$nodeId], $at);
+        if ($workerServer !== null) {
+            $this->writeFrameToWorkers(
+                $workerServer,
+                new WorkerRtStalenessMessageDTO(StateHilosClusterNode::RT_COLLECTION, [$nodeId], $at),
+                SourceChange::KIND_RT,
+                StateHilosClusterNode::RT_COLLECTION,
+            );
+        }
     }
 
     /**
@@ -3490,6 +3510,10 @@ abstract class DaemonManager extends BaseManager implements
      * missed while the link was down. The mark therefore needs no expiry, no tick and no poll of
      * its own — the two cues it has are the two events that actually change the answer.
      *
+     * The node's own router row thaws here too, the mirror of the freeze above (HIL-876).
+     * {@see self::clearStaleness()} decides by itself whether a frame is owed, so there is no
+     * need to ask first whether that row was ever frozen.
+     *
      * @param string $nodeId Node this one can reach again
      */
     public function noteNodeReachable(string $nodeId): void
@@ -3497,6 +3521,8 @@ abstract class DaemonManager extends BaseManager implements
         foreach ($this->agentManagerDaemon->rtReplicaOriginMap()->rowsOfNode($nodeId) as $collectionKey => $stateIds) {
             $this->clearStaleness($collectionKey, $stateIds);
         }
+
+        $this->clearStaleness(StateHilosClusterNode::RT_COLLECTION, [$nodeId]);
     }
 
     /**

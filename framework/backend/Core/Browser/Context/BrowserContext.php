@@ -1450,6 +1450,10 @@ abstract class BrowserContext
      * already - every source a page's rows draw from is declared - so this walks the same
      * declarations {@see TopologyValidator} judges rather than any live state.
      *
+     * What the page's TABLES draw from, which is not everything it reads: a collection the page
+     * depends on without showing a row of it is named by {@see AbstractPage::READS_RT}, and the
+     * two lists add up.
+     *
      * @param string $page Page name from the subscription mirror
      * @return list<string> RT collection keys the page reads, each named once
      */

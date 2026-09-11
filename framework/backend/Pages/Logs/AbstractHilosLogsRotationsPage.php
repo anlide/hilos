@@ -37,6 +37,7 @@ use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use JsonException;
 
@@ -79,6 +80,13 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS,
     ];
+
+    /**
+     * The section draws its picture out of the cluster log mirror, so a node that stopped
+     * answering leaves its last word on the screen looking current. The router of cluster nodes
+     * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
+     */
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     public const array ACTIONS = [
         HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => LogsTakeoutConfirmActionDTO::class,

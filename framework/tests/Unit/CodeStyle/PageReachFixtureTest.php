@@ -48,9 +48,12 @@ final class PageReachFixtureTest extends TestCase
                 'PAGE-REACH PageReachTree/AbstractLoudRoot.php:10 — AbstractLoudRoot is a common root of the page '
                     . 'hierarchy and may declare no PageReach but UNDECLARED: an answer here declares every page in '
                     . 'the repository and leaves nothing to check (see docs/agents/signals/subscriptions.md)',
-                'PAGE-REACH PageReachTree/ActionHostPage.php:10 — ActionHostPage is an ACTION_HOST and still fills '
+                'PAGE-REACH PageReachTree/ActionHostPage.php:11 — ActionHostPage is an ACTION_HOST and still fills '
                     . 'READS_DB: that list is only taken up on a page subscription, so these reads belong in '
                     . 'DbContext::processWideReadCollections() (see docs/agents/signals/subscriptions.md)',
+                'PAGE-REACH PageReachTree/ActionHostPage.php:11 — ActionHostPage is an ACTION_HOST and still fills '
+                    . 'READS_RT: that list is only taken up on a page subscription, which never comes here '
+                    . '(see docs/agents/signals/subscriptions.md)',
                 'PAGE-REACH PageReachTree/InheritedReadsPage.php:11 — InheritedReadsPage is an ACTION_HOST and still '
                     . 'fills READS_DB: that list is only taken up on a page subscription, so these reads belong in '
                     . 'DbContext::processWideReadCollections() (see docs/agents/signals/subscriptions.md)',

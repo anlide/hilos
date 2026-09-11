@@ -24,6 +24,7 @@ use Hilos\Log\ClusterLogTotals;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use JsonException;
 use Hilos\Core\Page\PageRouteParams;
@@ -55,6 +56,13 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS,
     ];
+
+    /**
+     * The section draws its picture out of the cluster log mirror, so a node that stopped
+     * answering leaves its last word on the screen looking current. The router of cluster nodes
+     * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
+     */
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
     private static array $logsOverviewSubscribers = [];

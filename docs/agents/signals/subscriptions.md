@@ -143,13 +143,38 @@ of ownership is a reader interest too — is
 
 Nothing reads the declaration at runtime. It is judged by the `PAGE-REACH` guard, which
 reports a page nothing in its chain answers for, an `ACTION_HOST` that still fills
-`READS_DB`, and a common root that answers at all. No `ACTION_HOST` is left in the
-repository: the only one was the notification center, a page by mistake — the bell lives
-in the application shell and its live channel is the group above — and HIL-860 retired
-it. The category stays for the projects that host actions off a page nobody navigates to.
+`READS_DB` or `READS_RT`, and a common root that answers at all. No `ACTION_HOST` is
+left in the repository: the only one was the notification center, a page by mistake —
+the bell lives in the application shell and its live channel is the group above — and
+HIL-860 retired it. The category stays for the projects that host actions off a page
+nobody navigates to.
 
 Checked automatically: `PAGE-REACH`, see
 [automated-checks.md](../code-style/automated-checks.md).
+
+### A page names the runtime collections behind its picture
+
+`AbstractPage::READS_RT` is the runtime twin of `READS_DB`, read where its database
+half is read (`WorkerManager::pageReadsRt()`) and added to what topology names, so a
+page's runtime interest is what its tables draw from plus what it writes here. A page
+needs the list when it depends on a collection without showing a row of it — a screen
+built out of a mirror, a cache, an index somebody else keeps — because what asks first
+is not an action but the frozen-replica mark: that mark is addressed to a page by the
+RT collections it is interested in (`WorkerManager::notifyStalenessToPages()`), so a
+page leaving the collection out is never told its picture stopped moving (HIL-876).
+
+The list behaves like the database one in every other respect. Naming a collection a
+table already draws from is harmless, because interest is held per collection and not
+per mention; a subclass that declares its own list replaces its parent's and carries it
+with `[...parent::READS_RT, …]`; and it is taken up on subscription and let go on
+unsubscribe, so an `ACTION_HOST` filling it is reported for the same reason.
+
+What it does not do is refuse the page. `BrowserContext::assertPageSourcesReady()` judges
+the collections the page's answer is BUILT from, which are the topological ones, and a
+collection named only here stays out of that gate: a section refused whole because a mark
+about it had not arrived would be worse than the staleness the mark reports. The wait is
+shared — the collection is waited for like any other — but a page that gives up waiting
+renders without the mark, and the mark arrives with the next freeze frame.
 
 ### Exceptions, and the test that finds them
 

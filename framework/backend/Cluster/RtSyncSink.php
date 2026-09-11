@@ -130,6 +130,11 @@ interface RtSyncSink
      * not the node leaving the roster: membership is gossip, and a third node's word can put a
      * peer back online while nothing this node sends or receives reaches it.
      *
+     * The replicas are not all of it. Every row whose SOURCE is that node stops being current,
+     * and the node's own row in the node-local cluster router is one of those — this node wrote
+     * that row itself, out of its own observation, and the node it describes is exactly what can
+     * no longer be heard from (HIL-876).
+     *
      * @param string $nodeId Node that can no longer be reached
      * @param float $at Microtime of this node's clock when the link closed
      */
@@ -140,7 +145,8 @@ interface RtSyncSink
      *
      * Called off the completed handshake, beside {@see handOverRtSnapshots()} and for the same
      * reason: the link is what carries deltas, so it is the link coming back — not the roster
-     * saying the node is a member — that makes the copy trustworthy again.
+     * saying the node is a member — that makes the copy trustworthy again. It lifts the mark
+     * from everything the call above put it on, the node's own router row included.
      *
      * @param string $nodeId Node this one can reach again
      */
