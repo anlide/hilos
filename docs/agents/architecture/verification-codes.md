@@ -136,9 +136,10 @@ twice on its own.
 ## What the Person Watching Is Told: The Send-Progress Line
 
 The code screen carries a live line saying where the code has got to — `queued`,
-`sending`, `sent`, or `failed` with the provider's own sentence (HIL-826). It is
-the answer to a screen that used to look identical whether the letter had left,
-was stuck behind a stalled mail server, or had been refused outright.
+`sending`, `sent`, `not_sent`, or `failed` with the provider's own sentence
+(HIL-826, HIL-827). It is the answer to a screen that used to look identical
+whether the letter had left, was stuck behind a stalled mail server, or had been
+refused outright.
 
 **The line belongs to the browser SESSION, not to the socket.** It is one runtime
 row per session in `hilosCodeSendAttempts`, keyed by the hash of the session
@@ -173,6 +174,28 @@ retries with a growing backoff, so `failed` is reserved for a permanent refusal 
 an exhausted attempt count. Showing "could not send" and then "sent" a second later
 is flicker; `failed` is the state a person acts on by pressing resend, and it has
 to keep meaning that.
+
+**A letter that was only written down reports `not_sent`, not `sent`** (HIL-827).
+The file transport settles `MailSendOutcome::written()` where it used to settle
+`delivered()`, and the mail queue's delivery arm turns that into the fifth state;
+the mark rides the OUTCOME rather than a lookup of the resolved config, because
+the agent's tests replace the transport through its own seam and would otherwise
+prove the one thing worth proving against a fake with no opinion. It is a SUCCESS
+and terminal like `sent` — the code is live, the resend countdown runs, and the
+person types the digits in — so it must not be dressed as an error. A failed WRITE
+is still `failed` with its own sentence: a mode that swallowed an unwritable
+directory would hide the one thing the operator has to fix. An older SDK with no
+copy for the state drops the line rather than printing the raw key, which is what
+makes adding a fifth one safe.
+
+**The mode that makes it worth saying is DECLARED, not detected.** An explicit
+`MAIL_TRANSPORT=file` together with a non-empty `MAIL_FILE_DIR` is an installation
+saying it mails nobody on purpose (`MailTransportConfig::isTestMode()`), and
+`CodeDeliveryAvailability` keeps registration open there — the ceremony is meant
+to run. The same transport reached by auto-selection is an accident, not a
+declaration, and registration is withdrawn on it as HIL-830 decided. There is no
+second env key for the mode, and no per-address opt-out: one transport is resolved
+for the installation and every letter it takes gets the same reading.
 
 **The refusal carries the provider's own words**, cut to one sentence on the way
 out (`CodeSendStepSignalData::step()`: first line, whitespace collapsed, capped).
@@ -252,13 +275,22 @@ person alike.
   or dev stack, where the Mailpit UI is published on a host port that each
   demo's README lists.
 
-There is no file with the code on disk. `StubSmsProvider` used to write each
+**An installation with NO stand reads the letter off disk, and that is the one
+place a code is read that way.** In the declared test mode the `.eml` is written
+into `MAIL_FILE_DIR` and the code is in it; the progress line says the letter was
+written rather than sent, so nobody waits for a delivery. Mail is the only channel
+this applies to — a stand's SMS and Telegram codes really are sent, to the gateway
+above, and off a stand there is nothing to read them from.
+
+There is no file with an SMS code on disk. `StubSmsProvider` used to write each
 message as a `.txt` artifact, and HIL-653 (commit `9c269667`) removed it: the
 artifact was mistaken for a readable channel, it landed in the work tree owned
 by the container's user, and a stale one from an earlier run was once read as
 the code a person had just asked for. `demo/chat/data/sms` is a dead remnant
 of that. Do not look for a code there, and do not bring the artifact back;
-a stand that wants to read its SMS configures a gateway endpoint.
+a stand that wants to read its SMS configures a gateway endpoint. The `.eml` of
+the paragraph above is not an exception to this: mail is the one channel that
+writes what it sends, and only where an installation asked it to.
 
 ## Anti-Patterns
 
@@ -280,6 +312,8 @@ a stand that wants to read its SMS configures a gateway endpoint.
   anything to a person.
 - Do not put a transport's raw error on the wire. One sentence goes out, cut by
   `CodeSendStepSignalData::step()`; the dialogue stays in the agent log.
+- Do not report `sent` for a letter a transport only wrote. That is `not_sent`,
+  and the difference is a person waiting for a message that is not coming.
 
 ## Validation
 
@@ -296,7 +330,15 @@ the re-read of the mirror.
 The send-progress line is pinned by `CodeSendProgressLineTest` (the row's rule -
 start replaces, a stale ticket moves nothing, a retryable refusal loses the
 sentence), `CodeSendSignalDataTest` (both frames, including the empty one),
-`MailDeliveryChannelAgentTest` (the four reports of the mail queue) and
-`CodeChannelSendIntegrationTest` (the code agent's own pass). On the frontend,
-`core/test/auth/authSendProgress.test.ts` holds the parse boundary and
-`core/test/auth/authFlow.test.ts` holds the machine's lifetime for it.
+`MailDeliveryChannelAgentTest` (the five reports of the mail queue, the mark among
+them) and `CodeChannelSendIntegrationTest` (the code agent's own pass). On the
+frontend, `core/test/auth/authSendProgress.test.ts` holds the parse boundary,
+`core/test/auth/authFlow.test.ts` holds the machine's lifetime for it, and the Vue
+and React `HilosAuthSurface` specs hold the words the line is drawn with.
+
+The declared test mode is pinned by `MailTransportConfigTest` (the four selections
+`isTestMode()` judges) and `CodeDeliveryAvailabilityTest` (the mode still reaches an
+address). None of it is proved by e2e, said out loud so its absence is not read as
+coverage: every stand pins `MAIL_TRANSPORT=smtp` at its own Mailpit, and proving the
+mark needs a stand with no relay — the same wall the refusal hits, lifted by the same
+leaf (HIL-919).

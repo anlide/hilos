@@ -32,7 +32,7 @@ use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
-     * @param ?string $state One of the four states of the send, or null when there is no line
+     * @param ?string $state One of the five states of the send, or null when there is no line
      * @param ?string $channel Channel the code travels over, or null when there is no line
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      */

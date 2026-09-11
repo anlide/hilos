@@ -82,7 +82,7 @@ abstract class AbstractLibraryCommands
      * Opens the send-progress line of this browser and names the send it will follow (HIL-826).
      *
      * The first state of the line is reported over the same frame every later one travels on,
-     * rather than drawn into the action reply: one path for all four states and one place that
+     * rather than drawn into the action reply: one path for all five states and one place that
      * fans out. The cost is that the line arrives a tick after the code screen does, which is
      * the shape the ticket asks for - two sources of truth on the first frame is what it avoids.
      *

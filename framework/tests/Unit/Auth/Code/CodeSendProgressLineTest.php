@@ -160,6 +160,21 @@ final class CodeSendProgressLineTest extends TestCase
         $this->assertSame(self::REFUSAL, $attempts[self::SESSION_HASH]?->detail);
     }
 
+    public function testALetterOnlyWrittenDownEndsTheLineWithoutASentence(): void
+    {
+        $attempts = $this->attempts();
+        $attempts->actions->start(self::SESSION_HASH, self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $attempts->actions->advance(self::TICKET, StateHilosCodeSendAttempt::STATE_SENDING, null);
+
+        $moved = $attempts->actions->advance(self::TICKET, StateHilosCodeSendAttempt::STATE_NOT_SENT, null);
+
+        // Terminal like `sent` and a success like it: nothing follows, nothing is retried, and
+        // there is no provider sentence to carry because nothing went wrong (HIL-827, Flow F2).
+        $this->assertSame(self::SESSION_HASH, $moved);
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_NOT_SENT, $attempts[self::SESSION_HASH]?->state);
+        $this->assertNull($attempts[self::SESSION_HASH]?->detail);
+    }
+
     public function testGoingBackToQueuedLosesTheSentenceItWasCarrying(): void
     {
         $attempts = $this->attempts();

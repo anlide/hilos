@@ -38,6 +38,26 @@ final class MailDeliveryAttemptTest extends TestCase
         $attempt->tick(2.0);
         self::assertFalse($attempt->isBusy());
         self::assertTrue($attempt->isDelivered());
+        self::assertTrue($attempt->isSentForReal());
+        self::assertNull($attempt->errorDetail());
+    }
+
+    public function testAWrittenSendIsDeliveredButNotSentForReal(): void
+    {
+        $transport = new FakeMailTransport(1, MailSendOutcome::written());
+        $attempt = new MailDeliveryAttempt(
+            $transport,
+            new EmailMessage(to: 'user@example.com', subject: 'Hi', text: 'Body'),
+            0.0,
+        );
+
+        $attempt->tick(1.0);
+
+        // Two questions, not two answers to one: the send is over and will not be retried,
+        // and the letter went nowhere (HIL-827). An unsettled attempt answers the second
+        // with false too, because a send that has not finished has not gone anywhere yet.
+        self::assertTrue($attempt->isDelivered());
+        self::assertFalse($attempt->isSentForReal());
         self::assertNull($attempt->errorDetail());
     }
 

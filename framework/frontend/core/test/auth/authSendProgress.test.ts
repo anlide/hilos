@@ -4,6 +4,7 @@ import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
   bindCodeSendProgress,
   CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_NOT_SENT,
   CODE_SEND_STATE_QUEUED,
   CODE_SEND_STATE_SENT,
   codeSendProgressSchema,
@@ -25,6 +26,21 @@ describe('code send progress frame', () => {
     // The provider's own words travel as text and untranslated: the refusal is
     // the one thing on this line no key of ours can hold.
     expect(parsed.detail).toBe('mailbox unavailable (550)')
+  })
+
+  it('parses the step of a letter that was only written down', () => {
+    const parsed = codeSendProgressSchema.parse({
+      state: CODE_SEND_STATE_NOT_SENT,
+      channel: 'email',
+      detail: null,
+    })
+
+    // Byte-equal to the PHP constant, because the wire is where the two meet:
+    // the backend writes this word and the copy table is keyed by it.
+    expect(CODE_SEND_STATE_NOT_SENT).toBe('not_sent')
+    expect(parsed.state).toBe(CODE_SEND_STATE_NOT_SENT)
+    // No sentence rides the mark: there is no provider and nothing went wrong.
+    expect(parsed.detail).toBeNull()
   })
 
   it('parses the empty frame that takes the line away', () => {

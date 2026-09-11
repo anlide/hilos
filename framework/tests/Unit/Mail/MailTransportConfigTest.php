@@ -115,6 +115,33 @@ final class MailTransportConfigTest extends TestCase
         );
     }
 
+    /**
+     * The declared test mode is a DECLARATION, not a resolved transport (HIL-827).
+     *
+     * Four inputs, one rule: an explicit `file` with somewhere to write it is the mode,
+     * the same selection with nowhere to write it is not (nothing would be readable),
+     * the auto-selected file transport is not (nobody declared anything), and `smtp` is
+     * not. Only the first of the four keeps a registration open on an installation that
+     * mails nobody.
+     */
+    public function testOnlyAWrittenOutFileTransportWithSomewhereToWriteIsTheTestMode(): void
+    {
+        self::assertTrue(
+            new MailTransportConfig('no-reply@example.com', '/tmp', MailTransportFactory::TRANSPORT_FILE)->isTestMode(),
+        );
+        self::assertFalse(
+            new MailTransportConfig('no-reply@example.com', '', MailTransportFactory::TRANSPORT_FILE)->isTestMode(),
+        );
+        // The catalog defaults: no driver written out and no relay, which is the accident
+        // the auth layer calls "nothing to send a code with" rather than a mode.
+        $autoSelected = MailTransportConfig::fromEnv();
+        self::assertTrue($autoSelected->usesFileTransport());
+        self::assertFalse($autoSelected->isTestMode());
+        self::assertFalse(
+            new MailTransportConfig('no-reply@example.com', '/tmp', MailTransportFactory::TRANSPORT_SMTP)->isTestMode(),
+        );
+    }
+
     public function testUnknownSecurityModeThrows(): void
     {
         putenv('MAIL_SMTP_SECURITY=quantum');

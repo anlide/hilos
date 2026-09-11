@@ -626,6 +626,11 @@ enum EnvConstants
     /**
      * @var string Forced mail driver: smtp | file. Empty auto-selects the file transport
      * whenever MAIL_SMTP_HOST is empty, so a project with no relay still writes a .eml.
+     * Written out as `file` together with a MAIL_FILE_DIR it is the declared test mode
+     * (HIL-827): nothing is mailed on purpose, the code screen says the letter was only
+     * written, and registration stays open. The auto-selection above is NOT that mode -
+     * nobody declared it - and an installation that lands there is told it has nothing to
+     * send a code with.
      */
     case MAIL_TRANSPORT;
 
@@ -662,7 +667,12 @@ enum EnvConstants
     /** @var string Concurrent SMTP dialogs one mail agent runs at once. Default 4. */
     case MAIL_MAX_CONCURRENT;
 
-    /** @var string Directory the file transport writes .eml artifacts to; empty writes none. */
+    /**
+     * @var string Directory the file transport writes .eml artifacts to; empty writes none.
+     * With an explicit MAIL_TRANSPORT=file the pair is what makes the declared test mode
+     * (HIL-827), because the mode exists to leave the code readable; empty leaves the mode
+     * off, since a letter written nowhere can be read by nobody.
+     */
     case MAIL_FILE_DIR;
 
     // ── Watchdog alert (HIL-617) ─────────────────────────────────────────────

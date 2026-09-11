@@ -14,6 +14,11 @@ namespace Hilos\Mail;
  * is the config's own ({@see MailTransportConfig::usesFileTransport()}), because the
  * auth layer asks the same question without ever building a transport. The factory is
  * pure; reading env into the config happens at the facade boundary.
+ *
+ * An explicit {@see TRANSPORT_FILE} with a directory to write into is the DECLARED test
+ * mode (HIL-827): the installation mails nobody on purpose and the code screen says so.
+ * Auto-selection reaches the same class without anybody declaring anything, and that
+ * difference is {@see MailTransportConfig::isTestMode()} rather than a second env key.
  */
 final class MailTransportFactory
 {

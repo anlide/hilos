@@ -240,6 +240,7 @@ export {
   CODE_SEND_STATE_SENDING,
   CODE_SEND_STATE_SENT,
   CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_NOT_SENT,
   codeSendProgressSchema,
   bindCodeSendProgress,
   hilosCodeSendProgress,

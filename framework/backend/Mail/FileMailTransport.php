@@ -12,10 +12,14 @@ use Hilos\Mail\Exception\MailResultUnavailableException;
  *
  * The auto transport when no SMTP host is configured, and the explicit choice under
  * MAIL_TRANSPORT=file. It encodes the message exactly as an SMTP transport would and
- * writes it to the mail directory, then reports success — giving dev and e2e a verifiable
- * artifact of every email (which finally makes code-gated auth flows e2e-testable) instead
- * of a line in the log. The send is synchronous: it settles within {@see start()}, so
- * {@see tick()} is a no-op.
+ * writes it to the mail directory — giving dev and e2e a verifiable artifact of every email
+ * (which finally makes code-gated auth flows e2e-testable) instead of a line in the log. The
+ * send is synchronous: it settles within {@see start()}, so {@see tick()} is a no-op.
+ *
+ * The outcome says the letter was WRITTEN rather than sent ({@see MailSendOutcome::written()},
+ * HIL-827), because that is what happened: the file is on disk and nobody's inbox is getting
+ * it. Reporting a plain success here is what left a person on a stand waiting for a message
+ * that was never coming.
  */
 final class FileMailTransport implements MailTransportInterface
 {
@@ -109,7 +113,7 @@ final class FileMailTransport implements MailTransportInterface
      *
      * @param string $encoded Encoded wire message
      * @param float $nowMs Current time in milliseconds, used to name the artifact
-     * @return MailSendOutcome Delivered on success, or a permanent failure when the write fails
+     * @return MailSendOutcome Written on success, or a permanent failure when the write fails
      */
     private function write(string $encoded, float $nowMs): MailSendOutcome
     {
@@ -122,6 +126,6 @@ final class FileMailTransport implements MailTransportInterface
             return MailSendOutcome::failed('mail file could not be written', true);
         }
 
-        return MailSendOutcome::delivered();
+        return MailSendOutcome::written();
     }
 }

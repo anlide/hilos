@@ -38,7 +38,7 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
 
     /**
      * @param string $ticket Ticket of the send this step belongs to
-     * @param string $state One of the four states on {@see HilosCodeSendAttempt}
+     * @param string $state One of the five states on {@see HilosCodeSendAttempt}
      * @param ?string $sessionTokenHash Hash of the session cookie token, on the `queued` report and no other
      * @param ?string $channel Channel the code travels over, on the `queued` report and no other
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
@@ -77,7 +77,7 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      * is found by the ticket it was given.
      *
      * @param string $ticket Ticket the transport was handed with the order
-     * @param string $state One of the four states on {@see HilosCodeSendAttempt}
+     * @param string $state One of the five states on {@see HilosCodeSendAttempt}
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      * @return self Frame carrying one step
      */

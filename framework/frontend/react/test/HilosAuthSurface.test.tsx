@@ -17,6 +17,8 @@ import {
   AUTH_ACTION_LOGIN,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
   AUTH_SURFACE_HEADING_ID,
+  bindCodeSendProgress,
+  CODE_SEND_STATE_NOT_SENT,
   createHilosAuthContext,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
@@ -25,6 +27,7 @@ import {
   PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
+  SIGNAL_CODE_SEND_PROGRESS,
   type ActionHandle,
   type HilosAuthContext,
   type HilosConnection,
@@ -349,10 +352,43 @@ function type(id: string, value: string): void {
   fireEvent.change(byId(id) as Element, { target: { value } })
 }
 
+/**
+ * Put a send-progress frame on the SDK's session-wide line, the way the socket
+ * would (HIL-826). The line is a module singleton, so the frame outlives the
+ * surface and the next test has to be handed a clean one - which is what the
+ * null frame below does, and what the server itself sends to take a line away.
+ *
+ * @param state The `CODE_SEND_STATE_*` the line should report, or null for none.
+ */
+function reportSendProgress(state: string | null): void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  const connection = {
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as unknown as (signal: {
+          type: string
+          data: unknown
+        }) => void,
+      )
+
+      return () => undefined
+    },
+  } as unknown as HilosConnection
+  const unbind = bindCodeSendProgress(connection)
+  for (const listener of listeners) {
+    listener({
+      type: SIGNAL_CODE_SEND_PROGRESS,
+      data: { state, channel: 'email', detail: null },
+    })
+  }
+  unbind()
+}
+
 describe('HilosAuthSurface', () => {
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
+    reportSendProgress(null)
   })
 
   it('assembles from a one-password registry with no icon method offered', () => {
@@ -448,6 +484,38 @@ describe('HilosAuthSurface', () => {
       email: 'someone@example.com',
       code: '135790',
     })
+  })
+
+  it('says a letter that was only written down was not really sent', async () => {
+    vi.useFakeTimers()
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+    fireEvent.click(byId('auth-icon-magic-link') as Element)
+    await flush()
+
+    await act(async () => {
+      reportSendProgress(CODE_SEND_STATE_NOT_SENT)
+    })
+    await flush()
+
+    // The whole visible output of this leaf: the line says the letter went
+    // nowhere, and it says it calmly - not green, because nothing was sent, and
+    // not red, because nothing went wrong (HIL-827). No path is named.
+    const line = byId('auth-send-progress')
+    expect(line?.textContent).toBe(
+      'Not really sent to someone@example.com — letters are written here, not mailed',
+    )
+    expect(line?.className).toContain('text-body-secondary')
+    expect(line?.querySelector('i')?.className).toContain('bi-flask')
   })
 
   it('stands both live regions up empty before anything has been said', () => {

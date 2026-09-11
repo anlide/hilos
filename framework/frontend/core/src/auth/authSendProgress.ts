@@ -14,7 +14,7 @@
 // same sentence — and a frame with a null `state` is the legal one that takes the
 // line away.
 //
-// The name and the four state values are byte-equal to the backend
+// The name and the five state values are byte-equal to the backend
 // `HilosSignalConstants` / `HilosCodeSendAttempt` constants.
 import { z } from 'zod'
 
@@ -46,6 +46,16 @@ export const CODE_SEND_STATE_SENT = 'sent'
 export const CODE_SEND_STATE_FAILED = 'failed'
 
 /**
+ * `state` of a send that is over and was written down instead of mailed (PHP
+ * `STATE_NOT_SENT`). Terminal like {@link CODE_SEND_STATE_SENT} and, like it, a
+ * SUCCESS: the code is live and the person types it in, having read it where the
+ * installation's test mode puts the letter. It is its own state rather than a
+ * shade of `sent` because a line that claims a delivery leaves a person waiting
+ * for a message that is not coming.
+ */
+export const CODE_SEND_STATE_NOT_SENT = 'not_sent'
+
+/**
  * The frame: the whole line, every field nullable.
  *
  * All three being null is not a lax reader but the commonest frame the signal
@@ -68,13 +78,13 @@ export type CodeSendProgressSignalData = z.infer<typeof codeSendProgressSchema>
 /**
  * One reported step of the send behind the code screen (HIL-826).
  *
- * `state` is one of the four `CODE_SEND_STATE_*` values. `detail` carries the
+ * `state` is one of the five `CODE_SEND_STATE_*` values. `detail` carries the
  * provider's own sentence and only on a refusal — untranslated, because the whole
  * point of it is that a person is told "mailbox unavailable (550)" rather than
  * "something went wrong".
  */
 export interface CodeSendProgress {
-  /** One of the four `CODE_SEND_STATE_*` values. */
+  /** One of the five `CODE_SEND_STATE_*` values. */
   readonly state: string
   /** The channel the code travels over, or `null` when the server named none. */
   readonly channel: string | null

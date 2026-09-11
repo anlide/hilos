@@ -19,6 +19,12 @@ use Hilos\Mail\Exception\MailConfigException;
  * file transport whenever {@see smtpHost} is empty, so a project with no relay configured
  * still produces a verifiable .eml artifact. Secrets live only here, never in DB settings.
  * Built from the `MAIL_*` env values via {@see fromEnv()}; tests build one directly.
+ *
+ * An EXPLICIT `file` with a non-empty {@see fileDir} is the declared test mode (HIL-827):
+ * the installation says it mails nobody on purpose, the send-progress line says so instead
+ * of claiming a delivery, and the code is read out of the artifact. Reaching the same
+ * transport by auto-selection is not the mode - nobody declared anything - which is why
+ * {@see isTestMode()} and {@see usesFileTransport()} are two questions.
  */
 final class MailTransportConfig
 {
@@ -99,6 +105,27 @@ final class MailTransportConfig
         }
 
         return $this->smtpHost === '';
+    }
+
+    /**
+     * Decides whether this installation DECLARED that it mails nobody (HIL-827).
+     *
+     * The declaration is the selection that already exists: `MAIL_TRANSPORT=file` typed
+     * out by hand can mean nothing but "write the letters, do not mail them, and I meant
+     * it", and a directory to write them to is what makes the code readable afterwards.
+     * An empty MAIL_FILE_DIR writes nothing at all, which is the one thing the mode is
+     * for, so it is not the mode.
+     *
+     * The file transport reached by AUTO-SELECTION is not a declaration but an accident -
+     * the case {@see usesFileTransport()} answers for, and the one the auth layer calls
+     * "nothing to send a code with". Two predicates, one rule, one place: the declared
+     * mode keeps a registration open where the accident closes it.
+     *
+     * @return bool True when the file transport is explicitly selected and has a directory
+     */
+    public function isTestMode(): bool
+    {
+        return $this->transport === MailTransportFactory::TRANSPORT_FILE && $this->fileDir !== '';
     }
 
     /**

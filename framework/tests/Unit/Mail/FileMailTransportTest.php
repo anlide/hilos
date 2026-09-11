@@ -33,7 +33,7 @@ final class FileMailTransportTest extends TestCase
         rmdir($this->dir);
     }
 
-    public function testWritesEmlArtifactAndReportsDelivered(): void
+    public function testWritesEmlArtifactAndReportsWritten(): void
     {
         $transport = new FileMailTransport($this->dir, 'from@example.com', 'Sender');
         $transport->start(new EmailMessage(to: 'user@example.com', subject: 'Hi', text: 'Hello'), 1000.0);
@@ -43,6 +43,7 @@ final class FileMailTransportTest extends TestCase
 
         $outcome = $transport->consumeResult();
         $this->assertTrue($outcome->delivered);
+        $this->assertFalse($outcome->sentForReal);
         $this->assertNull($outcome->errorDetail);
 
         $files = glob($this->dir . '/*.eml') ?: [];

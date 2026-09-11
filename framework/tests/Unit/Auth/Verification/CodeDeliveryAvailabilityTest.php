@@ -61,6 +61,22 @@ final class CodeDeliveryAvailabilityTest extends TestCase
     }
 
     /**
+     * The DECLARED test mode is the one file-transport installation an address can reach.
+     *
+     * Written out by hand with somewhere to put the letters, it says "mail nobody, and I
+     * meant it" (HIL-827): the code screen reports the letter as written rather than sent
+     * and the person reads the digits off the artifact, so withdrawing registration here
+     * would close the only flow the mode exists for.
+     */
+    public function testTheDeclaredTestModeStillReachesAnAddress(): void
+    {
+        putenv(EnvConstants::MAIL_TRANSPORT->name . '=file');
+        putenv(EnvConstants::MAIL_FILE_DIR->name . '=/tmp/hilos-mail');
+
+        self::assertTrue(new CodeDeliveryAvailability()->canDeliverTo(IdentifierDetection::KIND_EMAIL));
+    }
+
+    /**
      * With no forced driver and no relay host the framework auto-picks the file transport.
      */
     public function testNoRelayHostMeansNothingToMailWith(): void
@@ -159,6 +175,7 @@ final class CodeDeliveryAvailabilityTest extends TestCase
     {
         putenv(EnvConstants::MAIL_TRANSPORT->name);
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
+        putenv(EnvConstants::MAIL_FILE_DIR->name);
         DeliveryAvailabilityTestRegistry::hold(null);
         Hilos::initBrowser();
         Hilos::resetBrowser();

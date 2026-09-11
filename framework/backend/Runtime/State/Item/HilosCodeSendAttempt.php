@@ -66,6 +66,17 @@ final class HilosCodeSendAttempt extends RtState
      */
     public const string STATE_FAILED = 'failed';
 
+    /**
+     * The send is over and the letter was written down instead of mailed (HIL-827).
+     *
+     * A SUCCESS, and terminal like {@see self::STATE_SENT}: the code is minted and live, the
+     * resend countdown runs, and the person reads the digits out of the artifact the way the
+     * mode's documentation says. It is a separate state rather than a shade of `sent` because
+     * an installation that deliberately mails nobody would otherwise leave a person waiting
+     * for a message that is not coming - which is the whole reason this reading exists.
+     */
+    public const string STATE_NOT_SENT = 'not_sent';
+
     /** The channel of a code that travels as a letter; every other value is a code channel key. */
     public const string CHANNEL_EMAIL = 'email';
 
@@ -78,7 +89,7 @@ final class HilosCodeSendAttempt extends RtState
     /** {@see self::CHANNEL_EMAIL}, or the key of the code channel carrying it. */
     private(set) string $channel = '';
 
-    /** One of the four states above. */
+    /** One of the five states above. */
     private(set) string $state = '';
 
     /** The provider's own sentence, on {@see self::STATE_FAILED} and nowhere else. */

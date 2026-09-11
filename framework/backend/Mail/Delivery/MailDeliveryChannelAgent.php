@@ -344,6 +344,10 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * is permanent or the attempt ceiling is reached, in which case it is logged (address
      * and template key only) and dropped.
      *
+     * A delivered send reports one of two states, because "the send is over" and "the letter
+     * went somewhere" are different questions (HIL-827): a transport that only wrote the
+     * message down settles as delivered and reports {@see HilosCodeSendAttempt::STATE_NOT_SENT}.
+     *
      * @param float $nowMs Current time in milliseconds
      */
     private function pumpRawInFlight(float $nowMs): void
@@ -359,8 +363,15 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             }
 
             if ($attempt->isDelivered()) {
+                // Asked before the attempt is released, because the question is about the
+                // outcome the transport settled rather than about the transport itself.
+                $sentForReal = $attempt->isSentForReal();
                 $attempt->close();
-                $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_SENT, null);
+                $this->reportCodeSendStep(
+                    $send,
+                    $sentForReal ? HilosCodeSendAttempt::STATE_SENT : HilosCodeSendAttempt::STATE_NOT_SENT,
+                    null,
+                );
                 unset($this->rawSends[$id]);
                 continue;
             }
@@ -458,7 +469,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * transport step never waits on a delivery.
      *
      * @param RawMailSend $send Send whose step is being reported
-     * @param string $state One of the four states on {@see HilosCodeSendAttempt}
+     * @param string $state One of the five states on {@see HilosCodeSendAttempt}
      * @param ?string $detail Transport's own error text on a refusal, null otherwise
      */
     private function reportCodeSendStep(RawMailSend $send, string $state, ?string $detail): void

@@ -73,6 +73,20 @@ final class MailDeliveryAttempt implements DeliveryAttempt
     }
 
     /**
+     * Reports whether the settled send actually left this installation.
+     *
+     * A second question about a delivered send rather than a third answer to the first one
+     * ({@see MailSendOutcome::written()}): a letter the file transport put on disk is a
+     * finished send that mailed nobody, and the line on the code screen says so.
+     *
+     * @return bool True when the send settled as a message that really went out
+     */
+    public function isSentForReal(): bool
+    {
+        return $this->outcome?->sentForReal ?? false;
+    }
+
+    /**
      * @return ?string The settled failure sentence, or null when delivered or unsettled
      */
     public function errorDetail(): ?string

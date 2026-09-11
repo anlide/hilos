@@ -256,6 +256,28 @@ final class MailDeliveryChannelAgentTest extends TestCase
         );
     }
 
+    public function testALetterOnlyWrittenDownReportsNotSentAndIsDroppedAllTheSame(): void
+    {
+        $transport = new ScriptedMailTransport(1, MailSendOutcome::written());
+        $agent = new TestableMailAgent([$transport]);
+        $this->watchSignals();
+
+        $this->rawSend($agent, $this->watchedLetter());
+        $agent->onTick();
+        $agent->onTick();
+        $agent->onTick();
+
+        self::assertSame(
+            [HilosCodeSendAttempt::STATE_SENDING, HilosCodeSendAttempt::STATE_NOT_SENT],
+            $this->reportedSteps(),
+        );
+        // The mark is a success, not a refusal (Flow F2): the send settles and leaves the pool
+        // exactly as a delivered one does, so nothing is retried and no transport is opened again.
+        self::assertTrue($transport->closed);
+        $agent->onTick();
+        self::assertSame(1, $agent->createdCount);
+    }
+
     public function testARetryableRefusalPutsTheLineBackInTheQueue(): void
     {
         $transports = [

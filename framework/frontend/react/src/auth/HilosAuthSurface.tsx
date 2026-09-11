@@ -33,6 +33,7 @@ import {
   authAckToFlowPatch,
   authConvergeSignalSchema,
   CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_NOT_SENT,
   CODE_SEND_STATE_QUEUED,
   CODE_SEND_STATE_SENDING,
   CODE_SEND_STATE_SENT,
@@ -205,6 +206,12 @@ const SEND_PROGRESS_COPY: Record<
     icon: 'bi-exclamation-triangle-fill',
     tone: 'text-danger',
     text: () => 'Could not send',
+  },
+  [CODE_SEND_STATE_NOT_SENT]: {
+    icon: 'bi-flask',
+    tone: 'text-body-secondary',
+    text: (target) =>
+      `Not really sent to ${target} — letters are written here, not mailed`,
   },
 }
 

@@ -84,12 +84,20 @@ final class CodeDeliveryAvailability
      * writes nothing at all. Either way an address is not a way to reach the person in
      * front of the form (owner's decision, 06.09.2026).
      *
-     * @return bool True when mail leaves this installation
+     * Unless the mode is DECLARED, in which case the letter is readable and the ceremony
+     * is meant to run (HIL-827): an installation that wrote out `MAIL_TRANSPORT=file`
+     * with a directory mails nobody on purpose, the code screen says the letter was only
+     * written, and the person reads the digits out of the artifact. Withdrawing
+     * registration there would close the one flow the mode exists to keep working.
+     *
+     * @return bool True when mail leaves this installation, or is deliberately kept at home
      */
     private function mailReachesARelay(): bool
     {
         try {
-            return !MailTransportConfig::fromEnv()->usesFileTransport();
+            $config = MailTransportConfig::fromEnv();
+
+            return !$config->usesFileTransport() || $config->isTestMode();
         } catch (HilosException) {
             return true;
         }

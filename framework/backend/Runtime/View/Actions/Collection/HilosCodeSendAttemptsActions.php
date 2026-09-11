@@ -75,7 +75,7 @@ final class HilosCodeSendAttemptsActions extends RtActions
      * today's state.
      *
      * @param string $ticket Ticket the reporting transport was given
-     * @param string $state One of the four states on {@see StateHilosCodeSendAttempt}
+     * @param string $state One of the five states on {@see StateHilosCodeSendAttempt}
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      * @return ?string Session token hash of the row that moved, or null when the ticket is stale
      * @throws RtActionsCollectionNameNullException When collection name is unavailable

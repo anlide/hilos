@@ -23,7 +23,7 @@ use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
  * @property-read string $sessionTokenHash Hash of the session cookie token this line is addressed to
  * @property-read string $ticket Send this line is about
  * @property-read string $channel Channel the code is travelling over
- * @property-read string $state One of the four states of the send
+ * @property-read string $state One of the five states of the send
  * @property-read ?string $detail Provider's sentence, on a refusal and nowhere else
  * @property-read int $updatedAt Epoch milliseconds of the last write
  */
