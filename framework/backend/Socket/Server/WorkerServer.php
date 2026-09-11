@@ -1587,15 +1587,25 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * once its worker has reported it. Everything between those two moments is a start in flight,
      * and a freeze entered on top of one costs the node that agent.
      *
-     * @return list<string> Ids of agents registered here whose start has not been reported yet
+     * An agent LINKED TO NO WORKER is not one of those moments, and this is the whole reason the
+     * link is asked about here. A start that found no free worker throws and leaves its record
+     * behind ({@see startAgentInternal()}), so the node holds an agent nobody was ever asked to
+     * run - and no report about it will ever arrive. Counted as a start in flight it made every
+     * freeze from then on wait out the entry gate's whole deadline and go in on top of it:
+     * measured in run 0232, nine holds of five seconds each, always on the same three agents, and
+     * exactly the three whose start reports the run was short of.
+     *
+     * @return list<string> Ids of agents whose start was asked of a worker and not reported yet
      */
     public function agentsStillStarting(): array
     {
         $starting = [];
-        foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
-            if (!$this->agentManager->isAgentStarted($agentId)) {
-                $starting[] = $agentId;
+        foreach ($this->agentManager->getAgents() as $agentId => $agentDaemon) {
+            if (!$agentDaemon->hasWorkerClient() || $this->agentManager->isAgentStarted($agentId)) {
+                continue;
             }
+
+            $starting[] = $agentId;
         }
 
         return $starting;
