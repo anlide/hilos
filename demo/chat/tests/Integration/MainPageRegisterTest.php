@@ -19,6 +19,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\PasswordPolicy;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -74,6 +75,14 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private const string CODE = '424242';
     private const string WRONG_CODE = '000000';
     private const int TTL_SECONDS = 900;
+
+    /**
+     * @var int How often {@see awaitNextSecond()} looks at the clock, in microseconds
+     *
+     * Ten milliseconds: short enough that the wait costs a rounding error of the boundary it
+     * waits for, long enough that it is not a spin.
+     */
+    private const int SECOND_BOUNDARY_POLL_MICROSECONDS = 10_000;
 
     /**
      * A submit holds the address and issues a code, and creates no account at all.
@@ -331,6 +340,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
         $this->register($agent, 'confirm-ak', $email);
         $this->seedKnownCode($email);
         $heldUntil = $this->holdOf('confirm-ak')?->expiresAt;
+        $this->awaitNextSecond();
 
         try {
             $outcome = $this->confirm($agent, 'confirm-ak', $email, self::CODE);
@@ -1365,6 +1375,29 @@ final class MainPageRegisterTest extends IntegrationTestCase
     private function holdOf(string $acceptKey): ?ObjectRegistrationReservation
     {
         return $this->reservations()->findActiveForSession(Hilos::$rt->connections[$acceptKey]->sessionToken);
+    }
+
+    /**
+     * Waits out the rest of the current wall-clock second, and no longer than that.
+     *
+     * A hold's expiry is a DATETIME, so it is remembered to the second, and both stamps a
+     * registration flow writes are "now + the same TTL": the one the reservation is born with
+     * and the one {@see RegistrationReservationService::markProven()} writes over it. Inside a
+     * single second those two are the same string, and the refresh a case asserts on becomes
+     * invisible - the faster the box, the more often that happens, which is why this reads as a
+     * rare flake on a loaded server and as a near-certain failure on a fast one.
+     *
+     * Crossing the boundary is what keeps the assertion strict. Weakening it to "not earlier"
+     * would pass on a hold nobody refreshed at all, since an untouched stamp satisfies equality,
+     * and the case would then hold whether the product does the thing or not.
+     */
+    private function awaitNextSecond(): void
+    {
+        $startedIn = time();
+
+        while (time() === $startedIn) {
+            usleep(self::SECOND_BOUNDARY_POLL_MICROSECONDS);
+        }
     }
 
     /**
