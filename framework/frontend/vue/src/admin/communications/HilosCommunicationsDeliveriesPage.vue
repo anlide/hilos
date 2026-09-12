@@ -212,7 +212,7 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
       :columns="columns"
       searchable
       search-placeholder="Search type or recipient…"
-      empty-text="No deliveries match."
+      empty-text="No deliveries yet."
     >
       <template #row="{ row }">
         <td class="text-nowrap">{{ row.createdAt || '—' }}</td>

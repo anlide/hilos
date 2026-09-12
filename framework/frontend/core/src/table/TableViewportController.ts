@@ -93,6 +93,17 @@ const SEARCH_FILTER_KEY = 'search'
 const HIGHLIGHT_MS = 2000
 
 /**
+ * How long a window change may go unanswered before the body turns into the row
+ * skeleton, in milliseconds.
+ *
+ * Until then the rows of the previous window stay on screen: an answer on a near machine
+ * lands in tens of milliseconds, and a skeleton drawn on every press of the pager, of a
+ * header, of a filter would be a flash rather than a state. The number was named by the
+ * owner (HIL-808); it lives in one place so that it can be tuned in one place.
+ */
+const WINDOW_SKELETON_MS = 400
+
+/**
  * The empty freshness list every current row and every placeholder shares.
  *
  * One frozen array rather than a fresh `[]` per row: the window is rebuilt on every
@@ -526,6 +537,19 @@ export class TableViewportController<R> implements TableWindowSink {
     ReturnType<typeof setTimeout>
   >()
 
+  /**
+   * Whether a window change has gone unanswered for longer than {@link WINDOW_SKELETON_MS} —
+   * what turns the body into the skeleton after the first window has arrived.
+   *
+   * {@link loadedSignal} cannot say it: it goes true once and never back, and the first
+   * window arrives with the page itself (HIL-642), so "no window yet" is a state a reader
+   * practically never sees. The skeleton is for a window CHANGE, and this is its sign.
+   */
+  private readonly windowPendingSignal = createSignal(false)
+
+  /** The countdown to {@link windowPendingSignal}, or null while no window change is unanswered. */
+  private windowSkeletonTimer: ReturnType<typeof setTimeout> | null = null
+
   /** The displayed rows resolved to view-models — what the view renders. */
   readonly rows: ReadonlySignal<readonly TableViewportRow<R>[]>
 
@@ -698,7 +722,7 @@ export class TableViewportController<R> implements TableWindowSink {
         }
       }),
       body: computedSignal<HilosTableBody>(() => {
-        if (!this.loadedSignal.get()) {
+        if (this.windowPendingSignal.get() || !this.loadedSignal.get()) {
           return 'loading'
         }
         if (this.windowSignal.get().length > 0) {
@@ -839,6 +863,17 @@ export class TableViewportController<R> implements TableWindowSink {
   /** The current zero-based page index. */
   get page(): ReadonlySignal<number> {
     return this.pageSignal
+  }
+
+  /**
+   * The window size, as the last window that arrived said it was.
+   *
+   * What a view counts the skeleton rows by when the previous window was empty — a reader
+   * who reset the filters out of "Nothing found" is waiting for a full window, and a
+   * skeleton of zero rows would say nothing is coming.
+   */
+  get pageSize(): ReadonlySignal<number> {
+    return this.pageSizeSignal
   }
 
   /**
@@ -1122,6 +1157,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
     this.placeholderKeysSignal.set(new Set())
     this.loadedSignal.set(true)
+    this.clearWindowPending()
     this.clearHighlights()
     this.clearPending()
     this.clearAnnounced()
@@ -1885,9 +1921,18 @@ export class TableViewportController<R> implements TableWindowSink {
     }
   }
 
+  /** Stop waiting for a window: stop the countdown to the skeleton and take the skeleton down. */
+  private clearWindowPending(): void {
+    if (this.windowSkeletonTimer !== null) {
+      clearTimeout(this.windowSkeletonTimer)
+      this.windowSkeletonTimer = null
+    }
+    this.windowPendingSignal.set(false)
+  }
+
   /**
    * Discard pending, placeholders, marks, the selection and the open panels, then
-   * request the new window.
+   * request the new window and start the countdown to the skeleton.
    *
    * The one place a selection or an expansion is cleared, and every input that
    * changes a window goes through here — search, filters, their reset, sort, a
@@ -1907,6 +1952,15 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearSelection()
     this.clearExpanded()
     this.send()
+    // The rows of the previous window stay until the answer is late; only then does the
+    // body say so. A second change restarts the countdown rather than stacking a second one.
+    if (this.windowSkeletonTimer !== null) {
+      clearTimeout(this.windowSkeletonTimer)
+    }
+    this.windowSkeletonTimer = setTimeout(() => {
+      this.windowSkeletonTimer = null
+      this.windowPendingSignal.set(true)
+    }, WINDOW_SKELETON_MS)
   }
 
   /**

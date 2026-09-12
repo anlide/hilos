@@ -232,7 +232,6 @@ async function submitDelete(): Promise<void> {
         :columns="columns"
         searchable
         search-placeholder="Search bots…"
-        loading-text="Loading bots…"
         empty-text="No bots yet."
       >
         <template #row="{ row }">

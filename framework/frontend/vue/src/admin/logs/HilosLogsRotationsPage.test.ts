@@ -270,12 +270,17 @@ describe('HilosLogsRotationsPage', () => {
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('2019-01-01')
 
+    // A search that matched nothing is the table's own state since HIL-808: the framework
+    // names the query and offers the reset, and the page's words stay for an empty store.
+    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      true,
+    )
     expect(
-      wrapper.find('[data-id="hilos-rotation-empty-nomatch"]').exists(),
+      wrapper.find('[data-id="hilos-table-no-matches-reset"]').exists(),
     ).toBe(true)
     expect(
-      wrapper.find('[data-id="hilos-rotation-clear-filters"]').exists(),
-    ).toBe(true)
+      wrapper.find('[data-id="hilos-rotation-empty-never"]').exists(),
+    ).toBe(false)
   })
 
   it('shows no node column and no node filter where nodes have no names', async () => {

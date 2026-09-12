@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 import { TableViewportController } from '@hilos/core'
 import type {
@@ -2089,5 +2089,156 @@ describe('HilosViewportTable expanding a row', () => {
     expect(wrapper.find('[data-id="hilos-table-row-detail-b"]').exists()).toBe(
       false,
     )
+  })
+})
+
+describe('HilosViewportTable drawing the states of the body', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const STATE_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'kind', label: 'Kind' },
+  ]
+  const STATE_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    search: {},
+    columns: STATE_COLUMNS,
+    empty: { title: 'Nothing here yet' },
+  }
+  const STATE_SLOTS = {
+    'cell-name': (props: { row: unknown }) =>
+      h('span', { class: 'named' }, (props.row as Row).name),
+  }
+
+  function mountStates(controller: TableViewportController<unknown>) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns: STATE_COLUMNS },
+      slots: STATE_SLOTS,
+    })
+  }
+
+  function twoRows(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      25,
+    )
+  }
+
+  it('keeps the rows through a quick change and draws a skeleton as tall as the window past the threshold', async () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(STATE_FRAME)
+    twoRows(controller)
+    const wrapper = mountStates(controller)
+
+    controller.setSort('name')
+    vi.advanceTimersByTime(399)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('[data-id="hilos-table-loading"]')).toHaveLength(0)
+    expect(wrapper.findAll('.named')).toHaveLength(4)
+
+    vi.advanceTimersByTime(1)
+    await wrapper.vm.$nextTick()
+
+    // Both branches say it, each in its own shape: rows of cells in the table,
+    // one bar per card in the list.
+    const loading = wrapper.findAll('[data-id="hilos-table-loading"]')
+    expect(loading).toHaveLength(2)
+    expect(loading[0]?.attributes('aria-busy')).toBe('true')
+    const tableRows = wrapper.findAll(
+      'tbody[data-id="hilos-table-loading"] [data-id="hilos-table-skeleton-row"]',
+    )
+    expect(tableRows).toHaveLength(2)
+    // A cell for every column standing in the row, so the widths hold.
+    expect(tableRows[0]?.findAll('td')).toHaveLength(2)
+    expect(
+      wrapper.findAll(
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-skeleton-row"]',
+      ),
+    ).toHaveLength(2)
+    expect(wrapper.findAll('.placeholder[aria-hidden="true"]')).toHaveLength(
+      2 * 2,
+    )
+    expect(
+      wrapper
+        .findAll('[role="status"]')
+        .filter((node) => node.text() === 'Loading…'),
+    ).toHaveLength(2)
+    expect(wrapper.findAll('.named')).toHaveLength(0)
+  })
+
+  it('counts the skeleton by the window size when the window before was empty', async () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(STATE_FRAME)
+    controller.ingestWindow([], 0, true, null, null, 3)
+    const wrapper = mountStates(controller)
+
+    controller.setSearch('x')
+    vi.advanceTimersByTime(400)
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper.findAll(
+        'tbody[data-id="hilos-table-loading"] [data-id="hilos-table-skeleton-row"]',
+      ),
+    ).toHaveLength(3)
+  })
+
+  it('says nothing was found in both branches and resets out of it', async () => {
+    const { controller, sent } = makeController(STATE_FRAME)
+    twoRows(controller)
+    const wrapper = mountStates(controller)
+
+    controller.setSearch('night')
+    controller.ingestWindow([], 0, true, null, null, 25)
+    await wrapper.vm.$nextTick()
+
+    const states = wrapper.findAll('[data-id="hilos-table-no-matches"]')
+    expect(states).toHaveLength(2)
+    expect(
+      wrapper.findAll('[data-id="hilos-table-no-matches-terms"]')[1]?.text(),
+    ).toBe('No rows match “night”')
+    expect(wrapper.find('[data-id="hilos-table-empty"]').exists()).toBe(false)
+
+    await wrapper
+      .findAll('[data-id="hilos-table-no-matches-reset"]')[1]
+      ?.trigger('click')
+    expect(sent.at(-1)?.filter).toEqual({})
+  })
+
+  it('draws the declared empty state in both branches when nothing filters the set', async () => {
+    const { controller } = makeController(STATE_FRAME)
+    const wrapper = mountStates(controller)
+
+    controller.ingestWindow([], 0, true, null, null, 25)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-id="hilos-table-empty-title"]')).toHaveLength(
+      2,
+    )
+    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('says nothing was found on a table that still draws its frame from props', async () => {
+    const { controller } = makeController()
+    const wrapper = mountTable(controller, true)
+    controller.ingestWindow([], 0, true, null, null, 10)
+    controller.setSearch('night')
+    controller.ingestWindow([], 0, true, null, null, 10)
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-table-no-matches-terms"]').text(),
+    ).toBe('No rows match “night”')
   })
 })

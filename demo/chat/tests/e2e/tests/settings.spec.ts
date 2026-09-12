@@ -2,6 +2,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
+import { typeInto } from '../helpers/session'
 
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
 // framework HilosViewportTable over the live socket. The window comes from the
@@ -72,21 +73,29 @@ test('lists settings in the server window and filters from the search box', asyn
   await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
 
   // A key query narrows the window to its row; a query nothing matches empties
-  // it (the loaded "no rows" state, distinct from the initial loading spinner);
-  // clearing restores the window.
+  // it into "Nothing found", which names the query and offers the reset (the
+  // framework's own state since HIL-808, distinct from the skeleton of a late
+  // window); the reset restores the window and clears the box.
   const search = page.getByTestId('hilos-table-search')
-  await search.fill('chat_bot_language')
+  await typeInto(search, 'chat_bot_language')
   await expect(page.getByTestId('hilos-table-row-chat_bot_language')).toBeVisible()
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
 
-  await search.fill('zzz-no-such-setting-zzz')
+  await typeInto(search, 'zzz-no-such-setting-zzz')
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  const noMatches = page.getByTestId('hilos-table-no-matches')
+  await expect(noMatches).toBeVisible()
+  await expect(page.getByTestId('hilos-table-no-matches-terms')).toContainText(
+    '“zzz-no-such-setting-zzz”',
+  )
 
-  await search.fill('')
+  await page.getByTestId('hilos-table-no-matches-reset').click()
   await expect(
     page.locator('[data-id^="hilos-table-row-"]').first(),
   ).toBeVisible()
+  await expect(noMatches).toHaveCount(0)
+  await expect(search).toHaveValue('')
 })
 
 test('paginates the server window', async ({ page }) => {

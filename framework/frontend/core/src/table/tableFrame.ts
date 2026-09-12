@@ -198,7 +198,10 @@ export interface HilosTableFooter {
  * Which of its states the body of a table is in — decided in the core so that
  * three view layers cannot decide it three ways:
  *
- * - `loading` — no window has arrived yet; the view draws the row skeleton;
+ * - `loading` — a window change has gone unanswered for longer than the
+ *   controller's skeleton threshold (400 ms), or no window has arrived yet; the
+ *   view draws the row skeleton. Until the threshold the rows of the previous
+ *   window stay, so a quick answer draws no skeleton at all;
  * - `empty` — the set is empty and nothing is filtering it, so the page's own
  *   empty text and its main action are what to offer;
  * - `empty_filtered` — the set is empty under a search or a filter, so what to

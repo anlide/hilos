@@ -1183,6 +1183,80 @@ describe('TableViewportController', () => {
     expect(controller.loaded.get()).toBe(true)
   })
 
+  it('keeps the rows through a quick window change and draws the skeleton only past the threshold', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.setSort('name')
+
+    // An answer on a near machine lands in tens of milliseconds: until the threshold the
+    // previous rows are what the body shows, or every press would flash a skeleton.
+    vi.advanceTimersByTime(399)
+    expect(controller.frame.body.get()).toBe('rows')
+
+    vi.advanceTimersByTime(1)
+    expect(controller.frame.body.get()).toBe('loading')
+  })
+
+  it('takes the skeleton down and stops its countdown when the window arrives', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.setSort('name')
+    vi.advanceTimersByTime(400)
+    expect(controller.frame.body.get()).toBe('loading')
+    open([{ rowKey: 'b', slots: {} }], 1, true, null, null)
+    expect(controller.frame.body.get()).toBe('rows')
+
+    // A window that arrives before the threshold leaves no countdown behind to fire into
+    // the rows that came.
+    controller.setSort('name')
+    vi.advanceTimersByTime(100)
+    open([{ rowKey: 'c', slots: {} }], 1, true, null, null)
+    vi.advanceTimersByTime(1000)
+    expect(controller.frame.body.get()).toBe('rows')
+  })
+
+  it('restarts the countdown on a second window change rather than keeping the first', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.setSort('name')
+    vi.advanceTimersByTime(300)
+    controller.setSort('name')
+    vi.advanceTimersByTime(300)
+    expect(controller.frame.body.get()).toBe('rows')
+
+    vi.advanceTimersByTime(100)
+    expect(controller.frame.body.get()).toBe('loading')
+  })
+
+  it('says loading before it says nothing was found, and nothing found once the window lands', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+
+    controller.setSearch('no such key')
+    vi.advanceTimersByTime(400)
+    // The search is already active, but the answer to it has not come: the empty set it
+    // might name is not known yet.
+    expect(controller.frame.body.get()).toBe('loading')
+
+    open([], 0, true, null, null)
+    expect(controller.frame.body.get()).toBe('empty_filtered')
+  })
+
+  it('gives the window size the last window was served at', () => {
+    const { controller, open } = makeController(25)
+    expect(controller.pageSize.get()).toBe(1)
+
+    open([], 0, true, null, null)
+    expect(controller.pageSize.get()).toBe(25)
+  })
+
   it('exposes the pending kind on the affected rows', () => {
     const { controller, open } = makeController()
     open(

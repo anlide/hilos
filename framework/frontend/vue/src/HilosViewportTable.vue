@@ -32,7 +32,11 @@ document and Bootstrap's visibility utilities show one of them.
 It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
 when the controller carries a declaration, and from its own props when it does
 not — two epochs of the same table living side by side while the five framework
-pages have not moved onto the declaration yet (HIL-819). -->
+pages have not moved onto the declaration yet (HIL-819).
+The body is drawn from the state the core decides (HilosTableBody): rows, a
+skeleton of rows while a window change is late, or one of the two worded states
+drawn by HilosTableEmptyState — the page's own "nothing here yet" and the
+framework's "Nothing found" (mockups/components/table section 10). -->
 
 <script setup lang="ts" generic="R">
 import { computed, inject, useId, useSlots } from 'vue'
@@ -56,6 +60,7 @@ import type {
 } from '@hilos/core'
 
 import HilosTableBar from './HilosTableBar.vue'
+import HilosTableEmptyState from './HilosTableEmptyState.vue'
 import HilosTableFooter from './HilosTableFooter.vue'
 import HilosTableProgress from './HilosTableProgress.vue'
 import { hilosTableSelectionEdgeKey } from './hilosTableSelectionEdge.js'
@@ -75,8 +80,6 @@ const props = withDefaults(
     searchPlaceholder?: string
     /** Message shown when there are no rows. */
     emptyText?: string
-    /** Message shown while the first window is still loading. */
-    loadingText?: string
     /** Label shown in a removed row's placeholder slot. */
     placeholderText?: string
     /**
@@ -91,7 +94,6 @@ const props = withDefaults(
     searchable: false,
     searchPlaceholder: 'Search…',
     emptyText: 'No rows.',
-    loadingText: 'Loading…',
     placeholderText: 'Removed',
     dataId: 'hilos-viewport-table',
   },
@@ -162,7 +164,20 @@ const totalExact = useSignal(props.controller.totalExact)
 const hasNextPage = useSignal(props.controller.hasNextPage)
 const pendingCount = useSignal(props.controller.pendingCount)
 const announced = useSignal(props.controller.announced)
-const loaded = useSignal(props.controller.loaded)
+
+// Which state the body is in — rows, the skeleton, or one of the two worded
+// states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
+// view layers cannot decide it three ways, and both branches below read this one
+// answer.
+const body = useSignal(props.controller.frame.body)
+const pageSize = useSignal(props.controller.pageSize)
+
+// As many skeleton rows as the window had rows, so the height of the table does
+// not jump while the next one is on its way; a window that had none — a reset out
+// of "Nothing found" — is waiting for a full one (Flow F2).
+const skeletonRows = computed(() =>
+  rows.value.length > 0 ? rows.value.length : pageSize.value,
+)
 
 // The two bars this view draws itself. The third place of work, the bulk bar,
 // lives inside the selection panel and is drawn by the bar above the table —
@@ -653,7 +668,37 @@ function onSelectPage(event: Event): void {
             </th>
           </tr>
         </thead>
-        <tbody>
+        <!-- The skeleton stands in a body of its own while a window is late:
+        a cell for every column standing in the row, the framework's included,
+        so the columns keep their widths instead of collapsing into one cell
+        and jolting the table sideways on every change (Flow F3). The bars say
+        nothing to a screen reader; the hidden line says it in words. -->
+        <tbody
+          v-if="body === 'loading'"
+          aria-busy="true"
+          data-id="hilos-table-loading"
+        >
+          <tr
+            v-for="index in skeletonRows"
+            :key="index"
+            data-id="hilos-table-skeleton-row"
+          >
+            <td
+              v-for="cell in bodyColspan"
+              :key="cell"
+              class="placeholder-glow"
+            >
+              <span
+                v-if="index === 1 && cell === 1"
+                class="visually-hidden"
+                role="status"
+                >Loading…</span
+              >
+              <span class="placeholder col-12" aria-hidden="true"></span>
+            </td>
+          </tr>
+        </tbody>
+        <tbody v-else>
           <template v-for="view in rows" :key="view.rowKey">
             <tr
               :data-id="`hilos-table-row-${view.rowKey}`"
@@ -865,21 +910,14 @@ function onSelectPage(event: Event): void {
               </td>
             </tr>
           </template>
-          <tr v-if="rows.length === 0">
-            <td :colspan="bodyColspan" class="text-center text-muted py-4">
-              <span
-                v-if="!loaded"
-                class="d-inline-flex align-items-center gap-2"
-                role="status"
-                data-id="hilos-table-loading"
+          <tr v-if="body !== 'rows'">
+            <td :colspan="bodyColspan">
+              <HilosTableEmptyState
+                :controller="controller"
+                :kind="body === 'empty_filtered' ? 'empty_filtered' : 'empty'"
               >
-                <span
-                  class="spinner-border spinner-border-sm"
-                  aria-hidden="true"
-                ></span>
-                {{ loadingText }}
-              </span>
-              <slot v-else name="empty">{{ emptyText }}</slot>
+                <slot name="empty">{{ emptyText }}</slot>
+              </HilosTableEmptyState>
             </td>
           </tr>
         </tbody>
@@ -901,7 +939,7 @@ function onSelectPage(event: Event): void {
     list holds the cards and nothing else; what the table says in words when it
     has no rows stands BESIDE it, a sentence not being an item of a list. -->
     <div v-if="card" class="d-md-none" data-id="hilos-table-cards">
-      <div v-if="rows.length > 0" role="list" :aria-labelledby="titleId">
+      <div v-if="body === 'rows'" role="list" :aria-labelledby="titleId">
         <div
           v-for="view in rows"
           :key="view.rowKey"
@@ -1102,25 +1140,36 @@ function onSelectPage(event: Event): void {
         </div>
       </div>
 
-      <!-- The two states a table says in words. They live inside the table in
-      the wide branch, so a narrow screen would hide them along with it and the
-      phone would be left with a blank space where the sentence is (Flow F12).
+      <!-- The skeleton and the two states a table says in words. They live
+      inside the table in the wide branch, so a narrow screen would hide them
+      along with it and the phone would be left with a blank space where they
+      are (Flow F12). A card of the skeleton is one bar, as the mockup draws it.
       The page writes the empty slot once and sees it in both branches. -->
-      <div v-else class="text-center text-muted py-4">
-        <span
-          v-if="!loaded"
-          class="d-inline-flex align-items-center gap-2"
-          role="status"
-          data-id="hilos-table-loading"
+      <div
+        v-else-if="body === 'loading'"
+        aria-busy="true"
+        data-id="hilos-table-loading"
+      >
+        <span class="visually-hidden" role="status">Loading…</span>
+        <div
+          v-for="index in skeletonRows"
+          :key="index"
+          class="card mb-2"
+          aria-hidden="true"
+          data-id="hilos-table-skeleton-row"
         >
-          <span
-            class="spinner-border spinner-border-sm"
-            aria-hidden="true"
-          ></span>
-          {{ loadingText }}
-        </span>
-        <slot v-else name="empty">{{ emptyText }}</slot>
+          <div class="card-body py-2 px-3 placeholder-glow">
+            <span class="placeholder col-12"></span>
+          </div>
+        </div>
       </div>
+      <HilosTableEmptyState
+        v-else
+        :controller="controller"
+        :kind="body === 'empty_filtered' ? 'empty_filtered' : 'empty'"
+      >
+        <slot name="empty">{{ emptyText }}</slot>
+      </HilosTableEmptyState>
     </div>
 
     <HilosTableFooter v-if="declaration" :controller="controller" />

@@ -175,7 +175,16 @@ on a narrow screen is a fourth and has its own section below:
   declared for its key;
 - **the state of the body** — `loading`, `empty`, `empty_filtered`, or `rows`.
   Deciding this in the core is the point: three view layers deciding it apart
-  would drift. A page that refuses altogether is none of these — that is
+  would drift. `loading` holds while a window change has gone unanswered for
+  longer than 400 ms (`WINDOW_SKELETON_MS`), or before any window has arrived —
+  which a reader practically never sees, the first window riding the page's own
+  answer. Until the threshold the previous rows stay, so a quick answer draws no
+  skeleton; past it the view draws one as tall as the previous window, or
+  `pageSize` rows when that window was empty. The state is read by every table,
+  declared frame or not: "Nothing found" names the query and the active
+  declared filters and resets through `resetFilters()`, while `empty` speaks
+  the declared `empty` and `mainAction`, or the page's `empty` slot where
+  nothing is declared. A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
 
 ### The card a row projects to
@@ -773,8 +782,12 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-page` is the single number the props-driven footer prints and
   goes with that footer when the framework pages move onto the declaration
   (HIL-819);
-- **states:** `hilos-table-loading`, `hilos-table-skeleton`,
-  `hilos-table-empty`, `hilos-table-empty-filtered`, `hilos-table-unavailable`;
+- **states:** `hilos-table-loading` — the skeleton as a whole,
+  `hilos-table-skeleton-row` — one row of it (one bar in the cards);
+  `hilos-table-empty` with `hilos-table-empty-title`, `hilos-table-empty-hint`
+  and `hilos-table-empty-action`; `hilos-table-no-matches` with
+  `hilos-table-no-matches-terms` and `hilos-table-no-matches-reset`;
+  `hilos-table-unavailable` (HIL-943);
 - **a source that went quiet:** `hilos-table-stale` — the bar,
   `hilos-table-stale-column-<key>` — the snowflake in a header,
   `hilos-table-stale-row-<rowKey>` — the snowflake in a row-state cell. There is
@@ -852,6 +865,7 @@ an address does not:
 | the bar the frame is drawn as | `framework/frontend/vue/src/HilosTableBar.vue` |
 | one control of one declared filter | `framework/frontend/vue/src/HilosTableFilterControl.vue` |
 | the footer under the table | `framework/frontend/vue/src/HilosTableFooter.vue` |
+| the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/vue/src/HilosTableEmptyState.vue` |
 | the bar a running job is drawn as | `framework/frontend/vue/src/HilosTableProgress.vue` |
 | the selection panel and the bulk bar | `framework/frontend/vue/src/HilosTableSelection.vue` |
 | the edge the selection column sits on | `framework/frontend/vue/src/hilosTableSelectionEdge.ts` |
