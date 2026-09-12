@@ -1006,7 +1006,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
     const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
 
     expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length + 1)
-    expect(wrapper.find('thead th:last-child').text()).toBe('Row state')
+    expect(wrapper.find('thead th:last-child').text()).toBe(
+      'Row state and controls',
+    )
     // Header and body read one condition, so the cell the header just made room
     // for is the one standing last in the row.
     const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
@@ -1039,5 +1041,161 @@ describe('HilosViewportTable marking a source that went quiet', () => {
       true,
     )
     expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length)
+  })
+})
+
+describe('HilosViewportTable expanding a row', () => {
+  // A table with one field that did not fit a column of its own: the row shows the
+  // name, and the reason waits in the panel under it.
+  const DETAIL_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'lastError', label: 'Error', detail: true },
+  ]
+
+  function window(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function mountDetailTable(
+    controller: TableViewportController<unknown>,
+    detailSlots: Record<string, unknown> = {
+      'detail-lastError': () => h('span', { class: 'reason' }, 'Mailbox full'),
+    },
+  ) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns: DETAIL_COLUMNS, searchable: true },
+      slots: {
+        row: (props: { row: unknown; rowKey: string }) =>
+          h('td', { class: 'cell' }, (props.row as Row).name),
+        ...detailSlots,
+      },
+    })
+  }
+
+  it('keeps a detail column out of the header and out of the width of a row', () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller)
+
+    // One declared column left standing, plus the row-state cell the control lives in.
+    expect(wrapper.findAll('thead th')).toHaveLength(2)
+    expect(wrapper.find('thead').text()).not.toContain('Error')
+    expect(
+      wrapper.find('[data-id="hilos-table-sort-lastError"]').exists(),
+    ).toBe(false)
+  })
+
+  it('offers the control only where a detail field was declared', () => {
+    const { controller } = makeController()
+    window(controller)
+
+    expect(
+      mountDetailTable(controller)
+        .find('[data-id="hilos-table-expand-a"]')
+        .exists(),
+    ).toBe(true)
+    expect(
+      mountTable(controller).find('[data-id="hilos-table-expand-a"]').exists(),
+    ).toBe(false)
+  })
+
+  it('opens the panel of one row and closes it again from the same control', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller)
+    const control = wrapper.find('[data-id="hilos-table-expand-a"]')
+
+    expect(control.attributes('aria-expanded')).toBe('false')
+    expect(control.text()).toBe('Show details')
+    expect(wrapper.find('[data-id="hilos-table-row-detail-a"]').exists()).toBe(
+      false,
+    )
+
+    await control.trigger('click')
+
+    const panel = wrapper.find('[data-id="hilos-table-row-detail-a"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('Error')
+    expect(panel.find('.reason').text()).toBe('Mailbox full')
+    expect(wrapper.find('[data-id="hilos-table-expand-a"]').text()).toBe(
+      'Hide details',
+    )
+    expect(wrapper.find('[data-id="hilos-table-row-detail-b"]').exists()).toBe(
+      false,
+    )
+
+    await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
+
+    expect(wrapper.find('[data-id="hilos-table-row-detail-a"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('points the control at its own panel and hides the chevron from the reader', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller)
+    await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
+
+    const control = wrapper.find('[data-id="hilos-table-expand-a"]')
+    const panel = wrapper.find('[data-id="hilos-table-row-detail-a"]')
+    expect(control.attributes('aria-expanded')).toBe('true')
+    expect(control.attributes('aria-controls')).toBe(panel.attributes('id'))
+    expect(panel.attributes('id')).toBeTruthy()
+    expect(control.find('i').attributes('aria-hidden')).toBe('true')
+    expect(control.find('i').classes()).toContain('bi-chevron-up')
+  })
+
+  it('spans the panel across the whole row, tinted as the row it hangs under', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller)
+    await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
+
+    const panel = wrapper.find('[data-id="hilos-table-row-detail-a"]')
+    expect(panel.classes()).toContain('table-active')
+    expect(panel.find('td').attributes('colspan')).toBe('2')
+    expect(wrapper.find('[data-id="hilos-table-row-a"]').classes()).toContain(
+      'table-active',
+    )
+  })
+
+  it('stands a dash in a field the page declared but drew nothing into', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller, {})
+    await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
+
+    expect(wrapper.find('[data-id="hilos-table-row-detail-a"] dd').text()).toBe(
+      '—',
+    )
+  })
+
+  it('closes every panel when the window changes', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller)
+    await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
+    await wrapper.find('[data-id="hilos-table-expand-b"]').trigger('click')
+
+    await wrapper.find('[data-id="hilos-table-search"]').setValue('failed')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-row-detail-a"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-row-detail-b"]').exists()).toBe(
+      false,
+    )
   })
 })

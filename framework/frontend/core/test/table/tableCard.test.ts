@@ -77,6 +77,27 @@ describe('hilosTableCard', () => {
     expect(card.fields.map((column) => column.key)).toEqual(['size', 'node'])
   })
 
+  it('keeps a detail column out of the main set: the card expands to it instead', () => {
+    const card = hilosTableCard([
+      { key: 'created', label: 'Date' },
+      { key: 'lastError', label: 'Error', detail: true },
+      { key: 'size', label: 'Size' },
+    ])
+
+    expect(card.title?.key).toBe('created')
+    expect(card.fields.map((column) => column.key)).toEqual(['size'])
+  })
+
+  it('never titles a card with a detail column, even as the first declared', () => {
+    const card = hilosTableCard([
+      { key: 'lastError', label: 'Error', detail: true },
+      { key: 'created', label: 'Date' },
+    ])
+
+    expect(card.title?.key).toBe('created')
+    expect(card.fields).toEqual([])
+  })
+
   it('gives a taken place to the first claimant and makes the second a field', () => {
     const card = hilosTableCard([
       { key: 'created', label: 'Date', card: 'title' },

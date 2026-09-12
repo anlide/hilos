@@ -465,6 +465,7 @@ describe('TableViewportController', () => {
         pending: null,
         highlighted: false,
         selected: false,
+        expanded: false,
         staleSources: [],
       },
     ])
@@ -843,6 +844,7 @@ describe('TableViewportController', () => {
       pending: null,
       highlighted: false,
       selected: false,
+      expanded: false,
       staleSources: [],
     })
     expect(rows[1]?.placeholder).toBe(false)
@@ -1144,6 +1146,7 @@ describe('TableViewportController', () => {
       pending: null,
       highlighted: false,
       selected: false,
+      expanded: false,
       staleSources: [],
     })
   })

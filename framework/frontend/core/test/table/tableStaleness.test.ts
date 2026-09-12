@@ -20,6 +20,7 @@ function makeRow(
     pending: null,
     highlighted: false,
     selected: false,
+    expanded: false,
     staleSources,
   }
 }

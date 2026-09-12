@@ -255,6 +255,13 @@ export interface TableViewportRow<R> {
    */
   readonly selected: boolean
   /**
+   * True when the reader has opened this row's panel of details. Always a boolean
+   * rather than an optional field, for the reason `selected` next to it is: the views
+   * read it on every row they draw. A placeholder is never expanded — there are no
+   * values under it to show.
+   */
+  readonly expanded: boolean
+  /**
    * The row slots whose values stopped being kept up to date, empty when the row is
    * current. Always a list rather than an optional field: the views read it on every
    * row they draw, and an optional one would make each of them write `?? []` of its
@@ -402,6 +409,22 @@ export class TableViewportController<R> implements TableWindowSink {
    * intersection.
    */
   private readonly selectedKeysSignal = createSignal<ReadonlySet<string>>(
+    new Set(),
+  )
+
+  /**
+   * The row keys whose panel of details the reader opened, held the same way the
+   * marks next door are and narrowed at the same three places.
+   *
+   * It lives here rather than in the view because the view has no event for a window
+   * changing — it only ever sees a new list of rows — and three views each guessing
+   * when to close the panels would be three different rules. Here there is one:
+   * whatever changes the window closes them, and nothing else does.
+   *
+   * There is no ceiling on how many rows are open at once: a reader opens two records
+   * precisely to read them side by side.
+   */
+  private readonly expandedKeysSignal = createSignal<ReadonlySet<string>>(
     new Set(),
   )
 
@@ -578,6 +601,7 @@ export class TableViewportController<R> implements TableWindowSink {
       const pendingKinds = this.pendingKindSignal.get()
       const highlighted = this.highlightedKeysSignal.get()
       const selectedKeys = this.selectedKeysSignal.get()
+      const expandedKeys = this.expandedKeysSignal.get()
       const allByFilter = this.allByFilterSignal.get()
 
       return this.windowSignal.get().map((raw) => {
@@ -591,6 +615,7 @@ export class TableViewportController<R> implements TableWindowSink {
           highlighted: !placeholder && highlighted.has(raw.rowKey),
           selected:
             !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
+          expanded: !placeholder && expandedKeys.has(raw.rowKey),
           staleSources: placeholder
             ? NO_STALE_SOURCES
             : (raw.staleSources ?? NO_STALE_SOURCES),
@@ -1117,6 +1142,11 @@ export class TableViewportController<R> implements TableWindowSink {
         [...this.selectedKeysSignal.get()].filter((key) => arrived.has(key)),
       ),
     )
+    this.expandedKeysSignal.set(
+      new Set(
+        [...this.expandedKeysSignal.get()].filter((key) => arrived.has(key)),
+      ),
+    )
   }
 
   /**
@@ -1374,18 +1404,22 @@ export class TableViewportController<R> implements TableWindowSink {
     this.totalExactSignal.set(totalExact)
 
     const placeholders = new Set(this.placeholderKeysSignal.get())
-    // The mark goes with everything else held under these keys, and for the same
-    // reason: the row pushed past the edge is gone, and a key coming back as a
-    // fresh row must not arrive already marked — nobody marked THIS row.
+    // The mark and the open panel go with everything else held under these keys, and
+    // for the same reason: the row pushed past the edge is gone, and a key coming back
+    // as a fresh row must not arrive already marked or already open — nobody touched
+    // THIS row.
     const selected = new Set(this.selectedKeysSignal.get())
+    const expanded = new Set(this.expandedKeysSignal.get())
     for (const gone of [...evicted, row]) {
       this.pendingMoves.delete(gone.rowKey)
       this.pendingRemoved.delete(gone.rowKey)
       placeholders.delete(gone.rowKey)
       selected.delete(gone.rowKey)
+      expanded.delete(gone.rowKey)
     }
     this.placeholderKeysSignal.set(placeholders)
     this.selectedKeysSignal.set(selected)
+    this.expandedKeysSignal.set(expanded)
     this.refreshPendingSignals()
   }
 
@@ -1693,6 +1727,36 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
+   * Open or close the panel of details under one row — the control at the end of it,
+   * one input for both directions.
+   *
+   * It takes the state the row is going TO rather than toggling: the view already
+   * knows the state the row is in, it draws it off `expanded` on that very row, and a
+   * toggle here would be a second source for the same truth.
+   *
+   * A key that is not a LIVE row of the window is refused, the way a mark is: a
+   * placeholder is the trace of a row that left, and there are no values under it to
+   * unfold. Unlike a mark it is guarded by nothing else: which fields a panel holds
+   * follows from the declared columns, which live in the view, and a table that
+   * declared none simply never draws a control to press.
+   *
+   * @param rowKey The row the control belongs to.
+   * @param expanded Whether the panel is now open.
+   */
+  expandRow(rowKey: string, expanded: boolean): void {
+    if (!this.isLiveRow(rowKey)) {
+      return
+    }
+    const keys = new Set(this.expandedKeysSignal.get())
+    if (expanded) {
+      keys.add(rowKey)
+    } else {
+      keys.delete(rowKey)
+    }
+    this.expandedKeysSignal.set(keys)
+  }
+
+  /**
    * Mark every live row of the window, or take the marks off them — the header
    * checkbox, one input for both directions. It takes the rows of the current
    * window and nothing else: an action over rows that are not on screen is "all
@@ -1744,6 +1808,17 @@ export class TableViewportController<R> implements TableWindowSink {
   clearSelection(): void {
     this.allByFilterSignal.set(false)
     this.selectedKeysSignal.set(new Set())
+  }
+
+  /**
+   * Close every open panel — one line of {@link changeWindow} and called from
+   * nowhere else. The reader opened those panels over the rows that were on the
+   * screen; a search, a filter, an order or a page turn puts other rows there, and
+   * an expansion that outlived its window would be an opinion about records the
+   * reader never opened.
+   */
+  private clearExpanded(): void {
+    this.expandedKeysSignal.set(new Set())
   }
 
   private isInWindow(rowKey: string): boolean {
@@ -1857,13 +1932,13 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Discard pending, placeholders, marks and the selection, then request the new
-   * window.
+   * Discard pending, placeholders, marks, the selection and the open panels, then
+   * request the new window.
    *
-   * The one place a selection is cleared, and every input that changes a window
-   * goes through here — search, filters, their reset, sort, a declared order, its
-   * reset, a page jump and the two neighbours — so the rule cannot be forgotten by
-   * whoever adds the next one.
+   * The one place a selection or an expansion is cleared, and every input that
+   * changes a window goes through here — search, filters, their reset, sort, a
+   * declared order, its reset, a page jump and the two neighbours — so the rule
+   * cannot be forgotten by whoever adds the next one.
    *
    * The bars of running work are deliberately NOT in that list, and their absence is a
    * decision rather than an oversight: work goes on whichever page is being looked at, so
@@ -1876,6 +1951,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearPending()
     this.clearAnnounced()
     this.clearSelection()
+    this.clearExpanded()
     this.send()
   }
 

@@ -223,6 +223,51 @@ The declaration carries no facet counts (a number beside an option is HIL-240)
 and no executor for a bulk action: what an operation does to each row, and how it
 names the ones it left alone, is the bulk-action contract below.
 
+### The panel a row expands into
+
+A field that did not fit a column of its own waits in a panel under the row, and
+the reader opens it with the control at the end of that row
+(mockups/components/table section 4). It is not a device for the phone: a long
+value is shown this way on a wide screen too, instead of stretching the table
+around it.
+
+Such a field is marked where the columns are declared — `detail: true` on
+`HilosTableColumn` — and not listed a second time somewhere else. A second
+register of the fields of one table would be two places to keep in step, and
+nothing would catch them drifting apart; the card next door is built from the
+declaration for the same reason.
+
+**A marked column leaves the row entirely.** It is not in the header, takes no
+width in the row, and offers no sort control — there is no header to click. It is
+not in the card's main set on a narrow screen either: the card expands to it,
+rather than carrying it in its body. What the column keeps is its label, which
+becomes the label of the field in the panel, and its place: the panel holds the
+fields in declaration order, and there is no second answer to that question.
+
+**Removing the cell of a marked column from the `#row` slot is the page's own
+duty.** The framework does not see the markup a page writes, so it cannot check
+this; a page that marks a column and keeps its `<td>` gets a row one cell wider
+than its header. The same shape of rule the card carries, and it is tested where
+it can be — on the page the framework itself moved over.
+
+**The framework owns the panel, the page owns its values.** The room under the
+row, the order of the fields, their labels, the control and its accessibility are
+the framework's; every value comes from the page through a `#detail-<key>` slot,
+exactly as the content of a cell does. A slot the page left unfilled shows a dash
+rather than an empty line, which would read as "there is no value".
+
+**The state lives in the controller and goes with the window.** `expandRow(rowKey,
+expanded)` takes the state the row is going to rather than toggling — the view
+already draws it off `expanded` on that row — and a placeholder is refused, there
+being no values under it to unfold. Any number of rows may be open at once: a
+reader opens two records precisely to compare them. A search, a filter, an order
+or a page turn closes every panel, through the very `changeWindow()` that clears
+the marks; a key that leaves the window loses its panel and comes back collapsed.
+A live update does NOT close a panel — showing the new value is what the open
+panel is for — and neither does a pending change, which is about the place of a
+row and not about what the reader opened. An APPLIED removal does close it: what
+is left in that slot is a placeholder.
+
 ## Custom filters and search-as-filter
 
 - **Project filters are extensible.** The framework does not know in advance what

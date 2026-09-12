@@ -396,6 +396,59 @@ test('an emitted notification is mailed out and journaled as sent', async ({
   expect(mail.text).toContain(body)
 })
 
+test('the journal keeps the reason of a delivery in a panel the row expands into', async ({
+  page,
+}) => {
+  const { userId } = await signInAddressableAdmin(page)
+  await enableEmailChannel(page)
+
+  const title = `Expandable delivery for user ${userId}`
+  await emitNotification(userId, {
+    type: 'e2e_delivery',
+    title,
+    body: 'This line waits in the panel under its row.',
+  })
+  await expectJournalSent(page, title)
+
+  // The assertion above left exactly this delivery on the screen, and nothing is
+  // expanded yet, so the one row-shaped handle in the table is the row itself.
+  const rowId = await page
+    .getByTestId(/^hilos-table-row-/)
+    .getAttribute('data-id')
+  const key = String(rowId).replace('hilos-table-row-', '')
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+  const panel = page.getByTestId(`hilos-table-row-detail-${key}`)
+  const control = page.getByTestId(`hilos-table-expand-${key}`)
+
+  // The notification title took no column of its own: it waits in the panel, and
+  // the row says nothing of it until the reader opens one.
+  await expect(row).not.toContainText(title)
+  await expect(panel).toHaveCount(0)
+  await expect(control).toHaveAttribute('aria-expanded', 'false')
+
+  await control.click()
+
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText(title)
+  await expect(control).toHaveAttribute('aria-expanded', 'true')
+
+  await control.click()
+
+  await expect(panel).toHaveCount(0)
+
+  // A change of window closes what the reader opened, and it closes it even where
+  // the row itself stays. The window is changed by SORTING rather than by dropping
+  // the search: the search is what left this one delivery on the screen, and this
+  // suite resets its database once per run, so without the filter the row would
+  // stand among every other test's deliveries and the assertion would be measuring
+  // paging instead of the panel.
+  await control.click()
+  await expect(panel).toBeVisible()
+  await page.getByTestId('hilos-table-sort-createdAt').click()
+  await expect(row).toBeVisible()
+  await expect(panel).toHaveCount(0)
+})
+
 // The product half of the line (HIL-557): until now every row in this suite was
 // planted by the command channel, which proves the center but not that anything
 // in the demo ever raises a notification. A mention is the first domain event

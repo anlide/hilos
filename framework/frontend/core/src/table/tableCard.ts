@@ -31,7 +31,9 @@ export interface HilosTableCard {
 /**
  * Derives the card layout of a row from the declared columns, in one pass over them:
  *
- * - a column marked `hidden` is not in the card at all;
+ * - a column marked `hidden` is not in the card at all, and neither is one marked
+ *   `detail` — the ticket that asked for the panel says that on a narrow screen such
+ *   a field is shown by expanding the card, not inside its body (tableDetail.ts);
  * - a column keyed {@link HILOS_TABLE_ACTIONS_KEY} takes the actions place, whatever
  *   it is marked — it has no value of its own in the row, so making it the title
  *   would title the card with nothing;
@@ -55,7 +57,7 @@ export function hilosTableCard(
   const fields: HilosTableColumn[] = []
 
   for (const column of columns) {
-    if (column.card === 'hidden') {
+    if (column.card === 'hidden' || column.detail === true) {
       continue
     }
 

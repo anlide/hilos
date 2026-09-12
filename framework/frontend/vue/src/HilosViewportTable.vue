@@ -6,8 +6,12 @@ its slot — the layout never collapses. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
 Body cells come from the `#row` slot, plus one framework-owned cell at the end
 of the row carrying the state of that row — it waits, its values are behind, or
-both; the placeholder, header, paging, and the three strips of live change stay
-framework-owned.
+both — and the control that opens the row; the placeholder, header, paging, and
+the three strips of live change stay framework-owned.
+A field that did not fit a column of its own is declared `detail` and waits in a
+panel under the row: the framework owns the room, the order and the labels, while
+the page draws every value through a `#detail-<key>` slot, exactly as it draws a
+cell (mockups/components/table section 4).
 Running work is drawn as a bar — above the table for work over the set, and in a
 row of its own under a row for work over that one row, stretched under whichever
 columns declared themselves. The room and the track are the framework's, while
@@ -22,7 +26,9 @@ pages have not moved onto the declaration yet (HIL-819). -->
 <script setup lang="ts" generic="R">
 import { computed, useId } from 'vue'
 import {
+  TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
+  hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
@@ -89,6 +95,11 @@ const declaration = props.controller.frame.declaration
 // points at it can see it (Flow F9).
 const titleId = useId()
 
+// The base every expanded row's panel takes its id from — minted the same way the
+// title above is, and for the same reason: the control that points at a panel and
+// the panel itself are drawn in two places of one template.
+const detailBaseId = useId()
+
 const rows = useSignal(props.controller.rows)
 const search = useSignal(props.controller.search)
 const order = useSignal(props.controller.order)
@@ -113,10 +124,19 @@ const paginated = computed(
   () => pageCount.value === null || pageCount.value > 1,
 )
 
+// The fields that wait in a panel instead of taking a column of their own, and the
+// columns that are left standing in the row. Every place that measures or draws the
+// row itself — the header, the width of a full-row cell, the cells of a row bar —
+// counts the second list, while the panel is built from the first.
+const detailFields = computed(() => hilosTableDetailFields(props.columns))
+const rowColumns = computed(() =>
+  props.columns.filter((column) => column.detail !== true),
+)
+
 // Which sources went quiet anywhere in the shown window, which declared columns are
 // built from them, and the sentence the strip says about those columns. The columns
-// are read out of the very list the header is drawn from, so the strip cannot name a
-// column the header does not show.
+// are read out of the very list the page declared, so the strip cannot name a column
+// this table does not have — whether it stands in the row or waits in a panel.
 const staleSources = computed(() => hilosTableStaleSources(rows.value))
 const staleColumns = computed(() =>
   hilosTableStaleColumns(props.columns, staleSources.value),
@@ -128,18 +148,23 @@ const staleLabel = computed(() =>
   hilosTableStaleLabel(staleColumns.value, staleSources.value.size > 0),
 )
 
-// The mark column stands while anything waits OR while a shown row's values are
-// behind: the cell carries both marks, and a table with no pending change still needs
-// it the moment a source goes quiet. Header cell and body cell read the SAME
+// The row-state cell stands while anything waits OR while a shown row's values are
+// behind OR while the table declared a field to expand into: it carries all three, and
+// a table with no pending change still needs it the moment a source goes quiet or a
+// reader is given something to open. Header cell and body cell read the SAME
 // condition, so the two cannot drift apart into a row wider than its header.
 const markColumn = computed(
-  () => pendingCount.value > 0 || staleSources.value.size > 0,
+  () =>
+    pendingCount.value > 0 ||
+    staleSources.value.size > 0 ||
+    detailFields.value.length > 0,
 )
 
-// Every cell that spans the whole row — the placeholder of a removed row, the empty
-// and loading states — counts the mark column while it stands.
+// Every cell that spans the whole row — the placeholder of a removed row, the panel a
+// row expands into, the empty and loading states — counts the columns left standing in
+// the row plus the mark column while it stands.
 const bodyColspan = computed(
-  () => props.columns.length + (markColumn.value ? 1 : 0),
+  () => rowColumns.value.length + (markColumn.value ? 1 : 0),
 )
 
 /** One cell of a row bar's row: how many columns it spans, and whether the bar is under it. */
@@ -154,7 +179,7 @@ type ProgressCell = { span: number; covered: boolean }
 // from growing wider than its header the moment a waiting change appears.
 const progressCells = computed<readonly ProgressCell[]>(() => {
   const cells: ProgressCell[] = []
-  for (const column of props.columns) {
+  for (const column of rowColumns.value) {
     const covered = column.progress === true
     const last = cells[cells.length - 1]
     if (last !== undefined && last.covered === covered) {
@@ -163,8 +188,11 @@ const progressCells = computed<readonly ProgressCell[]>(() => {
       cells.push({ span: 1, covered })
     }
   }
-  if (!props.columns.some((column) => column.progress === true)) {
-    cells.splice(0, cells.length, { span: props.columns.length, covered: true })
+  if (!rowColumns.value.some((column) => column.progress === true)) {
+    cells.splice(0, cells.length, {
+      span: rowColumns.value.length,
+      covered: true,
+    })
   }
   if (markColumn.value) {
     cells.push({ span: 1, covered: false })
@@ -200,14 +228,27 @@ const pendingSuffix = computed(() =>
 // while a pending change waits on the row — a move and a removal alike — and green
 // for the couple of seconds after a value landed. Waiting outranks the highlight,
 // because it is the one of the two the reader still has to act on. Red belongs to a
-// refused write, not to waiting. Bootstrap's contextual row classes carry their own
-// dark-mode variants, so they adapt to the active theme with no custom style layer.
+// refused write, not to waiting. Grey comes last of the three: amber and green speak
+// of something that happened to the row and the reader has yet to take in, while grey
+// says only that the reader opened this one themselves. Bootstrap's contextual row
+// classes carry their own dark-mode variants, so they adapt to the active theme with
+// no custom style layer.
 function rowClass(view: TableViewportRow<R>): string | undefined {
   if (view.pending !== null) {
     return 'table-warning'
   }
+  if (view.highlighted) {
+    return 'table-success'
+  }
 
-  return view.highlighted ? 'table-success' : undefined
+  return view.expanded ? 'table-active' : undefined
+}
+
+// The id of one row's panel, which the control above it points at through
+// aria-controls. One base for the whole table and the row key after it: the keys are
+// unique within a window, and two tables on one page mint two bases.
+function detailId(rowKey: string): string {
+  return `${detailBaseId}-${rowKey}`
 }
 
 // The bar running over one row, or undefined when none is. Read out of the map
@@ -391,7 +432,7 @@ function onSearchInput(event: Event): void {
         <thead>
           <tr>
             <th
-              v-for="column in columns"
+              v-for="column in rowColumns"
               :key="column.key"
               scope="col"
               :class="column.headerClass"
@@ -444,7 +485,7 @@ function onSearchInput(event: Event): void {
               <template v-else>{{ column.label }}</template>
             </th>
             <th v-if="markColumn" scope="col" class="text-end">
-              <span class="visually-hidden">Row state</span>
+              <span class="visually-hidden">Row state and controls</span>
             </th>
           </tr>
         </thead>
@@ -495,6 +536,31 @@ function onSearchInput(event: Event): void {
                   <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Will
                   leave
                 </span>
+                <!-- The control comes last of the three and stands at the very
+                edge: the snowflake and the badge STATE something about the row,
+                while this one is the only thing in the cell the reader acts on. -->
+                <button
+                  v-if="detailFields.length > 0"
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary ms-1"
+                  :data-id="`hilos-table-expand-${view.rowKey}`"
+                  :aria-expanded="view.expanded"
+                  :aria-controls="detailId(view.rowKey)"
+                  @click="controller.expandRow(view.rowKey, !view.expanded)"
+                >
+                  <i
+                    :class="[
+                      'bi',
+                      view.expanded ? 'bi-chevron-up' : 'bi-chevron-down',
+                    ]"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    view.expanded
+                      ? TABLE_DETAIL_COPY.hide
+                      : TABLE_DETAIL_COPY.show
+                  }}</span>
+                </button>
               </td>
             </tr>
 
@@ -535,6 +601,41 @@ function onSearchInput(event: Event): void {
                     label="Work on this row"
                   />
                 </template>
+              </td>
+            </tr>
+
+            <!-- The panel this row expands into, drawn after the row's own bar:
+            the bar is a continuation of the row it belongs to, and what the
+            reader opened themselves comes after what is happening to the record
+            on its own. A placeholder never says it is expanded; the second half
+            of the condition says the same thing to the compiler, so the fields
+            below are handed a row rather than a row-or-nothing. -->
+            <tr
+              v-if="view.expanded && view.row !== null"
+              :id="detailId(view.rowKey)"
+              class="table-active"
+              :data-id="`hilos-table-row-detail-${view.rowKey}`"
+            >
+              <td :colspan="bodyColspan" class="pt-0">
+                <dl class="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                  <div
+                    v-for="field in detailFields"
+                    :key="field.key"
+                    class="col"
+                  >
+                    <dt class="text-body-secondary fw-normal">
+                      {{ field.label }}
+                    </dt>
+                    <dd class="mb-0 text-break">
+                      <!-- A field the page declared but drew nothing into shows
+                      the dash its cells show, rather than an empty line that
+                      would read as "there is no value". -->
+                      <slot :name="`detail-${field.key}`" :row="view.row">{{
+                        TABLE_DETAIL_COPY.empty
+                      }}</slot>
+                    </dd>
+                  </div>
+                </dl>
               </td>
             </tr>
           </template>

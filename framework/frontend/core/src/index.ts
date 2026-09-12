@@ -94,6 +94,10 @@ export {
 } from './table/tableFrame.js'
 export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
 export {
+  TABLE_DETAIL_COPY,
+  hilosTableDetailFields,
+} from './table/tableDetail.js'
+export {
   TABLE_STALENESS_COPY,
   hilosTableStaleColumns,
   hilosTableStaleLabel,

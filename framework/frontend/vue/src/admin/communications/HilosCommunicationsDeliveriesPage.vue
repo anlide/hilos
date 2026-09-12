@@ -81,8 +81,15 @@ const columns: HilosTableColumnOf<HilosDeliveryRow>[] = [
   },
   { key: DELIVERY_DELIVERED_AT_FIELD, label: 'Delivered', sortable: true },
   { key: DELIVERY_USER_LABEL_FIELD, label: 'Recipient' },
-  { key: DELIVERY_NOTIFICATION_TITLE_FIELD, label: 'Notification' },
-  { key: DELIVERY_LAST_ERROR_FIELD, label: 'Error' },
+  // Two fields no column is wide enough for: the title of the notification with its
+  // type under it, and the reason a delivery failed — a whole sentence that stretched
+  // the table around it. Both wait in the panel a row expands into.
+  {
+    key: DELIVERY_NOTIFICATION_TITLE_FIELD,
+    label: 'Notification',
+    detail: true,
+  },
+  { key: DELIVERY_LAST_ERROR_FIELD, label: 'Error', detail: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
@@ -220,13 +227,6 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
         <td class="text-end">{{ row.attempts }}</td>
         <td class="text-nowrap">{{ row.deliveredAt || '—' }}</td>
         <td>{{ recipientLabel(row) }}</td>
-        <td>
-          <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
-          <code class="small text-body-secondary">{{
-            row.notificationType
-          }}</code>
-        </td>
-        <td class="text-body-secondary">{{ row.lastError || '—' }}</td>
         <td class="text-end">
           <LoadingButton
             v-if="isDeliveryRetryable(row)"
@@ -239,6 +239,15 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
             Retry
           </LoadingButton>
         </td>
+      </template>
+      <template #detail-notificationTitle="{ row }">
+        <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
+        <code class="small text-body-secondary">{{
+          row.notificationType
+        }}</code>
+      </template>
+      <template #detail-lastError="{ row }">
+        {{ row.lastError || '—' }}
       </template>
     </HilosViewportTable>
   </HilosAdminPage>
