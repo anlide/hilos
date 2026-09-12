@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogBatchSummary;
+use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogWorkerSummary;
@@ -44,9 +45,10 @@ use Hilos\Log\NodeLogIndex;
  * confirmation lives in a marker file on that machine, and a page worker holding the cluster
  * picture knows its own log root, its own window and its own settings and no other node's.
  *
- * Two of them are allowed to be absent, both because a node running the previous build says
- * nothing about them: {@see self::dueFromArray()} says why for the verdict, and
- * {@see self::carrying} reads as "not being carried" when it is missing.
+ * Three of them are allowed to be absent, all because a node running the previous build says
+ * nothing about them: {@see self::dueFromArray()} says why for the verdict, {@see self::carrying}
+ * reads as "not being carried" when it is missing, and {@see self::errorsFromArray()} reads a
+ * missing tail of failures as an empty one.
  */
 final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -79,6 +81,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Payload key: batches the reporting node's retention rule recommends carrying off, ascending. */
     public const string dueBatchTimestamps = 'dueBatchTimestamps';
+
+    /** Payload key: last failures written to the reporting node's live error streams, newest first. */
+    public const string recentErrors = 'recentErrors';
 
     /** Batch row key: Unix timestamp of the rotation folder. */
     public const string timestamp = 'timestamp';
@@ -136,6 +141,18 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Key and worker row key: summed size in bytes across the live file and every batch. */
     public const string totalBytes = 'totalBytes';
 
+    /** Error row key: instant the line was written, unix milliseconds in the reporting node's own zone. */
+    public const string atMs = 'atMs';
+
+    /** Error row key: basename of the live stream the line was read from. */
+    public const string stream = 'stream';
+
+    /** Error row key: line text, already cut to the reporting node's limit. */
+    public const string message = 'message';
+
+    /** Error row key: frames in the entry's stack trace, absent when the entry carries none. */
+    public const string traceFrames = 'traceFrames';
+
     /**
      * @param ?string $nodeId Cluster node this index was measured on, or null in a single-node installation
      * @param bool $available Whether the log store could be read
@@ -147,6 +164,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $logDirectory Absolute log root of the reporting node, or null when its environment names none
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on the reporting node
      * @param list<int> $dueBatchTimestamps Batches the reporting node's retention rule recommends carrying off, ascending
+     * @param list<LogErrorEntry> $recentErrors Last failures written to the reporting node's live error streams, newest first
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -159,6 +177,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?string $logDirectory = null,
         public readonly int $takeoutUndoWindowSeconds = 0,
         public readonly array $dueBatchTimestamps = [],
+        public readonly array $recentErrors = [],
     ) {
     }
 
@@ -181,6 +200,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             logDirectory: $index->logDirectory,
             takeoutUndoWindowSeconds: $index->takeoutUndoWindowSeconds,
             dueBatchTimestamps: $index->dueBatchTimestamps,
+            recentErrors: $index->recentErrors,
         );
     }
 
@@ -209,6 +229,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::logDirectory => $this->logDirectory,
             self::takeoutUndoWindowSeconds => $this->takeoutUndoWindowSeconds,
             self::dueBatchTimestamps => $this->dueBatchTimestamps,
+            self::recentErrors => array_map(
+                static fn (LogErrorEntry $entry): array => self::errorToArray($entry),
+                $this->recentErrors,
+            ),
         ];
     }
 
@@ -255,6 +279,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             logDirectory: self::optionalString($data, self::logDirectory),
             takeoutUndoWindowSeconds: self::requireInt($data, self::takeoutUndoWindowSeconds),
             dueBatchTimestamps: self::dueFromArray($data),
+            recentErrors: self::errorsFromArray($data),
         );
     }
 
@@ -276,6 +301,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             logDirectory: $this->logDirectory,
             takeoutUndoWindowSeconds: $this->takeoutUndoWindowSeconds,
             dueBatchTimestamps: $this->dueBatchTimestamps,
+            recentErrors: $this->recentErrors,
         );
     }
 
@@ -455,6 +481,54 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         }
 
         return $timestamps;
+    }
+
+    /**
+     * @param LogErrorEntry $entry Failure to lay out
+     * @return array<string, mixed> Error row
+     */
+    private static function errorToArray(LogErrorEntry $entry): array
+    {
+        return [
+            self::atMs => $entry->atMs,
+            self::stream => $entry->stream,
+            self::message => $entry->message,
+            self::traceFrames => $entry->traceFrames,
+        ];
+    }
+
+    /**
+     * Reads the tail of failures the reporting node keeps for the overview panel (HIL-867).
+     *
+     * Absent reads as an empty tail, for the reason {@see self::dueFromArray()} gives about the
+     * verdict beside it: a node still running the build before this key existed says nothing about
+     * failures, and refusing its frame over that would take its whole store off the cluster
+     * picture. The rows themselves are strict once the key is there — a row is a measurement of a
+     * line that was really written, and an entry repaired here would point an administrator at a
+     * file to open over something nobody logged.
+     *
+     * @param array<string, mixed> $data Wire form of one node's index
+     * @return list<LogErrorEntry> Failures in the order the node lists them
+     * @throws InvalidFormatException When the key carries a row that is not an object, or a row
+     *     with a field absent or of the wrong type
+     */
+    private static function errorsFromArray(array $data): array
+    {
+        $entries = [];
+        foreach (self::optionalArray($data, self::recentErrors) ?? [] as $row) {
+            if (!is_array($row)) {
+                throw new InvalidFormatException('Node log index carries a recent error that is not an object');
+            }
+
+            $entries[] = new LogErrorEntry(
+                atMs: self::requireInt($row, self::atMs),
+                stream: self::requireString($row, self::stream),
+                message: self::requireString($row, self::message),
+                traceFrames: self::optionalInt($row, self::traceFrames),
+            );
+        }
+
+        return $entries;
     }
 
     /**

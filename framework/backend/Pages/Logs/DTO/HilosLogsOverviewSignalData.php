@@ -66,6 +66,12 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Payload key: the named nodes of the picture, one row each; empty in a single-node installation. */
     public const string nodes = 'nodes';
 
+    /** Payload key: the cluster's last failures inside the panel's window, newest first. */
+    public const string recentErrors = 'recentErrors';
+
+    /** Payload key: whether that list was cut at the limit, which the screen reads as "10+". */
+    public const string recentErrorsCapped = 'recentErrorsCapped';
+
     /** Node row key: cluster node id, always a name - a node without one does not travel here. */
     public const string nodeId = 'nodeId';
 
@@ -74,6 +80,28 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
 
     /** Node row key: what this node's live files weigh, the archive taken back out. */
     public const string liveBytes = 'liveBytes';
+
+    /** Error row key: basename of the live stream the line was written to. */
+    public const string stream = 'stream';
+
+    /** Error row key: instant the line was written, ISO 8601 with milliseconds. */
+    public const string at = 'at';
+
+    /** Error row key: line text, already cut by the node that read it. */
+    public const string message = 'message';
+
+    /** Error row key: frames in the entry's stack trace, null when the entry carries none. */
+    public const string traceFrames = 'traceFrames';
+
+    /**
+     * Value of {@see self::nodeId} in an error row from an installation whose nodes have no names.
+     *
+     * A value and not an absence, which is why it is spelled out here rather than left to a
+     * fallback: the viewer address reads the empty id as "the node you are on" and draws it as its
+     * own segment, where a missing id would mean no file was named at all. The screen is told
+     * which file to open either way — only the way of naming the machine differs.
+     */
+    public const string SELF_NODE_ID = '';
 
     /**
      * @param ?bool $available Whether the cluster's log stores could be read, null while no merged picture has arrived
@@ -89,6 +117,10 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * @param list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
      *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int}> $nodes
      *     Named nodes of the picture, one row each; empty in a single-node installation
+     * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentErrors
+     *     Last failures across the cluster inside the panel's window, newest first; the node id is
+     *     an empty string in a single-node installation, which is what the viewer address expects
+     * @param bool $recentErrorsCapped Whether that list was cut at the limit, so the screen says "10+"
      */
     public function __construct(
         public readonly ?bool $available,
@@ -102,6 +134,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
         public readonly ?int $keysWithoutGrowthWindow,
         public readonly ?int $batchesDueForTakeout,
         public readonly array $nodes,
+        public readonly array $recentErrors = [],
+        public readonly bool $recentErrorsCapped = false,
     ) {
     }
 
@@ -122,6 +156,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::keysWithoutGrowthWindow => $this->keysWithoutGrowthWindow,
             self::batchesDueForTakeout => $this->batchesDueForTakeout,
             self::nodes => $this->nodes,
+            self::recentErrors => $this->recentErrors,
+            self::recentErrorsCapped => $this->recentErrorsCapped,
         ];
     }
 
@@ -150,6 +186,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             keysWithoutGrowthWindow: self::optionalNonNegativeInt($data[self::keysWithoutGrowthWindow] ?? null),
             batchesDueForTakeout: self::optionalNonNegativeInt($data[self::batchesDueForTakeout] ?? null),
             nodes: self::nodeRows($data),
+            recentErrors: self::errorRows($data),
+            recentErrorsCapped: ($data[self::recentErrorsCapped] ?? null) === true,
         );
     }
 
@@ -185,6 +223,40 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
                 self::archiveBytes => self::optionalNonNegativeInt($row[self::archiveBytes] ?? null),
                 self::growthBytesPerDay => self::optionalNonNegativeInt($row[self::growthBytesPerDay] ?? null),
                 self::batchesDueForTakeout => self::optionalNonNegativeInt($row[self::batchesDueForTakeout] ?? null),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Reads the panel's rows back, refusing one that is not a row (HIL-867).
+     *
+     * Every field of a row is required but the frame count, and the node id is required as a
+     * STRING that may be empty: a single-node installation has no name to give, and the address
+     * the row leads to wants the empty string in that place rather than nothing at all. The frame
+     * count keeps its null, which is the difference between "there is a stack to look at" and
+     * "there is not" — read as zero it would put a badge on every row.
+     *
+     * @param array<string, mixed> $data Wire form of the overview
+     * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Rows of the panel
+     * @throws InvalidFormatException When the list is absent, holds a row that is not an object, or
+     *     a row omits a field it has no meaning without
+     */
+    private static function errorRows(array $data): array
+    {
+        $rows = [];
+        foreach (self::requireArray($data, self::recentErrors) as $row) {
+            if (!is_array($row)) {
+                throw new InvalidFormatException('Logs overview carries a recent error that is not an object');
+            }
+
+            $rows[] = [
+                self::nodeId => self::requireString($row, self::nodeId),
+                self::stream => self::requireString($row, self::stream),
+                self::at => self::requireString($row, self::at),
+                self::message => self::requireString($row, self::message),
+                self::traceFrames => self::optionalNonNegativeInt($row[self::traceFrames] ?? null),
             ];
         }
 

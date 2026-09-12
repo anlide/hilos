@@ -24,17 +24,27 @@ import {
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
+  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
+  hasLogsOverviewRecentErrors,
   logsOverviewBatchesNote,
+  logsOverviewErrorOrigin,
+  logsOverviewErrorPath,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
+  logsOverviewRecentErrors,
+  logsOverviewRecentErrorsBadge,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
   subscribeSignal,
 } from '@hilos/core'
-import type { HilosLogsOverview, HilosLogsOverviewContext } from '@hilos/core'
+import type {
+  HilosLogsOverview,
+  HilosLogsOverviewContext,
+  HilosLogsOverviewError,
+} from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -166,6 +176,89 @@ import { HilosLink } from '../../HilosLink.js'
               Show them
             </a>
           </div>
+        }
+
+        @if (state() === 'figures') {
+          <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
+            <h2 class="h6 text-uppercase text-body-secondary mb-0">
+              Recent errors
+            </h2>
+            <span
+              class="badge text-bg-danger"
+              data-id="hilos-logs-recent-errors-count"
+            >
+              {{ recentErrorsBadge() }}
+            </span>
+            <span class="ms-auto small text-body-secondary">
+              Over the last hour
+            </span>
+          </div>
+          <p class="small text-body-secondary">
+            An error asks somebody to go and look at it. Each line leads into
+            the journal it was written in — the same node, the same file.
+          </p>
+          <!-- The row leads to the FILE and not to the line: the viewer address has
+          no anchor for a line yet, and "the same place" is the next step rather than
+          this one. -->
+          @if (hasRecentErrors()) {
+            <div
+              class="border rounded-3 overflow-hidden mb-2"
+              data-id="hilos-logs-recent-errors"
+            >
+              @for (error of recentErrors(); track $index) {
+                <a
+                  [hilosLink]="errorPath(error)"
+                  class="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
+                  data-id="hilos-logs-recent-error"
+                >
+                  <span class="small fw-semibold text-danger flex-shrink-0"
+                    >ERROR</span
+                  >
+                  <span class="small text-body-secondary flex-shrink-0">
+                    {{ formatErrorAt(error.at) }}
+                  </span>
+                  <span class="flex-grow-1 small">
+                    {{ error.message }}
+                    <span class="d-block text-body-secondary">
+                      {{ errorOrigin(error) }}
+                    </span>
+                  </span>
+                  @if (error.traceFrames !== null) {
+                    <span
+                      class="badge text-bg-light border flex-shrink-0"
+                      title="This error carries a stack trace"
+                      data-id="hilos-logs-recent-error-trace"
+                    >
+                      <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+                      {{ error.traceFrames }}
+                    </span>
+                  }
+                  <i
+                    class="bi bi-chevron-right text-body-secondary flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
+                </a>
+              }
+            </div>
+          } @else {
+            <!-- Good news, and it must not read as "no data": the picture IS here,
+            and it says nothing went wrong in the window. -->
+            <div
+              class="border rounded-3 p-3 mb-2 d-flex align-items-center gap-3 bg-body-tertiary"
+              data-id="hilos-logs-recent-errors-empty"
+            >
+              <i
+                class="bi bi-check2-circle fs-4 text-success"
+                aria-hidden="true"
+              ></i>
+              <div>
+                <div class="fw-semibold small">No errors in the last hour</div>
+                <div class="small text-body-secondary">
+                  Nothing has asked for attention in that time.
+                </div>
+              </div>
+            </div>
+          }
         }
 
         @if (clustered()) {
@@ -352,6 +445,21 @@ export class HilosLogsPage {
     logsOverviewGrowthNote(this.overview()),
   )
 
+  // The panel of last failures. It is drawn only where there ARE figures: saying
+  // "nothing has gone wrong" about a picture that has not arrived would be good news
+  // made up, and that is the one thing an empty state here must never look like.
+  protected readonly recentErrors = computed(() =>
+    logsOverviewRecentErrors(this.overview()),
+  )
+  protected readonly hasRecentErrors = computed(() =>
+    hasLogsOverviewRecentErrors(this.overview()),
+  )
+  protected readonly recentErrorsBadge = computed(() =>
+    logsOverviewRecentErrorsBadge(this.overview()),
+  )
+  protected readonly formatErrorAt = formatLogsOverviewErrorAt
+  protected readonly errorPath = logsOverviewErrorPath
+
   constructor() {
     // The frame arrives once as the answer to the subscription and again on every
     // tick where the cluster picture moved; nothing is ever re-requested. The same
@@ -368,5 +476,18 @@ export class HilosLogsPage {
         logs.dispose()
       })
     })
+  }
+
+  /**
+   * Where a failure was written, as the row's sub-line says it.
+   *
+   * A method and not a bound function, because the origin is asked of the whole
+   * picture and not of the row: the row's empty node id is a value, not a sign that
+   * this installation runs on one machine.
+   *
+   * @param error The failure the row draws.
+   */
+  protected errorOrigin(error: HilosLogsOverviewError): string {
+    return logsOverviewErrorOrigin(this.overview(), error)
   }
 }

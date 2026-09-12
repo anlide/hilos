@@ -3,17 +3,24 @@ import { describe, expect, it } from 'vitest'
 import {
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
+  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
+  hasLogsOverviewRecentErrors,
   logsOverviewBatchesNote,
+  logsOverviewErrorOrigin,
+  logsOverviewErrorPath,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
+  logsOverviewRecentErrors,
+  logsOverviewRecentErrorsBadge,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
   LOGS_OVERVIEW_SIGNAL_SCHEMAS,
   OVERVIEW_SIGNAL,
   type HilosLogsOverview,
+  type HilosLogsOverviewError,
   type HilosLogsOverviewNode,
 } from '../../../src/admin/logs/hilosLogsOverview.js'
 
@@ -47,6 +54,21 @@ function overview(
     keysWithoutGrowthWindow: 0,
     batchesDueForTakeout: 0,
     nodes: [],
+    recentErrors: [],
+    recentErrorsCapped: false,
+    ...overrides,
+  }
+}
+
+function failure(
+  overrides: Partial<HilosLogsOverviewError> = {},
+): HilosLogsOverviewError {
+  return {
+    nodeId: '',
+    stream: 'worker-monopolistic-5.error.log',
+    at: '2026-09-06T10:00:02.125+00:00',
+    message: 'login action failed',
+    traceFrames: 3,
     ...overrides,
   }
 }
@@ -84,6 +106,18 @@ describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
     )
 
     expect(parsed.success).toBe(true)
+  })
+
+  it('accepts the panel of failures, the null frame count included', () => {
+    const parsed = LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse(
+      overview({
+        recentErrors: [failure(), failure({ traceFrames: null })],
+        recentErrorsCapped: true,
+      }),
+    )
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.recentErrors[1].traceFrames).toBeNull()
   })
 
   it('tolerates a field it has never heard of, so a newer backend still reaches the screen', () => {
@@ -294,6 +328,96 @@ describe('logsOverviewTakeoutHeadline', () => {
   it('agrees with the many', () => {
     expect(logsOverviewTakeoutHeadline(3)).toBe(
       '3 batches are waiting to be taken out',
+    )
+  })
+})
+
+describe('logsOverviewRecentErrors', () => {
+  it('has nothing to draw before a picture arrives, which is not the same as no failures', () => {
+    expect(logsOverviewRecentErrors(null)).toEqual([])
+    expect(hasLogsOverviewRecentErrors(null)).toBe(false)
+  })
+
+  it('draws the list the page sent, in the order it sent it', () => {
+    const newest = failure({ message: 'the newest one' })
+    const older = failure({ message: 'the older one' })
+
+    expect(
+      logsOverviewRecentErrors(overview({ recentErrors: [newest, older] })),
+    ).toEqual([newest, older])
+    expect(
+      hasLogsOverviewRecentErrors(overview({ recentErrors: [newest, older] })),
+    ).toBe(true)
+  })
+})
+
+describe('logsOverviewRecentErrorsBadge', () => {
+  it('names the length exactly while the list was not cut', () => {
+    expect(
+      logsOverviewRecentErrorsBadge(
+        overview({ recentErrors: [failure(), failure(), failure()] }),
+      ),
+    ).toBe('3')
+  })
+
+  it('says there were at least that many once the page cut the list', () => {
+    expect(
+      logsOverviewRecentErrorsBadge(
+        overview({ recentErrors: [failure()], recentErrorsCapped: true }),
+      ),
+    ).toBe('1+')
+  })
+})
+
+describe('formatLogsOverviewErrorAt', () => {
+  it('prints the time of day and leaves the date out, since every row shares it', () => {
+    const printed = formatLogsOverviewErrorAt('2026-09-06T10:00:02.125+00:00')
+
+    expect(printed).toBe(
+      new Date('2026-09-06T10:00:02.125+00:00').toLocaleTimeString(),
+    )
+    expect(printed).not.toContain('2026')
+  })
+
+  it('answers a dash to an instant it cannot read, rather than the words Invalid Date', () => {
+    expect(formatLogsOverviewErrorAt('whenever')).toBe('—')
+  })
+})
+
+describe('logsOverviewErrorOrigin', () => {
+  it('names the node only where an installation has node names', () => {
+    const clustered = overview({ nodes: [node({ nodeId: 'node-2' })] })
+
+    expect(
+      logsOverviewErrorOrigin(
+        clustered,
+        failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
+      ),
+    ).toBe('node-2 · worker-0.error.log')
+  })
+
+  it('names the stream alone on one machine, where there is no node to speak of', () => {
+    expect(
+      logsOverviewErrorOrigin(
+        overview(),
+        failure({ stream: 'worker-0.error.log' }),
+      ),
+    ).toBe('worker-0.error.log')
+  })
+})
+
+describe('logsOverviewErrorPath', () => {
+  it('leads to the viewer on the live file the line is in', () => {
+    expect(
+      logsOverviewErrorPath(
+        failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
+      ),
+    ).toBe('/hilos/logs/view/node-2/live/worker-0.error.log')
+  })
+
+  it('reads the empty node id as the machine the reader is on', () => {
+    expect(logsOverviewErrorPath(failure({ stream: 'daemon-error.log' }))).toBe(
+      '/hilos/logs/view/-/live/daemon-error.log',
     )
   })
 })

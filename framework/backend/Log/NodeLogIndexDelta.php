@@ -24,6 +24,7 @@ final class NodeLogIndexDelta
      * @param list<int> $withdrawnBatchTimestamps Rotation batches whose confirmation an operator withdrew since the previous index
      * @param list<int> $verdictChangedBatchTimestamps Rotation batches the retention rule started or stopped recommending since the previous index
      * @param bool $availabilityChanged Whether the store crossed between readable and unreadable
+     * @param bool $recentErrorsChanged Whether the tail of failures this node keeps for the overview panel moved
      */
     public function __construct(
         public readonly array $appearedKeys,
@@ -35,6 +36,7 @@ final class NodeLogIndexDelta
         public readonly array $withdrawnBatchTimestamps,
         public readonly array $verdictChangedBatchTimestamps,
         public readonly bool $availabilityChanged,
+        public readonly bool $recentErrorsChanged,
     ) {
     }
 
@@ -63,8 +65,15 @@ final class NodeLogIndexDelta
      * name and marker. Left out, the frame that would have taken the new verdict to the screen
      * is judged empty, and the badge waits for whatever changes next.
      *
+     * And so does the tail of recent failures, on an axis of its own for the same reason
+     * (HIL-867). A new line in an error stream does grow a key, but only when that key's weight
+     * is re-measured — and a stream that gets one line back after a rotation can hold the very
+     * same byte count it held a walk ago. Left out, the newest failure on a node would wait for
+     * whatever moves next, or, on a quiet installation, for the keepalive frame a minute later,
+     * while the panel that exists to say "go and look at this" showed the one before it.
+     *
      * @return bool True when nothing appeared, grew, vanished, changed its confirmation, changed
-     *     its retention verdict or changed side
+     *     its retention verdict, moved the tail of failures or changed side
      */
     public function isEmpty(): bool
     {
@@ -76,6 +85,7 @@ final class NodeLogIndexDelta
             && $this->confirmedBatchTimestamps === []
             && $this->withdrawnBatchTimestamps === []
             && $this->verdictChangedBatchTimestamps === []
+            && !$this->recentErrorsChanged
             && !$this->availabilityChanged;
     }
 }

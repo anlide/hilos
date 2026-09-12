@@ -29,6 +29,15 @@ final class TimeConstants
      */
     public const int NS_PER_MILLISECOND = 1_000_000;
 
+    /**
+     * @var int Microseconds in one millisecond, the factor a stamp in milliseconds needs before a
+     *     `DateTimeImmutable` will take it: its finest unit is the microsecond
+     *
+     * Equal to {@see self::MS_PER_SECOND} today and unrelated to it: one converts inside a second,
+     * the other inside a millisecond. Sharing a declaration would claim the two move together.
+     */
+    public const int US_PER_MILLISECOND = 1000;
+
     /** @var int Seconds in one minute */
     public const int SECONDS_PER_MINUTE = 60;
 

@@ -200,14 +200,44 @@ final class LogStoreReaderTest extends TestCase
         $this->assertNull($reader->readLiveFiles());
     }
 
+    public function testErrorStreamsAreRecognizedBySuffixAndByTheConfiguredDaemonName(): void
+    {
+        $reader = $this->reader();
+
+        $this->assertTrue($reader->isErrorStream('worker-monopolistic-5.error.log'));
+        $this->assertTrue($reader->isErrorStream('agent-chat_context_analyzer.error.log'));
+        $this->assertTrue($reader->isErrorStream(self::DAEMON_ERROR_LOG));
+    }
+
+    public function testTheRawPairAndOrdinaryStreamsAreNotErrorStreams(): void
+    {
+        $reader = $this->reader();
+
+        // The raw pair falls out on the shape of its own name, which no rule here states: the
+        // recent-errors panel would otherwise carry lines PHP printed past the Logger, with no
+        // timestamp to order them by.
+        $this->assertFalse($reader->isErrorStream('daemon-raw.log'));
+        $this->assertFalse($reader->isErrorStream('daemon-error-raw.log'));
+        $this->assertFalse($reader->isErrorStream(self::DAEMON_LOG));
+        $this->assertFalse($reader->isErrorStream('worker-1.log'));
+    }
+
+    public function testWithoutAConfiguredErrorLogOnlyTheSuffixNamesAnErrorStream(): void
+    {
+        $reader = new LogStoreReader($this->dir, [self::DAEMON_LOG]);
+
+        $this->assertTrue($reader->isErrorStream('worker-1.error.log'));
+        $this->assertFalse($reader->isErrorStream(self::DAEMON_ERROR_LOG));
+    }
+
     /**
-     * Reader over the fixture directory, knowing the two daemon basenames.
+     * Reader over the fixture directory, knowing the two daemon basenames and which of them is the error one.
      *
      * @return LogStoreReader Reader bound to the temp log root
      */
     private function reader(): LogStoreReader
     {
-        return new LogStoreReader($this->dir, [self::DAEMON_LOG, self::DAEMON_ERROR_LOG]);
+        return new LogStoreReader($this->dir, [self::DAEMON_LOG, self::DAEMON_ERROR_LOG], self::DAEMON_ERROR_LOG);
     }
 
     /**

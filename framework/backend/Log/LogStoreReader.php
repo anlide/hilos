@@ -7,6 +7,7 @@ namespace Hilos\Log;
 use DateTimeImmutable;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Constants\LogStreamConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\FileSystemHelper;
@@ -53,10 +54,13 @@ final class LogStoreReader
      * @param ?string $logDirectory Log root holding the live `*.log` files and the staging and archive
      *     subtrees, or null when it could not be resolved
      * @param list<string> $daemonBasenames Exact basenames of the daemon's own logs, classified as {@see self::CLASS_DAEMON}
+     * @param ?string $daemonErrorBasename Basename of the daemon's own error stream, the one name
+     *     {@see isErrorStream()} cannot derive from a suffix, or null when the env does not configure one
      */
     public function __construct(
         private readonly ?string $logDirectory,
         private readonly array $daemonBasenames = [],
+        private readonly ?string $daemonErrorBasename = null,
     ) {
     }
 
@@ -78,7 +82,30 @@ final class LogStoreReader
             return new self(null);
         }
 
-        return new self(dirname($daemonLogFile), self::daemonBasenamesFromEnv($daemonLogFile));
+        $errorLogFile = self::daemonErrorLogFileFromEnv();
+
+        return new self(
+            dirname($daemonLogFile),
+            self::daemonBasenames($daemonLogFile, $errorLogFile),
+            $errorLogFile === null ? null : basename($errorLogFile),
+        );
+    }
+
+    /**
+     * Path of the daemon's own error stream as the environment names it.
+     *
+     * Read on its own, away from `DAEMON_LOG_FILE`: an installation that names the main log and
+     * not the error one stays readable and loses only what that one value would have told.
+     *
+     * @return ?string Value of `DAEMON_ERROR_LOG_FILE`, or null when the env does not carry one
+     */
+    private static function daemonErrorLogFileFromEnv(): ?string
+    {
+        try {
+            return Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]->string();
+        } catch (EnvException) {
+            return null;
+        }
     }
 
     /**
@@ -89,23 +116,22 @@ final class LogStoreReader
      * process and get the same {@see self::CLASS_DAEMON} — a class of their own would split one
      * daemon's output in two on every screen that reads this index.
      *
-     * Each env value is read on its own: a store that resolves through `DAEMON_LOG_FILE` alone
-     * stays readable, and an env missing the error stream loses that one class rather than the
-     * whole walk.
+     * Each env value is resolved on its own by the caller: a store that resolves through
+     * `DAEMON_LOG_FILE` alone stays readable, and an env missing the error stream loses that one
+     * class rather than the whole walk.
      *
      * @param string $daemonLogFile Value of `DAEMON_LOG_FILE`, already resolved by the caller
+     * @param ?string $errorLogFile Value of `DAEMON_ERROR_LOG_FILE`, or null when the env carries none
      *
      * @return list<string> Two basenames per daemon stream the env names
      */
-    private static function daemonBasenamesFromEnv(string $daemonLogFile): array
+    private static function daemonBasenames(string $daemonLogFile, ?string $errorLogFile): array
     {
         $basenames = [
             basename($daemonLogFile),
             basename(DaemonRawStream::pathFor($daemonLogFile)),
         ];
-        try {
-            $errorLogFile = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]->string();
-        } catch (EnvException) {
+        if ($errorLogFile === null) {
             return $basenames;
         }
 
@@ -123,6 +149,29 @@ final class LogStoreReader
     public function logDirectory(): ?string
     {
         return $this->logDirectory;
+    }
+
+    /**
+     * Whether a live stream carries failures — worker stderr, every ERROR level, and nothing else.
+     *
+     * Two names qualify, and for two different reasons. Any stream ending in
+     * {@see LogStreamConstants::ERROR_STREAM_SUFFIX} is one the master spilled a worker's or an
+     * agent's failures into; the daemon's own error stream is not named that way at all and is
+     * recognized by the basename the environment gave it.
+     *
+     * The raw pair beside each daemon stream ({@see DaemonRawStream::pathFor()}) is left out on its
+     * own: `daemon-error-raw.log` neither ends in the suffix nor equals the configured basename.
+     * That is a consequence of how the raw name is built rather than a rule stated here, which is
+     * exactly why a test holds it — it would stop being true the day that name changes.
+     *
+     * @param string $basename Basename of a live stream, as {@see LogStoreSnapshot::liveFiles()} names it
+     *
+     * @return bool Whether the stream is one of failures
+     */
+    public function isErrorStream(string $basename): bool
+    {
+        return str_ends_with($basename, LogStreamConstants::ERROR_STREAM_SUFFIX)
+            || $basename === $this->daemonErrorBasename;
     }
 
     /**

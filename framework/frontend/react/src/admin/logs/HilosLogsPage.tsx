@@ -17,12 +17,18 @@ import {
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
+  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
+  hasLogsOverviewRecentErrors,
   logsOverviewBatchesNote,
+  logsOverviewErrorOrigin,
+  logsOverviewErrorPath,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
+  logsOverviewRecentErrors,
+  logsOverviewRecentErrorsBadge,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
 } from '@hilos/core'
@@ -73,6 +79,13 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
   const batchesDue = overview?.batchesDueForTakeout ?? 0
   const nodesDue = logsOverviewNodesDue(overview)
   const growthNote = logsOverviewGrowthNote(overview)
+
+  // The panel of last failures. It is drawn only where there ARE figures: saying
+  // "nothing has gone wrong" about a picture that has not arrived would be good news
+  // made up, and that is the one thing an empty state here must never look like.
+  const recentErrors = logsOverviewRecentErrors(overview)
+  const hasRecentErrors = hasLogsOverviewRecentErrors(overview)
+  const recentErrorsBadge = logsOverviewRecentErrorsBadge(overview)
 
   return (
     <HilosAdminPage
@@ -204,6 +217,98 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                 Show them
               </HilosLink>
             </div>
+          ) : null}
+
+          {state === 'figures' ? (
+            <>
+              <div className="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
+                <h2 className="h6 text-uppercase text-body-secondary mb-0">
+                  Recent errors
+                </h2>
+                <span
+                  className="badge text-bg-danger"
+                  data-id="hilos-logs-recent-errors-count"
+                >
+                  {recentErrorsBadge}
+                </span>
+                <span className="ms-auto small text-body-secondary">
+                  Over the last hour
+                </span>
+              </div>
+              <p className="small text-body-secondary">
+                An error asks somebody to go and look at it. Each line leads
+                into the journal it was written in — the same node, the same
+                file.
+              </p>
+              {/* The row leads to the FILE and not to the line: the viewer address
+              has no anchor for a line yet, and "the same place" is the next step
+              rather than this one. */}
+              {hasRecentErrors ? (
+                <div
+                  className="border rounded-3 overflow-hidden mb-2"
+                  data-id="hilos-logs-recent-errors"
+                >
+                  {recentErrors.map((error, index) => (
+                    <HilosLink
+                      key={index}
+                      to={logsOverviewErrorPath(error)}
+                      className="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
+                      data-id="hilos-logs-recent-error"
+                    >
+                      <span className="small fw-semibold text-danger flex-shrink-0">
+                        ERROR
+                      </span>
+                      <span className="small text-body-secondary flex-shrink-0">
+                        {formatLogsOverviewErrorAt(error.at)}
+                      </span>
+                      <span className="flex-grow-1 small">
+                        {error.message}
+                        <span className="d-block text-body-secondary">
+                          {logsOverviewErrorOrigin(overview, error)}
+                        </span>
+                      </span>
+                      {error.traceFrames === null ? null : (
+                        <span
+                          className="badge text-bg-light border flex-shrink-0"
+                          title="This error carries a stack trace"
+                          data-id="hilos-logs-recent-error-trace"
+                        >
+                          <i
+                            className="bi bi-info-circle me-1"
+                            aria-hidden="true"
+                          />
+                          {error.traceFrames}
+                        </span>
+                      )}
+                      <i
+                        className="bi bi-chevron-right text-body-secondary flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    </HilosLink>
+                  ))}
+                </div>
+              ) : (
+                /* Good news, and it must not read as "no data": the picture IS here,
+                and it says nothing went wrong in the window. */
+                <div
+                  className="border rounded-3 p-3 mb-2 d-flex align-items-center gap-3 bg-body-tertiary"
+                  data-id="hilos-logs-recent-errors-empty"
+                >
+                  <i
+                    className="bi bi-check2-circle fs-4 text-success"
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <div className="fw-semibold small">
+                      No errors in the last hour
+                    </div>
+                    <div className="small text-body-secondary">
+                      Nothing has asked for attention in that time.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           ) : null}
 
           {clustered ? (

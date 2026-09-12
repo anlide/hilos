@@ -15,12 +15,18 @@ import {
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
+  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
+  hasLogsOverviewRecentErrors,
   logsOverviewBatchesNote,
+  logsOverviewErrorOrigin,
+  logsOverviewErrorPath,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
+  logsOverviewRecentErrors,
+  logsOverviewRecentErrorsBadge,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
   HILOS_PAGE_ROUTES,
@@ -60,6 +66,16 @@ const state = computed(() => logsOverviewState(overview.value))
 // and a banner saying so would be a warning about nothing.
 const batchesDue = computed(() => overview.value?.batchesDueForTakeout ?? 0)
 const nodesDue = computed(() => logsOverviewNodesDue(overview.value))
+// The panel of last failures. It is drawn only where there ARE figures: saying
+// "nothing has gone wrong" about a picture that has not arrived would be good news
+// made up, and that is the one thing an empty state here must never look like.
+const recentErrors = computed(() => logsOverviewRecentErrors(overview.value))
+const hasRecentErrors = computed(() =>
+  hasLogsOverviewRecentErrors(overview.value),
+)
+const recentErrorsBadge = computed(() =>
+  logsOverviewRecentErrorsBadge(overview.value),
+)
 const rotationsPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_ROTATIONS]
 </script>
 
@@ -191,6 +207,87 @@ const rotationsPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_ROTATIONS]
           Show them
         </HilosLink>
       </div>
+
+      <template v-if="state === 'figures'">
+        <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
+          <h2 class="h6 text-uppercase text-body-secondary mb-0">
+            Recent errors
+          </h2>
+          <span
+            class="badge text-bg-danger"
+            data-id="hilos-logs-recent-errors-count"
+          >
+            {{ recentErrorsBadge }}
+          </span>
+          <span class="ms-auto small text-body-secondary">
+            Over the last hour
+          </span>
+        </div>
+        <p class="small text-body-secondary">
+          An error asks somebody to go and look at it. Each line leads into the
+          journal it was written in — the same node, the same file.
+        </p>
+        <!-- The row leads to the FILE and not to the line: the viewer address has
+        no anchor for a line yet, and "the same place" is the next step rather than
+        this one. -->
+        <div
+          v-if="hasRecentErrors"
+          class="border rounded-3 overflow-hidden mb-2"
+          data-id="hilos-logs-recent-errors"
+        >
+          <HilosLink
+            v-for="(error, index) in recentErrors"
+            :key="index"
+            :to="logsOverviewErrorPath(error)"
+            class="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
+            data-id="hilos-logs-recent-error"
+          >
+            <span class="small fw-semibold text-danger flex-shrink-0"
+              >ERROR</span
+            >
+            <span class="small text-body-secondary flex-shrink-0">
+              {{ formatLogsOverviewErrorAt(error.at) }}
+            </span>
+            <span class="flex-grow-1 small">
+              {{ error.message }}
+              <span class="d-block text-body-secondary">
+                {{ logsOverviewErrorOrigin(overview, error) }}
+              </span>
+            </span>
+            <span
+              v-if="error.traceFrames !== null"
+              class="badge text-bg-light border flex-shrink-0"
+              title="This error carries a stack trace"
+              data-id="hilos-logs-recent-error-trace"
+            >
+              <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+              {{ error.traceFrames }}
+            </span>
+            <i
+              class="bi bi-chevron-right text-body-secondary flex-shrink-0"
+              aria-hidden="true"
+            ></i>
+          </HilosLink>
+        </div>
+        <!-- Good news, and it must not read as "no data": the picture IS here, and
+        it says nothing went wrong in the window. -->
+        <div
+          v-else
+          class="border rounded-3 p-3 mb-2 d-flex align-items-center gap-3 bg-body-tertiary"
+          data-id="hilos-logs-recent-errors-empty"
+        >
+          <i
+            class="bi bi-check2-circle fs-4 text-success"
+            aria-hidden="true"
+          ></i>
+          <div>
+            <div class="fw-semibold small">No errors in the last hour</div>
+            <div class="small text-body-secondary">
+              Nothing has asked for attention in that time.
+            </div>
+          </div>
+        </div>
+      </template>
 
       <template v-if="clustered">
         <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">

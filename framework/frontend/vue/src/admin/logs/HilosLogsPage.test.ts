@@ -5,6 +5,7 @@ import { HilosPages, createSignal, OVERVIEW_SIGNAL } from '@hilos/core'
 import type {
   HilosConnection,
   HilosLogsOverview,
+  HilosLogsOverviewError,
   HilosLogsOverviewNode,
   HilosRouter,
   PageRouteMatch,
@@ -45,6 +46,22 @@ function overview(
     keysWithoutGrowthWindow: 0,
     batchesDueForTakeout: 0,
     nodes: [],
+    recentErrors: [],
+    recentErrorsCapped: false,
+    ...overrides,
+  }
+}
+
+/** One failure of the recent-errors panel. */
+function failure(
+  overrides: Partial<HilosLogsOverviewError> = {},
+): HilosLogsOverviewError {
+  return {
+    nodeId: '',
+    stream: 'worker-monopolistic-5.error.log',
+    at: '2026-09-06T10:00:02.125+00:00',
+    message: 'login action failed',
+    traceFrames: 3,
     ...overrides,
   }
 }
@@ -223,6 +240,81 @@ describe('HilosLogsPage', () => {
     expect(
       wrapper.find('[data-id="hilos-logs-node-nodata-node-1"]').exists(),
     ).toBe(false)
+  })
+
+  it('draws no panel of failures in either empty state, where good news would be made up', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-errors-empty"]').exists(),
+    ).toBe(false)
+
+    push(overview({ available: false }))
+    await nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-errors-empty"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('[data-id="hilos-logs-recent-errors"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('says the hour was quiet in words, rather than showing an empty list', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    push(overview({ recentErrors: [] }))
+    await nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-errors-empty"]').text(),
+    ).toContain('No errors in the last hour')
+    expect(wrapper.find('[data-id="hilos-logs-recent-errors"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('leads a row into the viewer on the file that line is in', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    push(
+      overview({
+        recentErrors: [failure({ stream: 'worker-0.error.log' })],
+      }),
+    )
+    await nextTick()
+
+    const row = wrapper.find('[data-id="hilos-logs-recent-error"]')
+    expect(row.exists()).toBe(true)
+    expect(row.attributes('href')).toBe(
+      '/hilos/logs/view/-/live/worker-0.error.log',
+    )
+    expect(row.text()).toContain('login action failed')
+  })
+
+  it('badges only the failure that has a stack behind it', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    push(
+      overview({
+        recentErrors: [
+          failure({ traceFrames: 3 }),
+          failure({ traceFrames: null }),
+        ],
+      }),
+    )
+    await nextTick()
+
+    const badges = wrapper.findAll('[data-id="hilos-logs-recent-error-trace"]')
+    expect(badges).toHaveLength(1)
+    expect(badges[0].text()).toContain('3')
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-errors-count"]').text(),
+    ).toBe('2')
   })
 
   it('leaves the takeout banner out entirely when nothing is waiting', async () => {

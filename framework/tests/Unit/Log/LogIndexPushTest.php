@@ -200,7 +200,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testADeltaWithNothingInItIsEmpty(): void
     {
-        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false)->isEmpty());
+        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, false)->isEmpty());
     }
 
     /**
@@ -210,7 +210,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testCrossingIntoUnavailabilityCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], true)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], true, false)->isEmpty());
     }
 
     /**
@@ -220,7 +220,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAConfirmedBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], [], false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], [], false, false)->isEmpty());
     }
 
     /**
@@ -230,7 +230,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAWithdrawnBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], [], false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], [], false, false)->isEmpty());
     }
 
     /**
@@ -240,7 +240,17 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAChangedVerdictCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [1756166400], false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [1756166400], false, false)->isEmpty());
+    }
+
+    /**
+     * And so does the tail of failures the overview panel draws: a stream that got a line back
+     * after a rotation can weigh exactly what it weighed a walk ago, and without an axis of its
+     * own the newest failure on a quiet node waits for the keepalive frame (HIL-867).
+     */
+    public function testAMovedErrorTailCountsAsAChangeOnItsOwn(): void
+    {
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, true)->isEmpty());
     }
 
     public function testTheWrittenSettingSetsTheInterval(): void

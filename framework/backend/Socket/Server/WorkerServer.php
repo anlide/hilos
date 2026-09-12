@@ -14,6 +14,7 @@ use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\LogStreamConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
@@ -133,9 +134,6 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
     /** @var string Standard log file extension */
     private const string LOG_EXTENSION = '.log';
-
-    /** @var string Error log file extension */
-    private const string ERROR_LOG_EXTENSION = '.error.log';
 
     /** @var string Worker log file name prefix */
     private const string WORKER_LOG_PREFIX = 'worker-';
@@ -714,7 +712,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         // Read stderr and write to file
         $stderr = $process->getStdErr();
         if (!empty($stderr)) {
-            $stderrFile = $logDirectory . '/' . self::WORKER_LOG_PREFIX . "{$workerType}-{$workerIndex}" . self::ERROR_LOG_EXTENSION;
+            $stderrFile = $logDirectory . '/' . self::WORKER_LOG_PREFIX . "{$workerType}-{$workerIndex}" . LogStreamConstants::ERROR_STREAM_SUFFIX;
             $this->processWorkerOutput($stderr, $stderrFile, $logDirectory, true);
         }
     }
@@ -818,7 +816,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             foreach ($levels as $level => $messages) {
                 // Determine log file extension
                 // ERROR level or stderr -> .error.log, otherwise -> .log
-                $extension = ($level === Logger::LEVEL_ERROR || $isStderr) ? self::ERROR_LOG_EXTENSION : self::LOG_EXTENSION;
+                $extension = ($level === Logger::LEVEL_ERROR || $isStderr) ? LogStreamConstants::ERROR_STREAM_SUFFIX : self::LOG_EXTENSION;
                 $agentLogFile = $logDirectory . '/' . self::AGENT_LOG_PREFIX . "{$safeAgentId}{$extension}";
 
                 // Write messages

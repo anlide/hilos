@@ -10,6 +10,7 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogGrowthWindow;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogStoreAgent;
@@ -377,6 +378,103 @@ final class LogStoreAgentIndexTest extends TestCase
     }
 
     /**
+     * The panel over the tiles asks one question — "has something gone wrong here" — and on a
+     * node the answer is spread across as many files as there are processes writing (HIL-867).
+     */
+    public function testTheErrorTailIsMergedAcrossStreamsNewestFirst(): void
+    {
+        $this->writeErrorLines('worker-monopolistic-5.error.log', [
+            $this->errorLine('2026-09-06 10:00:00.100', 'login action failed'),
+            $this->errorLine('2026-09-06 10:00:02.100', 'the newest failure'),
+        ]);
+        $this->writeErrorLines('daemon-error.log', [
+            $this->errorLine('2026-09-06 10:00:01.100', 'watchdog mail is not configured'),
+        ]);
+        $agent = $this->startedAgent();
+
+        $this->assertSame(
+            ['the newest failure', 'watchdog mail is not configured', 'login action failed'],
+            array_map(
+                static fn (LogErrorEntry $entry): string => $entry->message,
+                $agent->index()->recentErrors,
+            ),
+        );
+        $this->assertSame('worker-monopolistic-5.error.log', $agent->index()->recentErrors[0]->stream);
+    }
+
+    /**
+     * An error stream in a healthy installation does not grow for days, and reading the tail of
+     * one costs a window of the file read backwards. The weight the walk already measured is the
+     * tripwire, so silence is free.
+     */
+    public function testAStreamWhoseWeightHasNotMovedIsNotReadAgain(): void
+    {
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'the first failure')]);
+        $agent = $this->startedAgent();
+
+        // Same length, different text: only a re-read could show the new line.
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'the OTHER failure')]);
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertSame('the first failure', $agent->index()->recentErrors[0]->message);
+    }
+
+    /**
+     * The panel empties with the rotation, and that is the honest answer rather than a hole: its
+     * rows lead into a live file, and the file those lines were in is in a batch now.
+     */
+    public function testARotationTakesTheErrorTailWithIt(): void
+    {
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'login action failed')]);
+        $agent = $this->startedAgent();
+        $this->assertCount(1, $agent->index()->recentErrors);
+
+        $this->rotate('2026-08-01-00-00-00');
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertSame([], $agent->index()->recentErrors);
+    }
+
+    /**
+     * A directory that cannot be read is "we do not know", and the tail held over from before
+     * would be read on the screen as "nothing has gone wrong since".
+     */
+    public function testAnUnreadableStoreReportsAnEmptyErrorTail(): void
+    {
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'login action failed')]);
+        $agent = $this->startedAgent();
+        $this->assertCount(1, $agent->index()->recentErrors);
+
+        putenv(EnvConstants::DAEMON_LOG_FILE->name);
+        $agent->onStart();
+
+        $this->assertFalse($agent->index()->available);
+        $this->assertSame([], $agent->index()->recentErrors);
+    }
+
+    /**
+     * A new failure has to leave the node on the next frame rather than on the keepalive one a
+     * minute later, so the tail is an axis of the delta of its own. {@see LogIndexPushTest} holds
+     * the other half of that: a delta carrying nothing but a moved tail is not empty.
+     */
+    public function testANewFailureRaisesTheErrorTailAxis(): void
+    {
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'the first failure')]);
+        $agent = $this->startedAgent();
+
+        $agent->walkStore($this->t0 + 60);
+        $this->assertFalse($agent->lastDelta()?->recentErrorsChanged, 'A walk that found the same lines says nothing');
+
+        $this->writeErrorLines('daemon-error.log', [
+            $this->errorLine('2026-09-06 10:00:00.100', 'the first failure'),
+            $this->errorLine('2026-09-06 10:00:05.100', 'and then another one'),
+        ]);
+        $agent->walkStore($this->t0 + 120);
+
+        $this->assertTrue($agent->lastDelta()?->recentErrorsChanged);
+    }
+
+    /**
      * Agent started over the fixture directory, its baseline walk already taken.
      *
      * @return LogStoreAgent Started agent whose index holds the store as it stood at {@see self::T0}
@@ -400,6 +498,30 @@ final class LogStoreAgentIndexTest extends TestCase
     {
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=' . self::KEEP_NO_BATCHES);
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=' . self::EVICT_AFTER_A_SECOND);
+    }
+
+    /**
+     * Writes one live error stream out of whole lines, replacing whatever was there.
+     *
+     * @param string $name Basename of the stream
+     * @param list<string> $lines Lines in file order, without their trailing newline
+     */
+    private function writeErrorLines(string $name, array $lines): void
+    {
+        file_put_contents($this->dir . DIRECTORY_SEPARATOR . $name, implode("\n", $lines) . "\n");
+    }
+
+    /**
+     * One line in the shape {@see Logger} appends to an error stream.
+     *
+     * @param string $stamp Local time of the entry, milliseconds included
+     * @param string $message Message text
+     *
+     * @return string Line text without its trailing newline
+     */
+    private function errorLine(string $stamp, string $message): string
+    {
+        return "[{$stamp}] {$message}";
     }
 
     /**

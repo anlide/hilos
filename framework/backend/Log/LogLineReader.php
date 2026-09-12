@@ -41,6 +41,15 @@ use Hilos\Utils\Logger;
  */
 final class LogLineReader
 {
+    /**
+     * Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix a fresh log entry starts with.
+     *
+     * Public because the same prefix is what tells a fresh entry from a continuation for anyone
+     * reading these files, not just for this scan: {@see LogErrorTailReader} lifts the stamp out of
+     * it (HIL-867). A second copy of the pattern would be a second answer to "what is an entry".
+     */
+    public const string TIMESTAMP_PREFIX_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /';
+
     /** Window growth step (bytes) for the backward tail scan. */
     private const int CHUNK_SIZE = 65536;
 
@@ -61,9 +70,6 @@ final class LogLineReader
         Logger::LEVEL_DEBUG . ': ' => Logger::LEVEL_DEBUG,
         '[' . Logger::LEVEL_INFO . '] ' => Logger::LEVEL_INFO,
     ];
-
-    /** Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix a fresh log entry starts with. */
-    private const string TIMESTAMP_PREFIX_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /';
 
     /**
      * @param ?string $logDirectory Log root holding the live `*.log` files and the archive subtree, or null when it could not be resolved

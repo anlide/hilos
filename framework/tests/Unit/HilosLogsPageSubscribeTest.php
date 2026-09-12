@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -23,6 +24,7 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\LogBatchSummary;
+use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
@@ -348,6 +350,140 @@ final class HilosLogsPageSubscribeTest extends TestCase
     }
 
     /**
+     * The panel asks one question of the whole installation, so the tails of every node are one
+     * list here, ordered by when the failures happened and not by whose frame arrived last.
+     */
+    public function testTheRecentErrorsOfEveryNodeAreOneListNewestFirst(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', recentErrors: [self::failure(120, 'worker-0.error.log', message: 'the older one')]),
+            self::nodeSlot('node-2', recentErrors: [self::failure(30, 'daemon-error.log', message: 'the newer one')]),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(
+            ['the newer one', 'the older one'],
+            array_column($overview->recentErrors, HilosLogsOverviewSignalData::message),
+        );
+        $this->assertSame('node-2', $overview->recentErrors[0][HilosLogsOverviewSignalData::nodeId]);
+        $this->assertFalse($overview->recentErrorsCapped);
+    }
+
+    /**
+     * The window is the page's, not the nodes': they report what they hold, stamped, and three
+     * clocks cutting three windows would show a different panel depending on whose frame came last.
+     */
+    public function testAFailureOlderThanTheWindowIsCutOff(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1', recentErrors: [
+            self::failure(60, 'worker-0.error.log', message: 'inside the window'),
+            self::failure(self::AN_HOUR_IN_SECONDS + 60, 'worker-0.error.log', message: 'older than the window'),
+        ]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(
+            ['inside the window'],
+            array_column($overview->recentErrors, HilosLogsOverviewSignalData::message),
+        );
+    }
+
+    /**
+     * Cut at the limit, the list says so: the counter beside the heading then reads "10+" instead
+     * of claiming the installation had exactly ten failures this hour.
+     */
+    public function testAListCutAtTheLimitSaysItWasCut(): void
+    {
+        $failures = [];
+        for ($index = 0; $index < 12; $index++) {
+            $failures[] = self::failure($index + 1, 'worker-0.error.log', message: "failure {$index}");
+        }
+        $this->fileThePicture(self::nodeSlot('node-1', recentErrors: $failures));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertCount(10, $overview->recentErrors);
+        $this->assertTrue($overview->recentErrorsCapped);
+        $this->assertSame('failure 0', $overview->recentErrors[0][HilosLogsOverviewSignalData::message], 'The newest survives the cut');
+    }
+
+    /**
+     * A single-node installation draws no per-node table and still has failures to show, so the
+     * row keeps its place in this list under the empty name the viewer address reads as "here".
+     */
+    public function testAFailureOnAnUnnamedNodeCarriesTheEmptyNodeId(): void
+    {
+        $this->fileThePicture(self::nodeSlot(null, recentErrors: [self::failure(30, 'daemon-error.log', 4)]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame([], $overview->nodes, 'No table, and the panel still has the row');
+        $this->assertCount(1, $overview->recentErrors);
+        $this->assertSame(
+            HilosLogsOverviewSignalData::SELF_NODE_ID,
+            $overview->recentErrors[0][HilosLogsOverviewSignalData::nodeId],
+        );
+        $this->assertSame('daemon-error.log', $overview->recentErrors[0][HilosLogsOverviewSignalData::stream]);
+        $this->assertSame(4, $overview->recentErrors[0][HilosLogsOverviewSignalData::traceFrames]);
+    }
+
+    /**
+     * A node that could not read its directory knows nothing about failures — which is not the
+     * same as knowing there were none — and it adds nothing here while its neighbours still speak.
+     */
+    public function testAnUnreadableNodeAddsNothingToThePanel(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', recentErrors: [self::failure(30, 'worker-0.error.log', message: 'a real failure')]),
+            self::nodeSlot('node-2', available: false),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(
+            ['a real failure'],
+            array_column($overview->recentErrors, HilosLogsOverviewSignalData::message),
+        );
+    }
+
+    /**
+     * The same trap the node rows fall into, one field further along: a picture in which ONLY a
+     * failure arrived leaves every scalar where it was, so a fingerprint blind to the panel would
+     * call the picture unchanged and leave the screen looking alive over a stale list.
+     */
+    public function testATickPushesWhenOnlyTheRecentErrorsChanged(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1', recentErrors: [self::failure(120, 'worker-0.error.log', message: 'the first one')]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        $this->fileThePicture(self::nodeSlot('node-1', recentErrors: [
+            self::failure(30, 'worker-0.error.log', message: 'and then another'),
+            self::failure(120, 'worker-0.error.log', message: 'the first one'),
+        ]));
+        usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
+        AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
+
+        $overview = $this->overview();
+        $this->assertSame(
+            ['and then another', 'the first one'],
+            array_column($overview->recentErrors, HilosLogsOverviewSignalData::message),
+        );
+    }
+
+    /**
      * Subscribing counts the connection as a viewer of the section, which is the only thing that
      * makes the aggregator send anything: without it the mirror would stay empty for good.
      */
@@ -562,6 +698,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @param list<LogKeySummary> $keys Streams the node holds, live and archived together
      * @param array<string, ?int> $growthBytesPerDay Stream → bytes over the last day, null until its window fills
      * @param list<int> $due Batches this node's own retention rule recommends carrying off
+     * @param list<LogErrorEntry> $recentErrors Failures the node read off the tails of its live error streams
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private static function nodeSlot(
@@ -571,6 +708,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         array $keys = [],
         array $growthBytesPerDay = [],
         array $due = [],
+        array $recentErrors = [],
     ): ClusterLogNodeSlot {
         return new ClusterLogNodeSlot(
             nodeId: $nodeId,
@@ -583,9 +721,31 @@ final class HilosLogsPageSubscribeTest extends TestCase
                 workers: [],
                 growthBytesPerDay: $growthBytesPerDay,
                 dueBatchTimestamps: $due,
+                recentErrors: $recentErrors,
             ),
             receivedAt: self::T0,
         );
+    }
+
+    /**
+     * One failure a node read off a live error stream, placed relative to now.
+     *
+     * The page cuts its window against the real clock, so a fixture failure has to be as recent
+     * as it claims to be — {@see self::T0} is a fixed instant and says nothing about how long ago.
+     *
+     * @param int $secondsAgo How long before now the line was written
+     * @param string $stream Basename of the stream it was written to
+     * @param ?int $traceFrames Frames in its stack trace, null when it carries none
+     * @param string $message Line text as the node cut it
+     * @return LogErrorEntry Failure as the node reported it
+     */
+    private static function failure(
+        int $secondsAgo,
+        string $stream,
+        ?int $traceFrames = null,
+        string $message = 'something went wrong',
+    ): LogErrorEntry {
+        return new LogErrorEntry((time() - $secondsAgo) * TimeConstants::MS_PER_SECOND, $stream, $message, $traceFrames);
     }
 
     /**

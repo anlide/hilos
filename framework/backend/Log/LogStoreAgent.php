@@ -186,6 +186,22 @@ final class LogStoreAgent extends AbstractAgent
      */
     private const int RAW_STREAM_COMPLAINT_BYTES = 16 * self::BYTES_PER_MEBIBYTE;
 
+    /**
+     * @var int Entries kept from the tail of EACH error stream, and also the length of the merged
+     *     list this node reports. Per stream and not per node only: a stream is re-read on its own
+     *     when it grows, so a tail shorter than the merged list would let one busy stream push
+     *     another's entries out of a list that is still supposed to hold the newest ten.
+     */
+    private const int ERROR_TAIL_MAX_ENTRIES = 10;
+
+    /**
+     * @var int Characters of an error message that leave this node. One such line weighed four
+     *     kilobytes on a live stand — the stack trace rides inside it as a JSON context — and ten
+     *     of those from every node every few seconds would sink the index frame they travel in.
+     *     The whole text stays readable in the viewer the panel's row leads to.
+     */
+    private const int ERROR_MESSAGE_MAX_CHARS = 300;
+
     private LogStoreReader $reader;
 
     /** @var LogStoreSnapshot Result of the last full walk, the archive half of every live resample */
@@ -248,6 +264,17 @@ final class LogStoreAgent extends AbstractAgent
     /** @var array<string, true> Raw stream basename → its size has already been complained about */
     private array $rawStreamComplained = [];
 
+    /** @var LogErrorTailReader Reader of the error-stream tails the overview panel draws */
+    private LogErrorTailReader $errorTailReader;
+
+    /**
+     * @var array<string, array{bytes: int, entries: list<LogErrorEntry>}> Error stream basename →
+     *     its size when the tail was last read, and the tail read then. The size is the tripwire:
+     *     a stream whose weight has not moved holds the same last lines, and a backward scan of
+     *     every error stream every few seconds would be paid for silence.
+     */
+    private array $errorTails = [];
+
     /**
      * Builds the reader and the rotator, learns which node this is, and takes the first full walk
      * as the baseline.
@@ -259,6 +286,7 @@ final class LogStoreAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->reader = LogStoreReader::fromEnv();
+        $this->errorTailReader = new LogErrorTailReader(LogLineReader::fromEnv(), self::ERROR_MESSAGE_MAX_CHARS);
         try {
             $this->rotator = LogRotator::forRuntime();
         } catch (EnvException) {
@@ -1417,6 +1445,8 @@ final class LogStoreAgent extends AbstractAgent
             $batchTimestamps[] = $batch->timestamp;
         }
 
+        $this->refreshErrorTails($snapshot);
+
         $previous = $this->index;
         $this->index = new NodeLogIndex(
             nodeId: $this->nodeId,
@@ -1429,6 +1459,7 @@ final class LogStoreAgent extends AbstractAgent
             logDirectory: $this->reader->logDirectory(),
             takeoutUndoWindowSeconds: $this->resolver->takeoutUndoWindowSeconds(),
             dueBatchTimestamps: $this->judgeDueBatches($batchTimestamps, $sampledAt),
+            recentErrors: $this->recentErrors(),
         );
         $this->lastDelta = self::diff($previous, $this->index);
         // Raised here and not where the frame is scheduled, because this is the one moment the
@@ -1439,6 +1470,127 @@ final class LogStoreAgent extends AbstractAgent
         }
         $this->rememberLiveKeys($snapshot);
         $this->reportChanges($this->index, $this->lastDelta);
+    }
+
+    /**
+     * Re-read the tails of this node's live error streams, and forget the ones that are gone.
+     *
+     * Only streams whose weight moved since the last read are re-read: an error stream in a
+     * healthy installation does not grow for days, and a backward scan costs a window of the file
+     * per stream. The size comes from the walk that has just listed the live files, so nothing is
+     * stat'd a second time to find out.
+     *
+     * A stream that vanished or went back to zero — a rotation renamed it away — takes its tail
+     * with it, the way {@see self::refreshWindows()} drops the window of a dead key. The panel
+     * empties with the rotation, and that is the honest answer: its rows lead into a live file,
+     * and after a rotation there is no longer one to lead into.
+     *
+     * An unreadable store drops every tail instead. Same rule as the windows: for the time the
+     * directory could not be read there is no honest answer, and the last one held over would be
+     * read on the screen as "nothing has gone wrong since".
+     *
+     * @param LogStoreSnapshot $snapshot Snapshot of the walk this publish is about
+     */
+    private function refreshErrorTails(LogStoreSnapshot $snapshot): void
+    {
+        if (!$snapshot->available) {
+            $this->errorTails = [];
+
+            return;
+        }
+
+        $seen = [];
+        foreach (self::flattenLiveFiles($snapshot->liveFiles()) as $basename => $bytes) {
+            if (!$this->reader->isErrorStream($basename)) {
+                continue;
+            }
+            $seen[$basename] = true;
+            $known = $this->errorTails[$basename] ?? null;
+            if ($known !== null && $known['bytes'] === $bytes) {
+                continue;
+            }
+            $this->errorTails[$basename] = [
+                'bytes' => $bytes,
+                'entries' => $this->errorTailReader->readStream($basename, self::ERROR_TAIL_MAX_ENTRIES),
+            ];
+        }
+
+        foreach (array_keys($this->errorTails) as $basename) {
+            if (!isset($seen[$basename])) {
+                unset($this->errorTails[$basename]);
+            }
+        }
+    }
+
+    /**
+     * Merge the per-stream tails into the one list this node reports.
+     *
+     * Newest first, and by stream name when two entries share a millisecond. The second key is
+     * not decoration: without it two entries of the same millisecond swap places from walk to
+     * walk, which both jitters the panel and raises the change axis on a node where nothing
+     * happened.
+     *
+     * No window is applied here. The node reports what it holds, stamped; "the last hour" is cut
+     * by the page that merges every node, because three nodes cutting by three clocks would show
+     * a different panel depending on whose frame arrived last.
+     *
+     * @return list<LogErrorEntry> Entries newest first, at most {@see self::ERROR_TAIL_MAX_ENTRIES}
+     */
+    private function recentErrors(): array
+    {
+        $entries = [];
+        foreach ($this->errorTails as $tail) {
+            foreach ($tail['entries'] as $entry) {
+                $entries[] = $entry;
+            }
+        }
+
+        usort($entries, static function (LogErrorEntry $first, LogErrorEntry $second): int {
+            if ($first->atMs !== $second->atMs) {
+                return $second->atMs <=> $first->atMs;
+            }
+
+            return strcmp($first->stream, $second->stream);
+        });
+
+        return array_slice($entries, 0, self::ERROR_TAIL_MAX_ENTRIES);
+    }
+
+    /**
+     * Whether the tail of failures moved between two indexes (HIL-867).
+     *
+     * Its own axis for the same reason as the retention verdict: a new line in an error stream
+     * does grow the key that stream belongs to, but a live walk publishes the growth only once
+     * the weight is re-measured, and a stream that gained a line after a rotation can weigh
+     * exactly what it weighed a walk ago. Left out, the newest failure on the node would wait for
+     * whatever moves next — on a quiet installation, for the keepalive frame a minute later.
+     *
+     * Compared on time, stream and text rather than on the whole entry: the frame count is read
+     * out of the same line as the text, so it cannot move without it, and comparing it too would
+     * only cost a field.
+     *
+     * @param NodeLogIndex $previous Older index
+     * @param NodeLogIndex $current Newer index
+     *
+     * @return bool Whether the reported list differs in length, order or content
+     */
+    private static function recentErrorsChanged(NodeLogIndex $previous, NodeLogIndex $current): bool
+    {
+        if (count($previous->recentErrors) !== count($current->recentErrors)) {
+            return true;
+        }
+
+        foreach ($current->recentErrors as $position => $entry) {
+            $before = $previous->recentErrors[$position];
+            if ($before->atMs !== $entry->atMs || $before->stream !== $entry->stream) {
+                return true;
+            }
+            if ($before->message !== $entry->message) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1643,7 +1795,7 @@ final class LogStoreAgent extends AbstractAgent
 
     /**
      * Difference between two indexes: what appeared, grew, vanished, was confirmed, changed its
-     * retention verdict, and whether the store changed side.
+     * retention verdict, moved the tail of failures, and whether the store changed side.
      *
      * @param NodeLogIndex $previous Older index
      * @param NodeLogIndex $current Newer index
@@ -1687,6 +1839,7 @@ final class LogStoreAgent extends AbstractAgent
             withdrawnBatchTimestamps: self::newlyWithdrawn($previous, $current),
             verdictChangedBatchTimestamps: self::verdictChanged($previous, $current),
             availabilityChanged: $previous->available !== $current->available,
+            recentErrorsChanged: self::recentErrorsChanged($previous, $current),
         );
     }
 

@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeInterface;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
@@ -21,6 +22,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogTotals;
+use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
@@ -63,6 +65,38 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * is named for the frozen-replica mark alone; not a row of it is read here (HIL-876).
      */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
+
+    /**
+     * @var int How far back the recent-errors panel looks. The window is applied HERE and not on
+     *     the nodes (HIL-867): nodes report what they hold with their own stamps, and three
+     *     clocks cutting three windows would show a different panel depending on whose frame
+     *     arrived last.
+     */
+    private const int RECENT_ERRORS_WINDOW_SECONDS = 3600;
+
+    /** @var int Rows the panel carries; past it the screen's counter reads "10+" */
+    private const int RECENT_ERRORS_LIMIT = 10;
+
+    /**
+     * @var string Instant of a failure as the panel receives it: ISO 8601 like every other time on
+     *     this screen, with the milliseconds that {@see DateTimeInterface::ATOM} drops
+     */
+    private const string FAILURE_AT_FORMAT = 'Y-m-d\TH:i:s.vP';
+
+    /** @var string Hour of a moment, 24-hour clock without a leading zero */
+    private const string HOUR_FORMAT = 'G';
+
+    /** @var string Minute of a moment */
+    private const string MINUTE_FORMAT = 'i';
+
+    /** @var string Second of a moment */
+    private const string SECOND_FORMAT = 's';
+
+    /** @var string Key the merge sorts a failure by, dropped before the row goes on the wire */
+    private const string SORTED_BY = 'atMs';
+
+    /** @var string Key the merge carries the wire row under while it sorts */
+    private const string SORTED_ROW = 'row';
 
     /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
     private static array $logsOverviewSubscribers = [];
@@ -123,6 +157,15 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *     per-node table, named nodes only; empty in a single-node installation
      */
     private static array $logsOverviewNodes = [];
+
+    /**
+     * @var list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}>
+     *     Rows of the recent-errors panel, newest first, already cut to the window and the limit
+     */
+    private static array $logsOverviewRecentErrors = [];
+
+    /** @var bool Whether the list above was cut at the limit, so the screen's counter says "10+" */
+    private static bool $logsOverviewRecentErrorsCapped = false;
 
     /**
      * Remove a connection from the subscriber set after {@see self::onUnsubscribe()} or when the connection
@@ -279,6 +322,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         }
         self::$logsOverviewBatchesDueForTakeout = $batchesDueForTakeout;
         self::$logsOverviewNodes = $nodes;
+        self::fillRecentErrors($index->nodes(), time());
     }
 
     /**
@@ -426,6 +470,105 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
+     * Merge every node's tail of failures into the one list the panel draws (HIL-867).
+     *
+     * The nodes report what they hold, stamped; the window is cut here, by the page's own clock,
+     * so the panel says the same thing whichever node's frame arrived last. Newest first, and a
+     * shared millisecond is broken by node and then by stream — without a second key two entries
+     * of the same instant swap places from frame to frame and the list jitters on a quiet screen.
+     *
+     * The nameless slot is in, where the table above skips it: a single-node installation has no
+     * table and all of the failures, and the row still has to name a file to open.
+     *
+     * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture, the nameless one included
+     * @param int $now Unix timestamp the window is measured back from
+     */
+    private static function fillRecentErrors(array $slots, int $now): void
+    {
+        $oldestShown = ($now - self::RECENT_ERRORS_WINDOW_SECONDS) * TimeConstants::MS_PER_SECOND;
+
+        $failures = [];
+        foreach ($slots as $slot) {
+            $nodeId = $slot->nodeId ?? HilosLogsOverviewSignalData::SELF_NODE_ID;
+            foreach ($slot->index->recentErrors as $entry) {
+                if ($entry->atMs < $oldestShown) {
+                    continue;
+                }
+
+                $failures[] = [
+                    self::SORTED_BY => $entry->atMs,
+                    self::SORTED_ROW => [
+                        HilosLogsOverviewSignalData::nodeId => $nodeId,
+                        HilosLogsOverviewSignalData::stream => $entry->stream,
+                        HilosLogsOverviewSignalData::at => self::failureAt($entry->atMs),
+                        HilosLogsOverviewSignalData::message => $entry->message,
+                        HilosLogsOverviewSignalData::traceFrames => $entry->traceFrames,
+                    ],
+                ];
+            }
+        }
+
+        usort($failures, static fn (array $first, array $second): int => self::compareFailures($first, $second));
+
+        self::$logsOverviewRecentErrorsCapped = count($failures) > self::RECENT_ERRORS_LIMIT;
+        self::$logsOverviewRecentErrors = array_column(
+            array_slice($failures, 0, self::RECENT_ERRORS_LIMIT),
+            self::SORTED_ROW,
+        );
+    }
+
+    /**
+     * Orders two failures of the merged list: newest first, then by node, then by stream.
+     *
+     * @param array{atMs: int, row: array<string, mixed>} $first Failure to place
+     * @param array{atMs: int, row: array<string, mixed>} $second Failure to place it against
+     * @return int Negative when the first comes higher up the panel, positive when it comes lower
+     */
+    private static function compareFailures(array $first, array $second): int
+    {
+        if ($first[self::SORTED_BY] !== $second[self::SORTED_BY]) {
+            return $second[self::SORTED_BY] <=> $first[self::SORTED_BY];
+        }
+
+        $firstRow = $first[self::SORTED_ROW];
+        $secondRow = $second[self::SORTED_ROW];
+        if ($firstRow[HilosLogsOverviewSignalData::nodeId] !== $secondRow[HilosLogsOverviewSignalData::nodeId]) {
+            return strcmp(
+                (string)$firstRow[HilosLogsOverviewSignalData::nodeId],
+                (string)$secondRow[HilosLogsOverviewSignalData::nodeId],
+            );
+        }
+
+        return strcmp(
+            (string)$firstRow[HilosLogsOverviewSignalData::stream],
+            (string)$secondRow[HilosLogsOverviewSignalData::stream],
+        );
+    }
+
+    /**
+     * The instant a failure was written, in the form the screen reads it in.
+     *
+     * Milliseconds are kept where {@see self::rotationAt()} has none to keep: two failures of one
+     * second are ordered by them, and the panel prints seconds.
+     *
+     * @param int $atMs Unix milliseconds, as the node that wrote the line read them
+     * @return string ISO 8601 datetime with milliseconds
+     */
+    private static function failureAt(int $atMs): string
+    {
+        $moment = new DateTimeImmutable()->setTimestamp(intdiv($atMs, TimeConstants::MS_PER_SECOND));
+
+        return $moment
+            ->setTime(
+                (int)$moment->format(self::HOUR_FORMAT),
+                (int)$moment->format(self::MINUTE_FORMAT),
+                (int)$moment->format(self::SECOND_FORMAT),
+                ($atMs % TimeConstants::MS_PER_SECOND) * TimeConstants::US_PER_MILLISECOND,
+            )
+            ->format(self::FAILURE_AT_FORMAT);
+    }
+
+    /**
      * A rotation instant in the form the screen reads it in.
      *
      * @param ?int $timestamp Unix timestamp of the rotation, null when there was none
@@ -500,6 +643,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewKeysWithoutGrowthWindow = null;
         self::$logsOverviewBatchesDueForTakeout = null;
         self::$logsOverviewNodes = [];
+        self::$logsOverviewRecentErrors = [];
+        self::$logsOverviewRecentErrorsCapped = false;
     }
 
     /**
@@ -536,6 +681,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             keysWithoutGrowthWindow: self::$logsOverviewKeysWithoutGrowthWindow,
             batchesDueForTakeout: self::$logsOverviewBatchesDueForTakeout,
             nodes: self::$logsOverviewNodes,
+            recentErrors: self::$logsOverviewRecentErrors,
+            recentErrorsCapped: self::$logsOverviewRecentErrorsCapped,
         );
     }
 

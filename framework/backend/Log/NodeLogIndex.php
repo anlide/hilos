@@ -33,6 +33,13 @@ namespace Hilos\Log;
  * which of it the newest few protect. An empty list means the rule recommends carrying nothing
  * off, and it is the same answer an index measured by a node that predates this field gives.
  *
+ * {@see $recentErrors} is a measurement again, and the only one here that is about the CONTENT of
+ * the logs rather than about their weight (HIL-867): the last failures written on this node, read
+ * from the tail of its live error streams. It rides on the index because it is measured by the
+ * same walk and travels in the same frame as the tiles the screen draws it under. It speaks of
+ * LIVE streams only, so a rotation empties it — the panel points an administrator at a file to
+ * open, and after a rotation that file is no longer where the row leads.
+ *
  * Unavailability is a state and not an exception, the same way {@see LogStoreSnapshot} carries it:
  * {@see $available} false comes with empty projections, which the overview draws as blank tiles
  * rather than as zeros — a zero would claim there were no rotations, and here we simply do not know.
@@ -50,6 +57,7 @@ final class NodeLogIndex
      * @param ?string $logDirectory Absolute log root of this node, or null when the environment cannot name one
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on this node, 0 when it is not to wait
      * @param list<int> $dueBatchTimestamps Batches the retention rule recommends carrying off, ascending; empty when it recommends none
+     * @param list<LogErrorEntry> $recentErrors Last failures written to this node's live error streams, newest first
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -62,6 +70,7 @@ final class NodeLogIndex
         public readonly ?string $logDirectory = null,
         public readonly int $takeoutUndoWindowSeconds = 0,
         public readonly array $dueBatchTimestamps = [],
+        public readonly array $recentErrors = [],
     ) {
     }
 }

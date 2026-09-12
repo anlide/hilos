@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Log;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogBatchSummary;
+use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Log\NodeLogIndex;
@@ -81,6 +82,49 @@ final class NodeLogIndexSignalDataTest extends TestCase
         $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
 
         $this->assertSame([], $restored->dueBatchTimestamps);
+        $this->assertCount(1, $restored->batches);
+    }
+
+    /**
+     * The tail of failures the overview panel draws travels inside this same frame, so every
+     * field of an entry has to survive it — the null in the frame count included, because it is
+     * the difference between "there is a stack to look at" and "there is not" (HIL-867).
+     */
+    public function testTheTailOfFailuresSurvivesTheRoundTrip(): void
+    {
+        $index = new NodeLogIndex(
+            nodeId: 'node-1',
+            available: true,
+            sampledAt: self::T0,
+            batches: [],
+            keys: [],
+            workers: [],
+            growthBytesPerDay: [],
+            recentErrors: [
+                new LogErrorEntry(self::T0 * 1000 + 250, 'worker-monopolistic-5.error.log', 'login action failed', 12),
+                new LogErrorEntry(self::T0 * 1000, 'daemon-error.log', 'watchdog mail is not configured', null),
+            ],
+        );
+
+        $restored = $this->roundTrip($index);
+
+        $this->assertEquals($index->recentErrors, $restored->recentErrors);
+        $this->assertNull($restored->recentErrors[1]->traceFrames);
+    }
+
+    /**
+     * And the third key a node running the previous build honestly omits (HIL-867): it knows
+     * nothing of the panel, and taking its whole store off the cluster picture over that would
+     * cost far more than the panel it cannot fill.
+     */
+    public function testAPayloadWithoutTheTailOfFailuresReadsAsNoFailures(): void
+    {
+        $payload = $this->payload();
+        unset($payload[NodeLogIndexSignalData::recentErrors]);
+
+        $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
+
+        $this->assertSame([], $restored->recentErrors);
         $this->assertCount(1, $restored->batches);
     }
 

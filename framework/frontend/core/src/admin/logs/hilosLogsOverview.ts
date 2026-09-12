@@ -16,6 +16,7 @@
 import { z } from 'zod'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
+import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
 
 /** Server→client signal `type` carrying the whole screen (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS`). */
 export const OVERVIEW_SIGNAL = 'subscription_page_hilos_logs'
@@ -48,6 +49,27 @@ export const OVERVIEW_NODE_GROWTH_FIELD = 'growthBytesPerDay'
 export const OVERVIEW_NODE_DUE_FIELD = 'batchesDueForTakeout'
 
 /**
+ * Row payload key of the node a failure was written on.
+ *
+ * Empty in an installation whose nodes have no names, and that empty string is a
+ * value rather than an absence: {@link logsOverviewErrorPath} reads it as "the node
+ * you are on", where a missing id would mean no file was named at all.
+ */
+export const OVERVIEW_ERROR_NODE_ID_FIELD = 'nodeId'
+
+/** Row payload key of the live stream a failure was written to. */
+export const OVERVIEW_ERROR_STREAM_FIELD = 'stream'
+
+/** Row payload key of when a failure was written, ISO 8601 with milliseconds. */
+export const OVERVIEW_ERROR_AT_FIELD = 'at'
+
+/** Row payload key of the failure's text, already cut by the node that read it. */
+export const OVERVIEW_ERROR_MESSAGE_FIELD = 'message'
+
+/** Row payload key of the frames in a failure's stack trace, null when it has none. */
+export const OVERVIEW_ERROR_TRACE_FRAMES_FIELD = 'traceFrames'
+
+/**
  * One row of the per-node table.
  *
  * A node that could not be read keeps its row with null in every figure: a zero
@@ -62,6 +84,22 @@ const overviewNodeSchema = z.looseObject({
   [OVERVIEW_NODE_ARCHIVE_BYTES_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_GROWTH_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_DUE_FIELD]: z.number().nullable(),
+})
+
+/**
+ * One row of the recent-errors panel.
+ *
+ * Every field but the frame count is a string the node measured, so none of them is
+ * nullable: a row exists because a line was really written. The frame count keeps its
+ * null, which is the difference between "there is a stack to look at" and "there is
+ * not" — read as a zero it would put a badge on every row.
+ */
+const recentErrorSchema = z.looseObject({
+  [OVERVIEW_ERROR_NODE_ID_FIELD]: z.string(),
+  [OVERVIEW_ERROR_STREAM_FIELD]: z.string(),
+  [OVERVIEW_ERROR_AT_FIELD]: z.string(),
+  [OVERVIEW_ERROR_MESSAGE_FIELD]: z.string(),
+  [OVERVIEW_ERROR_TRACE_FRAMES_FIELD]: z.number().nullable(),
 })
 
 /**
@@ -80,10 +118,15 @@ const overviewSchema = z.looseObject({
   keysWithoutGrowthWindow: z.number().nullable(),
   batchesDueForTakeout: z.number().nullable(),
   nodes: z.array(overviewNodeSchema),
+  recentErrors: z.array(recentErrorSchema),
+  recentErrorsCapped: z.boolean(),
 })
 
 /** One node's row of the per-node table. */
 export type HilosLogsOverviewNode = z.infer<typeof overviewNodeSchema>
+
+/** One failure of the recent-errors panel. */
+export type HilosLogsOverviewError = z.infer<typeof recentErrorSchema>
 
 /** The screen as the page answers a subscription with it. */
 export type HilosLogsOverview = z.infer<typeof overviewSchema>
@@ -361,4 +404,103 @@ export function logsOverviewGrowthNote(
   }
 
   return `No full day of data yet for ${streams} stream${streams === 1 ? '' : 's'}`
+}
+
+/**
+ * The failures the panel draws, newest first.
+ *
+ * Empty before the first frame, which is not the same as "no failures": the panel is
+ * not drawn at all until there is a picture, because saying "nothing has gone wrong"
+ * about what we have not been told would be good news made up.
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ */
+export function logsOverviewRecentErrors(
+  overview: HilosLogsOverview | null,
+): HilosLogsOverviewError[] {
+  return overview === null ? [] : overview.recentErrors
+}
+
+/**
+ * Whether the panel has a list to draw, as opposed to its good-news plaque.
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ */
+export function hasLogsOverviewRecentErrors(
+  overview: HilosLogsOverview | null,
+): boolean {
+  return logsOverviewRecentErrors(overview).length > 0
+}
+
+/**
+ * The counter beside the heading, which says `10+` once the list was cut.
+ *
+ * The plus is not a hedge: the nodes send their newest failures and the page cuts
+ * the window, so a list that reached the limit says there were at least that many.
+ * A list that did not reach it names its length exactly.
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ */
+export function logsOverviewRecentErrorsBadge(
+  overview: HilosLogsOverview | null,
+): string {
+  const errors = logsOverviewRecentErrors(overview)
+
+  return overview?.recentErrorsCapped === true
+    ? `${errors.length}+`
+    : String(errors.length)
+}
+
+/**
+ * When a failure was written, to the second and in the reader's own locale.
+ *
+ * The date is left out where the rotation tile keeps it: everything in this panel
+ * happened within the last hour, and a date on every row would be the same date
+ * repeated. An instant that cannot be read is a dash rather than `Invalid Date`.
+ *
+ * @param at The instant as ISO 8601, as the node that wrote the line read it.
+ */
+export function formatLogsOverviewErrorAt(at: string): string {
+  const parsed = new Date(at)
+
+  return Number.isNaN(parsed.getTime())
+    ? NOTHING_KNOWN
+    : parsed.toLocaleTimeString()
+}
+
+/**
+ * Where a failure was written: the stream, and the node too when there is one.
+ *
+ * The node is named only in an installation that has node names — the same rule the
+ * rest of the screen keeps, and the reason it is asked of the picture rather than of
+ * the row: a row from an unnamed node carries an empty id, which is a value and not
+ * a signal that this installation is single-node.
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ * @param error The failure the row draws.
+ */
+export function logsOverviewErrorOrigin(
+  overview: HilosLogsOverview | null,
+  error: HilosLogsOverviewError,
+): string {
+  return hasLogsOverviewNodes(overview)
+    ? `${error.nodeId} · ${error.stream}`
+    : error.stream
+}
+
+/**
+ * The address a row leads to: the viewer, on the live file this line is in.
+ *
+ * On the FILE and not on the line — the viewer address has no anchor for a line yet.
+ * The row still answers "where do I go from here" rather than dropping the reader at
+ * the top of a journal to search it themselves.
+ *
+ * @param error The failure the row draws.
+ */
+export function logsOverviewErrorPath(error: HilosLogsOverviewError): string {
+  return logViewerPath({
+    nodeId: error.nodeId,
+    source: LOG_SOURCE_LIVE,
+    stream: error.stream,
+  })
 }
