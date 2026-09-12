@@ -25,7 +25,14 @@
 // is shared.
 //
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
   AUTH_CONVERGE_SIGNAL,
@@ -58,6 +65,7 @@ import {
   type CodeSendProgress,
   type HilosAuthContext,
   type OAuthTripOutcome,
+  type PendingAuthStep,
   type ProjectSignal,
 } from '@hilos/core'
 
@@ -390,6 +398,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const resendAvailableAt = useSignal(auth.resendAvailableAt)
   const expiresAt = useSignal(auth.expiresAt)
   const ack = useSignal(pendingAck)
+  const reportedStep = useSignal(pendingAuthStep)
   const codeDelivery = useSignal(codeDeliverySignal)
 
   // Set on mount when an OAuth email collision armed a pending link (HIL-282):
@@ -786,6 +795,49 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     gate?.dismiss()
   }, [ack, auth, gate])
 
+  /**
+   * Apply what the server says this surface should be showing, whoever asked
+   * for it: a converge about the address being waited on, an ack this connection
+   * still owes its person, or the step the handshake reports.
+   *
+   * @param step The step off the wire.
+   * @param intent The intent off the wire.
+   * @param code The semantic reason of a rollback, or null.
+   */
+  const applyFromServer = useCallback(
+    (step: unknown, intent: unknown, code: string | null): void => {
+      const patch = toFlowPatch(step, intent)
+      if (patch === null) {
+        return
+      }
+      auth.applyExternal(patch)
+      setNotice(code === null ? null : (CODE_MESSAGES[code] ?? null))
+    },
+    [auth],
+  )
+
+  /**
+   * Apply a step the session was MOVED to rather than one it left off on
+   * (HIL-833): the address this browser was registering went to somebody else
+   * while it was away, and the handshake says so by naming a REASON on the step.
+   *
+   * Narrow on purpose. A step with no reason is an ordinary resume — the code
+   * screen a session is still standing on — and applying one anywhere but on
+   * mount would rebuild the screen under the hands of somebody typing on it.
+   *
+   * @param step The step the session stands on, or `null` when it stands on
+   *   none.
+   */
+  const applyReportedStep = useCallback(
+    (step: PendingAuthStep | null): void => {
+      if (step === null || step.code === null) {
+        return
+      }
+      applyFromServer(step.step, step.intent, step.code)
+    },
+    [applyFromServer],
+  )
+
   // Mount and unmount, in one effect. Its dependencies are the memos above, so
   // it runs once per context and not once per render. demo/tasks mounts
   // under StrictMode, so in dev it runs twice — safe precisely because every
@@ -814,28 +866,6 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       const converged = identifier.trim().toLowerCase()
 
       return converged === typed || converged === normalized
-    }
-
-    /**
-     * Apply what the server says this surface should be showing, whoever asked
-     * for it: a converge about the address being waited on, or an ack this
-     * connection still owes its person.
-     *
-     * @param step The step off the wire.
-     * @param intent The intent off the wire.
-     * @param code The semantic reason of a rollback, or null.
-     */
-    const applyFromServer = (
-      step: unknown,
-      intent: unknown,
-      code: string | null,
-    ): void => {
-      const patch = toFlowPatch(step, intent)
-      if (patch === null) {
-        return
-      }
-      auth.applyExternal(patch)
-      setNotice(code === null ? null : (CODE_MESSAGES[code] ?? null))
     }
 
     // Start every mount clean: the surface may be re-shown for a new gated
@@ -935,7 +965,26 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       stopWatchingTrip()
       clearInterval(clock)
     }
-  }, [auth, authActions, oauth, context, pendingAuthStep, pendingAck])
+  }, [
+    auth,
+    authActions,
+    oauth,
+    context,
+    pendingAuthStep,
+    pendingAck,
+    applyFromServer,
+  ])
+
+  // News of a lost race reaches a tab whose socket merely BLINKED, not only one
+  // that reloaded: resume() runs in the mount effect and nowhere else
+  // (deliberately), so a step arriving on a reconnect would otherwise sit in the
+  // session unread. This effect also runs on mount, which is what says WHY the
+  // screen moved there - resume() moves it and stays silent - and it is written
+  // AFTER the mount effect for exactly that: that one clears the notice, and the
+  // effects of one render run in the order they stand in.
+  useEffect(() => {
+    applyReportedStep(reportedStep)
+  }, [applyReportedStep, reportedStep])
 
   return (
     <section data-id="auth-surface" className="mx-auto" style={MAX_WIDTH}>

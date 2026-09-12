@@ -183,10 +183,13 @@ final class PasswordCommands extends AbstractLibraryCommands
      * THIS BROWSER's hold on the address is what decides whether there is anything to
      * re-send (HIL-608), and when it is gone the surface is sent to the screen that says
      * the code is dead and offers a new one (HIL-828), under a code of its own rather than
-     * told "no". It is not sent BACK to the address field: the way out of a code that ran
-     * out is one button, and the address is still the one the person came with. A resend
-     * inside the cooldown sends nothing and answers with the seconds still to wait - the
-     * countdown the screen draws.
+     * told "no". Unless the ADDRESS is what has gone, which this method asks before
+     * anything else and answers as a move to sign-in (HIL-833): a code screen offering
+     * another code for an address somebody else now owns is a circle, not a way out. It
+     * is not sent BACK to the address field: the way out of a code that ran out is one
+     * button, and the address is still the one the person came with. A resend inside the
+     * cooldown sends nothing and answers with the seconds still to wait - the countdown
+     * the screen draws.
      *
      * The hold is pushed out only when a code actually went out, so a button mashed
      * inside the cooldown moves nothing. What stops the patient caller - the one that
@@ -204,13 +207,28 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
-     * @throws HilosException When the reservation, verification, or runtime write fails
+     * @throws HilosException When an identity lookup, the reservation, verification, or runtime write fails
      */
     public function requestRegisterConfirm(string $acceptKey, RequestRegisterConfirmActionDTO $dto): AuthFlowOutcome
     {
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
+
+        // The same question the code submit asks first, for the same reason (HIL-833): a
+        // resend pressed the moment somebody else finished registering this address would
+        // otherwise answer "the registration expired" and offer a new code for an address
+        // that can never be registered again. Asked before the send gate, so no letter
+        // goes out for it either.
+        if ($this->emailBelongsToAccount($email)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                AuthMessages::IDENTIFIER_TAKEN,
+            );
+        }
+
         $reservations = new RegistrationReservationService();
         if ($reservations->findActiveForSession($acting->sessionToken)?->identifier !== $email) {
             return AuthFlowOutcome::rejectTo(
@@ -276,13 +294,20 @@ final class PasswordCommands extends AbstractLibraryCommands
      * elsewhere: the letter went to the inbox, so the person reading it can register the
      * address in their own browser, but they cannot finish somebody else's attempt.
      *
-     * The fourth is the address having become somebody's while it was held. The hold
-     * keeps a SECOND registration off it, not an account arriving by another road - an
-     * OAuth sign-in mints one from a verified email of its own type (HIL-405), and that
-     * identity does not collide with the password one written later. So the question the
-     * submit asked is asked again, and answered the same way: not an error to retype, but
-     * a move to sign-in. Without it a person would be sent to choose a password for an
-     * address that is already somebody's.
+     * The fourth is the address having become somebody's while it was held, and it is asked
+     * FIRST (HIL-833). The hold keeps a SECOND registration off the address, not an account
+     * arriving by another road - an OAuth sign-in mints one from a verified email of its own
+     * type (HIL-405), and that identity does not collide with the password one written
+     * later. So the question the submit asked is asked again, and answered the same way: not
+     * an error to retype, but a move to sign-in. Without it a person would be sent to choose
+     * a password for an address that is already somebody's.
+     *
+     * Its place at the top is what the browser that lost the race by a fraction of a second
+     * hears. The winner's landing takes the loser's hold away, so asking the hold first
+     * answered every such person "the registration expired" and offered them a new code -
+     * a sentence that is wrong about the letter they are holding and a button that walks
+     * them back to the same taken address. Whichever of the two records noticed it, an
+     * address that is somebody's is answered as somebody's.
      *
      * The OTHER browsers racing this address are not touched here, and that is the whole
      * of what moved with the password: the address belongs to nobody yet, so there is
@@ -306,6 +331,25 @@ final class PasswordCommands extends AbstractLibraryCommands
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
+
+        // Asked here too, not only at the submit: the hold blocks another registration
+        // on the address, not an account that arrived by another road while it stood.
+        // Asked BEFORE the hold since HIL-833, and the order is the answer this browser
+        // gets when it lost the race by a fraction of a second. Its own hold is gone by
+        // then - the winner's landing released it - so the hold check answered first and
+        // said the registration had expired, which is untrue twice over: the code in the
+        // letter is alive, and the new one that screen offers would walk the same circle
+        // back to the same taken address. An address that has become somebody's is
+        // somebody's whichever record noticed it, so that is what is said.
+        if ($this->emailBelongsToAccount($email)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                AuthMessages::IDENTIFIER_TAKEN,
+            );
+        }
+
         $reservations = new RegistrationReservationService();
         if ($reservations->findActiveForSession($acting->sessionToken)?->identifier !== $email) {
             return AuthFlowOutcome::rejectTo(
@@ -313,17 +357,6 @@ final class PasswordCommands extends AbstractLibraryCommands
                 AuthFlowStep::CODE_EXPIRED,
                 AuthFlowIntent::REGISTER,
                 AuthMessages::RESERVATION_EXPIRED,
-            );
-        }
-
-        // Asked here too, not only at the submit: the hold blocks another registration
-        // on the address, not an account that arrived by another road while it stood.
-        if ($this->emailBelongsToAccount($email)) {
-            return AuthFlowOutcome::rejectTo(
-                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
-                AuthFlowStep::IDENTIFIER,
-                AuthFlowIntent::LOGIN,
-                AuthMessages::IDENTIFIER_TAKEN,
             );
         }
 

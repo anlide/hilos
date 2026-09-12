@@ -8,7 +8,6 @@ use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Session as ObjectSession;
@@ -125,26 +124,6 @@ final class SessionsActions extends DbActions
         $this->createDbItemFromObject($session)->actions->expire();
 
         return $session;
-    }
-
-    /**
-     * Forgets every session that was waiting on one address's registration code (HIL-612).
-     *
-     * The end of a flow as the ADDRESS experienced it - the registration completed, or its
-     * hold ran out - so nobody is left on a code screen for a code that can no longer
-     * arrive. Per address rather than per session because that is what the callers know:
-     * the converge and the rollback speak about an address, and the sessions watching it
-     * are however many they are.
-     *
-     * @param string $identifier Normalized identifier nobody should be waiting on any more
-     * @throws ItemNotFoundForUpdateException When a matched session is not persisted (id is null)
-     * @throws HilosException On database or write error
-     */
-    public function releasePendingRegistrationFor(string $identifier): void
-    {
-        foreach ($this->objectCollection->findAwaitingRegistration($identifier) as $session) {
-            $this->createDbItemFromObject($session)->actions->releasePendingRegistration();
-        }
     }
 
     /**

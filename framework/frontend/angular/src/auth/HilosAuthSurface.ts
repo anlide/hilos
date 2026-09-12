@@ -80,6 +80,7 @@ import type {
   CodeSendProgress,
   DetectionState,
   HilosAuthContext,
+  PendingAuthStep,
   ProjectSignal,
   ReadonlySignal,
 } from '@hilos/core'
@@ -1552,6 +1553,11 @@ export class HilosAuthSurface {
       // their signals rather than from the mirrors, which the effect must not
       // depend on: a mirror changing would re-run the whole mount.
       auth.resume(this.pendingAuthStep().get())
+      // resume() moves the screen but says nothing about WHY it moved, and the
+      // why is what the notice draws: without this a tab coming back by reload
+      // lands on the identifier field, address filled in, with no word about
+      // what happened.
+      this.applyReportedStep(auth, this.pendingAuthStep().get())
       const patch = authAckToFlowPatch(this.pendingAck().get())
       if (patch !== null) {
         auth.applyExternal(patch)
@@ -1563,6 +1569,19 @@ export class HilosAuthSurface {
         stopWatchingTrip()
         clearInterval(clock)
       })
+    })
+
+    // News of a lost race reaches a tab whose socket merely BLINKED, not only
+    // one that reloaded: resume() runs in the mount effect and nowhere else
+    // (deliberately), so a step arriving on a reconnect would otherwise sit in
+    // the session unread. Its own effect, written AFTER the mount one on
+    // purpose - that one clears the notice, and effects run in creation order.
+    effect((onCleanup) => {
+      const auth = this.auth()
+      const reported = this.pendingAuthStep()
+      onCleanup(
+        subscribeSignal(reported, (step) => this.applyReportedStep(auth, step)),
+      )
     })
 
     // A step CHANGE moves focus; a reveal inside the identifier step
@@ -1944,5 +1963,28 @@ export class HilosAuthSurface {
     }
     auth.applyExternal(patch)
     this.notice.set(code === null ? null : (CODE_MESSAGES[code] ?? null))
+  }
+
+  /**
+   * Apply a step the session was MOVED to rather than one it left off on
+   * (HIL-833): the address this browser was registering went to somebody else
+   * while it was away, and the handshake says so by naming a REASON on the step.
+   *
+   * Narrow on purpose. A step with no reason is an ordinary resume — the code
+   * screen a session is still standing on — and applying one anywhere but on
+   * mount would rebuild the screen under the hands of somebody typing on it.
+   *
+   * @param auth The machine the step is applied to.
+   * @param step The step the session stands on, or `null` when it stands on
+   *   none.
+   */
+  private applyReportedStep(
+    auth: AuthFlow,
+    step: PendingAuthStep | null,
+  ): void {
+    if (step === null || step.code === null) {
+      return
+    }
+    this.applyFromServer(auth, step.step, step.intent, step.code)
   }
 }

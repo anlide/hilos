@@ -49,6 +49,39 @@ const PENDING_ACK_SLOT = 'pendingAck'
 // `sessionCodeDelivery` (sessionScope.ts), the same way the ack is read.
 const CODE_DELIVERY_SLOT = 'codeDelivery'
 
+// The session slot the unfinished auth step arrives in — the default of
+// `sessionPendingAuthStep` (sessionScope.ts), read here the way the ack is.
+const PENDING_AUTH_STEP_SLOT = 'pendingAuthStep'
+
+/**
+ * What a session that LOST the race for an address comes back to (HIL-833): the
+ * step it was MOVED to, under the intent that is now the only way in, carrying
+ * the reason. No moment, because there is no code of its own left in play.
+ */
+const LOST_RACE_STEP = {
+  identifier: 'someone@example.com',
+  kind: 'email',
+  intent: 'login',
+  step: 'identifier',
+  channel: null,
+  expiresAt: null,
+  code: 'identifier_taken',
+}
+
+/**
+ * What a session that is simply unfinished comes back to: the code screen it was
+ * standing on all along, with no reason on it, because nobody moved it.
+ */
+const RESUMED_CODE_STEP = {
+  identifier: 'someone@example.com',
+  kind: 'email',
+  intent: 'register',
+  step: 'code',
+  channel: null,
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
 /** The dispatch calls one mounted surface made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 
@@ -508,6 +541,58 @@ describe('HilosAuthSurface', () => {
 
     expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
     expect(dismissed).not.toHaveBeenCalled()
+  })
+
+  it('tells a tab that came back by reload the address was taken while away', async () => {
+    const { context } = passwordOnlyContext()
+    // The handshake was answered before this surface existed — the whole of the
+    // reload case — so the node is already on the session at mount.
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, LOST_RACE_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    // The step alone would leave the address field standing there filled in and
+    // unexplained; what the leaf adds is the sentence beside it.
+    const field = wrapper.find('[data-id="auth-identifier"]')
+    expect((field.element as HTMLInputElement).value).toBe(
+      'someone@example.com',
+    )
+    expect(wrapper.find('[data-id="auth-notice"]').text()).toBe(
+      'That address already has an account — sign in instead.',
+    )
+  })
+
+  it('tells a tab whose socket only blinked, with no reload under it', async () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+
+    // The socket came back and the handshake put the step on the session. Mount
+    // is long over, so nothing but the watch can carry this.
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, LOST_RACE_STEP)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-notice"]').text()).toBe(
+      'That address already has an account — sign in instead.',
+    )
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+  })
+
+  it('leaves a screen alone when the step that arrives names no reason', async () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    // An ordinary unfinished step, arriving on a reconnect while somebody is on
+    // the identifier field. It is restored on MOUNT and nowhere else: rebuilding
+    // the screen under their hands is exactly what the narrowing is for.
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, RESUMED_CODE_STEP)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
   })
 
   it('stands both live regions up empty before anything has been said', () => {

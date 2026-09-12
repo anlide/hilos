@@ -84,20 +84,44 @@ export interface CodeDelivery {
  * names the code channel a phone code went over and is null for a mail flow,
  * which has no choice to name; `expiresAt` arrives as a SERVER moment and is
  * handed on in local ms, like every other moment the backend sends.
+ *
+ * The node also names WHY the session stands where it does (HIL-833), in the
+ * vocabulary the live converge signal already uses. That is what lets the
+ * handshake report a step the session was MOVED to rather than only the one it
+ * left off on: a browser asleep while somebody else registered the address it
+ * was racing for comes back to the identifier field knowing the address is
+ * taken, instead of to a code screen for a registration that has quietly
+ * stopped being winnable.
  */
 export interface PendingAuthStep {
   /** The identifier the code went to, shown on the screen it is restored to. */
   readonly identifier: string
   /** What that identifier is — the classification the backend made of it. */
   readonly kind: 'email' | 'phone'
-  /** Which flow the session is standing in. */
-  readonly intent: 'register' | 'recovery'
-  /** Which screen of that flow it is standing on. */
-  readonly step: 'code' | 'set_password'
+  /**
+   * Which flow the session is standing in. `login` is the one it did not ask
+   * for: the address it was registering has an account now, and signing in is
+   * the way in that exists.
+   */
+  readonly intent: 'register' | 'recovery' | 'login'
+  /**
+   * Which screen of that flow it is standing on. `identifier` is the screen a
+   * session is sent BACK to, and the only one of the three that stands on no
+   * code.
+   */
+  readonly step: 'code' | 'set_password' | 'identifier'
   /** The code channel it went over, or `null` for a mail flow. */
   readonly channel: string | null
-  /** The LOCAL epoch-ms moment the code stops being good. */
-  readonly expiresAt: number
+  /**
+   * The LOCAL epoch-ms moment the code stops being good, or `null` on the
+   * identifier step, which has no code to outlive.
+   */
+  readonly expiresAt: number | null
+  /**
+   * Why the session stands here — an `AuthFlowOutcome::CODE_*` value — or
+   * `null` when it simply has not finished what it started.
+   */
+  readonly code: string | null
 }
 
 /**
@@ -346,7 +370,13 @@ export function sessionPendingAck(
  * nothing about it is remembered in the tab.
  *
  * The moment is converted to the local scale on the way out, so a view compares
- * it with `Date.now()` and never with the server's clock.
+ * it with `Date.now()` and never with the server's clock; on the identifier step
+ * there is no moment at all, and the field is null.
+ *
+ * Not only where the session stopped, but where it was MOVED to while nobody was
+ * listening (HIL-833) — which is why a surface watches this for CHANGES and not
+ * only on mount. A node carrying a reason is news; one without is the screen the
+ * session was on all along.
  *
  * @param scopes The application's scope-partitioned stores.
  */
@@ -364,6 +394,16 @@ export function sessionPendingAuthStep(
  * would restore a code screen naming no address or counting down to nothing,
  * which is worse than the identifier field this falls back to.
  *
+ * The moment is judged PER STEP rather than always (HIL-833), because the three
+ * steps do not stand on the same thing: a code and a new-password screen are
+ * drawn against a deadline and are unreadable without one, while the identifier
+ * step a lost race sends a session back to has no code left in play, so a moment
+ * there is not missing data but invented data. The reason is judged the same way
+ * and for the same sentence: on the two steps a session reached by itself it is
+ * optional, and on the one it was MOVED to it is the whole message — a silent
+ * jump out of a code screen would take somebody off the screen they were using
+ * and say nothing about who took it.
+ *
  * @param value The raw session-scope slot.
  */
 function readPendingAuthStep(value: unknown): PendingAuthStep | null {
@@ -376,15 +416,23 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
   const intent = node['intent']
   const step = node['step']
   const channel = node['channel'] ?? null
-  const expiresAt = node['expiresAt']
+  const expiresAt = node['expiresAt'] ?? null
+  const code = node['code'] ?? null
   if (
     typeof identifier !== 'string' ||
     (kind !== 'email' && kind !== 'phone') ||
-    (intent !== 'register' && intent !== 'recovery') ||
-    (step !== 'code' && step !== 'set_password') ||
+    (intent !== 'register' && intent !== 'recovery' && intent !== 'login') ||
+    (step !== 'code' && step !== 'set_password' && step !== 'identifier') ||
     (channel !== null && typeof channel !== 'string') ||
-    typeof expiresAt !== 'number'
+    (code !== null && typeof code !== 'string')
   ) {
+    return null
+  }
+  if (step === 'identifier') {
+    if (expiresAt !== null || code === null) {
+      return null
+    }
+  } else if (typeof expiresAt !== 'number') {
     return null
   }
 
@@ -394,7 +442,8 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     intent,
     step,
     channel,
-    expiresAt: toLocal(expiresAt),
+    expiresAt: typeof expiresAt === 'number' ? toLocal(expiresAt) : null,
+    code,
   }
 }
 

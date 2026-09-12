@@ -26,8 +26,16 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      * @var list<string> Framework tables these cases need. `hilos_setting` is not read by the
      *     carry-over: it is the one framework collection loaded eagerly, so a re-hydration - the
      *     very thing a restore triggers - reaches for it whether the case cares about it or not.
+     *     The registration holds join them because the wait a session carries is only half the
+     *     story since HIL-833: what the handshake answers depends on whether a hold stands
+     *     behind that wait, so the table has to be there to be empty.
      */
-    private const array TABLES = ['hilos_session', 'hilos_identity', 'hilos_setting'];
+    private const array TABLES = [
+        'hilos_session',
+        'hilos_identity',
+        'hilos_setting',
+        'hilos_registration_reservation',
+    ];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;

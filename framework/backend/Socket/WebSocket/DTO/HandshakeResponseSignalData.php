@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket\DTO;
 
+use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -40,6 +41,17 @@ use Hilos\Core\Router\SignalDataInterface;
  * members describe the address the flow runs against. One node covers both flows
  * because a session cannot stand in two of them at once, so a fresh tab reads its
  * screen from a single key instead of guessing which of several was written.
+ *
+ * The node names a REASON as well (HIL-833): `code` says why the session stands where
+ * it does, in the same vocabulary {@see AuthConvergeSignalData} pushes to a connection
+ * that is on the wire. The two doors then carry one triple — step, intent, reason — and
+ * the surface takes them apart on one path instead of two that resemble each other. It
+ * is what lets the handshake tell a browser something it MISSED rather than only where
+ * it left off: a session whose address was registered by somebody else while it was
+ * asleep comes back to the identifier field knowing the address is taken, instead of to
+ * a code screen for a registration that has quietly stopped being winnable. `expiresAt`
+ * is nullable for the same reason — that step counts down to nothing, and there is no
+ * moment to promise.
  * Server time rides the handshake because the browser clock is not evidence — a
  * countdown drawn against it runs out early or never — so the client measures the
  * offset once per handshake and reads every absolute moment the backend sends
@@ -81,6 +93,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string step = 'step';
     public const string channel = 'channel';
     public const string expiresAt = 'expiresAt';
+    public const string code = 'code';
 
     /**
      * Creates handshake response signal data.
@@ -103,7 +116,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?string $impersonatorName Impersonating admin's display name, or null when not impersonating
      * @param ?string $pendingAck Ack the receiving connection still owes (a {@see SessionAck} value), or null
      * @param ?int $serverTimeMs Server "now" in epoch milliseconds, or null before the session context is stamped
-     * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
+     * @param ?array{identifier: string, kind: string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param ?array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time
      *     code to, or null before the session context is stamped
@@ -158,7 +172,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * happened to hold, which is exactly what a re-handshake exists to refresh.
      *
      * @param int $serverTimeMs Server "now" in epoch milliseconds
-     * @param ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} $pendingAuthStep
+     * @param ?array{identifier: string, kind: string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
      * @return self The same response carrying that session context
@@ -271,8 +286,16 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * surface navigates by — a member missing from it would surface as a code screen
      * with no identifier to name and no moment to count down to.
      *
+     * Two of the seven are read as optional, and the pair is what the identifier step
+     * is made of (HIL-833): a session told its address was taken while it was away
+     * stands on no code and therefore on no expiry, so the moment is absent rather
+     * than invented, and the reason is present rather than guessed from the step. The
+     * strictness that used to live here moves to the surface, which knows which step it
+     * is reading and can ask for the moment on exactly the two that count down.
+     *
      * @param array<string, mixed> $section Plain data section of the response
-     * @return ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int} Node, or null when absent
+     * @return ?array{identifier: string, kind: string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string} Node, or null when absent
      * @throws InvalidFormatException When a present node lacks a required member
      */
     private static function readPendingAuthStep(array $section): ?array
@@ -288,7 +311,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             self::intent => self::requireString($node, self::intent),
             self::step => self::requireString($node, self::step),
             self::channel => self::optionalString($node, self::channel),
-            self::expiresAt => self::requireInt($node, self::expiresAt),
+            self::expiresAt => self::optionalInt($node, self::expiresAt),
+            self::code => self::optionalString($node, self::code),
         ];
     }
 

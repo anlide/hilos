@@ -215,6 +215,11 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
      * again, so nothing parked it in the runtime list - which is what makes that list a
      * projection rather than the truth.
      *
+     * That memory SURVIVES the converge since HIL-833, and what ends the loser's race is its
+     * hold being dropped. The wait used to be cleared here for everybody on the number at
+     * once, which left a device that was offline in this second with nothing to be told on
+     * its way back; keeping it is what lets the handshake answer such a browser at all.
+     *
      * @throws HilosException When setup or the request handling fails
      */
     public function testConfirmTellsTheOtherDeviceTheNumberIsTaken(): void
@@ -248,9 +253,10 @@ final class MainPagePhoneCodeTest extends IntegrationTestCase
             $this->assertSame(AuthFlowStep::IDENTIFIER, $converge->step);
             $this->assertSame(AuthFlowIntent::LOGIN, $converge->intent);
             $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $converge->code);
-            $this->assertNull(
+            $this->assertSame(
+                $phone,
                 Hilos::$db->sessions->findByToken($waitingToken)?->pendingRegistrationIdentifier,
-                'Nothing is left to wait on once the registration happened',
+                'The loser keeps the memory of what it was registering; the dropped hold is what ends its race',
             );
         } finally {
             $this->cleanUp();

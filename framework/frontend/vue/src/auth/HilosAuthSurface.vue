@@ -58,6 +58,7 @@ import {
   type AuthFlowScreen,
   type HilosAuthContext,
   type OAuthTripOutcome,
+  type PendingAuthStep,
   type ProjectSignal,
 } from '@hilos/core'
 
@@ -801,6 +802,24 @@ function applyFromServer(
 }
 
 /**
+ * Apply a step the session was MOVED to rather than one it left off on
+ * (HIL-833): the address this browser was registering went to somebody else
+ * while it was away, and the handshake says so by naming a REASON on the step.
+ *
+ * Narrow on purpose. A step with no reason is an ordinary resume — the code
+ * screen a session is still standing on — and applying one anywhere but on
+ * mount would rebuild the screen under the hands of somebody typing on it.
+ *
+ * @param step The step the session stands on, or `null` when it stands on none.
+ */
+function applyReportedStep(step: PendingAuthStep | null): void {
+  if (step === null || step.code === null) {
+    return
+  }
+  applyFromServer(step.step, step.intent, step.code)
+}
+
+/**
  * Whether a converge is about the identifier this surface is waiting on.
  *
  * The server converges on the NORMALIZED identifier (a lowercased address), so
@@ -883,6 +902,11 @@ watch(ack, (value, previous) => {
   auth.reset()
   gate?.dismiss()
 })
+
+// News of a lost race reaches a tab whose socket merely BLINKED, not only one
+// that reloaded: resume() runs on mount and nowhere else (deliberately), so a
+// step arriving on a reconnect would otherwise sit in the session unread.
+watch(resumable, applyReportedStep)
 
 /**
  * Show the pending link the collision arm armed: pre-fill the colliding address
@@ -978,6 +1002,10 @@ onMounted(() => {
   // this tab remembers, so a reload, a second tab and another device all resume
   // the same screen.
   auth.resume(resumable.value)
+  // resume() moves the screen but says nothing about WHY it moved, and the why
+  // is what the notice draws: without this a tab coming back by reload lands on
+  // the identifier field, address filled in, with no word about what happened.
+  applyReportedStep(resumable.value)
   const patch = authAckToFlowPatch(ack.value)
   if (patch !== null) {
     auth.applyExternal(patch)

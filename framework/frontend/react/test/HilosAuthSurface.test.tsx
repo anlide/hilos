@@ -44,6 +44,39 @@ type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 // `sessionCodeDelivery` (sessionScope.ts).
 const CODE_DELIVERY_SLOT = 'codeDelivery'
 
+// The session slot the unfinished auth step arrives in — the default of
+// `sessionPendingAuthStep` (sessionScope.ts), read the same way.
+const PENDING_AUTH_STEP_SLOT = 'pendingAuthStep'
+
+/**
+ * What a session that LOST the race for an address comes back to (HIL-833): the
+ * step it was MOVED to, under the intent that is now the only way in, carrying
+ * the reason. No moment, because there is no code of its own left in play.
+ */
+const LOST_RACE_STEP = {
+  identifier: 'someone@example.com',
+  kind: 'email',
+  intent: 'login',
+  step: 'identifier',
+  channel: null,
+  expiresAt: null,
+  code: 'identifier_taken',
+}
+
+/**
+ * What a session that is simply unfinished comes back to: the code screen it was
+ * standing on all along, with no reason on it, because nobody moved it.
+ */
+const RESUMED_CODE_STEP = {
+  identifier: 'someone@example.com',
+  kind: 'email',
+  intent: 'register',
+  step: 'code',
+  channel: null,
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
 /**
  * A context whose lookup answers with an account that exists and carries
  * `methods`; every other dispatch is recorded and resolved with nothing.
@@ -516,6 +549,61 @@ describe('HilosAuthSurface', () => {
     )
     expect(line?.className).toContain('text-body-secondary')
     expect(line?.querySelector('i')?.className).toContain('bi-flask')
+  })
+
+  it('tells a tab that came back by reload the address was taken while away', async () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    // The handshake was answered before this surface existed — the whole of the
+    // reload case — so the node is already on the session at mount.
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, LOST_RACE_STEP)
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    // The step alone would leave the address field standing there filled in and
+    // unexplained; what the leaf adds is the sentence beside it.
+    expect((byId('auth-identifier') as HTMLInputElement).value).toBe(
+      'someone@example.com',
+    )
+    expect(byId('auth-notice')?.textContent).toBe(
+      'That address already has an account — sign in instead.',
+    )
+  })
+
+  it('tells a tab whose socket only blinked, with no reload under it', async () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+    expect(byId('auth-notice')).toBeNull()
+
+    // The socket came back and the handshake put the step on the session. Mount
+    // is long over, so nothing but the effect watching it can carry this.
+    await act(async () => {
+      context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, LOST_RACE_STEP)
+    })
+    await flush()
+
+    expect(byId('auth-notice')?.textContent).toBe(
+      'That address already has an account — sign in instead.',
+    )
+    expect(byId('auth-identifier')).not.toBeNull()
+  })
+
+  it('leaves a screen alone when the step that arrives names no reason', async () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    // An ordinary unfinished step, arriving on a reconnect while somebody is on
+    // the identifier field. It is restored on MOUNT and nowhere else: rebuilding
+    // the screen under their hands is exactly what the narrowing is for.
+    await act(async () => {
+      context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, RESUMED_CODE_STEP)
+    })
+    await flush()
+
+    expect(byId('auth-code')).toBeNull()
+    expect(byId('auth-identifier')).not.toBeNull()
+    expect(byId('auth-notice')).toBeNull()
   })
 
   it('stands both live regions up empty before anything has been said', () => {

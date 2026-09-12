@@ -7,6 +7,7 @@ import {
   sessionImpersonating,
   sessionImpersonatedByName,
   sessionPendingAck,
+  sessionPendingAuthStep,
   sessionCodeDelivery,
   SESSION_ACK_REGISTERED,
   SESSION_SIGNAL_SCHEMAS,
@@ -277,5 +278,106 @@ describe('sessionScope', () => {
     connection.emitHandshakeResponse({ data: { codeDelivery: null } })
 
     expect(delivery.get()).toStrictEqual({ email: true, phone: true })
+  })
+
+  it('reads the step a session was moved to, with the reason it was moved for', () => {
+    // HIL-833: the address this session was registering became somebody else's
+    // while it was offline, so the handshake reports the address field under the
+    // sign-in intent — and the reason, which is the whole of what it has to say.
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const step = sessionPendingAuthStep(scopes)
+
+    connection.emitHandshakeResponse({
+      data: {
+        pendingAuthStep: {
+          identifier: 'ada@b.com',
+          kind: 'email',
+          intent: 'login',
+          step: 'identifier',
+          channel: null,
+          expiresAt: null,
+          code: 'identifier_taken',
+        },
+      },
+    })
+
+    expect(step.get()).toStrictEqual({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: 'identifier_taken',
+    })
+  })
+
+  it('drops a code step that promises no moment, and an identifier step that promises one', () => {
+    // The two halves of the same rule: the screens that count down are unreadable
+    // without a deadline, and the one that does not count down would be drawn
+    // against a deadline belonging to nothing.
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const step = sessionPendingAuthStep(scopes)
+
+    connection.emitHandshakeResponse({
+      data: {
+        pendingAuthStep: {
+          identifier: 'ada@b.com',
+          kind: 'email',
+          intent: 'register',
+          step: 'code',
+          channel: null,
+          expiresAt: null,
+          code: null,
+        },
+      },
+    })
+    expect(step.get()).toBeNull()
+
+    connection.emitHandshakeResponse({
+      data: {
+        pendingAuthStep: {
+          identifier: 'ada@b.com',
+          kind: 'email',
+          intent: 'login',
+          step: 'identifier',
+          channel: null,
+          expiresAt: 1_700_000_000_000,
+          code: 'identifier_taken',
+        },
+      },
+    })
+
+    expect(step.get()).toBeNull()
+  })
+
+  it('drops an identifier step that names no reason for being there', () => {
+    // Nobody stands on the address field by not having finished something: it is
+    // the screen a session is SENT back to, so a node naming it and saying nothing
+    // else would take a person off the code screen they were using in silence.
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const step = sessionPendingAuthStep(scopes)
+
+    connection.emitHandshakeResponse({
+      data: {
+        pendingAuthStep: {
+          identifier: 'ada@b.com',
+          kind: 'email',
+          intent: 'login',
+          step: 'identifier',
+          channel: null,
+          expiresAt: null,
+          code: null,
+        },
+      },
+    })
+
+    expect(step.get()).toBeNull()
   })
 })

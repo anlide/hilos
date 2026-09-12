@@ -11,6 +11,8 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\Command\ActingSession;
+use Hilos\Auth\Library\Command\PasswordCommands;
+use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\EmptyValueException;
@@ -29,6 +31,9 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -92,8 +97,14 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     /** Password the registration screen is taken to have submitted. */
     private const string PASSWORD = 'landing-secret-4343';
 
-    /** Accept key of the socket the landing acts for; no connection is looked up behind it. */
+    /**
+     * Accept key of the socket the landing acts for. The landing itself looks up no connection
+     * behind it; the confirm cases below do, so the fixture runtime carries a row for it.
+     */
     private const string ACCEPT_KEY = 'accept-key-of-the-landing-browser';
+
+    /** A code the confirm cases never reach the checking of, because both refuse above it. */
+    private const string SUBMITTED_CODE = '123456';
 
     /** Connection index of the outside observer; the case itself holds the primary one. */
     private const int RIVAL_INDEX = 1;
@@ -109,6 +120,9 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
     private ?DbContext $previousDb = null;
 
     private ?SignalRouter $previousSignalRouter = null;
+
+    /** @var ?RtContext Runtime context to restore after the test */
+    private ?RtContext $previousRt = null;
 
     /**
      * @throws HilosException When a stub statement fails or the context cannot be configured
@@ -127,6 +141,12 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         $db->configure();
         Hilos::$db = $db;
         Hilos::$sr = new SignalRouter();
+        $this->previousRt = Hilos::$rt;
+        $rt = new RegistrationLandingTestRtContext();
+        $rt->mountFeatureRuntime([]);
+        $rt->configure();
+        $rt->bindStateCollectionNames();
+        Hilos::$rt = $rt;
     }
 
     /**
@@ -134,6 +154,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
      */
     protected function tearDown(): void
     {
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
 
@@ -376,6 +397,53 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         } finally {
             $this->dropFixtureUserTable();
         }
+    }
+
+    /**
+     * A code typed on an address that became somebody else's is answered as taken, not as expired.
+     *
+     * The door the loser of a race walks into when its submit and the news pass each other
+     * by a fraction of a second (HIL-833). The winner's landing took this browser's hold
+     * away, so the check that used to be asked first found nothing and answered "the
+     * registration expired" - which is wrong twice over: the code in the letter is alive,
+     * and the new one that screen offers walks the same circle back to the same taken
+     * address. Asking the ADDRESS first is the whole of the fix, and this is what it says.
+     *
+     * @throws HilosException When the identity seed or the confirm fails
+     */
+    public function testACodeOnAnAddressThatBecameSomebodysIsAnsweredAsTaken(): void
+    {
+        $email = $this->uniqueEmail();
+        Hilos::$db?->identities->createPasswordIdentity(self::RIVAL_USER_ID, $email, self::RIVAL_SECRET);
+
+        $outcome = new PasswordCommands(new RegistrationLandingFixtureLibrary())
+            ->confirmRegister(self::ACCEPT_KEY, new ConfirmRegisterActionDTO($email, self::SUBMITTED_CODE));
+
+        self::assertNotNull($outcome, 'A refusal is answered to the submitting socket, not handed to the session');
+        self::assertFalse($outcome->ok);
+        self::assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $outcome->code);
+        self::assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+        self::assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
+    }
+
+    /**
+     * A dead hold on an address nobody took is still answered as a hold that ran out.
+     *
+     * The branch the reorder moved PAST, pinned so it cannot be swallowed by the one put in
+     * front of it: an address still free has no account to send anybody to, and the honest
+     * answer there is the screen that offers a fresh code.
+     *
+     * @throws HilosException When the confirm fails
+     */
+    public function testACodeOnAFreeAddressWithNoHoldIsStillAnsweredAsExpired(): void
+    {
+        $outcome = new PasswordCommands(new RegistrationLandingFixtureLibrary())
+            ->confirmRegister(self::ACCEPT_KEY, new ConfirmRegisterActionDTO($this->uniqueEmail(), self::SUBMITTED_CODE));
+
+        self::assertNotNull($outcome);
+        self::assertFalse($outcome->ok);
+        self::assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
+        self::assertSame(AuthFlowStep::CODE_EXPIRED, $outcome->step);
     }
 
     /**
@@ -642,5 +710,66 @@ final class RegistrationLandingTestCommands extends AbstractLibraryCommands
     public function land(ActingSession $acting, string $identifier, string $displayName, ?string $plainPassword): ?AuthFlowOutcome
     {
         return $this->landRegistration($acting, $identifier, $displayName, $plainPassword);
+    }
+}
+
+/**
+ * A runtime context whose only row is the socket the confirm cases submit from: what
+ * {@see AbstractLibraryCommands::acting()} resolves a browser with.
+ */
+final class RegistrationLandingTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
+        $connections = RegistrationLandingTestConnections::init();
+        $connections->add(RegistrationLandingTestConnection::create(
+            'accept-key-of-the-landing-browser',
+            null,
+            'registration-landing-test-session-token',
+        ));
+        $this->_stateCollections[RegistrationLandingTestConnections::RT_COLLECTION] = $connections;
+    }
+}
+
+/**
+ * The project's session-stage connection rows, standing in for a real project's.
+ */
+final class RegistrationLandingTestConnections extends HilosSessionConnections
+{
+    /** @var string Runtime collection name this fixture mounts under */
+    public const string RT_COLLECTION = 'registrationLandingTestConnections';
+
+    public const string STATE_CLASS = RegistrationLandingTestConnection::class;
+}
+
+/**
+ * One such row, with nothing of a project's own on it.
+ */
+final class RegistrationLandingTestConnection extends HilosSessionConnection
+{
+    protected function initOwn(): void
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row
+     */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Own fields, of which this fixture has none
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Incoming field changes
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
     }
 }

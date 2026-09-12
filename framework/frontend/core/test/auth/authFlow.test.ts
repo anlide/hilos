@@ -1863,6 +1863,7 @@ describe('resuming an unfinished auth step', () => {
       step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'code',
@@ -1884,6 +1885,7 @@ describe('resuming an unfinished auth step', () => {
       step: 'code',
       channel: 'telegram',
       expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
     })
     expect(flow.flow.get()).toMatchObject({
       identifierKind: 'phone',
@@ -1912,6 +1914,7 @@ describe('resuming an unfinished auth step', () => {
       step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
     })
     flow.setField('identifier', 'other@b.com')
     expect(flow.expiresAt.get()).toBeNull()
@@ -1946,6 +1949,7 @@ describe('resuming an unfinished auth step', () => {
       step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
     })
     flow.setField('code', '000000')
     await flow.submit()
@@ -1963,6 +1967,7 @@ describe('resuming an unfinished auth step', () => {
       step: 'set_password',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'set_password',
@@ -1981,11 +1986,72 @@ describe('resuming an unfinished auth step', () => {
       step: 'code',
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'code',
       intent: 'recovery',
     })
+  })
+
+  it('sends a session back to the address field when it lost the race while away', () => {
+    // HIL-833: the browser that was offline in the second somebody else
+    // registered the address never saw the live converge, so the handshake is the
+    // only thing left that can tell it — and it tells it by naming the step the
+    // session was MOVED to, with the same reason the converge carries.
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: 'identifier_taken',
+    })
+    expect(flow.flow.get()).toMatchObject({
+      step: 'identifier',
+      intent: 'login',
+      identifierKind: 'email',
+      channelKey: null,
+    })
+    // The address comes back in the field, because signing in is what is left to
+    // do with it and retyping it is not part of being told.
+    expect(flow.form.get().identifier).toBe('ada@b.com')
+    expect(flow.expiresAt.get()).toBeNull()
+  })
+
+  it('takes the old countdown down when the step it lands on has no code in play', async () => {
+    // The timer belongs to the code screen, and a step carrying no moment has to
+    // TAKE IT DOWN rather than merely not add one: left armed, it would outlive
+    // the screen it was made for and expire the next code the person asks for,
+    // seconds before that code's own deadline.
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'code',
+      channel: null,
+      expiresAt: Date.now() + 5 * SECOND_MS,
+      code: null,
+    })
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: 'identifier_taken',
+    })
+    expect(flow.flow.get().step).toBe('identifier')
+
+    // Back on a code screen, on a deadline of its own that has not come yet.
+    flow.applyExternal({ step: 'code', intent: 'register' })
+    await vi.advanceTimersByTimeAsync(6 * SECOND_MS)
+
+    expect(flow.flow.get().step).toBe('code')
   })
 })
 
@@ -2174,6 +2240,7 @@ describe('a code that ran out says so itself (HIL-828)', () => {
       step: 'code',
       channel: null,
       expiresAt: Date.now() - SECOND_MS,
+      code: null,
     })
 
     await vi.advanceTimersByTimeAsync(0)

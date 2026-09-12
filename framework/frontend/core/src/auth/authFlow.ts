@@ -484,6 +484,12 @@ export interface AuthFlow {
    * all come back to where the session stands - a registration on its code
    * screen, a recovery on its code or its new-password screen.
    *
+   * The step is not always the one this browser left off on (HIL-833). A session
+   * whose address was registered by somebody else while it was away stands on the
+   * identifier step under the sign-in intent, and restoring it is how a tab that
+   * missed the live converge is told at all. That step carries no moment, so
+   * nothing is armed for it and any countdown standing from before is taken down.
+   *
    * A `null` pending step does NOTHING, deliberately: a reconnect that lands
    * while somebody is halfway through typing an identifier must not wipe what
    * they are doing. A step is only ever taken AWAY by the server saying so
@@ -1633,7 +1639,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       form.set({ ...form.get(), identifier: pending.identifier })
       expiresAt.set(pending.expiresAt)
       // A code that died while the tab was closed flips at once (HIL-828), which
-      // is the whole of what a past moment means here.
+      // is the whole of what a past moment means here. A step carrying NO moment
+      // arms nothing and leaves no countdown behind it (HIL-833): the identifier
+      // step a lost race sends a session back to stands on no code, and a timer
+      // left running there would expire a screen that is not counting.
       armExpiry(pending.expiresAt)
     },
     setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void {

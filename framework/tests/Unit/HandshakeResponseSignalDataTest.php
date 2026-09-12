@@ -26,6 +26,21 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'step' => 'code',
         'channel' => null,
         'expiresAt' => 1_700_000_600_000,
+        'code' => null,
+    ];
+
+    /**
+     * The node a browser gets when the address it was registering became somebody else's
+     * while it was away (HIL-833) - the two members that may be absent, both absent.
+     */
+    private const array TAKEN_AUTH_STEP = [
+        'identifier' => 'ada@example.com',
+        'kind' => 'email',
+        'intent' => 'login',
+        'step' => 'identifier',
+        'channel' => null,
+        'expiresAt' => null,
+        'code' => 'identifier_taken',
     ];
 
     /** A deployment that can mail a code but has no phone channel - the asymmetric case. */
@@ -286,6 +301,21 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    public function testARollbackNodeSurvivesTheRoundtripWithItsReasonAndNoExpiry(): void
+    {
+        // The identifier step is the one the handshake was widened for (HIL-833): it
+        // stands on no code, so there is no moment to promise, and without the reason
+        // travelling beside it the surface could not tell "your address was taken" from
+        // "you were never in a flow" - both of which look like the address field.
+        $data = new HandshakeResponseSignalData()
+            ->withSessionContext(self::SERVER_TIME_MS, self::TAKEN_AUTH_STEP, self::CODE_DELIVERY);
+
+        $restored = HandshakeResponseSignalData::fromArray($data->toArray());
+
+        $this->assertSame(self::TAKEN_AUTH_STEP, $restored->pendingAuthStep);
+        $this->assertSame($data->toArray(), $restored->toArray());
     }
 
     public function testRoundtripRejectsADeliveryNodeMissingAKind(): void

@@ -12,6 +12,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -885,10 +886,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * whatever else is registered, and naming a channel there would be inventing a
      * choice nobody made.
      *
+     * A WAIT WITH NO HOLD BEHIND IT IS AN ANSWER OF ITS OWN (HIL-833). It used to be
+     * silence, and the silence is what lost the news: the browser that was offline in the
+     * second somebody else registered its address never received the live converge, and a
+     * handshake that said "no step" sent it back to the code screen it was already on, to
+     * finish a registration that had stopped being winnable. The address the session
+     * remembers is still on its row - the converge no longer wipes it - so the question
+     * "did this end because somebody else won it" can be asked, and it is asked of the one
+     * definition of a taken address. It has become somebody's: the session is told so, on
+     * the identifier step under the sign-in intent, with the same reason the live converge
+     * carries. Nobody's: null, as before, because the hold was simply swept and the
+     * address is free to register again.
+     *
+     * A number never reaches that branch and needs no clause for it: the browser that
+     * loses a race for a NUMBER is signed in rather than refused
+     * ({@see PhoneCodeCommands::confirmPhoneCode()}), so there is no loser to tell.
+     *
      * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int}
-     *     Step, or null when there is none
-     * @throws HilosException When the reservation, runtime or verification query fails
+     * @return ?array{identifier: string, kind: string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string} Step, or null when there is none
+     * @throws HilosException When the reservation, runtime, verification or identity query fails
      */
     private function pendingAuthStepFor(?Session $session): ?array
     {
@@ -901,16 +918,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return $recovery;
         }
 
-        if ($session->pendingRegistrationIdentifier === null) {
+        $waited = $session->pendingRegistrationIdentifier;
+        if ($waited === null) {
             return null;
         }
 
         $reservation = new RegistrationReservationService()->findActiveForSession($session->token);
-        if ($reservation === null) {
-            return null;
-        }
-
-        $identifier = $reservation->identifier;
+        // The address comes off the HOLD while there is one, because a hold made on
+        // another address after the wait was written would otherwise be described with
+        // the wait's stale identifier. With the hold gone the wait is all there is, and
+        // it names the address this browser was racing for.
+        $identifier = $reservation?->identifier ?? $waited;
         try {
             $kind = IdentifierDetector::kindOf($identifier);
         } catch (InvalidFormatException $e) {
@@ -925,6 +943,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return null;
         }
 
+        if ($reservation === null) {
+            return $this->lostRegistrationStepFor($identifier, $kind);
+        }
+
         return [
             HandshakeResponseSignalData::identifier => $identifier,
             HandshakeResponseSignalData::kind => $kind,
@@ -936,6 +958,44 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 ? new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $identifier)
                 : null,
             HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($reservation->expiresAt),
+            HandshakeResponseSignalData::code => null,
+        ];
+    }
+
+    /**
+     * Describes the race a session lost while it was away, or nothing when it lost none (HIL-833).
+     *
+     * The other half of {@see pendingAuthStepFor()}, kept apart because it answers a
+     * different question: not "where did this browser stop" but "why is it not there any
+     * more". The step it names is where the person belongs now - the address field, under
+     * the sign-in intent, because the address has an account and signing in is the honest
+     * way forward - and the reason rides with it so the surface says which of the several
+     * ways off a code screen this was.
+     *
+     * No moment travels with it. An identifier step counts down to nothing, and the
+     * handshake promising an expiry there would be promising the death of a code that is
+     * not in play.
+     *
+     * @param string $identifier Address the session was registering
+     * @param string $kind Classification of that address (see IdentifierDetection::KIND_*)
+     * @return ?array{identifier: string, kind: string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string} Step, or null when the address is free
+     * @throws HilosException When the identity lookup fails
+     */
+    private function lostRegistrationStepFor(string $identifier, string $kind): ?array
+    {
+        if (Hilos::$db->identities->findAccountIdByEmail($identifier) === null) {
+            return null;
+        }
+
+        return [
+            HandshakeResponseSignalData::identifier => $identifier,
+            HandshakeResponseSignalData::kind => $kind,
+            HandshakeResponseSignalData::intent => AuthFlowIntent::LOGIN,
+            HandshakeResponseSignalData::step => AuthFlowStep::IDENTIFIER,
+            HandshakeResponseSignalData::channel => null,
+            HandshakeResponseSignalData::expiresAt => null,
+            HandshakeResponseSignalData::code => AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
         ];
     }
 
@@ -967,8 +1027,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * every project has.
      *
      * @param Session $session Session to describe
-     * @return ?array{identifier: string, kind: string, intent: string, step: string, channel: ?string, expiresAt: int}
-     *     Step, or null when the session stands on no live recovery
+     * @return ?array{identifier: string, kind: string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string} Step, or null when the session stands on no live recovery
      * @throws HilosException When the runtime read or a verification query fails
      */
     private function recoveryStepFor(Session $session): ?array
@@ -1014,6 +1074,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 : AuthFlowStep::SET_PASSWORD,
             HandshakeResponseSignalData::channel => null,
             HandshakeResponseSignalData::expiresAt => $expiresAt,
+            HandshakeResponseSignalData::code => null,
         ];
     }
 
@@ -1036,7 +1097,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Both flows are parked rather than the one that won the response: which step is
      * SHOWN is a question about now, and which broadcasts a connection belongs to is a
-     * question about what it must not miss. Registration's park is unchanged.
+     * question about what it must not miss.
+     *
+     * Registration is parked only behind a LIVE HOLD of this session (HIL-833). The wait on
+     * the row stopped meaning "still racing" when the losers were allowed to keep it: a
+     * browser that lost the address earlier still remembers which address it was, and parking
+     * it on that name would join it to the next stranger's registration of the same address
+     * and roll its surface back on somebody else's news. The hold is the record that says a
+     * browser is still in the race, so it is the one asked.
      *
      * Called by the project's handshake handler, which is the only place holding both
      * the accept key and the moment: the response builder above is also used for
@@ -1044,7 +1112,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param string $acceptKey Accept key of the connection that just handshook
      * @param ?Session $session Session the connection resolved to, or null when it has none
-     * @throws HilosException When the runtime read, a verification query, or the runtime write fails
+     * @throws HilosException When the runtime read, a reservation or verification query, or the runtime write fails
      */
     private function parkPendingAuthStep(string $acceptKey, ?Session $session): void
     {
@@ -1062,7 +1130,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $identifier = $session->pendingRegistrationIdentifier;
-        if ($identifier === null) {
+        if ($identifier === null || new RegistrationReservationService()->findActiveForSession($session->token) === null) {
             return;
         }
 
@@ -1941,10 +2009,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * no wait, and its check-your-inbox screen would otherwise sit there until the link it
      * is waiting for turned out to be worthless.
      *
-     * The durable waits are dropped HERE, and only after the waiting sockets have been
-     * read off them (HIL-486): they are half of who is waiting, so a caller that cleared
-     * them first would converge to whoever happened to be parked in the runtime list and
-     * silently miss the rest.
+     * THE LOSERS KEEP THEIR MEMORY OF THE REGISTRATION, and that is what makes the news
+     * survive a closed lid (HIL-833). Until then this cleared the wait of every session on
+     * the address at once, winner and losers together, so the frame above was the only copy
+     * of the news: a browser that was offline in this second came back to a session that
+     * remembered nothing, was told it stood on no step, and sat on its code screen finishing
+     * a registration that no longer existed. Left standing, the wait is what the handshake
+     * reads the loss off ({@see pendingAuthStepFor()}) - the address it names has an account
+     * now, and no hold of this session's is behind it. The winner needs no line here either:
+     * its own sign-in clears its wait a moment later, where a session that belongs to
+     * somebody stops standing on anything.
+     *
+     * The waiting sockets are still read off the durable waits BEFORE anything is released
+     * (HIL-486): they are half of who is waiting, so a caller that started from the runtime
+     * list alone would converge to whoever happened to be parked and silently miss the rest.
      *
      * @param string $identifier Normalized identifier that was just confirmed (lowercased email)
      * @param int $userId User the confirmation created
@@ -1966,8 +2044,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $parked[$acceptKey] = $sessionToken;
             }
         }
-
-        Hilos::$db->sessions->actions->releasePendingRegistrationFor($identifier);
 
         foreach ($parked as $acceptKey => $sessionToken) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
@@ -3832,9 +3908,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * contribute nothing and cost nothing: their tabs are told at the handshake, by the
      * step the response carries.
      *
+     * A wait is no longer proof of standing in the race, so the second source is narrowed
+     * by the HOLD (HIL-833). A browser that lost an earlier race keeps its wait - that is
+     * the copy of the news the handshake reads - and would otherwise be pulled into the
+     * converge of the NEXT registration of the same address, and told a second time about
+     * a race it was never in. What says somebody is still in one is a live hold of that
+     * session's own, which is the record the race is settled on.
+     *
      * @param string $identifier Normalized identifier being converged
      * @return array<string, string> Session token by waiting connection accept key
-     * @throws HilosException On runtime failure
+     * @throws HilosException On runtime or reservation failure
      */
     private function parkedAcceptKeys(string $identifier): array
     {
@@ -3843,7 +3926,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $parked[$waiter->acceptKey] = $waiter->sessionToken;
         }
 
+        $reservations = new RegistrationReservationService();
         foreach (Hilos::$db->sessions->findAwaitingRegistration($identifier) as $session) {
+            if ($reservations->findActiveForSession($session->token) === null) {
+                continue;
+            }
+
             foreach ($this->sessionConnectionKeys($session->token) as $acceptKey) {
                 $parked[$acceptKey] = $session->token;
             }
