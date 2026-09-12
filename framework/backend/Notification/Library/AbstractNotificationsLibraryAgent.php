@@ -7,6 +7,8 @@ namespace Hilos\Notification\Library;
 use DateTimeImmutable;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -48,6 +50,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\DeliveryLogPruner;
+use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
@@ -131,7 +134,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
 
     /**
-     * The two frames this library is addressed by.
+     * The three frames this library is addressed by.
      *
      * Routing takes the destination from whoever declares a name here, so the first line IS
      * the move: an emit that used to be a write in the calling worker is now a frame that
@@ -141,10 +144,17 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * action stayed on {@see AbstractHilosCommunicationsDeliveriesPage}, because the ADMIN
      * level closing it lives on a page and an agent action has none. So that page keeps the
      * door and this library keeps the journal, and the retry crosses between them.
+     *
+     * The third is sent by {@see BackupAgent} (HIL-846): the letters a restore left while nobody
+     * could be told, offered from the backup directory they were written to, because in a cluster
+     * that directory need not be on this library's node.
+     * {@see HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT} is absent: it is the receipt this
+     * library sends back, and the backup agent declares it.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
         HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
+        HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
     ];
 
     /**
@@ -219,7 +229,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Arms the journal prune and sends what was written while this library was not running.
+     * Arms the journal prune.
      *
      * The journal prune is armed only where deliveries are written. Whether the project declared
      * {@see HilosFeature::NOTIFICATION_DELIVERY} is a fact about how it was built, settled before
@@ -229,18 +239,14 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * the retention key - and the accident, not the absence of a delivery table, is what stopped
      * a daily DELETE against a table it never migrated.
      *
-     * The last thing it does is send the letters written while it was not running (HIL-771): a
-     * restore emits with the node frozen or the daemon down, and those drafts waited in
-     * {@see DeferredNotificationQueue} for exactly this moment. Sending one writes a row, which
-     * {@see self::OWNS_DB} has granted before this hook is called at all.
+     * The letters a restore wrote while this library was not running are not sent from here any
+     * more (HIL-846): they arrive as a frame from the agent holding them ({@see emitHandedOverNotices()}).
      */
     public function onStart(): void
     {
         if (Hilos::hasFeature(HilosFeature::NOTIFICATION_DELIVERY)) {
             $this->deliveryLogPruneRule = new CronRule(self::DELIVERY_LOG_PRUNE_RULE, self::DELIVERY_LOG_PRUNE_SCHEDULE);
         }
-
-        $this->emitDeferred();
     }
 
     /**
@@ -274,7 +280,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the notification cannot be written or delivered
-     * @throws InvalidArgumentException When the retry answer cannot be named or queued
+     * @throws InvalidArgumentException When the retry answer or a hand-over receipt cannot be named or queued
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -288,6 +294,18 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                     );
                 }
                 $this->emit($data->data->toDraft());
+
+                return;
+
+            case HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER:
+                if (!$data->data instanceof DeferredNotificationHandoverSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        DeferredNotificationHandoverSignalData::class,
+                        $data->data,
+                    );
+                }
+                $this->emitHandedOverNotices($data->data);
 
                 return;
 
@@ -452,23 +470,42 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Sends everything left in the queue while this library was not running (HIL-771).
+     * Sends the letters a restore left while this library could not be told (HIL-771), from the
+     * batch the agent holding them handed over (HIL-846).
+     *
+     * A restore emits with the node frozen or the daemon down, so its drafts wait in
+     * {@see DeferredNotificationQueue} and {@see BackupAgent} offers them here until this library
+     * answers. The library never reads that file itself: it lies on the disk of the node that ran
+     * the restore, and in a cluster this library may run on another.
      *
      * Contained on purpose, one letter at a time: the drafts come from a restore that has already
-     * happened, and an agent whose start hook throws is an agent this node does not get back. A
-     * letter that cannot be sent is logged and the next one is tried.
+     * happened. A letter that cannot be sent is logged and counted as dropped, and the next one is
+     * tried. The receipt goes back after every pass, whatever became of each letter - the batch is
+     * this library's once it has been through here, and unanswered it would be offered forever.
+     *
+     * @param DeferredNotificationHandoverSignalData $handover The batch and the id its receipt names
+     * @throws InvalidArgumentException When the receipt cannot be named
      */
-    private function emitDeferred(): void
+    private function emitHandedOverNotices(DeferredNotificationHandoverSignalData $handover): void
     {
-        foreach (DeferredNotificationQueue::drain() as $draft) {
+        $sent = 0;
+        $dropped = 0;
+        foreach ($handover->notifications as $draft) {
             try {
                 $this->emit($draft);
+                $sent++;
             } catch (Throwable $e) {
+                $dropped++;
                 $this->logAgentError(
                     "Deferred notification for userId={$draft->userId} could not be sent: {$e->getMessage()}",
                 );
             }
         }
+
+        $this->sendToAgent(
+            HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT,
+            new DeferredNoticesSentSignalData($handover->batch, $sent, $dropped),
+        );
     }
 
     /**

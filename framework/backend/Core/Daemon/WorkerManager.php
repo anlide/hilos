@@ -3056,8 +3056,10 @@ abstract class WorkerManager extends BaseManager
             }
 
             // The two halves of the restored-login debt take the same road, and for the same
-            // reason: what they report to is the freeze the master owns, and neither the restore
-            // nor the sessions library can reach it except through their own daemon (HIL-771).
+            // reason: what they report to is the freeze the master owns, and the agent that ran
+            // the restore can reach it only through its own daemon (HIL-771). Both halves are that
+            // agent's: the library's receipt comes back to it, so the debt is paid to the master
+            // that took it on even when the library runs on another node (HIL-846).
             if ($signalType === SignalTypeConstants::SESSION_CARRY_OVER_DEFERRED) {
                 if ($signal->data instanceof SessionCarryOverDeferredSignalData) {
                     $this->daemonClient->send(new WorkerSessionCarryOverDeferredDTO($signal->data));

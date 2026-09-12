@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Closure;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupRunKind;
 use Hilos\Backup\BackupNotificationType;
@@ -132,8 +133,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
 
         // Both queues are emptied before the case rather than only after it: one left behind by a
         // run that died mid-case would hand its logins and its letters to this one.
-        DeferredSessionCarryoverQueue::drain();
-        DeferredNotificationQueue::drain();
+        self::emptyQueues();
     }
 
     /**
@@ -141,8 +141,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
      */
     protected function tearDown(): void
     {
-        DeferredSessionCarryoverQueue::drain();
-        DeferredNotificationQueue::drain();
+        self::emptyQueues();
         rmdir($this->backupDir);
         RtTruthSourceRegistry::unregisterDaemon(StateBackupRuntime::RT_ITEM);
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
@@ -185,7 +184,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->endRestoreChild($agent, ExitCode::SUCCESS);
         $this->assertSame(
             [],
-            DeferredSessionCarryoverQueue::drain(),
+            self::takeSessions(),
             'Handed over here, the logins would be applied in a node still holding caches of the database that is gone',
         );
 
@@ -195,8 +194,8 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
             'The supervisor stopped writing this table: the rows belong to the sessions library now (HIL-771)',
         );
 
-        // What the library does on its way back up, and the whole of it.
-        $queued = DeferredSessionCarryoverQueue::drain();
+        // What the library does with the batch handed over to it, and the whole of it.
+        $queued = self::takeSessions();
         $this->assertCount(1, $queued, 'The photographed login waits in the queue for its owner');
         SessionCarrier::carryOver($queued);
 
@@ -220,7 +219,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
 
         $this->assertSame(
             [],
-            DeferredSessionCarryoverQueue::drain(),
+            self::takeSessions(),
             'Handing sessions to the library after a half-imported database would build on top of the damage',
         );
         $this->assertNull(self::sessionRow(self::TOKEN), 'And nothing writes them behind its back either');
@@ -239,7 +238,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->endRestoreChild($agent, ExitCode::SUCCESS);
         $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
 
-        $letters = DeferredNotificationQueue::drain();
+        $letters = self::takeLetters();
         $draft = self::letterTo($letters, self::NEW_USER_ID);
         $this->assertNotNull($draft, 'The person who asked is found again by identity, not by the id they had');
         $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $draft->type);
@@ -263,7 +262,7 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         $this->endRestoreChild($agent, ExitCode::ERROR);
         $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
 
-        $draft = self::letterTo(DeferredNotificationQueue::drain(), self::NEW_USER_ID);
+        $draft = self::letterTo(self::takeLetters(), self::NEW_USER_ID);
         $this->assertNotNull($draft, 'A restore that failed is exactly the one nobody may find out about by chance');
         $this->assertSame(BackupNotificationType::RESTORE_FAILED, $draft->type);
     }
@@ -343,6 +342,54 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         return $registry instanceof CarryOverTestViewConnections
             ? $registry
             : throw new RuntimeException('The connections collection is not represented.');
+    }
+
+    /**
+     * Takes the session batch waiting in the queue and closes it, as the holder does on the library's receipt.
+     *
+     * @return list<SessionCarryover> Sessions of the batch, empty when nothing waits
+     */
+    private static function takeSessions(): array
+    {
+        $batch = DeferredSessionCarryoverQueue::take();
+        if ($batch === null) {
+            return [];
+        }
+
+        DeferredSessionCarryoverQueue::release($batch->batch);
+
+        return $batch->sessions;
+    }
+
+    /**
+     * Takes the letter batch waiting in the queue and closes it, as the holder does on the library's receipt.
+     *
+     * @return list<NotificationDraft> Drafts of the batch, empty when nothing waits
+     */
+    private static function takeLetters(): array
+    {
+        $batch = DeferredNotificationQueue::take();
+        if ($batch === null) {
+            return [];
+        }
+
+        DeferredNotificationQueue::release($batch->batch);
+
+        return $batch->drafts;
+    }
+
+    /**
+     * Closes everything either queue holds, so no case inherits what another one left.
+     *
+     * Two passes each, because two files at most can be waiting in one queue: a batch still in
+     * flight and the fresh file appended behind it.
+     */
+    private static function emptyQueues(): void
+    {
+        self::takeSessions();
+        self::takeSessions();
+        self::takeLetters();
+        self::takeLetters();
     }
 
     /**

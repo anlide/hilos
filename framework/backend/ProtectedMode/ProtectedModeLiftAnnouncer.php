@@ -23,10 +23,12 @@ use Throwable;
  * comes back with the other agents, and an operator who opens the node in that moment beats it.
  *
  * **What it waits on is a debt, not a guess.** The restore says it left logins here
- * ({@see noteSessionsDeferred()}) and the library says they are back ({@see noteSessionsCarriedOver()}),
- * both as frames from their own worker to their own master. Nothing is inferred from the freeze row
- * or from a file on disk: a node that ran no restore takes on no debt and lifts with no delay at
- * all, which is what a cluster follower and every non-restore freeze do.
+ * ({@see noteSessionsDeferred()}) and the same agent says they are back ({@see noteSessionsCarriedOver()})
+ * once the library has answered for them - both frames from the restore's worker to its own master,
+ * which is the master holding this lift even when the library runs on another node (HIL-846).
+ * Nothing is inferred from the freeze row or from a file on disk: a node that ran no restore takes
+ * on no debt and lifts with no delay at all, which is what a cluster follower and every non-restore
+ * freeze do.
  *
  * **The wait is bounded and it never blocks.** The master may not sit in a loop, so the lift is
  * held as a frame and let go from {@see DaemonManager}'s iteration - by the answer when it comes,

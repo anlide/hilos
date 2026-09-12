@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Auth\Session;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\DeferredQueueHandover;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
@@ -16,6 +18,7 @@ use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 use JsonException;
 
@@ -25,19 +28,21 @@ use JsonException;
  *
  * The sessions table belongs to {@see AbstractSessionsLibraryAgent}, so the restore stopped
  * writing it: {@see BackupAgent} photographs the live logins before the swap and leaves the
- * picture here, and the library re-creates the rows when it comes back up. What made this a file
- * rather than a frame is the moment it happens in - the node is still frozen, every agent but the
- * restore's own is stopped, and a frame addressed to a stopped agent under a freeze is dropped
- * where it is sent. So the picture is left somewhere the freeze cannot reach, and picked up by
- * the one process allowed to write those rows.
+ * picture here. What made this a file rather than a frame is the moment it happens in - the node
+ * is still frozen, every agent but the restore's own is stopped, and a frame addressed to a stopped
+ * agent under a freeze is dropped where it is sent. So the picture is left somewhere the freeze
+ * cannot reach, and the agent that left it goes on offering it to the library until the library
+ * answers ({@see DeferredQueueHandover}). The library never reads this file: in a cluster it may
+ * run on a node whose disk the file is not on (HIL-846).
  *
  * **A line, not a document.** One JSON object per session, in the vocabulary {@see SessionCarryover}
  * already speaks, because appending a line is the whole of what a writer with no reader can safely
  * do.
  *
- * **Taken before it is read.** A drain renames the file aside and reads that, so a session
- * appended while the library is starting is not swallowed by the delete. What survives a crash
- * mid-drain is the renamed file, and the next drain takes it first.
+ * **Released by receipt, not by reading.** A take renames the fresh file aside as a batch, so a
+ * session appended while the batch is in flight is not swallowed by its removal, and the batch
+ * file stays until the library's receipt names it. What survives a restart of the holder is the
+ * batch file, and the next take hands it out again before anything fresh.
  *
  * It lives beside the archives, under `BACKUP_DIR`, because everything that queues here is part of
  * a restore - an installation that names no backup directory runs none, which is why an unset
@@ -48,8 +53,14 @@ final class DeferredSessionCarryoverQueue
     /** @var string Name of the queue file inside the backup directory */
     public const string FILE_NAME = 'pending-session-carryover.jsonl';
 
-    /** @var string Suffix of the file a drain reads, renamed aside so a concurrent append is not lost */
+    /** @var string Suffix of a batch file, renamed aside so an append made while it is in flight is not lost */
     private const string TAKEN_SUFFIX = '.taken';
+
+    /** @var string Separator between the queue file name and the batch id in the name of a batch file */
+    private const string BATCH_SEPARATOR = '.';
+
+    /** @var int Random bytes a batch id is drawn from */
+    private const int BATCH_BYTES = 4;
 
     /** @var string Agent id the queue's own failures are logged under */
     private const string LOG_AGENT_ID = 'sessions';
@@ -85,7 +96,7 @@ final class DeferredSessionCarryoverQueue
             $lines = '';
             foreach ($snapshot as $carryover) {
                 $lines .= json_encode(
-                    self::toArray($carryover),
+                    self::carryoverToArray($carryover),
                     JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE,
                 ) . "\n";
             }
@@ -103,115 +114,86 @@ final class DeferredSessionCarryoverQueue
     }
 
     /**
-     * Takes everything waiting and hands it over, leaving the queue empty.
+     * Sets a batch aside for the owner of the sessions table, leaving its file in place.
      *
-     * A line that cannot be understood is logged and dropped rather than stopping the drain: it is
+     * A batch already in flight is handed out again before anything fresh is taken: nobody has
+     * said it arrived, and the logins in it are still owed to the people holding them. Only when
+     * none is in flight does the fresh file become the next batch, under a new id; whatever is
+     * appended after that waits for the batch ahead of it to be released, so the logins keep
+     * their order.
+     *
+     * The file is not removed here. It stays until the owner's receipt names its batch
+     * ({@see release()}), which makes the hand-over at-least-once: a batch whose receipt is lost
+     * is offered again, and the carry-over survives the repeat - a token that already holds a row
+     * is neither carried nor lost.
+     *
+     * The id only has to differ from the id of another batch in the same directory, and nobody
+     * gains anything by guessing it, so it is drawn from the tolerant random axis.
+     *
+     * A line that cannot be understood is logged and dropped rather than stopping the read: it is
      * one login, and the ones behind it in the file belong to somebody too.
      *
-     * @return list<SessionCarryover> Sessions left for the library, in the order they were left
+     * @return ?DeferredSessionCarryoverBatch The batch to hand over, or null when nothing is waiting
      */
-    public static function drain(): array
+    public static function take(): ?DeferredSessionCarryoverBatch
     {
         $path = self::path();
         if ($path === null) {
-            return [];
+            return null;
         }
 
-        // Leftovers first: a drain that died between the rename and the write left its file
-        // behind, and the logins in it are still owed to the people holding them.
-        $carried = self::takeFile($path . self::TAKEN_SUFFIX);
-
-        try {
-            FsPath::move($path, $path . self::TAKEN_SUFFIX);
-        } catch (FileMoveException) {
-            // Nothing waiting, which is the ordinary case: the queue only fills during a restore.
-            return $carried;
+        $batch = self::batchInFlight($path);
+        if ($batch === null) {
+            $batch = RandomHelper::hex(self::BATCH_BYTES);
+            try {
+                FsPath::move($path, self::batchPath($path, $batch));
+            } catch (FileMoveException) {
+                // Nothing waiting, which is the ordinary case: the queue only fills during a restore.
+                return null;
+            }
         }
 
-        return [...$carried, ...self::takeFile($path . self::TAKEN_SUFFIX)];
+        return new DeferredSessionCarryoverBatch($batch, self::readBatch(self::batchPath($path, $batch)));
     }
 
     /**
-     * Reads one queue file whole and removes it.
+     * Forgets a batch its owner has taken, by removing the file the batch is named by.
      *
-     * @param string $path Absolute path of the file to take
-     * @return list<SessionCarryover> Sessions it carried, in file order
+     * A receipt for a batch whose file is already gone - the second receipt for a batch offered
+     * twice - removes nothing and says nothing, and neither does an id that is not a batch id at
+     * all: neither names a file this queue holds.
+     *
+     * @param string $batch Id of the batch the owner's receipt is for
      */
-    private static function takeFile(string $path): array
+    public static function release(string $batch): void
     {
-        $carried = [];
-
-        try {
-            foreach (FsPath::readLines($path) as $line) {
-                $carryover = self::readLine($path, $line);
-                if ($carryover !== null) {
-                    $carried[] = $carryover;
-                }
-            }
-        } catch (FileNotFoundException) {
-            return [];
-        } catch (FileReadException $e) {
-            Logger::logAgentError(
-                self::LOG_AGENT_ID,
-                "Deferred session carry-over at {$path} could not be read: {$e->getMessage()}",
-            );
-
-            return $carried;
+        $path = self::path();
+        if ($path === null || !ctype_xdigit($batch)) {
+            return;
         }
 
         try {
-            FsPath::delete($path);
+            FsPath::delete(self::batchPath($path, $batch));
         } catch (FileDeleteException $e) {
-            // The logins are already in hand, so the start goes on; what is left behind is a file
-            // the next drain would read a second time, which the carry-over itself survives - a
-            // token that already holds a row is neither carried nor lost - but is worth a log line.
+            // The logins are with their owner already; what is left behind is a batch the holder
+            // offers a second time, which the carry-over survives but is worth a log line.
             Logger::logAgentError(
                 self::LOG_AGENT_ID,
-                "Deferred session carry-over at {$path} was applied but the file could not be removed: {$e->getMessage()}",
+                "Deferred session carry-over batch {$batch} was taken but its file could not be removed: {$e->getMessage()}",
             );
-        }
-
-        return $carried;
-    }
-
-    /**
-     * Turns one queued line back into a captured session, or into a log line.
-     *
-     * @param string $path File the line came from, named in the log
-     * @param string $line One line as the file holds it, line ending included
-     * @return ?SessionCarryover The captured session, or null when the line is not one
-     */
-    private static function readLine(string $path, string $line): ?SessionCarryover
-    {
-        $trimmed = trim($line);
-        if ($trimmed === '') {
-            return null;
-        }
-
-        try {
-            $decoded = json_decode($trimmed, true, flags: JSON_THROW_ON_ERROR);
-            if (!is_array($decoded)) {
-                throw new InvalidFormatException('queued line is not an object');
-            }
-
-            return self::fromArray($decoded);
-        } catch (JsonException | InvalidFormatException $e) {
-            Logger::logAgentError(
-                self::LOG_AGENT_ID,
-                "Deferred session carry-over at {$path} is not a session and was dropped: {$e->getMessage()}",
-            );
-
-            return null;
         }
     }
 
     /**
      * Writes one captured session as the line the queue holds.
      *
+     * Public because the hand-over carries the same line ({@see DeferredSessionCarryoverHandoverSignalData}):
+     * one vocabulary for the file and the wire.
+     *
      * @param SessionCarryover $carryover Session captured before the swap
      * @return array<string, mixed> Line payload
      */
-    private static function toArray(SessionCarryover $carryover): array
+    public static function carryoverToArray(SessionCarryover $carryover): array
     {
         $identities = [];
         foreach ($carryover->identities as $identity) {
@@ -231,13 +213,13 @@ final class DeferredSessionCarryoverQueue
      *
      * A session with no identity pairs left is kept rather than refused: the carry-over already
      * answers that case by dropping it, counted and logged, and refusing it here would turn a
-     * countable loss into a line the drain complains about.
+     * countable loss into a line the read complains about.
      *
-     * @param array<string, mixed> $data One decoded line
+     * @param array<mixed> $data One decoded line
      * @return SessionCarryover The captured session
      * @throws InvalidFormatException When the line names no token, no creation time, or bad identities
      */
-    private static function fromArray(array $data): SessionCarryover
+    public static function carryoverFromArray(array $data): SessionCarryover
     {
         $token = $data['token'] ?? null;
         $createdAt = $data['createdAt'] ?? null;
@@ -264,6 +246,37 @@ final class DeferredSessionCarryoverQueue
     }
 
     /**
+     * Turns one queued line back into a captured session, or into a log line.
+     *
+     * @param string $path File the line came from, named in the log
+     * @param string $line One line as the file holds it, line ending included
+     * @return ?SessionCarryover The captured session, or null when the line is not one
+     */
+    private static function readLine(string $path, string $line): ?SessionCarryover
+    {
+        $trimmed = trim($line);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($trimmed, true, flags: JSON_THROW_ON_ERROR);
+            if (!is_array($decoded)) {
+                throw new InvalidFormatException('queued line is not an object');
+            }
+
+            return self::carryoverFromArray($decoded);
+        } catch (JsonException | InvalidFormatException $e) {
+            Logger::logAgentError(
+                self::LOG_AGENT_ID,
+                "Deferred session carry-over at {$path} is not a session and was dropped: {$e->getMessage()}",
+            );
+
+            return null;
+        }
+    }
+
+    /**
      * Reads the identity pairs of one queued line.
      *
      * @param array<mixed> $identities Identity list as the line holds it
@@ -284,6 +297,64 @@ final class DeferredSessionCarryoverQueue
         }
 
         return $refs;
+    }
+
+    /**
+     * Reads the file of one batch whole, leaving it where it is.
+     *
+     * @param string $path Absolute path of the batch file
+     * @return list<SessionCarryover> Sessions it carries, in file order
+     */
+    private static function readBatch(string $path): array
+    {
+        $carried = [];
+
+        try {
+            foreach (FsPath::readLines($path) as $line) {
+                $carryover = self::readLine($path, $line);
+                if ($carryover !== null) {
+                    $carried[] = $carryover;
+                }
+            }
+        } catch (FileNotFoundException) {
+            return [];
+        } catch (FileReadException $e) {
+            Logger::logAgentError(
+                self::LOG_AGENT_ID,
+                "Deferred session carry-over at {$path} could not be read: {$e->getMessage()}",
+            );
+        }
+
+        return $carried;
+    }
+
+    /**
+     * Finds the batch an earlier take set aside and nobody has released yet.
+     *
+     * @param string $path Absolute path of the queue file
+     * @return ?string Id of the batch in flight, or null when there is none
+     */
+    private static function batchInFlight(string $path): ?string
+    {
+        $prefix = $path . self::BATCH_SEPARATOR;
+        foreach (glob($prefix . '*' . self::TAKEN_SUFFIX) ?: [] as $batchPath) {
+            $batch = substr($batchPath, strlen($prefix), -strlen(self::TAKEN_SUFFIX));
+            if (ctype_xdigit($batch)) {
+                return $batch;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param string $path Absolute path of the queue file
+     * @param string $batch Batch id
+     * @return string Absolute path of the file that batch is named by
+     */
+    private static function batchPath(string $path, string $batch): string
+    {
+        return $path . self::BATCH_SEPARATOR . $batch . self::TAKEN_SUFFIX;
     }
 
     /**

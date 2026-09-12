@@ -27,6 +27,7 @@ use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
+use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
@@ -34,7 +35,6 @@ use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
-use Hilos\Auth\Session\DTO\SessionCarryOverDoneSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
@@ -50,11 +50,12 @@ use Hilos\Auth\Session\SessionToastSeverity;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -73,9 +74,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
@@ -237,6 +236,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * the code agent - and it arrives here because the line it moves is the session's.
      * {@see HilosSignalConstants::HILOS_CODE_SEND_PROGRESS} is absent for the usual reason: it
      * is what this library sends on to the browser.
+     *
+     * The fourteenth is sent by {@see BackupAgent} (HIL-846): the logins a restore photographed,
+     * offered from the backup directory they were left in, because in a cluster that directory
+     * need not be on this library's node. {@see HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED}
+     * is absent for the usual reason: it is the receipt this library sends back.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -252,6 +256,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
         HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
         HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
+        HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => DeferredSessionCarryoverHandoverSignalData::class,
     ];
 
     /**
@@ -375,7 +380,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private ?CronRule $reservationSweepRule = null;
 
     /**
-     * Arms the two sweeps that keep the session set honest and replays a restore's logins.
+     * Arms the two sweeps that keep the session set honest.
+     *
+     * A restore's logins are not replayed here any more (HIL-846): they arrive as a frame from the
+     * agent holding them ({@see carryOverHandedOverSessions()}), and they arrive after this hook has
+     * returned, so the claim on the rows is in place before the first one is written.
      *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
      */
@@ -383,85 +392,54 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $this->armPendingRegistrationSweep();
         $this->armReservationSweep();
-
-        $this->carryOverDeferredSessions();
     }
 
     /**
-     * Re-creates the logins a restore photographed before it replaced the database (HIL-771).
+     * Re-creates the logins a restore photographed before it replaced the database (HIL-771), from
+     * the batch the agent holding them handed over (HIL-846).
      *
-     * The last thing the library does on its way up, and the reason the queue exists at all: the
-     * restore runs with this agent stopped by the freeze, so it cannot ask - it leaves the picture
-     * in {@see DeferredSessionCarryoverQueue} and this is where the picture is used. Applying one
-     * WRITES the rows this library owns, which {@see self::OWNS_DB} has granted before this hook
-     * runs at all.
+     * The restore runs with this agent stopped by the freeze, so it cannot ask - it leaves the
+     * picture in {@see DeferredSessionCarryoverQueue}, and {@see BackupAgent} offers it here, again
+     * and again, until this library answers. The library never reads that file itself: it lies on
+     * the disk of the node that ran the restore, and in a cluster this library may run on another.
+     * Applying the batch WRITES the rows this library owns, which {@see self::OWNS_DB} granted before
+     * any frame could reach it.
      *
-     * The queue is empty in ordinary life: only a restore ever fills it, and only on the branch
-     * where the swap succeeded. Contained like everything else about a finished restore - a
-     * library that cannot re-create a login must still come up, or the node that just came back
-     * has no sessions at all rather than the ones it could not carry.
+     * Contained like everything else about a finished restore: a login that cannot be re-created is
+     * logged and counted, and the batch is answered all the same.
      *
-     * A pass that found something to do is reported to this node's master, which may be holding
-     * the "the freeze lifted, reload" frame back until it hears this ({@see reportCarriedOverSessions()}).
+     * The answer goes back on every branch and means "the batch is mine now", not "every login came
+     * back": the holder removes the batch and tells its own master the carry-over is done - the
+     * master that may be holding the "the freeze lifted, reload" frame back until it hears so. A
+     * batch offered twice is survived by construction, because a token that already holds a row is
+     * neither carried nor lost.
+     *
+     * @param DeferredSessionCarryoverHandoverSignalData $handover The batch and the id its receipt names
+     * @throws InvalidArgumentException When the receipt cannot be named
      */
-    private function carryOverDeferredSessions(): void
+    private function carryOverHandedOverSessions(DeferredSessionCarryoverHandoverSignalData $handover): void
     {
-        // Named before the try because the catch below counts it: the drain itself can fail, and
-        // an unset variable there would turn a reported loss into a second failure.
-        $snapshot = [];
-
         try {
-            $snapshot = DeferredSessionCarryoverQueue::drain();
-            if ($snapshot === []) {
-                return;
-            }
-
-            $result = SessionCarrier::carryOver($snapshot);
+            $result = SessionCarrier::carryOver($handover->sessions);
         } catch (Throwable $e) {
             $this->logAgentError('Deferred session carry-over failed: ' . $e->getMessage());
-            // Reported all the same, with nothing carried: what the master is holding the lift for
-            // is whether anything more is coming, and after this catch the answer is no. Silence
-            // here would cost the browsers the whole timeout and tell the operator, in a second
-            // log line, what the one above already said. Nothing was kept either - a pass that
-            // broke on the drain or on a row never reached the branch that leaves one untouched.
-            $this->reportCarriedOverSessions(0, count($snapshot), 0);
+            // Answered all the same, with nothing carried: unanswered, the batch would be offered
+            // forever, and the master holding the lift is waiting to hear whether anything more is
+            // coming - after this catch the answer is no. Nothing was kept either - a pass that broke
+            // on a row never reached the branch that leaves one untouched.
+            $this->sendToAgent(
+                HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED,
+                new DeferredSessionsCarriedSignalData($handover->batch, 0, count($handover->sessions), 0),
+            );
 
             return;
         }
 
         $this->logAgentInfo("Carried over {$result->carried} restored session(s), kept {$result->kept}, dropped {$result->dropped}");
-        $this->reportCarriedOverSessions($result->carried, $result->dropped, $result->kept);
-    }
-
-    /**
-     * Tells this node's master that the logins a restore left here have been dealt with.
-     *
-     * The answer to the debt the restore reported when it queued them (HIL-771): until it arrives,
-     * the master holds back the frame that tells every browser the freeze has lifted, because that
-     * frame means "reload" and a reload arriving before these rows exist signs their owners out.
-     * Sent only when there WAS a queue to empty - an ordinary start drains nothing and reports
-     * nothing, and a master owed nothing is not waiting.
-     *
-     * The naming throw is contained here rather than carried out of {@see onStart()}: the name is
-     * a constant, so it cannot happen, and a library refusing to come up over an unsendable report
-     * would cost the node its sessions to save its browsers one reload.
-     *
-     * @param int $carried Logins written into the restored database
-     * @param int $dropped Logins that will not survive the restore
-     * @param int $kept Logins that came back inside the archive
-     */
-    private function reportCarriedOverSessions(int $carried, int $dropped, int $kept): void
-    {
-        try {
-            Hilos::$sr?->queueSignal(
-                signalSource: $this->getAgentSignalSource(),
-                signalType: new SignalType(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
-                signalName: new SignalName(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
-                signalData: new SessionCarryOverDoneSignalData($carried, $dropped, $kept),
-            );
-        } catch (InvalidArgumentException $e) {
-            $this->logAgentError('Carried-over sessions could not be reported: ' . $e->getMessage());
-        }
+        $this->sendToAgent(
+            HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED,
+            new DeferredSessionsCarriedSignalData($handover->batch, $result->carried, $result->dropped, $result->kept),
+        );
     }
 
     /**
@@ -2280,8 +2258,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Routes one frame addressed to this library - seven from the users library, two back
      * over the project seam (HIL-622, HIL-710, HIL-729), one from whoever has something to
      * say to a browser (HIL-768), one from the framework's own Hilos users page, which holds
-     * the takeover's name and forwards its write here (HIL-824), and one from whoever is
-     * carrying a code, each time the send moves (HIL-826).
+     * the takeover's name and forwards its write here (HIL-824), one from whoever is carrying
+     * a code, each time the send moves (HIL-826), and one from the agent holding the logins a
+     * restore left (HIL-846).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -2407,6 +2386,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->rebindSession($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER:
+                if (!$data->data instanceof DeferredSessionCarryoverHandoverSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        DeferredSessionCarryoverHandoverSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->carryOverHandedOverSessions($data->data);
 
                 return;
 

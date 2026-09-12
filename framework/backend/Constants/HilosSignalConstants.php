@@ -17,6 +17,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
@@ -24,7 +25,10 @@ use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
+use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
+use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Router\SignalSource;
@@ -49,6 +53,7 @@ use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\Delivery\NotificationDispatcher;
+use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
@@ -995,6 +1000,18 @@ final class HilosSignalConstants
     public const string HILOS_SESSION_REBIND = 'hilos_session_rebind';
 
     /**
+     * {@see BackupAgent} → sessions library: here are the logins a restore left for you (HIL-846).
+     *
+     * The deferred carry-over queue stays in the backup directory of the node that wrote it, and
+     * the agent holding it offers the batch over this signal until the library answers - the
+     * library no longer reads the file off its own disk, which in a cluster may be another disk.
+     * The library re-creates the rows and answers {@see self::BACKUP_AGENT_SESSIONS_CARRIED} on
+     * every branch, the failed one included. Carried by
+     * {@see DeferredSessionCarryoverHandoverSignalData}.
+     */
+    public const string HILOS_SESSION_CARRYOVER_HANDOVER = 'hilos_session_carryover_handover';
+
+    /**
      * Project agent → sessions library: fold this account into that one (HIL-729).
      *
      * The second way into the merge, beside {@see CliCommands::ACCOUNT_MERGE}, and the one a
@@ -1034,6 +1051,18 @@ final class HilosSignalConstants
      * which runs it. Carried by {@see NotificationEmitSignalData}.
      */
     public const string HILOS_NOTIFICATION_EMIT = 'hilos_notification_emit';
+
+    /**
+     * {@see BackupAgent} → notifications library: here are the notices a restore left for you
+     * (HIL-846).
+     *
+     * The other half of {@see self::HILOS_SESSION_CARRYOVER_HANDOVER}, for the restore outcome
+     * letters queued while nobody could be told. The library emits each draft exactly as if it
+     * had arrived over {@see self::HILOS_NOTIFICATION_EMIT} and answers
+     * {@see self::BACKUP_AGENT_NOTICES_SENT}. Carried by
+     * {@see DeferredNotificationHandoverSignalData}.
+     */
+    public const string HILOS_NOTIFICATION_HANDOVER = 'hilos_notification_handover';
 
     /**
      * Deliveries page → notifications library: re-queue this failed delivery (HIL-771).
@@ -1165,6 +1194,27 @@ final class HilosSignalConstants
      * refusing in its log. Carried by {@see BackupReopenSignalData}.
      */
     public const string BACKUP_AGENT_REOPEN = 'backup_agent_reopen';
+
+    /**
+     * Sessions library → BackupAgent: the batch of deferred logins is mine now (HIL-846).
+     *
+     * The receipt for {@see self::HILOS_SESSION_CARRYOVER_HANDOVER}. It means "I have it", not
+     * "all of it worked": a login that could not be re-created is lost on purpose and counted,
+     * and holding the batch over it would only offer it again forever. On it the holder removes
+     * exactly that batch's file and tells its own master the carry-over is done - the master that
+     * holds the reload frame, which in a cluster is not necessarily the library's. Carried by
+     * {@see DeferredSessionsCarriedSignalData}.
+     */
+    public const string BACKUP_AGENT_SESSIONS_CARRIED = 'backup_agent_sessions_carried';
+
+    /**
+     * Notifications library → BackupAgent: the batch of deferred notices is mine now (HIL-846).
+     *
+     * The receipt for {@see self::HILOS_NOTIFICATION_HANDOVER}, meaning what
+     * {@see self::BACKUP_AGENT_SESSIONS_CARRIED} means; the holder removes that batch's file and
+     * owes no master anything for it. Carried by {@see DeferredNoticesSentSignalData}.
+     */
+    public const string BACKUP_AGENT_NOTICES_SENT = 'backup_agent_notices_sent';
 
     // ── Hilos logs admin: viewer page → the node that owns the files (agent signal) ──
     /**

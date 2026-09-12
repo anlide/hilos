@@ -69,6 +69,8 @@ final class RandomSourceRule implements CodeStyleRule
         'Agents/BotAgent.php',
         'Database/Actions/Collection/GuestsActions.php',
         'Database/Actions/Collection/UsersActions.php',
+        'Auth/Session/DeferredSessionCarryoverQueue.php',
+        'Notification/DeferredNotificationQueue.php',
     ];
 
     /**

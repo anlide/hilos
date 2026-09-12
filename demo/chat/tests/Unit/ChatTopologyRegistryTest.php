@@ -66,6 +66,8 @@ use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
+use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
+use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
@@ -84,6 +86,7 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
+use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
@@ -106,6 +109,7 @@ use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
@@ -440,8 +444,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
@@ -453,6 +459,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_RESTORE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_REOPEN => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => AgentType::HILOS_BACKUP,
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
             HilosSignalConstants::HILOS_MAIL_DELIVER => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
@@ -571,8 +579,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE => RaiseSessionToastSignalData::class,
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
             HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
+            HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => DeferredSessionCarryoverHandoverSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
+            HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
             HilosSignalConstants::HILOS_SETTING_WRITE => SettingWriteSignalData::class,
             HilosSignalConstants::HILOS_SETTING_RESET => SettingResetSignalData::class,
             HilosSignalConstants::HILOS_SETTING_DELETE => SettingDeleteSignalData::class,
@@ -584,6 +594,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_REOPEN => BackupReopenSignalData::class,
+            HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => DeferredSessionsCarriedSignalData::class,
+            HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => DeferredNoticesSentSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,

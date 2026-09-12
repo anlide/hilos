@@ -7,18 +7,20 @@ namespace Hilos\Tests\Unit\Notification;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Notification\DeferredNotificationBatch;
 use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the notices a restore leaves behind when nobody can be told (HIL-771).
+ * Unit tests for the notices a restore leaves behind when nobody can be told (HIL-771, HIL-846).
  *
  * The queue is the whole of what stands between a restore outcome and silence: the emit seam is a
  * door to an agent now, and the two paths that announce a restore run with that agent stopped or
- * the daemon down. What is pinned here is the round trip and the two ways it is asked to survive
- * damage - a line that is not a notification, and a file a previous drain left behind.
+ * the daemon down. What is pinned here is the round trip, a line that is not a notification, and
+ * the batch that stands for the file while the library has not answered: it is handed out again
+ * until a receipt names it, and a receipt naming any other batch removes nothing.
  */
 final class DeferredNotificationQueueTest extends TestCase
 {
@@ -43,10 +45,8 @@ final class DeferredNotificationQueueTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach ([$this->path(), $this->path() . '.taken'] as $leftover) {
-            if (is_file($leftover)) {
-                FsPath::delete($leftover);
-            }
+        foreach (glob($this->directory . '/*') ?: [] as $leftover) {
+            FsPath::delete($leftover);
         }
         rmdir($this->directory);
         $this->previousBackupDir === false ? putenv('BACKUP_DIR') : putenv('BACKUP_DIR=' . $this->previousBackupDir);
@@ -60,7 +60,7 @@ final class DeferredNotificationQueueTest extends TestCase
         DeferredNotificationQueue::defer($this->draft(7, 'first'));
         DeferredNotificationQueue::defer($this->draft(12, 'second'));
 
-        $drafts = DeferredNotificationQueue::drain();
+        $drafts = $this->take()->drafts;
 
         self::assertCount(2, $drafts);
         self::assertSame([7, 12], array_map(static fn(NotificationDraft $d): int => $d->userId, $drafts));
@@ -70,13 +70,70 @@ final class DeferredNotificationQueueTest extends TestCase
         self::assertSame(['backupId' => 'b-1'], $drafts[0]->data);
     }
 
-    public function testADrainedQueueIsEmptyAfterwards(): void
+    public function testAnEmptyQueueHasNoBatch(): void
+    {
+        self::assertNull(DeferredNotificationQueue::take());
+    }
+
+    /**
+     * Taking is not sending: until the library says it has the batch, the letters in it are still
+     * owed, and a holder that asks again - on its next tick, or after a restart - is handed the
+     * same batch under the same id.
+     */
+    public function testATakenBatchIsHandedOutAgainUntilItIsReleased(): void
     {
         DeferredNotificationQueue::defer($this->draft(7, 'first'));
 
-        DeferredNotificationQueue::drain();
+        $first = $this->take();
+        $second = $this->take();
 
-        self::assertSame([], DeferredNotificationQueue::drain(), 'A notice is sent once, not on every start');
+        self::assertSame($first->batch, $second->batch);
+        self::assertSame([7], $this->recipients($second));
+    }
+
+    public function testAReleasedBatchIsGone(): void
+    {
+        DeferredNotificationQueue::defer($this->draft(7, 'first'));
+
+        DeferredNotificationQueue::release($this->take()->batch);
+
+        self::assertNull(DeferredNotificationQueue::take(), 'A notice is handed over once, not on every tick of the holder');
+        self::assertSame([], glob($this->directory . '/*') ?: [], 'The released batch leaves no file behind');
+    }
+
+    /**
+     * The reason a batch has an id at all: a receipt for an earlier batch that arrived late would
+     * otherwise remove the batch in flight now, unread - the silent loss the hand-over exists to end.
+     */
+    public function testALateReceiptForAnEarlierBatchRemovesNothing(): void
+    {
+        DeferredNotificationQueue::defer($this->draft(7, 'earlier'));
+        $earlier = $this->take()->batch;
+        DeferredNotificationQueue::release($earlier);
+        DeferredNotificationQueue::defer($this->draft(12, 'later'));
+        $later = $this->take();
+
+        DeferredNotificationQueue::release($earlier);
+
+        $offered = $this->take();
+        self::assertNotSame($earlier, $later->batch);
+        self::assertSame($later->batch, $offered->batch, 'A receipt naming another batch leaves this one in flight');
+        self::assertSame([12], $this->recipients($offered));
+    }
+
+    public function testWhatArrivesWhileABatchIsInFlightWaitsBehindIt(): void
+    {
+        DeferredNotificationQueue::defer($this->draft(7, 'stranded'));
+        $first = $this->take();
+        DeferredNotificationQueue::defer($this->draft(12, 'fresh'));
+
+        self::assertSame([7], $this->recipients($this->take()), 'The batch in flight is handed out again, alone');
+
+        DeferredNotificationQueue::release($first->batch);
+        $next = $this->take();
+
+        self::assertNotSame($first->batch, $next->batch);
+        self::assertSame([12], $this->recipients($next), 'The fresh notices become the next batch once the first is released');
     }
 
     public function testALineThatIsNotANotificationIsDroppedAndTheRestSurvive(): void
@@ -85,28 +142,7 @@ final class DeferredNotificationQueueTest extends TestCase
         FsPath::append($this->path(), "{\"userId\":\"not a number\"}\nnot json at all\n");
         DeferredNotificationQueue::defer($this->draft(12, 'second'));
 
-        $drafts = DeferredNotificationQueue::drain();
-
-        self::assertSame(
-            [7, 12],
-            array_map(static fn(NotificationDraft $d): int => $d->userId, $drafts),
-            'One unreadable line owes the letters behind it nothing',
-        );
-    }
-
-    public function testAFileLeftByADrainThatDiedIsTakenFirst(): void
-    {
-        DeferredNotificationQueue::defer($this->draft(7, 'stranded'));
-        FsPath::move($this->path(), $this->path() . '.taken');
-        DeferredNotificationQueue::defer($this->draft(12, 'fresh'));
-
-        $drafts = DeferredNotificationQueue::drain();
-
-        self::assertSame(
-            [7, 12],
-            array_map(static fn(NotificationDraft $d): int => $d->userId, $drafts),
-            'The stranded file is read before the one being taken now, so the notices keep their order',
-        );
+        self::assertSame([7, 12], $this->recipients($this->take()), 'One unreadable line owes the letters behind it nothing');
     }
 
     public function testAnInstallationWithNoBackupDirectoryQueuesNothing(): void
@@ -116,8 +152,28 @@ final class DeferredNotificationQueueTest extends TestCase
 
         DeferredNotificationQueue::defer($this->draft(7, 'first'));
 
-        self::assertSame([], DeferredNotificationQueue::drain());
+        self::assertNull(DeferredNotificationQueue::take());
         self::assertFalse(is_file($this->path()), 'Nothing is written where no backup directory is named');
+    }
+
+    /**
+     * @return DeferredNotificationBatch The batch the queue hands out now, asserted to exist
+     */
+    private function take(): DeferredNotificationBatch
+    {
+        $batch = DeferredNotificationQueue::take();
+        self::assertNotNull($batch, 'The queue holds a batch to take');
+
+        return $batch;
+    }
+
+    /**
+     * @param DeferredNotificationBatch $batch Batch to read
+     * @return list<int> Recipients of its drafts, in batch order
+     */
+    private function recipients(DeferredNotificationBatch $batch): array
+    {
+        return array_map(static fn(NotificationDraft $d): int => $d->userId, $batch->drafts);
     }
 
     /**

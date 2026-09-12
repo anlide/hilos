@@ -10,6 +10,7 @@ use DateTimeZone;
 use Exception;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
+use Hilos\Auth\Session\DTO\SessionCarryOverDoneSignalData;
 use Hilos\Auth\Session\DTO\SessionCarryOverDeferredSignalData;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\SessionCarrier;
@@ -22,6 +23,8 @@ use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
+use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
+use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Backup\BackupCeilingSpare;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
@@ -41,6 +44,8 @@ use Hilos\Backup\BackupSpaceDecision;
 use Hilos\Backup\BackupSpaceGuard;
 use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\DeferredQueueHandover;
+use Hilos\Backup\DeferredQueueHandoverSink;
 use Hilos\Backup\Ship\BackupArchiveEncryptor;
 use Hilos\Backup\Ship\BackupShipCommand;
 use Hilos\Backup\Ship\BackupShipPlan;
@@ -64,6 +69,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\DirectoryWatchTrait;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -135,8 +141,13 @@ use Throwable;
  * and lifts the freeze when the run ends ({@see finishRestore()}). Create and restore share
  * the one child slot, so the monopoly lock keeps them mutually exclusive by construction;
  * {@see BackupRunKind} routes the poll's finish.
+ *
+ * And it holds what a restore leaves for owners it could not ask (HIL-846): the photographed
+ * logins and the outcome letter stay in this agent's backup directory, and
+ * {@see DeferredQueueHandover} offers them to their libraries from {@see onTick()} until each
+ * library answers - over a signal, because in a cluster the library may run on another node.
  */
-final class BackupAgent extends AbstractAgent
+final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSink
 {
     use DirectoryWatchTrait;
     use ProtectedModeOperatorTrait;
@@ -166,8 +177,9 @@ final class BackupAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
 
     /**
-     * Page → agent routes for the list-page actions (HIL-333, restore HIL-276, reopen HIL-676).
-     * All five are singleton signals (the agent is monopolistic), so each maps straight to its
+     * Page → agent routes for the list-page actions (HIL-333, restore HIL-276, reopen HIL-676),
+     * and the two receipts the libraries send back for a deferred restore batch (HIL-846).
+     * All seven are singleton signals (the agent is monopolistic), so each maps straight to its
      * payload DTO.
      */
     public const array AGENT_SIGNALS = [
@@ -176,6 +188,8 @@ final class BackupAgent extends AbstractAgent
         HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_REOPEN => BackupReopenSignalData::class,
+        HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => DeferredSessionsCarriedSignalData::class,
+        HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => DeferredNoticesSentSignalData::class,
     ];
 
     /**
@@ -474,11 +488,16 @@ final class BackupAgent extends AbstractAgent
     /** Request id of the action whose create is parked in {@see $pendingScope}. */
     private ?string $pendingInitiatorRequestId = null;
 
+    /** @var ?DeferredQueueHandover Holder of what a restore left for the libraries, built on start */
+    private ?DeferredQueueHandover $deferredQueueHandover = null;
+
     /**
      * Takes storage under watch, rebuilds the runtime backup index, and loads the schedule.
      *
-     * No-ops entirely when disabled: nothing is watched, no scan, and no cron rules, so
-     * scheduling is off.
+     * No-ops when disabled: nothing is watched, no scan, and no cron rules, so scheduling is off.
+     * The one thing built either way is the holder of the deferred restore queues
+     * ({@see DeferredQueueHandover}): a restore is not refused when backups are disabled, and what
+     * it left for the libraries is owed to them all the same.
      *
      * The watch is taken BEFORE the first scan for the reason the discard-then-scan ordering
      * exists at all: a scan that runs before storage is watched loses whatever lands between
@@ -489,6 +508,8 @@ final class BackupAgent extends AbstractAgent
      */
     public function onStart(): void
     {
+        $this->deferredQueueHandover = new DeferredQueueHandover($this);
+
         if (!Hilos::$env[EnvConstants::BACKUP_ENABLED]->bool()) {
             $this->logAgentInfo('Backup disabled; skipping history scan');
 
@@ -526,14 +547,18 @@ final class BackupAgent extends AbstractAgent
      * a log line and nothing else. It is also why it runs after the create poll rather than before
      * - a backup that just finished is a candidate this same tick.
      *
-     * The storage watch is asked last but one, ahead of the schedule, so that a scheduled fire
-     * admitted on this very tick weighs its free space ({@see admitBySpace()}) against an index
-     * that already knows about whatever changed on disk.
+     * The storage watch is asked ahead of the schedule, so that a scheduled fire admitted on this
+     * very tick weighs its free space ({@see admitBySpace()}) against an index that already knows
+     * about whatever changed on disk.
+     *
+     * The deferred restore queues are offered last (HIL-846). Their order against the rest does not
+     * matter: the holder throttles itself to a pass a second, and a batch a restore left on this
+     * tick is simply offered on the next pass.
      *
      * @throws ProcessException When the running child cannot be polled, read or terminated
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws HilosException Whatever finishing a restore that ended on this tick raises
-     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
+     * @throws InvalidArgumentException When the failure notice to the initiator or a hand-over frame cannot be named
      */
     public function onTick(): void
     {
@@ -550,6 +575,7 @@ final class BackupAgent extends AbstractAgent
             $this->refreshHistory();
         }
         $this->checkSchedule();
+        $this->deferredQueueHandover?->tick(microtime(true));
     }
 
     /**
@@ -1372,10 +1398,15 @@ final class BackupAgent extends AbstractAgent
      * admission the `backup:restore` CLI goes through ({@see admitRestore()}), and reopen through
      * the same release `protected-mode:open` asks for ({@see handleReopenRequest()}).
      *
+     * The two receipts are not page actions: a library answers for a batch of what a restore left
+     * (HIL-846), the holder closes that batch, and the session receipt is passed on to this node's
+     * master as the end of the carry-over ({@see reportCarriedOverSessions()}).
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
-     * @throws AgentUnknownSignalException When the signal name is not a backup list action
+     * @throws AgentUnknownSignalException When the signal name is not one this agent declares
+     * @throws InvalidAgentSignalPayloadException When a receipt's payload is not the one its name promises
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
@@ -1419,9 +1450,52 @@ final class BackupAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED:
+                if (!$data->data instanceof DeferredSessionsCarriedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        DeferredSessionsCarriedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->deferredQueueHandover?->onSessionsCarried($data->data);
+                $this->reportCarriedOverSessions($data->data->carried, $data->data->dropped, $data->data->kept);
+
+                return;
+
+            case HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT:
+                if (!$data->data instanceof DeferredNoticesSentSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        DeferredNoticesSentSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->deferredQueueHandover?->onNoticesSent($data->data);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Sends one batch of what a restore left to the library that owns it, as any agent-to-agent frame.
+     *
+     * The port {@see DeferredQueueHandover} sends through: routed by name, and carried to another
+     * node when the library is placed there - which is the whole reason the batch travels as a
+     * frame rather than being read off this agent's disk.
+     *
+     * @param string $signalName Hand-over signal name
+     * @param SignalDataInterface $data The batch, as the library reads it
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function handOverDeferredQueue(string $signalName, SignalDataInterface $data): void
+    {
+        $this->sendToAgent($signalName, $data);
     }
 
     /**
@@ -3512,9 +3586,10 @@ final class BackupAgent extends AbstractAgent
      * an owner now ({@see AbstractSessionsLibraryAgent}), and a restore is the one moment that
      * owner cannot be asked: the node is still frozen, every agent but this one is stopped, and a
      * frame sent to a stopped agent under a freeze is dropped where it is sent. So the picture is
-     * left in {@see DeferredSessionCarryoverQueue}, and the library re-creates the rows as it
-     * comes back up - which on this path is the verification window, opened by the request that
-     * immediately follows this call.
+     * left in {@see DeferredSessionCarryoverQueue}, and this agent offers it to the library from
+     * its own tick ({@see DeferredQueueHandover}, HIL-846) until the library answers - which on this
+     * path it can once the verification window, opened by the request that immediately follows
+     * this call, has started it again.
      *
      * The re-hydrate announcement used to live here and has moved up to the finalizer (HIL-436):
      * it belongs to the swap, not to the sessions, so it has to happen on the failed branch too -
@@ -3546,9 +3621,9 @@ final class BackupAgent extends AbstractAgent
      * Tells this node's master that the logins just queued are owed, so the lift waits for them.
      *
      * The frame exists because the master cannot find this out for itself: the queue is a file
-     * this agent writes and the library empties, and a master that read it would be doing file
-     * I/O on its own loop to answer a question the writer already knows the answer to. Sent from
-     * the node that ran the restore and nowhere else - every other node lifts with no wait at all.
+     * this agent writes and hands over, and a master that read it would be doing file I/O on its
+     * own loop to answer a question the writer already knows the answer to. Sent from the node that
+     * ran the restore and nowhere else - every other node lifts with no wait at all.
      *
      * Contained like everything else on this path: the restore has succeeded, and a report that
      * could not be queued costs a reload the browsers may have to repeat, not the operation.
@@ -3570,6 +3645,38 @@ final class BackupAgent extends AbstractAgent
             );
         } catch (InvalidArgumentException $e) {
             $this->logAgentError('Deferred sessions could not be reported: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Tells this node's master that the logins a restore left have been dealt with.
+     *
+     * The answer to the debt {@see reportDeferredSessions()} took on: until it arrives, the master
+     * holds back the frame that tells every browser the freeze has lifted, because that frame means
+     * "reload" and a reload arriving before these rows exist signs their owners out. Sent on the
+     * sessions library's receipt for a batch (HIL-846), and sent from here rather than by the
+     * library because the master holding the lift is the one on this node - in a cluster the library
+     * may answer from another. A receipt arriving twice for one batch says "done" twice, which the
+     * master survives: a debt already paid is simply paid again.
+     *
+     * Contained like the report of the debt: the carry-over has happened, and a report that could
+     * not be queued costs the browsers the lift's timeout, not their logins.
+     *
+     * @param int $carried Logins written into the restored database
+     * @param int $dropped Logins that will not survive the restore
+     * @param int $kept Logins that came back inside the archive
+     */
+    private function reportCarriedOverSessions(int $carried, int $dropped, int $kept): void
+    {
+        try {
+            Hilos::$sr?->queueSignal(
+                signalSource: $this->getAgentSignalSource(),
+                signalType: new SignalType(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
+                signalName: new SignalName(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
+                signalData: new SessionCarryOverDoneSignalData($carried, $dropped, $kept),
+            );
+        } catch (InvalidArgumentException $e) {
+            $this->logAgentError('Carried-over sessions could not be reported: ' . $e->getMessage());
         }
     }
 

@@ -13,8 +13,8 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerSessionCarryOverDoneDTO - worker -> daemon report that the owed logins are back.
  *
- * The answer to {@see WorkerSessionCarryOverDeferredDTO}, sent by the worker hosting the sessions
- * library once it has emptied the deferred queue, and handed to
+ * The answer to {@see WorkerSessionCarryOverDeferredDTO}, sent by the worker hosting the backup
+ * agent once the sessions library has answered for the deferred batch, and handed to
  * {@see ProtectedModeLiftAnnouncer::noteSessionsCarriedOver()} - which releases a lift being held
  * for it. A thin transport envelope like its protected-mode neighbours.
  */

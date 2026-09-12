@@ -618,9 +618,10 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
      *
      * Off the queue rather than out of `hilos_notification`, because that is where a restore
      * puts it (HIL-771): the announcement is written with the node frozen or the daemon down,
-     * so it is deferred and the notifications library sends it when it next starts. What these
-     * cases still pin is the half the restore owns - who is told, and what the letter says -
-     * and that half is decided against the database the archive brought.
+     * so it is deferred, and the backup agent hands it to the notifications library once the
+     * library can be reached (HIL-846). What these cases still pin is the half the restore owns -
+     * who is told, and what the letter says - and that half is decided against the database the
+     * archive brought.
      *
      * @param int $userId Recipient user id
      * @return ?NotificationDraft The newest letter left for them, or null when they got none
@@ -628,11 +629,28 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     private function queuedFor(int $userId): ?NotificationDraft
     {
         $mine = array_values(array_filter(
-            DeferredNotificationQueue::drain(),
+            self::takeLetters(),
             static fn(NotificationDraft $draft): bool => $draft->userId === $userId,
         ));
 
         return $mine === [] ? null : $mine[count($mine) - 1];
+    }
+
+    /**
+     * Takes the letter batch waiting in the queue and closes it, as the holder does on the library's receipt.
+     *
+     * @return list<NotificationDraft> Drafts of the batch, empty when nothing waits
+     */
+    private static function takeLetters(): array
+    {
+        $batch = DeferredNotificationQueue::take();
+        if ($batch === null) {
+            return [];
+        }
+
+        DeferredNotificationQueue::release($batch->batch);
+
+        return $batch->drafts;
     }
 
     /**

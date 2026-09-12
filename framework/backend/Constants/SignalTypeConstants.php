@@ -205,13 +205,14 @@ final class SignalTypeConstants
      * @var string Restored logins are owed on this node (restore worker -> own daemon, drained worker-locally)
      *
      * The two frames below are what the lift waits on: a restore leaves the logins it photographed
-     * in a file the frozen sessions library will pick up, and the master must not tell the browsers
-     * to reload until they are back in the database. This one says the debt exists and is sent only
-     * where it was taken on, so a node that ran no restore never waits (HIL-771).
+     * in a file its agent hands to the sessions library once the library is up, and the master must
+     * not tell the browsers to reload until they are back in the database. This one says the debt
+     * exists and is sent only where it was taken on, so a node that ran no restore never waits
+     * (HIL-771).
      */
     public const string SESSION_CARRY_OVER_DEFERRED = 'session_carry_over_deferred';
 
-    /** @var string The owed logins are back in the database (sessions library worker -> own daemon) */
+    /** @var string The owed logins are back in the database (backup agent worker -> own daemon, on the library's receipt, HIL-846) */
     public const string SESSION_CARRY_OVER_DONE = 'session_carry_over_done';
 
     /**

@@ -54,13 +54,9 @@ final class BackupRestoreNotifierTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach ([
-            $this->queueDirectory . '/' . DeferredNotificationQueue::FILE_NAME,
-            $this->queueDirectory . '/' . DeferredNotificationQueue::FILE_NAME . '.taken',
-        ] as $leftover) {
-            if (is_file($leftover)) {
-                FsPath::delete($leftover);
-            }
+        // The queue file and any batch set aside from it, whatever id the batch was taken under.
+        foreach (glob($this->queueDirectory . '/' . DeferredNotificationQueue::FILE_NAME . '*') ?: [] as $leftover) {
+            FsPath::delete($leftover);
         }
         rmdir($this->queueDirectory);
         $this->previousBackupDir === false ? putenv('BACKUP_DIR') : putenv('BACKUP_DIR=' . $this->previousBackupDir);
@@ -265,11 +261,20 @@ final class BackupRestoreNotifierTest extends TestCase
     }
 
     /**
+     * Takes the batch the announcement left and closes it, as the holder does on the library's receipt.
+     *
      * @return list<NotificationDraft> Drafts the announcement left for the library, in order
      */
     private function queued(): array
     {
-        return DeferredNotificationQueue::drain();
+        $batch = DeferredNotificationQueue::take();
+        if ($batch === null) {
+            return [];
+        }
+
+        DeferredNotificationQueue::release($batch->batch);
+
+        return $batch->drafts;
     }
 
     /**
