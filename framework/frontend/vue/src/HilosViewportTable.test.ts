@@ -102,6 +102,62 @@ describe('HilosViewportTable', () => {
     expect(arrows.every((arrow) => arrow.classes('bi-arrow-down'))).toBe(true)
   })
 
+  it('numbers the columns of a composite order and says the place in words', async () => {
+    const { controller } = makeController()
+    controller.setOrder([
+      { field: 'name', direction: 'desc' },
+      { field: 'id', direction: 'asc' },
+    ])
+    const wrapper = mountTable(controller, false, TWO_COLUMNS)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('th sup').map((mark) => mark.text())).toEqual([
+      '1',
+      '2',
+    ])
+    // aria-sort names a direction and cannot say "second by importance", so the
+    // place is spoken beside the number instead.
+    expect(
+      wrapper.findAll('th .visually-hidden').map((said) => said.text()),
+    ).toEqual(['Sort column 1 of 2', 'Sort column 2 of 2'])
+  })
+
+  it('numbers nothing under an order of one column, where the arrow says it all', async () => {
+    const { controller } = makeController()
+    controller.setSort('name')
+    const wrapper = mountTable(controller, false, TWO_COLUMNS)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('th sup')).toHaveLength(0)
+  })
+
+  it('never repeats the state on display when the opening column is clicked on', async () => {
+    const { controller, sent } = makeController()
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      20,
+      [{ field: 'name', direction: 'asc' }],
+      [],
+    )
+    const wrapper = mountTable(controller)
+
+    // The table opened sorted by this column ascending, so that state is already
+    // on display and the cycle skips it: three clicks ask for three windows, no
+    // one of them the window just shown.
+    await wrapper.find('[data-id="hilos-table-sort-name"]').trigger('click')
+    await wrapper.find('[data-id="hilos-table-sort-name"]').trigger('click')
+    await wrapper.find('[data-id="hilos-table-sort-name"]').trigger('click')
+
+    const orders = sent.map((descriptor) => JSON.stringify(descriptor.sort))
+    expect(
+      orders.filter((order, index) => index > 0 && order === orders[index - 1]),
+    ).toEqual([])
+  })
+
   it('shows the apply button with the pending count and applies in place', async () => {
     const { controller } = makeController()
     controller.ingestWindow(

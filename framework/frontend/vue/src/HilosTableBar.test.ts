@@ -1,7 +1,15 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { TableViewportController } from '@hilos/core'
-import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
+import {
+  HILOS_TABLE_OPENING_ORDER_KEY,
+  TableViewportController,
+} from '@hilos/core'
+import type {
+  HilosTableFrame,
+  HilosTableSortOrder,
+  TableSortOrder,
+  TableViewportDescriptor,
+} from '@hilos/core'
 
 import HilosModal from './HilosModal.vue'
 import HilosTableBar from './HilosTableBar.vue'
@@ -13,6 +21,7 @@ const COLUMNS = [{ key: 'name', label: 'Name' }]
 function makeController(
   frame: HilosTableFrame,
   initialFilter?: Record<string, unknown>,
+  declaredOrders?: readonly HilosTableSortOrder[],
 ): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
@@ -23,9 +32,65 @@ function makeController(
     sendViewport: (descriptor) => sent.push(descriptor),
     initialFilter,
     frame,
+    declaredOrders,
   })
 
   return { controller, sent }
+}
+
+// The two columns a composite order runs by, and the orders the table declares
+// over them — the shape the "Order" menu is drawn from.
+const ORDERED_COLUMNS = [
+  { key: 'channel', label: 'Kind', sortable: true },
+  { key: 'createdAt', label: 'Date', sortable: true },
+]
+
+const DECLARED_ORDERS: readonly HilosTableSortOrder[] = [
+  {
+    key: 'by_channel',
+    components: [
+      { field: 'channel', direction: 'asc' },
+      { field: 'createdAt', direction: 'desc' },
+    ],
+  },
+  {
+    key: 'by_date_up',
+    components: [
+      { field: 'createdAt', direction: 'asc' },
+      { field: 'channel', direction: 'asc' },
+    ],
+  },
+]
+
+const OPENING_ORDER: TableSortOrder = [
+  { field: 'createdAt', direction: 'desc' },
+]
+
+/**
+ * A table that declares composite orders and has opened in one of its own — the
+ * order only the first window can tell it, the way a page's answer does.
+ */
+function makeOrdered(): {
+  controller: TableViewportController<unknown>
+  sent: TableViewportDescriptor[]
+} {
+  const made = makeController(
+    { title: 'Deliveries', columns: ORDERED_COLUMNS },
+    undefined,
+    DECLARED_ORDERS,
+  )
+  made.controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    20,
+    OPENING_ORDER,
+    [],
+  )
+
+  return made
 }
 
 const FILTERED: HilosTableFrame = {
@@ -249,6 +314,110 @@ describe('HilosTableBar', () => {
     )
     expect(wrapper.findComponent(HilosModal).exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('draws no order menu at all for a table that declared no composite order', () => {
+    const { controller } = makeController({
+      title: 'Backups',
+      search: {},
+      columns: COLUMNS,
+    })
+    const wrapper = mountBar(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-order"]').exists()).toBe(false)
+  })
+
+  it('offers the way home first and every declared order after it', () => {
+    const { controller } = makeOrdered()
+    const wrapper = mountBar(controller)
+
+    expect(
+      wrapper
+        .findAll('[data-id^="hilos-table-order-"]')
+        .map((item) => item.text()),
+    ).toEqual(['Date ↓', 'Kind ↑, then Date ↓', 'Date ↑, then Kind ↑'])
+    expect(
+      wrapper
+        .find(`[data-id="hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}"]`)
+        .exists(),
+    ).toBe(true)
+  })
+
+  it('names the order the window runs in on the face of the button', async () => {
+    const { controller } = makeOrdered()
+    const wrapper = mountBar(controller)
+
+    expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
+      'Order: Date ↓',
+    )
+
+    await wrapper
+      .find('[data-id="hilos-table-order-by_channel"]')
+      .trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
+      'Order: Kind ↑, then Date ↓',
+    )
+  })
+
+  it('takes a declared order whole rather than a column of it', async () => {
+    const { controller, sent } = makeOrdered()
+    const wrapper = mountBar(controller)
+
+    await wrapper
+      .find('[data-id="hilos-table-order-by_channel"]')
+      .trigger('click')
+
+    expect(sent.at(-1)).toMatchObject({
+      sort: [
+        { field: 'channel', direction: 'asc' },
+        { field: 'createdAt', direction: 'desc' },
+      ],
+    })
+  })
+
+  it('comes home through the first item, whatever order the window left in', async () => {
+    const { controller, sent } = makeOrdered()
+    const wrapper = mountBar(controller)
+
+    await wrapper
+      .find('[data-id="hilos-table-order-by_channel"]')
+      .trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper
+      .find(`[data-id="hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}"]`)
+      .trigger('click')
+
+    expect(sent.at(-1)).toMatchObject({ sort: OPENING_ORDER })
+  })
+
+  it('asks for nothing when the item picked is the one already running', async () => {
+    const { controller, sent } = makeOrdered()
+    const wrapper = mountBar(controller)
+
+    await wrapper
+      .find(`[data-id="hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}"]`)
+      .trigger('click')
+
+    expect(sent).toEqual([])
+  })
+
+  it('marks no item at all once a header click has left an order of one column', async () => {
+    const { controller } = makeOrdered()
+    const wrapper = mountBar(controller)
+
+    controller.setSort('channel')
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .findAll('[data-id^="hilos-table-order-"]')
+        .filter((item) => item.classes('active')),
+    ).toEqual([])
+    expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
+      'Order: Kind ↑',
+    )
   })
 
   it('draws no main action when the table declares none', () => {

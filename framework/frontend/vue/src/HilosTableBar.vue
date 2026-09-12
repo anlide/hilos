@@ -7,10 +7,13 @@ it is not exported from index.ts, because a bar has no meaning away from the
 table it sits on (mockups/components/table section 7). -->
 <script setup lang="ts" generic="R">
 import { computed, ref } from 'vue'
+import { HILOS_TABLE_OPENING_ORDER_KEY, TABLE_ORDER_COPY } from '@hilos/core'
 import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
 
+import HilosDropdown from './HilosDropdown.vue'
 import HilosModal from './HilosModal.vue'
 import HilosTableFilterControl from './HilosTableFilterControl.vue'
+import type { HilosDropdownOption } from './hilosDropdown.js'
 import { useSignal } from './useSignal.js'
 
 const props = defineProps<{
@@ -40,6 +43,8 @@ const searchPlaceholder = searchBox?.placeholder ?? 'Search…'
 const search = useSignal(props.controller.search)
 const filters = useSignal(props.controller.frame.filters)
 const activeFilterCount = useSignal(props.controller.frame.activeFilterCount)
+const orders = useSignal(props.controller.frame.orders)
+const orderLabel = useSignal(props.controller.frame.orderLabel)
 
 // The badge counts the declared filters holding a value; the search box is not
 // one of them and has its own field (tableFrame.ts, activeFilterCount).
@@ -48,6 +53,34 @@ const filterCountLabel = computed(() =>
     ? '1 filter'
     : `${activeFilterCount.value} filters`,
 )
+
+const orderOptions = computed<HilosDropdownOption<string>[]>(() =>
+  orders.value.map(({ key, label }) => ({ value: key, label })),
+)
+
+// Null while the window runs in an order the menu does not offer — one that came
+// from a click on a header. Saying so is the truth about how the rows lie;
+// lighting up the nearest item instead would not be (tableFrame.ts, orderLabel).
+const activeOrderKey = computed(
+  () => orders.value.find((view) => view.active)?.key ?? null,
+)
+
+function onOrder(key: string): void {
+  if (key === activeOrderKey.value) {
+    // The window already runs in it, and asking for it again would cost a frame
+    // from the server for a pick that changes nothing.
+    return
+  }
+  if (key === HILOS_TABLE_OPENING_ORDER_KEY) {
+    props.controller.resetOrder()
+
+    return
+  }
+  const declared = props.controller.orders.find((order) => order.key === key)
+  if (declared) {
+    props.controller.setOrder(declared.components)
+  }
+}
 
 // A date range is one control over two keys, and it is listed under the lower
 // one — the same word the control answers to from outside.
@@ -84,7 +117,7 @@ function onSearchInput(event: Event): void {
     </div>
 
     <div
-      v-if="searchBox || filters.length > 0 || mainAction"
+      v-if="searchBox || filters.length > 0 || mainAction || orders.length > 0"
       class="d-flex flex-wrap align-items-center gap-2 mb-3"
     >
       <div
@@ -145,6 +178,42 @@ function onSearchInput(event: Event): void {
           @click="controller.resetFilters()"
         ></button>
       </span>
+
+      <!-- Outside the row that leaves the bar below md: the menu is the only way
+      to change the order on a narrow screen, where the header of a column is out
+      of reach, so hiding it behind the Filters button would remove it. -->
+      <div v-if="orders.length > 0" class="w-auto" data-id="hilos-table-order">
+        <HilosDropdown
+          :model-value="activeOrderKey"
+          :options="orderOptions"
+          :menu-aria-label="TABLE_ORDER_COPY.menu"
+          @update:model-value="onOrder"
+        >
+          <template #toggle>
+            <span class="text-truncate"
+              >{{ TABLE_ORDER_COPY.menu }}: {{ orderLabel }}</span
+            >
+          </template>
+          <template #option="{ option, selected, select }">
+            <button
+              type="button"
+              class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+              :class="{ active: selected }"
+              role="option"
+              :aria-selected="selected"
+              :data-id="`hilos-table-order-${option.value}`"
+              @click="select()"
+            >
+              <span class="text-truncate">{{ option.label }}</span>
+              <i
+                v-if="selected"
+                class="bi bi-check2 flex-shrink-0"
+                aria-hidden="true"
+              ></i>
+            </button>
+          </template>
+        </HilosDropdown>
+      </div>
 
       <button
         v-if="filters.length > 0"

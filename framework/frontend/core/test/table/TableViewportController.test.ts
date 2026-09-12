@@ -9,6 +9,7 @@ import {
   type TableSortOrder,
   TableViewportController,
 } from '../../src/table/TableViewportController.js'
+import { HILOS_TABLE_OPENING_ORDER_KEY } from '../../src/table/tableSortOrder.js'
 
 function makeController(pageSize = 10, initialOrder?: TableSortOrder) {
   const sent: TableViewportDescriptor[] = []
@@ -292,10 +293,13 @@ describe('TableViewportController', () => {
 
   it('reports the orders the table declares in the sequence a menu offers them', () => {
     const declaredOrders = [
-      [
-        { field: 'channel', direction: 'desc' },
-        { field: 'created', direction: 'desc' },
-      ],
+      {
+        key: 'by_channel',
+        components: [
+          { field: 'channel', direction: 'desc' },
+          { field: 'created', direction: 'desc' },
+        ],
+      },
     ] as const
     const controller = new TableViewportController<TableRow>({
       resolve: (row) => row,
@@ -304,6 +308,68 @@ describe('TableViewportController', () => {
     })
 
     expect(controller.orders).toEqual(declaredOrders)
+  })
+
+  it('the menu follows every way the order changes — a pick, a header click, a way home', () => {
+    const declaredOrders = [
+      {
+        key: 'by_channel',
+        components: [
+          { field: 'channel', direction: 'desc' },
+          { field: 'created', direction: 'desc' },
+        ],
+      },
+    ] as const
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      declaredOrders,
+      frame: {
+        title: 'Messages',
+        columns: [
+          { key: 'channel', label: 'Kind', sortable: true },
+          { key: 'created', label: 'Date', sortable: true },
+        ],
+      },
+    })
+    const activeKeys = (): readonly string[] =>
+      controller.frame.orders
+        .get()
+        .filter(({ active }) => active)
+        .map(({ key }) => key)
+
+    // The table opens in the order the first window ran in — and that is where the
+    // menu's first item points, from the first frame on.
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      [{ field: 'created', direction: 'desc' }],
+      [],
+    )
+    expect(controller.frame.orders.get()[0]?.label).toBe('Date ↓')
+    expect(activeKeys()).toEqual([HILOS_TABLE_OPENING_ORDER_KEY])
+    expect(controller.frame.orderLabel.get()).toBe('Date ↓')
+
+    controller.setOrder([
+      { field: 'channel', direction: 'desc' },
+      { field: 'created', direction: 'desc' },
+    ])
+    expect(activeKeys()).toEqual(['by_channel'])
+    expect(controller.frame.orderLabel.get()).toBe('Kind ↓, then Date ↓')
+
+    // A header click leaves an order the menu does not offer: nothing is active, and
+    // the button still says what the rows are sorted by.
+    controller.setSort('channel')
+    expect(activeKeys()).toEqual([])
+    expect(controller.frame.orderLabel.get()).toBe('Kind ↑')
+
+    controller.resetOrder()
+    expect(activeKeys()).toEqual([HILOS_TABLE_OPENING_ORDER_KEY])
+    expect(controller.frame.orderLabel.get()).toBe('Date ↓')
   })
 
   it('a table declaring no orders reports an empty list rather than nothing', () => {

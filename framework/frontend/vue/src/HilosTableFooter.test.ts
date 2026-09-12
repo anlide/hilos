@@ -109,6 +109,79 @@ describe('HilosTableFooter', () => {
     ).toBeDefined()
   })
 
+  it('offers page numbers exactly while the count is exact', () => {
+    const { controller } = makeController()
+    ingestPage(controller, 128) // 7 pages of 20
+    const wrapper = mountFooter(controller)
+
+    expect(
+      wrapper
+        .findAll('[data-id^="hilos-table-page-"]')
+        .map((page) => page.text()),
+    ).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+  })
+
+  it('offers no page numbers while the count stands at its ceiling', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(20), 500, false, null, null, 20)
+    const wrapper = mountFooter(controller)
+
+    expect(wrapper.find('[data-id^="hilos-table-page-"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-prev"]').text()).toBe('Previous')
+    expect(wrapper.find('[data-id="hilos-table-next"]').text()).toBe('Next')
+  })
+
+  it('jumps to the page whose number was pressed', async () => {
+    const { controller, sent } = makeController()
+    ingestPage(controller, 128)
+    const wrapper = mountFooter(controller)
+
+    await wrapper.find('[data-id="hilos-table-page-4"]').trigger('click')
+
+    expect(sent.at(-1)).toMatchObject({ pageIndex: 3, anchor: null })
+  })
+
+  it('states the page the reader stands on rather than offering it again', () => {
+    const { controller } = makeController()
+    ingestPage(controller, 128)
+    const wrapper = mountFooter(controller)
+    const current = wrapper.find('[data-id="hilos-table-page-1"]')
+
+    expect(current.attributes('disabled')).toBeDefined()
+    expect(current.attributes('aria-current')).toBe('page')
+  })
+
+  it('passes over the pages between the ends when there are too many to draw', async () => {
+    const { controller } = makeController()
+    // 400 rows of 20 make 20 pages — more than the pager has room for.
+    ingestPage(controller, 400)
+    const wrapper = mountFooter(controller)
+
+    controller.setPage(9) // the tenth page, with ends far on either side
+    await wrapper.vm.$nextTick()
+
+    const numbers = wrapper
+      .findAll('[data-id^="hilos-table-page-"]')
+      .map((page) => page.text())
+    expect(numbers.length).toBeLessThanOrEqual(5)
+    expect(numbers.at(0)).toBe('1')
+    expect(numbers.at(-1)).toBe('20')
+    expect(wrapper.findAll('[aria-hidden="true"].disabled')).toHaveLength(2)
+  })
+
+  it('leaves the steps their words only where no numbers stand beside them', () => {
+    const { controller } = makeController()
+    ingestPage(controller, 128)
+    const wrapper = mountFooter(controller)
+    const previous = wrapper.find('[data-id="hilos-table-prev"]')
+
+    expect(previous.text()).toBe('')
+    expect(previous.attributes('aria-label')).toBe('Previous page')
+    expect(
+      wrapper.find('[data-id="hilos-table-next"]').attributes('aria-label'),
+    ).toBe('Next page')
+  })
+
   it('steps the window on and back through the controller', async () => {
     const { controller, sent } = makeController()
     ingestPage(controller, 128)

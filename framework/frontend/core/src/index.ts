@@ -94,6 +94,16 @@ export {
 } from './table/tableFrame.js'
 export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
 export {
+  HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_ORDER_COPY,
+  type HilosTableOrderView,
+  type HilosTableSortOrder,
+  hilosTableOrderLabel,
+  hilosTableOrderPosition,
+  hilosTableOrderViews,
+  hilosTableSortPositionLabel,
+} from './table/tableSortOrder.js'
+export {
   type HilosTableSelectionHeader,
   type HilosTableSelectionState,
   type HilosTableSelectionTarget,

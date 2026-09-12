@@ -20,7 +20,14 @@ on a column header asks for. `TableDefinition::sortOrders()` declares the orders
 of more than one column, one per key: the key is the order's own slug, the one the
 frontend builds its `hilos-table-order-<orderKey>` selector out of, and it stays
 on this side of the wire — a client picks an order and echoes the order itself
-back. `TableSortWhitelist` holds every query path to both: `holdComposite()` asks
+back. The frontend declares the same orders a second time, for the menu that offers
+them — `declaredOrders` on the `TableViewportController`, every entry carrying
+the very key `sortOrders()` gave it, because the wire is what the two sides meet
+on and a key derived on the frontend would name the same order twice. The words
+of a menu item are not declared anywhere: the core builds them out of the labels
+of the declared columns, so a renamed column renames every item it appears in
+and no second text of an order exists to fall out of step.
+`TableSortWhitelist` holds every query path to both: `holdComposite()` asks
 whether an order of more than one column was offered at all, `resolve()` turns
 each of its components into a column, and either refusal costs the window its
 order and nothing else.

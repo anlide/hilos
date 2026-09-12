@@ -573,7 +573,9 @@ Everything inside the root keeps the `hilos-table-*` prefix:
 - **frame:** `hilos-table-title`, `hilos-table-main-action`,
   `hilos-table-search`, `hilos-table-filters`,
   `hilos-table-filter-<filterKey>`, `hilos-table-order`,
-  `hilos-table-order-<orderKey>`, `hilos-table-sort-<key>`;
+  `hilos-table-order-<orderKey>`, `hilos-table-sort-<key>`. The "Order" menu's
+  first item is the way back to the order the table opened in, and it answers to
+  the one key no table declares: `hilos-table-order-opening`;
 - **rows:** `hilos-table-row-<rowKey>`, `hilos-table-card-<rowKey>`,
   `hilos-table-expand-<rowKey>`, `hilos-table-row-detail-<rowKey>`,
   `hilos-table-placeholder`;
@@ -585,8 +587,12 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-select-all-filtered`, `hilos-table-selection-clear`;
 - **work:** `hilos-table-progress`, `hilos-table-progress-row-<rowKey>`,
   `hilos-table-progress-bulk`;
-- **counts and paging:** `hilos-table-count`, `hilos-table-page`,
-  `hilos-table-prev`, `hilos-table-next`;
+- **counts and paging:** `hilos-table-count`,
+  `hilos-table-page-<pageNumber>` (1-based, and only while the count is exact
+  enough to have page numbers at all), `hilos-table-prev`, `hilos-table-next`;
+  `hilos-table-page` is the single number the props-driven footer prints and
+  goes with that footer when the framework pages move onto the declaration
+  (HIL-819);
 - **states:** `hilos-table-loading`, `hilos-table-skeleton`,
   `hilos-table-empty`, `hilos-table-empty-filtered`, `hilos-table-unavailable`,
   `hilos-table-stale`, `hilos-table-stale-cell`.

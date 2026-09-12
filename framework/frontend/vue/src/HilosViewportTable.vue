@@ -15,6 +15,10 @@ pages have not moved onto the declaration yet (HIL-819). -->
 
 <script setup lang="ts" generic="R">
 import { computed, useId } from 'vue'
+import {
+  hilosTableOrderPosition,
+  hilosTableSortPositionLabel,
+} from '@hilos/core'
 import type {
   HilosTableColumn,
   TableSort,
@@ -154,6 +158,14 @@ function sortIcon(key: string): string {
   return component.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
 }
 
+// The place a column takes in a composite order — null under an order of one
+// column, where the arrow already says everything. The arithmetic is the core's:
+// a view that counted the places itself would be a second answer to the question
+// the menu answers (tableSortOrder.ts).
+function sortPosition(key: string): number | null {
+  return hilosTableOrderPosition(order.value, key)
+}
+
 // A sortable header reports its current sort state to assistive tech through
 // aria-sort: a sortable-but-unsorted column reports 'none', the active column
 // its direction, and a non-sortable column nothing at all.
@@ -270,6 +282,17 @@ function onSearchInput(event: Event): void {
               >
                 {{ column.label }}
                 <i :class="['bi', sortIcon(column.key)]" aria-hidden="true"></i>
+                <template v-if="sortPosition(column.key) !== null">
+                  <sup aria-hidden="true">{{ sortPosition(column.key) }}</sup>
+                  <span class="visually-hidden">
+                    {{
+                      hilosTableSortPositionLabel(
+                        sortPosition(column.key)!,
+                        order!.length,
+                      )
+                    }}
+                  </span>
+                </template>
               </button>
               <template v-else>{{ column.label }}</template>
             </th>

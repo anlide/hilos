@@ -58,6 +58,12 @@ import {
   type HilosTableSelectionState,
   type HilosTableSelectionTarget,
 } from './tableSelection.js'
+import {
+  hilosTableOrderLabel,
+  hilosTableOrderViews,
+  type HilosTableOrderView,
+  type HilosTableSortOrder,
+} from './tableSortOrder.js'
 /** Sort direction for the active sort field. */
 export type SortDirection = 'asc' | 'desc'
 
@@ -91,11 +97,15 @@ const HIGHLIGHT_MS = 2000
  * same directions in the same sequence. An absent order (a table opened without
  * an initial one) is a state of its own, equal only to another absent order.
  *
+ * Exported because the "Order" menu decides its active item by the very same
+ * question, and a second answer to it would light up an item the sort cycle
+ * would then step past (tableSortOrder.ts).
+ *
  * @param one The state to compare.
  * @param other The state to compare it with.
  * @returns True when both run by the same components, or both are absent.
  */
-function isSameOrder(
+export function isSameOrder(
   one: TableSortOrder | undefined,
   other: TableSortOrder | undefined,
 ): boolean {
@@ -307,10 +317,12 @@ export interface TableViewportControllerOptions<R> {
    * very same list, so an order absent from here is one no window will be
    * served in.
    *
-   * SCAFFOLD: no table declares one yet, and no view reads them — the "Order"
-   * menu that offers them is HIL-802 (Vue) and HIL-811 (React, Angular).
+   * Every order carries the key it is picked by — the same slug the backend
+   * declares it under, and the one the menu item's `data-id` is built from.
+   * Declaring none leaves the table without a menu at all: one item, "the way it
+   * opened", is no choice to offer.
    */
-  declaredOrders?: readonly TableSortOrder[]
+  declaredOrders?: readonly HilosTableSortOrder[]
   /**
    * What this table's page declares about its frame — title, search, filters,
    * main action, columns, bulk actions, empty state. Optional because a table
@@ -616,6 +628,20 @@ export class TableViewportController<R> implements TableWindowSink {
       card: declaration ? hilosTableCard(declaration.columns) : null,
       filters: filterViews,
       activeFilterCount,
+      orders: computedSignal<readonly HilosTableOrderView[]>(() =>
+        hilosTableOrderViews(
+          this.orders,
+          this.openingOrder,
+          this.orderSignal.get(),
+          declaration?.columns ?? [],
+        ),
+      ),
+      orderLabel: computedSignal(() =>
+        hilosTableOrderLabel(
+          this.orderSignal.get(),
+          declaration?.columns ?? [],
+        ),
+      ),
       footer: computedSignal<HilosTableFooter>(() => {
         const shown = this.windowSignal.get().length
         const page = this.pageSignal.get()
@@ -698,11 +724,12 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * The orders of more than one column this table declares, in menu sequence.
-   *
-   * SCAFFOLD: read by the "Order" menu, which is HIL-802 and HIL-811.
+   * The orders of more than one column this table declares, in menu sequence —
+   * each with the key it is picked by. What the menu DRAWS is
+   * {@link frameState}'s `orders`; this is the declaration itself, which a view
+   * reads to answer a pick with the components behind the key.
    */
-  get orders(): readonly TableSortOrder[] {
+  get orders(): readonly HilosTableSortOrder[] {
     return this.options.declaredOrders ?? []
   }
 
@@ -1108,13 +1135,17 @@ export class TableViewportController<R> implements TableWindowSink {
     progress: readonly HilosTableProgressFrame[],
   ): void {
     this.replaceProgress(progress)
-    this.orderSignal.set(sort)
     if (!this.openingOrderKnown) {
       // Where the sort cycle and a reset come home to: the order the table opened in, which
       // is the backend's declaration and never a later choice of the reader's.
+      //
+      // Taken BEFORE the order itself is published: this is a plain field, not a signal, so
+      // nothing recomputes when it lands, and the menu built off the order would otherwise
+      // word its way home from the moment before the table knew where home was.
       this.openingOrder = sort
       this.openingOrderKnown = true
     }
+    this.orderSignal.set(sort)
     this.ingestWindow(
       rows,
       totalCount,
