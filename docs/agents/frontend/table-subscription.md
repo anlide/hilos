@@ -211,8 +211,61 @@ header, the column order, and sorting never read it.
 The layout is derived once, with the rest of the frame, and read off
 `frame.card` — it follows from the declaration alone, which does not change over
 the life of a table, so it is not wrapped in a signal and null exactly when
-`declaration` is. Drawing the card is a view's job: HIL-806 (Vue) and HIL-815
-(React, Angular).
+`declaration` is. Drawing the card is a view's job — Vue draws it, React and
+Angular are HIL-815 — and what follows is what drawing it means.
+
+**Which branch is seen is a matter of Bootstrap's visibility utilities, not of
+JavaScript.** The table carries `d-none d-md-block` and the cards `d-md-none`, so
+the boundary is the one place `md` is — the same boundary at which a modal
+becomes a sheet from the bottom. Nothing reads the width of the window: there is
+no `matchMedia` anywhere in the frontend, and a view that read one would have to
+guard itself for the server, where `@hilos/prerender` renders it with no window
+at all. There is no width at which both branches are seen and none at which
+neither is, and crossing the boundary re-renders nothing — both are mounted, and
+only the showing of them changes.
+
+**Both branches stand in the document at once, so a row's `data-id` is in it
+twice** — its own (`hilos-table-row-<rowKey>` against
+`hilos-table-card-<rowKey>`) and any the page put inside a cell, which is drawn
+in both. A test therefore aims at a row THROUGH the container of the branch it
+means; the cards have one of their own, `hilos-table-cards`. This is the price of
+the line above and it was taken knowingly: one markup deciding the width in JS
+would cost every view a window guard.
+
+**A card carries everything the framework says about a row, not a smaller set of
+it.** The removed row keeps its place as a card of one line; the marks of the
+framework — the snowflake of a quiet source, "will move", "will leave" — stand in
+the head of the card BESIDE the page's badge rather than instead of it, the card
+being a second projection of the same columns; the bar of work running over the
+record stands at the foot of the card across its whole width, `progress` on a
+column saying nothing there, a card having no columns in a row; and the loading
+and empty words are repeated in the card branch, or the phone would be left
+looking at a blank space where the sentence is.
+
+**The cards are a list and the list holds cards only.** A set of alike records
+with no role of its own is read out as a run of text, with no way to say "eight
+records" — so the cards are a `list` of `listitem`s, named by the very heading
+that names the table, there being one table and no reason for a second name for
+it. Both names are never live at once: the hidden branch leaves the
+accessibility tree with its display. What the table says in words when it has no
+rows stands BESIDE that list rather than inside it, a sentence being no item of
+a list; the container of the branch holds the two.
+
+**A declared table hands the page one slot per column, `#cell-<key>`, and writes
+the cell around it.** That is what makes a cell addressable by column at all, and
+it is what lets the card be built without a second markup: one slot fills the
+`<td>` of the row and the line of the card alike. The wide branch draws the cell
+of every declared column even where the page filled nothing into it — a row one
+cell short is a row narrower than its header — while the card leaves that place
+out entirely, a label with nothing under it reading as a value lost rather than
+as an empty field. A column may carry `cellClass` for the classes its `<td>`
+needs, e.g. `text-end` under a numeric header; the card does not read it, a line
+of a description list not being a cell of a table.
+
+**A table drawing its frame from props keeps the `#row` slot and gets no cards.**
+There is nothing to address a cell by in that epoch, so there is nothing to build
+a card out of, and such a table keeps its horizontal scroll at every width until
+its page moves onto the declaration (HIL-819).
 
 Several filter-map entries are set in one window change with `setFilters()`, and
 `resetFilters()` returns the map to the filters the table opened with —
@@ -245,16 +298,26 @@ becomes the label of the field in the panel, and its place: the panel holds the
 fields in declaration order, and there is no second answer to that question.
 
 **Removing the cell of a marked column from the `#row` slot is the page's own
-duty.** The framework does not see the markup a page writes, so it cannot check
-this; a page that marks a column and keeps its `<td>` gets a row one cell wider
-than its header. The same shape of rule the card carries, and it is tested where
-it can be — on the page the framework itself moved over.
+duty — in the props epoch, which is the only one that has such a slot.** The
+framework does not see the markup a page writes, so it cannot check this; a page
+that marks a column and keeps its `<td>` gets a row one cell wider than its
+header. In a DECLARED table the question does not arise: the framework draws the
+cells itself, from the columns left standing in the row, and a marked one is
+simply not among them.
 
 **The framework owns the panel, the page owns its values.** The room under the
 row, the order of the fields, their labels, the control and its accessibility are
 the framework's; every value comes from the page through a `#detail-<key>` slot,
 exactly as the content of a cell does. A slot the page left unfilled shows a dash
 rather than an empty line, which would read as "there is no value".
+
+**On a narrow screen the panel is inside the card**, opened from a control in the
+head of it and drawn between the fields and the controls — it goes on with the
+very pairs of label and value the fields above are, while the controls and the
+bar of the row's own work stay the bottom block. It is one state, held on the row
+by the controller, and one pair of words; what it is NOT is one id — the card
+mints an id base of its own, both branches standing in the document at once and a
+borrowed id breaking the tie between control and panel on both.
 
 **The state lives in the controller and goes with the window.** `expandRow(rowKey,
 expanded)` takes the state the row is going to rather than toggling — the view
@@ -674,9 +737,20 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-order-<orderKey>`, `hilos-table-sort-<key>`. The "Order" menu's
   first item is the way back to the order the table opened in, and it answers to
   the one key no table declares: `hilos-table-order-opening`;
-- **rows:** `hilos-table-row-<rowKey>`, `hilos-table-card-<rowKey>`,
-  `hilos-table-expand-<rowKey>`, `hilos-table-row-detail-<rowKey>`,
-  `hilos-table-placeholder`;
+- **rows:** `hilos-table-row-<rowKey>`, `hilos-table-cards` — the container of
+  the card branch, `hilos-table-card-<rowKey>`, `hilos-table-expand-<rowKey>`,
+  `hilos-table-row-detail-<rowKey>`, `hilos-table-placeholder`;
+
+  **A row answers to its selectors twice, once per branch**, both of them
+  standing in the document and only one of them shown (the card section above).
+  Everything inside a card — the placeholder, the waiting badges, the snowflake,
+  the control and the panel, the bar of the row's work, the mark checkbox, and
+  any `data-id` the page wrote into a cell — carries the identifier it carries in
+  the row, on purpose: the two are the same fact about the same record, and a
+  second name for it would be a second thing to keep in step. **So a test names
+  the branch it means**: through `hilos-table-cards` on a narrow screen, through
+  the table on a wide one. A bare selector finds the table's copy, the table
+  being drawn first;
 - **waiting and announcing:** `hilos-table-pending`,
   `hilos-table-pending-move-<rowKey>`, `hilos-table-pending-remove-<rowKey>`,
   `hilos-table-apply`, `hilos-table-announce`, `hilos-table-announce-show`;
@@ -763,6 +837,7 @@ an address does not:
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
 | the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
+| the card, the cell slots and the two branches as they are drawn | `framework/frontend/vue/src/HilosViewportTable.vue` |
 | the words a quiet source is marked with, and the columns it froze | `framework/frontend/core/src/table/tableStaleness.ts` |
 | the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | the progress bars a table reports | `framework/frontend/core/src/table/tableProgress.ts` |

@@ -1,8 +1,9 @@
 // The column declaration a HilosViewportTable header renders from. It is framework-
 // agnostic view config — header text, which fields offer a sort control, which
-// place the column takes in the card a row projects to on a narrow screen, which
-// source its values are built from, which columns a row's bar of running work
-// stretches under, and which of them wait in the panel the row expands into — never
+// classes the header and the body cell carry, which place the column takes in the
+// card a row projects to on a narrow screen, which source its values are built
+// from, which columns a row's bar of running work stretches under, and which of
+// them wait in the panel the row expands into — never
 // table logic, which lives in the TableViewportController (table-subscription.md,
 // multiframework-core.md). It lives in the core so every view layer's
 // HilosViewportTable shares one column type.
@@ -40,6 +41,15 @@ export interface HilosTableColumn {
   sortable?: boolean
   /** Extra classes for the header cell, e.g. `text-end` for a numeric column. */
   headerClass?: string
+  /**
+   * Extra classes for this column's body cell, e.g. `text-end` under a numeric
+   * header. Only the wide branch of a DECLARED table reads it — the one place the
+   * framework draws the cell itself. The card does not: a line of a description
+   * list is not a cell of a table, and the alignment of a column means nothing
+   * once the column is a labelled line. A table drawing its frame from props does
+   * not either, its page writing the `<td>` with its own classes on it.
+   */
+  cellClass?: string
   /**
    * Where this column goes in the card a row projects to on a narrow screen.
    * Absent means the default layout follows from the declaration order — the first

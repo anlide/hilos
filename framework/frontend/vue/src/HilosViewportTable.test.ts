@@ -574,6 +574,107 @@ describe('HilosViewportTable with a declared frame', () => {
   })
 })
 
+describe('HilosViewportTable drawing the cells of a declared table', () => {
+  // Two columns, one of them aligned the way a numeric column is: what the page
+  // used to write onto its own `<td>` and now declares once.
+  const CELL_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name' },
+    {
+      key: 'size',
+      label: 'Size',
+      headerClass: 'text-end',
+      cellClass: 'text-end',
+    },
+  ]
+  const CELL_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CELL_COLUMNS,
+  }
+
+  function window(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function mountCells(controller: TableViewportController<unknown>) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns: CELL_COLUMNS },
+      slots: {
+        'cell-name': (props: { row: unknown }) =>
+          h('span', { class: 'named' }, (props.row as Row).name),
+        'cell-size': () => h('span', { class: 'sized' }, '1.2 GB'),
+      },
+    })
+  }
+
+  it('draws one cell per declared column and fills it from its own slot', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const wrapper = mountCells(controller)
+
+    const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
+    expect(cells).toHaveLength(CELL_COLUMNS.length)
+    expect(cells[0]?.find('.named').text()).toBe('Alice')
+    expect(cells[1]?.find('.sized').text()).toBe('1.2 GB')
+  })
+
+  it('puts the declared cell class on the body cell and nowhere else', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const wrapper = mountCells(controller)
+
+    const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
+    expect(cells[0]?.classes()).not.toContain('text-end')
+    expect(cells[1]?.classes()).toContain('text-end')
+  })
+
+  it('leaves the cell standing where the page filled no slot', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller, columns: CELL_COLUMNS },
+      slots: {},
+    })
+
+    const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
+    expect(cells).toHaveLength(wrapper.findAll('thead th').length)
+    expect(cells[1]?.text()).toBe('')
+  })
+
+  it('reads the columns off the declaration rather than off the prop', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const wrapper = mount(HilosViewportTable, {
+      // A prop left behind from the props epoch: the declared table ignores it,
+      // so its row and its header cannot be assembled from two different lists.
+      props: { controller, columns: [{ key: 'name', label: 'Name' }] },
+      slots: {
+        'cell-size': () => h('span', { class: 'sized' }, '1.2 GB'),
+      },
+    })
+
+    expect(wrapper.findAll('thead th')).toHaveLength(CELL_COLUMNS.length)
+    expect(wrapper.find('thead').text()).toContain('Size')
+    expect(wrapper.find('.sized').exists()).toBe(true)
+  })
+
+  it('keeps handing the whole row over while the page passes columns as a prop', () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-row-a"] td.cell').text()).toBe(
+      'Alice',
+    )
+  })
+})
+
 describe('HilosViewportTable with a selection column', () => {
   // The table of a page that declared one bulk operation — the one sign that it
   // has marks at all, and the whole reason the column stands.
@@ -787,6 +888,567 @@ describe('HilosViewportTable with a selection column', () => {
     )
     expect(span).toBe(COLUMNS.length + 1)
     expect(cells[0]?.attributes('colspan')).toBe('1')
+  })
+})
+
+describe('HilosViewportTable drawing a row as a card', () => {
+  // One column of each place a card has, plus one the page keeps out of it: the
+  // whole projection read back through the markup the view writes.
+  const CARD_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name' },
+    { key: 'kind', label: 'Kind', cellClass: 'text-end' },
+    { key: 'state', label: 'State', card: 'badge' },
+    { key: 'secret', label: 'Secret', card: 'hidden' },
+    { key: 'actions', label: '' },
+  ]
+  const CARD_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CARD_COLUMNS,
+  }
+
+  /** The same table on a page that also declared an operation over marked rows. */
+  const BULK_CARD_FRAME: HilosTableFrame = {
+    ...CARD_FRAME,
+    bulkActions: [
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    ],
+  }
+
+  const CARD_SLOTS = {
+    'cell-name': (props: { row: unknown }) =>
+      h('span', { class: 'named' }, (props.row as Row).name),
+    'cell-kind': () => h('span', { class: 'kind' }, 'full'),
+    'cell-state': () => h('span', { class: 'state-badge' }, 'ready'),
+    'cell-secret': () => h('span', { class: 'secret' }, '1.2 GB'),
+    'cell-actions': () => h('button', { class: 'restore' }, 'Restore'),
+  }
+
+  function window(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function mountCards(
+    controller: TableViewportController<unknown>,
+    edge?: HilosTableSelectionEdge,
+  ) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns: CARD_COLUMNS },
+      slots: CARD_SLOTS,
+      global:
+        edge === undefined
+          ? {}
+          : { provide: { [hilosTableSelectionEdgeKey as symbol]: edge } },
+    })
+  }
+
+  it('stands the cards beside the table and shows exactly one of the two', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const wrapper = mountCards(controller)
+
+    const cards = wrapper.find('[data-id="hilos-table-cards"]')
+    expect(cards.classes()).toContain('d-md-none')
+    expect(cards.findAll('[data-id^="hilos-table-card-"]')).toHaveLength(2)
+
+    const wide = wrapper.find('.table-responsive')
+    expect(wide.classes()).toContain('d-none')
+    expect(wide.classes()).toContain('d-md-block')
+    // Nothing to scroll sideways once the columns became lines of a card.
+    expect(cards.findAll('.table-responsive')).toHaveLength(0)
+  })
+
+  it('draws no cards and keeps the table at every width without a declaration', () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-cards"]').exists()).toBe(false)
+    expect(wrapper.find('.table-responsive').classes()).not.toContain('d-none')
+  })
+
+  it('lays the card out the way the core projected it', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const card = mountCards(controller).find('[data-id="hilos-table-card-a"]')
+
+    expect(card.find('.named').text()).toBe('Alice')
+    // The title and the badge are drawn bare; only fields carry a label.
+    expect(card.text()).not.toContain('Name')
+    expect(card.find('.state-badge').exists()).toBe(true)
+    expect(card.text()).not.toContain('State')
+    expect(card.findAll('dt').map((label) => label.text())).toEqual(['Kind'])
+    expect(card.find('dd .kind').exists()).toBe(true)
+    expect(card.find('.d-grid .restore').exists()).toBe(true)
+    // A column the page kept out of the card is nowhere in it, though it still
+    // stands in the row.
+    expect(card.find('.secret').exists()).toBe(false)
+    expect(
+      mountCards(controller)
+        .find('[data-id="hilos-table-row-a"] .secret')
+        .exists(),
+    ).toBe(true)
+  })
+
+  it('fills a cell of the row and a line of the card from one slot', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const wrapper = mountCards(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-row-a"] .kind').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="hilos-table-card-a"] .kind').exists()).toBe(
+      true,
+    )
+  })
+
+  it('leaves out the card line of a column the page drew nothing into', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller, columns: CARD_COLUMNS },
+      slots: { 'cell-name': () => h('span', { class: 'named' }, 'Alice') },
+    })
+
+    // The row keeps every cell, or it comes out narrower than its header; the
+    // card keeps no label with nothing under it.
+    expect(wrapper.findAll('[data-id="hilos-table-row-a"] td')).toHaveLength(
+      CARD_COLUMNS.length,
+    )
+    expect(wrapper.findAll('[data-id="hilos-table-card-a"] dt')).toHaveLength(0)
+    expect(
+      wrapper.find('[data-id="hilos-table-card-a"] .d-grid').exists(),
+    ).toBe(false)
+  })
+
+  it('puts the declared cell class on the row cell and not on the card line', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const wrapper = mountCards(controller)
+
+    const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
+    expect(cells[1]?.classes()).toContain('text-end')
+    expect(
+      wrapper.find('[data-id="hilos-table-card-a"] dd').classes(),
+    ).not.toContain('text-end')
+  })
+
+  it('keeps a removed row as a card of one line, in its place', async () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const wrapper = mountCards(controller)
+    await wrapper.vm.$nextTick()
+
+    const card = wrapper.find('[data-id="hilos-table-card-a"]')
+    expect(card.find('[data-id="hilos-table-placeholder"]').text()).toBe(
+      'Removed',
+    )
+    expect(card.findAll('dt')).toHaveLength(0)
+    expect(card.find('.restore').exists()).toBe(false)
+    expect(wrapper.findAll('[data-id^="hilos-table-card-"]')).toHaveLength(2)
+  })
+
+  it('tints a card amber while a change waits and green after one landed', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    const wrapper = mountCards(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-card-a"]').classes()).toContain(
+      'border-warning',
+    )
+    expect(wrapper.find('[data-id="hilos-table-card-b"]').classes()).toContain(
+      'border-success',
+    )
+  })
+
+  it('lets the waiting outrank the highlight on a card that is both', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alexandra' } },
+    })
+    const card = mountCards(controller).find('[data-id="hilos-table-card-a"]')
+
+    expect(card.classes()).toContain('border-warning')
+    expect(card.classes()).not.toContain('border-success')
+  })
+
+  it('stands the framework marks beside the page badge, not instead of it', async () => {
+    const { controller } = makeController(CARD_FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' }, staleSources: ['sizes'] }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    const wrapper = mountCards(controller)
+    await wrapper.vm.$nextTick()
+
+    const card = wrapper.find('[data-id="hilos-table-card-a"]')
+    expect(card.find('.state-badge').exists()).toBe(true)
+    expect(card.find('[data-id="hilos-table-stale-row-a"]').exists()).toBe(true)
+    expect(card.find('[data-id="hilos-table-pending-move-a"]').exists()).toBe(
+      true,
+    )
+  })
+
+  it('puts the bar of a running job at the foot of the card', async () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'pack-a',
+      rowKey: 'a',
+      current: 34,
+      total: 110,
+    })
+    const wrapper = mountCards(controller)
+    await wrapper.vm.$nextTick()
+
+    const card = wrapper.find('[data-id="hilos-table-card-a"]')
+    expect(card.find('[data-id="hilos-table-progress-row-a"]').exists()).toBe(
+      true,
+    )
+    expect(card.find('[role="progressbar"]').exists()).toBe(true)
+
+    // A row shown as a placeholder gets no bar, on a card as in a row.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .find(
+          '[data-id="hilos-table-card-a"] [data-id="hilos-table-progress-row-a"]',
+        )
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('says loading and then the page own empty words in both branches', async () => {
+    const { controller } = makeController(CARD_FRAME)
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller, columns: CARD_COLUMNS },
+      slots: {
+        ...CARD_SLOTS,
+        empty: () => h('span', { class: 'none-yet' }, 'No backups yet'),
+      },
+    })
+
+    expect(wrapper.findAll('[data-id="hilos-table-loading"]')).toHaveLength(2)
+
+    controller.ingestWindow([], 0, true, null, null, 10)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-id="hilos-table-loading"]')).toHaveLength(0)
+    expect(wrapper.findAll('.none-yet')).toHaveLength(2)
+  })
+
+  it('names the list of cards with the heading the table is named by', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const wrapper = mountCards(controller)
+
+    const list = wrapper.find('[data-id="hilos-table-cards"] [role="list"]')
+    const titleId = wrapper
+      .find('[data-id="hilos-table-title"]')
+      .attributes('id')
+    expect(list.attributes('aria-labelledby')).toBe(titleId)
+    expect(wrapper.find('table').attributes('aria-labelledby')).toBe(titleId)
+    expect(
+      wrapper.find('[data-id="hilos-table-card-a"]').attributes('role'),
+    ).toBe('listitem')
+    // The list owns cards and nothing else.
+    expect(list.element.children).toHaveLength(2)
+  })
+
+  it('keeps the words of an empty table beside the list and not inside it', async () => {
+    const { controller } = makeController(CARD_FRAME)
+    const wrapper = mountCards(controller)
+
+    expect(
+      wrapper
+        .find(
+          '[data-id="hilos-table-cards"] [role="list"] [data-id="hilos-table-loading"]',
+        )
+        .exists(),
+    ).toBe(false)
+
+    controller.ingestWindow([], 0, true, null, null, 10)
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-table-cards"] [role="list"]').exists(),
+    ).toBe(false)
+  })
+
+  it('carries the row mark in the head of the card, on the edge the app chose', async () => {
+    const { controller } = makeController(BULK_CARD_FRAME)
+    window(controller)
+    const left = mountCards(controller)
+
+    const box = left.find(
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-select-a"]',
+    )
+    expect(box.exists()).toBe(true)
+    // On the left edge the mark stands before the title, not in the group of
+    // marks pushed to the right.
+    expect(
+      left.find('[data-id="hilos-table-card-a"] .ms-auto input').exists(),
+    ).toBe(false)
+
+    await box.setValue(true)
+    expect(controller.selection.count.get()).toBe(1)
+
+    const right = mountCards(controller, 'end')
+    expect(
+      right
+        .find('[data-id="hilos-table-card-a"] .ms-auto input')
+        .attributes('data-id'),
+    ).toBe('hilos-table-select-a')
+  })
+
+  it('gives a card shown as a placeholder no mark to make', async () => {
+    const { controller } = makeController(BULK_CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const wrapper = mountCards(controller)
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper
+        .find('[data-id="hilos-table-card-a"] [data-id="hilos-table-select-a"]')
+        .exists(),
+    ).toBe(false)
+    expect(
+      wrapper
+        .find('[data-id="hilos-table-card-b"] [data-id="hilos-table-select-b"]')
+        .exists(),
+    ).toBe(true)
+  })
+})
+
+describe('HilosViewportTable expanding a card', () => {
+  // The same table as next door with one field that did not fit a column: on a
+  // narrow screen it is what the card opens into.
+  const CARD_DETAIL_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name' },
+    { key: 'kind', label: 'Kind' },
+    { key: 'lastError', label: 'Error', detail: true },
+    { key: 'actions', label: '' },
+  ]
+  const CARD_DETAIL_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CARD_DETAIL_COLUMNS,
+  }
+
+  function mountDetailCards(controller: TableViewportController<unknown>) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns: CARD_DETAIL_COLUMNS },
+      slots: {
+        'cell-name': () => h('span', { class: 'named' }, 'Alice'),
+        'cell-kind': () => h('span', { class: 'kind' }, 'full'),
+        'cell-actions': () => h('button', { class: 'restore' }, 'Restore'),
+        'detail-lastError': () =>
+          h('span', { class: 'reason' }, 'Mailbox full'),
+      },
+    })
+  }
+
+  function window(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  it('opens one card from the control in its head and closes it again', async () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const wrapper = mountDetailCards(controller)
+    const control = wrapper.find(
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]',
+    )
+
+    expect(control.attributes('aria-expanded')).toBe('false')
+    expect(control.text()).toBe('Show details')
+    expect(
+      wrapper
+        .find(
+          '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"]',
+        )
+        .exists(),
+    ).toBe(false)
+
+    await control.trigger('click')
+
+    const panel = wrapper.find(
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"]',
+    )
+    expect(panel.text()).toContain('Error')
+    expect(panel.find('.reason').text()).toBe('Mailbox full')
+    expect(
+      wrapper
+        .find(
+          '[data-id="hilos-table-card-b"] [data-id="hilos-table-row-detail-b"]',
+        )
+        .exists(),
+    ).toBe(false)
+
+    await wrapper
+      .find('[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]')
+      .trigger('click')
+
+    expect(
+      wrapper
+        .find(
+          '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"]',
+        )
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('stands the panel after the fields and before the controls', async () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const wrapper = mountDetailCards(controller)
+    await wrapper
+      .find('[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]')
+      .trigger('click')
+
+    const blocks = wrapper.findAll(
+      '[data-id="hilos-table-card-a"] .card-body > *',
+    )
+    expect(blocks[1]?.element.tagName).toBe('DL')
+    expect(blocks[2]?.attributes('data-id')).toBe('hilos-table-row-detail-a')
+    expect(blocks[3]?.classes()).toContain('d-grid')
+  })
+
+  it('gives the card panel an id of its own, apart from the row panel', async () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const wrapper = mountDetailCards(controller)
+    await wrapper
+      .find('[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]')
+      .trigger('click')
+
+    const rowPanel = wrapper.find('tr[data-id="hilos-table-row-detail-a"]')
+    const cardControl = wrapper.find(
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]',
+    )
+    const cardPanel = wrapper.find(
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"]',
+    )
+
+    expect(cardPanel.attributes('id')).toBeTruthy()
+    expect(cardPanel.attributes('id')).not.toBe(rowPanel.attributes('id'))
+    expect(cardControl.attributes('aria-controls')).toBe(
+      cardPanel.attributes('id'),
+    )
+    expect(cardControl.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('offers no control on a card of a table that declared no such field', () => {
+    const { controller } = makeController({
+      title: 'Backups',
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'actions', label: '' },
+      ],
+    })
+    window(controller)
+    const wrapper = mount(HilosViewportTable, {
+      props: {
+        controller,
+        columns: [
+          { key: 'name', label: 'Name' },
+          { key: 'actions', label: '' },
+        ],
+      },
+      slots: { 'cell-name': () => h('span', { class: 'named' }, 'Alice') },
+    })
+
+    expect(
+      wrapper
+        .find('[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('stands a dash in a card field the page drew nothing into', async () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller, columns: CARD_DETAIL_COLUMNS },
+      slots: { 'cell-name': () => h('span', { class: 'named' }, 'Alice') },
+    })
+    await wrapper
+      .find('[data-id="hilos-table-card-a"] [data-id="hilos-table-expand-a"]')
+      .trigger('click')
+
+    expect(
+      wrapper
+        .find(
+          '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"] dd',
+        )
+        .text(),
+    ).toBe('—')
   })
 })
 

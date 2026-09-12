@@ -4,7 +4,9 @@ and are sent to the backend (NO local filtering); live changes arrive as pending
 and are resolved with the Apply button. A removed row renders as a placeholder in
 its slot — the layout never collapses. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
-Body cells come from the `#row` slot, plus one framework-owned cell at the end
+Body cells come from a `#cell-<key>` slot per declared column — the page gives
+the content, the framework writes the cell — or from the one `#row` slot while a
+page still passes its columns as a prop; plus one framework-owned cell at the end
 of the row carrying the state of that row — it waits, its values are behind, or
 both — and the control that opens the row; the placeholder, header, paging, and
 the three strips of live change stay framework-owned.
@@ -21,13 +23,19 @@ columns declared themselves. The room and the track are the framework's, while
 everything a reader sees beside them comes from the page through slots
 (mockups/components/table section 5).
 (Distinct from HilosTable, the client-side view.)
+On a narrow screen a declared table is drawn as a list of cards instead: the
+framework builds each card out of the very columns the page declared and fills
+it from the same `#cell-<key>` slots, so a project writes no second markup for
+its phone (mockups/components/table section 9). A card opens into its own panel,
+inside its own body and off an id base of its own. Both branches stand in the
+document and Bootstrap's visibility utilities show one of them.
 It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
 when the controller carries a declaration, and from its own props when it does
 not — two epochs of the same table living side by side while the five framework
 pages have not moved onto the declaration yet (HIL-819). -->
 
 <script setup lang="ts" generic="R">
-import { computed, inject, useId } from 'vue'
+import { computed, inject, useId, useSlots } from 'vue'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
@@ -94,6 +102,27 @@ const props = withDefaults(
 // life of a table, so it is read once rather than wrapped in a signal.
 const declaration = props.controller.frame.declaration
 
+// The columns the table is drawn from: the declaration's own where there is one,
+// and the prop while the five framework pages have not moved onto it (HIL-819).
+// Everything that measures or draws a column — the header, the cells of a row,
+// the width of a full-row cell, the card — counts THIS list, so a declared table
+// cannot assemble its row from one list and its card from another (Design D7).
+// It is the one reader of the prop left in the component.
+const frameColumns = computed<readonly HilosTableColumn[]>(
+  () => declaration?.columns ?? props.columns,
+)
+
+// Which declared column takes which place of the card a row is drawn as on a
+// narrow screen — the head, the badge beside it, the labelled lines, the
+// controls. The core derived it from the declaration (tableCard.ts) and the view
+// has no arithmetic of its own about it; like the declaration it follows from, it
+// is a constant over the life of a table and null exactly when that is.
+const card = props.controller.frame.card
+
+// The slots as the page filled them — read to tell a place of the card the page
+// draws nothing into from one it does (Flow F3).
+const slots = useSlots()
+
 // The declared title names the table through aria-labelledby, so the id is
 // minted here — where both the bar that renders the heading and the table that
 // points at it can see it (Flow F9).
@@ -103,6 +132,12 @@ const titleId = useId()
 // title above is, and for the same reason: the control that points at a panel and
 // the panel itself are drawn in two places of one template.
 const detailBaseId = useId()
+
+// The base the panel inside a CARD takes its id from — a second one, minted for
+// the same table. An id is unique in a document and both branches stand in it at
+// once, so a card borrowing the row's id would put that id in twice and break the
+// tie between control and panel on both.
+const cardDetailBaseId = useId()
 
 // Which edge the checkbox column sits on — one choice for the whole installation
 // and not a prop of this table, because two tables of one product disagreeing
@@ -145,9 +180,9 @@ const paginated = computed(
 // columns that are left standing in the row. Every place that measures or draws the
 // row itself — the header, the width of a full-row cell, the cells of a row bar —
 // counts the second list, while the panel is built from the first.
-const detailFields = computed(() => hilosTableDetailFields(props.columns))
+const detailFields = computed(() => hilosTableDetailFields(frameColumns.value))
 const rowColumns = computed(() =>
-  props.columns.filter((column) => column.detail !== true),
+  frameColumns.value.filter((column) => column.detail !== true),
 )
 
 // Which sources went quiet anywhere in the shown window, which declared columns are
@@ -156,7 +191,7 @@ const rowColumns = computed(() =>
 // this table does not have — whether it stands in the row or waits in a panel.
 const staleSources = computed(() => hilosTableStaleSources(rows.value))
 const staleColumns = computed(() =>
-  hilosTableStaleColumns(props.columns, staleSources.value),
+  hilosTableStaleColumns(frameColumns.value, staleSources.value),
 )
 const staleColumnKeys = computed(
   () => new Set(staleColumns.value.map((column) => column.key)),
@@ -275,11 +310,48 @@ function rowClass(view: TableViewportRow<R>): string | undefined {
   return view.expanded ? 'table-active' : undefined
 }
 
+// A card's tint, resolved in the order the row's is: amber while a change waits
+// on the record, green for the couple of seconds after a value landed, and
+// nothing otherwise. It is worn as a border rather than a fill — Bootstrap's
+// contextual row classes are built for the cells of a table — and an expanded
+// card takes no grey: the row wears grey to tie itself to a panel drawn under it,
+// while a card holds its panel inside its own body (Flow F5).
+function cardClass(view: TableViewportRow<R>): string | undefined {
+  if (view.pending !== null) {
+    return 'border-warning'
+  }
+
+  return view.highlighted ? 'border-success' : undefined
+}
+
+// Whether the page draws anything into a column's cell. A card leaves out the
+// place of a column the page filled nothing into: a label with nothing under it
+// reads as a value lost rather than as an empty field, and on a phone it spends a
+// line of the screen saying that (Flow F3). The row is the other way round — its
+// cell always stands, or the row comes out narrower than its header — and that is
+// the one place the two branches part company.
+function hasCell(column: HilosTableColumn | null): boolean {
+  return column !== null && slots[`cell-${column.key}`] !== undefined
+}
+
+// The labelled lines of a card: the fields of the layout the page actually drew
+// into. A function rather than a computed, because what it reads is the slots and
+// those are settled per render — a computed would hold the answer from the render
+// the page passed other slots in.
+function cardFields(): readonly HilosTableColumn[] {
+  return card === null ? [] : card.fields.filter(hasCell)
+}
+
 // The id of one row's panel, which the control above it points at through
 // aria-controls. One base for the whole table and the row key after it: the keys are
 // unique within a window, and two tables on one page mint two bases.
 function detailId(rowKey: string): string {
   return `${detailBaseId}-${rowKey}`
+}
+
+/** The same for the panel inside the card of that row, off its own base. */
+function cardDetailId(rowKey: string): string {
+  return `${cardDetailBaseId}-${rowKey}`
 }
 
 // The bar running over one row, or undefined when none is. Read out of the map
@@ -467,7 +539,16 @@ function onSelectPage(event: Event): void {
       </button>
     </div>
 
-    <div class="table-responsive">
+    <!-- A DECLARED table is a table on a wide screen and a list of cards on a
+    narrow one, so its scroll wrapper goes with the table itself: there is
+    nothing left to scroll sideways once the columns became lines of a card
+    (Design D8). A table still drawn from props has no cards to fall back on and
+    keeps the wrapper at every width, scrollbar and all, until its page moves
+    onto the declaration (HIL-819). -->
+    <div
+      class="table-responsive"
+      :class="{ 'd-none d-md-block': declaration !== null }"
+    >
       <table
         class="table table-striped table-hover align-middle mb-0"
         :aria-labelledby="declaration ? titleId : undefined"
@@ -608,6 +689,28 @@ function onSelectPage(event: Event): void {
               >
                 {{ placeholderText }}
               </td>
+              <!-- What stands where a row's values do, one shape per epoch of
+              the frame. A DECLARED table hands the page one slot per column and
+              writes the cell around it: that is what makes a cell addressable by
+              column at all, and it is what lets the card next door be built from
+              the same slots instead of a second markup the page would write. A
+              table still drawing its frame from props has no column to address a
+              cell by, so it keeps handing over the whole row (HIL-819). -->
+              <template v-else-if="declaration">
+                <!-- The cell stands even where the page filled no slot: a row one
+                cell short is a row narrower than its header (Flow F3). -->
+                <td
+                  v-for="column in rowColumns"
+                  :key="column.key"
+                  :class="column.cellClass"
+                >
+                  <slot
+                    :name="`cell-${column.key}`"
+                    :row="view.row"
+                    :row-key="view.rowKey"
+                  />
+                </td>
+              </template>
               <slot v-else name="row" :row="view.row" :row-key="view.rowKey" />
               <td
                 v-if="markColumn && !view.placeholder && view.row !== null"
@@ -781,6 +884,243 @@ function onSelectPage(event: Event): void {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- The same rows as cards, the shape a table takes on a narrow screen: the
+    framework builds each card out of the very columns the page declared, so no
+    project writes a second markup for its table (mockup section 9). Both
+    branches stand in the document at once and Bootstrap's visibility utilities
+    show exactly one of them — there is no width at which both are seen, and
+    crossing the boundary re-renders nothing, both being mounted already
+    (Flow F11). The price is that a row's data-id is in the document twice, which
+    is why a test on a narrow screen aims at a row THROUGH this container
+    (table-subscription.md, the registry of selectors). The cards are a list and
+    carry the accessible name of the table itself: the same name rather than a
+    second one, this being the same table, and never both at once — the branch
+    that is hidden leaves the accessibility tree with its display (Flow F9). The
+    list holds the cards and nothing else; what the table says in words when it
+    has no rows stands BESIDE it, a sentence not being an item of a list. -->
+    <div v-if="card" class="d-md-none" data-id="hilos-table-cards">
+      <div v-if="rows.length > 0" role="list" :aria-labelledby="titleId">
+        <div
+          v-for="view in rows"
+          :key="view.rowKey"
+          class="card mb-2"
+          :class="cardClass(view)"
+          role="listitem"
+          :data-id="`hilos-table-card-${view.rowKey}`"
+        >
+          <!-- A removed row keeps its place as a card of one line, exactly as
+          it keeps it as a row of one cell: the set never closes up under the
+          reader (Flow F4). -->
+          <div
+            v-if="view.placeholder || view.row === null"
+            class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
+            data-id="hilos-table-placeholder"
+          >
+            {{ placeholderText }}
+          </div>
+          <div v-else class="card-body py-2 px-3">
+            <div class="d-flex align-items-start gap-2 mb-1">
+              <!-- The mark sits on the edge the installation chose, the same
+              edge it sits on in the row: one product disagreeing with itself
+              between its table and its card is the very thing that choice
+              forbids. -->
+              <input
+                v-if="selectionEnabled && selectionEdge === 'start'"
+                class="form-check-input mt-1"
+                type="checkbox"
+                aria-label="Select row"
+                :data-id="`hilos-table-select-${view.rowKey}`"
+                :checked="view.selected"
+                @change="onSelectRow(view.rowKey, $event)"
+              />
+              <span v-if="hasCell(card.title)" class="fw-medium">
+                <slot
+                  :name="`cell-${card.title!.key}`"
+                  :row="view.row"
+                  :row-key="view.rowKey"
+                />
+              </span>
+              <!-- The right of the head, in one group: what the PAGE says about
+              the row first, then what the FRAMEWORK says about it. The page's
+              badge is not pushed out by a framework mark — on a wide screen the
+              two stand in two different cells, and a card is a second
+              projection of the same columns rather than a smaller set of facts
+              (Design D9, design debt D-058). -->
+              <span class="ms-auto d-flex align-items-center gap-1">
+                <slot
+                  v-if="hasCell(card.badge)"
+                  :name="`cell-${card.badge!.key}`"
+                  :row="view.row"
+                  :row-key="view.rowKey"
+                />
+                <template v-if="view.staleSources.length > 0">
+                  <i
+                    class="bi bi-snow"
+                    :data-id="`hilos-table-stale-row-${view.rowKey}`"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    TABLE_STALENESS_COPY.rowMark
+                  }}</span>
+                </template>
+                <span
+                  v-if="view.pending === 'move'"
+                  class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  :data-id="`hilos-table-pending-move-${view.rowKey}`"
+                >
+                  <i class="bi bi-arrows-move" aria-hidden="true"></i> Will move
+                </span>
+                <span
+                  v-else-if="view.pending === 'remove'"
+                  class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  :data-id="`hilos-table-pending-remove-${view.rowKey}`"
+                >
+                  <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Will
+                  leave
+                </span>
+                <!-- The control comes after everything that merely STATES
+                something about the record, exactly as it does at the end of a
+                row: it is the one thing in the head the reader acts on. -->
+                <button
+                  v-if="detailFields.length > 0"
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  :data-id="`hilos-table-expand-${view.rowKey}`"
+                  :aria-expanded="view.expanded"
+                  :aria-controls="cardDetailId(view.rowKey)"
+                  @click="controller.expandRow(view.rowKey, !view.expanded)"
+                >
+                  <i
+                    :class="[
+                      'bi',
+                      view.expanded ? 'bi-chevron-up' : 'bi-chevron-down',
+                    ]"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    view.expanded
+                      ? TABLE_DETAIL_COPY.hide
+                      : TABLE_DETAIL_COPY.show
+                  }}</span>
+                </button>
+                <input
+                  v-if="selectionEnabled && selectionEdge === 'end'"
+                  class="form-check-input mt-1"
+                  type="checkbox"
+                  aria-label="Select row"
+                  :data-id="`hilos-table-select-${view.rowKey}`"
+                  :checked="view.selected"
+                  @change="onSelectRow(view.rowKey, $event)"
+                />
+              </span>
+            </div>
+
+            <!-- What a column becomes on a narrow screen is a pair of a label
+            and a value, and a description list is the one markup that says so
+            to a screen reader (Flow F10). -->
+            <dl v-if="cardFields().length > 0" class="row mb-2 small g-0">
+              <template v-for="field in cardFields()" :key="field.key">
+                <dt class="col-5 fw-normal text-body-secondary">
+                  {{ field.label }}
+                </dt>
+                <dd class="col-7 mb-0">
+                  <slot
+                    :name="`cell-${field.key}`"
+                    :row="view.row"
+                    :row-key="view.rowKey"
+                  />
+                </dd>
+              </template>
+            </dl>
+
+            <!-- What the reader opened, going on with the very pairs of label
+            and value the fields above are: in a row the panel comes last of
+            all, under the bar of the row's own work, but in a card the controls
+            and that bar are the bottom block and the panel belongs with the
+            body. -->
+            <div
+              v-if="view.expanded"
+              :id="cardDetailId(view.rowKey)"
+              class="mb-2"
+              :data-id="`hilos-table-row-detail-${view.rowKey}`"
+            >
+              <dl class="row mb-0 small g-0">
+                <template v-for="field in detailFields" :key="field.key">
+                  <dt class="col-5 fw-normal text-body-secondary">
+                    {{ field.label }}
+                  </dt>
+                  <dd class="col-7 mb-0 text-break">
+                    <!-- A field the page declared but drew nothing into shows
+                    the dash its cells show, rather than an empty line that
+                    would read as "there is no value". -->
+                    <slot :name="`detail-${field.key}`" :row="view.row">{{
+                      TABLE_DETAIL_COPY.empty
+                    }}</slot>
+                  </dd>
+                </template>
+              </dl>
+            </div>
+
+            <!-- The controls of the row, full width at the foot of the card.
+            Which of them comes first is the markup the page hands over, and the
+            framework neither reorders them nor takes one away (Flow F2). -->
+            <div v-if="hasCell(card.actions)" class="d-grid gap-2">
+              <slot
+                :name="`cell-${card.actions!.key}`"
+                :row="view.row"
+                :row-key="view.rowKey"
+              />
+            </div>
+
+            <!-- Work running over this one record, at the very bottom of the
+            card and across its whole width: which columns a bar stretches under
+            says nothing here, a card having no columns standing in a row (Flow
+            F7). -->
+            <div
+              v-if="rowBar(view.rowKey) !== undefined"
+              class="mt-2"
+              :data-id="`hilos-table-progress-row-${view.rowKey}`"
+            >
+              <div
+                v-if="$slots['row-progress']"
+                class="small text-body-secondary mb-1"
+              >
+                <slot
+                  name="row-progress"
+                  :progress="rowBar(view.rowKey)!"
+                  :row-key="view.rowKey"
+                />
+              </div>
+              <HilosTableProgress
+                :progress="rowBar(view.rowKey)!"
+                label="Work on this row"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- The two states a table says in words. They live inside the table in
+      the wide branch, so a narrow screen would hide them along with it and the
+      phone would be left with a blank space where the sentence is (Flow F12).
+      The page writes the empty slot once and sees it in both branches. -->
+      <div v-else class="text-center text-muted py-4">
+        <span
+          v-if="!loaded"
+          class="d-inline-flex align-items-center gap-2"
+          role="status"
+          data-id="hilos-table-loading"
+        >
+          <span
+            class="spinner-border spinner-border-sm"
+            aria-hidden="true"
+          ></span>
+          {{ loadingText }}
+        </span>
+        <slot v-else name="empty">{{ emptyText }}</slot>
+      </div>
     </div>
 
     <HilosTableFooter v-if="declaration" :controller="controller" />
