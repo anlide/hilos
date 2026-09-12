@@ -105,10 +105,10 @@ final class CliCommands
     public const string ORPHAN_TEST_DELETE = 'test:orphan:delete';
 
     /** @var string Command: Write the example catalog key's override row (test-only) */
-    public const string ORPHAN_SETTING_TEST_CREATE = 'test:orphan-setting:create';
+    public const string SETTING_OVERRIDE_TEST_CREATE = 'test:setting-override:create';
 
     /** @var string Command: Delete the example catalog key's override row (test-only) */
-    public const string ORPHAN_SETTING_TEST_DELETE = 'test:orphan-setting:delete';
+    public const string SETTING_OVERRIDE_TEST_DELETE = 'test:setting-override:delete';
 
     /** @var string Command: Verify stored backup archives against their recorded checksums */
     public const string BACKUP_VERIFY = 'backup:verify';

@@ -18,7 +18,7 @@ use Hilos\Hilos;
 /**
  * Test-only: seed a TRUE orphan settings row for a key that is NOT in the catalog.
  *
- * Unlike the scaffold {@see OrphanSettingTestCreateCommand} (which writes a catalog-key
+ * Unlike the scaffold {@see SettingOverrideTestCreateCommand} (which writes a catalog-key
  * override), this writes a row whose key is absent from the catalog, so it reads back as
  * valueSource=orphan — the state an e2e fixture needs but the normal UI never leaves
  * behind. Pairs with {@see OrphanTestDeleteCommand}.

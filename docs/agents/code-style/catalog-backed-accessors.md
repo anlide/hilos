@@ -53,7 +53,7 @@ rule is about how a value is read, not about these:
    code that knows the type it needs does not call it.
 3. **Questions about the catalog itself,** not about a key's value: `catalog()`,
    `typeFor()`, `defaultValueFor()`, `defaultReferenceKeyFor()`, `ruleFor()`.
-   Their readers are the orphan-setting CLI commands and the project facades —
+   Their readers are the orphan and setting-override CLI commands and the project facades —
    `OrphanTestCreateCommand` (`framework/backend/Core/CLI/Commands/`) hands
    `Hilos::$setting->catalog()` to the settings action.
 4. **The inside of the reader.** `EnvValue::resolveValue()` calls

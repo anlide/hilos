@@ -15,21 +15,21 @@ use Hilos\Hilos;
 /**
  * SCAFFOLD/EXAMPLE of the test-only command mechanism (see docs/agents/cli/commands.md).
  *
- * Deletes the orphan settings row written by {@see OrphanSettingTestCreateCommand}, returning
+ * Deletes the override row written by {@see SettingOverrideTestCreateCommand}, returning
  * the catalog key to its baseline (no DB row). The pair shows how a test sets up and tears down
  * a state through test-only CLI commands instead of idempotency hacks in the test itself.
  */
-final class OrphanSettingTestDeleteCommand extends TestOnlyCommand
+final class SettingOverrideTestDeleteCommand extends TestOnlyCommand
 {
     /** @var array<string, list<TruthSourceOperation>> Settings rows this command deletes, claimed for it by its runner */
     public const array OWNS_DB = [HilosDbContext::settings => TruthSourceOperation::BY_KIND];
 
-    /** @var string Catalog key whose example orphan row is removed */
-    private const string ORPHAN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
+    /** @var string Catalog key whose example override row is removed */
+    private const string OVERRIDDEN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
 
     public function getName(): string
     {
-        return CliCommands::ORPHAN_SETTING_TEST_DELETE;
+        return CliCommands::SETTING_OVERRIDE_TEST_DELETE;
     }
 
     /**
@@ -46,7 +46,7 @@ final class OrphanSettingTestDeleteCommand extends TestOnlyCommand
 
     public function getDescription(): string
     {
-        return 'Test-only: delete the example orphan settings row';
+        return 'Test-only: delete the example catalog key\'s override row';
     }
 
     public function getHelp(): string
@@ -54,8 +54,8 @@ final class OrphanSettingTestDeleteCommand extends TestOnlyCommand
         return <<<HELP
 Test-only command (refused unless APP_ENV is non-production).
 
-Deletes the example orphan settings row (if present), restoring the catalog key to its
-baseline. Pairs with the matching create command.
+Deletes the example catalog key's override row (if present), returning the key to its
+catalog default. Pairs with the matching create command.
 HELP;
     }
 
@@ -67,14 +67,14 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
-        if (isset(Hilos::$db->settings[self::ORPHAN_KEY])) {
-            Hilos::$db->settings[self::ORPHAN_KEY]->actions->delete();
-            echo "Orphan setting deleted for key '" . self::ORPHAN_KEY . "'.\n";
+        if (isset(Hilos::$db->settings[self::OVERRIDDEN_KEY])) {
+            Hilos::$db->settings[self::OVERRIDDEN_KEY]->actions->delete();
+            echo "Override deleted for catalog key '" . self::OVERRIDDEN_KEY . "'.\n";
 
             return ExitCode::SUCCESS;
         }
 
-        echo "No orphan setting for key '" . self::ORPHAN_KEY . "' — nothing to delete.\n";
+        echo "No override for catalog key '" . self::OVERRIDDEN_KEY . "' — nothing to delete.\n";
 
         return ExitCode::SUCCESS;
     }

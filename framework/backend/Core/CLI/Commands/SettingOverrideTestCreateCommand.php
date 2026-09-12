@@ -17,25 +17,25 @@ use Hilos\Hilos;
 /**
  * SCAFFOLD/EXAMPLE of the test-only command mechanism (see docs/agents/cli/commands.md).
  *
- * Writes a settings row for a catalog key, so a test can set up a state the normal UI
- * does not leave behind. Pairs with {@see OrphanSettingTestDeleteCommand}, which restores the
+ * Writes an override row for a catalog key, so a test can set up a state the normal UI
+ * does not leave behind. Pairs with {@see SettingOverrideTestDeleteCommand}, which restores the
  * baseline. The value of this specific command is to demonstrate the mechanism, not a real
  * feature.
  */
-final class OrphanSettingTestCreateCommand extends TestOnlyCommand
+final class SettingOverrideTestCreateCommand extends TestOnlyCommand
 {
     /** @var array<string, list<TruthSourceOperation>> Settings rows this command writes, claimed for it by its runner */
     public const array OWNS_DB = [HilosDbContext::settings => TruthSourceOperation::BY_KIND];
 
-    /** @var string Catalog key the example row is written for */
-    private const string ORPHAN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
+    /** @var string Catalog key the example override row is written for */
+    private const string OVERRIDDEN_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
 
     /** @var string Override the example row carries — a row without a value does not exist */
-    private const string ORPHAN_VALUE = 'scaffold example override';
+    private const string OVERRIDE_VALUE = 'scaffold example override';
 
     public function getName(): string
     {
-        return CliCommands::ORPHAN_SETTING_TEST_CREATE;
+        return CliCommands::SETTING_OVERRIDE_TEST_CREATE;
     }
 
     /**
@@ -46,13 +46,14 @@ final class OrphanSettingTestCreateCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            'seeds a cataloged settings row from composer test:db-prepare, before the stand\'s daemon starts',
+            'writes the scaffold\'s example override by hand on a stand, in the same daemon-less window '
+            . 'its delete half undoes it in',
         );
     }
 
     public function getDescription(): string
     {
-        return 'Test-only: write the example settings row';
+        return 'Test-only: write the example catalog key\'s override row';
     }
 
     public function getHelp(): string
@@ -60,8 +61,8 @@ final class OrphanSettingTestCreateCommand extends TestOnlyCommand
         return <<<HELP
 Test-only command (refused unless APP_ENV is non-production).
 
-Writes a settings row with a custom value for the example catalog key so a test can set
-up that state. Restore the baseline with the matching delete command.
+Writes an override row for the example catalog key so a test can set up that state.
+Remove it again with the matching delete command.
 HELP;
     }
 
@@ -75,8 +76,8 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
-        Hilos::$db->settings->actions->add(self::ORPHAN_KEY, self::ORPHAN_VALUE, Hilos::$setting->catalog());
-        echo "Setting created for key '" . self::ORPHAN_KEY . "'.\n";
+        Hilos::$db->settings->actions->add(self::OVERRIDDEN_KEY, self::OVERRIDE_VALUE, Hilos::$setting->catalog());
+        echo "Override written for catalog key '" . self::OVERRIDDEN_KEY . "'.\n";
 
         return ExitCode::SUCCESS;
     }

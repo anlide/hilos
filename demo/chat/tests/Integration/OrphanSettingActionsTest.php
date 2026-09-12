@@ -23,7 +23,7 @@ use Hilos\Utils\Helpers\RandomHelper;
  * Integration coverage for the orphan settings write pair (HIL-118):
  * SettingsActions::addOrphan/deleteOrphan and the test:orphan CLI commands.
  *
- * Catalog overrides go through add()/OrphanSettingTestCreateCommand; this pair is the
+ * Catalog overrides go through add()/SettingOverrideTestCreateCommand; this pair is the
  * uncataloged (true orphan) path an e2e fixture needs, with the inverse catalog guard
  * and non-idempotent contract.
  */

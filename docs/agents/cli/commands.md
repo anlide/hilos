@@ -131,7 +131,7 @@ final class ProjectCliManager extends CliManager
 ```
 
 **No demo uses this seam today, and that is the point of HIL-729:** the fifteen commands
-chat used to carry are the framework's, `test:orphan-setting:create` / `:delete` among
+chat used to carry are the framework's, `test:setting-override:create` / `:delete` among
 them, and they live in `framework/backend/Core/CLI/Commands/` beside every other one. What
 is left in `demo/chat/backend/CLI/ChatCliManager.php` is the empty override, kept as the
 worked example of the shape — the other three demos name `CliManager` in their `cli.php`

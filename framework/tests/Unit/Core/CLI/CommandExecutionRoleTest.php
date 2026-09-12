@@ -74,11 +74,11 @@ final class CommandExecutionRoleTest extends TestCase
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::ORPHAN_TEST_DELETE]->site);
         $this->assertSame(
             CommandExecutionSite::CLI_OFFLINE_WRITE,
-            $executions[CliCommands::ORPHAN_SETTING_TEST_CREATE]->site,
+            $executions[CliCommands::SETTING_OVERRIDE_TEST_CREATE]->site,
         );
         $this->assertSame(
             CommandExecutionSite::CLI_OFFLINE_WRITE,
-            $executions[CliCommands::ORPHAN_SETTING_TEST_DELETE]->site,
+            $executions[CliCommands::SETTING_OVERRIDE_TEST_DELETE]->site,
         );
         // The framework's first two daemon-spawned commands, also from HIL-729. The backup agent
         // starts both itself, and a restore writes to the database with the daemon up, under

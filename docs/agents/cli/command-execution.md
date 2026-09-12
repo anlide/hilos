@@ -127,9 +127,11 @@ monopolistic backup agent's loop).
 
 **`cli-offline-write`** — `db:migration:up` / `:down` / `:retry`, `db:seed:apply`,
 `test:db:reset`, `test:user:seed`, `test:verification:expire`, `test:session:expire`,
-`test:orphan:create` / `:delete` and `test:orphan-setting:create` / `:delete`. All of them
+`test:orphan:create` / `:delete` and `test:setting-override:create` / `:delete`. All of them
 prepare the schema and the fixtures the daemon later boots on, from the container
-entrypoint and from `composer test:db-prepare`.
+entrypoint and from `composer test:db-prepare` — except the `test:setting-override:*` pair,
+which nothing calls automatically; it stands as a worked example of the mechanism, run by
+hand.
 
 **`daemon-spawned`** — `backup:run` and `backup:restore-run`, both spawned by the backup
 agent (HIL-729 brought them in from chat; before that the framework had none).
