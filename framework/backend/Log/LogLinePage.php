@@ -25,7 +25,9 @@ final class LogLinePage
      * @param bool $readable Whether the requested file could be read
      * @param list<LogLine> $lines Matched lines in file (chronological) order, up to the query limit
      * @param ?int $nextCursor Byte offset to pass back as {@see LogReadQuery::$cursor} for the adjacent page, or null when none remain
-     * @param bool $hasMore Whether more matching lines exist beyond this page in the read direction
+     * @param bool $hasMore Whether an older matching line remains before this page, for a backward tail scan: it
+     *     looks one match past the page to answer, so the flag is exact. A forward read carries a weaker promise —
+     *     it stopped on the limit with bytes still unread, which under a filter need not hold another match
      * @param ?int $endCursor Byte offset just past the last complete line this read consumed, or null when the
      *     read direction does not track one (a backward tail scan, or an unavailable file)
      * @param ?string $endLevel Running entry level (a {@see Logger} `LEVEL_*` value) at {@see $endCursor}, to be

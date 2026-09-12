@@ -40,6 +40,14 @@ final class LogLineReaderTest extends TestCase
         ['text' => '[2026-07-28 12:00:00.006] all good', 'level' => Logger::LEVEL_INFO, 'continuation' => false],
     ];
 
+    /**
+     * Bytes of non-matching padding written past the matches in the window-growth test.
+     *
+     * Above the reader's own 64 KiB window step, so the backward scan has to take more than one of them before it
+     * can say whether an older match remains.
+     */
+    private const int PADDING_BYTES = 70000;
+
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('hilos-log-', true);
@@ -185,6 +193,102 @@ final class LogLineReaderTest extends TestCase
         );
     }
 
+    public function testTailLastPageOfAFilteredSetPromisesNoMore(): void
+    {
+        $this->writeLines('worker-1.log', [
+            '[2026-07-28 12:00:00.001] unrelated',
+            '[2026-07-28 12:00:00.002] unrelated',
+            '[2026-07-28 12:00:00.003] unrelated',
+            '[2026-07-28 12:00:00.004] needle 1',
+            '[2026-07-28 12:00:00.005] needle 2',
+            '[2026-07-28 12:00:00.006] needle 3',
+            '[2026-07-28 12:00:00.007] needle 4',
+        ]);
+        $reader = new LogLineReader($this->root);
+
+        $first = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 3, substring: 'needle'),
+        );
+
+        $this->assertSame(
+            ['[2026-07-28 12:00:00.005] needle 2', '[2026-07-28 12:00:00.006] needle 3', '[2026-07-28 12:00:00.007] needle 4'],
+            array_map(static fn (LogLine $line): string => $line->text, $first->lines),
+        );
+        $this->assertTrue($first->hasMore);
+
+        // The page that carries the last match answers that none is left, so the viewer is not invited to ask again.
+        $last = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, cursor: $first->nextCursor, limit: 3, substring: 'needle'),
+        );
+
+        $this->assertSame(
+            ['[2026-07-28 12:00:00.004] needle 1'],
+            array_map(static fn (LogLine $line): string => $line->text, $last->lines),
+        );
+        $this->assertFalse($last->hasMore);
+        $this->assertNull($last->nextCursor);
+    }
+
+    public function testTailSetSizedExactlyToThePagePromisesNoMore(): void
+    {
+        $this->writeLines('worker-1.log', [
+            '[2026-07-28 12:00:00.001] unrelated',
+            '[2026-07-28 12:00:00.002] unrelated',
+            '[2026-07-28 12:00:00.003] needle 1',
+            '[2026-07-28 12:00:00.004] needle 2',
+            '[2026-07-28 12:00:00.005] needle 3',
+        ]);
+        $reader = new LogLineReader($this->root);
+
+        // A set sized to a whole number of pages is the second way to reach the same defect: the first page is
+        // already the last one, and the non-matching bytes in front of it must not promise an older page.
+        $page = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 3, substring: 'needle'),
+        );
+
+        $this->assertSame(
+            ['[2026-07-28 12:00:00.003] needle 1', '[2026-07-28 12:00:00.004] needle 2', '[2026-07-28 12:00:00.005] needle 3'],
+            array_map(static fn (LogLine $line): string => $line->text, $page->lines),
+        );
+        $this->assertFalse($page->hasMore);
+        $this->assertNull($page->nextCursor);
+    }
+
+    public function testTailGrowsThroughChunksToAnswerHasMore(): void
+    {
+        $lines = [
+            '[2026-07-28 12:00:00.001] unrelated',
+            '[2026-07-28 12:00:00.002] needle 1',
+            '[2026-07-28 12:00:00.003] needle 2',
+            '[2026-07-28 12:00:00.004] needle 3',
+        ];
+        $written = 0;
+        while ($written < self::PADDING_BYTES) {
+            $padding = '[2026-07-28 12:00:01.000] unrelated ' . count($lines);
+            $lines[] = $padding;
+            $written += strlen($padding) + 1;
+        }
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        // Every match sits behind more than one window step, so the answer can only come from growing the window
+        // to the start of the file — the branch the first two tests never reach.
+        $page = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 3, substring: 'needle'),
+        );
+
+        $this->assertSame(
+            ['[2026-07-28 12:00:00.002] needle 1', '[2026-07-28 12:00:00.003] needle 2', '[2026-07-28 12:00:00.004] needle 3'],
+            array_map(static fn (LogLine $line): string => $line->text, $page->lines),
+        );
+        $this->assertFalse($page->hasMore);
+        $this->assertNull($page->nextCursor);
+    }
+
     public function testMissingFileYieldsUnavailable(): void
     {
         $reader = new LogLineReader($this->root);
@@ -212,6 +316,17 @@ final class LogLineReaderTest extends TestCase
         $reader = new LogLineReader(null);
 
         $this->assertEquals(LogLinePage::unavailable(), $reader->read('worker-1.log', new LogReadQuery(LogReadQuery::ANCHOR_HEAD)));
+    }
+
+    /**
+     * Write the given lines to a log file under the temp root.
+     *
+     * @param string $name File basename
+     * @param list<string> $lines Lines in file order, each written with a trailing newline
+     */
+    private function writeLines(string $name, array $lines): void
+    {
+        file_put_contents($this->root . DIRECTORY_SEPARATOR . $name, implode("\n", $lines) . "\n");
     }
 
     /**

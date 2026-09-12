@@ -21,8 +21,10 @@ use Hilos\Utils\Logger;
  *
  * Two independent scans share one line classifier: {@see LogReadQuery::ANCHOR_HEAD} walks forward from
  * the cursor a line at a time; {@see LogReadQuery::ANCHOR_TAIL} grows a byte window backward from the end
- * in {@see CHUNK_SIZE} steps until it holds the requested number of matches, so large files are never
- * loaded whole for the common tail case. Level detection is per line: a recognized prefix
+ * in {@see CHUNK_SIZE} steps until it holds one match more than the page was asked for, so large files are
+ * never loaded whole for the common tail case. The extra match is what answers "is there an older page":
+ * bytes before the page can be all non-matching under a filter, so only a found match proves one remains.
+ * Level detection is per line: a recognized prefix
  * (`[ERROR]`/`ERROR:` and the like, or the `agentId|level|message` agent-pipe format under
  * {@see Logger::AGENT_LOG_MARKER}) updates a running level, a line without one is a continuation that
  * inherits it — so an `ERROR` filter also catches the entry's stack trace. The running level resets to
@@ -249,7 +251,10 @@ final class LogLineReader
     }
 
     /**
-     * Grow a window backward from the cursor until it holds `$limit` matches (or reaches the start).
+     * Grow a window backward from the cursor until it holds more than `$limit` matches (or reaches the start).
+     *
+     * One match beyond the page is what {@see tailPageFromMatches()} reads the "older page remains" answer off,
+     * so the window keeps growing past a full page until either that match turns up or the file runs out on the left.
      *
      * @param string $path Canonical file path
      * @param LogReadQuery $query Query providing the cursor and filters
@@ -292,7 +297,7 @@ final class LogLineReader
             }
 
             $matches = self::matchWindow($buffer, $windowStart, $windowStart > 0, $query);
-            if (count($matches) >= $limit || $windowStart === 0) {
+            if (count($matches) > $limit || $windowStart === 0) {
                 fclose($handle);
 
                 return self::tailPageFromMatches($matches, $limit);
@@ -346,7 +351,7 @@ final class LogLineReader
      * @param list<array{offset: int, line: LogLine}> $matches Matched lines with offsets, in file order
      * @param int $limit Positive page size
      *
-     * @return LogLinePage Last `$limit` lines in file order; cursor is the earliest kept line's offset when older content remains
+     * @return LogLinePage Last `$limit` lines in file order; cursor is the earliest kept line's offset when an older MATCH remains
      */
     private static function tailPageFromMatches(array $matches, int $limit): LogLinePage
     {
@@ -357,7 +362,7 @@ final class LogLineReader
 
         $earliestOffset = $kept[0]['offset'];
         $lines = array_map(static fn (array $match): LogLine => $match['line'], $kept);
-        $hasMore = $earliestOffset > 0;
+        $hasMore = count($matches) > $limit;
 
         return new LogLinePage(true, $lines, $hasMore ? $earliestOffset : null, $hasMore);
     }
