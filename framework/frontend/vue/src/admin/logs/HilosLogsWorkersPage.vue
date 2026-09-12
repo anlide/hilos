@@ -2,14 +2,15 @@
 (HilosPages.LOGS_WORKERS): the same stream list as the by-key page, but only the
 workers and with the one distinction that page folds away — the monopolistic worker
 against the ordinary ones. A row is one worker stream ON ONE NODE, so the node
-column, the node filter and the node in the footnote exist only where nodes have
-names. Search, the node filter and the All / Monopolistic only switch ride the open
-viewport filter map (server-side, no local filtering); the window is re-served by the
-page whenever the cluster picture moves. The screen commands nothing: the only way
-out of it is the Open button into the viewer (HIL-388). All table logic, the row
-view-model, the empty-state discrimination and the wording are the core headless's
-(hilosLogWorkers); this view owns only the markup, so a project mounts it by passing
-its HilosLogWorkersContext. Bootstrap classes only (styling-rules.md). -->
+column, the node filter, the node in the footnote and the node half of the search
+hint exist only where nodes have names. Search, the node filter and the All /
+Monopolistic only switch ride the open viewport filter map (server-side, no local
+filtering); the window is re-served by the page whenever the cluster picture moves.
+The screen commands nothing: the only way out of it is the Open button into the
+viewer (HIL-388). All table logic, the row view-model, the empty-state discrimination
+and the wording are the core headless's (hilosLogWorkers); this view owns only the
+markup, so a project mounts it by passing its HilosLogWorkersContext. Bootstrap
+classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosLogWorkersHeader,
@@ -20,6 +21,7 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
+  logWorkersSearchPlaceholder,
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
   HILOS_LOG_WORKER_TYPE_OPTIONS,
   HilosPages,
@@ -68,6 +70,12 @@ const search = useSignal(streamsTable.search)
 // question: in a single-node installation a column repeating one name and a filter
 // offering one option would both be furniture for a choice that does not exist.
 const clustered = computed(() => hasLogWorkerNodes(header.value))
+
+// The search hint follows the same header, so the field never offers a dimension
+// the list cannot match on.
+const searchPlaceholder = computed(() =>
+  logWorkersSearchPlaceholder(header.value),
+)
 
 // The sortable keys are the exported wire constants, which is where a typo would
 // actually cost something — they travel to the backend as the sort field. The type
@@ -201,7 +209,7 @@ function clearFilters(): void {
       :controller="streamsTable"
       :columns="columns"
       searchable
-      search-placeholder="Search by key or node…"
+      :search-placeholder="searchPlaceholder"
     >
       <template #row="{ row }">
         <td>
@@ -259,8 +267,11 @@ function clearFilters(): void {
         >
           <div class="fw-semibold">The log directory cannot be read</div>
           <p class="mb-0">
-            No node could read its log store. Check the log directory setting
-            and the permissions on it.
+            <template v-if="clustered">
+              No node could read its log store.
+            </template>
+            <template v-else>The log store could not be read.</template>
+            Check the log directory setting and the permissions on it.
           </p>
         </div>
         <div

@@ -10,6 +10,7 @@ import {
   hasRotationNodes,
   resolveHilosLogRotationRow,
   rotationsEmptyState,
+  rotationsSearchPlaceholder,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   HILOS_ROTATION_STATE_DUE,
@@ -178,6 +179,24 @@ describe('hasRotationNodes', () => {
 
   it('is true once the picture names nodes', () => {
     expect(hasRotationNodes(header({ nodes: ['node-1', 'node-2'] }))).toBe(true)
+  })
+})
+
+describe('rotationsSearchPlaceholder', () => {
+  it('offers only the batch date in a single-node installation, which has no node to match', () => {
+    expect(rotationsSearchPlaceholder(header({ nodes: [] }))).toBe(
+      'Search by batch date…',
+    )
+  })
+
+  it('offers only the batch date before the header arrives, so no offer is withdrawn', () => {
+    expect(rotationsSearchPlaceholder(null)).toBe('Search by batch date…')
+  })
+
+  it('offers the node once the picture names nodes', () => {
+    expect(rotationsSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
+      'Search by batch date or node…',
+    )
   })
 })
 

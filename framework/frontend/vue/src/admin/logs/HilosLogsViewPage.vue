@@ -401,7 +401,10 @@ function toggle(entry: HilosLogViewerEntry): void {
           class="px-3 mb-0 small text-body-secondary"
           data-id="hilos-log-empty-unreadable"
         >
-          No node could read its log store.
+          <template v-if="clustered">
+            No node could read its log store.
+          </template>
+          <template v-else>The log store could not be read.</template>
         </p>
         <p
           v-else-if="paneState === 'empty'"

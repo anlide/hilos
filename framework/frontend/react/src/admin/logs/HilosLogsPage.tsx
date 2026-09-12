@@ -470,9 +470,12 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                 />
                 The log directory cannot be read
               </div>
-              No node could read its log store. Check the log directory setting
-              and the permissions on it. The tiles stay empty rather than zero —
-              a zero would be a measurement nobody took.
+              {clustered
+                ? 'No node could read its log store.'
+                : 'The log store could not be read.'}{' '}
+              Check the log directory setting and the permissions on it. The
+              tiles stay empty rather than zero — a zero would be a measurement
+              nobody took.
             </div>
           ) : null}
         </>

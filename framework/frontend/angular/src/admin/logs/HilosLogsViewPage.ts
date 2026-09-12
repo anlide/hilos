@@ -252,7 +252,11 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
               class="px-3 mb-0 small text-body-secondary"
               data-id="hilos-log-empty-unreadable"
             >
-              No node could read its log store.
+              @if (clustered()) {
+                No node could read its log store.
+              } @else {
+                The log store could not be read.
+              }
             </p>
           } @else if (paneState() === 'empty') {
             <p

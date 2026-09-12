@@ -449,6 +449,25 @@ export function hasRotationNodes(
   return header !== null && header.nodes.length > 0
 }
 
+/**
+ * What the search field of the rotation history offers to search by.
+ *
+ * The node is named only where the node exists on the screen: in a single-node
+ * installation the search has no node to match, so offering one promises a
+ * dimension the list does not have. The wording follows the same header the node
+ * column follows, because two sentences about one mode, once they drift apart,
+ * leave a screen contradicting itself.
+ *
+ * @param header The latest header, or null before the first one arrives.
+ */
+export function rotationsSearchPlaceholder(
+  header: HilosLogRotationsHeader | null,
+): string {
+  return hasRotationNodes(header)
+    ? 'Search by batch date or node…'
+    : 'Search by batch date…'
+}
+
 /** What the rotation history has to say instead of rows. */
 export type HilosRotationsEmptyState =
   /** Rows to show, so no empty state at all. */

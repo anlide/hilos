@@ -1,8 +1,8 @@
-// HilosLogsWorkersPage — the framework Hilos by-worker page
-// (HilosPages.LOGS_WORKERS): the same stream list as the by-key page, but only the
-// workers and with the one distinction that page folds away — the monopolistic worker
-// against the ordinary ones. A row is one worker stream ON ONE NODE, so the node
-// column, the node filter and the node in the footnote exist only where nodes have
+// HilosLogsWorkersPage — the framework Hilos by-worker page (HilosPages.LOGS_WORKERS):
+// the same stream list as the by-key page, but only the workers and with the one
+// distinction that page folds away — the monopolistic worker against the ordinary ones.
+// A row is one worker stream ON ONE NODE, so the node column, the node filter, the node
+// in the footnote and the node half of the search hint exist only where nodes have
 // names. Search, the node filter and the All / Monopolistic only switch ride the open
 // viewport filter map (server-side, no local filtering); the window is re-served by the
 // page whenever the cluster picture moves. The screen commands nothing: the only way
@@ -36,6 +36,7 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
+  logWorkersSearchPlaceholder,
   subscribeSignal,
 } from '@hilos/core'
 import type {
@@ -107,7 +108,7 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
         [controller]="streams().controller"
         [columns]="columns()"
         [searchable]="true"
-        searchPlaceholder="Search by key or node…"
+        [searchPlaceholder]="searchPlaceholder()"
       >
         <ng-template #row let-row>
           <td>
@@ -169,8 +170,12 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
             <div data-id="hilos-log-worker-empty-unreadable">
               <div class="fw-semibold">The log directory cannot be read</div>
               <p class="mb-0">
-                No node could read its log store. Check the log directory
-                setting and the permissions on it.
+                @if (clustered()) {
+                  No node could read its log store.
+                } @else {
+                  The log store could not be read.
+                }
+                Check the log directory setting and the permissions on it.
               </p>
             </div>
           } @else if (emptyState() === 'nomatch') {
@@ -253,6 +258,12 @@ export class HilosLogsWorkersPage {
   // offering one option would both be furniture for a choice that does not exist.
   protected readonly clustered = computed(() =>
     hasLogWorkerNodes(this.header()),
+  )
+
+  // The search hint follows the same header, so the field never offers a dimension
+  // the list cannot match on.
+  protected readonly searchPlaceholder = computed(() =>
+    logWorkersSearchPlaceholder(this.header()),
   )
 
   // The sortable keys are the exported wire constants, which is where a typo would

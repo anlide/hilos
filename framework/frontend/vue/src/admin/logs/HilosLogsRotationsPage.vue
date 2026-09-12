@@ -1,22 +1,22 @@
 <!-- HilosLogsRotationsPage — the framework Hilos rotation-history page
 (HilosPages.LOGS_ROTATIONS): what already lies in the log archive, what it weighs,
-and what the retention rule recommends carrying off before the installation runs
-out of room. A row is one batch ON ONE NODE — the same rotation moment on two
-machines is two directories, carried off apart — so the node column and the node
-filter exist only where nodes have names. Search, the node filter and the
-All / awaiting switch ride the open viewport filter map (server-side, no local
-filtering); the window is re-served by the page whenever the cluster picture or
-the rule moves. A recommended batch carries the first of this screen's two
-commands: a modal saying where the batch lies and how to copy it off, and a
-confirmation that it was (HIL-483) — the badge then repaints when the holding
-node's next index arrives, not when the ack does. A taken batch carries the other
-half of that (HIL-759): a trigger that takes the word back while the batch is
-still on disk, behind a modal naming when its node's cleaner may first delete it.
-Deleting a taken batch is HIL-382, and there is no way through to the viewer yet
-because it takes no batch address (HIL-388). All table logic, the row
-view-model, the empty-state discrimination and the wording are the core headless's
-(hilosLogRotations); this view owns only the markup, so a project mounts it by
-passing its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
+and what the retention rule recommends carrying off before the installation runs out
+of room. A row is one batch ON ONE NODE — the same rotation moment on two machines is
+two directories, carried off apart — so the node column, the node filter and the node
+half of the search hint exist only where nodes have names. Search, the node filter
+and the All / awaiting switch ride the open viewport filter map (server-side, no
+local filtering); the window is re-served by the page whenever the cluster picture or
+the rule moves. A recommended batch carries the first of this screen's two commands:
+a modal saying where the batch lies and how to copy it off, and a confirmation that
+it was (HIL-483) — the badge then repaints when the holding node's next index
+arrives, not when the ack does. A taken batch carries the other half of that
+(HIL-759): a trigger that takes the word back while the batch is still on disk,
+behind a modal naming when its node's cleaner may first delete it. Deleting a taken
+batch is HIL-382, and there is no way through to the viewer yet because it takes no
+batch address (HIL-388). All table logic, the row view-model, the empty-state
+discrimination and the wording are the core headless's (hilosLogRotations); this view
+owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
+Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosLogRotationsActions,
@@ -29,6 +29,7 @@ import {
   formatRotationWeight,
   hasRotationNodes,
   rotationsEmptyState,
+  rotationsSearchPlaceholder,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   HILOS_PAGE_ROUTES,
@@ -87,6 +88,12 @@ const search = useSignal(rotationsTable.search)
 // single-node installation a column repeating one name and a filter offering one
 // option would both be furniture for a choice that does not exist.
 const clustered = computed(() => hasRotationNodes(header.value))
+
+// The search hint follows the same header, so the field never offers a dimension
+// the list cannot match on.
+const searchPlaceholder = computed(() =>
+  rotationsSearchPlaceholder(header.value),
+)
 
 // Declared as the loose HilosTableColumn rather than the row-typed form: the Files
 // column is three counts at once and belongs to no single field, so keying it to
@@ -354,7 +361,7 @@ const legendOpen = ref(false)
       :controller="rotationsTable"
       :columns="columns"
       searchable
-      search-placeholder="Search by batch date or node…"
+      :search-placeholder="searchPlaceholder"
     >
       <template #row="{ row }">
         <td>
@@ -421,8 +428,11 @@ const legendOpen = ref(false)
         >
           <div class="fw-semibold">The log directory cannot be read</div>
           <p class="mb-0">
-            No node could read its log store. Check the log directory setting
-            and the permissions on it.
+            <template v-if="clustered">
+              No node could read its log store.
+            </template>
+            <template v-else>The log store could not be read.</template>
+            Check the log directory setting and the permissions on it.
           </p>
         </div>
         <div

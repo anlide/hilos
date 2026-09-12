@@ -1,8 +1,8 @@
-// HilosLogsWorkersPage — the framework Hilos by-worker page
-// (HilosPages.LOGS_WORKERS): the same stream list as the by-key page, but only the
-// workers and with the one distinction that page folds away — the monopolistic worker
-// against the ordinary ones. A row is one worker stream ON ONE NODE, so the node
-// column, the node filter and the node in the footnote exist only where nodes have
+// HilosLogsWorkersPage — the framework Hilos by-worker page (HilosPages.LOGS_WORKERS):
+// the same stream list as the by-key page, but only the workers and with the one
+// distinction that page folds away — the monopolistic worker against the ordinary ones.
+// A row is one worker stream ON ONE NODE, so the node column, the node filter, the node
+// in the footnote and the node half of the search hint exist only where nodes have
 // names. Search, the node filter and the All / Monopolistic only switch ride the open
 // viewport filter map (server-side, no local filtering); the window is re-served by the
 // page whenever the cluster picture moves. The screen commands nothing: the only way
@@ -29,6 +29,7 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
+  logWorkersSearchPlaceholder,
 } from '@hilos/core'
 import type {
   HilosLogWorkerRow,
@@ -148,6 +149,10 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
   const clustered = hasLogWorkerNodes(header)
   const columns = workerColumns(clustered)
 
+  // The search hint follows the same header, so the field never offers a dimension
+  // the list cannot match on.
+  const searchPlaceholder = logWorkersSearchPlaceholder(header)
+
   // Domain filters: the node and the type ride the open filter map so the backend
   // narrows the window (no local filtering). Empty clears the filter.
   const [nodeFilter, setNodeFilter] = useState('')
@@ -232,7 +237,7 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
         controller={streamsTable}
         columns={columns}
         searchable
-        searchPlaceholder="Search by key or node…"
+        searchPlaceholder={searchPlaceholder}
         row={(row: HilosLogWorkerRow) => (
           <>
             <td>
@@ -294,8 +299,10 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
                 The log directory cannot be read
               </div>
               <p className="mb-0">
-                No node could read its log store. Check the log directory
-                setting and the permissions on it.
+                {clustered
+                  ? 'No node could read its log store.'
+                  : 'The log store could not be read.'}{' '}
+                Check the log directory setting and the permissions on it.
               </p>
             </div>
           ) : emptyState === 'nomatch' ? (

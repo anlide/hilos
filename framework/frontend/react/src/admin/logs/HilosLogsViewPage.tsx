@@ -441,7 +441,9 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
               className="px-3 mb-0 small text-body-secondary"
               data-id="hilos-log-empty-unreadable"
             >
-              No node could read its log store.
+              {clustered
+                ? 'No node could read its log store.'
+                : 'The log store could not be read.'}
             </p>
           ) : paneState === 'empty' ? (
             <p

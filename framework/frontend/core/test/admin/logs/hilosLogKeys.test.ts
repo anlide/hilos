@@ -8,6 +8,7 @@ import {
   hasLogKeyNodes,
   logKeyViewerPath,
   logKeysEmptyState,
+  logKeysSearchPlaceholder,
   resolveHilosLogKeyRow,
   HILOS_LOG_CLASS_AGENT,
   HILOS_LOG_CLASS_WORKER,
@@ -153,6 +154,24 @@ describe('hasLogKeyNodes', () => {
 
   it('is true once the picture names nodes', () => {
     expect(hasLogKeyNodes(header({ nodes: ['node-1', 'node-2'] }))).toBe(true)
+  })
+})
+
+describe('logKeysSearchPlaceholder', () => {
+  it('offers only the key in a single-node installation, which has no node to match', () => {
+    expect(logKeysSearchPlaceholder(header({ nodes: [] }))).toBe(
+      'Search by key…',
+    )
+  })
+
+  it('offers only the key before the header arrives, so no offer is withdrawn', () => {
+    expect(logKeysSearchPlaceholder(null)).toBe('Search by key…')
+  })
+
+  it('offers the node once the picture names nodes', () => {
+    expect(logKeysSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
+      'Search by key or node…',
+    )
   })
 })
 

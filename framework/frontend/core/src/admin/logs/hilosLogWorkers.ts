@@ -297,6 +297,23 @@ export function hasLogWorkerNodes(
   return header !== null && header.nodes.length > 0
 }
 
+/**
+ * What the search field of the worker-stream list offers to search by.
+ *
+ * The node is named only where the node exists on the screen: in a single-node
+ * installation the search has no node to match, so offering one promises a
+ * dimension the list does not have. The wording follows the same header the node
+ * column follows, because two sentences about one mode, once they drift apart,
+ * leave a screen contradicting itself.
+ *
+ * @param header The latest header, or null before the first one arrives.
+ */
+export function logWorkersSearchPlaceholder(
+  header: HilosLogWorkersHeader | null,
+): string {
+  return hasLogWorkerNodes(header) ? 'Search by key or node…' : 'Search by key…'
+}
+
 /** What the worker-stream list has to say instead of rows. */
 export type HilosLogWorkersEmptyState =
   /** Rows to show, so no empty state at all. */

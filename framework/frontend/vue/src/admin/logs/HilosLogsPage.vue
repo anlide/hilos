@@ -422,9 +422,12 @@ const rotationsPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_ROTATIONS]
           <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
           The log directory cannot be read
         </div>
-        No node could read its log store. Check the log directory setting and
-        the permissions on it. The tiles stay empty rather than zero — a zero
-        would be a measurement nobody took.
+        <template v-if="clustered">
+          No node could read its log store.
+        </template>
+        <template v-else>The log store could not be read.</template>
+        Check the log directory setting and the permissions on it. The tiles
+        stay empty rather than zero — a zero would be a measurement nobody took.
       </div>
     </template>
   </HilosAdminPage>

@@ -397,9 +397,14 @@ import { HilosLink } from '../../HilosLink.js'
               <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
               The log directory cannot be read
             </div>
-            No node could read its log store. Check the log directory setting
-            and the permissions on it. The tiles stay empty rather than zero — a
-            zero would be a measurement nobody took.
+            @if (clustered()) {
+              No node could read its log store.
+            } @else {
+              The log store could not be read.
+            }
+            Check the log directory setting and the permissions on it. The tiles
+            stay empty rather than zero — a zero would be a measurement nobody
+            took.
           </div>
         }
       </ng-container>

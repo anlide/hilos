@@ -8,6 +8,7 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
+  logWorkersSearchPlaceholder,
   resolveHilosLogWorkerRow,
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
   HILOS_LOG_WORKER_TYPE_REGULAR,
@@ -224,6 +225,24 @@ describe('hasLogWorkerNodes', () => {
   it('is true once the picture names nodes', () => {
     expect(hasLogWorkerNodes(header({ nodes: ['node-1', 'node-2'] }))).toBe(
       true,
+    )
+  })
+})
+
+describe('logWorkersSearchPlaceholder', () => {
+  it('offers only the key in a single-node installation, which has no node to match', () => {
+    expect(logWorkersSearchPlaceholder(header({ nodes: [] }))).toBe(
+      'Search by key…',
+    )
+  })
+
+  it('offers only the key before the header arrives, so no offer is withdrawn', () => {
+    expect(logWorkersSearchPlaceholder(null)).toBe('Search by key…')
+  })
+
+  it('offers the node once the picture names nodes', () => {
+    expect(logWorkersSearchPlaceholder(header({ nodes: ['node-1'] }))).toBe(
+      'Search by key or node…',
     )
   })
 })

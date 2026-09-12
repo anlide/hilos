@@ -1,16 +1,16 @@
-// HilosLogsKeysPage — the framework Hilos by-key page (HilosPages.LOGS_KEYS):
-// which log streams the installation has, what each of them weighs, and how fast it
-// grows. A key is a file name that survives rotation, and a row is one key ON ONE
-// NODE — the same worker-0.log on two machines is two files, carried off apart — so
-// the node column and the node filter exist only where nodes have names. Search, the
-// node filter and the All / Agents / Workers switch ride the open viewport filter map
-// (server-side, no local filtering); the window is re-served by the page whenever the
-// cluster picture moves. The screen commands nothing: the only way out of it is the
-// Open button into the viewer (HIL-388). The monopolistic workers are folded in with
-// the ordinary ones here, and the daemon's own streams are not in the list at all.
-// All table logic, the row view-model, the empty-state discrimination and the wording
-// are the core headless's (hilosLogKeys); this view owns only the markup, so a project
-// mounts it by passing its HilosLogKeysContext. Bootstrap classes only
+// HilosLogsKeysPage — the framework Hilos by-key page (HilosPages.LOGS_KEYS): which log
+// streams the installation has, what each of them weighs, and how fast it grows. A key
+// is a file name that survives rotation, and a row is one key ON ONE NODE — the same
+// worker-0.log on two machines is two files, carried off apart — so the node column,
+// the node filter and the node half of the search hint exist only where nodes have
+// names. Search, the node filter and the All / Agents / Workers switch ride the open
+// viewport filter map (server-side, no local filtering); the window is re-served by the
+// page whenever the cluster picture moves. The screen commands nothing: the only way
+// out of it is the Open button into the viewer (HIL-388). The monopolistic workers are
+// folded in with the ordinary ones here, and the daemon's own streams are not in the
+// list at all. All table logic, the row view-model, the empty-state discrimination and
+// the wording are the core headless's (hilosLogKeys); this view owns only the markup,
+// so a project mounts it by passing its HilosLogKeysContext. Bootstrap classes only
 // (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -33,6 +33,7 @@ import {
   hasLogKeyNodes,
   logKeyViewerPath,
   logKeysEmptyState,
+  logKeysSearchPlaceholder,
 } from '@hilos/core'
 import type {
   HilosLogKeyRow,
@@ -151,6 +152,10 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
   const clustered = hasLogKeyNodes(header)
   const columns = keyColumns(clustered)
 
+  // The search hint follows the same header, so the field never offers a dimension
+  // the list cannot match on.
+  const searchPlaceholder = logKeysSearchPlaceholder(header)
+
   // Domain filters: the node and the class ride the open filter map so the backend
   // narrows the window (no local filtering). Empty clears the filter.
   const [nodeFilter, setNodeFilter] = useState('')
@@ -242,7 +247,7 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
         controller={streamsTable}
         columns={columns}
         searchable
-        searchPlaceholder="Search by key or node…"
+        searchPlaceholder={searchPlaceholder}
         row={(row: HilosLogKeyRow) => (
           <>
             <td>
@@ -308,8 +313,10 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
                 The log directory cannot be read
               </div>
               <p className="mb-0">
-                No node could read its log store. Check the log directory
-                setting and the permissions on it.
+                {clustered
+                  ? 'No node could read its log store.'
+                  : 'The log store could not be read.'}{' '}
+                Check the log directory setting and the permissions on it.
               </p>
             </div>
           ) : emptyState === 'nomatch' ? (
