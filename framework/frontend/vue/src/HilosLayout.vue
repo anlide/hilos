@@ -2,10 +2,11 @@
 app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand, nav, and user slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
-the SDK owns (core-and-connection.md), a full-width banner region below the nav a
-project fills with an app-wide status strip (e.g. an impersonation banner) — empty
-and zero-height otherwise — through the #banner slot, the routed page content in
-the default slot, and a footer of the public framework pages
+the SDK owns (core-and-connection.md), a full-width banner region below the nav
+carrying, in this order, the framework's own protected-mode strip and the app-wide
+status strip a project fills (e.g. an impersonation banner) through the #banner
+slot — one live region for both, empty and zero-height while neither is up — the
+routed page content in the default slot, and a footer of the public framework pages
 (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100): the
 nav, banner, and footer never scroll (flex-shrink-0) and the main region grows
 and scrolls its own overflow (min-h-0 + overflow-auto), so a page either scrolls

@@ -1,17 +1,19 @@
 // HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
-// app frame a project fills rather than re-implements. The brand and nav regions
-// are projected content and the routed page content is the default slot. It
-// renders the top navigation bar carrying the brand and nav, the framework admin
-// entry (the gear linking to the Hilos dashboard), the live connection indicator
-// the SDK owns (core-and-connection.md), a full-width banner region below the nav
-// a project fills with an app-wide status strip (e.g. an impersonation banner) —
-// empty and zero-height otherwise — through a projected [banner] node, the
-// content, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The
-// shell is a fixed-height viewport column (vh-100): the nav, banner, and footer
-// never scroll (flex-shrink-0) and the main region grows and scrolls its own
-// overflow (min-h-0 + overflow-auto), so a page either scrolls inside main or —
-// like the chat page — fills it and scrolls an inner region rather than the
-// whole document. The brand, the gear, and the footer links are HilosLinks —
+// app frame a project fills rather than re-implements. The brand and nav
+// regions are projected content and the routed page content is the default
+// slot. It renders the top navigation bar carrying the brand and nav, the
+// framework admin entry (the gear linking to the Hilos dashboard), the live
+// connection indicator the SDK owns (core-and-connection.md), a full-width
+// banner region below the nav carrying, in this order, the framework's own
+// protected-mode strip and the app-wide status strip a project fills (e.g. an
+// impersonation banner) through a projected [banner] node — one live region for
+// both, empty and zero-height while neither is up — the content, and a footer
+// of the public framework pages (HILOS_FOOTER_LINKS). The shell is a
+// fixed-height viewport column (vh-100): the nav, banner, and footer never
+// scroll (flex-shrink-0) and the main region grows and scrolls its own overflow
+// (min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
+// chat page — fills it and scrolls an inner region rather than the whole
+// document. The brand, the gear, and the footer links are HilosLinks —
 // no-refresh navigation that leaves the socket alive — so the shell alone moves
 // between the project home, the admin section, and the public pages. While the
 // connection reports protected mode the shell becomes the maintenance surface
@@ -160,14 +162,13 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             </div>
           </div>
         </nav>
-        <!-- The framework strip stands above the app-banner region, not inside
-        it, and so keeps a live region of its own. Moving it in - and dropping
-        that second live region - is HIL-935; until then the "the SDK speaks
-        first" order is held by this block preceding the region rather than by
-        the region's own child order (the Vue shell, where the strip is already
-        the region's first child). -->
-        @if (verificationBanner(); as bannerMessage) {
-          <div class="flex-shrink-0" role="status" aria-live="polite">
+        <div
+          class="flex-shrink-0"
+          role="status"
+          aria-live="polite"
+          data-id="app-banner"
+        >
+          @if (verificationBanner(); as bannerMessage) {
             <div
               class="alert alert-warning border-0 rounded-0 mb-0 py-2"
               data-id="protected-mode-banner"
@@ -184,14 +185,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                 </span>
               </div>
             </div>
-          </div>
-        }
-        <div
-          class="flex-shrink-0"
-          role="status"
-          aria-live="polite"
-          data-id="app-banner"
-        >
+          }
           <ng-content select="[banner]" />
         </div>
         <main

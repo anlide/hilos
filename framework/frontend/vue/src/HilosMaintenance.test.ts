@@ -188,10 +188,13 @@ function fakeConnection(
   }
 }
 
-function mountShell(connection: HilosConnection) {
+function mountShell(connection: HilosConnection, banner?: string) {
   return mount(HilosLayout, {
     props: { connection },
-    slots: { default: '<p data-id="page-body">Page</p>' },
+    slots: {
+      default: '<p data-id="page-body">Page</p>',
+      ...(banner === undefined ? {} : { banner }),
+    },
   })
 }
 
@@ -652,5 +655,51 @@ describe('HilosLayout under protected mode', () => {
       'Restoring a backup',
     )
     expect(wrapper.find('[data-id="page-body"]').exists()).toBe(false)
+  })
+})
+
+describe('HilosLayout banner region', () => {
+  it('puts the framework strip inside the banner region', () => {
+    const wrapper = mountShell(fakeConnection(ADMITTED).connection)
+
+    const region = wrapper.find('[data-id="app-banner"]')
+
+    expect(
+      region.element.querySelector('[data-id="protected-mode-banner"]'),
+    ).not.toBeNull()
+  })
+
+  it('adds no live region of its own when the strip goes up', () => {
+    // The shell always carries live regions of its own - the page title, the
+    // connection indicator, this region - so what the strip owes is a delta of
+    // zero, not a document with exactly one of them.
+    const live = '[role="status"][aria-live="polite"]'
+    const down = mountShell(fakeConnection(PROTECTED_MODE_INACTIVE).connection)
+    const up = mountShell(fakeConnection(ADMITTED).connection)
+
+    expect(up.element.querySelectorAll(live).length).toBe(
+      down.element.querySelectorAll(live).length,
+    )
+  })
+
+  it('keeps the framework strip above the one a project passes', () => {
+    const wrapper = mountShell(
+      fakeConnection(ADMITTED).connection,
+      '<p data-id="test-banner">Acting for someone else</p>',
+    )
+
+    // The order is the region's own child order, not the order two independent
+    // blocks happen to be written in.
+    const region = wrapper.find('[data-id="app-banner"]')
+    const children = Array.from(region.element.children)
+    const strip = children.findIndex(
+      (child) => child.getAttribute('data-id') === 'protected-mode-banner',
+    )
+    const passed = children.findIndex(
+      (child) => child.getAttribute('data-id') === 'test-banner',
+    )
+
+    expect(strip).toBeGreaterThanOrEqual(0)
+    expect(passed).toBeGreaterThan(strip)
   })
 })

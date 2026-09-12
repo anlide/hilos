@@ -718,4 +718,48 @@ describe('HilosLayout banner region', () => {
     expect(region).toBeGreaterThan(nav)
     expect(region).toBeLessThan(main)
   })
+
+  it('puts the framework strip inside the banner region', () => {
+    const container = renderShell(fakeConnection(ADMITTED).connection)
+
+    const region = surface(container, 'app-banner')
+
+    expect(
+      region?.querySelector('[data-id="protected-mode-banner"]'),
+    ).not.toBeNull()
+  })
+
+  it('adds no live region of its own when the strip goes up', () => {
+    // The shell always carries live regions of its own - the page title, the
+    // connection indicator, this region - so what the strip owes is a delta of
+    // zero, not a document with exactly one of them.
+    const live = '[role="status"][aria-live="polite"]'
+    const down = renderShell(fakeConnection(PROTECTED_MODE_INACTIVE).connection)
+    const up = renderShell(fakeConnection(ADMITTED).connection)
+
+    expect(up.querySelectorAll(live).length).toBe(
+      down.querySelectorAll(live).length,
+    )
+  })
+
+  it('keeps the framework strip above the one a project passes', () => {
+    const container = renderShell(
+      fakeConnection(ADMITTED).connection,
+      <p data-id="test-banner">Acting for someone else</p>,
+    )
+
+    // The order is the region's own child order now, not the order two
+    // independent blocks happen to be written in.
+    const region = surface(container, 'app-banner')
+    const children = Array.from(region?.children ?? [])
+    const strip = children.findIndex(
+      (child) => child.getAttribute('data-id') === 'protected-mode-banner',
+    )
+    const passed = children.findIndex(
+      (child) => child.getAttribute('data-id') === 'test-banner',
+    )
+
+    expect(strip).toBeGreaterThanOrEqual(0)
+    expect(passed).toBeGreaterThan(strip)
+  })
 })
