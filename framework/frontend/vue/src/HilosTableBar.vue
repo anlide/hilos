@@ -1,6 +1,9 @@
 <!-- HilosTableBar — the strip above a table, drawn from what the page DECLARED
 (HilosTableFrame) and never from props of its own: the title and subtitle, the
-search box, the declared filters, and the one main action pinned right. It holds
+search box, the declared filters, and the one main action pinned right. Under the
+title it shows EITHER those controls OR the selection panel, never both: actions
+over one record and over twenty standing side by side is the confusion the panel
+exists against (mockups/components/table section 6). It holds
 NO table logic — the controller owns the descriptor, and every control here is a
 call into it (multiframework-core.md). Internal to the Vue view layer on purpose:
 it is not exported from index.ts, because a bar has no meaning away from the
@@ -13,6 +16,7 @@ import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
 import HilosDropdown from './HilosDropdown.vue'
 import HilosModal from './HilosModal.vue'
 import HilosTableFilterControl from './HilosTableFilterControl.vue'
+import HilosTableSelection from './HilosTableSelection.vue'
 import type { HilosDropdownOption } from './hilosDropdown.js'
 import { useSignal } from './useSignal.js'
 
@@ -90,6 +94,41 @@ function filterKey(view: HilosTableFilterView): string {
     : view.filter.key
 }
 
+// A table has marks exactly when its page declared bulk operations, and that never
+// changes over its life — so the panel is MOUNTED on that sign and only shows itself
+// on the three below. What it carries is a dialog, and a dialog owns the page's
+// scroll lock; one that came and went with what the server sends would pass that
+// lock around on nobody's behalf. The filters dialog below is gated the same way and
+// for the same reason.
+const selectionEnabled = props.controller.selection.enabled
+
+const selectionTarget = useSignal(props.controller.selection.target)
+const bulkProgress = useSignal(props.controller.progress.bulk)
+const bulkReport = useSignal(props.controller.bulk.report)
+
+// Which run's report the reader has dismissed. It is state of the VIEW and kept
+// against the key of the run: the core holds its report until the next run
+// replaces it, on purpose, and a new run brings a new key and is shown again
+// (Flow F12).
+const dismissedReport = ref<string | null>(null)
+const shownReport = computed(() =>
+  bulkReport.value !== null &&
+  bulkReport.value.progressKey !== dismissedReport.value
+    ? bulkReport.value
+    : null,
+)
+
+// What stands in the strip: the selection panel while ANY of its three counts
+// holds — something marked, a run going, or a report on screen — and the ordinary
+// controls otherwise. Worked out once and read by both, so the two can never
+// stand at the same time (Flow F4).
+const selectionPanel = computed(
+  () =>
+    selectionTarget.value !== null ||
+    bulkProgress.value !== null ||
+    shownReport.value !== null,
+)
+
 // Narrow screens put the filters in a modal rather than an offcanvas of the
 // SDK's own: the SDK ships Bootstrap's CSS and not its JS, so an offcanvas would
 // be a second way of showing a surface over the screen — one every other view
@@ -117,7 +156,10 @@ function onSearchInput(event: Event): void {
     </div>
 
     <div
-      v-if="searchBox || filters.length > 0 || mainAction || orders.length > 0"
+      v-if="
+        !selectionPanel &&
+        (searchBox || filters.length > 0 || mainAction || orders.length > 0)
+      "
       class="d-flex flex-wrap align-items-center gap-2 mb-3"
     >
       <div
@@ -238,6 +280,18 @@ function onSearchInput(event: Event): void {
         {{ mainAction.label }}
       </button>
     </div>
+
+    <HilosTableSelection
+      v-if="selectionEnabled"
+      :controller="controller"
+      :shown="selectionPanel"
+      :report="shownReport"
+      @dismiss="dismissedReport = $event"
+    >
+      <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
+        <slot name="bulk-untouched" v-bind="untouched" />
+      </template>
+    </HilosTableSelection>
 
     <!-- Under the same condition as the button that opens it: a table with no
     filters has nothing to show here, and a closed HilosModal is not free —

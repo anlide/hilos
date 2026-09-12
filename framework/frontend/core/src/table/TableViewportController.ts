@@ -797,10 +797,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * bulk operations still has this to read — `enabled` is then false, the four
    * inputs stay silent, and the state reads empty.
    *
-   * SCAFFOLD: read by the selection panel and the checkbox column, which are
-   * HIL-801 (Vue) and HIL-810 (React, Angular), and by the view that sends a bulk
-   * action over what is marked, which is HIL-804 (Vue) and HIL-813 (React,
-   * Angular). No table declares bulk operations until HIL-819.
+   * SCAFFOLD: the Vue panel, its checkbox column and the send over what is marked
+   * read it; React and Angular follow in HIL-810 and HIL-813, and no table declares
+   * bulk operations until HIL-819.
    */
   get selection(): HilosTableSelectionState {
     return this.selectionState
@@ -836,8 +835,8 @@ export class TableViewportController<R> implements TableWindowSink {
    * It stands until the next run on this table begins, which is the one thing that
    * clears it.
    *
-   * SCAFFOLD: read by the selection panel, which is HIL-804 (Vue) and HIL-813 (React,
-   * Angular). No table declares bulk operations until HIL-819.
+   * SCAFFOLD: the Vue selection panel reads it; React and Angular follow in
+   * HIL-813, and no table declares bulk operations until HIL-819.
    */
   get bulk(): HilosTableBulkState {
     return this.bulkState

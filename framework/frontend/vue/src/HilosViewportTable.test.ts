@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { TableViewportController } from '@hilos/core'
 import type {
+  ActionHandle,
+  HilosTableBulkAccepted,
   HilosTableColumn,
   HilosTableFrame,
   HilosTableProgress,
@@ -10,6 +12,10 @@ import type {
 } from '@hilos/core'
 
 import HilosViewportTable from './HilosViewportTable.vue'
+import {
+  hilosTableSelectionEdgeKey,
+  type HilosTableSelectionEdge,
+} from './hilosTableSelectionEdge.js'
 
 interface Row {
   name: string
@@ -18,6 +24,14 @@ interface Row {
 const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
+
+/**
+ * The sender of the declared operation, which this file never presses: the column
+ * is what it is about, and the panel that presses is tested next door.
+ */
+function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+  throw new Error('the declaration is only read here')
+}
 
 // A second sortable column, for the one test about an order that runs by two.
 const TWO_COLUMNS: HilosTableColumn[] = [
@@ -557,6 +571,222 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(wrapper.findAll('[data-id="hilos-table-search"]')).toHaveLength(1)
     expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="hilos-table-pending"]').text()).toBe('1')
+  })
+})
+
+describe('HilosViewportTable with a selection column', () => {
+  // The table of a page that declared one bulk operation — the one sign that it
+  // has marks at all, and the whole reason the column stands.
+  const BULK_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: COLUMNS,
+    bulkActions: [
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    ],
+  }
+
+  /** The same table with nothing declared for marked rows. */
+  const PLAIN_FRAME: HilosTableFrame = { title: 'Backups', columns: COLUMNS }
+
+  function mountWithEdge(
+    controller: TableViewportController<unknown>,
+    edge?: HilosTableSelectionEdge,
+    columns: HilosTableColumn[] = COLUMNS,
+  ) {
+    return mount(HilosViewportTable, {
+      props: { controller, columns },
+      slots: {
+        row: (props: { row: unknown; rowKey: string }) =>
+          h('td', {}, (props.row as Row).name),
+      },
+      global:
+        edge === undefined
+          ? {}
+          : { provide: { [hilosTableSelectionEdgeKey as symbol]: edge } },
+    })
+  }
+
+  function window(controller: TableViewportController<unknown>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  it('draws no checkbox column for a table that declared no bulk operations', () => {
+    const { controller } = makeController(PLAIN_FRAME)
+    window(controller)
+    const wrapper = mountWithEdge(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-select-page"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-select-a"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.findAll('thead th')).toHaveLength(COLUMNS.length)
+  })
+
+  it('puts the column first by default and last where the app asked for the end', () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+
+    const left = mountWithEdge(controller)
+    expect(
+      left.findAll('thead th')[0]?.classes('hilos-table-selection-cell'),
+    ).toBe(true)
+    const leftCells = left.findAll('[data-id="hilos-table-row-a"] td')
+    expect(leftCells[0]?.find('input').attributes('data-id')).toBe(
+      'hilos-table-select-a',
+    )
+
+    const right = mountWithEdge(controller, 'end')
+    const headers = right.findAll('thead th')
+    expect(
+      headers[headers.length - 1]?.classes('hilos-table-selection-cell'),
+    ).toBe(true)
+    const rightCells = right.findAll('[data-id="hilos-table-row-a"] td')
+    expect(
+      rightCells[rightCells.length - 1]?.find('input').attributes('data-id'),
+    ).toBe('hilos-table-select-a')
+  })
+
+  it('stands after the row-state cell on the end edge', async () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    // A waiting change is what raises the row-state cell, so both framework cells
+    // stand and their order can be read at all.
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    const wrapper = mountWithEdge(controller, 'end')
+    await wrapper.vm.$nextTick()
+
+    const headers = wrapper.findAll('thead th')
+    expect(headers).toHaveLength(COLUMNS.length + 2)
+    expect(headers[COLUMNS.length]?.classes('text-end')).toBe(true)
+    expect(
+      headers[COLUMNS.length + 1]?.classes('hilos-table-selection-cell'),
+    ).toBe(true)
+  })
+
+  it('tells the core the state each checkbox is now in', async () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    const wrapper = mountWithEdge(controller)
+
+    const row = wrapper.find('[data-id="hilos-table-select-a"]')
+    await row.setValue(true)
+    expect(controller.selection.count.get()).toBe(1)
+    await row.setValue(false)
+    expect(controller.selection.count.get()).toBe(0)
+
+    const header = wrapper.find('[data-id="hilos-table-select-page"]')
+    await header.setValue(true)
+    expect(controller.selection.count.get()).toBe(2)
+    await header.setValue(false)
+    expect(controller.selection.count.get()).toBe(0)
+  })
+
+  it('shows the header checkbox empty, half-marked and full', async () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    const wrapper = mountWithEdge(controller)
+    const header = wrapper.find<HTMLInputElement>(
+      '[data-id="hilos-table-select-page"]',
+    )
+
+    expect(header.element.checked).toBe(false)
+    expect(header.element.indeterminate).toBe(false)
+
+    controller.selectRow('a', true)
+    await wrapper.vm.$nextTick()
+    expect(header.element.checked).toBe(false)
+    expect(header.element.indeterminate).toBe(true)
+
+    controller.selectRow('b', true)
+    await wrapper.vm.$nextTick()
+    expect(header.element.checked).toBe(true)
+    expect(header.element.indeterminate).toBe(false)
+  })
+
+  it('gives a row shown as a placeholder no checkbox', async () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const wrapper = mountWithEdge(controller)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-placeholder"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="hilos-table-select-a"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-select-b"]').exists()).toBe(true)
+  })
+
+  it('counts the checkbox column into every cell that spans the row', async () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const wrapper = mountWithEdge(controller)
+    await wrapper.vm.$nextTick()
+
+    // The placeholder spans the declared columns and the checkbox column; nothing
+    // is waiting after the apply, so the row-state cell is not standing.
+    expect(
+      wrapper.find('[data-id="hilos-table-placeholder"]').attributes('colspan'),
+    ).toBe(String(COLUMNS.length + 1))
+
+    const empty = makeController(BULK_FRAME)
+    empty.controller.ingestWindow([], 0, true, null, null, 10)
+    const emptyWrapper = mountWithEdge(empty.controller)
+    expect(emptyWrapper.find('tbody td').attributes('colspan')).toBe(
+      String(COLUMNS.length + 1),
+    )
+  })
+
+  it('adds an empty segment to a row bar so it stays as wide as its header', async () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'p1',
+      rowKey: 'a',
+      current: 1,
+      total: 4,
+      ended: false,
+    })
+    const wrapper = mountWithEdge(controller)
+    await wrapper.vm.$nextTick()
+
+    const cells = wrapper.findAll('[data-id="hilos-table-progress-row-a"] td')
+    const span = cells.reduce(
+      (total, cell) => total + Number(cell.attributes('colspan') ?? 1),
+      0,
+    )
+    expect(span).toBe(COLUMNS.length + 1)
+    expect(cells[0]?.attributes('colspan')).toBe('1')
   })
 })
 

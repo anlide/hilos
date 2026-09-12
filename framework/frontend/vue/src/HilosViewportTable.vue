@@ -12,6 +12,9 @@ A field that did not fit a column of its own is declared `detail` and waits in a
 panel under the row: the framework owns the room, the order and the labels, while
 the page draws every value through a `#detail-<key>` slot, exactly as it draws a
 cell (mockups/components/table section 4).
+A table whose page declared bulk operations also carries the framework's checkbox
+column, on whichever edge the installation provided — one choice for the whole
+application rather than a prop of this table (mockups/components/table section 6).
 Running work is drawn as a bar — above the table for work over the set, and in a
 row of its own under a row for work over that one row, stretched under whichever
 columns declared themselves. The room and the track are the framework's, while
@@ -24,7 +27,7 @@ not — two epochs of the same table living side by side while the five framewor
 pages have not moved onto the declaration yet (HIL-819). -->
 
 <script setup lang="ts" generic="R">
-import { computed, useId } from 'vue'
+import { computed, inject, useId } from 'vue'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
@@ -47,6 +50,7 @@ import type {
 import HilosTableBar from './HilosTableBar.vue'
 import HilosTableFooter from './HilosTableFooter.vue'
 import HilosTableProgress from './HilosTableProgress.vue'
+import { hilosTableSelectionEdgeKey } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -100,6 +104,19 @@ const titleId = useId()
 // the panel itself are drawn in two places of one template.
 const detailBaseId = useId()
 
+// Which edge the checkbox column sits on — one choice for the whole installation
+// and not a prop of this table, because two tables of one product disagreeing
+// about it is the very thing the rule forbids (Design D5). A project that
+// provided nothing gets the left edge, where lists usually keep it.
+const selectionEdge = inject(hilosTableSelectionEdgeKey, 'start')
+
+// The marks, and the one sign that this table has them: a page that declared bulk
+// operations. There is no second sign — a table drawing its frame from props has
+// no declaration, so `enabled` is already false for it (Flow F14).
+const selection = props.controller.selection
+const selectionEnabled = selection.enabled
+const selectionHeader = useSignal(selection.header)
+
 const rows = useSignal(props.controller.rows)
 const search = useSignal(props.controller.search)
 const order = useSignal(props.controller.order)
@@ -112,8 +129,8 @@ const pendingCount = useSignal(props.controller.pendingCount)
 const announced = useSignal(props.controller.announced)
 const loaded = useSignal(props.controller.loaded)
 
-// The bars this view draws. The third place of work, the bulk bar, lives inside
-// the selection panel, and there is no panel in Vue yet (HIL-804) — drawn
+// The two bars this view draws itself. The third place of work, the bulk bar,
+// lives inside the selection panel and is drawn by the bar above the table —
 // anywhere else it would take the room the table bar gives to the project.
 const tableProgress = useSignal(props.controller.progress.table)
 const rowProgress = useSignal(props.controller.progress.rows)
@@ -162,9 +179,14 @@ const markColumn = computed(
 
 // Every cell that spans the whole row — the placeholder of a removed row, the panel a
 // row expands into, the empty and loading states — counts the columns left standing in
-// the row plus the mark column while it stands.
+// the row plus the mark column while it stands plus the checkbox column while the
+// table has marks. This is the ONE place the width is worked out, and everything that
+// spans a row reads it rather than counting again.
 const bodyColspan = computed(
-  () => rowColumns.value.length + (markColumn.value ? 1 : 0),
+  () =>
+    rowColumns.value.length +
+    (markColumn.value ? 1 : 0) +
+    (selectionEnabled ? 1 : 0),
 )
 
 /** One cell of a row bar's row: how many columns it spans, and whether the bar is under it. */
@@ -174,6 +196,7 @@ type ProgressCell = { span: number; covered: boolean }
 // marked columns merge into one covered cell, runs of unmarked ones into one
 // empty cell, and the waiting cell is added exactly while it stands over the
 // ordinary rows. No column marked means one covered cell across the whole row.
+// The checkbox column takes an empty cell of its own on whichever edge it sits.
 //
 // The spans add up to bodyColspan by construction, which is what keeps the row
 // from growing wider than its header the moment a waiting change appears.
@@ -196,6 +219,14 @@ const progressCells = computed<readonly ProgressCell[]>(() => {
   }
   if (markColumn.value) {
     cells.push({ span: 1, covered: false })
+  }
+  if (selectionEnabled) {
+    const selectionCell: ProgressCell = { span: 1, covered: false }
+    if (selectionEdge === 'start') {
+      cells.unshift(selectionCell)
+    } else {
+      cells.push(selectionCell)
+    }
   }
 
   return cells
@@ -313,6 +344,21 @@ function staleColumnText(column: HilosTableColumn): string {
 function onSearchInput(event: Event): void {
   props.controller.setSearch((event.target as HTMLInputElement).value)
 }
+
+// The checkbox tells the core the state it is now IN rather than asking it to
+// toggle: the state of a checkbox is what the reader sees, and a toggle sent from
+// a box the browser has already flipped is a second answer to one question
+// (Flow F1).
+function onSelectRow(rowKey: string, event: Event): void {
+  props.controller.selectRow(rowKey, (event.target as HTMLInputElement).checked)
+}
+
+// One input for both directions: the header box goes to "all" out of none and out
+// of the half-marked state alike, and clears the window only from "all" — which is
+// what the core does with the state the box is now in (Flow F2).
+function onSelectPage(event: Event): void {
+  props.controller.selectWindow((event.target as HTMLInputElement).checked)
+}
 </script>
 
 <template>
@@ -321,7 +367,11 @@ function onSearchInput(event: Event): void {
       v-if="declaration"
       :controller="controller"
       :title-id="titleId"
-    />
+    >
+      <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
+        <slot name="bulk-untouched" v-bind="untouched" />
+      </template>
+    </HilosTableBar>
 
     <!-- SCAFFOLD: the bar a table draws from props, kept while the five
     framework pages still pass them. It goes with the props themselves when
@@ -431,6 +481,24 @@ function onSearchInput(event: Event): void {
         </caption>
         <thead>
           <tr>
+            <!-- The checkbox column stands on the edge the installation chose,
+            outside the declared columns on either side of them: it belongs to
+            the framework, and the page's columns are the page's. -->
+            <th
+              v-if="selectionEnabled && selectionEdge === 'start'"
+              scope="col"
+              class="hilos-table-selection-cell"
+            >
+              <input
+                class="form-check-input"
+                type="checkbox"
+                aria-label="Select all rows on this page"
+                data-id="hilos-table-select-page"
+                :checked="selectionHeader === 'all'"
+                :indeterminate="selectionHeader === 'some'"
+                @change="onSelectPage"
+              />
+            </th>
             <th
               v-for="column in rowColumns"
               :key="column.key"
@@ -487,6 +555,21 @@ function onSearchInput(event: Event): void {
             <th v-if="markColumn" scope="col" class="text-end">
               <span class="visually-hidden">Row state and controls</span>
             </th>
+            <th
+              v-if="selectionEnabled && selectionEdge === 'end'"
+              scope="col"
+              class="hilos-table-selection-cell"
+            >
+              <input
+                class="form-check-input"
+                type="checkbox"
+                aria-label="Select all rows on this page"
+                data-id="hilos-table-select-page"
+                :checked="selectionHeader === 'all'"
+                :indeterminate="selectionHeader === 'some'"
+                @change="onSelectPage"
+              />
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -495,6 +578,28 @@ function onSearchInput(event: Event): void {
               :data-id="`hilos-table-row-${view.rowKey}`"
               :class="rowClass(view)"
             >
+              <!-- A row drawn as a placeholder carries no checkbox: there is
+              nothing to mark in the trace of a row that left, and the core would
+              not take its key anyway (Flow F1). Its own cell spans the whole row,
+              so the column is simply not there for it. -->
+              <td
+                v-if="
+                  selectionEnabled &&
+                  selectionEdge === 'start' &&
+                  !view.placeholder &&
+                  view.row !== null
+                "
+                class="hilos-table-selection-cell"
+              >
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  aria-label="Select row"
+                  :data-id="`hilos-table-select-${view.rowKey}`"
+                  :checked="view.selected"
+                  @change="onSelectRow(view.rowKey, $event)"
+                />
+              </td>
               <td
                 v-if="view.placeholder || view.row === null"
                 :colspan="bodyColspan"
@@ -561,6 +666,24 @@ function onSearchInput(event: Event): void {
                       : TABLE_DETAIL_COPY.show
                   }}</span>
                 </button>
+              </td>
+              <td
+                v-if="
+                  selectionEnabled &&
+                  selectionEdge === 'end' &&
+                  !view.placeholder &&
+                  view.row !== null
+                "
+                class="hilos-table-selection-cell"
+              >
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  aria-label="Select row"
+                  :data-id="`hilos-table-select-${view.rowKey}`"
+                  :checked="view.selected"
+                  @change="onSelectRow(view.rowKey, $event)"
+                />
               </td>
             </tr>
 

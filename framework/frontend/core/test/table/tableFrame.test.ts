@@ -3,8 +3,10 @@ import {
   type TableAnchor,
   type TableViewportDescriptor,
 } from '../../src/connection/HilosConnection.js'
+import { type ActionHandle } from '../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { TableViewportController } from '../../src/table/TableViewportController.js'
+import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
 import { type HilosTableFrame } from '../../src/table/tableFrame.js'
 
 function makeController(
@@ -41,6 +43,14 @@ function makeController(
   return { controller, sent, open }
 }
 
+/**
+ * The sender of the declared operation, which these tests never press: what they
+ * are about is the state behind the run, not the run itself.
+ */
+function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+  throw new Error('the declaration is only read here')
+}
+
 const backupsFrame: HilosTableFrame = {
   title: 'Backups',
   subtitle: 'Nightly and manual copies',
@@ -69,7 +79,9 @@ const backupsFrame: HilosTableFrame = {
     { key: 'createdAt', label: 'Date', sortable: true },
     { key: 'kind', label: 'Kind' },
   ],
-  bulkActions: [{ key: 'delete', label: 'Delete', danger: true }],
+  bulkActions: [
+    { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+  ],
   empty: {
     title: 'Nothing here yet',
     hint: 'Your first backup will show up here',
@@ -96,7 +108,7 @@ describe('TableViewportController frame declaration', () => {
       'kind',
     ])
     expect(declaration?.bulkActions).toEqual([
-      { key: 'delete', label: 'Delete', danger: true },
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
     ])
     expect(declaration?.empty?.title).toBe('Nothing here yet')
   })

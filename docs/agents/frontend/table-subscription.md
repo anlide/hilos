@@ -545,14 +545,44 @@ record and over twenty never stand side by side.
   holding the action open would fail work that is going fine
   ([wire-protocol.md](wire-protocol.md), *When the work outlives the reply*).
   The shape of the report is unchanged by the move: only its carrier is.
+- **The declaration carries the sender.** One operation declares `run(target)`
+  beside its key and its label, and that is what the panel calls: the view owns
+  the button and the confirmation, while which action the press becomes is the
+  page's, exactly as the main action's `press` is. The target is read off the
+  controller **at the moment of the confirmation** and not when the button was
+  pressed — between the two the reader may have cleared a checkbox.
+- **Every bulk operation is confirmed in a modal**, `danger` or not: `danger`
+  changes how the button reads and nothing else. Irreversible work over twenty
+  records from a single click is the one outcome the confirmation exists against,
+  and two behaviors on one place would be a flag the frame does not carry.
+- **The panel stands on any of three counts** — something is marked, **or** a
+  bulk bar is running, **or** a report is on screen — and the ordinary controls
+  of the bar come back only when none of the three holds. Rows a run deletes drop
+  out of the selection by themselves, so "the panel while something is marked"
+  would take the running bar and the not-yet-arrived report off the screen in the
+  very case the panel is there for.
+- **The report is dismissed by the reader**, and that is its only exit short of
+  the next run: the core holds it until a run replaces it, and the dismissal is
+  state of the view, kept against the `progressKey` it dismissed. Paging,
+  filtering and re-sorting leave it standing, for the reason they leave a bar
+  standing — it is about the work, not about the window.
 - **A silent partial success is forbidden.** The server judges each row
   separately, and the report names the untouched rows one by one. "39 of 40
   deleted" without names is a message after which the reader has to go looking.
+  The report carries a `rowKey` and a reason, and the human name of that row is
+  the page's: the framework hands the place over as a **slot**
+  (`bulk-untouched` in Vue, given the `rowKey` and the `reason`) and prints the
+  key where the page filled nothing. It cannot do better — the row has left the
+  window by then.
 - A table may declare **no** bulk actions, and then it has no selection column at
   all. Which edge that column sits on is the project's choice, and within one
   installation it is the same edge everywhere — a choice of the VIEW, which draws
   the column; the core declares no edge, having nowhere to draw one and no reader
-  for it.
+  for it. The view takes it as **one injection for the whole application**
+  (`app.provide(hilosTableSelectionEdgeKey, 'end')` in Vue), defaulting to the
+  left edge where the project provides nothing. A prop on each table would hand
+  the product the right to disagree with itself, which is the one thing the rule
+  is about.
 - **The selection is state of the window controller**, next to the pending changes
   and the placeholders, because every rule above is a rule about the window. It
   reads as one of the two shapes the request carries — the row keys, or the filter
@@ -652,7 +682,11 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-apply`, `hilos-table-announce`, `hilos-table-announce-show`;
 - **selection:** `hilos-table-selection`, `hilos-table-selection-count`,
   `hilos-table-select-page`, `hilos-table-select-<rowKey>`,
-  `hilos-table-select-all-filtered`, `hilos-table-selection-clear`;
+  `hilos-table-select-all-filtered`, `hilos-table-selection-clear`,
+  `hilos-table-bulk-<actionKey>` — the button of one declared operation,
+  `hilos-table-bulk-confirm` — the button that confirms it,
+  `hilos-table-bulk-report` — the report the run ended with,
+  `hilos-table-bulk-report-close` — the cross that dismisses it;
 - **work:** `hilos-table-progress`, `hilos-table-progress-row-<rowKey>`,
   `hilos-table-progress-bulk`;
 - **counts and paging:** `hilos-table-count`,
@@ -740,3 +774,5 @@ an address does not:
 | one control of one declared filter | `framework/frontend/vue/src/HilosTableFilterControl.vue` |
 | the footer under the table | `framework/frontend/vue/src/HilosTableFooter.vue` |
 | the bar a running job is drawn as | `framework/frontend/vue/src/HilosTableProgress.vue` |
+| the selection panel and the bulk bar | `framework/frontend/vue/src/HilosTableSelection.vue` |
+| the edge the selection column sits on | `framework/frontend/vue/src/hilosTableSelectionEdge.ts` |

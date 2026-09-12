@@ -26,6 +26,10 @@ export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'
 export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'
 export { hilosRouterKey } from './hilosRouterKey.js'
+export {
+  hilosTableSelectionEdgeKey,
+  type HilosTableSelectionEdge,
+} from './hilosTableSelectionEdge.js'
 export { default as HilosAdminPage } from './HilosAdminPage.vue'
 export { default as HilosBreadcrumb } from './HilosBreadcrumb.vue'
 export { default as HilosLayout } from './HilosLayout.vue'

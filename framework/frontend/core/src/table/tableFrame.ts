@@ -6,9 +6,12 @@
 // section 2). Like hilosTableColumn.ts this file holds declaration types only —
 // no window logic, which lives in the TableViewportController.
 
+import { type ActionHandle } from '../connection/actionLifecycle.js'
 import { type ReadonlySignal } from '../state/signal.js'
 import { type HilosTableColumn } from './hilosTableColumn.js'
+import { type HilosTableBulkAccepted } from './tableBulk.js'
 import { type HilosTableCard } from './tableCard.js'
+import { type HilosTableSelectionTarget } from './tableSelection.js'
 import { type HilosTableOrderView } from './tableSortOrder.js'
 
 /**
@@ -90,14 +93,10 @@ export interface HilosTableMainAction {
 }
 
 /**
- * One operation offered for the marked rows: its key, its label, and whether it
- * reads as destructive.
+ * One operation offered for the marked rows: its key, its label, whether it reads
+ * as destructive, and what it runs.
  *
- * SCAFFOLD: declaration only, on purpose. Who is marked, and running an operation
- * and naming the rows it left untouched, are both built — the marks on the
- * controller, the run on the server — and the frame still carries no executor: the
- * view is what sends the action, which is HIL-804 (Vue) and HIL-813 (React,
- * Angular), and no table declares a bulk operation until HIL-819.
+ * SCAFFOLD: no table declares a bulk operation until HIL-819.
  */
 export interface HilosTableBulkAction {
   /** Operation id, unique within the table. */
@@ -106,6 +105,13 @@ export interface HilosTableBulkAction {
   readonly label: string
   /** Whether the operation reads as destructive (default false). */
   readonly danger?: boolean
+  /**
+   * Send the operation over what is marked; the run is watched through the
+   * table's bulk bar and report.
+   */
+  readonly run: (
+    target: HilosTableSelectionTarget,
+  ) => ActionHandle<HilosTableBulkAccepted>
 }
 
 /**

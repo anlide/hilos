@@ -177,3 +177,10 @@
 .hilos-progress-track {
   height: 0.35rem;
 }
+
+// WHY: Bootstrap has no width utility narrow enough for a checkbox column, and a
+// column that takes its share of the table pushes the content columns around.
+// WHAT: the framework's selection column, header and body cell alike.
+.hilos-table-selection-cell {
+  width: 2.5rem;
+}

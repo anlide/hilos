@@ -1,15 +1,29 @@
 import { describe, expect, it } from 'vitest'
+import { type ActionHandle } from '../../src/connection/actionLifecycle.js'
 import { type TableViewportDescriptor } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { TableViewportController } from '../../src/table/TableViewportController.js'
-import { type HilosTableBulkReport } from '../../src/table/tableBulk.js'
+import {
+  type HilosTableBulkAccepted,
+  type HilosTableBulkReport,
+} from '../../src/table/tableBulk.js'
 import { type HilosTableFrame } from '../../src/table/tableFrame.js'
+
+/**
+ * The sender of the declared operation, which these tests never press: what they
+ * are about is the state behind the run, not the run itself.
+ */
+function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+  throw new Error('the declaration is only read here')
+}
 
 /** A table whose page declared one bulk operation — the one sign that it runs them. */
 const bulkFrame: HilosTableFrame = {
   title: 'Backups',
   columns: [{ key: 'createdAt', label: 'Date', sortable: true }],
-  bulkActions: [{ key: 'delete', label: 'Delete', danger: true }],
+  bulkActions: [
+    { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+  ],
 }
 
 function row(rowKey: string): TableRow {
