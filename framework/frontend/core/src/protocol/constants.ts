@@ -91,6 +91,9 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce'
 /** Server frame `type` carrying a bar of work running on a table (PHP `SignalTypeConstants::TABLE_PROGRESS`). */
 export const SIGNAL_TYPE_TABLE_PROGRESS = 'table_progress'
 
+/** Server frame `type` carrying how a bulk run judged the rows it reached (PHP `SignalTypeConstants::TABLE_BULK_REPORT`). */
+export const SIGNAL_TYPE_TABLE_BULK_REPORT = 'table_bulk_report'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 

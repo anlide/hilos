@@ -11,6 +11,7 @@ import {
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,
   SIGNAL_TYPE_SESSION_ROTATE,
+  SIGNAL_TYPE_TABLE_BULK_REPORT,
   SIGNAL_TYPE_TABLE_PROGRESS,
   SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
@@ -30,6 +31,7 @@ import {
   tableViewportAnnounceSignalDataSchema,
   tableViewportAppendSignalDataSchema,
   tableProgressSignalDataSchema,
+  tableBulkReportSignalDataSchema,
   tableViewportOwnCreateSignalDataSchema,
   sessionRotateSignalDataSchema,
   type SignalEnvelope,
@@ -39,6 +41,7 @@ import {
   type TableViewportAnnounceSignalData,
   type TableViewportAppendSignalData,
   type TableProgressSignalData,
+  type TableBulkReportSignalData,
   type TableViewportOwnCreateSignalData,
 } from './envelope.js'
 import {
@@ -138,6 +141,11 @@ export type ParsedSignal =
       data: TableProgressSignalData
       envelope: SignalEnvelope
     }
+  | {
+      kind: 'tableBulkReport'
+      data: TableBulkReportSignalData
+      envelope: SignalEnvelope
+    }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
@@ -180,6 +188,10 @@ export type TableViewportAnnounceSignal = Extract<
 export type TableProgressSignal = Extract<
   ParsedSignal,
   { kind: 'tableProgress' }
+>
+export type TableBulkReportSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableBulkReport' }
 >
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
@@ -512,6 +524,29 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableProgress',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_BULK_REPORT: {
+      const data = tableBulkReportSignalDataSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_BULK_REPORT,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableBulkReport',
           data: data.data,
           envelope: envelope.data,
         },

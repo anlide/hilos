@@ -27,6 +27,11 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
+use Hilos\Core\Table\DTO\TableBulkActionDTO;
+use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -205,6 +210,15 @@ abstract class AbstractPage implements ActionHostInterface
      * exist yet while the page's own constructor runs.
      */
     private ?ActionReply $actionReply = null;
+
+    /**
+     * The router that serves this page, handed over the first time it resolves this page.
+     *
+     * A page reaches back into it for one thing only: a mass operation lives in the router's
+     * pool, so starting one and declaring the verdict on a row are calls into that pool, and
+     * the second of them happens long after the action that started the run has returned.
+     */
+    private ?PageSignalRouter $signalRouter = null;
 
     /**
      * Creates a page bound to its owning agent.
@@ -755,6 +769,123 @@ abstract class AbstractPage implements ActionHostInterface
             signalName: new SignalName($signalName),
             signalData: new AgentSignalData(data: $data),
         );
+    }
+
+    /**
+     * Hands this page the router of the agent that serves it.
+     *
+     * Called by {@see PageSignalRouter} every time it resolves a page, before anything is
+     * dispatched into it. It exists for the mass-operation pool and nothing else: that pool
+     * lives on the router, and a page both opens a run in it and answers about single rows
+     * long after the opening action returned.
+     *
+     * @param PageSignalRouter $router Router of this page's agent
+     */
+    public function bindSignalRouter(PageSignalRouter $router): void
+    {
+        $this->signalRouter = $router;
+    }
+
+    /**
+     * Accepts a mass operation over one of this page's tables, and answers that it was taken.
+     *
+     * Call from onAction() and return what it gives back as the action's reply. The answer says
+     * the run was ACCEPTED - it is not the outcome and never becomes one: a run over a condition
+     * outlives the client's action timeout, so the outcome arrives later as its own frame
+     * (docs/agents/frontend/wire-protocol.md, "When the work outlives the reply").
+     *
+     * The table is resolved by the page, not by the framework: which of this page's tables a
+     * request may name, and under which action, is the page's own question, and the framework
+     * touches no row it was not handed a table for.
+     *
+     * @param string $acceptKey Connection that asked
+     * @param TableBulkActionDTO $dto Request naming the table and the target
+     * @param ViewportTable $table Table this page resolved the request's key to
+     * @return TableBulkAcceptedReplyDTO Acceptance carrying the run's key and its honest total
+     * @throws TableBulkRunBusyException When this connection already has a run on this table
+     * @throws HilosException When the page was never handed its router
+     */
+    protected function startBulkAction(
+        string $acceptKey,
+        TableBulkActionDTO $dto,
+        ViewportTable $table,
+    ): TableBulkAcceptedReplyDTO {
+        return $this->requireSignalRouter()->startBulkRun($this, $acceptKey, $dto, $table);
+    }
+
+    /**
+     * Judges one row of a running mass operation.
+     *
+     * The framework touches no row itself: it walks the target, asks the table whether the row
+     * still belongs to it, and hands the row here. What happens to it is the page's to decide,
+     * because the write belongs to the owner of the entity, and for most rows that owner is
+     * another agent this page only asks.
+     *
+     * The verdict is ANNOUNCED and not returned: {@see self::bulkRowTouched()} in this very
+     * call when the page owns the row, {@see self::bulkRowUntouched()} with a reason, or either
+     * of them later from the signal the owner answers with. A hook that returned a value could
+     * not serve the second case at all, and two shapes for one decision would be one behavior
+     * with a flag.
+     *
+     * @param string $action Action the run was started under
+     * @param string $progressKey Run the row belongs to, which the verdict carries back
+     * @param string $rowKey Row to judge
+     * @throws TableActionException Always, until the page that declared the action overrides this
+     */
+    public function onBulkRow(string $action, string $progressKey, string $rowKey): void
+    {
+        throw new TableActionException(
+            'This page declared a bulk action and does not judge its rows: ' . static::PAGE . '/' . $action,
+        );
+    }
+
+    /**
+     * Declares that the page changed one row it was handed.
+     *
+     * @param string $progressKey Run the row belongs to
+     * @param string $rowKey Row that was changed
+     * @throws HilosException When the page was never handed its router
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    protected function bulkRowTouched(string $progressKey, string $rowKey): void
+    {
+        $this->requireSignalRouter()->declareBulkVerdict($progressKey, $rowKey, null);
+    }
+
+    /**
+     * Declares that the page left one row alone, and why.
+     *
+     * The reason is shown to the person who started the run, so it is written for them: this is
+     * the sentence that turns "39 of 40 deleted" into a report they can act on.
+     *
+     * @param string $progressKey Run the row belongs to
+     * @param string $rowKey Row that was left alone
+     * @param string $reason Why it was left, in words meant for the person who asked
+     * @throws HilosException When the page was never handed its router
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    protected function bulkRowUntouched(string $progressKey, string $rowKey, string $reason): void
+    {
+        $this->requireSignalRouter()->declareBulkVerdict($progressKey, $rowKey, $reason);
+    }
+
+    /**
+     * Answers with the router serving this page, or refuses to guess.
+     *
+     * A page that was dispatched into has one, because the dispatcher binds it on the way in.
+     * A page built by hand outside the dispatcher has none, and a mass operation started on it
+     * would be held in a pool no tick ever visits - a run that accepts and then never reports.
+     *
+     * @return PageSignalRouter Router of this page's agent
+     * @throws HilosException When the page was never handed its router
+     */
+    private function requireSignalRouter(): PageSignalRouter
+    {
+        if ($this->signalRouter === null) {
+            throw new HilosException('Page ' . static::PAGE . ' has no signal router to run a bulk action in');
+        }
+
+        return $this->signalRouter;
     }
 
     /**

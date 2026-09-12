@@ -203,11 +203,18 @@ collection, one of them a surface.
 A bulk action belongs to the table agent, not to the window. The window starts
 it — "delete all rows matching the filter" — and the holder runs it, judges
 each row separately, and holds the report that names the rows it did not touch
-and why (not in the code yet — HIL-799). The shape of request and reply is
-fixed on the frontend side already: `rowKeys` or `filter`, exactly one of the
-two, and a reply carrying `touched` and `untouched: [{ rowKey, reason }]`
+and why. The run, the per-row verdict and the report are in the code — the run
+is `framework/backend/Core/Table/Bulk/TableBulkRun.php`, walked a handful of
+rows per worker tick by `PageSignalRouter` — but the HOLDER is not the figure
+this page describes: today the run lives in the worker that took the action and
+lasts as long as that connection does, and a table agent holding it is still a
+leaf of HIL-782. The shape is `rowKeys` or `filter`, exactly one of the two; the
+reply answers acceptance and carries the run's key, and `touched` and
+`untouched: [{ rowKey, reason }]` arrive after it on a `table_bulk_report` frame
 ([../frontend/table-subscription.md](../frontend/table-subscription.md),
-*Selection and bulk actions*).
+*Selection and bulk actions*). The outcome was given a frame of its own for
+exactly the move this page is about: whoever ends up holding the run, the wire
+does not change.
 
 Two consequences follow, and both are the reason the unit is not the window. A
 closed tab does not cancel the operation: the holder is still running it. And

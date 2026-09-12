@@ -14,6 +14,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -43,7 +44,21 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Bulk\TableBulkRun;
+use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
+use Hilos\Core\Table\DTO\TableBulkActionDTO;
+use Hilos\Core\Table\DTO\TableBulkReportSignalData;
+use Hilos\Core\Table\DTO\TableProgressDTO;
+use Hilos\Core\Table\DTO\TableProgressSignalData;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableAnchorDirection;
+use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -107,6 +122,19 @@ class PageSignalRouter
 
     /** @var int Serial that makes each parked action's request key unique in this router */
     private int $deferredSequence = 0;
+
+    /**
+     * @var array<string, TableBulkRun> Mass operations this router is driving, by progress key
+     *
+     * The second pool beside {@see self::$deferredActions}, and in the same place for the same
+     * reason: both ends of the wait meet on the router of one page agent. The action that
+     * opened the run was dispatched here, and the verdict on every row comes back through
+     * this same router, whether the page answers in that very call or a signal later.
+     */
+    private array $bulkRuns = [];
+
+    /** @var int Serial that makes each run's progress key unique in this router */
+    private int $bulkSequence = 0;
 
     /**
      * @var array<string, list<PendingFrame>> Frames held per connection until its identity lands, by accept key
@@ -941,6 +969,466 @@ class PageSignalRouter
     }
 
     /**
+     * Accepts one mass operation over a table, and answers that it was taken.
+     *
+     * The run is opened and nothing else happens here. Judging the rows inside this call would
+     * stop every other connection this worker serves, so the work is driven a handful of rows
+     * per tick by {@see self::advanceBulkRuns()} instead, and this returns the moment the
+     * target is known.
+     *
+     * A second run on the same table from the same connection is refused rather than queued.
+     * One place holds one bar: the second run would take the bar of the first and leave it
+     * working blind, and an invisible queue promises a person work they will never be told of.
+     * The place is the pair (page, table) and not the table alone, because that is how a bar is
+     * addressed on the wire - two pages of one agent may each carry a table of the same key.
+     *
+     * @param AbstractPage $page Page the table belongs to
+     * @param string $acceptKey Connection that asked, and the only one the frames go to
+     * @param TableBulkActionDTO $dto Request naming the table and the target
+     * @param ViewportTable $table Table the page resolved the request's key to
+     * @return TableBulkAcceptedReplyDTO Acceptance carrying the run's key and its honest total
+     * @throws TableBulkRunBusyException When this connection already has a run on this table
+     */
+    public function startBulkRun(
+        AbstractPage $page,
+        string $acceptKey,
+        TableBulkActionDTO $dto,
+        ViewportTable $table,
+    ): TableBulkAcceptedReplyDTO {
+        foreach ($this->bulkRuns as $running) {
+            if ($running->acceptKey === $acceptKey
+                && $running->page === $page->getPageName()
+                && $running->tableKey === $dto->tableKey
+            ) {
+                throw new TableBulkRunBusyException($dto->tableKey);
+            }
+        }
+
+        $run = new TableBulkRun(
+            progressKey: $dto->tableKey . ':' . ++$this->bulkSequence,
+            acceptKey: $acceptKey,
+            page: $page->getPageName(),
+            tableKey: $dto->tableKey,
+            table: $table,
+            action: $dto->getAction(),
+            rowKeys: $dto->rowKeys,
+            filter: $dto->filter,
+            total: $dto->rowKeys === null ? null : count($dto->rowKeys),
+        );
+        $this->bulkRuns[$run->progressKey] = $run;
+
+        return new TableBulkAcceptedReplyDTO(
+            $run->progressKey,
+            $run->rowKeys !== null ? $run->total : $this->primeBulkTarget($run),
+        );
+    }
+
+    /**
+     * Records what the page decided about one row it was handed.
+     *
+     * A verdict for a row this router is not waiting on is dropped in silence, as a late
+     * throttle verdict is: its run has already reported, or the deadline called the row
+     * untouched before the owner spoke. Answering it would move a bar that is no longer there.
+     *
+     * @param string $progressKey Run the verdict belongs to
+     * @param string $rowKey Row that was judged
+     * @param ?string $reason Why the row was left alone, or null when it was changed
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    public function declareBulkVerdict(string $progressKey, string $rowKey, ?string $reason): void
+    {
+        $run = $this->bulkRuns[$progressKey] ?? null;
+        if ($run === null || !$run->settle($rowKey)) {
+            return;
+        }
+
+        if ($reason === null) {
+            $run->recordTouched();
+        } else {
+            $run->recordUntouched($rowKey, $reason);
+        }
+        $this->emitBulkProgress($run, false);
+    }
+
+    /**
+     * Moves every mass operation this router holds one step forward.
+     *
+     * Called once per worker tick, beside the two pools that wait on another process. The step
+     * is deliberately small - overdue verdicts, then a handful of rows handed out, then the
+     * report when there is nothing left - because the worker has every other connection to
+     * serve between two ticks.
+     *
+     * The step runs inside the initiator's execution frame for the reason a resumed action
+     * does ({@see self::resumeDeferredAction()}): the rows are changed by handlers reached from
+     * here, and without the frame the initiator's own table deltas would not apply at once.
+     *
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     * @throws InvalidArgumentException When a frame of a run cannot be named
+     */
+    public function advanceBulkRuns(): void
+    {
+        if ($this->bulkRuns === []) {
+            return;
+        }
+
+        foreach ($this->bulkRuns as $run) {
+            ExecutionContext::withOrigin($run->acceptKey, null, function () use ($run): void {
+                $this->expireBulkVerdicts($run);
+                $this->handOutBulkRows($run);
+                $this->reportFinishedBulkRun($run);
+            });
+        }
+    }
+
+    /**
+     * Calls untouched every row whose verdict did not arrive in time.
+     *
+     * Silence from the owner of a row is this server's failure - a dropped signal, a stopped
+     * agent - so it is logged as one. It is never a reason to stop: a run that waits forever
+     * is a bar that never comes down and a report nobody ever reads.
+     *
+     * @param TableBulkRun $run Run to sweep
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    private function expireBulkVerdicts(TableBulkRun $run): void
+    {
+        foreach ($run->overdue(microtime(true)) as $rowKey) {
+            Logger::error(
+                "Bulk verdict timed out, the row is reported untouched: "
+                    . "page={$run->page}, table={$run->tableKey}, action={$run->action}, rowKey={$rowKey}",
+            );
+            $run->recordUntouched($rowKey, TableConstants::BULK_REASON_NO_VERDICT);
+            $this->emitBulkProgress($run, false);
+        }
+    }
+
+    /**
+     * Hands the page its next rows to judge, up to what one tick is allowed to give out.
+     *
+     * The same bound holds both counts, as the constant says: no more than a handful in flight,
+     * and no more than a handful handed out in one tick. Without the second the loop would walk
+     * the whole target inside one tick whenever the page judges rows in the very call it is
+     * asked, which is the ordinary case for a table whose rows the page owns itself.
+     *
+     * A row that has left the set is not handed to the page at all. That is the question the
+     * ticket is proved by: a row a neighbour deleted before its turn came is reported untouched
+     * with a reason, rather than quietly missing from the count.
+     *
+     * @param TableBulkRun $run Run to feed
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    private function handOutBulkRows(TableBulkRun $run): void
+    {
+        $handedOut = 0;
+        while ($handedOut < TableConstants::BULK_ROWS_IN_FLIGHT
+            && count($run->awaiting) < TableConstants::BULK_ROWS_IN_FLIGHT
+        ) {
+            $rowKey = $this->nextBulkRow($run);
+            if ($rowKey === null) {
+                return;
+            }
+
+            $handedOut++;
+            if ($run->table->containsRow($rowKey, $this->bulkMembershipQuery($run)) === false) {
+                $run->recordUntouched($rowKey, TableConstants::BULK_REASON_ROW_GONE);
+                $this->emitBulkProgress($run, false);
+                continue;
+            }
+
+            $run->handOut($rowKey, microtime(true) + TableConstants::BULK_VERDICT_TIMEOUT_SECONDS);
+            $this->judgeBulkRow($run, $rowKey);
+        }
+    }
+
+    /**
+     * Asks the page about one row, and turns a judge that threw into a reason.
+     *
+     * A page whose hook raises is a page that did not decide, and the run has to say so about
+     * that row and keep going: letting the failure out would break the tick that drives every
+     * other run and every other pool of this worker, and would lose the report as well. The
+     * words the client is allowed to see are the ones any other action failure travels with.
+     *
+     * @param TableBulkRun $run Run the row belongs to
+     * @param string $rowKey Row to judge
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    private function judgeBulkRow(TableBulkRun $run, string $rowKey): void
+    {
+        $page = $this->resolvePage($run->page);
+        if ($page === null) {
+            $this->declareBulkVerdict($run->progressKey, $rowKey, TableConstants::BULK_REASON_NO_VERDICT);
+            return;
+        }
+
+        try {
+            $page->onBulkRow($run->action, $run->progressKey, $rowKey);
+        } catch (Throwable $e) {
+            Logger::error(
+                "Bulk row judge failed: page={$run->page}, table={$run->tableKey}, "
+                    . "action={$run->action}, rowKey={$rowKey}, error={$e->getMessage()}",
+            );
+            $this->declareBulkVerdict($run->progressKey, $rowKey, ActionFailureReason::forClient($e));
+        }
+    }
+
+    /**
+     * Takes the next row of the target, fetching one more window of a condition when needed.
+     *
+     * @param TableBulkRun $run Run to take from
+     * @return ?string Next row key, or null when the target has nothing left
+     */
+    private function nextBulkRow(TableBulkRun $run): ?string
+    {
+        if ($run->queue === [] && !$run->drained) {
+            $this->fetchBulkWindow($run);
+        }
+
+        return array_shift($run->queue);
+    }
+
+    /**
+     * Reads one more window of the condition, from the place the last one ended.
+     *
+     * By anchor and never by offset: the run itself removes rows from the set it is walking, so
+     * an offset would step over as many rows as the last window changed - the very defect the
+     * window moved onto keys to be rid of.
+     *
+     * A window that comes back standing where it was taken from is thrown away and ends the
+     * walk. Asked for the rows AFTER a place, a table answers with rows below it or with none,
+     * so an answer ending at that same place is a table that did not honour the anchor: its
+     * rows are the ones just judged, and following it would judge one window over and over,
+     * every tick, for as long as the worker lives.
+     *
+     * @param TableBulkRun $run Run whose condition is being walked
+     * @return TableSnapshotDTO Window the walk read, whose counts the opening of a run needs
+     */
+    private function fetchBulkWindow(TableBulkRun $run): TableSnapshotDTO
+    {
+        $snapshot = $run->table->getPage($this->bulkWindowQuery($run));
+        $stalled = $snapshot->lastAnchor !== null
+            && $snapshot->lastAnchor->toArray() === $run->cursor?->toArray();
+        if ($stalled) {
+            Logger::error(
+                "Bulk run stopped: the window came back where it was taken from, so the table did "
+                    . "not honour the anchor: page={$run->page}, table={$run->tableKey}",
+            );
+        }
+
+        $run->queue = $stalled ? [] : $this->rowKeysOf($snapshot->rows, $run);
+        $run->drained = $run->queue === [] || $snapshot->lastAnchor === null;
+        $run->cursor = $snapshot->lastAnchor;
+
+        return $snapshot;
+    }
+
+    /**
+     * Opens the walk of a condition and answers how many rows it honestly has.
+     *
+     * The first window is read here rather than on the first tick because the acceptance has to
+     * name the total, and the total comes off that same read. Above the count ceiling there is
+     * no honest number - "500 of 500+" is the lie the ceiling exists to prevent - so the answer
+     * is that the run has no estimate, which is a bar state of its own.
+     *
+     * @param TableBulkRun $run Run to open
+     * @return ?int Rows the run will judge, or null when the set has no exact count
+     */
+    private function primeBulkTarget(TableBulkRun $run): ?int
+    {
+        $snapshot = $this->fetchBulkWindow($run);
+
+        return $snapshot->totalExact ? $snapshot->totalCount : null;
+    }
+
+    /**
+     * Reads the keys of one fetched window, in the order the table returned them.
+     *
+     * A row that cannot name itself is skipped and logged rather than judged: a bulk action is
+     * addressed by row key from end to end, and a row with none could be neither reported nor
+     * asked about.
+     *
+     * @param list<AbstractTableRow|array<string, mixed>> $rows Rows as the window returned them
+     * @param TableBulkRun $run Run the window was fetched for, named in the log
+     * @return list<string> Row keys to judge
+     */
+    private function rowKeysOf(array $rows, TableBulkRun $run): array
+    {
+        $keys = [];
+        foreach ($rows as $row) {
+            $rowKey = $row instanceof AbstractTableRow ? $row->getRowKey() : null;
+            if ($rowKey === null) {
+                Logger::error(
+                    "Bulk run skipped a row that names no key: page={$run->page}, table={$run->tableKey}",
+                );
+                continue;
+            }
+
+            $keys[] = (string)$rowKey;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * Builds the query one window of the target is read with.
+     *
+     * The search term is lifted out of the filter map exactly as the viewport does it, because
+     * the condition the person chose is the one the panel showed them - a run that left the
+     * term in the map would walk the unsearched set and touch rows nobody was looking at. The
+     * order is the table's own, which is what makes the anchor mean anything.
+     *
+     * @param TableBulkRun $run Run whose condition is being walked
+     * @return TableQueryDTO Window query for the next rows of the target
+     */
+    private function bulkWindowQuery(TableBulkRun $run): TableQueryDTO
+    {
+        return new TableQueryDTO(
+            search: $this->bulkSearchTerm($run),
+            sort: $run->table->defaultSort(),
+            limit: TableConstants::BULK_ROWS_IN_FLIGHT,
+            filter: $run->filter ?? [],
+            anchor: $run->cursor,
+            anchorDirection: TableAnchorDirection::After,
+        );
+    }
+
+    /**
+     * Lifts the search term out of the condition, the way the viewport does it.
+     *
+     * The term travels inside the filter map, and the query carries it in a field of its own;
+     * a caller that left it in the map would describe the UNSEARCHED set, and the run would
+     * touch rows the person who chose the condition never saw. One reader for both queries,
+     * because two descriptions of one condition drift apart silently.
+     *
+     * @param TableBulkRun $run Run whose condition carries the term
+     * @return ?string Term the set is searched by, or null when nothing is searched
+     */
+    private function bulkSearchTerm(TableBulkRun $run): ?string
+    {
+        $search = ($run->filter ?? [])[TableConstants::FILTER_KEY_SEARCH] ?? null;
+
+        return is_string($search) ? $search : null;
+    }
+
+    /**
+     * Builds the query a row's membership of the target is asked against.
+     *
+     * The same question for both targets, and only the set differs: named rows are asked about
+     * against the table with no condition on it, a condition's rows against that condition. A
+     * table that answers null has not said no - it has said it cannot tell - and the row goes
+     * to the page, which is the one that can.
+     *
+     * @param TableBulkRun $run Run whose target describes the set
+     * @return TableQueryDTO Query describing the set a row is placed against
+     */
+    private function bulkMembershipQuery(TableBulkRun $run): TableQueryDTO
+    {
+        return new TableQueryDTO(
+            search: $this->bulkSearchTerm($run),
+            filter: $run->filter ?? [],
+        );
+    }
+
+    /**
+     * Ends a run that has nothing left to judge: the report first, the bar down after it.
+     *
+     * That order is the whole of it. The other way round leaves the panel for an instant with
+     * neither - the bar already gone, the report not yet there - and a view showing empty space
+     * where work was running a moment ago.
+     *
+     * The outcome also goes to the log, every time and not only when something went wrong. A
+     * run is not cancelled by the tab that started it closing, and the frames of a run whose
+     * initiator has gone reach nobody - the log line is then the only record that forty rows
+     * were deleted and which of them were not.
+     *
+     * @param TableBulkRun $run Run to end, if it is over
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    private function reportFinishedBulkRun(TableBulkRun $run): void
+    {
+        if (!$run->isFinished()) {
+            return;
+        }
+
+        unset($this->bulkRuns[$run->progressKey]);
+        Logger::info(
+            "Bulk run finished: page={$run->page}, table={$run->tableKey}, action={$run->action}, "
+                . "progressKey={$run->progressKey}, touched={$run->touched}, "
+                . 'untouched=' . (count($run->untouched) + $run->untouchedOmitted),
+        );
+        $this->queueBulkFrame(
+            $run,
+            SignalTypeConstants::TABLE_BULK_REPORT,
+            new TableBulkReportSignalData(
+                page: $run->page,
+                tableKey: $run->tableKey,
+                progressKey: $run->progressKey,
+                touched: $run->touched,
+                untouched: $run->untouched,
+                untouchedOmitted: $run->untouchedOmitted > 0 ? $run->untouchedOmitted : null,
+            ),
+        );
+        $this->emitBulkProgress($run, true);
+    }
+
+    /**
+     * Sends the bar of one run, as far along as the run has judged.
+     *
+     * A judged row is the unit of the work, touched and untouched alike: what the person is
+     * watching is the set being gone through, and a row that was left alone took its turn like
+     * any other.
+     *
+     * @param TableBulkRun $run Run the bar is about
+     * @param bool $ended Whether the work has stopped and the bar comes down
+     * @throws InvalidArgumentException When the bar frame cannot be named
+     */
+    private function emitBulkProgress(TableBulkRun $run, bool $ended): void
+    {
+        $this->queueBulkFrame(
+            $run,
+            SignalTypeConstants::TABLE_PROGRESS,
+            TableProgressSignalData::fromProgress(
+                $run->page,
+                $run->tableKey,
+                new TableProgressDTO(
+                    TableProgressScope::Bulk,
+                    $run->progressKey,
+                    null,
+                    $run->judged,
+                    $run->total,
+                    $ended,
+                ),
+            ),
+        );
+    }
+
+    /**
+     * Addresses one frame of a run to the connection that started it.
+     *
+     * To that connection and to no other: the selection panel belongs to whoever was marking
+     * rows, and the tabs merely watching the table have seen every touched row already as an
+     * ordinary live delta.
+     *
+     * @param TableBulkRun $run Run the frame belongs to
+     * @param string $signalName Frame name on the wire
+     * @param SignalDataInterface $data Frame payload
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    private function queueBulkFrame(TableBulkRun $run, string $signalName, SignalDataInterface $data): void
+    {
+        $page = $this->resolvePage($run->page);
+        if ($page === null) {
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: $page->getAgent()->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $run->acceptKey),
+        );
+    }
+
+    /**
      * Holds a frame back when this worker does not yet know who is behind its connection.
      *
      * The identity is written by the agent that owns the WebSocket lifecycle, in its own
@@ -1307,6 +1795,12 @@ class PageSignalRouter
     /**
      * Resolve page instance by name
      *
+     * The router hands itself to the page on the way out, and this is the one door every page
+     * of this agent comes through. A page needs it for the one thing it cannot do alone: a mass
+     * operation is held in this router's pool, so starting one and declaring a verdict on a row
+     * are both calls back into here, and the second of them happens long after the action that
+     * started the run has returned.
+     *
      * @param string $page Page name
      * @return ?AbstractPage Resolved page instance or null if not found
      */
@@ -1318,7 +1812,10 @@ class PageSignalRouter
         }
 
         try {
-            return $this->pageFactory->getPage($page);
+            $pageInstance = $this->pageFactory->getPage($page);
+            $pageInstance->bindSignalRouter($this);
+
+            return $pageInstance;
         } catch (PageNotFoundException $exception) {
             Logger::error("Page not found: {$page}");
             return null;

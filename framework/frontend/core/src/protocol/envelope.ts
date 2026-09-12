@@ -266,6 +266,35 @@ export type TableProgressSignalData = z.infer<
 >
 
 /**
+ * Payload of the framework table bulk report frame (`type: 'table_bulk_report'`,
+ * PHP `TableBulkReportSignalData`): how one bulk run judged the rows it reached.
+ * It arrives after the run ends, addressed to the connection that started it, and
+ * carries the same `progressKey` its reply and its bar did.
+ *
+ * `touched` is a count and never a list: rows that changed have already arrived as
+ * live deltas. `untouched` is the list, because nothing else on the wire ever
+ * mentions those rows, and a partial success without their names is silent.
+ * `untouchedOmitted` is absent when every name fit under the server's ceiling.
+ */
+export const tableBulkReportSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  progressKey: z.string(),
+  touched: z.number().int(),
+  untouched: z.array(
+    z.looseObject({
+      rowKey: z.string(),
+      reason: z.string(),
+    }),
+  ),
+  untouchedOmitted: z.number().int().optional(),
+})
+
+export type TableBulkReportSignalData = z.infer<
+  typeof tableBulkReportSignalDataSchema
+>
+
+/**
  * Payload of the framework table viewport append (`type: 'table_viewport_append'`,
  * PHP `TableViewportAppendDTO`): the addressed live row to add at the tail of one
  * table's window, plus the new counts. Sent only when the window is the last page

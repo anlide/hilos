@@ -105,6 +105,12 @@ export {
   type HilosTableProgressState,
 } from './table/tableProgress.js'
 export {
+  type HilosTableBulkAccepted,
+  type HilosTableBulkReport,
+  type HilosTableBulkState,
+  type HilosTableBulkUntouched,
+} from './table/tableBulk.js'
+export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,
   type LoadingButtonState,

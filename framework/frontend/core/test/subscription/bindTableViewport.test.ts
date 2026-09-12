@@ -16,8 +16,10 @@ import {
   type TableViewportDelta,
   type TableWindowSink,
 } from '../../src/table/TableViewportController.js'
+import { type HilosTableBulkReport } from '../../src/table/tableBulk.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
 import {
+  type TableBulkReportSignal,
   type TableProgressSignal,
   type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
@@ -28,7 +30,7 @@ import {
   type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting the seven table signals, with real unsubscribe. */
+/** A connection double emitting the eight table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
@@ -41,6 +43,7 @@ function fakeConnection() {
     (signal: TableViewportAnnounceSignal) => void
   >()
   const progressListeners = new Set<(signal: TableProgressSignal) => void>()
+  const bulkReportListeners = new Set<(signal: TableBulkReportSignal) => void>()
   const projectListeners = new Set<(signal: ProjectSignal) => void>()
   const registered = new Map<string, TableWindowDescriptorSource>()
 
@@ -101,6 +104,14 @@ function fakeConnection() {
           progressListeners.add(typed)
 
           return () => progressListeners.delete(typed)
+        }
+        case 'tableBulkReport': {
+          const typed = listener as unknown as (
+            signal: TableBulkReportSignal,
+          ) => void
+          bulkReportListeners.add(typed)
+
+          return () => bulkReportListeners.delete(typed)
         }
         default: {
           const typed = listener as unknown as (
@@ -164,10 +175,15 @@ function fakeConnection() {
         listener({ data } as unknown as TableProgressSignal)
       }
     },
+    emitBulkReport(data: TableBulkReportSignal['data']): void {
+      for (const listener of bulkReportListeners) {
+        listener({ data } as unknown as TableBulkReportSignal)
+      }
+    },
   }
 }
 
-/** A controller double recording the windows, deltas, counts, appends, own creates, announcements and bars fed to it. */
+/** A controller double recording the windows, deltas, counts, appends, own creates, announcements, bars and bulk reports fed to it. */
 function fakeSink(): TableWindowSink & {
   windows: Array<{
     rows: readonly TableRow[]
@@ -196,6 +212,7 @@ function fakeSink(): TableWindowSink & {
   }>
   progress: HilosTableProgressFrame[]
   snapshots: Array<readonly HilosTableProgressFrame[]>
+  bulkReports: HilosTableBulkReport[]
 } {
   const windows: Array<{
     rows: readonly TableRow[]
@@ -228,6 +245,7 @@ function fakeSink(): TableWindowSink & {
   }> = []
   const progress: HilosTableProgressFrame[] = []
   const snapshots: Array<readonly HilosTableProgressFrame[]> = []
+  const bulkReports: HilosTableBulkReport[] = []
 
   return {
     windows,
@@ -238,6 +256,7 @@ function fakeSink(): TableWindowSink & {
     announcements,
     progress,
     snapshots,
+    bulkReports,
     ingestWindow(
       rows,
       totalCount,
@@ -295,6 +314,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestProgress(frame): void {
       progress.push(frame)
+    },
+    ingestBulkReport(report): void {
+      bulkReports.push(report)
     },
   }
 }
@@ -788,6 +810,64 @@ describe('bindTableViewport', () => {
         detail: { title: 'Nightly' },
       },
     ])
+  })
+
+  it('routes a bulk report addressed to the table, dropping the ones that are not', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitBulkReport({
+      page: 'main',
+      tableKey: 'other',
+      progressKey: 'bulk-1',
+      touched: 3,
+      untouched: [],
+    })
+    connection.emitBulkReport({
+      page: 'other',
+      tableKey: 'settings',
+      progressKey: 'bulk-1',
+      touched: 3,
+      untouched: [],
+    })
+    connection.emitBulkReport({
+      page: 'main',
+      tableKey: 'settings',
+      progressKey: 'bulk-1',
+      touched: 39,
+      untouched: [{ rowKey: 'r7', reason: 'It was already gone' }],
+      untouchedOmitted: 4,
+    })
+
+    expect(sink.bulkReports).toEqual([
+      {
+        progressKey: 'bulk-1',
+        touched: 39,
+        untouched: [{ rowKey: 'r7', reason: 'It was already gone' }],
+        untouchedOmitted: 4,
+      },
+    ])
+  })
+
+  it('reads a bulk report with no count of omitted names as none omitted', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitBulkReport({
+      page: 'main',
+      tableKey: 'settings',
+      progressKey: 'bulk-2',
+      touched: 40,
+      untouched: [],
+    })
+
+    expect(sink.bulkReports[0]?.untouchedOmitted).toBe(0)
   })
 
   it('drops a row bar that names no row, and ignores a row key on the other two', () => {

@@ -215,6 +215,27 @@ export function bindTableViewport(
     sink.ingestProgress(toProgressFrame(data))
   })
 
+  // Addressed to the connection that started the run, and only to it: the report answers a
+  // press nobody else made. The address is checked here all the same, because one connection
+  // can hold several tables of one page and several pages at once.
+  const unsubscribeBulkReport = connection.on('tableBulkReport', (signal) => {
+    const data = signal.data
+    if (data.tableKey !== address.tableKey || data.page !== address.page) {
+      return
+    }
+    sink.ingestBulkReport({
+      progressKey: data.progressKey,
+      touched: data.touched,
+      untouched: data.untouched.map((line) => ({
+        rowKey: line.rowKey,
+        reason: line.reason,
+      })),
+      // Absent is none omitted. The server leaves the key out when every name fit, and a
+      // view reading `undefined` would have to know that rule to draw the same thing.
+      untouchedOmitted: data.untouchedOmitted ?? 0,
+    })
+  })
+
   return () => {
     unsubscribeWindow()
     unsubscribePageWindow()
@@ -224,6 +245,7 @@ export function bindTableViewport(
     unsubscribeOwnCreate()
     unsubscribeAnnounce()
     unsubscribeProgress()
+    unsubscribeBulkReport()
     connection.unregisterTableWindow(address.tableKey)
   }
 }

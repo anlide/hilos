@@ -34,6 +34,9 @@ final class TableConstants
     /** Payload key for table identifier in refresh/action DTOs. */
     public const string PAYLOAD_KEY_TABLE_KEY = 'tableKey';
 
+    /** Payload key for the row keys a bulk action names one by one. */
+    public const string PAYLOAD_KEY_ROW_KEYS = 'rowKeys';
+
     /** Generic viewport filter-map key resolved to the query search term. */
     public const string FILTER_KEY_SEARCH = 'search';
 
@@ -72,6 +75,37 @@ final class TableConstants
      * table shows "500+" and offers no page numbers — so the count stops here instead.
      */
     public const int COUNT_CEILING = 500;
+
+    /**
+     * Rows a bulk run keeps in flight - handed out in one tick, and awaiting a verdict at once.
+     *
+     * One bound serves both counts. Handing the whole target to the owner at once floods its
+     * queue and stalls everyone else on it; judging one row per tick turns deleting forty rows
+     * into a matter of minutes. Neither end is a setting: a bulk run behaves one way.
+     */
+    public const int BULK_ROWS_IN_FLIGHT = 10;
+
+    /**
+     * Seconds a bulk run waits for the verdict on one row before calling the row untouched.
+     *
+     * A guard without a deadline is a guard in name only: the owner of a row is another process,
+     * and its silence has to become a named outcome rather than a run that never ends.
+     */
+    public const float BULK_VERDICT_TIMEOUT_SECONDS = 15.0;
+
+    /**
+     * Untouched rows a report names before it stops naming them and counts the rest.
+     *
+     * "39 of 40 deleted" without names is forbidden, and ten thousand names in one frame are
+     * that same absence in another form - no reader gets through them and no browser draws them.
+     */
+    public const int BULK_UNTOUCHED_NAME_CEILING = 200;
+
+    /** Reason a row is untouched: it had left the set before its turn came. */
+    public const string BULK_REASON_ROW_GONE = 'The row was gone by the time its turn came';
+
+    /** Reason a row is untouched: the owner of the row never answered the verdict asked of it. */
+    public const string BULK_REASON_NO_VERDICT = 'The owner of the row did not answer in time';
 
     /** Result key for objects array (Object layer queryPage intermediate result). */
     public const string RESULT_KEY_OBJECTS = 'objects';

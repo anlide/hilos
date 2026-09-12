@@ -481,8 +481,14 @@ record and over twenty never stand side by side.
   falls by itself.
 - **A bulk action is an ordinary `action`** — the page names it, as it names
   every other table action. The framework fixes only the shape: the request
-  carries `rowKeys` **or** `filter`, exactly one of the two; the reply carries
-  `touched` and `untouched: [{ rowKey, reason }]`.
+  carries `rowKeys` **or** `filter`, exactly one of the two; the reply answers
+  **acceptance** and carries the `progressKey` of the run, and `touched` and
+  `untouched: [{ rowKey, reason }]` arrive after it on a `table_bulk_report`
+  frame addressed to the connection that asked. The outcome does not ride the
+  reply because a run over a condition outlives the client's action timeout, and
+  holding the action open would fail work that is going fine
+  ([wire-protocol.md](wire-protocol.md), *When the work outlives the reply*).
+  The shape of the report is unchanged by the move: only its carrier is.
 - **A silent partial success is forbidden.** The server judges each row
   separately, and the report names the untouched rows one by one. "39 of 40
   deleted" without names is a message after which the reader has to go looking.
@@ -604,13 +610,18 @@ and everything below is addressed to the one connection it concerns:
 | `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |
 | `table_viewport_announce` | server → client, live | `page`, `tableKey`, `rowKey`, `placement` (`above` / `inside`), `totalCount`, `totalExact`, `pageCount` |
 | `table_progress` | server → client, live | `page`, `tableKey`, `scope` (`row` / `table` / `bulk`), `progressKey`, `rowKey` (`scope: row` only), `current`, `total`, `ended`, `detail` — work already running when a tab subscribes arrives instead in the `progress` key of the `windows` section |
+| `table_bulk_report` | server → client, addressed to the initiator | `page`, `tableKey`, `progressKey`, `touched` (a count, never names — changed rows have already arrived as live deltas), `untouched` (`[{ rowKey, reason }]`), `untouchedOmitted` (absent when every name fit under the server's ceiling) |
 
 A **full window snapshot never travels on the live stream**. It travels on one of
 two roads and no other: in reply to a `table_viewport` request, which is a window
 the reader changed, and in the `windows` section of the page's own
 `page_response`, which is the first window of every viewport table the page
-declares — a cold load and a reconnect alike. A bulk action gets no frame type of
-its own: it is an ordinary `action` in the shape given above.
+declares — a cold load and a reconnect alike. A bulk action is still an ordinary
+`action` in the shape given above, but its OUTCOME has a frame of its own,
+`table_bulk_report`: the acceptance travels on the reply and the report cannot,
+because the run outlives the timeout the reply is bound by. That frame is a
+report and never a window — it carries no rows, only how many were touched and
+which were not.
 
 The `windows` section carries one key the reply does not, `sort`, and leaves out
 one the reply has no reason to carry either, `filter`. The order is there because
@@ -642,6 +653,8 @@ an address does not:
 | the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
 | the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | the progress bars a table reports | `framework/frontend/core/src/table/tableProgress.ts` |
+| the bulk run a table holds | `framework/backend/Core/Table/Bulk/TableBulkRun.php` |
+| the report a bulk action ends with | `framework/frontend/core/src/table/tableBulk.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |
 | the thin view | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
 | the bar the frame is drawn as | `framework/frontend/vue/src/HilosTableBar.vue` |

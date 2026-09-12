@@ -1966,10 +1966,10 @@ abstract class WorkerManager extends BaseManager
     /**
      * Sweeps everything one agent's page router is holding until something else happens.
      *
-     * Two pools, one visit: actions that never got their throttle verdict, and frames
-     * waiting to learn who is behind their connection. Both are emptied on the tick because
-     * both wait on an answer from another process, and this worker must keep serving every
-     * other connection while they wait.
+     * Three pools, one visit: actions that never got their throttle verdict, frames waiting to
+     * learn who is behind their connection, and mass operations being walked a handful of rows
+     * at a time. All three are driven on the tick because all three wait on an answer from
+     * another process, and this worker must keep serving every other connection while they do.
      *
      * Only a router that already exists is asked. A router is built the first time its agent
      * routes something, so building one here - on every tick, for every agent - would stand
@@ -1984,6 +1984,7 @@ abstract class WorkerManager extends BaseManager
         $router = $this->pageSignalRouters[$agentId] ?? null;
         $router?->releaseExpiredDeferredActions();
         $router?->releasePendingFrames();
+        $router?->advanceBulkRuns();
     }
 
     /**

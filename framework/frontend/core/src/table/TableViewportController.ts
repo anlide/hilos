@@ -36,6 +36,10 @@ import {
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
+import {
+  type HilosTableBulkReport,
+  type HilosTableBulkState,
+} from './tableBulk.js'
 import { hilosTableCard } from './tableCard.js'
 import {
   type HilosTableBody,
@@ -263,6 +267,7 @@ export interface TableWindowSink {
   ): void
   ingestDelta(delta: TableViewportDelta): void
   ingestProgress(frame: HilosTableProgressFrame): void
+  ingestBulkReport(report: HilosTableBulkReport): void
   descriptor(): TableViewportDescriptor | null
   ingestCount(totalCount: number, totalExact: boolean): void
   ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
@@ -400,6 +405,11 @@ export class TableViewportController<R> implements TableWindowSink {
     ReadonlyMap<string, HilosTableProgress>
   >(new Map())
 
+  /** How the last bulk run on this table ended, or null while none has. */
+  private readonly bulkReportSignal = createSignal<HilosTableBulkReport | null>(
+    null,
+  )
+
   /** Request id of the last own-create ingested, or null when it was not tracked. */
   private readonly ownCreateRequestIdSignal = createSignal<string | null>(null)
 
@@ -520,6 +530,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** The readable progress state: the three signals above, under the names a view reads. */
   private readonly progressState: HilosTableProgressState
+
+  /** The readable bulk state: the report signal above, under the name a view reads. */
+  private readonly bulkState: HilosTableBulkState
 
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.filterSignal = createSignal<Record<string, unknown>>({
@@ -671,6 +684,7 @@ export class TableViewportController<R> implements TableWindowSink {
       bulk: this.bulkProgressSignal,
       rows: this.rowProgressSignal,
     }
+    this.bulkState = { report: this.bulkReportSignal }
   }
 
   /** The current search query (empty string when unset). */
@@ -712,8 +726,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * inputs stay silent, and the state reads empty.
    *
    * SCAFFOLD: read by the selection panel and the checkbox column, which are
-   * HIL-801 (Vue) and HIL-810 (React, Angular), and by the bulk action itself,
-   * which is HIL-799. No table declares bulk operations until HIL-819.
+   * HIL-801 (Vue) and HIL-810 (React, Angular), and by the view that sends a bulk
+   * action over what is marked, which is HIL-804 (Vue) and HIL-813 (React,
+   * Angular). No table declares bulk operations until HIL-819.
    */
   get selection(): HilosTableSelectionState {
     return this.selectionState
@@ -730,11 +745,30 @@ export class TableViewportController<R> implements TableWindowSink {
    * the whole truth at once.
    *
    * SCAFFOLD: read by the bars themselves, which are HIL-805 (Vue) and HIL-814 (React,
-   * Angular). The sender of the bulk bar is HIL-799, and the backup's run moves onto this
-   * channel in HIL-820.
+   * Angular). The backup's run moves onto this channel in HIL-820.
    */
   get progress(): HilosTableProgressState {
     return this.progressState
+  }
+
+  /**
+   * How the last bulk run on this table ended: how many rows it changed, and every
+   * row it did not, by name.
+   *
+   * It is NOT the reply to the action. The reply said the run was accepted — a run
+   * over a condition outlives the client's action timeout — and this is what arrived
+   * when the work was actually over.
+   *
+   * Like a bar, it does not belong to the window: paging, filtering and re-sorting
+   * leave it standing, because it is about the work and not about what is on screen.
+   * It stands until the next run on this table begins, which is the one thing that
+   * clears it.
+   *
+   * SCAFFOLD: read by the selection panel, which is HIL-804 (Vue) and HIL-813 (React,
+   * Angular). No table declares bulk operations until HIL-819.
+   */
+  get bulk(): HilosTableBulkState {
+    return this.bulkState
   }
 
   /** The current zero-based page index. */
@@ -1194,7 +1228,31 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return
     }
+    if (
+      frame.scope === 'bulk' &&
+      this.bulkReportSignal.get()?.progressKey !== frame.progressKey
+    ) {
+      // A new run is what clears the report of the last one, and nothing else does.
+      // Clearing it when the bar of the SAME run moves would erase a report that
+      // arrived first, which is the order the server sends the two in.
+      this.bulkReportSignal.set(null)
+    }
     place.set(toTableProgress(frame))
+  }
+
+  /**
+   * Ingest the report a bulk run ended with (`table_bulk_report`).
+   *
+   * It replaces whatever report was standing, because one table shows the outcome of
+   * the run that just ended and not a history of them. It is NOT matched against the
+   * bar: the report arrives BEFORE the bar comes down, deliberately, so that the panel
+   * is never left with neither, and a report checked against a bar that is still up
+   * would be the same ordering read backwards.
+   *
+   * @param report The outcome as it arrived.
+   */
+  ingestBulkReport(report: HilosTableBulkReport): void {
+    this.bulkReportSignal.set(report)
   }
 
   /**

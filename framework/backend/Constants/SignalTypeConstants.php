@@ -102,6 +102,9 @@ final class SignalTypeConstants
     /** @var string Table progress signal type (server-to-client live word of work running on one table) */
     public const string TABLE_PROGRESS = 'table_progress';
 
+    /** @var string Table bulk report signal type (server-to-client word of how a bulk run judged every row it reached) */
+    public const string TABLE_BULK_REPORT = 'table_bulk_report';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 

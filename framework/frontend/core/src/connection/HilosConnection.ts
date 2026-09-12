@@ -39,6 +39,7 @@ import {
   type ProtectedModeSignal,
   type SessionRotateSignal,
   type TableProgressSignal,
+  type TableBulkReportSignal,
   type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
   type TableViewportOwnCreateSignal,
@@ -225,6 +226,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableViewportAnnounce: TableViewportAnnounceSignal
   /** A bar of work running on a table (`table_progress`): where it is drawn, whose work it is, how far along. */
   tableProgress: TableProgressSignal
+  /** How a bulk run judged the rows it reached (`table_bulk_report`): how many it changed, and the ones it left by name. */
+  tableBulkReport: TableBulkReportSignal
   /** A signal the core has no concrete schema for; tolerated and observable. */
   unknownSignal: UnknownSignal
   /** A frame that violated the envelope contract; reported, never fatal. */
@@ -911,6 +914,9 @@ export class HilosConnection {
         break
       case 'tableProgress':
         this.emitter.emit('tableProgress', signal)
+        break
+      case 'tableBulkReport':
+        this.emitter.emit('tableBulkReport', signal)
         break
       case 'unknown':
         this.emitter.emit('unknownSignal', signal)

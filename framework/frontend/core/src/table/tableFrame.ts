@@ -92,9 +92,11 @@ export interface HilosTableMainAction {
  * One operation offered for the marked rows: its key, its label, and whether it
  * reads as destructive.
  *
- * SCAFFOLD: declaration only, on purpose — who is marked and how marks live
- * inside a window is HIL-796, and running an operation and naming the rows it
- * left untouched is HIL-799. The frame carries no executor for it.
+ * SCAFFOLD: declaration only, on purpose. Who is marked, and running an operation
+ * and naming the rows it left untouched, are both built — the marks on the
+ * controller, the run on the server — and the frame still carries no executor: the
+ * view is what sends the action, which is HIL-804 (Vue) and HIL-813 (React,
+ * Angular), and no table declares a bulk operation until HIL-819.
  */
 export interface HilosTableBulkAction {
   /** Operation id, unique within the table. */
