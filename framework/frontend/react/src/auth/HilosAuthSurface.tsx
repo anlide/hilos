@@ -468,6 +468,31 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         (error.code === null ? null : CODE_MESSAGES[error.code]) ??
         GENERIC_ERROR)
 
+  /** The channel the main button sends over, or null when the screen has none. */
+  const primaryChannel =
+    primaryAction === null || primaryAction.kind !== 'channel'
+      ? null
+      : (channels.find((channel) => channel.key === primaryAction.key) ?? null)
+
+  /** The other channels this number can be reached on, offered as icons. */
+  const otherChannels =
+    primaryChannel === null
+      ? []
+      : channels.filter((channel) => channel.key !== primaryChannel.key)
+
+  /**
+   * Why each dark channel icon is dark, one line per channel. The icon's title
+   * cannot carry it — a disabled button gets no mouse events, so the title never
+   * shows — and the line stands visible under the row instead (accessibility.md).
+   * Declared above the calm region's news, which announces the same lines.
+   */
+  const channelUnavailableLines = otherChannels
+    .filter((channel) => unavailableChannels.has(channel.key))
+    .map((channel) => ({
+      key: channel.key,
+      text: `${channel.label} cannot reach this number`,
+    }))
+
   // What the calm region says: the screen's news, in the order they stand on it
   // from the top down. More than one can be true at once, so it is a list and
   // not a sentence — each line keyed by the source it came from, the way the
@@ -497,6 +522,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     if (state.step === 'code_expired') {
       news.push({ key: 'code_expired', text: CODE_EXPIRED_MESSAGE })
     }
+    // The line under the channel row only shows; this region is what says it
+    // aloud, and a block carrying aria-live of its own would be read twice
+    // (accessibility.md, "Live regions").
+    if (state.step === 'identifier') {
+      for (const line of channelUnavailableLines) {
+        news.push({ key: `channel_unavailable_${line.key}`, text: line.text })
+      }
+    }
 
     return news
   }, [
@@ -506,6 +539,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     notice,
     screenKey,
     form.identifier,
+    channelUnavailableLines,
   ])
 
   // The icon row above the field, and the passwordless exits that live next to
@@ -611,18 +645,6 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
 
     return showPassword ? null : 'This account has no password.'
   }
-
-  /** The channel the main button sends over, or null when the screen has none. */
-  const primaryChannel =
-    primaryAction === null || primaryAction.kind !== 'channel'
-      ? null
-      : (channels.find((channel) => channel.key === primaryAction.key) ?? null)
-
-  /** The other channels this number can be reached on, offered as icons. */
-  const otherChannels =
-    primaryChannel === null
-      ? []
-      : channels.filter((channel) => channel.key !== primaryChannel.key)
 
   /** The method the machine promoted to the main button, or null. */
   const primaryMethod =
@@ -1265,11 +1287,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                           pending || unavailableChannels.has(channel.key)
                         }
                         aria-label={`Send the code via ${channel.label}`}
-                        title={
-                          unavailableChannels.has(channel.key)
-                            ? `${channel.label} cannot reach this number`
-                            : channel.label
-                        }
+                        title={`Send the code via ${channel.label}`}
                         data-id={channelDataId(channel.key)}
                         onClick={() => void auth.chooseChannel(channel.key)}
                       >
@@ -1280,6 +1298,21 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                       </LoadingButton>
                     ))}
                   </div>
+                  {channelUnavailableLines.length > 0 ? (
+                    <div
+                      className="small text-body-secondary mt-2"
+                      data-id="auth-channel-unavailable"
+                    >
+                      {channelUnavailableLines.map((line) => (
+                        <div
+                          key={line.key}
+                          data-id={`auth-channel-unavailable-${line.key}`}
+                        >
+                          {line.text}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </>
               ) : null}
             </>

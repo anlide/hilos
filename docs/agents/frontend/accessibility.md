@@ -126,6 +126,18 @@ The rules to apply when building a view or an SDK component:
   M". Name every table through the `label` prop.
 - **Icon-only controls** carry an `aria-label`; their `<i class="bi …">` is
   `aria-hidden="true"`.
+- **A control that can be disabled does not explain itself with a title.** A
+  disabled element gets no mouse events, so the browser never shows its `title`,
+  and a phone or a screen reader never reaches one at all — the reason is hidden
+  exactly when it is wanted. `loading` counts too: `LoadingButton` turns its own
+  button off while it loads. The reason lives in visible content instead: a short
+  word in the row (`MISMATCH`, `incompatible`, `failed`) and a live "why" icon
+  button beside the dark action that opens the whole sentence, as on the backup
+  page; where the reason is short and there is room under the controls, a visible
+  line there, as under the sign-in screen's channel row, announced through the
+  surface's own live region. A `title` stays legal on such a control only as its
+  name repeated — the same text as its `aria-label`. Checked automatically:
+  `DISABLED-TITLE`.
 - **Busy state** — a control performing an action sets `aria-busy` while in
   flight (`LoadingButton`).
 - **Live regions** — a live region is a **permanent** node that stands there

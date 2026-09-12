@@ -440,7 +440,22 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
     .toBeGreaterThan(0)
 
   expect(backupId).toBeTruthy()
-  await page.locator(`[data-id="hilos-backup-restore-${backupId}"]`).click()
+
+  // The other side of the rule a dark restore button follows (HIL-661): a live one
+  // has no "why" button beside it, and its title is its name, not a reason.
+  const restoreButton = page.locator(
+    `[data-id="hilos-backup-restore-${backupId}"]`,
+  )
+  await expect(restoreButton).toBeEnabled()
+  await expect(
+    page.locator(`[data-id="hilos-backup-blocked-why-${backupId}"]`),
+  ).toHaveCount(0)
+  await expect(restoreButton).toHaveAttribute(
+    'aria-label',
+    'Restore this backup',
+  )
+  await expect(restoreButton).toHaveAttribute('title', 'Restore this backup')
+  await restoreButton.click()
 
   // The barrier is the id, not a yes/no: the likely mistake is restoring the wrong
   // archive, and only typing its id proves the operator read which one is selected.

@@ -175,8 +175,10 @@ const circleColumns: HilosTableColumnOf<HilosBackupCircleRow>[] = [
 
 /**
  * Why an archive cannot be restored right now, or null when it can. The button
- * stays visible and carries this as its title, so the answer arrives before the
- * click rather than as a toast after it.
+ * stays visible and a live "why" button beside it opens this sentence, so the
+ * answer arrives before the click rather than as a toast after it. It is not the
+ * button's title: a disabled button gets no mouse events, so its title never shows
+ * (docs/agents/frontend/accessibility.md).
  *
  * @param row The backup row the button belongs to.
  */
@@ -262,6 +264,28 @@ const detailsRow = ref<HilosBackupRow | null>(null)
 function openDetails(row: HilosBackupRow): void {
   detailsRow.value = row
   detailsOpen.value = true
+}
+
+// Blocked-restore dialog: the sentence behind the "why" button of a dark restore
+// button. It shows whatever restoreBlockedReason() returns rather than knowing the
+// cases, so a reason added there is shown here without a word changed.
+const blockedOpen = ref(false)
+const blockedRow = ref<HilosBackupRow | null>(null)
+
+function openBlocked(row: HilosBackupRow): void {
+  blockedRow.value = row
+  blockedOpen.value = true
+}
+
+// Copy-failure dialog: why the last copy of an archive off the machine did not make
+// it. The word stays in the cell; the reason is one click away rather than in a title
+// no phone and no screen reader reaches.
+const shipErrorOpen = ref(false)
+const shipErrorRow = ref<HilosBackupRow | null>(null)
+
+function openShipError(row: HilosBackupRow): void {
+  shipErrorRow.value = row
+  shipErrorOpen.value = true
 }
 
 async function submitDelete(): Promise<void> {
@@ -627,9 +651,19 @@ function openOutcome(row: HilosBackupRow): void {
             :class="
               isBackupShipFailed(row) ? 'text-danger fw-semibold' : undefined
             "
-            :title="row.shipError ?? undefined"
             >{{ formatBackupShipping(row) }}</span
           >
+          <button
+            v-if="isBackupShipFailed(row) && row.shipError"
+            type="button"
+            class="btn btn-sm btn-outline-secondary ms-1"
+            title="Why the copy failed"
+            aria-label="Why the copy failed"
+            :data-id="`hilos-backup-ship-why-${row.id}`"
+            @click="openShipError(row)"
+          >
+            <i class="bi bi-question-circle" aria-hidden="true"></i>
+          </button>
         </td>
         <td class="text-end">{{ formatBackupDuration(row) }}</td>
         <td style="min-width: 10rem">
@@ -690,9 +724,7 @@ function openOutcome(row: HilosBackupRow): void {
               :aria-label="
                 row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
               "
-              :title="
-                row.keep ? 'Pinned out of rotation' : 'Pin out of rotation'
-              "
+              :title="row.keep ? 'Unpin from rotation' : 'Pin out of rotation'"
               :data-id="`hilos-backup-keep-${row.id}`"
               @change.prevent="toggleKeep(row)"
             />
@@ -712,18 +744,30 @@ function openOutcome(row: HilosBackupRow): void {
             <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
           </button>
           <template v-if="offersBackupRestore(row)">
-            <button
-              v-if="restoreGate.uiEnabled"
-              type="button"
-              class="btn btn-sm btn-outline-warning me-1"
-              :disabled="restoreBlockedReason(row) !== null"
-              :title="restoreBlockedReason(row) ?? 'Restore this backup'"
-              aria-label="Restore this backup"
-              :data-id="`hilos-backup-restore-${row.id}`"
-              @click="openRestore(row)"
-            >
-              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-            </button>
+            <template v-if="restoreGate.uiEnabled">
+              <button
+                v-if="restoreBlockedReason(row) !== null"
+                type="button"
+                class="btn btn-sm btn-outline-secondary me-1"
+                title="Why this backup cannot be restored"
+                aria-label="Why this backup cannot be restored"
+                :data-id="`hilos-backup-blocked-why-${row.id}`"
+                @click="openBlocked(row)"
+              >
+                <i class="bi bi-question-circle" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-warning me-1"
+                :disabled="restoreBlockedReason(row) !== null"
+                title="Restore this backup"
+                aria-label="Restore this backup"
+                :data-id="`hilos-backup-restore-${row.id}`"
+                @click="openRestore(row)"
+              >
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+              </button>
+            </template>
             <button
               v-else
               type="button"
@@ -839,6 +883,40 @@ function openOutcome(row: HilosBackupRow): void {
     </HilosModal>
 
     <HilosModal
+      v-model="blockedOpen"
+      :title="
+        blockedRow ? `Cannot restore · ${blockedRow.id}` : 'Cannot restore'
+      "
+    >
+      <HilosLongText
+        kind="prose"
+        :text="blockedRow ? (restoreBlockedReason(blockedRow) ?? '') : ''"
+        data-id="hilos-backup-blocked-reason-text"
+      />
+      <template #actions="{ requestClose }">
+        <button type="button" class="btn btn-secondary" @click="requestClose">
+          Close
+        </button>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="shipErrorOpen"
+      :title="shipErrorRow ? `Copy failed · ${shipErrorRow.id}` : 'Copy failed'"
+    >
+      <HilosLongText
+        kind="prose"
+        :text="shipErrorRow?.shipError ?? ''"
+        data-id="hilos-backup-ship-error-text"
+      />
+      <template #actions="{ requestClose }">
+        <button type="button" class="btn btn-secondary" @click="requestClose">
+          Close
+        </button>
+      </template>
+    </HilosModal>
+
+    <HilosModal
       v-model="restoreOpen"
       :title="restoreRow ? `Restore · ${restoreRow.id}` : 'Restore backup'"
       :close-on-backdrop="!restoreBusy"
@@ -914,9 +992,9 @@ function openOutcome(row: HilosBackupRow): void {
         :text="cliRow ? formatRestoreCliCommand(cliRow) : ''"
         data-id="hilos-backup-restore-cli-text"
       />
-      <!-- The same lines the button's title carries where there is a button: an
-      operator on production learns of an incompatible archive here, not from the
-      command refusing after they have walked to the terminal. -->
+      <!-- What the "why" dialog of a dark restore button says where there is a
+      button: an operator on production learns of an incompatible archive here, not
+      from the command refusing after they have walked to the terminal. -->
       <ul
         v-if="cliRow && backupMigrationNotes(cliRow).length > 0"
         class="mt-2 mb-0 ps-3 text-body-secondary"

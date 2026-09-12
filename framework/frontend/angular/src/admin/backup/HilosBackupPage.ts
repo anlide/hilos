@@ -314,9 +314,19 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             <span [class]="checksumClass(row)">{{ formatChecksum(row) }}</span>
           </td>
           <td class="text-nowrap">
-            <span [class]="shippingClass(row)" [title]="row.shipError ?? ''">{{
-              formatShipping(row)
-            }}</span>
+            <span [class]="shippingClass(row)">{{ formatShipping(row) }}</span>
+            @if (isShipFailed(row) && row.shipError) {
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary ms-1"
+                title="Why the copy failed"
+                aria-label="Why the copy failed"
+                [attr.data-id]="'hilos-backup-ship-why-' + row.id"
+                (click)="openShipError(row)"
+              >
+                <i class="bi bi-question-circle" aria-hidden="true"></i>
+              </button>
+            }
           </td>
           <td class="text-end">{{ formatDuration(row) }}</td>
           <td style="min-width: 10rem">
@@ -375,7 +385,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
                     row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
                   "
                   [attr.title]="
-                    row.keep ? 'Pinned out of rotation' : 'Pin out of rotation'
+                    row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
                   "
                   [attr.data-id]="'hilos-backup-keep-' + row.id"
                   (change)="toggleKeep(row)"
@@ -400,13 +410,23 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             }
             @if (offersRestore(row)) {
               @if (restoreGate().uiEnabled) {
+                @if (restoreBlockedReason(row) !== null) {
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary me-1"
+                    title="Why this backup cannot be restored"
+                    aria-label="Why this backup cannot be restored"
+                    [attr.data-id]="'hilos-backup-blocked-why-' + row.id"
+                    (click)="openBlocked(row)"
+                  >
+                    <i class="bi bi-question-circle" aria-hidden="true"></i>
+                  </button>
+                }
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-warning me-1"
                   [disabled]="restoreBlockedReason(row) !== null"
-                  [attr.title]="
-                    restoreBlockedReason(row) ?? 'Restore this backup'
-                  "
+                  title="Restore this backup"
                   aria-label="Restore this backup"
                   [attr.data-id]="'hilos-backup-restore-' + row.id"
                   (click)="openRestore(row)"
@@ -614,6 +634,48 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
       </hilos-modal>
 
       <hilos-modal
+        [open]="blockedOpen()"
+        (openChange)="blockedOpen.set($event)"
+        [title]="blockedTitle()"
+      >
+        <hilos-long-text
+          kind="prose"
+          [text]="blockedReason()"
+          dataId="hilos-backup-blocked-reason-text"
+        />
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            (click)="requestClose()"
+          >
+            Close
+          </button>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="shipErrorOpen()"
+        (openChange)="shipErrorOpen.set($event)"
+        [title]="shipErrorTitle()"
+      >
+        <hilos-long-text
+          kind="prose"
+          [text]="shipErrorRow()?.shipError ?? ''"
+          dataId="hilos-backup-ship-error-text"
+        />
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            (click)="requestClose()"
+          >
+            Close
+          </button>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
         [open]="restoreOpen()"
         (openChange)="restoreOpen.set($event)"
         [title]="restoreTitle()"
@@ -696,9 +758,9 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           [text]="cliCommand()"
           dataId="hilos-backup-restore-cli-text"
         />
-        <!-- The same lines the button's title carries where there is a button: an
-        operator on production learns of an incompatible archive here, not from the
-        command refusing after they have walked to the terminal. -->
+        <!-- What the "why" dialog of a dark restore button says where there is a
+        button: an operator on production learns of an incompatible archive here, not
+        from the command refusing after they have walked to the terminal. -->
         @if (cliRow(); as row) {
           @if (migrationNotes(row).length > 0) {
             <ul
@@ -768,6 +830,7 @@ export class HilosBackupPage {
   protected readonly hasFailureDetail = hasBackupFailureDetail
   protected readonly hasRestoreOutcome = hasRestoreOutcome
   protected readonly offersRestore = offersBackupRestore
+  protected readonly isShipFailed = isBackupShipFailed
 
   protected readonly backups = computed(() =>
     createHilosBackupsTable(this.context()),
@@ -834,6 +897,33 @@ export class HilosBackupPage {
     const row = this.detailsRow()
 
     return row ? `Backup failed · ${row.id}` : 'Backup failed'
+  })
+
+  // Blocked-restore dialog: the sentence behind the "why" button of a dark restore
+  // button. It shows whatever restoreBlockedReason() returns rather than knowing the
+  // cases, so a reason added there is shown here without a word changed.
+  protected readonly blockedOpen = signal(false)
+  protected readonly blockedRow = signal<HilosBackupRow | null>(null)
+  protected readonly blockedTitle = computed(() => {
+    const row = this.blockedRow()
+
+    return row ? `Cannot restore · ${row.id}` : 'Cannot restore'
+  })
+  protected readonly blockedReason = computed(() => {
+    const row = this.blockedRow()
+
+    return row === null ? '' : (this.restoreBlockedReason(row) ?? '')
+  })
+
+  // Copy-failure dialog: why the last copy of an archive off the machine did not make
+  // it. The word stays in the cell; the reason is one click away rather than in a title
+  // no phone and no screen reader reaches.
+  protected readonly shipErrorOpen = signal(false)
+  protected readonly shipErrorRow = signal<HilosBackupRow | null>(null)
+  protected readonly shipErrorTitle = computed(() => {
+    const row = this.shipErrorRow()
+
+    return row ? `Copy failed · ${row.id}` : 'Copy failed'
   })
 
   // Restore dialog: the destructive one. Confirmation is typing the archive's id —
@@ -1062,6 +1152,16 @@ export class HilosBackupPage {
     this.detailsOpen.set(true)
   }
 
+  protected openBlocked(row: HilosBackupRow): void {
+    this.blockedRow.set(row)
+    this.blockedOpen.set(true)
+  }
+
+  protected openShipError(row: HilosBackupRow): void {
+    this.shipErrorRow.set(row)
+    this.shipErrorOpen.set(true)
+  }
+
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
   // reply; a failure stays open with the reason shown.
   protected async submitDelete(): Promise<void> {
@@ -1109,8 +1209,10 @@ export class HilosBackupPage {
 
   /**
    * Why an archive cannot be restored right now, or null when it can. The button
-   * stays visible and carries this as its title, so the answer arrives before the
-   * click rather than as a toast after it.
+   * stays visible and a live "why" button beside it opens this sentence, so the
+   * answer arrives before the click rather than as a toast after it. It is not the
+   * button's title: a disabled button gets no mouse events, so its title never shows
+   * (docs/agents/frontend/accessibility.md).
    *
    * @param row The backup row the button belongs to.
    */

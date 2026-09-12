@@ -374,6 +374,14 @@ const announcedNews = computed(() => {
   if (state.value.step === 'code_expired') {
     news.push({ key: 'code_expired', text: CODE_EXPIRED_MESSAGE })
   }
+  // The line under the channel row only shows; this region is what says it aloud,
+  // and a block carrying aria-live of its own would be read twice (accessibility.md,
+  // "Live regions").
+  if (state.value.step === 'identifier') {
+    for (const line of channelUnavailableLines.value) {
+      news.push({ key: `channel_unavailable_${line.key}`, text: line.text })
+    }
+  }
 
   return news
 })
@@ -514,6 +522,20 @@ const otherChannels = computed(() => {
     ? []
     : channels.value.filter((channel) => channel.key !== primary.key)
 })
+
+/**
+ * Why each dark channel icon is dark, one line per channel. The icon's title cannot
+ * carry it — a disabled button gets no mouse events, so the title never shows — and
+ * the line stands visible under the row instead (accessibility.md).
+ */
+const channelUnavailableLines = computed(() =>
+  otherChannels.value
+    .filter((channel) => unavailableChannels.value.has(channel.key))
+    .map((channel) => ({
+      key: channel.key,
+      text: `${channel.label} cannot reach this number`,
+    })),
+)
 
 /** The method the machine promoted to the main button, or null. */
 const primaryMethod = computed(() => {
@@ -1279,16 +1301,25 @@ onUnmounted(() => {
               :loading="pending && state.channelKey === channel.key"
               :disabled="pending || unavailableChannels.has(channel.key)"
               :aria-label="`Send the code via ${channel.label}`"
-              :title="
-                unavailableChannels.has(channel.key)
-                  ? `${channel.label} cannot reach this number`
-                  : channel.label
-              "
+              :title="`Send the code via ${channel.label}`"
               :data-id="channelDataId(channel.key)"
               @click="chooseChannel(channel.key)"
             >
               <i :class="channelIcon(channel.key)" aria-hidden="true" />
             </LoadingButton>
+          </div>
+          <div
+            v-if="channelUnavailableLines.length > 0"
+            class="small text-body-secondary mt-2"
+            data-id="auth-channel-unavailable"
+          >
+            <div
+              v-for="line in channelUnavailableLines"
+              :key="line.key"
+              :data-id="`auth-channel-unavailable-${line.key}`"
+            >
+              {{ line.text }}
+            </div>
           </div>
         </template>
       </template>

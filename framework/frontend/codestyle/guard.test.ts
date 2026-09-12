@@ -23,6 +23,7 @@ import {
   type ReportedViolations,
 } from './baseline.js'
 import { checkRepository as checkBrowserValueDeclared } from './browserValueDeclared.js'
+import { checkRepository as checkDisabledTitle } from './disabledTitle.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkStyleInline } from './inlineStyle.js'
 import { checkRepository as checkStyleSheetHome } from './styleSheetHome.js'
@@ -44,6 +45,7 @@ const REPOSITORY_ROOT = join(
  */
 const RULES = [
   checkBrowserValueDeclared,
+  checkDisabledTitle,
   checkE2ePageGoto,
   checkStyleInline,
   checkStyleSheetHome,

@@ -293,6 +293,12 @@ Topic documents are referenced by filename; several are still being authored.
   React, Angular) — do not hand-write another copy. The row carries no role of
   its own; the surface announces from its own permanent live region. See
   [accessibility.md](accessibility.md).
+- **A disabled control explains itself with visible content, never with a
+  title.** A disabled element gets no mouse events, so its title never shows,
+  and no phone or screen reader reaches it. The reason stands in the row as a
+  word and behind a live "why" button beside the dark action; a title on a
+  control that can be disabled repeats its `aria-label` or is not there. Checked
+  automatically: `DISABLED-TITLE`, see [accessibility.md](accessibility.md).
 - **Full accessibility (WCAG 2.1 AA) in v1.** Focus-trap and focus-return in
   modals, full keyboard operability, ARIA roles and names, one heading per page,
   text alternatives for status color, and visible focus with adequate contrast

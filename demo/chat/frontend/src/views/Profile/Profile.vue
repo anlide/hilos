@@ -637,6 +637,15 @@ function mergeBoth(): void {
             >
               {{ identity.identifier }}
             </span>
+            <!-- Why Unlink is dark, said in the row: a disabled button gets no
+            mouse events, so a title on it never shows (accessibility.md). -->
+            <span
+              v-if="!identity.canUnlink"
+              class="text-body-secondary small"
+              data-id="identity-unlink-blocked"
+            >
+              You cannot remove your only login method
+            </span>
           </span>
           <span class="d-flex align-items-center gap-2 flex-shrink-0">
             <span
@@ -683,11 +692,6 @@ function mergeBoth(): void {
               type="button"
               class="btn btn-outline-danger btn-sm"
               :disabled="!identity.canUnlink"
-              :title="
-                identity.canUnlink
-                  ? 'Remove this login method'
-                  : 'You cannot remove your only login method'
-              "
               data-id="identity-unlink"
               @click="askUnlink(identity.key)"
             >

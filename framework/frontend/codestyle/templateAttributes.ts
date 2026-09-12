@@ -1,6 +1,7 @@
 // The markup reader the template-shaped rules share: given the text of a
 // template, it hands back every attribute an element carries, with the name as
-// written and the line it sits on.
+// written and the line it sits on — flat, or grouped by the element that carries
+// them for a rule whose question is about two attributes of one element.
 //
 // It is a scanner and not a parser, because the question the rules ask is a
 // lexical one — which attributes are written where — and a real parser per view
@@ -53,11 +54,24 @@ const NOT_NEWLINE = /[^\n]/g
  * @returns Each attribute with its name, its value and its line
  */
 export function templateAttributes(markup: string): TemplateAttribute[] {
+  return templateElements(markup).flat()
+}
+
+/**
+ * Reads the attributes of a piece of markup element by element, for a rule that
+ * judges how two attributes of the same element stand to each other.
+ *
+ * @param markup Template text — an SFC's template block, an Angular component's
+ *   template string, or a whole HTML file
+ * @returns One entry per element in source order, holding its attributes in
+ *   source order
+ */
+export function templateElements(markup: string): TemplateAttribute[][] {
   const text = withoutComments(markup)
   const starts = lineStarts(text)
-  const attributes: TemplateAttribute[] = []
 
-  for (const body of tagBodies(text)) {
+  return tagBodies(text).map((body) => {
+    const attributes: TemplateAttribute[] = []
     ATTRIBUTE.lastIndex = 0
     let match = ATTRIBUTE.exec(body.text)
     while (match !== null) {
@@ -68,9 +82,9 @@ export function templateAttributes(markup: string): TemplateAttribute[] {
       })
       match = ATTRIBUTE.exec(body.text)
     }
-  }
 
-  return attributes
+    return attributes
+  })
 }
 
 /**

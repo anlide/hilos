@@ -558,7 +558,7 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
                       pending() || unavailableChannels().has(other.key)
                     "
                     [attr.aria-label]="'Send the code via ' + other.label"
-                    [title]="channelTitle(other)"
+                    [title]="'Send the code via ' + other.label"
                     [attr.data-id]="channelDataId(other.key)"
                     (click)="chooseChannel(other.key)"
                   >
@@ -566,6 +566,20 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
                   </button>
                 }
               </div>
+              @if (channelUnavailableLines().length > 0) {
+                <div
+                  class="small text-body-secondary mt-2"
+                  data-id="auth-channel-unavailable"
+                >
+                  @for (line of channelUnavailableLines(); track line.key) {
+                    <div
+                      [attr.data-id]="'auth-channel-unavailable-' + line.key"
+                    >
+                      {{ line.text }}
+                    </div>
+                  }
+                </div>
+              }
             }
           }
         </form>
@@ -1228,6 +1242,14 @@ export class HilosAuthSurface {
     if (this.state().step === 'code_expired') {
       news.push({ key: 'code_expired', text: CODE_EXPIRED_MESSAGE })
     }
+    // The line under the channel row only shows; this region is what says it aloud,
+    // and a block carrying aria-live of its own would be read twice
+    // (accessibility.md, "Live regions").
+    if (this.state().step === 'identifier') {
+      for (const line of this.channelUnavailableLines()) {
+        news.push({ key: `channel_unavailable_${line.key}`, text: line.text })
+      }
+    }
 
     return news
   })
@@ -1377,6 +1399,22 @@ export class HilosAuthSurface {
         ? []
         : this.channels().filter((channel) => channel.key !== primary.key)
     },
+  )
+
+  /**
+   * Why each dark channel icon is dark, one line per channel. The icon's title cannot
+   * carry it — a disabled button gets no mouse events, so the title never shows — and
+   * the line stands visible under the row instead (accessibility.md).
+   */
+  protected readonly channelUnavailableLines = computed<
+    readonly { key: string; text: string }[]
+  >(() =>
+    this.otherChannels()
+      .filter((channel) => this.unavailableChannels().has(channel.key))
+      .map((channel) => ({
+        key: channel.key,
+        text: `${channel.label} cannot reach this number`,
+      })),
   )
 
   /** The method the machine promoted to the main button, or null. */
@@ -1700,19 +1738,6 @@ export class HilosAuthSurface {
    */
   protected channelIcon(key: string): string {
     return CHANNEL_ICONS[key] ?? GENERIC_ICON
-  }
-
-  /**
-   * The hover text of a secondary channel control, which says why it is dimmed
-   * when it is.
-   *
-   * @param channel The channel the control sends over.
-   * @returns The title text.
-   */
-  protected channelTitle(channel: CodeChannelDescriptor): string {
-    return this.unavailableChannels().has(channel.key)
-      ? `${channel.label} cannot reach this number`
-      : channel.label
   }
 
   /**
