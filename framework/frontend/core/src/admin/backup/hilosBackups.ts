@@ -4,12 +4,13 @@
 // @hilos/core primitives, so the Vue/React/Angular backup views stay thin
 // (multiframework-core.md).
 //
-// The page is read-only and live: rows arrive over the socket from two
-// framework-owned runtime sources (the stored backup index and the single
-// in-progress backup), delivered through the page-scoped `hilosBackups` viewport
-// table. A project supplies a HilosBackupsContext — its scope stores and its live
-// connection — and the framework owns the rest. Row actions (create / delete /
-// keep) are a separate page (HIL-333) and are not part of this view.
+// The page is read-only and live: rows arrive over the socket from the stored backup
+// index, delivered through the page-scoped `hilosBackups` viewport table. A run in
+// flight is no row of that set — it is the table's own progress bar, and the caption
+// beside it is assembled here (HIL-820). A project supplies a HilosBackupsContext —
+// its scope stores and its live connection — and the framework owns the rest. Row
+// actions (create / delete / keep) are a separate page (HIL-333) and are not part of
+// this view.
 
 import { z } from 'zod'
 import {
@@ -35,34 +36,36 @@ import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+import { type HilosTableProgress } from '../../table/tableProgress.js'
 
 /** One row of the Hilos backup table — the framework backup view-model. */
 export interface HilosBackupRow {
-  /** The backup id; also the table row key (a synthetic key for the in-progress row). */
+  /** The backup id; also the table row key. */
   readonly id: string
-  /** ISO-8601 creation timestamp (the start time for an in-progress backup). */
+  /** ISO-8601 creation timestamp. */
   readonly createdAt: string
   /** Application environment the backup was taken in, or null when the record names none. */
   readonly env: string | null
   /** Backup scope value (`full` | `schema-seed` | `schema-only`), or null when the record names none. */
   readonly scope: string | null
-  /** Archive size in bytes (0 while in progress). */
+  /** Archive size in bytes. */
   readonly sizeBytes: number
-  /** Capture duration in seconds (0 while in progress). */
+  /** Capture duration in seconds. */
   readonly durationSeconds: number
   /** Retention pin: true when the backup is excluded from rotation. */
   readonly keep: boolean
-  /** Status value (`success` | `error`, or `running` for the in-progress row). */
+  /** Status value (`success` | `error`). */
   readonly status: string
   /**
-   * Completion tri-state: true completed, false in progress (renders the live
-   * progress indicator), null a recorded failure.
+   * Completion state: true completed, null a recorded failure. Two values and not
+   * three — a run in flight is no row of this set at all, it is the table's own bar
+   * (HIL-820).
    */
   readonly finished: boolean | null
   /**
    * Why the run failed — the persisted diagnostic shown in the failure-detail
-   * modal. Present on error rows only; null for success, the in-progress row, and
-   * legacy records saved before the reason was recorded.
+   * modal. Present on error rows only; null for success and for legacy records saved
+   * before the reason was recorded.
    */
   readonly failureReason: string | null
   /**
@@ -126,20 +129,6 @@ export interface HilosBackupRow {
    * prints, so the two never word one verdict differently.
    */
   readonly restoreMigrationNotice: string | null
-  /**
-   * Phase the run in progress is in, or null on a stored archive — a finished
-   * backup has no run left to report on. Only the single in-progress row ever
-   * carries the three progress anchors.
-   */
-  readonly progressPhase: string | null
-  /** ISO-8601 instant that phase began, or null when there is no phase. */
-  readonly progressPhaseStartedAt: string | null
-  /**
-   * How long the run in progress is expected to take, in seconds, or null when
-   * there is no history to estimate it from — an installation's first backups run
-   * without a percentage rather than against a made-up one.
-   */
-  readonly progressEstimatedSeconds: number | null
 }
 
 /**
@@ -292,14 +281,11 @@ export const BACKUP_RESTORE_MIGRATION_NOTICE_FIELD = 'restoreMigrationNotice'
 /** Migration-gate decision that refuses the archive; the only value the views test for. */
 const BACKUP_MIGRATION_REFUSED = 'refuse'
 
-/** Row payload key of the phase the run in progress is in. */
-const BACKUP_PROGRESS_PHASE_FIELD = 'progressPhase'
+/** Detail key beside the run's bar: the phase value the run is in, as the code names it. */
+export const BACKUP_RUN_PROGRESS_DETAIL_PHASE = 'phase'
 
-/** Row payload key of the instant that phase began. */
-const BACKUP_PROGRESS_PHASE_STARTED_AT_FIELD = 'progressPhaseStartedAt'
-
-/** Row payload key of the expected duration of the run in progress. */
-const BACKUP_PROGRESS_ESTIMATED_SECONDS_FIELD = 'progressEstimatedSeconds'
+/** Detail key beside the run's bar: seconds left, negative once the estimate is spent. */
+export const BACKUP_RUN_PROGRESS_DETAIL_REMAINING_SECONDS = 'remainingSeconds'
 
 /** A selectable backup scope: its wire value and a human-readable label. */
 export interface HilosBackupScopeOption {
@@ -422,9 +408,9 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * Narrow a raw `finished` slot value to the completion tri-state. A stored backup
- * carries true (completed) or null (a recorded failure); the in-progress row
- * carries false. Missing / non-boolean input is treated as an unknown outcome (null).
+ * Narrow a raw `finished` slot value to the completion state: true completed, null a
+ * recorded failure. Missing / non-boolean input is treated as an unknown outcome
+ * (null), which is what a failure reads as.
  *
  * @param value The raw `finished` value from a payload slot.
  */
@@ -543,15 +529,6 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
       slot,
       BACKUP_RESTORE_MIGRATION_NOTICE_FIELD,
     ),
-    progressPhase: readStringOrNull(slot, BACKUP_PROGRESS_PHASE_FIELD),
-    progressPhaseStartedAt: readStringOrNull(
-      slot,
-      BACKUP_PROGRESS_PHASE_STARTED_AT_FIELD,
-    ),
-    progressEstimatedSeconds: readNumberOrNull(
-      slot,
-      BACKUP_PROGRESS_ESTIMATED_SECONDS_FIELD,
-    ),
   }
 }
 
@@ -582,13 +559,13 @@ export function resolveHilosBackupCircleRow(
 /**
  * Human-readable archive size, or a dash when there is no archive.
  *
- * A run in progress has not written one yet, and a failed run never will — both read
- * as a dash. Shared by the three views so the column cannot drift between them.
+ * A failed run never wrote one, and that reads as a dash. Shared by the three views so
+ * the column cannot drift between them.
  *
  * @param row The backup row to format.
  */
 export function formatBackupSize(row: HilosBackupRow): string {
-  if (isBackupInProgress(row) || row.sizeBytes <= 0) {
+  if (row.sizeBytes <= 0) {
     return '—'
   }
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -603,19 +580,15 @@ export function formatBackupSize(row: HilosBackupRow): string {
 }
 
 /**
- * Human-readable capture duration, or a dash while the run is still going.
+ * Human-readable capture duration.
  *
- * A finished run always has a duration, and a backup that took under a second took
- * `0s` — the dash is reserved for the in-progress row, where the number is not known
- * yet. Reporting a completed run as "no duration" reads as missing data.
+ * Every row of this set is a run that ended, so every one of them has a duration: a
+ * backup that took under a second took `0s`, and reporting that as "no duration" would
+ * read as missing data.
  *
  * @param row The backup row to format.
  */
 export function formatBackupDuration(row: HilosBackupRow): string {
-  if (isBackupInProgress(row)) {
-    return '—'
-  }
-
   const seconds = Math.max(0, row.durationSeconds)
   if (seconds < 60) {
     return `${seconds}s`
@@ -720,10 +693,10 @@ const MILLISECONDS_PER_SECOND = 1000
 /**
  * The anchors a running backup or restore is drawn from, wherever they arrive.
  *
- * The table row and the addressed restore frame carry the same four values, so one
- * formula serves both surfaces — the alternative is two implementations of one
- * arithmetic on one page. The names are the frame's, so a {@link HilosRestoreStatus}
- * is already of this shape and only a table row needs {@link backupRowAnchors}.
+ * Only the addressed restore frame carries them now: a create run has its numbers
+ * counted on the server and delivered ready on the table's bar (HIL-820), while a
+ * restore reports through a frame of its own and is drawn from these. The names are the
+ * frame's, so a {@link HilosRestoreStatus} is already of this shape.
  */
 export interface HilosProgressAnchors {
   /** Current phase value (a `BackupPhase` or a `RestorePhase`), or null when nothing runs. */
@@ -875,20 +848,36 @@ export function formatBackupProgressLabel(
 }
 
 /**
- * The progress anchors of a backup row, for the in-progress row's bar. A stored
- * archive carries none of them and reads as a run that is not happening.
+ * The caption beside the run's bar above the table, read off the bar itself.
  *
- * @param row The backup row to read the anchors off.
+ * The same sentence {@link formatBackupProgressLabel} prints for a restore —
+ * `archiving · 62% · ~40s left`, each part dropped when the run cannot say it — but
+ * assembled from the bar rather than from anchors and a clock. Nothing is counted here:
+ * the share and the seconds left arrive already counted on the server, which is what
+ * makes one wording out of two sources honest (HIL-820).
+ *
+ * @param progress The table's progress bar as the controller holds it.
  */
-export function backupRowAnchors(row: HilosBackupRow): HilosProgressAnchors {
-  return {
-    phase: row.progressPhase,
-    phaseStartedAt: row.progressPhaseStartedAt,
-    // The creation instant of the in-progress row IS the moment its run started —
-    // the row is the run, and it is written when the run is accepted.
-    startedAt: row.createdAt === '' ? null : row.createdAt,
-    estimatedSeconds: row.progressEstimatedSeconds,
+export function formatBackupRunCaption(progress: HilosTableProgress): string {
+  const phase = progress.detail[BACKUP_RUN_PROGRESS_DETAIL_PHASE]
+  const phaseLabel = typeof phase === 'string' && phase !== '' ? phase : null
+  if (progress.fraction === null) {
+    return phaseLabel ?? 'In progress'
   }
+
+  const parts = [
+    phaseLabel ?? 'In progress',
+    `${Math.round(progress.fraction * PERCENT_SCALE)}%`,
+  ]
+  const remaining =
+    progress.detail[BACKUP_RUN_PROGRESS_DETAIL_REMAINING_SECONDS]
+  if (typeof remaining === 'number') {
+    parts.push(
+      remaining > 0 ? `~${remaining}s left` : 'taking longer than usual',
+    )
+  }
+
+  return parts.join(' · ')
 }
 
 /**
@@ -907,11 +896,6 @@ export function isBackupChecksumMismatch(row: HilosBackupRow): boolean {
  */
 export function isBackupShipFailed(row: HilosBackupRow): boolean {
   return row.shipState === 'failed'
-}
-
-/** The single in-progress backup (renders the live progress row; not actionable). */
-export function isBackupInProgress(row: HilosBackupRow): boolean {
-  return row.finished === false
 }
 
 /** A completed backup, success or failure — the only kind that can be deleted. */
@@ -996,25 +980,25 @@ export function backupMigrationNotes(row: HilosBackupRow): readonly string[] {
 }
 
 /**
- * Whether the backup subsystem looks occupied from here: a run in the list, or a
- * restore this connection is watching.
+ * Whether the backup subsystem looks occupied from here: the table's bar is up, or a
+ * restore this connection is watching is running.
  *
  * The agent is single-flight and refuses the second run itself; this is what turns
  * that refusal into a disabled button with a reason instead of a toast after the
- * click. It is deliberately only what the client can see — another admin's restore
- * sends its frames to them, not here — so the server's answer stays the real one.
+ * click. Read off the bar rather than off the rows, because the bar lives outside the
+ * window: a run used to disappear from this answer the moment the operator paged away
+ * from the row reporting it. The restore half stays what the client can see — another
+ * admin's restore sends its frames to them, not here — so the server's answer remains
+ * the real one.
  *
- * @param rows The rows currently in the window (a removed placeholder reads as null).
+ * @param tableProgress The table's own progress bar, or null when nothing runs on it.
  * @param restore The latest restore frame this connection received, or null.
  */
 export function isBackupSubsystemBusy(
-  rows: readonly (HilosBackupRow | null)[],
+  tableProgress: HilosTableProgress | null,
   restore: HilosRestoreStatus | null,
 ): boolean {
-  return (
-    restore?.running === true ||
-    rows.some((row) => row !== null && isBackupInProgress(row))
-  )
+  return restore?.running === true || tableProgress !== null
 }
 
 /**
@@ -1350,16 +1334,15 @@ export interface HilosBackupProgressClock {
 /**
  * The one-second clock the backup page's progress bars are redrawn from.
  *
- * A percentage moves with wall time, not with the socket: the phase anchors arrive
- * once per phase, and everything between them is arithmetic against "now". Something
- * therefore has to re-render on its own, and this is that something — ONE ticker the
- * page owns, which every bar on it reads. Per-row timers were the alternative, and
- * they cost a timer per visible run and drift apart from each other on a busy tab.
+ * The restore panel is what reads it: a restore's phase anchors arrive once per phase
+ * on its addressed frame, and everything between them is arithmetic against "now", so
+ * something has to re-render on its own. A create run needs none of this — its share
+ * and its time left arrive counted on the table's bar (HIL-820).
  *
  * The tick keeps running while a page shows no run at all. That is deliberate: a
- * ticker that started and stopped with the in-progress row would have to be owned by
- * the row rather than the page, which is exactly the per-row timer this replaces, and
- * a signal republished once a second with no subscriber costs nothing to nobody.
+ * ticker that started and stopped with the restore would have to be owned by the
+ * restore rather than the page, and a signal republished once a second with no
+ * subscriber costs nothing to nobody.
  */
 export function createBackupProgressClock(): HilosBackupProgressClock {
   const now = createSignal(Date.now())

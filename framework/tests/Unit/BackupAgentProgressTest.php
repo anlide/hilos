@@ -35,6 +35,15 @@ use RuntimeException;
  */
 final class BackupAgentProgressTest extends TestCase
 {
+    /**
+     * An estimate long enough that the second the beat may drift by cannot move the share.
+     *
+     * The arithmetic is time-dependent by nature, and pinning "now" would mean pinning the clock
+     * of the row's own writer; a budget this size puts a whole second well inside the rounding of
+     * one percent instead.
+     */
+    private const int LONG_ESTIMATE = 10000;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -123,12 +132,126 @@ final class BackupAgentProgressTest extends TestCase
     {
         $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, 120);
         $this->feed(BackupRunKind::CREATE, BackupProgressMarker::statement(BackupPhase::PUBLISHING->value));
+        $this->backupRow()->actions->markProgress(99, 3);
 
         $this->backupRow()->actions->clearRunning();
 
         $this->assertNull($this->backupRow()->phase, 'A bar left behind by a finished run never empties');
         $this->assertNull($this->backupRow()->phaseStartedAt);
         $this->assertNull($this->backupRow()->estimatedSeconds);
+        $this->assertNull($this->backupRow()->percent);
+        $this->assertNull($this->backupRow()->remainingSeconds);
+    }
+
+    public function testTheFiguresRideTheRowAsTheyAreWritten(): void
+    {
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, 120);
+
+        $this->backupRow()->actions->markProgress(62, -8);
+
+        $this->assertSame(62, $this->backupRow()->percent);
+        $this->assertSame(
+            -8,
+            $this->backupRow()->remainingSeconds,
+            'A run that outlived its estimate is told apart from one about to finish by the sign',
+        );
+    }
+
+    public function testAStartingRunCarriesNoFiguresUntilOneIsCounted(): void
+    {
+        $this->backupRow()->actions->markProgress(62, 40);
+
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, 120);
+
+        $this->assertNull($this->backupRow()->percent, 'A new run inheriting the last one\'s bar is the ghost');
+        $this->assertNull($this->backupRow()->remainingSeconds);
+    }
+
+    public function testTheBeatPutsTheShareAndTheTimeLeftOnTheRow(): void
+    {
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, self::LONG_ESTIMATE);
+        $agent = $this->feed(BackupRunKind::CREATE, BackupProgressMarker::statement(BackupPhase::ARCHIVING->value));
+
+        $this->beat($agent, BackupRunKind::CREATE);
+
+        $this->assertSame(
+            70,
+            $this->backupRow()->percent,
+            'A run that has just entered archiving stands on the floor of that phase',
+        );
+        $this->assertNotNull($this->backupRow()->remainingSeconds);
+        $this->assertLessThanOrEqual(self::LONG_ESTIMATE, $this->backupRow()->remainingSeconds);
+    }
+
+    public function testASecondBeatInsideTheSameSecondWritesNothing(): void
+    {
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, self::LONG_ESTIMATE);
+        $agent = $this->feed(BackupRunKind::CREATE, BackupProgressMarker::statement(BackupPhase::ARCHIVING->value));
+        $this->beat($agent, BackupRunKind::CREATE);
+        $this->backupRow()->actions->markProgress(42, 42);
+
+        $this->beat($agent, BackupRunKind::CREATE);
+
+        $this->assertSame(42, $this->backupRow()->percent, 'A beat per tick would wake every reader for nothing');
+        $this->assertSame(42, $this->backupRow()->remainingSeconds);
+    }
+
+    public function testARunWithNothingToEstimateFromIsNeverGivenFigures(): void
+    {
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL);
+        $agent = $this->feed(BackupRunKind::CREATE, BackupProgressMarker::statement(BackupPhase::ARCHIVING->value));
+
+        $this->beat($agent, BackupRunKind::CREATE);
+
+        $this->assertNull($this->backupRow()->percent, 'An invented share is worse than an indeterminate bar');
+        $this->assertNull($this->backupRow()->remainingSeconds);
+    }
+
+    public function testARunWhoseFirstPhaseHasNotArrivedIsNeverGivenFigures(): void
+    {
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, self::LONG_ESTIMATE);
+
+        $this->beat(new BackupAgent(), BackupRunKind::CREATE);
+
+        $this->assertNull($this->backupRow()->percent, 'With no phase there is no instant to measure the share from');
+        $this->assertNull($this->backupRow()->remainingSeconds);
+    }
+
+    public function testARestoreNeverBeatsOnTheCreateRow(): void
+    {
+        $this->backupRow()->actions->markRunning('2026-08-15_10-30-00', BackupScope::FULL, self::LONG_ESTIMATE);
+        $agent = $this->feed(BackupRunKind::CREATE, BackupProgressMarker::statement(BackupPhase::ARCHIVING->value));
+
+        $this->beat($agent, BackupRunKind::RESTORE);
+
+        $this->assertNull($this->backupRow()->percent, 'A restore reports through its own addressed frame');
+        $this->assertNull($this->backupRow()->remainingSeconds);
+    }
+
+    /**
+     * Drives one progress beat on a supervisor running the given kind.
+     *
+     * Bound the same way the stdout feed is, and for the same reason: the beat is what a tick
+     * calls between polling the child and finishing it, and a live tick would test the process
+     * poll instead of the arithmetic.
+     *
+     * @param BackupAgent $agent Supervisor whose beat is driven
+     * @param BackupRunKind $kind What the in-flight child is doing
+     * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the test is not the row's truth source
+     */
+    private function beat(BackupAgent $agent, BackupRunKind $kind): void
+    {
+        $beat = Closure::bind(
+            static function (BackupAgent $agent, BackupRunKind $kind): void {
+                $agent->runKind = $kind;
+                $agent->beatRunProgress();
+            },
+            null,
+            BackupAgent::class,
+        );
+
+        $beat($agent, $kind);
     }
 
     /**

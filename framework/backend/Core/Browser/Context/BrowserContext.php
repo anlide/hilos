@@ -2166,7 +2166,20 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
     ): void {
-        $progress = $table->buildProgressForSourceEvent($change);
+        try {
+            $progress = $table->buildProgressForSourceEvent($change);
+        } catch (Throwable $e) {
+            // Contained for the reason the snapshot road contains it ({@see tableWindowSection()}):
+            // a table that cannot name its work costs the tab that bar, not the change - the rows
+            // of this very fan-out have already gone out beside it.
+            Logger::error(
+                "Browser fan-out skipped the work a table could not name: table={$browserKey}, "
+                . "page={$page}, error={$e->getMessage()}",
+            );
+
+            return;
+        }
+
         if ($progress === null) {
             return;
         }
@@ -2904,7 +2917,6 @@ abstract class BrowserContext
                 $browserKey,
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_DELETED,
-                $mutation->live,
                 $own,
             );
         }
@@ -2943,7 +2955,6 @@ abstract class BrowserContext
                 $browserKey,
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_LEFT_SET,
-                $mutation->live,
                 $own,
             );
         }
@@ -2960,7 +2971,6 @@ abstract class BrowserContext
                 $browserKey,
                 $mutation->rowKey,
                 $wireRow,
-                $mutation->live,
                 $own,
             );
         }
@@ -2974,7 +2984,6 @@ abstract class BrowserContext
                 $browserKey,
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_MOVED_OUT,
-                $mutation->live,
                 $own,
             );
         }
@@ -2991,7 +3000,6 @@ abstract class BrowserContext
                 $browserKey,
                 $mutation->rowKey,
                 $wireRow,
-                $mutation->live,
                 $own,
             );
         }
@@ -3002,7 +3010,6 @@ abstract class BrowserContext
             $mutation->rowKey,
             $wireRow,
             $slot,
-            $mutation->live,
             $own,
         );
     }

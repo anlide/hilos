@@ -1,10 +1,8 @@
 // HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
 // stored-backup list inside the admin shell, with its row actions. The list is
-// live — rows arrive over the socket from the backup runtime index plus the
-// single in-progress backup, so an in-progress row shows a live progress bar until
-// it completes and merges into the index. The bar is drawn from the phase anchors
-// the row carries and a page-wide one-second clock, and falls back to the
-// indeterminate striped bar on a run the backend cannot estimate. Its actions (create
+// live — rows arrive over the socket from the backup runtime index, and a run in
+// flight is not one of them: it is the table's own bar, which this view does not draw
+// yet (HIL-814) and reads only to keep the create button honest. Its actions (create
 // with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
 // the core headless's (createHilosBackupsActions); each dispatches a tracked action
 // and surfaces the backend's failure (authoritative-backend). Restore is the
@@ -39,7 +37,6 @@ import {
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
-  backupRowAnchors,
   createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsCircleTable,
@@ -59,7 +56,6 @@ import {
   isBackupChecksumMismatch,
   isBackupShipFailed,
   isBackupDeletable,
-  isBackupInProgress,
   isBackupKeepable,
   isBackupMigrationRefused,
   isBackupRestorable,
@@ -120,11 +116,14 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
 ]
 
 /**
- * The progress bar of a running backup or restore: a determinate bar once the run can
- * be estimated, and the indeterminate striped one until then. The caption under it
- * names the phase, the percentage, and the time left.
+ * The progress bar of a running restore: a determinate bar once the run can be
+ * estimated, and the indeterminate striped one until then. The caption under it names
+ * the phase, the percentage, and the time left.
  *
- * @param anchors The progress anchors of the run (a table row's or a restore frame's).
+ * A create run is not drawn here — it arrives as the table's own bar, already counted
+ * on the server (HIL-820), and this view does not draw that yet (HIL-814).
+ *
+ * @param anchors The progress anchors of the restore frame.
  * @param nowMs The current epoch milliseconds the percentage is measured against.
  * @param className Extra classes for the bar's own element (spacing at its use site).
  * @param label The accessible name of the bar, which its caption does not provide.
@@ -164,16 +163,13 @@ function progressBar(
   )
 }
 
-/** The backup status cell: a live progress bar, a success badge, or a failure badge. */
-function statusCell(row: HilosBackupRow, nowMs: number) {
-  if (isBackupInProgress(row)) {
-    return progressBar(backupRowAnchors(row), nowMs, '', 'Backup progress')
-  }
-  if (row.finished === true) {
-    return <span className="badge text-bg-success">{row.status}</span>
-  }
-
-  return <span className="badge text-bg-danger">{row.status}</span>
+/** The backup status cell: a success badge or a failure badge, every row having ended. */
+function statusCell(row: HilosBackupRow) {
+  return row.finished === true ? (
+    <span className="badge text-bg-success">{row.status}</span>
+  ) : (
+    <span className="badge text-bg-danger">{row.status}</span>
+  )
 }
 
 /**
@@ -204,15 +200,15 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     useMemo(() => createHilosBackupsReopenGate(context), [context]),
   )
   const restoreStatus = useSignal(restoreProgress.status)
-  // One ticker for the whole page: a percentage moves with wall time, while the socket
-  // only speaks on a change of phase, so every bar here redraws from this signal.
+  // The ticker of the restore panel: its percentage moves with wall time, while its
+  // addressed frame only speaks on a change of phase. The create run needs none of it —
+  // its figures arrive counted on the table's bar.
   const progressClock = useMemo(() => createBackupProgressClock(), [])
   const progressNow = useSignal(progressClock.now)
-  const rows = useSignal(backups.controller.rows)
-  const subsystemBusy = isBackupSubsystemBusy(
-    rows.map((entry) => entry.row),
-    restoreStatus,
-  )
+  // The bar lives outside the window, so the button stays honest on every page of the
+  // list rather than only on the one the run happened to be shown on.
+  const tableProgress = useSignal(backups.controller.progress.table)
+  const subsystemBusy = isBackupSubsystemBusy(tableProgress, restoreStatus)
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount. The restore frames are addressed to this
@@ -255,7 +251,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     setKeepPendingId(null)
   }
 
-  // Delete dialog: a completed backup only (never the in-progress row).
+  // Delete dialog: every row of this set is a run that ended, so every one can be deleted.
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteRow, setDeleteRow] = useState<HilosBackupRow | null>(null)
   const del = useTrackedAction()
@@ -656,9 +652,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               </span>
             </td>
             <td className="text-end">{formatBackupDuration(row)}</td>
-            <td style={{ minWidth: '10rem' }}>
-              {statusCell(row, progressNow)}
-            </td>
+            <td style={{ minWidth: '10rem' }}>{statusCell(row)}</td>
             <td className="text-nowrap">
               {hasRestoreOutcome(row) ? (
                 <button

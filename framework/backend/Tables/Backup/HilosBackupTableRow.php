@@ -14,19 +14,14 @@ use Hilos\Runtime\View\Item\BackupHistory;
 /**
  * Backend row payload for the framework backup list table.
  *
- * A row is either a stored backup (projected from a {@see BackupHistory} index
- * row) or the single in-progress backup (projected from the backup runtime
- * singleton). The two are told apart by {@see finished}: a stored backup carries
- * true (completed) or null (a recorded failure), and the in-progress row carries
- * false so the frontend renders its live progress indicator. The in-progress row
- * uses the fixed {@see RUNNING_ROW_KEY} so it never collides with a stored
- * backup's id and is deleted cleanly when the backup finishes.
+ * Every row is a stored backup, projected from a {@see BackupHistory} index row, and its key is
+ * that backup's own id: the set holds nothing that is not an archive on disk. A run in flight is
+ * not one - it has no archive and no id - and it shows as a bar above the table rather than as a
+ * row with an invented key (HIL-820). {@see finished} therefore has two live values: true for a
+ * completed backup and null for a recorded failure.
  */
 final class HilosBackupTableRow extends AbstractTableRow
 {
-    /** Stable row key of the single in-progress backup row. */
-    public const string RUNNING_ROW_KEY = '__running__';
-
     /**
      * Payload key of the row identity.
      *
@@ -59,20 +54,17 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string restoreMigrationDecision = 'restoreMigrationDecision';
     public const string restoreMigrationBehind = 'restoreMigrationBehind';
     public const string restoreMigrationNotice = 'restoreMigrationNotice';
-    public const string progressPhase = 'progressPhase';
-    public const string progressPhaseStartedAt = 'progressPhaseStartedAt';
-    public const string progressEstimatedSeconds = 'progressEstimatedSeconds';
 
     /**
-     * @param string $rowKey Stable table row key (backup id, or RUNNING_ROW_KEY)
-     * @param string $createdAt ISO-8601 creation/start timestamp
+     * @param string $rowKey Stable table row key: the stored backup's id
+     * @param string $createdAt ISO-8601 creation timestamp
      * @param ?string $env Application environment the backup was taken in; null when the record names none
      * @param ?string $scope Backup scope value; null when the record names none
-     * @param int $sizeBytes Archive size in bytes (0 while in progress)
-     * @param int $durationSeconds Capture duration in seconds (0 while in progress)
+     * @param int $sizeBytes Archive size in bytes
+     * @param int $durationSeconds Capture duration in seconds
      * @param bool $keep Whether the backup is pinned out of rotation
      * @param string $status Status value
-     * @param ?bool $finished true completed, false in progress, null failed/incomplete
+     * @param ?bool $finished true completed, null failed/incomplete
      * @param ?string $failureReason Why the run failed (error rows only); null otherwise
      * @param BackupChecksumState $checksumState Whether the backup carries a digest and how it last verified;
      *     the digest itself never reaches the browser
@@ -95,9 +87,6 @@ final class HilosBackupTableRow extends AbstractTableRow
      *     allowed archive one line per connection joined by newlines, on a refused one the gate's single
      *     refusal sentence, which names the connections that are ahead itself; null when there is
      *     nothing to say
-     * @param ?string $progressPhase Phase the run in progress is in; null on a stored archive, which has no run
-     * @param ?string $progressPhaseStartedAt ISO-8601 instant that phase began; null when there is no phase
-     * @param ?int $progressEstimatedSeconds How long the run in progress is expected to take; null without history
      */
     public function __construct(
         public string $rowKey,
@@ -129,13 +118,6 @@ final class HilosBackupTableRow extends AbstractTableRow
         public ?string $restoreMigrationDecision = null,
         public ?int $restoreMigrationBehind = null,
         public ?string $restoreMigrationNotice = null,
-        // The three anchors a progress bar is drawn from, and only the in-progress row carries
-        // them: the percentage and the time left are computed by the browser, which is why the
-        // row ships the phase and its instants rather than a number that would be stale on
-        // arrival and would need a table update per second to stay fresh.
-        public ?string $progressPhase = null,
-        public ?string $progressPhaseStartedAt = null,
-        public ?int $progressEstimatedSeconds = null,
     ) {
     }
 
@@ -190,9 +172,6 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::restoreMigrationDecision => $this->restoreMigrationDecision,
             self::restoreMigrationBehind => $this->restoreMigrationBehind,
             self::restoreMigrationNotice => $this->restoreMigrationNotice,
-            self::progressPhase => $this->progressPhase,
-            self::progressPhaseStartedAt => $this->progressPhaseStartedAt,
-            self::progressEstimatedSeconds => $this->progressEstimatedSeconds,
         ];
     }
 
@@ -240,9 +219,6 @@ final class HilosBackupTableRow extends AbstractTableRow
             restoreMigrationDecision: self::optionalString($data, self::restoreMigrationDecision),
             restoreMigrationBehind: self::optionalInt($data, self::restoreMigrationBehind),
             restoreMigrationNotice: self::optionalString($data, self::restoreMigrationNotice),
-            progressPhase: self::optionalString($data, self::progressPhase),
-            progressPhaseStartedAt: self::optionalString($data, self::progressPhaseStartedAt),
-            progressEstimatedSeconds: self::optionalInt($data, self::progressEstimatedSeconds),
         );
     }
 

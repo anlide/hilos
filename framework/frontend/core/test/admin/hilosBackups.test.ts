@@ -4,12 +4,12 @@ import {
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
-  backupRowAnchors,
   formatBackupChecksum,
   formatBackupShipping,
   formatBackupDuration,
   formatBackupEta,
   formatBackupProgressLabel,
+  formatBackupRunCaption,
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
@@ -20,6 +20,7 @@ import {
   isBackupChecksumMismatch,
   isBackupShipFailed,
   isBackupMigrationRefused,
+  isBackupSubsystemBusy,
   isBackupRestorable,
   resolveHilosBackupRow,
   type HilosBackupRow,
@@ -30,6 +31,10 @@ import {
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { type HilosTableProgress } from '../../src/table/tableProgress.js'
+
+/** What a percentage is counted out of, the server having already made the share one. */
+const PERCENT_TOTAL = 100
 
 /** A restore progress frame with only the keys a case cares about spelled out. */
 function restoreStatus(
@@ -50,6 +55,26 @@ function restoreStatus(
     rehydrateProblems: [],
     databaseTouched: false,
     ...overrides,
+  }
+}
+
+/**
+ * The table's bar as the controller holds it, with only what the caption reads spelled
+ * out: a share and the project's detail map.
+ *
+ * @param percent The share the server counted, or null when the run has no estimate.
+ * @param detail The keys the backup module puts beside its bar.
+ */
+function runBar(
+  percent: number | null,
+  detail: { phase?: string; remainingSeconds?: number },
+): HilosTableProgress {
+  return {
+    progressKey: 'hilos-backup-run',
+    current: percent ?? 0,
+    total: percent === null ? null : PERCENT_TOTAL,
+    fraction: percent === null ? null : percent / PERCENT_TOTAL,
+    detail,
   }
 }
 
@@ -101,9 +126,6 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     restoreMigrationDecision: null,
     restoreMigrationBehind: null,
     restoreMigrationNotice: null,
-    progressPhase: null,
-    progressPhaseStartedAt: null,
-    progressEstimatedSeconds: null,
     ...overrides,
   }
 }
@@ -128,12 +150,6 @@ describe('formatBackupDuration', () => {
     expect(formatBackupDuration(row({ durationSeconds: 125 }))).toBe('2m 5s')
   })
 
-  it('dashes only the in-progress row, whose duration is not known yet', () => {
-    expect(
-      formatBackupDuration(row({ finished: false, durationSeconds: 0 })),
-    ).toBe('—')
-  })
-
   it('reports a failed run by the time it burned before failing', () => {
     expect(
       formatBackupDuration(
@@ -152,8 +168,7 @@ describe('formatBackupSize', () => {
     expect(formatBackupSize(row({ sizeBytes: 512 }))).toBe('512 B')
   })
 
-  it('dashes a row with no archive — in progress, or a failure', () => {
-    expect(formatBackupSize(row({ finished: false, sizeBytes: 0 }))).toBe('—')
+  it('dashes a failed run, which never wrote an archive', () => {
     expect(formatBackupSize(row({ finished: null, sizeBytes: 0 }))).toBe('—')
   })
 })
@@ -281,32 +296,6 @@ describe('resolveHilosBackupRow', () => {
     expect(resolved.restoreMigrationDecision).toBeNull()
     expect(resolved.restoreMigrationBehind).toBeNull()
     expect(resolved.restoreMigrationNotice).toBeNull()
-  })
-
-  it('reads the progress anchors of the run in progress from the slot', () => {
-    const resolved = resolveHilosBackupRow(
-      backupTableRow('__running__', {
-        status: 'running',
-        finished: false,
-        progressPhase: 'dumping',
-        progressPhaseStartedAt: '2026-08-15T11:59:25+00:00',
-        progressEstimatedSeconds: 100,
-      }),
-    )
-
-    expect(resolved.progressPhase).toBe('dumping')
-    expect(resolved.progressPhaseStartedAt).toBe('2026-08-15T11:59:25+00:00')
-    expect(resolved.progressEstimatedSeconds).toBe(100)
-  })
-
-  it('reads a stored archive as carrying no progress anchors', () => {
-    // A run that cannot be estimated sends a null rather than a zero: zero seconds left
-    // is a claim about the run, and "we have no history for this" is not one.
-    const resolved = resolveHilosBackupRow(backupTableRow('b1', {}))
-
-    expect(resolved.progressPhase).toBeNull()
-    expect(resolved.progressPhaseStartedAt).toBeNull()
-    expect(resolved.progressEstimatedSeconds).toBeNull()
   })
 
   it('reads an archive nobody restored as carrying no restore at all', () => {
@@ -467,29 +456,50 @@ describe('formatBackupProgressLabel', () => {
   })
 })
 
-describe('backupRowAnchors', () => {
-  it('draws the in-progress row from its own creation instant', () => {
-    const anchored = backupRowAnchors(
-      row({
-        finished: false,
-        status: 'running',
-        createdAt: '2026-08-15T11:59:20+00:00',
-        progressPhase: 'dumping',
-        progressPhaseStartedAt: '2026-08-15T11:59:25+00:00',
-        progressEstimatedSeconds: RUN_SECONDS,
-      }),
-    )
-
-    expect(backupProgressPercent(anchored, NOW_MS)).toBe(35)
-    expect(formatBackupEta(anchored, NOW_MS)).toBe('~60s left')
+describe('formatBackupRunCaption', () => {
+  it('names the phase, the share and the time left of the run', () => {
+    expect(
+      formatBackupRunCaption(
+        runBar(62, { phase: 'archiving', remainingSeconds: 40 }),
+      ),
+    ).toBe('archiving · 62% · ~40s left')
   })
 
-  it('reads a stored archive as a run that is not happening', () => {
-    const anchored = backupRowAnchors(row())
+  it('says a run that outlived its estimate has, in words', () => {
+    // Not "0s left" and not "-8s left": both of those read as "about to finish", which
+    // is the one thing that is certainly not true of a run past its estimate.
+    expect(
+      formatBackupRunCaption(
+        runBar(99, { phase: 'publishing', remainingSeconds: -8 }),
+      ),
+    ).toBe('publishing · 99% · taking longer than usual')
+  })
 
-    expect(anchored.phase).toBeNull()
-    expect(backupProgressPercent(anchored, NOW_MS)).toBeNull()
-    expect(formatBackupEta(anchored, NOW_MS)).toBe('')
+  it('leaves out the share the bar does not have, and the time with it', () => {
+    expect(formatBackupRunCaption(runBar(null, { phase: 'dumping' }))).toBe(
+      'dumping',
+    )
+  })
+
+  it('keeps the old wording for a run that has announced no phase', () => {
+    expect(formatBackupRunCaption(runBar(null, {}))).toBe('In progress')
+  })
+})
+
+describe('isBackupSubsystemBusy', () => {
+  it("is busy while the table carries the run's bar", () => {
+    expect(isBackupSubsystemBusy(runBar(62, {}), null)).toBe(true)
+  })
+
+  it('is busy while a restore this tab is watching runs', () => {
+    expect(isBackupSubsystemBusy(null, restoreStatus({ running: true }))).toBe(
+      true,
+    )
+  })
+
+  it('is idle with no bar and no restore', () => {
+    expect(isBackupSubsystemBusy(null, null)).toBe(false)
+    expect(isBackupSubsystemBusy(null, restoreStatus())).toBe(false)
   })
 })
 
@@ -515,13 +525,10 @@ describe('isBackupRestorable', () => {
     ).toBe(false)
   })
 
-  it('is false for a failure and for the in-progress row', () => {
+  it('is false for a recorded failure, which wrote no archive to replay', () => {
     expect(isBackupRestorable(row({ finished: null, status: 'error' }))).toBe(
       false,
     )
-    expect(
-      isBackupRestorable(row({ finished: false, status: 'running' })),
-    ).toBe(false)
   })
 })
 
@@ -781,11 +788,5 @@ describe('hasBackupFailureDetail', () => {
 
   it('is false for a successful backup', () => {
     expect(hasBackupFailureDetail(row({ finished: true }))).toBe(false)
-  })
-
-  it('is false for the in-progress row', () => {
-    expect(
-      hasBackupFailureDetail(row({ finished: false, status: 'running' })),
-    ).toBe(false)
   })
 })

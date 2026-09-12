@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Backup\BackupPhase;
+use Hilos\Backup\BackupProgress;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /**
@@ -30,6 +31,8 @@ final class BackupRuntime extends RtState
     public const string phase = 'phase';
     public const string phaseStartedAt = 'phaseStartedAt';
     public const string estimatedSeconds = 'estimatedSeconds';
+    public const string percent = 'percent';
+    public const string remainingSeconds = 'remainingSeconds';
 
     /** Whether a backup is currently running. */
     public bool $running = false;
@@ -51,11 +54,27 @@ final class BackupRuntime extends RtState
 
     /**
      * How long the run is expected to take in seconds, or null when there is no history to
-     * estimate from. The three anchors are what a progress bar is drawn from: the percentage and
-     * the time left are computed by whoever shows them, so this row is written only when a phase
-     * changes rather than on a timer.
+     * estimate from. It is the budget the two figures below are measured against rather than
+     * something a reader recomputes: the agent does that arithmetic here and writes the answer,
+     * so the row is refreshed on a timer while an estimated run is in flight.
      */
     public ?int $estimatedSeconds = null;
+
+    /**
+     * How far along the run is, 0..99, or null when the run cannot be estimated.
+     *
+     * Never a hundred while the row still says running: a full bar under a run that has not
+     * finished is the one reading an operator cannot act on ({@see BackupProgress::percent()}).
+     */
+    public ?int $percent = null;
+
+    /**
+     * How many seconds the run is still expected to take, or null when it cannot be estimated.
+     *
+     * Negative once the estimate is spent, which is the whole reason it is not clamped: a run
+     * that outlived its estimate and one that is about to finish must not read the same.
+     */
+    public ?int $remainingSeconds = null;
 
     /**
      * Creates the idle singleton runtime row.
@@ -85,6 +104,8 @@ final class BackupRuntime extends RtState
         $instance->phase = self::optionalString($row, self::phase);
         $instance->phaseStartedAt = self::optionalString($row, self::phaseStartedAt);
         $instance->estimatedSeconds = self::optionalInt($row, self::estimatedSeconds);
+        $instance->percent = self::optionalInt($row, self::percent);
+        $instance->remainingSeconds = self::optionalInt($row, self::remainingSeconds);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -93,7 +114,7 @@ final class BackupRuntime extends RtState
     /**
      * Applies an inbound RT sync diff to this singleton.
      *
-     * The in-progress backup row is delivered as diffs of this item, so without it every
+     * The backup table's progress bar is built out of this item, so without the diffs every
      * worker but the agent's would show no running backup at all.
      *
      * @param array<string, mixed> $diff Changed fields and values from another worker
@@ -108,6 +129,8 @@ final class BackupRuntime extends RtState
         $this->phase = self::patchOptionalString($diff, self::phase, $this->phase);
         $this->phaseStartedAt = self::patchOptionalString($diff, self::phaseStartedAt, $this->phaseStartedAt);
         $this->estimatedSeconds = self::patchOptionalInt($diff, self::estimatedSeconds, $this->estimatedSeconds);
+        $this->percent = self::patchOptionalInt($diff, self::percent, $this->percent);
+        $this->remainingSeconds = self::patchOptionalInt($diff, self::remainingSeconds, $this->remainingSeconds);
     }
 
     /**
@@ -139,6 +162,8 @@ final class BackupRuntime extends RtState
             self::phase => $this->phase,
             self::phaseStartedAt => $this->phaseStartedAt,
             self::estimatedSeconds => $this->estimatedSeconds,
+            self::percent => $this->percent,
+            self::remainingSeconds => $this->remainingSeconds,
         ];
     }
 }

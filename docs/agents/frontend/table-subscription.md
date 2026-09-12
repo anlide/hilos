@@ -399,9 +399,13 @@ correlation is by a row key the client knew *before* the action, so it does not
 cover a create whose key the server mints — that one rides its own frame,
 `table_viewport_own_create`, which carries the place the row takes.
 
-A backend may **not** declare an ordinary mutation live to step around the gate.
-The one case that used to be allowed to — a row reporting work in progress — is
-no longer a row at all; see *Showing work in progress* below.
+**There is no second exception, and no mechanism for one.** A backend used to be
+able to declare an ordinary mutation *live* and have it step around the gate; the
+only thing that ever did — a row reporting work in progress — is no longer a row
+at all (see *Showing work in progress* below), so the flag went with it. It is
+gone from the mutation a table builds, from the `table_viewport_delta` frame, and
+from the client that read it: a table that wants something shown outside the gate
+declares a **bar**, not a row that claims not to be one.
 
 ## Where an arriving row lands
 
@@ -541,10 +545,10 @@ there is no known end — and an empty window is a legitimate answer.
 ## Showing work in progress
 
 Running work is **not a record of the set**, and it does not get a row. A
-synthetic row with an invented key falls under the live-change rules, enters the
-count, catches the selection checkbox, and leaves a placeholder behind when it
-ends — none of which it has any use for. Work shows as a **bar**, and there are
-exactly three:
+synthetic row with an invented key enters the count, catches the selection
+checkbox, and leaves a placeholder behind when it ends — none of which it has any
+use for — and it needed a hole in the pending gate on top of that. Work shows as
+a **bar**, and there are exactly three:
 
 1. **The row bar** — drawn under its own row and stretched beneath the columns
    the project names, usually the content ones rather than the selection or the

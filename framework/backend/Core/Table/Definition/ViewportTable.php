@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\Definition;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableProgressDTO;
@@ -184,6 +185,7 @@ interface ViewportTable
      * one cure for a bar left standing by a connection that dropped before the work ended.
      *
      * @return list<TableProgressDTO> Bars running on this table now, empty when none are
+     * @throws InvalidArgumentException When the table builds a bar with a row key its place refuses
      */
     public function progressSnapshot(): array;
 
@@ -198,6 +200,7 @@ interface ViewportTable
      *
      * @param SourceChange $change Source change that may report work on this table
      * @return ?TableProgressDTO Bar to address to the window's subscribers, or null when the change reports no work
+     * @throws InvalidArgumentException When the table builds a bar with a row key its place refuses
      */
     public function buildProgressForSourceEvent(SourceChange $change): ?TableProgressDTO;
 

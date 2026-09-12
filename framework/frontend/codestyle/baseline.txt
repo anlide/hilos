@@ -8,7 +8,7 @@ STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 8 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/User/User.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/HilosMaintenance.ts 1 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/HilosNotificationBell.ts 1 # HIL-449
-STYLE-INLINE framework/frontend/angular/src/admin/backup/HilosBackupPage.ts 3 # HIL-449
+STYLE-INLINE framework/frontend/angular/src/admin/backup/HilosBackupPage.ts 2 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/admin/logs/HilosLogsViewPage.ts 1 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/admin/settings/HilosSettingsPage.ts 1 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/admin/users/HilosUserPage.ts 1 # HIL-449
@@ -26,7 +26,7 @@ STYLE-INLINE framework/frontend/react/src/auth/HilosMagicLinkPage.tsx 1 # HIL-44
 STYLE-INLINE framework/frontend/react/src/auth/HilosOAuthCallbackPage.tsx 1 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/HilosMaintenance.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/HilosNotificationBell.vue 1 # HIL-449
-STYLE-INLINE framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 3 # HIL-449
+STYLE-INLINE framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 2 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/admin/logs/HilosLogsViewPage.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/admin/settings/HilosSettingsPage.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/vue/src/admin/users/HilosUserPage.vue 1 # HIL-449

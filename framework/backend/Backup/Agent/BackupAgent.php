@@ -28,6 +28,7 @@ use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupEstimator;
 use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupPhase;
+use Hilos\Backup\BackupProgress;
 use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
@@ -92,6 +93,7 @@ use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
+use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupHistory;
@@ -309,6 +311,17 @@ final class BackupAgent extends AbstractAgent
      * announcement routinely arrives in two pieces. Kept here, the second piece finds the first.
      */
     private string $childProgressTail = '';
+
+    /**
+     * `microtime(true)` of the last progress beat TAKEN for the run in flight, or 0.0 when none.
+     *
+     * Taken and not written: a beat that finds nothing to move — a run with no estimate, a run
+     * whose first phase has not been announced — still spends its slot, which is what keeps the
+     * row from being read once per tick. Kept rather than derived from the run's own start,
+     * because the beat is throttled against the previous beat and a run whose first tick was
+     * late must not owe the missed ones.
+     */
+    private float $lastProgressBeat = 0.0;
 
     /** What the in-flight child is doing, or null when idle. */
     private ?BackupRunKind $runKind = null;
@@ -1448,8 +1461,8 @@ final class BackupAgent extends AbstractAgent
     /**
      * Deletes one stored backup through the shared delete path and drops its index row.
      *
-     * Re-guards the in-progress backup (never delete the running row) and treats an
-     * already-removed backup as an idempotent no-op.
+     * Re-guards the run in flight (never delete the archive a child is still writing) and
+     * treats an already-removed backup as an idempotent no-op.
      *
      * @param BackupDeleteSignalData $data Delete request carrying the backup id
      */
@@ -1625,8 +1638,8 @@ final class BackupAgent extends AbstractAgent
      * manual CLI backup. A second request while a backup runs is skipped and logged, never queued.
      *
      * Refused before anything is allocated when backups are disabled or a required setting is
-     * missing ({@see missingCreateConfig()}), so a misconfigured install never shows a phantom
-     * running row for a child that cannot work.
+     * missing ({@see missingCreateConfig()}), so a misconfigured install never raises a phantom
+     * progress bar over a child that cannot work.
      *
      * @param BackupScope $scope What the backup should capture
      * @param ?string $initiatorAcceptKey Connection to tell when the run fails, or null when unattended
@@ -1897,6 +1910,7 @@ final class BackupAgent extends AbstractAgent
 
         $this->childProcess->tick();
         $this->consumeChildProgress($this->childProcess->getStdOut());
+        $this->beatRunProgress();
 
         if ($this->childProcess->getStatus()[Process::STATUS_RUNNING] === true) {
             if (microtime(true) - $this->startedAt >= $this->timeoutSeconds) {
@@ -2567,6 +2581,79 @@ final class BackupAgent extends AbstractAgent
 
             $view->actions->markPhase($phase);
         }
+    }
+
+    /**
+     * Puts the share and the time left of the create run in flight on the runtime row.
+     *
+     * The arithmetic used to live in every browser showing the run, ticking once a second off the
+     * row's three anchors. It moved here because the bar is now a frame the table emits rather
+     * than something a page recomputes: the phase weights make a run spend seven tenths of its
+     * wall-clock inside one phase, so a row written only when a phase changes would hold the bar
+     * still for most of the run.
+     *
+     * Nothing is written while there is nothing to move: a restore reports through its own frame,
+     * a run with no history to estimate from has no figures at all, and a run whose first phase
+     * has not been announced yet has no anchor to measure from. In all three the row keeps the
+     * empty pair {@see BackupRuntimeActions::markRunning()} left on it, which is what an
+     * indeterminate bar is drawn from.
+     *
+     * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
+     */
+    private function beatRunProgress(): void
+    {
+        if ($this->runKind !== BackupRunKind::CREATE) {
+            return;
+        }
+
+        $now = microtime(true);
+        if ($now - $this->lastProgressBeat < BackupConstants::PROGRESS_HEARTBEAT_SECONDS) {
+            return;
+        }
+
+        $this->lastProgressBeat = $now;
+        $view = $this->runtimeView();
+        if ($view === null || !$view->running || $view->estimatedSeconds === null) {
+            return;
+        }
+
+        $phase = $view->phase === null ? null : BackupPhase::tryFrom($view->phase);
+        $runElapsedSeconds = self::elapsedSecondsSince($view->startedAt, $now);
+        if ($phase === null || $runElapsedSeconds === null) {
+            return;
+        }
+
+        $view->actions->markProgress(
+            BackupProgress::percent(
+                $phase->weightBefore(),
+                $phase->weight(),
+                self::elapsedSecondsSince($view->phaseStartedAt, $now) ?? 0.0,
+                $view->estimatedSeconds,
+            ),
+            BackupProgress::remainingSeconds($view->estimatedSeconds, $runElapsedSeconds),
+        );
+    }
+
+    /**
+     * Seconds between an ISO-8601 instant the runtime row carries and the given moment.
+     *
+     * An absent or unreadable instant answers null rather than zero seconds: zero would read as
+     * "just started" and put a bar at the floor of a phase the run may be halfway through.
+     *
+     * @param ?string $instant ISO-8601 instant from the runtime row, or null when it carries none
+     * @param float $nowSeconds Moment to measure against, as `microtime(true)`
+     * @return ?float Seconds since that instant, or null when there is none to measure from
+     */
+    private static function elapsedSecondsSince(?string $instant, float $nowSeconds): ?float
+    {
+        if ($instant === null) {
+            return null;
+        }
+
+        $started = strtotime($instant);
+
+        return $started === false ? null : $nowSeconds - $started;
     }
 
     /**
@@ -3493,6 +3580,7 @@ final class BackupAgent extends AbstractAgent
     {
         $this->childProcess = null;
         $this->childProgressTail = '';
+        $this->lastProgressBeat = 0.0;
         $this->runKind = null;
         $this->currentBackupId = null;
         $this->currentScope = null;

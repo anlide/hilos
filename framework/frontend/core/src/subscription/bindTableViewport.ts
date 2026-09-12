@@ -324,7 +324,6 @@ function toViewportDelta(
         kind: 'row_updated',
         rowKey: String(data.rowKey),
         row: normalizeTableRow(scope, data.row, options),
-        live: data.live === true,
         own: data.own === true,
       }
     case 'row_moved':
@@ -337,7 +336,6 @@ function toViewportDelta(
         rowKey: String(data.rowKey),
         row: normalizeTableRow(scope, data.row, options),
         position: typeof data.position === 'number' ? data.position : undefined,
-        live: data.live === true,
         own: data.own === true,
       }
     case 'row_removed':
@@ -349,7 +347,6 @@ function toViewportDelta(
         kind: 'row_removed',
         rowKey: String(data.rowKey),
         reason: data.reason ?? '',
-        live: data.live === true,
         own: data.own === true,
       }
     case 'row_stale':

@@ -189,6 +189,7 @@ abstract class TableDefinition implements ArrayAccess
      * is what a table does when it has work worth showing, and not a duty of every table.
      *
      * @return list<TableProgressDTO> Bars running on this table now, empty when none are
+     * @throws InvalidArgumentException When an override builds a bar with a row key its place refuses
      */
     public function progressSnapshot(): array
     {
@@ -200,6 +201,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param SourceChange $change Source change that may report work on this table
      * @return ?TableProgressDTO Bar to fan out, or null when this table reads no work in the change
+     * @throws InvalidArgumentException When an override builds a bar with a row key its place refuses
      */
     public function buildProgressForSourceEvent(SourceChange $change): ?TableProgressDTO
     {
@@ -212,16 +214,14 @@ abstract class TableDefinition implements ArrayAccess
      * @param TableMutationType $type Mutation type
      * @param string|int $rowKey Affected table row key
      * @param ?AbstractTableRow $row Row payload for create/update mutations
-     * @param bool $live Whether the change must apply at once instead of waiting for Apply
      * @return TableRowMutationDTO Row mutation payload
      */
     protected function mutation(
         TableMutationType $type,
         string|int $rowKey,
         ?AbstractTableRow $row = null,
-        bool $live = false,
     ): TableRowMutationDTO {
-        return new TableRowMutationDTO($type, $rowKey, $row, $live);
+        return new TableRowMutationDTO($type, $rowKey, $row);
     }
 
     /**

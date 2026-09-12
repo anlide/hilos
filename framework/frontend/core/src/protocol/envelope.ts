@@ -177,7 +177,6 @@ export const tableViewportDeltaSignalDataSchema = z.looseObject({
   reason: z.string().optional(),
   position: z.number().int().optional(),
   staleSources: z.array(z.string()).optional(),
-  live: z.boolean().optional(),
   own: z.boolean().optional(),
 })
 

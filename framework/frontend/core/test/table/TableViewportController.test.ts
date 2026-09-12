@@ -625,29 +625,12 @@ describe('TableViewportController', () => {
     })
   })
 
-  it('applies a live row update at once, with nothing left pending', () => {
-    const { controller, open } = makeController()
-    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
-    controller.ingestDelta({
-      kind: 'row_updated',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { name: 'new' } },
-      live: true,
-    })
-
-    expect(controller.pendingCount.get()).toBe(0)
-    expect(controller.rows.get()[0]?.row).toEqual({
-      rowKey: 'a',
-      slots: { name: 'new' },
-    })
-  })
-
-  it('takes a live removal out of the window instead of leaving a placeholder', () => {
+  it('gates every removal, the door a status row used to have being gone', () => {
     const { controller, open } = makeController()
     open(
       [
-        { rowKey: 'progress', slots: { name: 'running' } },
         { rowKey: 'a', slots: { name: 'stored' } },
+        { rowKey: 'b', slots: { name: 'stored' } },
       ],
       2,
       true,
@@ -656,15 +639,15 @@ describe('TableViewportController', () => {
     )
     controller.ingestDelta({
       kind: 'row_removed',
-      rowKey: 'progress',
+      rowKey: 'b',
       reason: 'deleted',
-      live: true,
     })
 
-    // A status row that ended has nothing to hold a place for: it goes, and no
-    // Apply badge is left behind for a change the user never made.
-    expect(controller.pendingCount.get()).toBe(0)
-    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
+    // Until HIL-820 a backend could declare a removal live and take the row out from
+    // under the reader; the one row that needed it is a bar of its own now, so the gate
+    // holds every removal and only the author's own echo walks past it.
+    expect(controller.pendingCount.get()).toBe(1)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
   })
 
   it('applies a value that left the row where it stood, raising no badge', () => {

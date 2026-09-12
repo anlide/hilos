@@ -1,10 +1,8 @@
 <!-- HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
 stored-backup list inside the admin shell, with its row actions. The list is live
-— rows arrive over the socket from the backup runtime index plus the single
-in-progress backup, so an in-progress row shows a live progress bar until it
-completes and merges into the index. The bar is drawn from the phase anchors the
-row carries and a page-wide one-second clock, and falls back to the indeterminate
-striped bar on a run the backend cannot estimate. Its actions (create with a scope
+— rows arrive over the socket from the backup runtime index, and a run in flight is
+not one of them: it stands as the bar above the table, with the caption the core
+assembles out of the bar's own figures (HIL-820). Its actions (create with a scope
 picker, per-row delete, per-row keep toggle, per-row restore) are the core
 headless's (createHilosBackupsActions); each dispatches a tracked action and
 surfaces the backend's failure (authoritative-backend). Restore is the
@@ -32,7 +30,6 @@ import {
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
-  backupRowAnchors,
   createBackupProgressClock,
   BACKUP_CIRCLE_IDENTIFIER_FIELD,
   BACKUP_CIRCLE_ONLINE_FIELD,
@@ -46,6 +43,7 @@ import {
   formatBackupShipping,
   formatBackupDuration,
   formatBackupProgressLabel,
+  formatBackupRunCaption,
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
@@ -58,7 +56,6 @@ import {
   isBackupChecksumMismatch,
   isBackupShipFailed,
   isBackupDeletable,
-  isBackupInProgress,
   isBackupKeepable,
   isBackupMigrationRefused,
   isBackupRestorable,
@@ -109,10 +106,10 @@ const restoreGate = useSignal(createHilosBackupsRestoreGate(props.context))
 const reopenOffered = useSignal(createHilosBackupsReopenGate(props.context))
 const restoreProgress = createHilosRestoreProgress(props.context.connection)
 const restoreStatus = useSignal(restoreProgress.status)
-const rows = useSignal(backupsTable.rows)
 
-// One ticker for the whole page: a percentage moves with wall time, while the socket
-// only speaks on a change of phase, so every bar here redraws from this signal.
+// The ticker of the restore panel: its percentage moves with wall time, while its
+// addressed frame only speaks on a change of phase. The create run needs none of this —
+// its figures arrive counted on the table's bar.
 const progressClock = createBackupProgressClock()
 const progressNow = useSignal(progressClock.now)
 const restorePercent = computed(() =>
@@ -125,11 +122,11 @@ const restoreProgressLabel = computed(() =>
     ? ''
     : formatBackupProgressLabel(restoreStatus.value, progressNow.value),
 )
+// The run in flight is the table's own bar, which lives outside the window: the button
+// therefore stays honest on every page of the list, not only on the one the run was on.
+const tableProgress = useSignal(backupsTable.progress.table)
 const subsystemBusy = computed(() =>
-  isBackupSubsystemBusy(
-    rows.value.map((entry) => entry.row),
-    restoreStatus.value,
-  ),
+  isBackupSubsystemBusy(tableProgress.value, restoreStatus.value),
 )
 
 // Bind the server-windowed table to the connection on mount, request the first
@@ -145,26 +142,6 @@ onUnmounted(() => {
   restoreProgress.dispose()
   progressClock.dispose()
 })
-
-/**
- * How far along the run of this row is, or null when it cannot be told — an
- * installation with no history to estimate from, or a phase this build does not know.
- *
- * @param row The backup row being rendered.
- */
-function rowProgressPercent(row: HilosBackupRow): number | null {
-  return backupProgressPercent(backupRowAnchors(row), progressNow.value)
-}
-
-/**
- * The caption under this row's bar: the phase, the percentage, and the time left,
- * each dropped when the run cannot say it.
- *
- * @param row The backup row being rendered.
- */
-function rowProgressLabel(row: HilosBackupRow): string {
-  return formatBackupProgressLabel(backupRowAnchors(row), progressNow.value)
-}
 
 const columns: HilosTableColumnOf<HilosBackupRow>[] = [
   { key: BACKUP_CREATED_AT_FIELD, label: 'Date', sortable: true },
@@ -255,7 +232,7 @@ async function toggleKeep(row: HilosBackupRow): Promise<void> {
   keepPendingId.value = null
 }
 
-// Delete dialog: a completed backup only (never the in-progress row).
+// Delete dialog: every row of this set is a run that ended, so every one can be deleted.
 const deleteOpen = ref(false)
 const deleteRow = ref<HilosBackupRow | null>(null)
 const deleteAction = useTrackedAction()
@@ -625,6 +602,9 @@ function openOutcome(row: HilosBackupRow): void {
       search-placeholder="Search backups…"
       empty-text="No backups yet."
     >
+      <template #table-progress="{ progress }">{{
+        formatBackupRunCaption(progress)
+      }}</template>
       <template #row="{ row }">
         <td class="text-nowrap">{{ row.createdAt || '—' }}</td>
         <td>{{ row.env || '—' }}</td>
@@ -653,34 +633,9 @@ function openOutcome(row: HilosBackupRow): void {
         </td>
         <td class="text-end">{{ formatBackupDuration(row) }}</td>
         <td style="min-width: 10rem">
-          <template v-if="isBackupInProgress(row)">
-            <div
-              class="progress"
-              role="progressbar"
-              aria-label="Backup progress"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :aria-valuenow="rowProgressPercent(row) ?? undefined"
-              data-id="hilos-backup-progress-bar"
-            >
-              <div
-                :class="
-                  rowProgressPercent(row) === null
-                    ? 'progress-bar progress-bar-striped progress-bar-animated'
-                    : 'progress-bar'
-                "
-                :style="{ width: `${rowProgressPercent(row) ?? 100}%` }"
-              ></div>
-            </div>
-            <div class="small" data-id="hilos-backup-progress-label">
-              {{ rowProgressLabel(row) }}
-            </div>
-          </template>
-          <span
-            v-else-if="row.finished === true"
-            class="badge text-bg-success"
-            >{{ row.status }}</span
-          >
+          <span v-if="row.finished === true" class="badge text-bg-success">{{
+            row.status
+          }}</span>
           <span v-else class="badge text-bg-danger">{{ row.status }}</span>
         </td>
         <td class="text-nowrap">

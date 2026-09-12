@@ -457,12 +457,11 @@ describe('bindTableViewport', () => {
       row: { rowKey: 'a', slots: { value: 'x' } },
     })
 
-    // A delta without the backend's `live` / `own` markers keeps the pending gate.
+    // A delta without the backend's `own` marker keeps the pending gate.
     expect(sink.deltas[0]).toEqual({
       kind: 'row_updated',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { value: 'x' } },
-      live: false,
       own: false,
     })
   })
@@ -488,7 +487,6 @@ describe('bindTableViewport', () => {
       rowKey: 'a',
       row: { rowKey: 'a', slots: { value: 'x' } },
       position: 3,
-      live: false,
       own: false,
     })
   })
@@ -515,7 +513,6 @@ describe('bindTableViewport', () => {
       rowKey: 'a',
       row: { rowKey: 'a', slots: { value: 'x' } },
       position: undefined,
-      live: false,
       own: false,
     })
   })
@@ -540,12 +537,11 @@ describe('bindTableViewport', () => {
       kind: 'row_updated',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { value: 'x' } },
-      live: false,
       own: true,
     })
   })
 
-  it('carries the backend live marker through to the sink', () => {
+  it('drops a live marker a stale backend still sends', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     scopes.openPage('main')
@@ -556,16 +552,17 @@ describe('bindTableViewport', () => {
       page: 'main',
       tableKey: 'settings',
       kind: 'row_removed',
-      rowKey: 'progress',
+      rowKey: 'a',
       reason: 'deleted',
       live: true,
     })
 
+    // The door a `live` delta used to open is gone with the row it was cut for (HIL-820),
+    // and the key travels no further than the parse: a removal is gated like any other.
     expect(sink.deltas[0]).toEqual({
       kind: 'row_removed',
-      rowKey: 'progress',
+      rowKey: 'a',
       reason: 'deleted',
-      live: true,
       own: false,
     })
   })

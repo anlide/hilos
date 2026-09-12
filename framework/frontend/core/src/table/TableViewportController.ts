@@ -180,8 +180,6 @@ export type TableViewportDelta =
       readonly kind: 'row_updated'
       readonly rowKey: string
       readonly row: TableRow
-      /** The backend declared this change live: apply it now, never gate it. */
-      readonly live?: boolean
       /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
       readonly own?: boolean
     }
@@ -191,8 +189,6 @@ export type TableViewportDelta =
       readonly row: TableRow
       /** Zero-based slot the row lands in, absent when the table could not name one. */
       readonly position?: number
-      /** The backend declared this change live: apply it now, never gate it. */
-      readonly live?: boolean
       /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
       readonly own?: boolean
     }
@@ -200,8 +196,6 @@ export type TableViewportDelta =
       readonly kind: 'row_removed'
       readonly rowKey: string
       readonly reason: string
-      /** The backend declared this change live: apply it now, never gate it. */
-      readonly live?: boolean
       /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
       readonly own?: boolean
     }
@@ -214,7 +208,7 @@ export type TableViewportDelta =
 
 /**
  * A delta that carries a change to a row rather than to its freshness — the three
- * kinds the live and own doors apply at once, and the two the gate holds.
+ * kinds the own door applies at once, and the two the gate holds.
  */
 type LiveViewportDelta = Extract<
   TableViewportDelta,
@@ -1433,9 +1427,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * a reader who is aiming at it.
    *
    * A delta is kept only when its row is in the current window (anchored by row-id).
-   * A backend-tagged own-change is the exception to the gate: the server marks the
+   * A backend-tagged own-change is the ONE exception to the gate: the server marks the
    * delta `own` for the connection that authored it, and it applies immediately via
-   * {@link applyOwnDelta}.
+   * {@link applyOwnDelta}. There used to be a second — a backend could declare an
+   * ordinary mutation live to step around the gate, for the sake of a row reporting work
+   * in progress. That row is a bar of its own now, and the door went with it (HIL-820).
    *
    * A freshness delta is taken before any of those doors and passes through none of
    * them: it changes no value, so there is nothing for the gate to hold, and nothing
@@ -1446,11 +1442,6 @@ export class TableViewportController<R> implements TableWindowSink {
   ingestDelta(delta: TableViewportDelta): void {
     if (delta.kind === 'row_stale') {
       this.applyRowStaleness(delta.rowKey, delta.staleSources)
-
-      return
-    }
-    if (delta.live === true) {
-      this.applyLiveDelta(delta)
 
       return
     }
@@ -1552,42 +1543,6 @@ export class TableViewportController<R> implements TableWindowSink {
         row: { ...queued.row, staleSources },
       })
     }
-  }
-
-  /**
-   * Apply a backend-declared live change at once, gate or no gate.
-   *
-   * A live row is a status the table shows *about* work — an in-progress row, a
-   * progress bar — not content the reader is studying, so the frozen-viewport rule
-   * does not apply to it: an update lands in place and a removal takes the row out
-   * of the window entirely rather than leaving a placeholder in its slot, because a
-   * status that ended has nothing to hold a place for. The count that accompanies
-   * the change is already live.
-   *
-   * @param delta The live delta (row_updated, row_moved or row_removed).
-   */
-  private applyLiveDelta(delta: LiveViewportDelta): void {
-    this.pendingMoves.delete(delta.rowKey)
-    this.pendingRemoved.delete(delta.rowKey)
-
-    if (delta.kind === 'row_updated' || delta.kind === 'row_moved') {
-      if (this.isInWindow(delta.rowKey)) {
-        this.windowSignal.set(
-          this.placedWindow(delta.rowKey, delta.row, this.slotOf(delta)),
-        )
-        this.highlight(delta.rowKey)
-      }
-    } else {
-      this.windowSignal.set(
-        this.windowSignal.get().filter((row) => row.rowKey !== delta.rowKey),
-      )
-      const placeholders = new Set(this.placeholderKeysSignal.get())
-      if (placeholders.delete(delta.rowKey)) {
-        this.placeholderKeysSignal.set(placeholders)
-      }
-    }
-
-    this.refreshPendingSignals()
   }
 
   /**

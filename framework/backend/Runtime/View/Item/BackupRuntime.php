@@ -27,6 +27,8 @@ use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
  * @property-read ?string $phase Phase the run is in; null when idle or not yet reported
  * @property-read ?string $phaseStartedAt ISO-8601 instant the current phase began; null when there is no phase
  * @property-read ?int $estimatedSeconds Expected duration of the run; null when there is no history to estimate from
+ * @property-read ?int $percent How far along the run is, 0..99; null when the run cannot be estimated
+ * @property-read ?int $remainingSeconds Seconds the run still expects to take, negative once the estimate is spent; null without one
  * @property-read BackupRuntimeActions $actions Write operations for the runtime singleton
  */
 final class BackupRuntime extends RtItem
@@ -55,6 +57,8 @@ final class BackupRuntime extends RtItem
             StateBackupRuntime::phase => $this->_state->phase,
             StateBackupRuntime::phaseStartedAt => $this->_state->phaseStartedAt,
             StateBackupRuntime::estimatedSeconds => $this->_state->estimatedSeconds,
+            StateBackupRuntime::percent => $this->_state->percent,
+            StateBackupRuntime::remainingSeconds => $this->_state->remainingSeconds,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

@@ -6,13 +6,13 @@ namespace Hilos\Tables\Backup;
 
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupChecksumState;
+use Hilos\Backup\BackupProgress;
 use Hilos\Backup\BackupShipState;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestoreMigrationDecision;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\BackupShipperFactory;
-use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -23,11 +23,14 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -39,16 +42,15 @@ use Hilos\Runtime\View\Item\RestoreRuntime;
 use Throwable;
 
 /**
- * Framework backup list table: the stored backup index plus the in-progress row.
+ * Framework backup list table: the stored backup index, with the run in flight as a bar.
  *
- * Read-only and live. Rows come from three framework-owned runtime sources, no DB:
- * the {@see BackupHistory} index collection (one row per stored backup, files =
- * truth), the {@see BackupRuntime} singleton (the single in-progress row while
- * a backup runs), and the {@see RestoreRuntime} singleton, which decorates the one
- * archive being replayed with its restore's phase and outcome (HIL-276). The
- * monopoly backup agent is the sole writer of all three, so a
- * completed backup fans out as an index-row create while the runtime clears — the
- * in-progress row is deleted and the finished row appears in its place. Row
+ * Read-only and live. Three framework-owned runtime sources feed it, no DB, and one of them
+ * feeds no row: the {@see BackupHistory} index collection is one row per stored backup (files =
+ * truth), the {@see RestoreRuntime} singleton decorates the one archive being replayed with its
+ * restore's phase and outcome (HIL-276), and the {@see BackupRuntime} singleton declares the
+ * progress bar above the table while a backup runs (HIL-820). The monopoly backup agent is the
+ * sole writer of all three, so a completed backup fans out as an index-row create while the
+ * runtime clears — the bar comes down and the finished row appears, in that order. Row
  * actions (create/delete/keep) are out of scope here; they land in HIL-333.
  *
  * A project activates the table by registering it under a table key and binding
@@ -63,8 +65,24 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /** Wire slot the row payload rides under; must match the frontend backup slot. */
     private const string ROW_SLOT = 'backup';
 
-    /** Synthetic status of the in-progress row (a stored backup carries success/error). */
-    private const string RUNNING_STATUS = 'running';
+    /**
+     * Key of the one bar this table ever shows: the backup run in flight.
+     *
+     * A constant rather than the id of the run, and the subsystem is what makes that safe: the
+     * backup agent is monopolistic and refuses a second run while one is on, so the place above
+     * this table is never contested. It has to be a constant, in fact — the frame that takes the
+     * bar down is built after the runtime row was cleared, and there is no run left to name it by.
+     */
+    private const string PROGRESS_KEY = 'hilos-backup-run';
+
+    /** Detail key beside the bar: the phase value the run is in, as the code names it. */
+    public const string PROGRESS_DETAIL_PHASE = 'phase';
+
+    /** Detail key beside the bar: seconds left, negative once the estimate is spent. */
+    public const string PROGRESS_DETAIL_REMAINING_SECONDS = 'remainingSeconds';
+
+    /** What the run's share is counted out of, the agent having already made it a percentage. */
+    private const int PROGRESS_TOTAL = 100;
 
     /** Migration level this code expects; meaningless until {@see $codeMigrationIndexResolved}. */
     private ?int $codeMigrationIndex = null;
@@ -101,6 +119,9 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /**
      * Builds a backup row mutation from a runtime source change.
      *
+     * A change of the backup runtime singleton makes no row at all: the run it describes is
+     * reported as this table's bar instead ({@see buildProgressForSourceEvent()}).
+     *
      * @param SourceChange $change Runtime source change
      * @return ?TableRowMutationDTO Row mutation, or null when the change does not affect this table
      */
@@ -110,15 +131,55 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             return $this->historyMutation($change);
         }
 
-        if ($change->sourceKey === StateBackupRuntime::RT_ITEM) {
-            return $this->runtimeMutation();
-        }
-
         if ($change->sourceKey === StateRestoreRuntime::RT_ITEM) {
             return $this->restoreMutation();
         }
 
         return null;
+    }
+
+    /**
+     * Names the backup run in flight, which is the only work this table ever shows.
+     *
+     * A tab that opened in the middle of a run is told about it here and nowhere else: the run
+     * writes its runtime row once a second, but a tab that arrived between two of those writes
+     * would otherwise sit in front of an idle-looking list until the next one.
+     *
+     * @return list<TableProgressDTO> The run's bar while one is on, empty when the subsystem is idle
+     * @throws InvalidArgumentException When the bar is built with a row key its place refuses
+     */
+    public function progressSnapshot(): array
+    {
+        $running = $this->runningBar();
+
+        return $running === null ? [] : [$running];
+    }
+
+    /**
+     * Turns a change of the backup runtime singleton into this table's bar.
+     *
+     * The row the backup agent writes is the whole channel: it says a run started, it carries the
+     * share and the time left as they move, and its clearing is what takes the bar down. Nothing
+     * else this table reads reports work.
+     *
+     * @param SourceChange $change Runtime source change
+     * @return ?TableProgressDTO The run's bar, the frame that removes it, or null for another source
+     * @throws InvalidArgumentException When the bar is built with a row key its place refuses
+     */
+    public function buildProgressForSourceEvent(SourceChange $change): ?TableProgressDTO
+    {
+        if ($change->sourceKey !== StateBackupRuntime::RT_ITEM) {
+            return null;
+        }
+
+        return $this->runningBar() ?? new TableProgressDTO(
+            TableProgressScope::Table,
+            self::PROGRESS_KEY,
+            null,
+            0,
+            null,
+            true,
+        );
     }
 
     /**
@@ -139,7 +200,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Queries the merged backup rows: the stored index plus any in-progress row.
+     * Queries the stored backup index.
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Backup table snapshot
@@ -149,18 +210,13 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $rows = [];
-        // The index is resolved before it is walked: an unmounted one leaves the snapshot to the
-        // in-progress row alone, where iterating null would only have added a warning to that.
+        // The index is resolved before it is walked: an unmounted one leaves an empty snapshot,
+        // where iterating null would only have added a warning to that.
         $histories = $this->histories();
         if ($histories !== null) {
             foreach ($histories as $history) {
                 $rows[] = $this->rowFromHistory($history)->toArray();
             }
-        }
-
-        $running = $this->runningRow();
-        if ($running !== null) {
-            $rows[] = $running->toArray();
         }
 
         return $this->filterInMemory($rows, $query);
@@ -212,42 +268,12 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Builds the row mutation for a backup runtime-singleton change.
-     *
-     * A started backup creates the single in-progress row; a finished/idle runtime
-     * deletes it, leaving the stored index row (fanned out separately) in its place.
-     *
-     * @return TableRowMutationDTO In-progress row create or delete mutation
-     */
-    private function runtimeMutation(): TableRowMutationDTO
-    {
-        // The in-progress row is a status the table shows about work, not content the reader is
-        // studying: gating it behind Apply would strand "In progress" on screen long after the
-        // run ended. Both its arrival and its removal are declared live.
-        $running = $this->runningRow();
-        if ($running === null) {
-            return $this->mutation(
-                TableMutationType::Delete,
-                HilosBackupTableRow::RUNNING_ROW_KEY,
-                live: true,
-            );
-        }
-
-        return $this->mutation(
-            TableMutationType::Create,
-            HilosBackupTableRow::RUNNING_ROW_KEY,
-            $running,
-            live: true,
-        );
-    }
-
-    /**
      * Builds the row mutation for a change of the restore runtime singleton (HIL-276).
      *
      * A restore is about one archive, so it moves one row: the archive being replayed grows the
-     * live phase while the run is on and keeps its outcome afterwards. Declared live for the same
-     * reason the in-progress row is - this is status about work, not content being read, and a
-     * phase held behind Apply would still say "importing" long after the run ended.
+     * phase while the run is on and keeps its outcome afterwards. An ordinary update carries it,
+     * and reaches the tab at once for that reason - a field written onto a row already in the
+     * window is applied where it stands, without waiting for anything.
      *
      * The row is left alone when the restore names an archive this index does not carry, which is
      * what an idle row and a restore of a since-deleted archive both look like.
@@ -267,7 +293,6 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             TableMutationType::Update,
             $restoredId,
             $this->rowFromHistory($history),
-            live: true,
         );
     }
 
@@ -346,45 +371,39 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Builds the single in-progress backup row, or null when no backup is running.
+     * Builds the bar of the backup run in flight, or null when the subsystem is idle.
      *
-     * It is the only row that carries the progress anchors: a stored archive is not a run, so its
-     * row leaves them null rather than describing a bar that has nothing to fill.
+     * Both figures arrive already counted ({@see BackupProgress}), so the bar is a plain reading
+     * of the runtime row: the share is what the agent wrote, and the absent total is what says a
+     * run has no estimate at all - the difference between a bar standing at a share and one
+     * running its stripes. The ceiling of 99 is the agent's too, so a run still going never draws
+     * a full bar.
      *
-     * @return ?HilosBackupTableRow In-progress backup row, or null when idle
+     * @return ?TableProgressDTO Bar above the table while a backup runs, or null when none does
      */
-    private function runningRow(): ?HilosBackupTableRow
+    private function runningBar(): ?TableProgressDTO
     {
-        // A run records its start time together with the running flag, so the second
-        // half of the guard is dead — and a row that cannot say when it started is
-        // not a row the journal can order.
         $runtime = $this->runtimeView();
-        if ($runtime === null || !$runtime->running || $runtime->startedAt === null) {
+        if ($runtime === null || !$runtime->running) {
             return null;
         }
 
-        return new HilosBackupTableRow(
-            rowKey: HilosBackupTableRow::RUNNING_ROW_KEY,
-            createdAt: $runtime->startedAt,
-            env: $this->currentEnv(),
-            scope: $runtime->scope,
-            sizeBytes: 0,
-            durationSeconds: 0,
-            keep: false,
-            status: self::RUNNING_STATUS,
-            finished: false,
-            failureReason: null,
-            // A running backup has no archive yet, so it has nothing to checksum.
-            checksumState: BackupChecksumState::NONE,
-            verifiedAt: null,
-            // Nor anything to copy: shipping starts from a published archive, so the run in
-            // flight is not owed a copy and must not read as one that is late.
-            shipState: BackupShipState::NONE,
-            shippedAt: null,
-            shipError: null,
-            progressPhase: $runtime->phase,
-            progressPhaseStartedAt: $runtime->phaseStartedAt,
-            progressEstimatedSeconds: $runtime->estimatedSeconds,
+        $detail = [];
+        if ($runtime->phase !== null) {
+            $detail[self::PROGRESS_DETAIL_PHASE] = $runtime->phase;
+        }
+        if ($runtime->remainingSeconds !== null) {
+            $detail[self::PROGRESS_DETAIL_REMAINING_SECONDS] = $runtime->remainingSeconds;
+        }
+
+        return new TableProgressDTO(
+            TableProgressScope::Table,
+            self::PROGRESS_KEY,
+            null,
+            $runtime->percent ?? 0,
+            $runtime->percent === null ? null : self::PROGRESS_TOTAL,
+            false,
+            $detail,
         );
     }
 
@@ -408,29 +427,6 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             return $target !== null && BackupShipperFactory::fromTarget($target) !== null;
         } catch (Throwable) {
             return false;
-        }
-    }
-
-    /**
-     * Reads the current application environment for the in-progress row.
-     *
-     * The in-progress backup runs in the current environment, which the runtime
-     * singleton does not carry. APP_ENV is always cataloged and set, so a failure
-     * is not expected; it degrades to an unnamed ENV cell rather than dropping the row.
-     *
-     * @return ?string Current application environment, or null when unreadable
-     */
-    private function currentEnv(): ?string
-    {
-        $env = Hilos::$env;
-        if ($env === null) {
-            return null;
-        }
-
-        try {
-            return $env[EnvConstants::APP_ENV]->string();
-        } catch (Throwable) {
-            return null;
         }
     }
 

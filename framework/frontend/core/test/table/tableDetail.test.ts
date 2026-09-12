@@ -189,7 +189,6 @@ describe('TableViewportController expansion', () => {
       kind: 'row_updated',
       rowKey: 'a',
       row: row('a'),
-      live: true,
     })
 
     expect(expandedKeys()).toEqual(['a'])

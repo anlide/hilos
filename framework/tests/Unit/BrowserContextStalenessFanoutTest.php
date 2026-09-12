@@ -91,7 +91,7 @@ final class BrowserContextStalenessFanoutTest extends TestCase
         $this->assertSame('a', $delta->rowKey);
         $this->assertSame([StaleFanoutViewportTable::SLOT], $delta->staleSources);
         $this->assertNull($delta->row, 'the values did not move, so none are sent');
-        $this->assertFalse($delta->live, 'nothing the reader has queued may be resolved by this');
+        $this->assertFalse($delta->own, 'nothing the reader has queued may be resolved by this');
     }
 
     public function testARowTheWindowIsNotShowingIsNotMentionedToIt(): void

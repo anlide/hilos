@@ -7,6 +7,7 @@ namespace Hilos\Runtime\View\Actions\Item;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Hilos\Backup\BackupPhase;
+use Hilos\Backup\BackupProgress;
 use Hilos\Backup\BackupScope;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -51,6 +52,8 @@ final class BackupRuntimeActions extends RtActions
         $this->state->phase = null;
         $this->state->phaseStartedAt = null;
         $this->state->estimatedSeconds = $estimatedSeconds;
+        $this->state->percent = null;
+        $this->state->remainingSeconds = null;
         $this->sync();
     }
 
@@ -75,6 +78,28 @@ final class BackupRuntimeActions extends RtActions
     }
 
     /**
+     * Puts the figures a progress bar is drawn from on the row and syncs them to readers.
+     *
+     * The arithmetic ({@see BackupProgress}) is done by the agent rather than by each surface that
+     * shows the run: the phase weights make a run sit in one phase for most of its wall-clock, so
+     * a row written only on a phase change would leave every bar frozen between them. The two
+     * figures move together because a share without the time left is half an answer.
+     *
+     * @param ?int $percent How far along the run is, 0..99; null when it cannot be estimated
+     * @param ?int $remainingSeconds Seconds left, negative once the estimate is spent; null when it cannot be estimated
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function markProgress(?int $percent, ?int $remainingSeconds): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->percent = $percent;
+        $this->state->remainingSeconds = $remainingSeconds;
+        $this->sync();
+    }
+
+    /**
      * Returns the singleton to idle and syncs the change to readers.
      *
      * Every field is cleared, not only the flag: a leftover id or scope would keep the
@@ -95,6 +120,8 @@ final class BackupRuntimeActions extends RtActions
         $this->state->phase = null;
         $this->state->phaseStartedAt = null;
         $this->state->estimatedSeconds = null;
+        $this->state->percent = null;
+        $this->state->remainingSeconds = null;
         $this->sync();
     }
 }

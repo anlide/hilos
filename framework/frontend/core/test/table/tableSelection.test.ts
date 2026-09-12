@@ -215,7 +215,7 @@ describe('TableViewportController selection', () => {
     expect(controller.selection.header.get()).toBe('all')
   })
 
-  it('drops a row out of the marks when a live removal takes it out of the window', () => {
+  it("drops a row out of the marks the moment the author's own removal lands", () => {
     const { controller, open, markedKeys } = makeController()
     open(['a', 'b', 'c'])
     controller.selectWindow(true)
@@ -224,13 +224,12 @@ describe('TableViewportController selection', () => {
       kind: 'row_removed',
       rowKey: 'b',
       reason: 'deleted',
-      live: true,
+      own: true,
     })
 
-    expect(controller.rows.get().map((shown) => shown.rowKey)).toEqual([
-      'a',
-      'c',
-    ])
+    // The author's echo needs no Apply, so the placeholder is there at once - and a
+    // placeholder is not a row anybody can act on, so the mark goes with the record.
+    expect(controller.rows.get()[1]?.placeholder).toBe(true)
     expect(controller.selection.count.get()).toBe(2)
     expect(markedKeys()).toEqual(['a', 'c'])
   })

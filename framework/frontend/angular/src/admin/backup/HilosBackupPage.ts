@@ -1,10 +1,8 @@
 // HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
 // stored-backup list inside the admin shell, with its row actions. The list is
-// live — rows arrive over the socket from the backup runtime index plus the
-// single in-progress backup, so an in-progress row shows a live progress bar until
-// it completes and merges into the index. The bar is drawn from the phase anchors
-// the row carries and a page-wide one-second clock, and falls back to the
-// indeterminate striped bar on a run the backend cannot estimate. Its actions (create
+// live — rows arrive over the socket from the backup runtime index, and a run in
+// flight is not one of them: it is the table's own bar, which this view does not draw
+// yet (HIL-814) and reads only to keep the create button honest. Its actions (create
 // with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
 // the core headless's (createHilosBackupsActions); each dispatches a tracked action
 // and surfaces the backend's failure (authoritative-backend). Restore is the
@@ -46,7 +44,6 @@ import {
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
-  backupRowAnchors,
   createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsCircleTable,
@@ -66,7 +63,6 @@ import {
   isBackupChecksumMismatch,
   isBackupShipFailed,
   isBackupDeletable,
-  isBackupInProgress,
   isBackupKeepable,
   isBackupMigrationRefused,
   isBackupRestorable,
@@ -81,6 +77,7 @@ import type {
   HilosBackupsContext,
   HilosRestoreStatus,
   HilosTableColumnOf,
+  HilosTableProgress,
 } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
@@ -323,25 +320,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           </td>
           <td class="text-end">{{ formatDuration(row) }}</td>
           <td style="min-width: 10rem">
-            @if (isRunning(row)) {
-              <div
-                class="progress"
-                role="progressbar"
-                aria-label="Backup progress"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                [attr.aria-valuenow]="rowPercent(row)"
-                data-id="hilos-backup-progress-bar"
-              >
-                <div
-                  [class]="progressBarClass(rowPercent(row))"
-                  [style.width.%]="rowPercent(row) ?? 100"
-                ></div>
-              </div>
-              <div class="small" data-id="hilos-backup-progress-label">
-                {{ rowProgressLabel(row) }}
-              </div>
-            } @else if (row.finished === true) {
+            @if (row.finished === true) {
               <span class="badge text-bg-success">{{ row.status }}</span>
             } @else {
               <span class="badge text-bg-danger">{{ row.status }}</span>
@@ -818,7 +797,7 @@ export class HilosBackupPage {
   protected readonly keep = createHilosTrackedAction()
   protected readonly keepPendingId = signal<string | null>(null)
 
-  // Delete dialog: a completed backup only (never the in-progress row).
+  // Delete dialog: every row of this set is a run that ended, so every one can be deleted.
   protected readonly deleteOpen = signal(false)
   protected readonly deleteRow = signal<HilosBackupRow | null>(null)
   protected readonly del = createHilosTrackedAction()
@@ -902,7 +881,7 @@ export class HilosBackupPage {
 
   // Mirrored from the core selectors, which derive from the context input: what this
   // installation offers for restoring, the addressed frames a restore this tab started
-  // sends back while the node is frozen, and the rows the busy check reads.
+  // sends back while the node is frozen, and the table's own bar the busy check reads.
   protected readonly restoreGate = signal<HilosBackupRestoreGate>({
     uiEnabled: false,
     targetEnv: null,
@@ -911,9 +890,11 @@ export class HilosBackupPage {
   // the node in. Personal to the subscription, so a second admin's tab reads false.
   protected readonly reopenOffered = signal(false)
   protected readonly restoreStatus = signal<HilosRestoreStatus | null>(null)
-  private readonly rows = signal<readonly (HilosBackupRow | null)[]>([])
+  // The bar lives outside the window, so the button stays honest on every page of the
+  // list rather than only on the one the run happened to be shown on.
+  private readonly tableProgress = signal<HilosTableProgress | null>(null)
   protected readonly subsystemBusy = computed(() =>
-    isBackupSubsystemBusy(this.rows(), this.restoreStatus()),
+    isBackupSubsystemBusy(this.tableProgress(), this.restoreStatus()),
   )
 
   constructor() {
@@ -950,20 +931,18 @@ export class HilosBackupPage {
       const gate = createHilosBackupsRestoreGate(this.context())
       const reopenGate = createHilosBackupsReopenGate(this.context())
       const progress = this.restoreProgress()
-      const windowRows = this.backups().controller.rows
+      const runProgress = this.backups().controller.progress.table
       progress.start()
       this.restoreGate.set(gate.get())
       this.reopenOffered.set(reopenGate.get())
-      this.rows.set(windowRows.get().map((entry) => entry.row))
+      this.tableProgress.set(runProgress.get())
       const subscriptions = [
         subscribeSignal(gate, (value) => this.restoreGate.set(value)),
         subscribeSignal(reopenGate, (value) => this.reopenOffered.set(value)),
         subscribeSignal(progress.status, (value) =>
           this.restoreStatus.set(value),
         ),
-        subscribeSignal(windowRows, (value) =>
-          this.rows.set(value.map((entry) => entry.row)),
-        ),
+        subscribeSignal(runProgress, (value) => this.tableProgress.set(value)),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {
@@ -1158,11 +1137,6 @@ export class HilosBackupPage {
       : null
   }
 
-  /** Whether the backup is the single in-progress row (renders a live progress bar). */
-  protected isRunning(row: HilosBackupRow): boolean {
-    return isBackupInProgress(row)
-  }
-
   /** Whether this archive was taken on newer code and can never be replayed here. */
   protected isMigrationRefused(row: HilosBackupRow): boolean {
     return isBackupMigrationRefused(row)
@@ -1176,25 +1150,6 @@ export class HilosBackupPage {
   /** This archive's per-connection migration lines, one per rendered row. */
   protected migrationNotes(row: HilosBackupRow): readonly string[] {
     return backupMigrationNotes(row)
-  }
-
-  /**
-   * How far along the run of this row is, or null when it cannot be told — an
-   * installation with no history to estimate from, or a phase this build does not know.
-   *
-   * @param row The backup row being rendered.
-   */
-  protected rowPercent(row: HilosBackupRow): number | null {
-    return backupProgressPercent(backupRowAnchors(row), this.progressNow())
-  }
-
-  /**
-   * The caption under this row's bar: the phase, the percentage, and the time left.
-   *
-   * @param row The backup row being rendered.
-   */
-  protected rowProgressLabel(row: HilosBackupRow): string {
-    return formatBackupProgressLabel(backupRowAnchors(row), this.progressNow())
   }
 
   /**

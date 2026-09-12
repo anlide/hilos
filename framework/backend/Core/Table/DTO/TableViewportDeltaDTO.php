@@ -51,7 +51,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
     public const string reason = 'reason';
     public const string position = 'position';
     public const string staleSources = 'staleSources';
-    public const string live = 'live';
     public const string own = 'own';
 
     /**
@@ -64,7 +63,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param ?int $position Zero-based place in the window the row lands on (row_moved), or null when
      *     the table could not name one
      * @param ?list<string> $staleSources Source keys of the row that are no longer being kept up to date (row_stale)
-     * @param bool $live Whether the change applies at once instead of accumulating as pending
      * @param bool $own Whether this receiver authored the change (applies at once, resolving any queued pending)
      */
     private function __construct(
@@ -76,7 +74,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         public readonly ?string $reason = null,
         public readonly ?int $position = null,
         public readonly ?array $staleSources = null,
-        public readonly bool $live = false,
         public readonly bool $own = false,
     ) {
     }
@@ -88,7 +85,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param string $tableKey Table key
      * @param int|string $rowKey Affected row key
      * @param array<string, mixed> $row New row as a `{rowKey, slots}` fragment
-     * @param bool $live Whether the change applies at once instead of accumulating as pending
      * @param bool $own Whether this receiver authored the change (applies at once, resolving any queued pending)
      * @return self Row-updated delta
      */
@@ -97,10 +93,9 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         string $tableKey,
         int|string $rowKey,
         array $row,
-        bool $live = false,
         bool $own = false,
     ): self {
-        return new self($page, $tableKey, self::KIND_ROW_UPDATED, rowKey: $rowKey, row: $row, live: $live, own: $own);
+        return new self($page, $tableKey, self::KIND_ROW_UPDATED, rowKey: $rowKey, row: $row, own: $own);
     }
 
     /**
@@ -117,7 +112,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param int|string $rowKey Affected row key
      * @param array<string, mixed> $row New row as a `{rowKey, slots}` fragment
      * @param ?int $position Zero-based place in the window the row lands on, or null when the table could not say
-     * @param bool $live Whether the change applies at once instead of accumulating as pending
      * @param bool $own Whether this receiver authored the change (applies at once, resolving any queued pending)
      * @return self Row-moved delta
      */
@@ -127,7 +121,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         int|string $rowKey,
         array $row,
         ?int $position = null,
-        bool $live = false,
         bool $own = false,
     ): self {
         return new self(
@@ -137,7 +130,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
             rowKey: $rowKey,
             row: $row,
             position: $position,
-            live: $live,
             own: $own,
         );
     }
@@ -149,7 +141,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param string $tableKey Table key
      * @param int|string $rowKey Affected row key
      * @param string $reason Removal reason (REASON_DELETED / REASON_LEFT_SET / REASON_MOVED_OUT)
-     * @param bool $live Whether the change applies at once instead of accumulating as pending
      * @param bool $own Whether this receiver authored the change (applies at once, resolving any queued pending)
      * @return self Row-removed delta
      */
@@ -158,20 +149,19 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         string $tableKey,
         int|string $rowKey,
         string $reason,
-        bool $live = false,
         bool $own = false,
     ): self {
-        return new self($page, $tableKey, self::KIND_ROW_REMOVED, rowKey: $rowKey, reason: $reason, live: $live, own: $own);
+        return new self($page, $tableKey, self::KIND_ROW_REMOVED, rowKey: $rowKey, reason: $reason, own: $own);
     }
 
     /**
      * Creates a row-freshness delta.
      *
      * The list is the whole answer for that row and replaces whatever the receiver held,
-     * so a row that thawed is announced by the same kind carrying an empty list. It rides
-     * no `live` flag: on the client a live delta means the change applies at once AND
-     * resolves everything queued for the row, and this one has no business touching what
-     * the reader has not accepted yet — it says nothing about the row's values (HIL-800).
+     * so a row that thawed is announced by the same kind carrying an empty list. It does not
+     * announce itself the author's own either: that is what applies a change at once AND resolves
+     * everything queued for the row, and this one has no business touching what the reader has
+     * not accepted yet — it says nothing about the row's values (HIL-800).
      *
      * @param string $page Page the table belongs to
      * @param string $tableKey Table key
@@ -215,9 +205,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         if ($this->staleSources !== null) {
             $data[self::staleSources] = $this->staleSources;
         }
-        if ($this->live) {
-            $data[self::live] = true;
-        }
         if ($this->own) {
             $data[self::own] = true;
         }
@@ -230,8 +217,8 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      *
      * Only the three fields every kind carries are required. The rest are read
      * as the optional fields {@see self::toArray()} writes them as: it omits a
-     * key irrelevant to the kind, and omits a lowered flag, so an absent `live`
-     * or `own` is the false that side put there.
+     * key irrelevant to the kind, and omits a lowered flag, so an absent `own`
+     * is the false that side put there.
      *
      * @param array<string, mixed> $data Source data in the table-viewport-delta wire form
      * @return static Restored DTO instance
@@ -248,7 +235,6 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
             reason: self::optionalString($data, self::reason),
             position: self::optionalInt($data, self::position),
             staleSources: self::optionalArray($data, self::staleSources),
-            live: self::optionalBool($data, self::live) ?? false,
             own: self::optionalBool($data, self::own) ?? false,
         );
     }

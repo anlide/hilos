@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\TableProgressScope;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupShipState;
@@ -29,14 +30,23 @@ use RuntimeException;
 /**
  * Unit tests for the framework backup list table.
  *
- * The two runtime sources (the stored backup index and the in-progress singleton)
- * are bound by a test subclass through the table's seams; the assertions exercise
- * the merge, the source-change dispatch, and the row projection only.
+ * The three runtime sources (the stored backup index, the run in flight, and the restore) are
+ * bound by a test subclass through the table's seams; the assertions exercise the window, the
+ * source-change dispatch, the row projection, and the bar the run is shown as.
  */
 final class HilosBackupHistoryTableTest extends TestCase
 {
     /** Migration track the fixture files are written under. */
     private const string MIGRATION_TRACK = 'main';
+
+    /**
+     * The key the table names its one bar under, spelled out rather than read off the table.
+     *
+     * It is a wire value a frontend and an e2e both look for, so the test is the place that
+     * notices it changing; taking it from the constant would make the assertion agree with
+     * whatever the table says today.
+     */
+    private const string PROGRESS_KEY = 'hilos-backup-run';
 
     private string $migrationRoot = '';
 
@@ -66,36 +76,51 @@ final class HilosBackupHistoryTableTest extends TestCase
         );
     }
 
-    public function testRuntimeStartCreatesRunningRow(): void
+    public function testARunningBackupMakesNoRowAtAll(): void
     {
         $table = $this->table(runtime: $this->runningRuntime());
 
-        $mutation = $table->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+        $this->assertNull(
+            $table->buildMutationForSourceEvent(
+                SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+            ),
+            'A run has no archive and no id, so the set it would be a row of holds nothing for it',
         );
-
-        $this->assertNotNull($mutation);
-        $this->assertSame(TableMutationType::Create, $mutation->type);
-        $this->assertSame(HilosBackupTableRow::RUNNING_ROW_KEY, $mutation->rowKey);
-        $this->assertInstanceOf(HilosBackupTableRow::class, $mutation->row);
-        $this->assertFalse($mutation->row->finished);
-        $this->assertSame('running', $mutation->row->status);
-        $this->assertSame('full', $mutation->row->scope);
-        $this->assertSame('2026-07-20T11:00:00+00:00', $mutation->row->createdAt);
-        // The in-progress row has no failure — the reason exists only on a completed failure.
-        $this->assertNull($mutation->row->failureReason);
     }
 
-    public function testRuntimeIdleDeletesRunningRow(): void
+    public function testARunningBackupIsDeclaredAsTheBarAboveTheTable(): void
     {
-        $mutation = $this->table()->buildMutationForSourceEvent(
+        $table = $this->table(runtime: $this->runningRuntime());
+
+        $progress = $table->buildProgressForSourceEvent(
             SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
         );
 
-        $this->assertNotNull($mutation);
-        $this->assertSame(TableMutationType::Delete, $mutation->type);
-        $this->assertSame(HilosBackupTableRow::RUNNING_ROW_KEY, $mutation->rowKey);
-        $this->assertNull($mutation->row);
+        $this->assertNotNull($progress);
+        $this->assertSame(TableProgressScope::Table, $progress->scope);
+        $this->assertSame(self::PROGRESS_KEY, $progress->progressKey);
+        $this->assertNull($progress->rowKey, 'A bar above the table is tied to no row');
+        $this->assertFalse($progress->ended);
+    }
+
+    public function testAnIdleRuntimeTakesTheBarDown(): void
+    {
+        $progress = $this->table()->buildProgressForSourceEvent(
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+        );
+
+        $this->assertNotNull($progress);
+        $this->assertSame(self::PROGRESS_KEY, $progress->progressKey);
+        $this->assertTrue($progress->ended, 'The run is over and its bar has to come down with it');
+    }
+
+    public function testAnotherSourceReportsNoWork(): void
+    {
+        $this->assertNull(
+            $this->table(runtime: $this->runningRuntime())->buildProgressForSourceEvent(
+                SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
+            ),
+        );
     }
 
     public function testStoredBackupChangeProjectsFinishedRow(): void
@@ -168,7 +193,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertSame('gone', $mutation->rowKey);
     }
 
-    public function testFullSnapshotMergesStoredIndexAndRunningRow(): void
+    public function testTheWindowCarriesStoredArchivesOnlyWhileARunIsOn(): void
     {
         $table = $this->table(
             histories: $this->historiesWith(
@@ -183,39 +208,58 @@ final class HilosBackupHistoryTableTest extends TestCase
             $keys[] = $row->getRowKey();
         }
 
-        $this->assertContains('b1', $keys);
-        $this->assertContains(HilosBackupTableRow::RUNNING_ROW_KEY, $keys);
-        $this->assertCount(2, $keys);
+        $this->assertSame(['b1'], $keys, 'A bar does not live among the rows, so it is not counted with them');
     }
 
-    public function testTheInProgressRowCarriesTheProgressAnchorsAndAStoredArchiveCarriesNone(): void
+    public function testTheSnapshotCarriesTheBarWithItsFiguresAndItsPhase(): void
     {
-        $table = $this->table(
-            histories: $this->historiesWith(
-                BackupHistory::fromRow($this->historyRow()),
-            ),
-            runtime: $this->runningRuntime([
-                StateBackupRuntime::phase => 'archiving',
-                StateBackupRuntime::phaseStartedAt => '2026-07-20T11:02:00+00:00',
-                StateBackupRuntime::estimatedSeconds => 300,
-            ]),
+        $table = $this->table(runtime: $this->runningRuntime([
+            StateBackupRuntime::phase => 'archiving',
+            StateBackupRuntime::phaseStartedAt => '2026-07-20T11:02:00+00:00',
+            StateBackupRuntime::estimatedSeconds => 300,
+            StateBackupRuntime::percent => 62,
+            StateBackupRuntime::remainingSeconds => 40,
+        ]));
+
+        $progress = $table->progressSnapshot();
+
+        $this->assertCount(1, $progress);
+        $this->assertSame(62, $progress[0]->current);
+        $this->assertSame(100, $progress[0]->total, 'The agent already made the share a percentage');
+        $this->assertSame(
+            [
+                HilosBackupHistoryTable::PROGRESS_DETAIL_PHASE => 'archiving',
+                HilosBackupHistoryTable::PROGRESS_DETAIL_REMAINING_SECONDS => 40,
+            ],
+            $progress[0]->detail,
         );
+    }
 
-        $rows = [];
-        foreach ($table->getFullSnapshot()->rows as $row) {
-            $this->assertInstanceOf(HilosBackupTableRow::class, $row);
-            $rows[$row->getRowKey()] = $row;
-        }
+    public function testARunWithNothingToEstimateFromDrawsABarWithNoShare(): void
+    {
+        $table = $this->table(runtime: $this->runningRuntime([
+            StateBackupRuntime::phase => 'dumping',
+        ]));
 
-        $running = $rows[HilosBackupTableRow::RUNNING_ROW_KEY];
-        $this->assertSame('archiving', $running->progressPhase);
-        $this->assertSame('2026-07-20T11:02:00+00:00', $running->progressPhaseStartedAt);
-        $this->assertSame(300, $running->progressEstimatedSeconds);
+        $progress = $table->progressSnapshot();
 
-        $stored = $rows['b1'];
-        $this->assertNull($stored->progressPhase, 'A stored archive is not a run and has no bar to fill');
-        $this->assertNull($stored->progressPhaseStartedAt);
-        $this->assertNull($stored->progressEstimatedSeconds);
+        $this->assertCount(1, $progress);
+        $this->assertNull($progress[0]->total, 'No total is what says the work has no estimate at all');
+        $this->assertSame(0, $progress[0]->current);
+        $this->assertSame(
+            [HilosBackupHistoryTable::PROGRESS_DETAIL_PHASE => 'dumping'],
+            $progress[0]->detail,
+            'A run with no estimate has no time left to name either',
+        );
+    }
+
+    public function testAnIdleSubsystemDeclaresNoBar(): void
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow($this->historyRow()),
+        ));
+
+        $this->assertSame([], $table->progressSnapshot());
     }
 
     public function testBrowserRowRidesSingleBackupSlot(): void
@@ -268,44 +312,11 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::restoreMigrationDecision => null,
                         HilosBackupTableRow::restoreMigrationBehind => null,
                         HilosBackupTableRow::restoreMigrationNotice => null,
-                        HilosBackupTableRow::progressPhase => null,
-                        HilosBackupTableRow::progressPhaseStartedAt => null,
-                        HilosBackupTableRow::progressEstimatedSeconds => null,
                     ],
                 ],
             ],
             $table->browserRow($row),
         );
-    }
-
-    public function testTheInProgressRowIsDeclaredLive(): void
-    {
-        $create = $this->table(runtime: $this->runningRuntime())->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
-        );
-        $delete = $this->table()->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
-        );
-
-        // A progress row must never wait behind Apply: it would outlive the run it reports.
-        $this->assertNotNull($create);
-        $this->assertTrue($create->live);
-        $this->assertNotNull($delete);
-        $this->assertTrue($delete->live);
-    }
-
-    public function testAStoredBackupRowIsNotLive(): void
-    {
-        $histories = $this->historiesWith(
-            BackupHistory::fromRow($this->historyRow()),
-        );
-        $mutation = $this->table($histories)->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
-        );
-
-        // Stored backups are content: they keep the pending gate like any other row.
-        $this->assertNotNull($mutation);
-        $this->assertFalse($mutation->live);
     }
 
     public function testTheRowSlotCarriesNoIdField(): void
@@ -507,36 +518,24 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertSame(BackupChecksumState::NONE, $mutation->row?->checksumState);
     }
 
-    public function testTheInProgressRowHasNothingToChecksum(): void
+    public function testAnUnmountedIndexLeavesAnEmptyWindowAndStillShowsTheRun(): void
     {
-        $mutation = $this->table(runtime: $this->runningRuntime())->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
-        );
-
-        // The archive does not exist yet, so the running row claims neither digest nor check.
-        $this->assertSame(BackupChecksumState::NONE, $mutation->row?->checksumState);
-        $this->assertNull($mutation->row?->verifiedAt);
-    }
-
-    public function testAnUnmountedIndexLeavesTheInProgressRowAlone(): void
-    {
-        // A project that never declared the BACKUP feature has no index to walk. The snapshot then
-        // holds what the table does know - the run in flight - and reaching for the absent index
-        // is not a step on the way there, so no warning is raised getting to it.
+        // A project that never declared the BACKUP feature has no index to walk. Reaching for the
+        // absent one is not a step on the way to an empty window, so no warning is raised getting
+        // there - and the run in flight is reported all the same, the bar living outside the set.
+        $table = $this->table(runtime: $this->runningRuntime());
         set_error_handler(static function (int $severity, string $message): bool {
             throw new RuntimeException("PHP raised: {$message}");
         });
 
         try {
-            $snapshot = $this->table(runtime: $this->runningRuntime())->getFullSnapshot();
+            $snapshot = $table->getFullSnapshot();
         } finally {
             restore_error_handler();
         }
 
-        $this->assertCount(1, $snapshot->rows);
-        $row = $snapshot->rows[0];
-        $this->assertInstanceOf(HilosBackupTableRow::class, $row);
-        $this->assertSame(HilosBackupTableRow::RUNNING_ROW_KEY, $row->requireRowKey());
+        $this->assertSame([], $snapshot->rows);
+        $this->assertCount(1, $table->progressSnapshot());
     }
 
     public function testARestoreUpdatesTheRowOfTheArchiveItReplays(): void
@@ -558,7 +557,6 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertNotNull($mutation);
         $this->assertSame(TableMutationType::Update, $mutation->type);
         $this->assertSame('b2', $mutation->rowKey, 'Only the archive being replayed moves');
-        $this->assertTrue($mutation->live, 'A phase held behind Apply would outlive the run it describes');
         $this->assertSame('importing', $mutation->row?->restorePhase);
     }
 
@@ -725,19 +723,6 @@ final class HilosBackupHistoryTableTest extends TestCase
             ],
             explode("\n", (string)$row->restoreMigrationNotice),
         );
-    }
-
-    public function testTheInProgressRowHasNoArchiveToJudge(): void
-    {
-        $table = $this->table(runtime: $this->runningRuntime());
-
-        $mutation = $table->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
-        );
-
-        $this->assertNull($mutation->row?->restoreMigrationDecision);
-        $this->assertNull($mutation->row?->restoreMigrationBehind);
-        $this->assertNull($mutation->row?->restoreMigrationNotice);
     }
 
     /**

@@ -197,6 +197,16 @@ final class BackupConstants
     public const int RESTORE_EXIT_DATABASE_INTACT = 7;
 
     /**
+     * How often the supervisor refreshes the progress figures of a create run, in seconds.
+     *
+     * A second is not a guess but the step the surfaces already moved at while they did the
+     * arithmetic themselves, so moving it to the server changes who counts and not what an
+     * operator sees. Faster would write a row nobody could read the difference in; slower would
+     * make a bar visibly step.
+     */
+    public const int PROGRESS_HEARTBEAT_SECONDS = 1;
+
+    /**
      * Request payload / child argv option carrying the {@see RestoreEnvDecision} value the
      * CLI preflight recorded; the engine acts on it without re-deriving.
      */
