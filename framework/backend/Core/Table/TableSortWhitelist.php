@@ -43,9 +43,6 @@ final class TableSortWhitelist
     /** Log context key: what made a declared order unusable. */
     private const string LOG_KEY_REASON = 'reason';
 
-    /** Reason a declaration is skipped: its components do not all run the same way. */
-    private const string REASON_MIXED_DIRECTIONS = 'mixed-directions';
-
     /** Reason a declaration is skipped: it names a field the table's own map does not sort by. */
     private const string REASON_UNKNOWN_FIELD = 'unknown-field';
 
@@ -114,9 +111,8 @@ final class TableSortWhitelist
      * is what its field map already says.
      *
      * A declaration the table cannot honour is skipped as though it were not there, and says so
-     * once per window rather than being repaired: mixed directions rest on an index direction
-     * that is neither declared nor checked here (HIL-901), and a field outside the map has no
-     * column to reach, so honouring either would promise an index that nothing stands behind.
+     * once per window rather than being repaired: a field outside the map has no column to
+     * reach, so honouring such a declaration would promise an index that nothing stands behind.
      *
      * @param ?TableSortOrderDTO $order Order the window asked for, or null when it asked for none
      * @param array<string, TableSortOrderDTO> $declared Orders the table offers, by the key it declared each under
@@ -168,11 +164,7 @@ final class TableSortWhitelist
      */
     private static function declarationFlaw(TableSortOrderDTO $declared, array $allowed): ?string
     {
-        $direction = $declared->components[0]->direction;
         foreach ($declared->components as $component) {
-            if ($component->direction !== $direction) {
-                return self::REASON_MIXED_DIRECTIONS;
-            }
             if ($allowed !== [] && !isset($allowed[$component->field])) {
                 return self::REASON_UNKNOWN_FIELD;
             }

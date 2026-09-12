@@ -16,7 +16,7 @@ use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the sort gate {@see TableDefinition::getPage()} runs (HIL-561, HIL-789).
+ * Unit tests for the sort gate {@see TableDefinition::getPage()} runs (HIL-561, HIL-789, HIL-917).
  *
  * The gate is placed where every table's row source is reached from, so what the tests
  * inspect is the query the concrete table is handed: a declared field arrives with the
@@ -131,7 +131,7 @@ final class TableDefinitionSortGateTest extends TestCase
         self::assertStringContainsString('Table sort order rejected', $logged);
     }
 
-    public function testADeclarationMixingDirectionsIsPassedOverAsThoughItWereNotWritten(): void
+    public function testAMixedDirectionOrderReachesTheQueryWithAColumnUnderEveryComponent(): void
     {
         $mixed = TableSortOrderDTO::of(
             new TableSortDTO(SortGateUnitRow::CHANNEL, TableConstants::ORDER_ASC),
@@ -142,16 +142,25 @@ final class TableDefinitionSortGateTest extends TestCase
             ['mixed' => $mixed],
         );
 
-        ob_start();
         $table->getPage(new TableQueryDTO(sort: $mixed));
-        $logged = (string) ob_get_clean();
 
-        // An index direction is neither declared nor checked on this side (HIL-901), so the
-        // declaration would promise an index nothing stands behind.
-        self::assertNotNull($table->received);
-        self::assertNull($table->received->sort);
-        self::assertStringContainsString('Table sort order declaration ignored', $logged);
-        self::assertStringContainsString('mixed-directions', $logged);
+        // One column up and another down is an order the table may declare: the direction of
+        // every index column is declared and audited, so the index under it is as visible as
+        // the columns are.
+        $order = $table->received?->sort;
+        self::assertNotNull($order);
+        self::assertSame([SortGateUnitRow::CHANNEL, SortGateUnitRow::LABEL], array_map(
+            static fn(TableSortDTO $component): string => $component->field,
+            $order->components,
+        ));
+        self::assertSame([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC], array_map(
+            static fn(TableSortDTO $component): string => $component->direction,
+            $order->components,
+        ));
+        self::assertSame(['row_channel', 'row_label'], array_map(
+            static fn(TableSortDTO $component): ?string => $component->column,
+            $order->components,
+        ));
     }
 
     /**

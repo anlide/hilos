@@ -11,7 +11,7 @@ use Hilos\Core\Table\TableSortWhitelist;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the sort gate both table boundaries run on (HIL-561, HIL-789).
+ * Unit tests for the sort gate both table boundaries run on (HIL-561, HIL-789, HIL-917).
  *
  * The gate answers two questions with two methods. The map is what a boundary allows, so the
  * tests of {@see TableSortWhitelist::resolve()} are about what leaves it: an allowed field comes
@@ -201,7 +201,7 @@ final class TableSortWhitelistTest extends TestCase
         self::assertStringContainsString('promptPiece:asc, section:asc', $logged);
     }
 
-    public function testADeclarationRunningTwoWaysAtOnceIsPassedOverAndSaidSo(): void
+    public function testADeclarationMixingDirectionsIsServedLikeAnyOther(): void
     {
         $asked = TableSortOrderDTO::of(
             new TableSortDTO('section', TableConstants::ORDER_ASC),
@@ -217,11 +217,11 @@ final class TableSortWhitelistTest extends TestCase
         );
         $logged = (string) ob_get_clean();
 
-        // An index direction is neither declared nor checked on this side (HIL-901), so a
-        // declaration resting on one promises an index nothing stands behind.
-        self::assertNull($held);
-        self::assertStringContainsString('Table sort order declaration ignored', $logged);
-        self::assertStringContainsString('mixed-directions', $logged);
+        // An index declaration now carries the direction of every column and the schema audit
+        // holds it against the live index, so a mixed order is an order like any other: it is
+        // served, and the silence is the point — neither a skipped declaration nor a rejection.
+        self::assertSame($asked, $held);
+        self::assertSame('', $logged);
     }
 
     public function testADeclarationNamingAFieldOutsideTheMapIsPassedOverAndSaidSo(): void
