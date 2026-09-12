@@ -1,6 +1,7 @@
 // The column declaration a HilosViewportTable header renders from. It is framework-
-// agnostic view config — header text, which fields offer a sort control, and which
-// place the column takes in the card a row projects to on a narrow screen — never
+// agnostic view config — header text, which fields offer a sort control, which
+// place the column takes in the card a row projects to on a narrow screen, and
+// which columns a row's bar of running work stretches under — never
 // table logic, which lives in the TableViewportController (table-subscription.md,
 // multiframework-core.md). It lives in the core so every view layer's
 // HilosViewportTable shares one column type.
@@ -45,6 +46,11 @@ export interface HilosTableColumn {
    * reads this: a column kept out of the card keeps its place in the row.
    */
   card?: HilosTableCardSlot
+  /**
+   * Whether the row's progress bar stretches under this column; no column marked
+   * means it stretches under the whole row (mockups/components/table section 5).
+   */
+  progress?: boolean
 }
 
 /**

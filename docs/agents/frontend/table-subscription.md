@@ -440,12 +440,20 @@ exactly three:
 
 1. **The row bar** — drawn under its own row and stretched beneath the columns
    the project names, usually the content ones rather than the selection or the
-   actions. It is tied to the row key: the row goes, the bar goes. The caption
-   above it belongs to the project.
+   actions. Which ones those are is said by the **column declaration** — the
+   optional `progress` flag on `HilosTableColumn`; no column marked stretches the
+   bar under the whole row. It is tied to the row key: the row goes, the bar
+   goes. The caption above it belongs to the project, and the view hands it over
+   as a **slot** (`row-progress` in Vue) rather than reading a key of `detail`.
 2. **The table bar** — for work that has no row of its own. The place above the
    table is the framework's; **the content beside the bar is the project's** and
    is arbitrary: a title, a counter, a link, a cancel button. This is the reserve
-   for a product's own business logic.
+   for a product's own business logic. The view hands that place over as **slots**
+   too (`table-progress` above the track and `table-progress-action` beside it),
+   each receiving the whole bar, `detail` and all. It reads no key out of
+   `detail` itself: `detail` is the project's arbitrary payload, so a view
+   reading keys from it would invent a naming contract nobody declared and oblige
+   every other view layer to repeat it letter for letter.
 3. **The bulk-action bar** — lives inside the selection panel and belongs to the
    framework entirely. Deleting forty records takes time, and a button that says
    nothing for that long is not acceptable. The table bar must not be borrowed
@@ -454,7 +462,10 @@ exactly three:
 Common to all three: **a progress bar takes no part in the live-change rules, is
 not in the count, cannot be selected, and cannot be sorted.** It appears and
 disappears on its own, leaving nothing behind, because work that finished is not
-a deleted record and has no place to hold.
+a deleted record and has no place to hold. Work that named no total is drawn as
+a striped track running end to end and reports no number to assistive tech — an
+estimate is a thing work can honestly not have, and a bar without one still says
+that something is running.
 
 On the wire this is `table_progress` — page, tableKey, scope, progressKey,
 rowKey, current, total, ended, detail — where `scope` is `row`, `table`, or
@@ -666,3 +677,4 @@ an address does not:
 | the bar the frame is drawn as | `framework/frontend/vue/src/HilosTableBar.vue` |
 | one control of one declared filter | `framework/frontend/vue/src/HilosTableFilterControl.vue` |
 | the footer under the table | `framework/frontend/vue/src/HilosTableFooter.vue` |
+| the bar a running job is drawn as | `framework/frontend/vue/src/HilosTableProgress.vue` |

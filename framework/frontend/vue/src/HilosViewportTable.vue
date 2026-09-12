@@ -7,6 +7,11 @@ its slot — the layout never collapses. It holds NO table logic
 Body cells come from the `#row` slot, plus one framework-owned cell at the end
 of the row carrying the waiting mark while anything waits; the placeholder,
 header, paging, and the two strips of live change stay framework-owned.
+Running work is drawn as a bar — above the table for work over the set, and in a
+row of its own under a row for work over that one row, stretched under whichever
+columns declared themselves. The room and the track are the framework's, while
+everything a reader sees beside them comes from the page through slots
+(mockups/components/table section 5).
 (Distinct from HilosTable, the client-side view.)
 It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
 when the controller carries a declaration, and from its own props when it does
@@ -21,6 +26,8 @@ import {
 } from '@hilos/core'
 import type {
   HilosTableColumn,
+  // Aliased because the component drawing one of these carries the same name.
+  HilosTableProgress as TableProgressBar,
   TableSort,
   TableViewportController,
   TableViewportRow,
@@ -28,6 +35,7 @@ import type {
 
 import HilosTableBar from './HilosTableBar.vue'
 import HilosTableFooter from './HilosTableFooter.vue'
+import HilosTableProgress from './HilosTableProgress.vue'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -88,6 +96,12 @@ const pendingCount = useSignal(props.controller.pendingCount)
 const announced = useSignal(props.controller.announced)
 const loaded = useSignal(props.controller.loaded)
 
+// The bars this view draws. The third place of work, the bulk bar, lives inside
+// the selection panel, and there is no panel in Vue yet (HIL-804) — drawn
+// anywhere else it would take the room the table bar gives to the project.
+const tableProgress = useSignal(props.controller.progress.table)
+const rowProgress = useSignal(props.controller.progress.rows)
+
 // A table whose count stopped at its ceiling has no page count to compare against, and the
 // footer is exactly what such a table still needs: it is the only place saying there is more.
 const paginated = computed(
@@ -104,6 +118,37 @@ const markColumn = computed(() => pendingCount.value > 0)
 const bodyColspan = computed(
   () => props.columns.length + (markColumn.value ? 1 : 0),
 )
+
+/** One cell of a row bar's row: how many columns it spans, and whether the bar is under it. */
+type ProgressCell = { span: number; covered: boolean }
+
+// The cells of a row bar's row, in the order the columns are declared: runs of
+// marked columns merge into one covered cell, runs of unmarked ones into one
+// empty cell, and the waiting cell is added exactly while it stands over the
+// ordinary rows. No column marked means one covered cell across the whole row.
+//
+// The spans add up to bodyColspan by construction, which is what keeps the row
+// from growing wider than its header the moment a waiting change appears.
+const progressCells = computed<readonly ProgressCell[]>(() => {
+  const cells: ProgressCell[] = []
+  for (const column of props.columns) {
+    const covered = column.progress === true
+    const last = cells[cells.length - 1]
+    if (last !== undefined && last.covered === covered) {
+      last.span += 1
+    } else {
+      cells.push({ span: 1, covered })
+    }
+  }
+  if (!props.columns.some((column) => column.progress === true)) {
+    cells.splice(0, cells.length, { span: props.columns.length, covered: true })
+  }
+  if (markColumn.value) {
+    cells.push({ span: 1, covered: false })
+  }
+
+  return cells
+})
 
 // The total reads as "at least this many" when the count stopped at its ceiling, which is
 // what the trailing plus says. Spelling it out in words would say the same thing longer.
@@ -140,6 +185,13 @@ function rowClass(view: TableViewportRow<R>): string | undefined {
   }
 
   return view.highlighted ? 'table-success' : undefined
+}
+
+// The bar running over one row, or undefined when none is. Read out of the map
+// by key rather than off the row's own projection, which is the tie the channel
+// exists to cut (tableProgress.ts): the bar outlives the window the row sits in.
+function rowBar(rowKey: string): TableProgressBar | undefined {
+  return rowProgress.value.get(rowKey)
 }
 
 // The arrow a header carries: every column the order runs by gets one, because
@@ -209,6 +261,32 @@ function onSearchInput(event: Event): void {
         data-id="hilos-table-search"
         @input="onSearchInput"
       />
+    </div>
+
+    <!-- Work running over the set as a whole: the framework gives the room and
+    draws the track, and everything a reader sees beside it — a title, a counter,
+    a link, a Stop button — comes from the page through the two slots, because it
+    is the project's business logic and not the framework's (mockup section 5,
+    plate 2). It stands ABOVE both strips of live change: it speaks about work
+    over the set, while they speak about what has already happened to it. -->
+    <div
+      v-if="tableProgress"
+      class="d-flex align-items-start gap-2 mb-2 p-2 rounded border"
+      data-id="hilos-table-progress"
+    >
+      <div class="flex-grow-1">
+        <!-- The caption line stands only where the page filled it: a line that
+        holds its margin with nothing in it is not a reserve but a gap
+        (Flow F7). -->
+        <div v-if="$slots['table-progress']" class="small mb-1">
+          <slot name="table-progress" :progress="tableProgress" />
+        </div>
+        <HilosTableProgress
+          :progress="tableProgress"
+          label="Work on this table"
+        />
+      </div>
+      <slot name="table-progress-action" :progress="tableProgress" />
     </div>
 
     <!-- The two strips of live change, in the order of the mockup and outside
@@ -302,42 +380,82 @@ function onSearchInput(event: Event): void {
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="view in rows"
-            :key="view.rowKey"
-            :data-id="`hilos-table-row-${view.rowKey}`"
-            :class="rowClass(view)"
-          >
-            <td
-              v-if="view.placeholder || view.row === null"
-              :colspan="bodyColspan"
-              class="text-center text-muted fst-italic"
-              data-id="hilos-table-placeholder"
+          <template v-for="view in rows" :key="view.rowKey">
+            <tr
+              :data-id="`hilos-table-row-${view.rowKey}`"
+              :class="rowClass(view)"
             >
-              {{ placeholderText }}
-            </td>
-            <slot v-else name="row" :row="view.row" :row-key="view.rowKey" />
-            <td
-              v-if="markColumn && !view.placeholder && view.row !== null"
-              class="text-end text-nowrap"
+              <td
+                v-if="view.placeholder || view.row === null"
+                :colspan="bodyColspan"
+                class="text-center text-muted fst-italic"
+                data-id="hilos-table-placeholder"
+              >
+                {{ placeholderText }}
+              </td>
+              <slot v-else name="row" :row="view.row" :row-key="view.rowKey" />
+              <td
+                v-if="markColumn && !view.placeholder && view.row !== null"
+                class="text-end text-nowrap"
+              >
+                <span
+                  v-if="view.pending === 'move'"
+                  class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  :data-id="`hilos-table-pending-move-${view.rowKey}`"
+                >
+                  <i class="bi bi-arrows-move" aria-hidden="true"></i> Will move
+                </span>
+                <span
+                  v-else-if="view.pending === 'remove'"
+                  class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                  :data-id="`hilos-table-pending-remove-${view.rowKey}`"
+                >
+                  <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Will
+                  leave
+                </span>
+              </td>
+            </tr>
+
+            <!-- Work running over this one row, drawn right under it and only
+            while the row is on screen: a key absent from the window takes up
+            nothing and comes back with its row. A row drawn as a placeholder
+            gets no bar under it even if the key is still in the map — the core
+            takes a removed row's bar down at once, so that is a race rather
+            than a normal state, and the condition here is the same pair that
+            draws the placeholder above. -->
+            <tr
+              v-if="
+                !view.placeholder &&
+                view.row !== null &&
+                rowBar(view.rowKey) !== undefined
+              "
+              :data-id="`hilos-table-progress-row-${view.rowKey}`"
             >
-              <span
-                v-if="view.pending === 'move'"
-                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                :data-id="`hilos-table-pending-move-${view.rowKey}`"
+              <td
+                v-for="(cell, index) in progressCells"
+                :key="index"
+                :colspan="cell.span"
+                class="pt-0"
               >
-                <i class="bi bi-arrows-move" aria-hidden="true"></i> Will move
-              </span>
-              <span
-                v-else-if="view.pending === 'remove'"
-                class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                :data-id="`hilos-table-pending-remove-${view.rowKey}`"
-              >
-                <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Will
-                leave
-              </span>
-            </td>
-          </tr>
+                <template v-if="cell.covered">
+                  <div
+                    v-if="$slots['row-progress']"
+                    class="small text-body-secondary mb-1"
+                  >
+                    <slot
+                      name="row-progress"
+                      :progress="rowBar(view.rowKey)!"
+                      :row-key="view.rowKey"
+                    />
+                  </div>
+                  <HilosTableProgress
+                    :progress="rowBar(view.rowKey)!"
+                    label="Work on this row"
+                  />
+                </template>
+              </td>
+            </tr>
+          </template>
           <tr v-if="rows.length === 0">
             <td :colspan="bodyColspan" class="text-center text-muted py-4">
               <span
