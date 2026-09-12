@@ -94,6 +94,12 @@ export {
 } from './table/tableFrame.js'
 export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
 export {
+  TABLE_STALENESS_COPY,
+  hilosTableStaleColumns,
+  hilosTableStaleLabel,
+  hilosTableStaleSources,
+} from './table/tableStaleness.js'
+export {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   type HilosTableOrderView,
@@ -604,6 +610,7 @@ export {
   createHilosUserDetail,
   createHilosUserRename,
   createHilosImpersonate,
+  USER_CONNECTIONS_SLOT,
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   type HilosPresence,

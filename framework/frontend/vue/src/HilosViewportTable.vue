@@ -5,8 +5,9 @@ and are resolved with the Apply button. A removed row renders as a placeholder i
 its slot — the layout never collapses. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
 Body cells come from the `#row` slot, plus one framework-owned cell at the end
-of the row carrying the waiting mark while anything waits; the placeholder,
-header, paging, and the two strips of live change stay framework-owned.
+of the row carrying the state of that row — it waits, its values are behind, or
+both; the placeholder, header, paging, and the three strips of live change stay
+framework-owned.
 Running work is drawn as a bar — above the table for work over the set, and in a
 row of its own under a row for work over that one row, stretched under whichever
 columns declared themselves. The room and the track are the framework's, while
@@ -21,8 +22,12 @@ pages have not moved onto the declaration yet (HIL-819). -->
 <script setup lang="ts" generic="R">
 import { computed, useId } from 'vue'
 import {
+  TABLE_STALENESS_COPY,
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
+  hilosTableStaleColumns,
+  hilosTableStaleLabel,
+  hilosTableStaleSources,
 } from '@hilos/core'
 import type {
   HilosTableColumn,
@@ -108,10 +113,28 @@ const paginated = computed(
   () => pageCount.value === null || pageCount.value > 1,
 )
 
-// The mark column stands exactly while the waiting strip does. Header cell and body
-// cell read the SAME condition, so the two cannot drift apart into a row wider than
-// its header.
-const markColumn = computed(() => pendingCount.value > 0)
+// Which sources went quiet anywhere in the shown window, which declared columns are
+// built from them, and the sentence the strip says about those columns. The columns
+// are read out of the very list the header is drawn from, so the strip cannot name a
+// column the header does not show.
+const staleSources = computed(() => hilosTableStaleSources(rows.value))
+const staleColumns = computed(() =>
+  hilosTableStaleColumns(props.columns, staleSources.value),
+)
+const staleColumnKeys = computed(
+  () => new Set(staleColumns.value.map((column) => column.key)),
+)
+const staleLabel = computed(() =>
+  hilosTableStaleLabel(staleColumns.value, staleSources.value.size > 0),
+)
+
+// The mark column stands while anything waits OR while a shown row's values are
+// behind: the cell carries both marks, and a table with no pending change still needs
+// it the moment a source goes quiet. Header cell and body cell read the SAME
+// condition, so the two cannot drift apart into a row wider than its header.
+const markColumn = computed(
+  () => pendingCount.value > 0 || staleSources.value.size > 0,
+)
 
 // Every cell that spans the whole row — the placeholder of a removed row, the empty
 // and loading states — counts the mark column while it stands.
@@ -235,6 +258,17 @@ function ariaSort(
   return component.direction === 'asc' ? 'ascending' : 'descending'
 }
 
+// The words a frozen header carries for a screen reader: the refusal of the sort
+// control that is no longer drawn, or — on a column that was never sortable — the
+// plain statement that its source is behind. The control is taken away rather than
+// disabled because a disabled button drops out of the focus order, and a reason
+// hung on it would never be read to the one reader who needs it most.
+function staleColumnText(column: HilosTableColumn): string {
+  return column.sortable === true
+    ? TABLE_STALENESS_COPY.sortRefusal
+    : TABLE_STALENESS_COPY.columnMark
+}
+
 function onSearchInput(event: Event): void {
   props.controller.setSearch((event.target as HTMLInputElement).value)
 }
@@ -289,9 +323,21 @@ function onSearchInput(event: Event): void {
       <slot name="table-progress-action" :progress="tableProgress" />
     </div>
 
-    <!-- The two strips of live change, in the order of the mockup and outside
+    <!-- The three strips of live change, in the order of the mockup and outside
     both epochs of the frame: they speak about what is happening to the rows,
-    not about what the page declared. -->
+    not about what the page declared. The freshness strip stands first of them:
+    the other two speak about changes the reader has yet to take, while this one
+    says the values already on screen cannot be trusted. -->
+    <div
+      v-if="staleLabel !== undefined"
+      class="alert alert-info py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
+      role="status"
+      data-id="hilos-table-stale"
+    >
+      <i class="bi bi-snow" aria-hidden="true"></i>
+      <span class="small">{{ staleLabel }}</span>
+    </div>
+
     <div
       v-if="announced.above > 0"
       class="alert alert-secondary py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
@@ -351,8 +397,31 @@ function onSearchInput(event: Event): void {
               :class="column.headerClass"
               :aria-sort="ariaSort(column)"
             >
+              <!-- A column whose source is behind gets no sort control at all:
+              an order over stale values is as much a lie as an order over the
+              wrong ones. What stands in its place still reads the order that
+              IS standing — the arrow stays, only it is no longer a button. -->
+              <span
+                v-if="staleColumnKeys.has(column.key)"
+                class="d-inline-flex align-items-center gap-1"
+              >
+                {{ column.label }}
+                <i
+                  v-if="sortComponent(column.key) !== undefined"
+                  :class="['bi', sortIcon(column.key)]"
+                  aria-hidden="true"
+                ></i>
+                <i
+                  class="bi bi-snow"
+                  :data-id="`hilos-table-stale-column-${column.key}`"
+                  aria-hidden="true"
+                ></i>
+                <span class="visually-hidden">{{
+                  staleColumnText(column)
+                }}</span>
+              </span>
               <button
-                v-if="column.sortable"
+                v-else-if="column.sortable"
                 type="button"
                 class="btn btn-link p-0 text-reset text-decoration-none d-inline-flex align-items-center gap-1"
                 :data-id="`hilos-table-sort-${column.key}`"
@@ -375,7 +444,7 @@ function onSearchInput(event: Event): void {
               <template v-else>{{ column.label }}</template>
             </th>
             <th v-if="markColumn" scope="col" class="text-end">
-              <span class="visually-hidden">Waiting change</span>
+              <span class="visually-hidden">Row state</span>
             </th>
           </tr>
         </thead>
@@ -398,6 +467,19 @@ function onSearchInput(event: Event): void {
                 v-if="markColumn && !view.placeholder && view.row !== null"
                 class="text-end text-nowrap"
               >
+                <!-- The freshness mark comes first and the waiting badge after
+                it: a row can both wait and stand on values that are behind, and
+                neither statement stands in for the other. -->
+                <template v-if="view.staleSources.length > 0">
+                  <i
+                    class="bi bi-snow me-1"
+                    :data-id="`hilos-table-stale-row-${view.rowKey}`"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    TABLE_STALENESS_COPY.rowMark
+                  }}</span>
+                </template>
                 <span
                   v-if="view.pending === 'move'"
                   class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"

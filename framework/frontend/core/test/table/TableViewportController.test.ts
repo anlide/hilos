@@ -465,6 +465,7 @@ describe('TableViewportController', () => {
         pending: null,
         highlighted: false,
         selected: false,
+        staleSources: [],
       },
     ])
     expect(controller.totalCount.get()).toBe(42)
@@ -539,6 +540,73 @@ describe('TableViewportController', () => {
       slots: { name: 'old' },
       staleSources: [],
     })
+  })
+
+  it("carries the raw row's frozen sources onto the view row", () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: {}, staleSources: ['connections'] },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+
+    const rows = controller.rows.get()
+    expect(rows[0]?.staleSources).toEqual(['connections'])
+    // A row nobody said anything about carries the empty list, not undefined: the
+    // views read the field on every row they draw.
+    expect(rows[1]?.staleSources).toEqual([])
+  })
+
+  it('leaves a placeholder with no frozen sources of its own', () => {
+    const { controller, open } = makeController()
+    open(
+      [{ rowKey: 'a', slots: {}, staleSources: ['connections'] }],
+      1,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+
+    // The record is gone; there are no values left whose freshness could be spoken of.
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.rows.get()[0]?.staleSources).toEqual([])
+  })
+
+  it("moves the view row's frozen sources on a mark, leaving its pending change up", () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['connections'],
+    })
+
+    expect(controller.rows.get()[0]?.staleSources).toEqual(['connections'])
+    expect(controller.rows.get()[0]?.pending).toBe('move')
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: [],
+    })
+
+    expect(controller.rows.get()[0]?.staleSources).toEqual([])
+    expect(controller.rows.get()[0]?.pending).toBe('move')
   })
 
   it('ignores a freshness mark for a row it is not showing', () => {
@@ -775,6 +843,7 @@ describe('TableViewportController', () => {
       pending: null,
       highlighted: false,
       selected: false,
+      staleSources: [],
     })
     expect(rows[1]?.placeholder).toBe(false)
   })
@@ -1075,6 +1144,7 @@ describe('TableViewportController', () => {
       pending: null,
       highlighted: false,
       selected: false,
+      staleSources: [],
     })
   })
 

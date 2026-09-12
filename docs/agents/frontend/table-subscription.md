@@ -552,14 +552,26 @@ the other columns are live and true; refusing the whole page here would be a lie
 in the other direction. The rule "either the connection is there or there is no
 work" is about transport; this is one *source* lagging inside a live answer.
 
-What is stale is **marked**: a mark in the cells of the lagging source, and a bar
-that says in words what froze and why. Showing yesterday's number silently beside
-today's is the worst of the options, because it looks fresh. A lagging source
-does not block the rest — rows page, filter, and sort by the live columns — but
-**a column of a stale source cannot be sorted at all**: an order over stale
-values is indistinguishable from a wrong one. The other orders a table
-refuses, and what it answers, are in
-[table-sort-orders.md](table-sort-orders.md).
+**A column names the source it is built from**, through the optional `source` on
+its declaration — the slot key `staleSources` names. Without it the framework does
+not know what the column is made of, so a column that declares none is never
+counted stale; the bar still appears over a window with a quiet source, in a
+generic wording, because a table whose columns named nothing would otherwise show
+yesterday's number in silence.
+
+What is stale is **marked in the three places the framework owns**: a bar above
+the table saying in words what froze, why, and that the rest is live; a snowflake
+in the header of every column built from a quiet source, where the sort control is
+no longer drawn; and a snowflake in the narrow row-state cell at the end of every
+row whose own values are behind. The mark the mockup draws *inside* the cells of
+the lagging column is **not one of them and cannot be**: the body of a row comes
+from the page through the `#row` slot, so the framework owns no cell to put an
+icon in — design debt `D-051`. Showing yesterday's number silently beside today's
+is the worst of the options, because it looks fresh. A lagging source does not
+block the rest — rows page, filter, and sort by the live columns — but **a column
+of a stale source cannot be sorted at all**: an order over stale values is
+indistinguishable from a wrong one. The other orders a table refuses, and what it
+answers, are in [table-sort-orders.md](table-sort-orders.md).
 
 ## Headless table state machine
 
@@ -605,8 +617,12 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   goes with that footer when the framework pages move onto the declaration
   (HIL-819);
 - **states:** `hilos-table-loading`, `hilos-table-skeleton`,
-  `hilos-table-empty`, `hilos-table-empty-filtered`, `hilos-table-unavailable`,
-  `hilos-table-stale`, `hilos-table-stale-cell`.
+  `hilos-table-empty`, `hilos-table-empty-filtered`, `hilos-table-unavailable`;
+- **a source that went quiet:** `hilos-table-stale` — the bar,
+  `hilos-table-stale-column-<key>` — the snowflake in a header,
+  `hilos-table-stale-row-<rowKey>` — the snowflake in a row-state cell. There is
+  no `hilos-table-stale-cell`: the mark inside the cells of the lagging column is
+  the page's to draw and the framework's to name for nobody (`D-051`).
 
 ## Backend contract surface (the gate)
 
@@ -668,6 +684,7 @@ an address does not:
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
 | the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
+| the words a quiet source is marked with, and the columns it froze | `framework/frontend/core/src/table/tableStaleness.ts` |
 | the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | the progress bars a table reports | `framework/frontend/core/src/table/tableProgress.ts` |
 | the bulk run a table holds | `framework/backend/Core/Table/Bulk/TableBulkRun.php` |

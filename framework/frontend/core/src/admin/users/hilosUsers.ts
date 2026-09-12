@@ -91,7 +91,17 @@ const USER_DETAIL_TABLE = 'userDetail'
 // Row slots: the user entity (typed `user` via pageEntityTypes) and the inline
 // runtime connection summary a project fills on its backend.
 const USER_SLOT = 'users'
-const CONNECTIONS_SLOT = 'connections'
+
+/**
+ * Row slot key of the inline connection summary.
+ *
+ * Exported for the same reason as {@link USER_PRESENCE_FIELD} next door: the three
+ * views name this slot when they declare which source their presence columns are
+ * built from, and a string literal repeated in each of them is three places where a
+ * typo silently takes the freshness mark off.
+ */
+export const USER_CONNECTIONS_SLOT = 'connections'
+
 // Action / ack signal names (the rename round-trip). The fail ack carries no
 // registered schema, so the view observes its type only.
 const HILOS_USER_UPDATE_ACTION = 'hilos_user_update'
@@ -175,7 +185,7 @@ export function resolveHilosUserRow<TUser extends HilosUserProfile>(
 ): HilosUserRow {
   const ref = row.slots[USER_SLOT] as EntityRef | undefined
   const user = ref ? users.signal(ref).get() : undefined
-  const connection = recordSlot(row.slots[CONNECTIONS_SLOT])
+  const connection = recordSlot(row.slots[USER_CONNECTIONS_SLOT])
 
   return {
     id: Number(user?.id ?? row.rowKey),

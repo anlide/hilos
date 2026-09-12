@@ -1,7 +1,8 @@
 // The column declaration a HilosViewportTable header renders from. It is framework-
 // agnostic view config — header text, which fields offer a sort control, which
-// place the column takes in the card a row projects to on a narrow screen, and
-// which columns a row's bar of running work stretches under — never
+// place the column takes in the card a row projects to on a narrow screen, which
+// source its values are built from, and which columns a row's bar of running work
+// stretches under — never
 // table logic, which lives in the TableViewportController (table-subscription.md,
 // multiframework-core.md). It lives in the core so every view layer's
 // HilosViewportTable shares one column type.
@@ -46,6 +47,14 @@ export interface HilosTableColumn {
    * reads this: a column kept out of the card keeps its place in the row.
    */
   card?: HilosTableCardSlot
+  /**
+   * Which row slot this column's values are built from — the same key the row's
+   * `staleSources` names when that source stops being kept up to date. Declaring it
+   * is what lets the framework say in words which columns froze and take the sort
+   * control off them (tableStaleness.ts); a column that declares no source is never
+   * counted stale, because the framework does not know what it is made of.
+   */
+  source?: string
   /**
    * Whether the row's progress bar stretches under this column; no column marked
    * means it stretches under the whole row (mockups/components/table section 5).

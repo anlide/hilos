@@ -13,6 +13,7 @@ import {
   HilosPages,
   type HilosTableColumnOf,
   type HilosUserRow,
+  USER_CONNECTIONS_SLOT,
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   type HilosUsersContext,
@@ -85,15 +86,25 @@ async function submitImpersonate(): Promise<void> {
   }
 }
 
+// Only the two presence columns name a source: they are built from the inline
+// connections slot, which is the runtime summary a node keeps and the one thing here
+// that can stop being current. The rest come from the user record in the database,
+// and a database does not go quiet.
 const columns: HilosTableColumnOf<HilosUserRow>[] = [
   { key: 'id', label: 'ID', sortable: true },
   { key: 'name', label: 'Name', sortable: true },
-  { key: USER_PRESENCE_FIELD, label: 'Presence', sortable: true },
+  {
+    key: USER_PRESENCE_FIELD,
+    label: 'Presence',
+    sortable: true,
+    source: USER_CONNECTIONS_SLOT,
+  },
   {
     key: USER_ONLINE_SESSION_COUNT_FIELD,
     label: 'Sessions',
     sortable: true,
     headerClass: 'text-end',
+    source: USER_CONNECTIONS_SLOT,
   },
   { key: 'lastActivity', label: 'Last activity', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },

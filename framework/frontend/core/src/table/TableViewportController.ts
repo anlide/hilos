@@ -93,6 +93,15 @@ const SEARCH_FILTER_KEY = 'search'
 const HIGHLIGHT_MS = 2000
 
 /**
+ * The empty freshness list every current row and every placeholder shares.
+ *
+ * One frozen array rather than a fresh `[]` per row: the window is rebuilt on every
+ * signal read, and a new empty array each time would make a row look changed to any
+ * view comparing by identity.
+ */
+const NO_STALE_SOURCES: readonly string[] = []
+
+/**
  * Whether two orders are the same state of the table — the same fields in the
  * same directions in the same sequence. An absent order (a table opened without
  * an initial one) is a state of its own, equal only to another absent order.
@@ -245,6 +254,14 @@ export interface TableViewportRow<R> {
    * whether a row is marked, and a placeholder is never one.
    */
   readonly selected: boolean
+  /**
+   * The row slots whose values stopped being kept up to date, empty when the row is
+   * current. Always a list rather than an optional field: the views read it on every
+   * row they draw, and an optional one would make each of them write `?? []` of its
+   * own. A placeholder carries the empty list — it has no values whose freshness
+   * could be spoken of.
+   */
+  readonly staleSources: readonly string[]
 }
 
 /**
@@ -574,6 +591,9 @@ export class TableViewportController<R> implements TableWindowSink {
           highlighted: !placeholder && highlighted.has(raw.rowKey),
           selected:
             !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
+          staleSources: placeholder
+            ? NO_STALE_SOURCES
+            : (raw.staleSources ?? NO_STALE_SOURCES),
         }
       })
     })

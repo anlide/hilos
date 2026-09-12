@@ -885,3 +885,159 @@ describe('HilosViewportTable drawing work over one row', () => {
     ).toBe(false)
   })
 })
+
+describe('HilosViewportTable marking a source that went quiet', () => {
+  // A table assembled from two sources: the name comes from the row's own record,
+  // the presence from a second slot — and a slot is what can go quiet on its own.
+  const SOURCED_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    {
+      key: 'presence',
+      label: 'Presence',
+      sortable: true,
+      source: 'connections',
+    },
+  ]
+
+  function window(
+    controller: TableViewportController<unknown>,
+    staleSources: readonly string[] = [],
+  ): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' }, staleSources },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  it('raises the strip and names the columns built from the quiet source', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+
+    expect(wrapper.find('[data-id="hilos-table-stale"]').text()).toBe(
+      'Presence is not updating: the link to its source was lost. The other columns are live.',
+    )
+  })
+
+  it('raises the strip in the generic wording when no column named the source', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    // COLUMNS declares no source at all, so there is nothing to name — and saying
+    // nothing would leave yesterday's value looking like today's.
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-stale"]').text()).toBe(
+      'Some values here are not updating: the link to their source was lost. The other columns are live.',
+    )
+  })
+
+  it('takes the sort control off a quiet column and leaves the reason in its place', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+
+    expect(wrapper.find('[data-id="hilos-table-sort-presence"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-sort-name"]').exists()).toBe(
+      true,
+    )
+    expect(
+      wrapper.find('[data-id="hilos-table-stale-column-presence"]').exists(),
+    ).toBe(true)
+    expect(wrapper.findAll('thead th')[1]?.text()).toContain(
+      'Sorting by this column is unavailable',
+    )
+  })
+
+  it('sends no viewport when the name of a quiet column is clicked', async () => {
+    const { controller, sent } = makeController()
+    window(controller, ['connections'])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    sent.length = 0
+    await wrapper.findAll('thead th')[1]?.trigger('click')
+
+    expect(sent).toHaveLength(0)
+  })
+
+  it('keeps the standing order over a column that went quiet readable', async () => {
+    const { controller } = makeController()
+    window(controller, [])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    controller.setSort('presence')
+    await wrapper.vm.$nextTick()
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['connections'],
+    })
+    await wrapper.vm.$nextTick()
+
+    // The rows lie in that order right now, and saying so is the truth; only
+    // choosing or reversing it is gone.
+    const header = wrapper.findAll('thead th')[1]
+    expect(header?.attributes('aria-sort')).toBe('ascending')
+    expect(header?.find('.bi-arrow-up').exists()).toBe(true)
+  })
+
+  it('marks exactly the rows whose own values are behind', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+
+    expect(wrapper.find('[data-id="hilos-table-stale-row-a"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="hilos-table-stale-row-b"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('stands the mark cell up on a quiet source with nothing waiting at all', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+
+    expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length + 1)
+    expect(wrapper.find('thead th:last-child').text()).toBe('Row state')
+    // Header and body read one condition, so the cell the header just made room
+    // for is the one standing last in the row.
+    const cells = wrapper.findAll('[data-id="hilos-table-row-a"] td')
+    expect(
+      cells[cells.length - 1]
+        ?.find('[data-id="hilos-table-stale-row-a"]')
+        .exists(),
+    ).toBe(true)
+  })
+
+  it('takes the strip, the snowflakes and the cell down when the source is current again', async () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: [],
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-stale"]').exists()).toBe(false)
+    expect(
+      wrapper.find('[data-id="hilos-table-stale-column-presence"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-stale-row-a"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-sort-presence"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length)
+  })
+})
