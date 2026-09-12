@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Topology;
 
+use Closure;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -46,6 +47,11 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\SharedOwnersKey;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
@@ -79,6 +85,19 @@ final class TopologyValidator
 
     private const string SECTION_PAGE_CATALOG = 'PAGE_CATALOG';
 
+    private const string SECTION_SHARED_DB_OWNERS = 'SHARED_DB_OWNERS';
+
+    private const string SECTION_SHARED_RT_OWNERS = 'SHARED_RT_OWNERS';
+
+    /**
+     * The layer a shared-ownership refusal names a collection by. Two constants for two words
+     * that only look alike: a db collection and an rt collection of the same name are different
+     * sets of rows, and the halves are judged apart for that reason.
+     */
+    private const string HALF_DB = 'db';
+
+    private const string HALF_RT = 'rt';
+
     /**
      * Validates topology constants declared by a Hilos facade subclass.
      *
@@ -103,6 +122,7 @@ final class TopologyValidator
         $this->validatePages($pages, $errors);
         $this->validateGroups($groups, $errors);
         $this->validateAgents($agents, $errors);
+        $this->validateDeclaredOwnership($agents, $hilosClass, $errors);
         $this->validateRegisteredTables($tables, $errors);
         $this->validateBrowserTables($browserTables, self::SECTION_BROWSER_TABLES, $errors);
         $this->validateBrowserTables($browserLists, self::SECTION_BROWSER_LISTS, $errors);
@@ -624,6 +644,396 @@ final class TopologyValidator
                     . ' without ' . AgentRegistryKey::INDEXED
                     . ': an idle window is declared on an instance agent, and only an addressed'
                     . ' frame brings one back';
+            }
+        }
+    }
+
+    /**
+     * Refuses a topology whose declared ownership contradicts itself, before anything starts.
+     *
+     * Three contradictions, all of them readable off the classes: two owners holding one
+     * collection in full, one owner holding a collection whole while another holds rows of it,
+     * and a class naming one collection in both its reads and its claims. The first two are one
+     * rule rather than two - a claim over the whole collection covers any rows - and the pair of
+     * narrow claims is left alone, because which rows an instance holds only the instance knows
+     * ({@see AbstractAgent::ownedDbRowKeys()}). What that pair does at runtime stays with the
+     * runtime guard, which judges by the claim actually laid down.
+     *
+     * Full is the word the runtime already uses ({@see TruthSourceOperations::isComplete()}): a
+     * collection has one full owner, and a co-owner short of an operation beside it is a declared
+     * shape and not a collision - a notification library against its delivery channels, a set
+     * holder against the library that parks what it just created. A start-time refusal judging
+     * that any other way would refuse what the running system calls normal.
+     *
+     * What it deliberately does NOT answer is whether a collection has an owner at all. Seven
+     * live claims in this codebase come from classes that are not agents - six test-only commands
+     * and the application class - and a topology cannot see them: their claim is laid down and
+     * taken back by the runner of the command that made it. A rule promising that check would be
+     * a rule lying about its own reach.
+     *
+     * @param array $agents Agent registry
+     * @param class-string<Hilos> $hilosClass Project facade class
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateDeclaredOwnership(array $agents, string $hilosClass, array &$errors): void
+    {
+        $rejected = [];
+        $owners = $this->declaredOwnerClasses($agents, $rejected);
+
+        $this->validateSharedOwners(
+            $this->ownershipConflicts($this->completeClaims(
+                $owners,
+                OwnershipDeclaration::dbCollectionsOf(...),
+                OwnershipDeclaration::dbRowCollectionsOf(...),
+            )),
+            $this->constantArray($hilosClass, self::SECTION_SHARED_DB_OWNERS, $errors),
+            self::SECTION_SHARED_DB_OWNERS,
+            self::HALF_DB,
+            $owners,
+            $rejected,
+            $errors,
+        );
+        $this->validateSharedOwners(
+            $this->ownershipConflicts($this->completeClaims(
+                $owners,
+                OwnershipDeclaration::rtCollectionsOf(...),
+                OwnershipDeclaration::rtRowCollectionsOf(...),
+            )),
+            $this->constantArray($hilosClass, self::SECTION_SHARED_RT_OWNERS, $errors),
+            self::SECTION_SHARED_RT_OWNERS,
+            self::HALF_RT,
+            $owners,
+            $rejected,
+            $errors,
+        );
+
+        $this->validateClaimedReads($owners, $errors);
+    }
+
+    /**
+     * Collects the agent classes whose declarations this rule reads.
+     *
+     * Deduplicated by class-string, because the registry names runtimes and not owners: one class
+     * registered under two types, a sharded pool and an every-node replica all declare the same
+     * ownership once, and a class cannot collide with itself.
+     *
+     * @param array $agents Agent registry
+     * @param list<string> $rejected Classes {@see self::validateAgents()} already refused, collected for the caller
+     * @return list<class-string<AbstractAgent>> Worker classes the registry names, each of them once
+     */
+    private function declaredOwnerClasses(array $agents, array &$rejected): array
+    {
+        $owners = [];
+        foreach ($agents as $registryEntry) {
+            $workerClass = AgentRegistry::workerClass($registryEntry);
+            if ($workerClass === null) {
+                continue;
+            }
+
+            if (!class_exists($workerClass) || !is_subclass_of($workerClass, AbstractAgent::class)) {
+                $rejected[] = $workerClass;
+                continue;
+            }
+
+            if (!in_array($workerClass, $owners, true)) {
+                $owners[] = $workerClass;
+            }
+        }
+
+        return $owners;
+    }
+
+    /**
+     * Reads one half of the declarations and keeps the claims that are full by operation.
+     *
+     * The declarations are not parsed here: the four readers of {@see OwnershipDeclaration} fold
+     * the inheritance chain and expand {@see TruthSourceOperation::BY_KIND} already, and a second
+     * reading of one declaration would drift away from the first silently, in the rule that
+     * refuses a start.
+     *
+     * A class naming one collection in both widths is read as holding it whole. That pair of
+     * declarations is a contradiction the claim itself refuses at start
+     * ({@see OwnershipDeclaration::claimDbRows()}); until then the wider of the two is what this
+     * rule judges, so the refusal it prints is the one with the larger reach.
+     *
+     * @param list<class-string<AbstractAgent>> $ownerClasses Classes to read the declarations off
+     * @param Closure(class-string<AbstractAgent>): array<string, TruthSourceOperations> $wholeOf Reads whole-collection claims
+     * @param Closure(class-string<AbstractAgent>): array<string, TruthSourceOperations> $rowsOf Reads by-row claims
+     * @return array<string, array<class-string<AbstractAgent>, bool>> Collection => owner => whether the claim covers the whole collection
+     */
+    private function completeClaims(array $ownerClasses, Closure $wholeOf, Closure $rowsOf): array
+    {
+        $claims = [];
+        foreach ($ownerClasses as $ownerClass) {
+            foreach ($rowsOf($ownerClass) as $collection => $operations) {
+                if ($operations->isComplete()) {
+                    $claims[$collection][$ownerClass] = false;
+                }
+            }
+
+            foreach ($wholeOf($ownerClass) as $collection => $operations) {
+                if ($operations->isComplete()) {
+                    $claims[$collection][$ownerClass] = true;
+                }
+            }
+        }
+
+        return $claims;
+    }
+
+    /**
+     * Pairs up the claims of one half that cannot both stand.
+     *
+     * A pair collides when at least one of the two covers the whole collection; two by-row claims
+     * are not judged here at all, and the pair is named with the whole-collection owner first,
+     * which is the order its refusal reads in.
+     *
+     * @param array<string, array<class-string<AbstractAgent>, bool>> $claims Collection => owner => whether the claim is whole
+     * @return array<string, list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}>>
+     *     Collection => colliding pairs
+     */
+    private function ownershipConflicts(array $claims): array
+    {
+        $conflicts = [];
+        foreach ($claims as $collection => $owners) {
+            $classes = array_keys($owners);
+            $count = count($classes);
+            for ($first = 0; $first < $count; $first++) {
+                for ($second = $first + 1; $second < $count; $second++) {
+                    $left = $classes[$first];
+                    $right = $classes[$second];
+                    if (!$owners[$left] && !$owners[$right]) {
+                        continue;
+                    }
+
+                    $conflicts[$collection][] = $owners[$left]
+                        ? ['whole' => $left, 'other' => $right, 'bothWhole' => $owners[$right]]
+                        : ['whole' => $right, 'other' => $left, 'bothWhole' => false];
+                }
+            }
+        }
+
+        return $conflicts;
+    }
+
+    /**
+     * Judges the colliding pairs of one half against the receipts the project wrote for them.
+     *
+     * The list is a debt under lock, so it is read in both directions: a pair no row covers
+     * refuses the start, and a row whose owners no longer collide refuses it too - parting them
+     * for real takes the receipt away in the same commit, and a list describing the code of two
+     * months ago is worth nothing to the person reading it.
+     *
+     * Nothing here stops a hand from writing one more row, and the machine is not asked to: what
+     * holds the length is the topology snapshot of the project, red on any addition and silent on
+     * a removal. Asserting the exact contents instead would paint a test red on every PARTING -
+     * penalizing the one move the list exists to bring about.
+     *
+     * @param array<string, list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}>> $conflicts
+     *     Collection => colliding pairs
+     * @param array $records Shared-owners registry of this half
+     * @param string $section Registry constant name for error messages
+     * @param string $half Layer the messages name the collection by
+     * @param list<class-string<AbstractAgent>> $ownerClasses Worker classes the registry names
+     * @param list<string> $rejectedClasses Classes {@see self::validateAgents()} already refused
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateSharedOwners(
+        array $conflicts,
+        array $records,
+        string $section,
+        string $half,
+        array $ownerClasses,
+        array $rejectedClasses,
+        array &$errors,
+    ): void {
+        $recorded = [];
+        foreach ($records as $collection => $record) {
+            $recorded[$collection] = $this->sharedOwnerNames($record);
+        }
+
+        foreach ($conflicts as $collection => $pairs) {
+            $names = $recorded[$collection] ?? [];
+            foreach ($pairs as $pair) {
+                if (in_array($pair['whole'], $names, true) && in_array($pair['other'], $names, true)) {
+                    continue;
+                }
+
+                $errors[] = ($pair['bothWhole']
+                    ? "{$pair['whole']} and {$pair['other']} both own {$half} collection '{$collection}' in full"
+                    : "{$pair['whole']} owns {$half} collection '{$collection}' in full while {$pair['other']}"
+                        . ' owns rows of it')
+                    . "; narrow the operations of one claim, or list the pair in {$section}"
+                    . ' with the leaf that parts them';
+            }
+        }
+
+        foreach ($records as $collection => $record) {
+            if (!is_string($collection)) {
+                $errors[] = "{$section} contains a non-string collection key";
+                continue;
+            }
+
+            $names = $recorded[$collection];
+            if (array_intersect($names, $rejectedClasses) !== []) {
+                continue;
+            }
+
+            $debt = is_array($record) ? ($record[SharedOwnersKey::DEBT] ?? null) : null;
+            if (!is_string($debt) || $debt === '') {
+                $errors[] = "{$section}['{$collection}'] has no debt: name the leaf that will part these owners";
+            }
+
+            if (count($names) < 2 || count(array_unique($names)) !== count($names)) {
+                $errors[] = "{$section}['{$collection}'] must name at least two distinct owner classes";
+                continue;
+            }
+
+            $unregistered = array_diff($names, $ownerClasses);
+            foreach ($unregistered as $ownerClass) {
+                $errors[] = "{$section}['{$collection}'] names {$ownerClass}, which is not registered in AGENTS";
+            }
+
+            if ($unregistered !== []) {
+                continue;
+            }
+
+            $pairs = $conflicts[$collection] ?? [];
+            if (!$this->namesACollidingPair($names, $pairs)) {
+                $errors[] = "{$section}['{$collection}'] lists no pair that still conflicts;"
+                    . ' the claims were parted, so the record goes with them';
+                continue;
+            }
+
+            foreach ($names as $ownerClass) {
+                if (!$this->collidesOverCollection($ownerClass, $pairs)) {
+                    $errors[] = "{$section}['{$collection}'] names {$ownerClass},"
+                        . ' which conflicts with nobody over that collection';
+                }
+            }
+        }
+    }
+
+    /**
+     * Reads the owner classes one shared-owners row spells.
+     *
+     * Answers a broken row with no names rather than an error of its own: a row that names
+     * nothing covers no pair, and the refusals of the caller say both things already.
+     *
+     * @param mixed $record One row of a shared-owners registry
+     * @return list<string> Owner class names the row spells, in the order it names them
+     */
+    private function sharedOwnerNames(mixed $record): array
+    {
+        if (!is_array($record)) {
+            return [];
+        }
+
+        $names = $record[SharedOwnersKey::OWNERS] ?? [];
+
+        return is_array($names) ? array_values(array_filter($names, is_string(...))) : [];
+    }
+
+    /**
+     * @param list<string> $names Owner classes a shared-owners row names
+     * @param list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}> $pairs
+     *     Colliding pairs over that collection
+     * @return bool True when two of the named classes still collide
+     */
+    private function namesACollidingPair(array $names, array $pairs): bool
+    {
+        foreach ($pairs as $pair) {
+            if (in_array($pair['whole'], $names, true) && in_array($pair['other'], $names, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string $ownerClass Owner class a shared-owners row names
+     * @param list<array{whole: class-string<AbstractAgent>, other: class-string<AbstractAgent>, bothWhole: bool}> $pairs
+     *     Colliding pairs over that collection
+     * @return bool True when the class takes part in one of them
+     */
+    private function collidesOverCollection(string $ownerClass, array $pairs): bool
+    {
+        foreach ($pairs as $pair) {
+            if ($pair['whole'] === $ownerClass || $pair['other'] === $ownerClass) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Refuses a class that names one collection both as a reader and as an owner.
+     *
+     * Forbidden in words by both declarations already ({@see AbstractAgent::READS_DB},
+     * {@see TruthSourceOwner::OWNS_DB}) and by one reason: a claim is the reader interest
+     * already, so the second list only says the same thing in a form that can drift. No list of
+     * exceptions stands beside this one - there is nothing to cover, and an empty way out is an
+     * invitation to use it.
+     *
+     * @param list<class-string<AbstractAgent>> $ownerClasses Classes to read the declarations off
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateClaimedReads(array $ownerClasses, array &$errors): void
+    {
+        foreach ($ownerClasses as $ownerClass) {
+            $this->refuseReadingOwnClaim(
+                $ownerClass,
+                $ownerClass::READS_DB,
+                self::HALF_DB,
+                'READS_DB',
+                [
+                    'OWNS_DB' => OwnershipDeclaration::dbCollectionsOf($ownerClass),
+                    'OWNS_DB_ROWS' => OwnershipDeclaration::dbRowCollectionsOf($ownerClass),
+                ],
+                $errors,
+            );
+            $this->refuseReadingOwnClaim(
+                $ownerClass,
+                $ownerClass::READS_RT,
+                self::HALF_RT,
+                'READS_RT',
+                [
+                    'OWNS_RT' => OwnershipDeclaration::rtCollectionsOf($ownerClass),
+                    'OWNS_RT_ROWS' => OwnershipDeclaration::rtRowCollectionsOf($ownerClass),
+                ],
+                $errors,
+            );
+        }
+    }
+
+    /**
+     * @param class-string<AbstractAgent> $ownerClass Class whose declarations are read
+     * @param array $reads Collections the class declares it reads
+     * @param string $half Layer the message names the collection by
+     * @param string $readsConstant Name of the reader declaration, as the message spells it
+     * @param array<string, array<string, TruthSourceOperations>> $claims Claim declaration name => collections it holds
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function refuseReadingOwnClaim(
+        string $ownerClass,
+        array $reads,
+        string $half,
+        string $readsConstant,
+        array $claims,
+        array &$errors,
+    ): void {
+        foreach ($reads as $collection) {
+            if (!is_string($collection)) {
+                continue;
+            }
+
+            foreach ($claims as $ownsConstant => $held) {
+                if (array_key_exists($collection, $held)) {
+                    $errors[] = "{$ownerClass} names {$half} collection '{$collection}' in both {$readsConstant}"
+                        . " and {$ownsConstant}; a claim is the reader interest already";
+                }
             }
         }
     }

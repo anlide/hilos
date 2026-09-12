@@ -344,13 +344,29 @@ the master on every lazy load (owner's decision, 2026-08-27, on HIL-750).
 
 ## What The Start Refuses
 
-The topology validator knows nothing of ownership today: `TopologyValidator`
-mentions neither registry. With the declaration on the class it gains two
-refusals at start. Two static claims on one collection with overlapping
-operations that are not declared as co-ownership are refused before the first
-agent runs (not in the code yet — HIL-899). An agent that lists in `READS_DB` or
-`READS_RT` a collection it owns itself is refused the same way
-(not in the code yet — HIL-899).
+The topology validator reads the declarations off the classes before a single
+process is built, and refuses three contradictions there (HIL-899).
+
+Two owners holding one collection in full, where full is the word the runtime
+guard already uses: every operation, over rows that overlap. A claim over the
+whole collection covers any rows, so a full owner beside a by-row owner of the
+same collection is that same refusal rather than a second rule. Two by-row
+claims are not judged at all — which rows an instance holds, only the instance
+knows.
+
+A class that names one collection both in its reads (`READS_DB`, `READS_RT`) and
+in its claims: a claim is the reader interest already, so the second list says
+the same thing in a form that can drift away from it.
+
+A pair the project already lives with is written down instead of argued at every
+start. `Hilos::SHARED_DB_OWNERS` and `Hilos::SHARED_RT_OWNERS` name the owners
+of such a collection and, through `SharedOwnersKey::DEBT`, the leaf that will
+part them. The list is a debt under lock, and it is read in both directions: a
+colliding pair no row covers refuses the start, and a row whose owners no longer
+collide refuses it too, so parting them for real takes the receipt away in the
+same commit. What holds the length is the topology snapshot of each project — red
+on any addition, silent on a removal, because nothing should stand in the way of
+a debt getting smaller.
 
 What it will not refuse is a collection without an owner. That check is
 statically unreachable while claims come from things that are not agents — a

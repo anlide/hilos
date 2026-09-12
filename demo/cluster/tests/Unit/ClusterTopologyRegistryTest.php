@@ -151,6 +151,21 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    /**
+     * The length of the shared-ownership debt, so no receipt can be written in silence.
+     *
+     * A ceiling and not the exact rows: an addition paints this red, a removal passes quietly,
+     * because nothing should stand in the way of a debt getting smaller. Asserting the exact
+     * contents instead would paint this test red on every PARTING - the one move the list
+     * exists to bring about. No database collection is shared here; one runtime collection is, and
+     * that one on purpose.
+     */
+    public function testSharedOwnershipDebtDoesNotGrow(): void
+    {
+        $this->assertSame([], Hilos::SHARED_DB_OWNERS);
+        $this->assertLessThanOrEqual(1, count(Hilos::SHARED_RT_OWNERS));
+    }
+
     public function testDeclaredFeaturesAreFullyActivated(): void
     {
         // The startup activation check this project boots under: every declared feature has

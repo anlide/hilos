@@ -16,6 +16,7 @@ use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Database\Context\DbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
@@ -72,6 +73,21 @@ final class Hilos extends HilosFacade
             // PLACEMENT may stand beside it - a node replica has no index and no node to
             // pick - and topology validation refuses both.
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
+
+    /**
+     * The one runtime collection this demo lets two owners hold - on purpose.
+     *
+     * A receipt, not a permission, and the only row here whose debt is not a leaf: the claimer
+     * holds the whole status collection while every worker holds its own row, and that is the
+     * split the cluster scenarios exist to exercise. Startup would refuse the pair without this
+     * row, exactly as it refuses one that nobody wrote down.
+     */
+    public const array SHARED_RT_OWNERS = [
+        ClusterRtContext::workerStatuses => [
+            SharedOwnersKey::OWNERS => [ClaimerAgent::class, WorkerAgent::class],
+            SharedOwnersKey::DEBT => 'intentional: this demo exists to exercise the runtime two-owner guard',
         ],
     ];
 

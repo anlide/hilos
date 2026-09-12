@@ -56,7 +56,9 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -208,6 +210,43 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => AuthCodeAgent::class,
             AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
+
+    /**
+     * The collections this demo still lets two owners hold, and who will part them.
+     *
+     * Receipts, not permissions: every pair here is a place where two agents write the same rows
+     * today, and startup refuses both a pair that is missing from this list and a row whose
+     * owners no longer collide. The rights of nobody changed when the list was written - what
+     * writes today goes on writing, out loud instead of by eye.
+     *
+     * Five rows, and all of them are signing in: this demo's people table, held by its own agent
+     * together with the sessions and the users library, and the four framework tables those
+     * libraries share with the code agent. They stand the same way in every demo that switches
+     * the feature on. Parting them is somebody else's work and it has an address: HIL-630 gives
+     * the person an agent of their own, and the auth libraries are parted with it.
+     */
+    public const array SHARED_DB_OWNERS = [
+        PollsDbContext::users => [
+            SharedOwnersKey::OWNERS => [PollsAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::identities => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, OAuthAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::sessions => [
+            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, AuthCodeAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::verifications => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::registrationReservations => [
+            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class, AuthCodeAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
         ],
     ];
 

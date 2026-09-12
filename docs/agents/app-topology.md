@@ -29,6 +29,14 @@ table contexts when they can read the project registry.
   `INDEXED` (a sharded pool needs an index) nor `PLACEMENT` (a replica runs on
   every node, so no node is picked). `TopologyAgentFactory` creates worker and
   daemon instances from this registry.
+- `Hilos::SHARED_DB_OWNERS` and `Hilos::SHARED_RT_OWNERS` record the collections
+  more than one registered owner still holds, keyed by collection: the owners
+  under `SharedOwnersKey::OWNERS` and the leaf that will part them under
+  `SharedOwnersKey::DEBT`. A receipt rather than a permission — startup refuses a
+  colliding pair no row covers, and refuses a row whose owners no longer collide,
+  so parting them for real takes the row away in the same commit. See
+  [architecture/truth-source.md](architecture/truth-source.md), *What The Start
+  Refuses*.
 - Each page class declares its page subscription owner in
   `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
   page-to-agent routing map from `Hilos::PAGES` and those page-level constants.

@@ -194,3 +194,48 @@ final class TopologyThrottleIndexedAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'throttle_indexed_agent';
 }
+
+final class TopologyFullDbOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'full_db_owner_agent';
+}
+
+final class TopologySecondFullDbOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'second_full_db_owner_agent';
+}
+
+final class TopologyNarrowDbCoOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'narrow_db_co_owner_agent';
+}
+
+final class TopologyFullRtOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'full_rt_owner_agent';
+}
+
+final class TopologyRtRowOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'rt_row_owner_agent';
+}
+
+final class TopologySecondRtRowOwnerAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'second_rt_row_owner_agent';
+}
+
+final class TopologyReadingItsOwnClaimAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'reading_its_own_claim_agent';
+}
+
+final class TopologyReadingItsOwnRowsAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'reading_its_own_rows_agent';
+}
+
+final class TopologyOwningNothingAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'owning_nothing_agent';
+}

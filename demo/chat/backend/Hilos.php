@@ -156,8 +156,10 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -441,6 +443,58 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => AuthCodeAgent::class,
             AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
+
+    /**
+     * The collections this demo still lets two owners hold, and who will part them.
+     *
+     * Receipts, not permissions: every pair here is a place where two agents write the same rows
+     * today, and startup refuses both a pair that is missing from this list and a row whose
+     * owners no longer collide. The rights of nobody changed when the list was written - what
+     * writes today goes on writing, out loud instead of by eye.
+     *
+     * Three of the rows are this demo's own tables: the person is held by the chat agent, the
+     * users library and the admin index agent at once, and the events they appear in and the log
+     * line of a rename by the first and the last of those. The other four are the framework's
+     * auth libraries and the code agent sharing the tables of signing in, and they stand the same
+     * way in every demo that switches those features on.
+     *
+     * Parting them for real is somebody else's work, and it has an address: HIL-630 gives the
+     * person an agent of their own, and the auth libraries are parted with it.
+     */
+    public const array SHARED_DB_OWNERS = [
+        ChatDbContext::users => [
+            SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class, DemoHilosAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        ChatDbContext::events => [
+            SharedOwnersKey::OWNERS => [ChatAgent::class, DemoHilosAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        ChatDbContext::eventUserRenames => [
+            SharedOwnersKey::OWNERS => [ChatAgent::class, DemoHilosAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::identities => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, OAuthAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::sessions => [
+            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, AuthCodeAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::verifications => [
+            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
+            SharedOwnersKey::DEBT => 'HIL-630',
+        ],
+        HilosDbContext::registrationReservations => [
+            SharedOwnersKey::OWNERS => [
+                UsersLibraryAgent::class,
+                SessionsLibraryAgent::class,
+                AuthCodeAgent::class,
+            ],
+            SharedOwnersKey::DEBT => 'HIL-630',
         ],
     ];
 

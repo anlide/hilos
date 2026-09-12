@@ -40,6 +40,7 @@ use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageAgentIndexRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Context\DbContext;
@@ -233,6 +234,33 @@ abstract class Hilos implements TruthSourceOwner
      * Each entry declares worker and daemon classes via AgentRegistryKey.
      */
     public const array AGENTS = [];
+
+    /**
+     * Database collections more than one registered owner still holds, keyed by collection.
+     *
+     * A receipt under lock rather than a permission: every row names the owners that collide and,
+     * through {@see SharedOwnersKey::DEBT}, the leaf that will part them. Startup refuses a pair
+     * no row covers - that refusal is what the list is for - and refuses a row whose owners no
+     * longer collide, so parting them for real takes the row away in the same commit.
+     *
+     * The list lives in the project topology and not on an agent class: a framework agent may not
+     * name a project class, and what a project's topology holds is the project's own answer. The
+     * empty default is the answer of a project whose collections have one owner each.
+     *
+     * @var array<string, array{owners: list<class-string>, debt: string}>
+     */
+    public const array SHARED_DB_OWNERS = [];
+
+    /**
+     * Runtime collections more than one registered owner still holds, keyed by collection.
+     *
+     * The runtime twin of {@see self::SHARED_DB_OWNERS}, read and judged the same way. Two
+     * constants rather than one because the two halves key their collections in separate spaces:
+     * one name may stand in both, meaning two different sets of rows.
+     *
+     * @var array<string, array{owners: list<class-string>, debt: string}>
+     */
+    public const array SHARED_RT_OWNERS = [];
 
     /** Group classes keyed by group name. */
     public const array GROUPS = [];
