@@ -26,6 +26,9 @@ function node(
     archiveBytes: 1024 * 1024 * 1024,
     growthBytesPerDay: 190 * 1024 * 1024,
     batchesDueForTakeout: 0,
+    filesystemFreeBytes: null,
+    filesystemTotalBytes: null,
+    freeSpaceThresholdPercent: null,
     ...overrides,
   }
 }
@@ -48,6 +51,9 @@ function overview(
     nodes: [],
     recentErrors: [],
     recentErrorsCapped: false,
+    filesystemFreeBytes: null,
+    filesystemTotalBytes: null,
+    freeSpaceThresholdPercent: null,
     ...overrides,
   }
 }
@@ -409,5 +415,30 @@ describe('HilosLogsPage', () => {
     push(overview({ growthBytesPerDay: null, keysWithoutGrowthWindow: 5 }))
     expect(textOf(container, 'hilos-logs-tile-growth')).toBe('Still measuring')
     expect(byId(container, 'hilos-logs-growth-note')).toBeNull()
+  })
+
+  // The forecast stands under the caveat and appears only where the room is known:
+  // it is what the growth figure MEANS, and the tile changes neither color nor
+  // shape for it.
+  it('draws the forecast under the growth note, and only with room to forecast', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+
+    push(overview({ growthBytesPerDay: 100, keysWithoutGrowthWindow: 3 }))
+    expect(byId(container, 'hilos-logs-growth-forecast')).toBeNull()
+
+    push(
+      overview({
+        growthBytesPerDay: 100,
+        keysWithoutGrowthWindow: 3,
+        filesystemFreeBytes: 5400,
+        filesystemTotalBytes: 10000,
+        freeSpaceThresholdPercent: 20,
+      }),
+    )
+    expect(textOf(container, 'hilos-logs-growth-forecast')).toBe(
+      'At this rate the 20% threshold is 34 days away',
+    )
+    expect(textOf(container, 'hilos-logs-growth-note')).toContain('3 streams')
   })
 })

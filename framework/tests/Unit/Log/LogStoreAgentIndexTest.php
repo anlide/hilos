@@ -53,6 +53,9 @@ final class LogStoreAgentIndexTest extends TestCase
     /** Keep-count that protects the fixture archive by being wider than it. */
     private const string KEEP_MORE_THAN_THERE_ARE = '10';
 
+    /** Free-space threshold no fallback would produce, so an index carrying it read the environment. */
+    private const string A_THRESHOLD_OF_ITS_OWN = '35';
+
     /**
      * @var int Baseline the agent tests place their walks relative to. It is the real clock,
      *     because onStart() stamps its own baseline walk with time() and a synthetic origin
@@ -94,6 +97,7 @@ final class LogStoreAgentIndexTest extends TestCase
         putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name);
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name);
         putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name);
+        putenv(EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT->name);
         if ($this->previousEnv !== null) {
             Hilos::$env = $this->previousEnv;
         }
@@ -472,6 +476,39 @@ final class LogStoreAgentIndexTest extends TestCase
         $agent->walkStore($this->t0 + 120);
 
         $this->assertTrue($agent->lastDelta()?->recentErrorsChanged);
+    }
+
+    /**
+     * The disk the store sits on reaches the index beside the store's own figures (HIL-869), and
+     * so does the threshold this node resolved for itself: the page holding the cluster picture
+     * knows neither for anybody but itself.
+     */
+    public function testTheFilesystemAndTheThresholdReachTheIndex(): void
+    {
+        putenv(EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT->name . '=' . self::A_THRESHOLD_OF_ITS_OWN);
+        $this->write('agent-hilos_logs.log', 100);
+
+        $index = $this->startedAgent()->index();
+
+        $this->assertNotNull($index->filesystemTotalBytes);
+        $this->assertNotNull($index->filesystemFreeBytes);
+        $this->assertLessThanOrEqual($index->filesystemTotalBytes, $index->filesystemFreeBytes);
+        $this->assertSame((int)self::A_THRESHOLD_OF_ITS_OWN, $index->freeSpaceThresholdPercent);
+    }
+
+    /**
+     * Free space gets no axis of its own in the delta, which is the whole reason it is allowed to
+     * ride here: it moves continuously, and an axis over it would make every single walk a change
+     * and so send a frame every push interval forever.
+     */
+    public function testFreeSpaceIsNoAxisOfTheDelta(): void
+    {
+        $this->write('agent-hilos_logs.log', 100);
+        $agent = $this->startedAgent();
+
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertTrue($agent->lastDelta()?->isEmpty());
     }
 
     /**

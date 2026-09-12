@@ -50,6 +50,9 @@ final class LogSettingsCatalog implements CatalogProviderInterface
     /** Seconds a confirmed batch stays protected from the pruner, counted from the confirmation (HIL-759). */
     public const string TAKEOUT_UNDO_WINDOW_SECONDS = 'logs.takeout.undo_window_seconds';
 
+    /** Share of the log volume an installation keeps free, as a percentage, past which the screen warns (HIL-869). */
+    public const string FREE_SPACE_THRESHOLD_PERCENT = 'logs.free_space.threshold_percent';
+
     /** Smallest interval in milliseconds between two log-index frames a node sends the aggregator (HIL-754). */
     public const string INDEX_PUSH_INTERVAL_MS = 'logs.index.push_interval_ms';
 
@@ -64,6 +67,9 @@ final class LogSettingsCatalog implements CatalogProviderInterface
 
     /** Window the takeout undo falls back to when the environment cannot answer, in seconds. */
     public const int TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS = 86400;
+
+    /** Share of the volume the free-space threshold falls back to when the environment cannot answer, in percent. */
+    public const int FREE_SPACE_THRESHOLD_FALLBACK_PERCENT = 20;
 
     /**
      * Builds the log settings entries, each defaulting to its environment value.
@@ -100,6 +106,13 @@ final class LogSettingsCatalog implements CatalogProviderInterface
             self::TAKEOUT_UNDO_WINDOW_SECONDS => self::integerEntry(
                 self::envInt(EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS, self::TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS),
             ),
+            // Outside the logging modes for the reason the undo window is: a mode says how loudly
+            // the installation writes, not how much room it means to leave itself.
+            self::FREE_SPACE_THRESHOLD_PERCENT => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::freeSpaceThresholdDefault(),
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogFreeSpaceThresholdRule::class,
+            ],
             self::INDEX_PUSH_INTERVAL_MS => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::pushIntervalDefault(),
@@ -152,6 +165,22 @@ final class LogSettingsCatalog implements CatalogProviderInterface
         $env = self::envInt(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS, self::INDEX_PUSH_INTERVAL_FALLBACK_MS);
 
         return $env >= LogIndexPushIntervalRule::MINIMUM_MS ? $env : self::INDEX_PUSH_INTERVAL_FALLBACK_MS;
+    }
+
+    /**
+     * Reads the free-space threshold default, keeping it inside what its own rule accepts.
+     *
+     * An environment naming a share of the volume larger than the volume is treated the way an
+     * unreadable one is, for the reason {@see pushIntervalDefault()} gives: a catalog default the
+     * key's own rule would refuse shows the administrator a value they cannot save back.
+     *
+     * @return int Default value for the catalog entry
+     */
+    private static function freeSpaceThresholdDefault(): int
+    {
+        $env = self::envInt(EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT, self::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT);
+
+        return $env <= LogFreeSpaceThresholdRule::MAXIMUM_PERCENT ? $env : self::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT;
     }
 
     /**

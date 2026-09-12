@@ -849,6 +849,18 @@ enum EnvConstants
      */
     case LOG_TAKEOUT_UNDO_WINDOW_SECONDS;
 
+    // ── Log free space (HIL-869) ─────────────────────────────────────────────
+
+    /**
+     * @var string What share of the log volume, in percent, the installation means to keep free.
+     * The logs overview counts the days the measured growth rate leaves before that share is
+     * eaten into. Default 20; 0 means the installation keeps no reserve and wants the days
+     * counted to a full disk; values above 99 are refused, a reserve larger than the volume
+     * being one the screen could only report as already spent.
+     * Serves as the default of the logs.free_space.threshold_percent setting, which overrides it.
+     */
+    case LOG_FREE_SPACE_THRESHOLD_PERCENT;
+
     // ── Log write level (HIL-761) ────────────────────────────────────────────
 
     /**

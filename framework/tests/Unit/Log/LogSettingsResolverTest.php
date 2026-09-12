@@ -9,6 +9,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Hilos;
+use Hilos\Log\LogFreeSpaceThresholdRule;
 use Hilos\Log\LogIndexPushIntervalRule;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogSettingsResolver;
@@ -49,6 +50,7 @@ final class LogSettingsResolverTest extends TestCase
             EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS,
             EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES,
             EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES,
+            EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT,
         ] as $key) {
             putenv($key->name);
         }
@@ -316,6 +318,103 @@ final class LogSettingsResolverTest extends TestCase
         $resolver = new LogSettingsResolver();
 
         $this->assertSame(LogSettingsCatalog::INDEX_PUSH_INTERVAL_FALLBACK_MS, $resolver->pushIntervalMs());
+        $this->assertNotNull($resolver->takeComplaint());
+    }
+
+    public function testTheWrittenFreeSpaceThresholdWinsOverTheEnvironment(): void
+    {
+        LogSettingsResolverTestAccessor::$values = [
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT => '35',
+        ];
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(35, $resolver->freeSpaceThresholdPercent());
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    /**
+     * Zero is a value here and travels as one: the installation keeping no reserve wants the days
+     * counted to a full disk, which is not the same thing as an axis switched off.
+     */
+    public function testAThresholdOfZeroIsKeptAndNotReadAsOff(): void
+    {
+        LogSettingsResolverTestAccessor::$values = [
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT => '0',
+        ];
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(0, $resolver->freeSpaceThresholdPercent());
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    public function testWithoutAWrittenThresholdTheCatalogDefaultAnswers(): void
+    {
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
+            $resolver->freeSpaceThresholdPercent(),
+        );
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    /**
+     * A stored share larger than the volume is not clamped down to the ceiling: obeying a
+     * corrected version of it would hide the mistake, and the complaint is written once rather
+     * than on every publication of the index.
+     */
+    public function testAThresholdAboveTheCeilingFallsBackAndComplainsOnce(): void
+    {
+        LogSettingsResolverTestAccessor::$values = [
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT => '150',
+        ];
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
+            $resolver->freeSpaceThresholdPercent(),
+        );
+        $complaint = $resolver->takeComplaint();
+        $this->assertNotNull($complaint);
+        $this->assertStringContainsString(LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT, $complaint);
+
+        $resolver->freeSpaceThresholdPercent();
+        $this->assertNull($resolver->takeComplaint());
+    }
+
+    /**
+     * The ceiling guards the environment as well, and for the same reason it guards a written row:
+     * a reserve larger than the volume is one the overview could only report as already spent.
+     */
+    public function testAnEnvironmentThresholdAboveTheCeilingFallsBackAndComplains(): void
+    {
+        Hilos::$setting = null;
+        putenv(EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT->name . '=150');
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
+            $resolver->freeSpaceThresholdPercent(),
+        );
+        $this->assertNotNull($resolver->takeComplaint());
+        $this->assertLessThanOrEqual(
+            LogFreeSpaceThresholdRule::MAXIMUM_PERCENT,
+            $resolver->freeSpaceThresholdPercent(),
+        );
+    }
+
+    public function testUninitializedSettingsLeaveTheThresholdOnItsEnvironmentValue(): void
+    {
+        Hilos::$setting = null;
+        putenv(EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT->name . '=35');
+
+        $resolver = new LogSettingsResolver();
+
+        $this->assertSame(35, $resolver->freeSpaceThresholdPercent());
         $this->assertNotNull($resolver->takeComplaint());
     }
 

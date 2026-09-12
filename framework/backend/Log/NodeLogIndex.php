@@ -40,6 +40,17 @@ namespace Hilos\Log;
  * LIVE streams only, so a rotation empties it — the panel points an administrator at a file to
  * open, and after a rotation that file is no longer where the row leads.
  *
+ * {@see $filesystemFreeBytes} and {@see $filesystemTotalBytes} are about the DISK the store sits
+ * on rather than about the store itself (HIL-869), and they ride here for the reason
+ * {@see $logDirectory} does: a page worker holding the cluster picture knows its own filesystem
+ * and nobody else's. Null is "not known" — the directory is unnamed or gone, or the filesystem
+ * did not answer — and the overview draws no forecast at all rather than guessing one.
+ *
+ * {@see $freeSpaceThresholdPercent} rides beside them for the reason
+ * {@see $takeoutUndoWindowSeconds} does: with no setting row written the threshold bottoms out in
+ * the node's environment, so the node is the only one that can say which one it holds. Zero is a
+ * value and not an absence: it is the installation that wants the days counted to a full disk.
+ *
  * Unavailability is a state and not an exception, the same way {@see LogStoreSnapshot} carries it:
  * {@see $available} false comes with empty projections, which the overview draws as blank tiles
  * rather than as zeros — a zero would claim there were no rotations, and here we simply do not know.
@@ -58,6 +69,9 @@ final class NodeLogIndex
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on this node, 0 when it is not to wait
      * @param list<int> $dueBatchTimestamps Batches the retention rule recommends carrying off, ascending; empty when it recommends none
      * @param list<LogErrorEntry> $recentErrors Last failures written to this node's live error streams, newest first
+     * @param ?int $filesystemFreeBytes Free bytes on the filesystem holding the log root, null when not known
+     * @param ?int $filesystemTotalBytes Whole size of that filesystem in bytes, null when not known
+     * @param int $freeSpaceThresholdPercent Percentage of the volume this node keeps as its free-space threshold
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -71,6 +85,9 @@ final class NodeLogIndex
         public readonly int $takeoutUndoWindowSeconds = 0,
         public readonly array $dueBatchTimestamps = [],
         public readonly array $recentErrors = [],
+        public readonly ?int $filesystemFreeBytes = null,
+        public readonly ?int $filesystemTotalBytes = null,
+        public readonly int $freeSpaceThresholdPercent = LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
     ) {
     }
 }

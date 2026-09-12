@@ -23,6 +23,7 @@ import {
   logsOverviewBatchesNote,
   logsOverviewErrorOrigin,
   logsOverviewErrorPath,
+  logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
   logsOverviewRecentErrors,
@@ -126,6 +127,17 @@ const rotationsPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_ROTATIONS]
               data-id="hilos-logs-growth-note"
             >
               {{ logsOverviewGrowthNote(overview) }}
+            </div>
+            <!-- Last of the three on purpose: the note above qualifies the figure,
+            and this line says what the figure MEANS for the disk. The consequence
+            is read after the caveat, and it is shown even while the caveat
+            stands - the rate is there to divide by either way. -->
+            <div
+              v-if="logsOverviewForecastNote(overview)"
+              class="small text-body-secondary"
+              data-id="hilos-logs-growth-forecast"
+            >
+              {{ logsOverviewForecastNote(overview) }}
             </div>
           </div>
         </div>

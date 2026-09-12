@@ -9,6 +9,7 @@ use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Log\NodeLogIndex;
 use PHPUnit\Framework\TestCase;
@@ -83,6 +84,82 @@ final class NodeLogIndexSignalDataTest extends TestCase
 
         $this->assertSame([], $restored->dueBatchTimestamps);
         $this->assertCount(1, $restored->batches);
+    }
+
+    /**
+     * The disk the store sits on travels in the same frame (HIL-869), and every one of the three
+     * figures has to survive it: what is free, what the volume holds, and the share this node was
+     * told to keep. Read wrong they do not fail loudly — they turn into a forecast of days that
+     * nobody's disk has.
+     */
+    public function testTheFilesystemFiguresSurviveTheRoundTrip(): void
+    {
+        $index = new NodeLogIndex(
+            nodeId: 'node-1',
+            available: true,
+            sampledAt: self::T0,
+            batches: [],
+            keys: [],
+            workers: [],
+            growthBytesPerDay: [],
+            filesystemFreeBytes: 12_884_901_888,
+            filesystemTotalBytes: 107_374_182_400,
+            freeSpaceThresholdPercent: 35,
+        );
+
+        $restored = $this->roundTrip($index);
+
+        $this->assertSame(12_884_901_888, $restored->filesystemFreeBytes);
+        $this->assertSame(107_374_182_400, $restored->filesystemTotalBytes);
+        $this->assertSame(35, $restored->freeSpaceThresholdPercent);
+    }
+
+    /**
+     * A filesystem that did not answer travels as an absence, not as a zero: zero free bytes is a
+     * full disk, which is exactly the alarm the screen would raise over a reading nobody took.
+     */
+    public function testAFilesystemThatDidNotAnswerStaysUnknownAcrossTheWire(): void
+    {
+        $index = new NodeLogIndex(
+            nodeId: 'node-1',
+            available: true,
+            sampledAt: self::T0,
+            batches: [],
+            keys: [],
+            workers: [],
+            growthBytesPerDay: [],
+            freeSpaceThresholdPercent: 0,
+        );
+
+        $restored = $this->roundTrip($index);
+
+        $this->assertNull($restored->filesystemFreeBytes);
+        $this->assertNull($restored->filesystemTotalBytes);
+        $this->assertSame(0, $restored->freeSpaceThresholdPercent);
+    }
+
+    /**
+     * A node running the previous build says nothing about any of the three, the way it says
+     * nothing about the retention verdict: the frame is still worth drawing, and the threshold
+     * reads as the framework's own share — the one that node itself was running on.
+     */
+    public function testAPayloadWithoutTheFilesystemFiguresReadsAsUnknownRoom(): void
+    {
+        $payload = $this->payload();
+        unset(
+            $payload[NodeLogIndexSignalData::filesystemFreeBytes],
+            $payload[NodeLogIndexSignalData::filesystemTotalBytes],
+            $payload[NodeLogIndexSignalData::freeSpaceThresholdPercent],
+        );
+
+        $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
+
+        $this->assertNull($restored->filesystemFreeBytes);
+        $this->assertNull($restored->filesystemTotalBytes);
+        $this->assertSame(
+            LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
+            $restored->freeSpaceThresholdPercent,
+        );
     }
 
     /**

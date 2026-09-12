@@ -361,6 +361,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 LogSettingsCatalog::TAKEOUT_UNDO_WINDOW_FALLBACK_SECONDS,
                 emptyIsMissing: true,
             ),
+            EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
+                emptyIsMissing: true,
+            ),
             EnvConstants::LOG_WRITE_LEVEL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LogLevel::Info->value,

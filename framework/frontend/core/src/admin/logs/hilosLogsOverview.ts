@@ -49,6 +49,20 @@ export const OVERVIEW_NODE_GROWTH_FIELD = 'growthBytesPerDay'
 export const OVERVIEW_NODE_DUE_FIELD = 'batchesDueForTakeout'
 
 /**
+ * Row payload key of the free bytes on the filesystem holding that node's log root.
+ *
+ * Null is "not known" — the node named no directory, or its filesystem did not answer
+ * — and the forecast is then not drawn at all rather than guessed at.
+ */
+export const OVERVIEW_NODE_FREE_BYTES_FIELD = 'filesystemFreeBytes'
+
+/** Row payload key of the whole size of that same filesystem. */
+export const OVERVIEW_NODE_TOTAL_BYTES_FIELD = 'filesystemTotalBytes'
+
+/** Row payload key of the share of the volume that node keeps free, in percent. */
+export const OVERVIEW_NODE_THRESHOLD_FIELD = 'freeSpaceThresholdPercent'
+
+/**
  * Row payload key of the node a failure was written on.
  *
  * Empty in an installation whose nodes have no names, and that empty string is a
@@ -84,6 +98,9 @@ const overviewNodeSchema = z.looseObject({
   [OVERVIEW_NODE_ARCHIVE_BYTES_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_GROWTH_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_DUE_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_FREE_BYTES_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_TOTAL_BYTES_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_THRESHOLD_FIELD]: z.number().nullable(),
 })
 
 /**
@@ -120,6 +137,12 @@ const overviewSchema = z.looseObject({
   nodes: z.array(overviewNodeSchema),
   recentErrors: z.array(recentErrorSchema),
   recentErrorsCapped: z.boolean(),
+  // The header half of the same three fields the rows carry: a single-node
+  // installation has no row to put its disk in, a cluster leaves these null and
+  // answers per node. Exactly one half is ever filled.
+  [OVERVIEW_NODE_FREE_BYTES_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_TOTAL_BYTES_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_THRESHOLD_FIELD]: z.number().nullable(),
 })
 
 /** One node's row of the per-node table. */
@@ -404,6 +427,190 @@ export function logsOverviewGrowthNote(
   }
 
   return `No full day of data yet for ${streams} stream${streams === 1 ? '' : 's'}`
+}
+
+/**
+ * One installation's — or one node's — answer to "how long until the room runs out".
+ *
+ * `daysAway` null is not "unknown": a candidate exists only where all three figures
+ * and a rate were there, so null is the case the arithmetic actually reached — the
+ * threshold is already behind us.
+ */
+interface LogsOverviewForecast {
+  /** The node the figures belong to, null in an installation that names no nodes. */
+  readonly nodeId: string | null
+  /** Whole days before the threshold is reached, rounded down; null when it is passed. */
+  readonly daysAway: number | null
+  /**
+   * The share that node keeps free, in percent, as THAT node resolved it: with no
+   * settings row written two nodes of one cluster can honestly hold two.
+   */
+  readonly thresholdPercent: number
+}
+
+/**
+ * The forecast for one set of figures, or null when there is nothing to forecast.
+ *
+ * Three of the four cases are silence, and each is the honest answer. No rate yet:
+ * the tile already says it is still measuring, and a second line would say it twice.
+ * A rate of exactly zero: there is nothing to divide by, and "never" is not news.
+ * No room figures: a guess costs more than a blank.
+ *
+ * @param nodeId The node these figures belong to, null when the installation names none.
+ * @param freeBytes Free bytes on that filesystem, null when it is not known.
+ * @param totalBytes Whole size of that filesystem, null when it is not known.
+ * @param thresholdPercent Share of the volume kept free, null when it is not known.
+ * @param growthBytesPerDay What that node writes over a day, null while it is measured.
+ */
+function logsOverviewForecastOf(
+  nodeId: string | null,
+  freeBytes: number | null,
+  totalBytes: number | null,
+  thresholdPercent: number | null,
+  growthBytesPerDay: number | null,
+): LogsOverviewForecast | null {
+  if (
+    freeBytes === null ||
+    totalBytes === null ||
+    thresholdPercent === null ||
+    growthBytesPerDay === null ||
+    growthBytesPerDay <= 0
+  ) {
+    return null
+  }
+
+  const room = freeBytes - Math.floor((totalBytes * thresholdPercent) / 100)
+
+  return {
+    nodeId,
+    daysAway: room > 0 ? Math.floor(room / growthBytesPerDay) : null,
+    thresholdPercent,
+  }
+}
+
+/**
+ * The node the forecast speaks for: the one with the least time left.
+ *
+ * A node already past its threshold outranks every node that still has days, which
+ * is what makes the line worth reading in a cluster at all — the screen names the
+ * machine in trouble rather than the average of the fleet. An unreadable node has no
+ * figures and no right to speak for the cluster, so it is not a candidate.
+ *
+ * The single-node installation has no rows and answers from the header, which is the
+ * same shape the per-node table itself takes (HIL-869).
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ */
+function logsOverviewWorstForecast(
+  overview: HilosLogsOverview | null,
+): LogsOverviewForecast | null {
+  if (overview === null || logsOverviewState(overview) !== 'figures') {
+    return null
+  }
+
+  if (!hasLogsOverviewNodes(overview)) {
+    return logsOverviewForecastOf(
+      null,
+      overview[OVERVIEW_NODE_FREE_BYTES_FIELD],
+      overview[OVERVIEW_NODE_TOTAL_BYTES_FIELD],
+      overview[OVERVIEW_NODE_THRESHOLD_FIELD],
+      overview.growthBytesPerDay,
+    )
+  }
+
+  let worst: LogsOverviewForecast | null = null
+  for (const node of overview.nodes) {
+    if (!node[OVERVIEW_NODE_AVAILABLE_FIELD]) {
+      continue
+    }
+    const forecast = logsOverviewForecastOf(
+      node[OVERVIEW_NODE_ID_FIELD],
+      node[OVERVIEW_NODE_FREE_BYTES_FIELD],
+      node[OVERVIEW_NODE_TOTAL_BYTES_FIELD],
+      node[OVERVIEW_NODE_THRESHOLD_FIELD],
+      node[OVERVIEW_NODE_GROWTH_FIELD],
+    )
+    if (forecast !== null && logsOverviewForecastIsWorse(forecast, worst)) {
+      worst = forecast
+    }
+  }
+
+  return worst
+}
+
+/**
+ * Whether one forecast leaves less time than the one held so far.
+ *
+ * A passed threshold is worse than any number of days, and the first of two equals
+ * wins so the line does not swap nodes between two frames that say the same thing.
+ *
+ * @param forecast The forecast just worked out.
+ * @param worst The worst one so far, null while there is none.
+ */
+function logsOverviewForecastIsWorse(
+  forecast: LogsOverviewForecast,
+  worst: LogsOverviewForecast | null,
+): boolean {
+  if (worst === null || forecast.daysAway === null) {
+    return worst === null || worst.daysAway !== null
+  }
+
+  return worst.daysAway !== null && forecast.daysAway < worst.daysAway
+}
+
+/**
+ * How long is left, said so that a day nobody has is never promised.
+ *
+ * Days are rounded down, so the count can legitimately be zero — and a zero is said
+ * in words, because "in 0 days" reads as a figure rather than as "very soon".
+ *
+ * @param daysAway Whole days left, already rounded down.
+ */
+function logsOverviewForecastWhen(daysAway: number): string {
+  if (daysAway === 0) {
+    return 'less than a day'
+  }
+
+  return daysAway === 1 ? '1 day' : `${daysAway} days`
+}
+
+/**
+ * The third line of the growth tile: what the rate means for the room that is left.
+ *
+ * The arithmetic is done here rather than on the wire because "12 days away on
+ * node-2" is a phrase of this tile and the whole of its vocabulary already lives in
+ * this module — the same reason the takeout banner derives its list of nodes here
+ * ({@link logsOverviewNodesDue}) instead of being told it.
+ *
+ * Two families of wording, and the second is not an edge case: a threshold of zero
+ * is the installation that keeps no reserve and wants the days counted to a full
+ * disk. The node is named only where the installation names nodes at all.
+ *
+ * It is shown beside the qualifying note as well: the rate is there to divide by,
+ * and how complete it is has already been said by the line above.
+ *
+ * @param overview The latest screen, or null before the first frame arrives.
+ */
+export function logsOverviewForecastNote(
+  overview: HilosLogsOverview | null,
+): string | null {
+  const forecast = logsOverviewWorstForecast(overview)
+  if (forecast === null) {
+    return null
+  }
+
+  const on = forecast.nodeId === null ? '' : ` on ${forecast.nodeId}`
+  if (forecast.daysAway === null) {
+    return forecast.thresholdPercent === 0
+      ? `The log disk is full${on}`
+      : `Free space is already below the ${forecast.thresholdPercent}% threshold${on}`
+  }
+
+  const when = logsOverviewForecastWhen(forecast.daysAway)
+
+  return forecast.thresholdPercent === 0
+    ? `At this rate the disk is full in ${when}${on}`
+    : `At this rate the ${forecast.thresholdPercent}% threshold is ${when} away${on}`
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   logsOverviewBatchesNote,
   logsOverviewErrorOrigin,
   logsOverviewErrorPath,
+  logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
   logsOverviewRecentErrors,
@@ -35,6 +36,9 @@ function node(
     archiveBytes: 4096,
     growthBytesPerDay: 512,
     batchesDueForTakeout: 0,
+    filesystemFreeBytes: null,
+    filesystemTotalBytes: null,
+    freeSpaceThresholdPercent: null,
     ...overrides,
   }
 }
@@ -56,6 +60,9 @@ function overview(
     nodes: [],
     recentErrors: [],
     recentErrorsCapped: false,
+    filesystemFreeBytes: null,
+    filesystemTotalBytes: null,
+    freeSpaceThresholdPercent: null,
     ...overrides,
   }
 }
@@ -419,5 +426,272 @@ describe('logsOverviewErrorPath', () => {
     expect(logsOverviewErrorPath(failure({ stream: 'daemon-error.log' }))).toBe(
       '/hilos/logs/view/-/live/daemon-error.log',
     )
+  })
+})
+
+describe('logsOverviewForecastNote', () => {
+  it('turns the rate and the room into days on a single-node installation', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          growthBytesPerDay: 100,
+          filesystemFreeBytes: 5400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ),
+    ).toBe('At this rate the 20% threshold is 34 days away')
+  })
+
+  it('names the node in a cluster', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-2',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 3200,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('At this rate the 20% threshold is 12 days away on node-2')
+  })
+
+  // Days are rounded down, so the count reaches zero before the room does. A zero said
+  // as a figure would promise a day that the rounding has already spent.
+  it('says less than a day rather than nought days', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-2',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 2050,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('At this rate the 20% threshold is less than a day away on node-2')
+  })
+
+  // A threshold of nought is the installation that keeps no reserve, which is a
+  // second family of wording rather than an axis switched off.
+  it('counts the days to a full disk when no reserve is kept', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          growthBytesPerDay: 100,
+          filesystemFreeBytes: 3400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 0,
+        }),
+      ),
+    ).toBe('At this rate the disk is full in 34 days')
+  })
+
+  it('names the node in the zero-threshold family too', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-2',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 3400,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 0,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('At this rate the disk is full in 34 days on node-2')
+  })
+
+  it('says the threshold is already behind us', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-2',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 1000,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('Free space is already below the 20% threshold on node-2')
+  })
+
+  it('says the disk is full when no reserve is kept and none is left', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-2',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 0,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 0,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('The log disk is full on node-2')
+  })
+
+  // The line is about the machine in trouble, not about the fleet: a cluster answers
+  // with the node that runs out first, and a node past its threshold outranks any
+  // number of days.
+  it('speaks for the node with the least time left', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-1',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 5400,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+            node({
+              nodeId: 'node-3',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 3200,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('At this rate the 20% threshold is 12 days away on node-3')
+  })
+
+  it('lets a node already past its threshold speak before one with days', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-1',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 5400,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+            node({
+              nodeId: 'node-3',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 900,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('Free space is already below the 20% threshold on node-3')
+  })
+
+  it('leaves an unreadable node out of the choice', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          nodes: [
+            node({
+              nodeId: 'node-1',
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 5400,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+            node({
+              nodeId: 'node-3',
+              available: false,
+              growthBytesPerDay: 100,
+              filesystemFreeBytes: 900,
+              filesystemTotalBytes: 10000,
+              freeSpaceThresholdPercent: 20,
+            }),
+          ],
+        }),
+      ),
+    ).toBe('At this rate the 20% threshold is 34 days away on node-1')
+  })
+
+  // Three of the four silences, and each is the honest answer: the tile already says
+  // it is still measuring, there is nothing to divide by, and a guess about a
+  // filesystem that did not answer costs more than a blank.
+  it('says nothing while the rate is still being measured', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          growthBytesPerDay: null,
+          filesystemFreeBytes: 5400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('says nothing when nothing is being written', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          growthBytesPerDay: 0,
+          filesystemFreeBytes: 5400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('says nothing when the room is not known', () => {
+    expect(
+      logsOverviewForecastNote(overview({ growthBytesPerDay: 100 })),
+    ).toBeNull()
+  })
+
+  it('says nothing before the first frame and while the picture is unreadable', () => {
+    expect(logsOverviewForecastNote(null)).toBeNull()
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          available: false,
+          growthBytesPerDay: 100,
+          filesystemFreeBytes: 5400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  // It stands beside the qualifying note rather than instead of it: the rate is there
+  // to divide by, and how complete it is has been said by the line above.
+  it('is shown even while some streams have no full day of data', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({
+          growthBytesPerDay: 100,
+          keysWithoutGrowthWindow: 3,
+          filesystemFreeBytes: 5400,
+          filesystemTotalBytes: 10000,
+          freeSpaceThresholdPercent: 20,
+        }),
+      ),
+    ).toBe('At this rate the 20% threshold is 34 days away')
   })
 })

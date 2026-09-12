@@ -72,6 +72,23 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Payload key: whether that list was cut at the limit, which the screen reads as "10+". */
     public const string recentErrorsCapped = 'recentErrorsCapped';
 
+    /**
+     * Payload key: free bytes on the filesystem holding the log root (HIL-869).
+     *
+     * Declared once and read in both halves of the frame, the way {@see self::growthBytesPerDay}
+     * already is: a single-node installation has no node row to put it in and carries it in the
+     * header, a cluster carries one per node row and leaves the header null. Free space is never
+     * summed across the cluster — each node has a filesystem of its own, and the sum of free bytes
+     * answers no question anybody asks.
+     */
+    public const string filesystemFreeBytes = 'filesystemFreeBytes';
+
+    /** Payload key: whole size in bytes of that same filesystem, null when not known. */
+    public const string filesystemTotalBytes = 'filesystemTotalBytes';
+
+    /** Payload key: share of the volume the node keeps free, in percent, as that node resolved it. */
+    public const string freeSpaceThresholdPercent = 'freeSpaceThresholdPercent';
+
     /** Node row key: cluster node id, always a name - a node without one does not travel here. */
     public const string nodeId = 'nodeId';
 
@@ -115,12 +132,16 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * @param ?int $keysWithoutGrowthWindow Streams whose day window has not filled yet (null if unavailable)
      * @param ?int $batchesDueForTakeout Rotation batches past their retention across the cluster (null if unavailable)
      * @param list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
-     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int}> $nodes
+     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
+     *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> $nodes
      *     Named nodes of the picture, one row each; empty in a single-node installation
      * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentErrors
      *     Last failures across the cluster inside the panel's window, newest first; the node id is
      *     an empty string in a single-node installation, which is what the viewer address expects
      * @param bool $recentErrorsCapped Whether that list was cut at the limit, so the screen says "10+"
+     * @param ?int $filesystemFreeBytes Free bytes on this installation's log filesystem, null in a cluster or when not known
+     * @param ?int $filesystemTotalBytes Whole size of that filesystem, null in a cluster or when not known
+     * @param ?int $freeSpaceThresholdPercent Share of the volume kept free, null in a cluster or when not known
      */
     public function __construct(
         public readonly ?bool $available,
@@ -136,6 +157,9 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
         public readonly array $nodes,
         public readonly array $recentErrors = [],
         public readonly bool $recentErrorsCapped = false,
+        public readonly ?int $filesystemFreeBytes = null,
+        public readonly ?int $filesystemTotalBytes = null,
+        public readonly ?int $freeSpaceThresholdPercent = null,
     ) {
     }
 
@@ -158,6 +182,9 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::nodes => $this->nodes,
             self::recentErrors => $this->recentErrors,
             self::recentErrorsCapped => $this->recentErrorsCapped,
+            self::filesystemFreeBytes => $this->filesystemFreeBytes,
+            self::filesystemTotalBytes => $this->filesystemTotalBytes,
+            self::freeSpaceThresholdPercent => $this->freeSpaceThresholdPercent,
         ];
     }
 
@@ -188,6 +215,9 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             nodes: self::nodeRows($data),
             recentErrors: self::errorRows($data),
             recentErrorsCapped: ($data[self::recentErrorsCapped] ?? null) === true,
+            filesystemFreeBytes: self::optionalNonNegativeInt($data[self::filesystemFreeBytes] ?? null),
+            filesystemTotalBytes: self::optionalNonNegativeInt($data[self::filesystemTotalBytes] ?? null),
+            freeSpaceThresholdPercent: self::optionalNonNegativeInt($data[self::freeSpaceThresholdPercent] ?? null),
         );
     }
 
@@ -202,7 +232,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      *
      * @param array<string, mixed> $data Wire form of the overview
      * @return list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
-     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int}> Rows of the table
+     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
+     *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> Rows of the table
      * @throws InvalidFormatException When the list is absent, holds a row that is not an object,
      *     or a row omits its name or its readability
      */
@@ -223,6 +254,11 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
                 self::archiveBytes => self::optionalNonNegativeInt($row[self::archiveBytes] ?? null),
                 self::growthBytesPerDay => self::optionalNonNegativeInt($row[self::growthBytesPerDay] ?? null),
                 self::batchesDueForTakeout => self::optionalNonNegativeInt($row[self::batchesDueForTakeout] ?? null),
+                self::filesystemFreeBytes => self::optionalNonNegativeInt($row[self::filesystemFreeBytes] ?? null),
+                self::filesystemTotalBytes => self::optionalNonNegativeInt($row[self::filesystemTotalBytes] ?? null),
+                self::freeSpaceThresholdPercent => self::optionalNonNegativeInt(
+                    $row[self::freeSpaceThresholdPercent] ?? null,
+                ),
             ];
         }
 

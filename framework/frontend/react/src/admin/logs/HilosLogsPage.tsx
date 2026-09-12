@@ -25,6 +25,7 @@ import {
   logsOverviewBatchesNote,
   logsOverviewErrorOrigin,
   logsOverviewErrorPath,
+  logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
   logsOverviewRecentErrors,
@@ -79,6 +80,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
   const batchesDue = overview?.batchesDueForTakeout ?? 0
   const nodesDue = logsOverviewNodesDue(overview)
   const growthNote = logsOverviewGrowthNote(overview)
+  const growthForecast = logsOverviewForecastNote(overview)
 
   // The panel of last failures. It is drawn only where there ARE figures: saying
   // "nothing has gone wrong" about a picture that has not arrived would be good news
@@ -138,6 +140,18 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                     data-id="hilos-logs-growth-note"
                   >
                     {growthNote}
+                  </div>
+                ) : null}
+                {/* Last of the three on purpose: the note above qualifies the
+                figure, and this line says what the figure MEANS for the disk. The
+                consequence is read after the caveat, and it is shown even while
+                the caveat stands - the rate is there to divide by either way. */}
+                {growthForecast ? (
+                  <div
+                    className="small text-body-secondary"
+                    data-id="hilos-logs-growth-forecast"
+                  >
+                    {growthForecast}
                   </div>
                 ) : null}
               </div>

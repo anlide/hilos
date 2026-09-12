@@ -46,6 +46,9 @@ final class LogSettingsResolver
     /** Scope name under which the takeout-undo window outcome is remembered. */
     private const string SCOPE_TAKEOUT_UNDO = 'takeout undo window';
 
+    /** Scope name under which the free-space threshold outcome is remembered. */
+    private const string SCOPE_FREE_SPACE = 'free space threshold';
+
     /** @var array<string, string> Last trouble text per scope, so an unchanged fault stays silent */
     private array $lastTrouble = [];
 
@@ -143,6 +146,29 @@ final class LogSettingsResolver
     }
 
     /**
+     * Reads the share of the log volume the installation keeps free, in percent (HIL-869).
+     *
+     * Asked on every publication of the node index, the way the undo window is, so an
+     * administrator's edit reaches the screen with the next frame rather than at the next restart.
+     * The NODE answers rather than the page working it out, and for the same reason: with no row
+     * written the value bottoms out in the environment, which is per node, so a page reading its
+     * own environment on behalf of another node would report a threshold that node does not hold.
+     *
+     * Zero is an answer and not an absence — the days are then counted to a full disk.
+     *
+     * @return int Percentage of the volume kept free, 0 when the installation keeps none
+     */
+    public function freeSpaceThresholdPercent(): int
+    {
+        $written = $this->freeSpaceThresholdValue(LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT);
+        $threshold = $written ?? $this->freeSpaceThresholdFromEnv();
+
+        $this->conclude(self::SCOPE_FREE_SPACE);
+
+        return $threshold;
+    }
+
+    /**
      * Hands over one complaint raised since the last call, oldest first.
      *
      * @return ?string Line for the journal, or null when there is nothing new to say
@@ -189,6 +215,29 @@ final class LogSettingsResolver
         }
 
         $refusal = LogIndexPushIntervalRule::validate($value);
+        if ($refusal !== null) {
+            $this->trouble("setting '{$key}' is refused by its own rule ({$refusal}), using the environment instead");
+
+            return null;
+        }
+
+        return (int)$value;
+    }
+
+    /**
+     * Reads the free-space threshold setting, or reports why it cannot be used.
+     *
+     * @param string $key Setting key
+     * @return ?int Threshold to use, or null when the environment should answer instead
+     */
+    private function freeSpaceThresholdValue(string $key): ?int
+    {
+        $value = $this->rawValue($key);
+        if ($value === null) {
+            return null;
+        }
+
+        $refusal = LogFreeSpaceThresholdRule::validate($value);
         if ($refusal !== null) {
             $this->trouble("setting '{$key}' is refused by its own rule ({$refusal}), using the environment instead");
 
@@ -342,6 +391,52 @@ final class LogSettingsResolver
 
             return $fallback;
         }
+    }
+
+    /**
+     * Reads the free-space threshold from the environment, falling back to the literal.
+     *
+     * A negative number is clamped to zero the way the numeric policies clamp theirs: below zero
+     * the threshold has no reading other than "no reserve at all", which is what zero already
+     * says. A number above the ceiling is treated the way an unreadable one is, because a reserve
+     * larger than the volume would have the screen say the room has run out forever.
+     *
+     * @return int Threshold from the environment, or the fallback when it cannot answer
+     */
+    private function freeSpaceThresholdFromEnv(): int
+    {
+        $fallback = LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT;
+        $env = Hilos::$env;
+        if ($env === null) {
+            $this->trouble(
+                'log free space threshold is unreadable: no environment in this process, using the fallback of '
+                . $fallback . '%',
+            );
+
+            return $fallback;
+        }
+
+        try {
+            $threshold = max(0, $env[EnvConstants::LOG_FREE_SPACE_THRESHOLD_PERCENT]->int());
+        } catch (EnvException $exception) {
+            $this->trouble(
+                'log free space threshold is unreadable: ' . $exception->getMessage()
+                . ', using the fallback of ' . $fallback . '%',
+            );
+
+            return $fallback;
+        }
+
+        if ($threshold > LogFreeSpaceThresholdRule::MAXIMUM_PERCENT) {
+            $this->trouble(
+                "log free space threshold environment says {$threshold}%, above the maximum, using the fallback of "
+                . $fallback . '%',
+            );
+
+            return $fallback;
+        }
+
+        return $threshold;
     }
 
     /**

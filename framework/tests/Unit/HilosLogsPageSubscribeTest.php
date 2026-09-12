@@ -26,6 +26,7 @@ use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
@@ -295,9 +296,80 @@ final class HilosLogsPageSubscribeTest extends TestCase
                 HilosLogsOverviewSignalData::archiveBytes => null,
                 HilosLogsOverviewSignalData::growthBytesPerDay => null,
                 HilosLogsOverviewSignalData::batchesDueForTakeout => null,
+                HilosLogsOverviewSignalData::filesystemFreeBytes => null,
+                HilosLogsOverviewSignalData::filesystemTotalBytes => null,
+                HilosLogsOverviewSignalData::freeSpaceThresholdPercent => null,
             ],
             $overview->nodes[1],
         );
+    }
+
+    /**
+     * A single-node installation has no row to put its disk in, so the header carries it (HIL-869).
+     * Which half is filled follows the node list itself: empty there, header here.
+     */
+    public function testASingleNodeInstallationCarriesItsDiskInTheHeader(): void
+    {
+        $this->fileThePicture(self::nodeSlot(
+            null,
+            filesystemFreeBytes: 12_884_901_888,
+            filesystemTotalBytes: 107_374_182_400,
+            freeSpaceThresholdPercent: 35,
+        ));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(12_884_901_888, $overview->filesystemFreeBytes);
+        $this->assertSame(107_374_182_400, $overview->filesystemTotalBytes);
+        $this->assertSame(35, $overview->freeSpaceThresholdPercent);
+    }
+
+    /**
+     * A cluster puts every disk in its own row and leaves the header empty: free space is never
+     * summed, because each node has a filesystem of its own and the sum answers no question.
+     */
+    public function testInAClusterEveryDiskTravelsInItsOwnRow(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', filesystemFreeBytes: 500, filesystemTotalBytes: 1000, freeSpaceThresholdPercent: 20),
+            self::nodeSlot('node-2', filesystemFreeBytes: 100, filesystemTotalBytes: 4000, freeSpaceThresholdPercent: 10),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertNull($overview->filesystemFreeBytes);
+        $this->assertNull($overview->filesystemTotalBytes);
+        $this->assertNull($overview->freeSpaceThresholdPercent);
+        $this->assertSame(500, $overview->nodes[0][HilosLogsOverviewSignalData::filesystemFreeBytes]);
+        $this->assertSame(1000, $overview->nodes[0][HilosLogsOverviewSignalData::filesystemTotalBytes]);
+        $this->assertSame(20, $overview->nodes[0][HilosLogsOverviewSignalData::freeSpaceThresholdPercent]);
+        $this->assertSame(100, $overview->nodes[1][HilosLogsOverviewSignalData::filesystemFreeBytes]);
+        $this->assertSame(4000, $overview->nodes[1][HilosLogsOverviewSignalData::filesystemTotalBytes]);
+        $this->assertSame(10, $overview->nodes[1][HilosLogsOverviewSignalData::freeSpaceThresholdPercent]);
+    }
+
+    /**
+     * An unreadable node reports no disk even though it would have resolved a threshold: a
+     * threshold is something a measurement is judged against, and there is no measurement.
+     */
+    public function testAnUnreadableSingleNodeLeavesTheHeaderEmpty(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', keys: [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], 100)]),
+            self::nodeSlot(null, available: false, filesystemFreeBytes: 500, filesystemTotalBytes: 1000),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertNull($overview->filesystemFreeBytes);
+        $this->assertNull($overview->filesystemTotalBytes);
+        $this->assertNull($overview->freeSpaceThresholdPercent);
     }
 
     /**
@@ -699,6 +771,9 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @param array<string, ?int> $growthBytesPerDay Stream → bytes over the last day, null until its window fills
      * @param list<int> $due Batches this node's own retention rule recommends carrying off
      * @param list<LogErrorEntry> $recentErrors Failures the node read off the tails of its live error streams
+     * @param ?int $filesystemFreeBytes Free bytes this node measured on its log filesystem
+     * @param ?int $filesystemTotalBytes Whole size of that filesystem as this node measured it
+     * @param int $freeSpaceThresholdPercent Share of the volume this node resolved as its threshold
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private static function nodeSlot(
@@ -709,6 +784,9 @@ final class HilosLogsPageSubscribeTest extends TestCase
         array $growthBytesPerDay = [],
         array $due = [],
         array $recentErrors = [],
+        ?int $filesystemFreeBytes = null,
+        ?int $filesystemTotalBytes = null,
+        int $freeSpaceThresholdPercent = LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
     ): ClusterLogNodeSlot {
         return new ClusterLogNodeSlot(
             nodeId: $nodeId,
@@ -722,6 +800,9 @@ final class HilosLogsPageSubscribeTest extends TestCase
                 growthBytesPerDay: $growthBytesPerDay,
                 dueBatchTimestamps: $due,
                 recentErrors: $recentErrors,
+                filesystemFreeBytes: $filesystemFreeBytes,
+                filesystemTotalBytes: $filesystemTotalBytes,
+                freeSpaceThresholdPercent: $freeSpaceThresholdPercent,
             ),
             receivedAt: self::T0,
         );

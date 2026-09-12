@@ -1417,6 +1417,11 @@ final class LogStoreAgent extends AbstractAgent
      * Passing it through {@see self::diff()} afterwards needs no help - a verdict that moved is an
      * axis of the delta like any other.
      *
+     * The free space of the filesystem is measured here too, and deliberately does NOT become such
+     * an axis (HIL-869): it moves continuously, so an axis over it would make a change out of every
+     * single pass and send a frame every push interval forever. It travels on a frame some other
+     * axis called for, and the node keepalive caps how stale the screen's copy can get.
+     *
      * @param LogStoreSnapshot $snapshot Snapshot to publish
      * @param int $sampledAt Unix timestamp of the walk
      * @param bool $full Whether this came from a full walk, the only kind that feeds the windows
@@ -1460,6 +1465,9 @@ final class LogStoreAgent extends AbstractAgent
             takeoutUndoWindowSeconds: $this->resolver->takeoutUndoWindowSeconds(),
             dueBatchTimestamps: $this->judgeDueBatches($batchTimestamps, $sampledAt),
             recentErrors: $this->recentErrors(),
+            filesystemFreeBytes: $this->reader->filesystemFreeBytes(),
+            filesystemTotalBytes: $this->reader->filesystemTotalBytes(),
+            freeSpaceThresholdPercent: $this->resolver->freeSpaceThresholdPercent(),
         );
         $this->lastDelta = self::diff($previous, $this->index);
         // Raised here and not where the frame is scheduled, because this is the one moment the

@@ -241,6 +241,50 @@ final class LogStoreReaderTest extends TestCase
     }
 
     /**
+     * Both measurements answer over a directory that exists, and the free part cannot exceed the
+     * whole. The figures themselves belong to whatever filesystem the temp directory sits on, so
+     * what is pinned here is the relation between them rather than any number.
+     */
+    public function testMeasuresTheFilesystemHoldingTheLogRoot(): void
+    {
+        $reader = $this->reader();
+
+        $free = $reader->filesystemFreeBytes();
+        $total = $reader->filesystemTotalBytes();
+
+        $this->assertNotNull($free);
+        $this->assertNotNull($total);
+        $this->assertGreaterThan(0, $total);
+        $this->assertGreaterThanOrEqual(0, $free);
+        $this->assertLessThanOrEqual($total, $free);
+    }
+
+    /**
+     * An environment that names no log file leaves the reader unresolved, and an unresolved reader
+     * knows nothing about any filesystem: the overview draws no forecast rather than one over a
+     * disk it picked.
+     */
+    public function testAnUnresolvedReaderMeasuresNothing(): void
+    {
+        $reader = new LogStoreReader(null);
+
+        $this->assertNull($reader->filesystemFreeBytes());
+        $this->assertNull($reader->filesystemTotalBytes());
+    }
+
+    /**
+     * A named directory that is not there is the same answer, and it is asked BEFORE the
+     * primitives so a missing path never reaches them as a warning.
+     */
+    public function testADirectoryThatIsNotThereMeasuresNothing(): void
+    {
+        $reader = new LogStoreReader($this->dir . DIRECTORY_SEPARATOR . 'gone');
+
+        $this->assertNull($reader->filesystemFreeBytes());
+        $this->assertNull($reader->filesystemTotalBytes());
+    }
+
+    /**
      * Writes one file of the given size into the log root.
      *
      * @param string $name Basename to write

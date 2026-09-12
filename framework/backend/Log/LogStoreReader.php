@@ -152,6 +152,63 @@ final class LogStoreReader
     }
 
     /**
+     * Free bytes on the filesystem holding the log root (HIL-869).
+     *
+     * Measured on the node that owns the directory, because no other machine knows anything about
+     * this one's filesystem — the same reason the absolute log root itself rides on the node index
+     * ({@see NodeLogIndex}). The overview turns it, the volume beside it and the growth rate into
+     * "the threshold is N days away".
+     *
+     * @return ?int Free bytes, or null when the directory is unnamed, absent, or the filesystem does not answer
+     */
+    public function filesystemFreeBytes(): ?int
+    {
+        $directory = $this->measurableDirectory();
+        if ($directory === null) {
+            return null;
+        }
+
+        $free = disk_free_space($directory);
+
+        return $free === false ? null : (int)$free;
+    }
+
+    /**
+     * Whole size of that same filesystem, which is what a percentage threshold is taken of.
+     *
+     * @return ?int Total bytes, or null when the directory is unnamed, absent, or the filesystem does not answer
+     */
+    public function filesystemTotalBytes(): ?int
+    {
+        $directory = $this->measurableDirectory();
+        if ($directory === null) {
+            return null;
+        }
+
+        $total = disk_total_space($directory);
+
+        return $total === false ? null : (int)$total;
+    }
+
+    /**
+     * The log root when it can be asked about its filesystem at all.
+     *
+     * Asked before either measurement rather than suppressing what the primitives say about a
+     * missing path: an unresolved or absent directory is the ordinary state of an installation
+     * whose environment names no log file, and both readings answer "not known" for it.
+     *
+     * @return ?string Log root that exists, or null when there is nothing to measure
+     */
+    private function measurableDirectory(): ?string
+    {
+        if ($this->logDirectory === null || !is_dir($this->logDirectory)) {
+            return null;
+        }
+
+        return $this->logDirectory;
+    }
+
+    /**
      * Whether a live stream carries failures — worker stderr, every ERROR level, and nothing else.
      *
      * Two names qualify, and for two different reasons. Any stream ending in

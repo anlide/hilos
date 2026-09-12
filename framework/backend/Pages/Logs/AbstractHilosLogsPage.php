@@ -152,9 +152,23 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     private static ?int $logsOverviewBatchesDueForTakeout = null;
 
     /**
+     * @var ?int Free bytes on the log filesystem of a single-node installation (HIL-869); null in
+     *     a cluster, where every node answers for its own disk in its own row, and null when the
+     *     filesystem did not answer
+     */
+    private static ?int $logsOverviewFilesystemFreeBytes = null;
+
+    /** @var ?int Whole size of that same filesystem; null in a cluster or when not known */
+    private static ?int $logsOverviewFilesystemTotalBytes = null;
+
+    /** @var ?int Share of the volume that installation keeps free, in percent; null in a cluster */
+    private static ?int $logsOverviewFreeSpaceThresholdPercent = null;
+
+    /**
      * @var list<array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
-     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int}> Rows of the
-     *     per-node table, named nodes only; empty in a single-node installation
+     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
+     *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}>
+     *     Rows of the per-node table, named nodes only; empty in a single-node installation
      */
     private static array $logsOverviewNodes = [];
 
@@ -311,18 +325,50 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
 
         $batchesDueForTakeout = 0;
         $nodes = [];
+        // Cleared before the walk rather than beside the other scalars above: only a nameless slot
+        // ever fills them, so in a cluster they stay null and the disks are read out of the rows.
+        self::$logsOverviewFilesystemFreeBytes = null;
+        self::$logsOverviewFilesystemTotalBytes = null;
+        self::$logsOverviewFreeSpaceThresholdPercent = null;
         foreach ($index->nodes() as $slot) {
             $due = self::batchesDueOf($slot->index);
             // Summed over every slot, the nameless one included: a single-node installation draws
             // no table, and the banner above it still has to say the batches are waiting.
             $batchesDueForTakeout += $due;
-            if ($slot->nodeId !== null) {
-                $nodes[] = self::nodeRow($slot->nodeId, $slot->index, $due);
+            if ($slot->nodeId === null) {
+                self::fillFreeSpaceHeader($slot->index);
+
+                continue;
             }
+            $nodes[] = self::nodeRow($slot->nodeId, $slot->index, $due);
         }
         self::$logsOverviewBatchesDueForTakeout = $batchesDueForTakeout;
         self::$logsOverviewNodes = $nodes;
         self::fillRecentErrors($index->nodes(), time());
+    }
+
+    /**
+     * Copies the disk figures of the one slot that has no name into the header (HIL-869).
+     *
+     * The mirror image of {@see self::nodeRow()}, and the reason there are two places at all: a
+     * single-node installation draws no table, so a figure only its row could carry would never
+     * reach the screen. Exactly one half is ever filled, the way the node list itself is empty in
+     * precisely that installation.
+     *
+     * A node that could not be read leaves all three null, including the threshold it would have
+     * resolved: a reading nobody took has no threshold to be judged against.
+     *
+     * @param NodeLogIndex $index Index of the nameless slot, as that node last reported it
+     */
+    private static function fillFreeSpaceHeader(NodeLogIndex $index): void
+    {
+        if (!$index->available) {
+            return;
+        }
+
+        self::$logsOverviewFilesystemFreeBytes = $index->filesystemFreeBytes;
+        self::$logsOverviewFilesystemTotalBytes = $index->filesystemTotalBytes;
+        self::$logsOverviewFreeSpaceThresholdPercent = $index->freeSpaceThresholdPercent;
     }
 
     /**
@@ -336,7 +382,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @param NodeLogIndex $index That node's index, as it last reported it
      * @param int $batchesDue Batches this node reported as past their retention, counted by the caller
      * @return array{nodeId: string, available: bool, lastRotationAt: ?string, liveBytes: ?int,
-     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int} Row of the table
+     *     archiveBytes: ?int, growthBytesPerDay: ?int, batchesDueForTakeout: ?int,
+     *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}
+     *     Row of the table
      */
     private static function nodeRow(string $nodeId, NodeLogIndex $index, int $batchesDue): array
     {
@@ -349,6 +397,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
                 HilosLogsOverviewSignalData::archiveBytes => null,
                 HilosLogsOverviewSignalData::growthBytesPerDay => null,
                 HilosLogsOverviewSignalData::batchesDueForTakeout => null,
+                HilosLogsOverviewSignalData::filesystemFreeBytes => null,
+                HilosLogsOverviewSignalData::filesystemTotalBytes => null,
+                HilosLogsOverviewSignalData::freeSpaceThresholdPercent => null,
             ];
         }
 
@@ -362,6 +413,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             HilosLogsOverviewSignalData::archiveBytes => $archiveBytes,
             HilosLogsOverviewSignalData::growthBytesPerDay => self::growthOf($index),
             HilosLogsOverviewSignalData::batchesDueForTakeout => $batchesDue,
+            HilosLogsOverviewSignalData::filesystemFreeBytes => $index->filesystemFreeBytes,
+            HilosLogsOverviewSignalData::filesystemTotalBytes => $index->filesystemTotalBytes,
+            HilosLogsOverviewSignalData::freeSpaceThresholdPercent => $index->freeSpaceThresholdPercent,
         ];
     }
 
@@ -643,6 +697,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewKeysWithoutGrowthWindow = null;
         self::$logsOverviewBatchesDueForTakeout = null;
         self::$logsOverviewNodes = [];
+        self::$logsOverviewFilesystemFreeBytes = null;
+        self::$logsOverviewFilesystemTotalBytes = null;
+        self::$logsOverviewFreeSpaceThresholdPercent = null;
         self::$logsOverviewRecentErrors = [];
         self::$logsOverviewRecentErrorsCapped = false;
     }
@@ -683,6 +740,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             nodes: self::$logsOverviewNodes,
             recentErrors: self::$logsOverviewRecentErrors,
             recentErrorsCapped: self::$logsOverviewRecentErrorsCapped,
+            filesystemFreeBytes: self::$logsOverviewFilesystemFreeBytes,
+            filesystemTotalBytes: self::$logsOverviewFilesystemTotalBytes,
+            freeSpaceThresholdPercent: self::$logsOverviewFreeSpaceThresholdPercent,
         );
     }
 

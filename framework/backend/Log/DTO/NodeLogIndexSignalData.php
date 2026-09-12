@@ -11,6 +11,7 @@ use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Log\NodeLogIndex;
@@ -84,6 +85,15 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Payload key: last failures written to the reporting node's live error streams, newest first. */
     public const string recentErrors = 'recentErrors';
+
+    /** Payload key: free bytes on the filesystem holding the reporting node's log root, absent when not known. */
+    public const string filesystemFreeBytes = 'filesystemFreeBytes';
+
+    /** Payload key: whole size in bytes of that same filesystem, absent when not known. */
+    public const string filesystemTotalBytes = 'filesystemTotalBytes';
+
+    /** Payload key: share of the volume the reporting node keeps free, in percent. */
+    public const string freeSpaceThresholdPercent = 'freeSpaceThresholdPercent';
 
     /** Batch row key: Unix timestamp of the rotation folder. */
     public const string timestamp = 'timestamp';
@@ -165,6 +175,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on the reporting node
      * @param list<int> $dueBatchTimestamps Batches the reporting node's retention rule recommends carrying off, ascending
      * @param list<LogErrorEntry> $recentErrors Last failures written to the reporting node's live error streams, newest first
+     * @param ?int $filesystemFreeBytes Free bytes on the filesystem holding the log root, or null when not known
+     * @param ?int $filesystemTotalBytes Whole size of that filesystem in bytes, or null when not known
+     * @param ?int $freeSpaceThresholdPercent Share of the volume the node keeps free, or null when it did not say
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -178,6 +191,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         public readonly int $takeoutUndoWindowSeconds = 0,
         public readonly array $dueBatchTimestamps = [],
         public readonly array $recentErrors = [],
+        public readonly ?int $filesystemFreeBytes = null,
+        public readonly ?int $filesystemTotalBytes = null,
+        public readonly ?int $freeSpaceThresholdPercent = null,
     ) {
     }
 
@@ -201,6 +217,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             takeoutUndoWindowSeconds: $index->takeoutUndoWindowSeconds,
             dueBatchTimestamps: $index->dueBatchTimestamps,
             recentErrors: $index->recentErrors,
+            filesystemFreeBytes: $index->filesystemFreeBytes,
+            filesystemTotalBytes: $index->filesystemTotalBytes,
+            freeSpaceThresholdPercent: $index->freeSpaceThresholdPercent,
         );
     }
 
@@ -233,6 +252,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
                 static fn (LogErrorEntry $entry): array => self::errorToArray($entry),
                 $this->recentErrors,
             ),
+            self::filesystemFreeBytes => $this->filesystemFreeBytes,
+            self::filesystemTotalBytes => $this->filesystemTotalBytes,
+            self::freeSpaceThresholdPercent => $this->freeSpaceThresholdPercent,
         ];
     }
 
@@ -244,7 +266,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * cluster picture that no node ever measured. Two fields are allowed to be absent and neither
      * is a measurement: {@see self::nodeId}, because a single-node installation has no id to name
      * itself with, and {@see self::dueBatchTimestamps}, because a node predating that key still
-     * reports an index worth drawing.
+     * reports an index worth drawing. The three free-space fields are absent for both reasons at
+     * once (HIL-869): a node predating them says nothing, and a node that has them says nothing
+     * about a filesystem that did not answer.
      *
      * @param array<string, mixed> $data Wire form of one node's index
      * @return static Restored payload
@@ -280,6 +304,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             takeoutUndoWindowSeconds: self::requireInt($data, self::takeoutUndoWindowSeconds),
             dueBatchTimestamps: self::dueFromArray($data),
             recentErrors: self::errorsFromArray($data),
+            filesystemFreeBytes: self::optionalInt($data, self::filesystemFreeBytes),
+            filesystemTotalBytes: self::optionalInt($data, self::filesystemTotalBytes),
+            freeSpaceThresholdPercent: self::optionalInt($data, self::freeSpaceThresholdPercent),
         );
     }
 
@@ -302,6 +329,12 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             takeoutUndoWindowSeconds: $this->takeoutUndoWindowSeconds,
             dueBatchTimestamps: $this->dueBatchTimestamps,
             recentErrors: $this->recentErrors,
+            filesystemFreeBytes: $this->filesystemFreeBytes,
+            filesystemTotalBytes: $this->filesystemTotalBytes,
+            // A node predating the key said nothing about its threshold, and the index carries the
+            // framework's own share for it - the same value that node was running on.
+            freeSpaceThresholdPercent: $this->freeSpaceThresholdPercent
+                ?? LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
         );
     }
 

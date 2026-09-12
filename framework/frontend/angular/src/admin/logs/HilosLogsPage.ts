@@ -32,6 +32,7 @@ import {
   logsOverviewBatchesNote,
   logsOverviewErrorOrigin,
   logsOverviewErrorPath,
+  logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
   logsOverviewRecentErrors,
@@ -97,6 +98,18 @@ import { HilosLink } from '../../HilosLink.js'
                   data-id="hilos-logs-growth-note"
                 >
                   {{ note }}
+                </div>
+              }
+              <!-- Last of the three on purpose: the note above qualifies the
+              figure, and this line says what the figure MEANS for the disk. The
+              consequence is read after the caveat, and it is shown even while the
+              caveat stands - the rate is there to divide by either way. -->
+              @if (growthForecast(); as forecast) {
+                <div
+                  class="small text-body-secondary"
+                  data-id="hilos-logs-growth-forecast"
+                >
+                  {{ forecast }}
                 </div>
               }
             </div>
@@ -443,6 +456,9 @@ export class HilosLogsPage {
   )
   protected readonly growthNote = computed(() =>
     logsOverviewGrowthNote(this.overview()),
+  )
+  protected readonly growthForecast = computed(() =>
+    logsOverviewForecastNote(this.overview()),
   )
 
   // The panel of last failures. It is drawn only where there ARE figures: saying
