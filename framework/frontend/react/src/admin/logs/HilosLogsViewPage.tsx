@@ -63,6 +63,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
   skipped: 'bi-fast-forward',
   dropped: 'bi-scissors',
   stopped: 'bi-stop-circle',
+  anchorMissing: 'bi-geo-alt',
 }
 
 /**
@@ -496,9 +497,23 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                   <span>{row.text}</span>
                 </div>
               ) : (
-                <div key={row.key} data-id="hilos-log-entry">
+                // The entry a link opened the viewer on is framed so the eye lands on
+                // it; it comes first on its page, so nothing has to scroll to it.
+                <div
+                  key={row.key}
+                  data-id="hilos-log-entry"
+                  className={
+                    row.anchored
+                      ? 'border border-primary rounded-1 bg-primary-subtle'
+                      : undefined
+                  }
+                  aria-current={row.anchored ? 'location' : undefined}
+                >
                   <div
                     className={`d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4 border-${logLevelVariant(row.level)}${row.orphan ? ' opacity-75' : ''}`}
+                    data-id={
+                      row.anchored ? 'hilos-log-entry-anchor' : undefined
+                    }
                   >
                     <span
                       className={`fw-semibold text-nowrap text-${logLevelVariant(row.level)}`}

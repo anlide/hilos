@@ -67,6 +67,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
   skipped: 'bi-fast-forward',
   dropped: 'bi-scissors',
   stopped: 'bi-stop-circle',
+  anchorMissing: 'bi-geo-alt',
 }
 
 /** The framework log viewer: one file of one node, with its live tail. */
@@ -308,13 +309,26 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
                   <span>{{ row.text }}</span>
                 </div>
               } @else {
-                <div data-id="hilos-log-entry">
+                <!-- The entry a link opened the viewer on is framed so the eye lands on it;
+                it comes first on its page, so nothing has to scroll to it. -->
+                <div
+                  data-id="hilos-log-entry"
+                  [class]="
+                    row.anchored
+                      ? 'border border-primary rounded-1 bg-primary-subtle'
+                      : ''
+                  "
+                  [attr.aria-current]="row.anchored ? 'location' : null"
+                >
                   <div
                     class="d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4"
                     [class]="
                       'border-' +
                       levelVariant(row.level) +
                       (row.orphan ? ' opacity-75' : '')
+                    "
+                    [attr.data-id]="
+                      row.anchored ? 'hilos-log-entry-anchor' : null
                     "
                   >
                     <span

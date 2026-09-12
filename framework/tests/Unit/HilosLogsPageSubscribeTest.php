@@ -6,8 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
@@ -24,8 +24,8 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogRecentEntry;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
@@ -556,6 +556,121 @@ final class HilosLogsPageSubscribeTest extends TestCase
     }
 
     /**
+     * The warnings tab asks the same question of the whole installation, so every node's ring is one
+     * list, ordered by time, and it does not spill into the errors tab beside it (HIL-868).
+     */
+    public function testTheRecentWarningsOfEveryNodeAreOneListNewestFirst(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', recentWarnings: [self::failure(120, 'worker-0.log', message: 'the older one')]),
+            self::nodeSlot('node-2', recentWarnings: [self::failure(30, 'daemon.log', message: 'the newer one')]),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(
+            ['the newer one', 'the older one'],
+            array_column($overview->recentWarnings, HilosLogsOverviewSignalData::message),
+        );
+        $this->assertSame('node-2', $overview->recentWarnings[0][HilosLogsOverviewSignalData::nodeId]);
+        $this->assertFalse($overview->recentWarningsCapped);
+        $this->assertSame([], $overview->recentErrors);
+    }
+
+    /**
+     * The hour is the page's for warnings too: one clock cuts both tabs.
+     */
+    public function testAWarningOlderThanTheWindowIsCutOff(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1', recentWarnings: [
+            self::failure(60, 'worker-0.log', message: 'inside the window'),
+            self::failure(self::AN_HOUR_IN_SECONDS + 60, 'worker-0.log', message: 'older than the window'),
+        ]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $this->assertSame(
+            ['inside the window'],
+            array_column($this->overview()->recentWarnings, HilosLogsOverviewSignalData::message),
+        );
+    }
+
+    /**
+     * Each tab counts what it shows: warnings past the limit raise the warnings flag, and the errors
+     * tab, holding one row, still says one.
+     */
+    public function testAWarningListCutAtTheLimitRaisesItsOwnFlagAlone(): void
+    {
+        $warnings = [];
+        for ($index = 0; $index < 12; $index++) {
+            $warnings[] = self::failure($index + 1, 'worker-0.log', message: "warning {$index}");
+        }
+        $this->fileThePicture(self::nodeSlot(
+            'node-1',
+            recentErrors: [self::failure(30, 'worker-0.error.log', message: 'the only failure')],
+            recentWarnings: $warnings,
+        ));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertCount(10, $overview->recentWarnings);
+        $this->assertTrue($overview->recentWarningsCapped);
+        $this->assertSame('warning 0', $overview->recentWarnings[0][HilosLogsOverviewSignalData::message]);
+        $this->assertCount(1, $overview->recentErrors);
+        $this->assertFalse($overview->recentErrorsCapped);
+    }
+
+    /**
+     * A single-node installation has warnings to show as well, under the empty name the viewer
+     * address reads as "here".
+     */
+    public function testAWarningOnAnUnnamedNodeCarriesTheEmptyNodeId(): void
+    {
+        $this->fileThePicture(self::nodeSlot(null, recentWarnings: [self::failure(30, 'daemon.log', message: 'slow')]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertCount(1, $overview->recentWarnings);
+        $this->assertSame(
+            HilosLogsOverviewSignalData::SELF_NODE_ID,
+            $overview->recentWarnings[0][HilosLogsOverviewSignalData::nodeId],
+        );
+    }
+
+    /**
+     * The fingerprint is built from the payload, so a picture in which ONLY a warning arrived is a
+     * changed picture and the tick sends it.
+     */
+    public function testATickPushesWhenOnlyTheRecentWarningsChanged(): void
+    {
+        $this->fileThePicture(self::nodeSlot('node-1', recentWarnings: [
+            self::failure(120, 'worker-0.log', message: 'the first one'),
+        ]));
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->drainTheQueue();
+
+        $this->fileThePicture(self::nodeSlot('node-1', recentWarnings: [
+            self::failure(30, 'worker-0.log', message: 'and then another'),
+            self::failure(120, 'worker-0.log', message: 'the first one'),
+        ]));
+        usleep(self::PAST_THE_TICK_THROTTLE_MICROSECONDS);
+        AbstractHilosLogsPage::onAgentTick(new LogsPageSubscribeTestAgent());
+
+        $this->assertSame(
+            ['and then another', 'the first one'],
+            array_column($this->overview()->recentWarnings, HilosLogsOverviewSignalData::message),
+        );
+    }
+
+    /**
      * Subscribing counts the connection as a viewer of the section, which is the only thing that
      * makes the aggregator send anything: without it the mirror would stay empty for good.
      */
@@ -770,7 +885,8 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @param list<LogKeySummary> $keys Streams the node holds, live and archived together
      * @param array<string, ?int> $growthBytesPerDay Stream → bytes over the last day, null until its window fills
      * @param list<int> $due Batches this node's own retention rule recommends carrying off
-     * @param list<LogErrorEntry> $recentErrors Failures the node read off the tails of its live error streams
+     * @param list<LogRecentEntry> $recentErrors Failures the node read off the tails of its live error streams
+     * @param list<LogRecentEntry> $recentWarnings Warnings the node found in its live streams
      * @param ?int $filesystemFreeBytes Free bytes this node measured on its log filesystem
      * @param ?int $filesystemTotalBytes Whole size of that filesystem as this node measured it
      * @param int $freeSpaceThresholdPercent Share of the volume this node resolved as its threshold
@@ -784,6 +900,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         array $growthBytesPerDay = [],
         array $due = [],
         array $recentErrors = [],
+        array $recentWarnings = [],
         ?int $filesystemFreeBytes = null,
         ?int $filesystemTotalBytes = null,
         int $freeSpaceThresholdPercent = LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,
@@ -800,6 +917,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
                 growthBytesPerDay: $growthBytesPerDay,
                 dueBatchTimestamps: $due,
                 recentErrors: $recentErrors,
+                recentWarnings: $recentWarnings,
                 filesystemFreeBytes: $filesystemFreeBytes,
                 filesystemTotalBytes: $filesystemTotalBytes,
                 freeSpaceThresholdPercent: $freeSpaceThresholdPercent,
@@ -818,15 +936,15 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @param string $stream Basename of the stream it was written to
      * @param ?int $traceFrames Frames in its stack trace, null when it carries none
      * @param string $message Line text as the node cut it
-     * @return LogErrorEntry Failure as the node reported it
+     * @return LogRecentEntry Failure as the node reported it
      */
     private static function failure(
         int $secondsAgo,
         string $stream,
         ?int $traceFrames = null,
         string $message = 'something went wrong',
-    ): LogErrorEntry {
-        return new LogErrorEntry((time() - $secondsAgo) * TimeConstants::MS_PER_SECOND, $stream, $message, $traceFrames);
+    ): LogRecentEntry {
+        return new LogRecentEntry((time() - $secondsAgo) * TimeConstants::MS_PER_SECOND, $stream, $message, $traceFrames);
     }
 
     /**

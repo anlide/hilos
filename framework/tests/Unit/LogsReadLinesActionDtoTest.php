@@ -126,6 +126,36 @@ final class LogsReadLinesActionDtoTest extends TestCase
         LogsReadLinesActionDTO::fromArray($this->live([LogsReadLinesActionDTO::cursor => -1]));
     }
 
+    public function testAnAnchorIsCarriedAsTheMomentOfTheEntry(): void
+    {
+        $dto = LogsReadLinesActionDTO::fromArray($this->live([LogsReadLinesActionDTO::anchorAtMs => 1788000000250]));
+
+        $this->assertSame(1788000000250, $dto->anchorAtMs);
+        $this->assertNull($dto->cursor);
+        $this->assertSame(1788000000250, $dto->toArray()[LogsReadLinesActionDTO::anchorAtMs]);
+    }
+
+    public function testAnAnchorBeforeTheEpochIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        LogsReadLinesActionDTO::fromArray($this->live([LogsReadLinesActionDTO::anchorAtMs => -1]));
+    }
+
+    /**
+     * A cursor continues a page and an anchor opens one, so a request carrying both names two
+     * different pages, and neither is picked for it (HIL-868).
+     */
+    public function testACursorAndAnAnchorTogetherAreRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        LogsReadLinesActionDTO::fromArray($this->live([
+            LogsReadLinesActionDTO::cursor => 4096,
+            LogsReadLinesActionDTO::anchorAtMs => 1788000000250,
+        ]));
+    }
+
     /**
      * Builds a minimal live read, overridden field by field.
      *

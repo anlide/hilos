@@ -187,20 +187,37 @@ final class LogStoreAgent extends AbstractAgent
     private const int RAW_STREAM_COMPLAINT_BYTES = 16 * self::BYTES_PER_MEBIBYTE;
 
     /**
-     * @var int Entries kept from the tail of EACH error stream, and also the length of the merged
-     *     list this node reports. Per stream and not per node only: a stream is re-read on its own
-     *     when it grows, so a tail shorter than the merged list would let one busy stream push
-     *     another's entries out of a list that is still supposed to hold the newest ten.
+     * @var int Entries kept per stream by EACH feed of the recent-failures panel — an error
+     *     stream's tail, a stream's warning ring — and also the length of each merged list this
+     *     node reports. Per stream and not per node only: a stream is re-read on its own when it
+     *     grows, so a tail shorter than the merged list would let one busy stream push another's
+     *     entries out of a list that is still supposed to hold the newest ten. One limit for both
+     *     feeds, because the panel is one and two limits would part ways on the first edit.
      */
-    private const int ERROR_TAIL_MAX_ENTRIES = 10;
+    private const int RECENT_TAIL_MAX_ENTRIES = 10;
 
     /**
-     * @var int Characters of an error message that leave this node. One such line weighed four
-     *     kilobytes on a live stand — the stack trace rides inside it as a JSON context — and ten
-     *     of those from every node every few seconds would sink the index frame they travel in.
-     *     The whole text stays readable in the viewer the panel's row leads to.
+     * @var int Characters of a message that leave this node, errors and warnings alike. One such
+     *     line weighed four kilobytes on a live stand — the stack trace rides inside it as a JSON
+     *     context — and ten of those from every node every few seconds would sink the index frame
+     *     they travel in. The whole text stays readable in the viewer the panel's row leads to.
      */
-    private const int ERROR_MESSAGE_MAX_CHARS = 300;
+    private const int RECENT_MESSAGE_MAX_CHARS = 300;
+
+    /**
+     * @var int Bytes one warnings scan reads back from the end of a stream (HIL-868). Exactly the
+     *     step {@see LogLineReader} grows a window by, so a scan is one read. Twenty live streams
+     *     that all moved within one walk cost about 1.3 MB; that is the ceiling and not the usual
+     *     price, since a stream whose weight did not move is not read at all.
+     */
+    private const int WARNING_SCAN_WINDOW_BYTES = 65536;
+
+    /**
+     * @var int Furthest an anchored read searches back from the end of a file for the entry it
+     *     names (HIL-868). Two orders of magnitude above the warnings scan on purpose: this is one
+     *     read on a person's click, not work repeated for every stream every few seconds.
+     */
+    private const int ANCHOR_SEARCH_MAX_BYTES = 8388608;
 
     private LogStoreReader $reader;
 
@@ -264,16 +281,24 @@ final class LogStoreAgent extends AbstractAgent
     /** @var array<string, true> Raw stream basename → its size has already been complained about */
     private array $rawStreamComplained = [];
 
-    /** @var LogErrorTailReader Reader of the error-stream tails the overview panel draws */
-    private LogErrorTailReader $errorTailReader;
+    /** @var LogRecentTailReader Reader of the stream tails both feeds of the overview panel are made of */
+    private LogRecentTailReader $recentTailReader;
 
     /**
-     * @var array<string, array{bytes: int, entries: list<LogErrorEntry>}> Error stream basename →
+     * @var array<string, array{bytes: int, entries: list<LogRecentEntry>}> Error stream basename →
      *     its size when the tail was last read, and the tail read then. The size is the tripwire:
      *     a stream whose weight has not moved holds the same last lines, and a backward scan of
      *     every error stream every few seconds would be paid for silence.
      */
     private array $errorTails = [];
+
+    /**
+     * @var array<string, array{bytes: int, entries: list<LogRecentEntry>}> Stream basename → its
+     *     size when it was last scanned for warnings, and the warnings it has yielded since it
+     *     appeared (HIL-868). A ring and not a tail: each scan reads one window back from the end,
+     *     and a warning the file has grown past stays here rather than leaving the panel.
+     */
+    private array $warningRings = [];
 
     /**
      * Builds the reader and the rotator, learns which node this is, and takes the first full walk
@@ -286,7 +311,7 @@ final class LogStoreAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->reader = LogStoreReader::fromEnv();
-        $this->errorTailReader = new LogErrorTailReader(LogLineReader::fromEnv(), self::ERROR_MESSAGE_MAX_CHARS);
+        $this->recentTailReader = new LogRecentTailReader(LogLineReader::fromEnv(), self::RECENT_MESSAGE_MAX_CHARS);
         try {
             $this->rotator = LogRotator::forRuntime();
         } catch (EnvException) {
@@ -878,7 +903,7 @@ final class LogStoreAgent extends AbstractAgent
                 $request->acceptKey,
                 $request->action,
                 $request->requestId,
-                LogsReadLinesReplyDTO::fromPage($this->readPage($request)),
+                $this->readPage($request),
             );
         } catch (Throwable $e) {
             $this->logAgentError('Log read failed: ' . $e->getMessage());
@@ -887,31 +912,53 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Reads the requested slice through the shared reader.
+     * Reads the requested slice through the shared reader and shapes the reply.
      *
-     * Reading runs backwards and only backwards: the first page and the Earlier button are the
-     * same query, with and without a cursor. Following the end of a live file is a different
-     * mechanism and a different leaf (HIL-389).
+     * An ordinary read runs backwards: the first page and the Earlier button are the same query,
+     * with and without a cursor. Following the end of a live file is a different mechanism and a
+     * different leaf (HIL-389).
+     *
+     * A read opened on an anchor (HIL-868) first finds the line the entry was written on, searching
+     * back no further than {@see self::ANCHOR_SEARCH_MAX_BYTES}, and reads FORWARD from it with the
+     * same page size, so the entry comes first and what happened next follows under it. Not finding
+     * it is not a failure — the rotation took the file, the entry lies beyond the search, or the
+     * moment is newer than the file — and all three answer with the ordinary page from the tail,
+     * flagged as not found.
      *
      * @param LogsReadLinesSignalData $request Read request naming the file and the slice
-     * @return LogLinePage Matched lines, or an unavailable page when the request names no file
+     * @return LogsReadLinesReplyDTO Reply carrying the page, an unavailable one when the request names no file
      */
-    private function readPage(LogsReadLinesSignalData $request): LogLinePage
+    private function readPage(LogsReadLinesSignalData $request): LogsReadLinesReplyDTO
     {
         $relativePath = $this->relativePath($request);
         if ($relativePath === null) {
             $this->logAgentWarning("Ignoring a log read that names no file: source '{$request->source}'");
 
-            return LogLinePage::unavailable();
+            return LogsReadLinesReplyDTO::fromPage(LogLinePage::unavailable());
         }
 
-        return LogLineReader::fromEnv()->read($relativePath, new LogReadQuery(
+        $reader = LogLineReader::fromEnv();
+        $anchorOffset = $request->anchorAtMs === null
+            ? null
+            : $reader->locate($relativePath, $request->anchorAtMs, self::ANCHOR_SEARCH_MAX_BYTES);
+        if ($anchorOffset !== null) {
+            return LogsReadLinesReplyDTO::fromAnchoredPage(
+                $reader->read($relativePath, new LogReadQuery(LogReadQuery::ANCHOR_HEAD, $anchorOffset, self::READ_PAGE_LINES)),
+                $anchorOffset,
+            );
+        }
+
+        $page = $reader->read($relativePath, new LogReadQuery(
             LogReadQuery::ANCHOR_TAIL,
             $request->cursor,
             self::READ_PAGE_LINES,
             $request->level,
             $request->substring,
         ));
+
+        return $request->anchorAtMs === null
+            ? LogsReadLinesReplyDTO::fromPage($page)
+            : LogsReadLinesReplyDTO::fromMissedAnchor($page);
     }
 
     /**
@@ -1451,6 +1498,7 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         $this->refreshErrorTails($snapshot);
+        $this->refreshWarningRings($snapshot);
 
         $previous = $this->index;
         $this->index = new NodeLogIndex(
@@ -1464,7 +1512,8 @@ final class LogStoreAgent extends AbstractAgent
             logDirectory: $this->reader->logDirectory(),
             takeoutUndoWindowSeconds: $this->resolver->takeoutUndoWindowSeconds(),
             dueBatchTimestamps: $this->judgeDueBatches($batchTimestamps, $sampledAt),
-            recentErrors: $this->recentErrors(),
+            recentErrors: self::recentEntries($this->errorTails),
+            recentWarnings: self::recentEntries($this->warningRings),
             filesystemFreeBytes: $this->reader->filesystemFreeBytes(),
             filesystemTotalBytes: $this->reader->filesystemTotalBytes(),
             freeSpaceThresholdPercent: $this->resolver->freeSpaceThresholdPercent(),
@@ -1519,7 +1568,7 @@ final class LogStoreAgent extends AbstractAgent
             }
             $this->errorTails[$basename] = [
                 'bytes' => $bytes,
-                'entries' => $this->errorTailReader->readStream($basename, self::ERROR_TAIL_MAX_ENTRIES),
+                'entries' => $this->recentTailReader->readStream($basename, self::RECENT_TAIL_MAX_ENTRIES),
             ];
         }
 
@@ -1531,7 +1580,100 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Merge the per-stream tails into the one list this node reports.
+     * Scan this node's live streams for warnings, keeping what each scan found in that stream's ring (HIL-868).
+     *
+     * A warning has no file of its own — it lands in the stream of whoever wrote it — so every live
+     * stream is scanned, except the raw pair beside the daemon's streams
+     * ({@see LogStoreReader::isRawStream()}), whose lines carry no stamp to order them by. As with the
+     * error tails, only a stream whose weight moved is read again, the weight coming from the walk
+     * that has just listed the files; the first walk after a start reads them all.
+     *
+     * A scan reads one window back from the end ({@see self::WARNING_SCAN_WINDOW_BYTES}) and no
+     * further: under a level filter a healthy stream holds no match at all, and the read would
+     * otherwise go on to the start of the file — for every stream, every walk. What that ceiling
+     * takes away is what the ring gives back: a warning found once stays in it while the file grows
+     * past. The price is named rather than hidden: when more than a window was written between two
+     * walks and a warning fell into the part never scanned, it is missed.
+     *
+     * A stream that vanished or got lighter — a rotation renamed it away and a new file took its
+     * name — takes its ring with it, and an unreadable store drops every ring, for the reasons
+     * {@see self::refreshErrorTails()} gives.
+     *
+     * @param LogStoreSnapshot $snapshot Snapshot of the walk this publish is about
+     */
+    private function refreshWarningRings(LogStoreSnapshot $snapshot): void
+    {
+        if (!$snapshot->available) {
+            $this->warningRings = [];
+
+            return;
+        }
+
+        $seen = [];
+        foreach (self::flattenLiveFiles($snapshot->liveFiles()) as $basename => $bytes) {
+            if ($this->reader->isRawStream($basename)) {
+                continue;
+            }
+            $seen[$basename] = true;
+            $known = $this->warningRings[$basename] ?? null;
+            if ($known !== null && $known['bytes'] === $bytes) {
+                continue;
+            }
+            $found = $this->recentTailReader->readStream(
+                $basename,
+                self::RECENT_TAIL_MAX_ENTRIES,
+                Logger::LEVEL_WARNING,
+                self::WARNING_SCAN_WINDOW_BYTES,
+            );
+            // A stream lighter than it was is a new file under the old name: what the ring held
+            // was read out of the one rotation took away.
+            $held = $known === null || $bytes < $known['bytes'] ? [] : $known['entries'];
+            $this->warningRings[$basename] = [
+                'bytes' => $bytes,
+                'entries' => self::mergeRing($found, $held),
+            ];
+        }
+
+        foreach (array_keys($this->warningRings) as $basename) {
+            if (!isset($seen[$basename])) {
+                unset($this->warningRings[$basename]);
+            }
+        }
+    }
+
+    /**
+     * Fold what a scan found into what a stream's ring already held.
+     *
+     * Merged rather than replaced, which is the whole point of the ring: the scan sees one window at
+     * the end of the file, and a warning the file has since grown past is outside that window but
+     * still happened. A line two neighboring windows both saw is one entry and not two, known by its
+     * moment and its text — the stream is the ring's own and needs no comparing.
+     *
+     * @param list<LogRecentEntry> $found Entries the scan found, newest first
+     * @param list<LogRecentEntry> $held Entries the ring held before the scan, newest first
+     *
+     * @return list<LogRecentEntry> Entries newest first, without repeats, at most {@see self::RECENT_TAIL_MAX_ENTRIES}
+     */
+    private static function mergeRing(array $found, array $held): array
+    {
+        $entries = [];
+        $seen = [];
+        foreach ([...$found, ...$held] as $entry) {
+            if (isset($seen[$entry->atMs][$entry->message])) {
+                continue;
+            }
+            $seen[$entry->atMs][$entry->message] = true;
+            $entries[] = $entry;
+        }
+
+        usort($entries, static fn (LogRecentEntry $first, LogRecentEntry $second): int => $second->atMs <=> $first->atMs);
+
+        return array_slice($entries, 0, self::RECENT_TAIL_MAX_ENTRIES);
+    }
+
+    /**
+     * Merge the per-stream lists of one feed — the error tails or the warning rings — into the one
+     * list this node reports for it.
      *
      * Newest first, and by stream name when two entries share a millisecond. The second key is
      * not decoration: without it two entries of the same millisecond swap places from walk to
@@ -1542,18 +1684,24 @@ final class LogStoreAgent extends AbstractAgent
      * by the page that merges every node, because three nodes cutting by three clocks would show
      * a different panel depending on whose frame arrived last.
      *
-     * @return list<LogErrorEntry> Entries newest first, at most {@see self::ERROR_TAIL_MAX_ENTRIES}
+     * Both feeds go through here and by the same rule (HIL-868): two answers to "which entries does
+     * this node report" would part ways on the first edit.
+     *
+     * @param array<string, array{bytes: int, entries: list<LogRecentEntry>}> $tails Stream basename →
+     *     what that stream last yielded to the feed
+     *
+     * @return list<LogRecentEntry> Entries newest first, at most {@see self::RECENT_TAIL_MAX_ENTRIES}
      */
-    private function recentErrors(): array
+    private static function recentEntries(array $tails): array
     {
         $entries = [];
-        foreach ($this->errorTails as $tail) {
+        foreach ($tails as $tail) {
             foreach ($tail['entries'] as $entry) {
                 $entries[] = $entry;
             }
         }
 
-        usort($entries, static function (LogErrorEntry $first, LogErrorEntry $second): int {
+        usort($entries, static function (LogRecentEntry $first, LogRecentEntry $second): int {
             if ($first->atMs !== $second->atMs) {
                 return $second->atMs <=> $first->atMs;
             }
@@ -1561,39 +1709,41 @@ final class LogStoreAgent extends AbstractAgent
             return strcmp($first->stream, $second->stream);
         });
 
-        return array_slice($entries, 0, self::ERROR_TAIL_MAX_ENTRIES);
+        return array_slice($entries, 0, self::RECENT_TAIL_MAX_ENTRIES);
     }
 
     /**
-     * Whether the tail of failures moved between two indexes (HIL-867).
+     * Whether one feed of the recent-failures panel moved between two indexes (HIL-867, HIL-868).
      *
-     * Its own axis for the same reason as the retention verdict: a new line in an error stream
+     * Each feed is an axis of its own for the same reason as the retention verdict: a new line in a stream
      * does grow the key that stream belongs to, but a live walk publishes the growth only once
      * the weight is re-measured, and a stream that gained a line after a rotation can weigh
      * exactly what it weighed a walk ago. Left out, the newest failure on the node would wait for
-     * whatever moves next — on a quiet installation, for the keepalive frame a minute later.
+     * whatever moves next — on a quiet installation, for the keepalive frame a minute later. The
+     * two feeds are two axes rather than one because they move independently, and one axis over
+     * both would be raised for a feed in which nothing happened.
      *
      * Compared on time, stream and text rather than on the whole entry: the frame count is read
      * out of the same line as the text, so it cannot move without it, and comparing it too would
      * only cost a field.
      *
-     * @param NodeLogIndex $previous Older index
-     * @param NodeLogIndex $current Newer index
+     * @param list<LogRecentEntry> $before Feed as the older index reported it
+     * @param list<LogRecentEntry> $after The same feed as the newer index reports it
      *
-     * @return bool Whether the reported list differs in length, order or content
+     * @return bool Whether the list differs in length, order or content
      */
-    private static function recentErrorsChanged(NodeLogIndex $previous, NodeLogIndex $current): bool
+    private static function recentEntriesDiffer(array $before, array $after): bool
     {
-        if (count($previous->recentErrors) !== count($current->recentErrors)) {
+        if (count($before) !== count($after)) {
             return true;
         }
 
-        foreach ($current->recentErrors as $position => $entry) {
-            $before = $previous->recentErrors[$position];
-            if ($before->atMs !== $entry->atMs || $before->stream !== $entry->stream) {
+        foreach ($after as $position => $entry) {
+            $held = $before[$position];
+            if ($held->atMs !== $entry->atMs || $held->stream !== $entry->stream) {
                 return true;
             }
-            if ($before->message !== $entry->message) {
+            if ($held->message !== $entry->message) {
                 return true;
             }
         }
@@ -1803,7 +1953,7 @@ final class LogStoreAgent extends AbstractAgent
 
     /**
      * Difference between two indexes: what appeared, grew, vanished, was confirmed, changed its
-     * retention verdict, moved the tail of failures, and whether the store changed side.
+     * retention verdict, moved either feed of the recent-failures panel, and whether the store changed side.
      *
      * @param NodeLogIndex $previous Older index
      * @param NodeLogIndex $current Newer index
@@ -1847,7 +1997,8 @@ final class LogStoreAgent extends AbstractAgent
             withdrawnBatchTimestamps: self::newlyWithdrawn($previous, $current),
             verdictChangedBatchTimestamps: self::verdictChanged($previous, $current),
             availabilityChanged: $previous->available !== $current->available,
-            recentErrorsChanged: self::recentErrorsChanged($previous, $current),
+            recentErrorsChanged: self::recentEntriesDiffer($previous->recentErrors, $current->recentErrors),
+            recentWarningsChanged: self::recentEntriesDiffer($previous->recentWarnings, $current->recentWarnings),
         );
     }
 

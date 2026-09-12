@@ -40,6 +40,12 @@ namespace Hilos\Log;
  * LIVE streams only, so a rotation empties it — the panel points an administrator at a file to
  * open, and after a rotation that file is no longer where the row leads.
  *
+ * {@see $recentWarnings} measures the same content and is gathered differently, which makes it
+ * incomplete by construction (HIL-868). A warning has no file of its own, so the node scans a
+ * window at the end of every live stream and keeps what each scan found; a warning written into
+ * a stretch no scan looked at — more than a window between two walks — never makes it here. It
+ * empties with a rotation for the reason the errors do.
+ *
  * {@see $filesystemFreeBytes} and {@see $filesystemTotalBytes} are about the DISK the store sits
  * on rather than about the store itself (HIL-869), and they ride here for the reason
  * {@see $logDirectory} does: a page worker holding the cluster picture knows its own filesystem
@@ -68,7 +74,8 @@ final class NodeLogIndex
      * @param ?string $logDirectory Absolute log root of this node, or null when the environment cannot name one
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on this node, 0 when it is not to wait
      * @param list<int> $dueBatchTimestamps Batches the retention rule recommends carrying off, ascending; empty when it recommends none
-     * @param list<LogErrorEntry> $recentErrors Last failures written to this node's live error streams, newest first
+     * @param list<LogRecentEntry> $recentErrors Last failures written to this node's live error streams, newest first
+     * @param list<LogRecentEntry> $recentWarnings Last warnings the node found in its live streams, newest first
      * @param ?int $filesystemFreeBytes Free bytes on the filesystem holding the log root, null when not known
      * @param ?int $filesystemTotalBytes Whole size of that filesystem in bytes, null when not known
      * @param int $freeSpaceThresholdPercent Percentage of the volume this node keeps as its free-space threshold
@@ -85,6 +92,7 @@ final class NodeLogIndex
         public readonly int $takeoutUndoWindowSeconds = 0,
         public readonly array $dueBatchTimestamps = [],
         public readonly array $recentErrors = [],
+        public readonly array $recentWarnings = [],
         public readonly ?int $filesystemFreeBytes = null,
         public readonly ?int $filesystemTotalBytes = null,
         public readonly int $freeSpaceThresholdPercent = LogSettingsCatalog::FREE_SPACE_THRESHOLD_FALLBACK_PERCENT,

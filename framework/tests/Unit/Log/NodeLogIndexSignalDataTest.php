@@ -7,8 +7,8 @@ namespace Hilos\Tests\Unit\Log;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogRecentEntry;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Log\NodeLogIndex;
@@ -178,8 +178,8 @@ final class NodeLogIndexSignalDataTest extends TestCase
             workers: [],
             growthBytesPerDay: [],
             recentErrors: [
-                new LogErrorEntry(self::T0 * 1000 + 250, 'worker-monopolistic-5.error.log', 'login action failed', 12),
-                new LogErrorEntry(self::T0 * 1000, 'daemon-error.log', 'watchdog mail is not configured', null),
+                new LogRecentEntry(self::T0 * 1000 + 250, 'worker-monopolistic-5.error.log', 'login action failed', 12),
+                new LogRecentEntry(self::T0 * 1000, 'daemon-error.log', 'watchdog mail is not configured', null),
             ],
         );
 
@@ -202,6 +202,48 @@ final class NodeLogIndexSignalDataTest extends TestCase
         $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
 
         $this->assertSame([], $restored->recentErrors);
+        $this->assertCount(1, $restored->batches);
+    }
+
+    /**
+     * The ring of warnings travels in the same frame and by the same row, null frame count included,
+     * and it does not bleed into the errors beside it (HIL-868).
+     */
+    public function testTheRingOfWarningsSurvivesTheRoundTrip(): void
+    {
+        $index = new NodeLogIndex(
+            nodeId: 'node-1',
+            available: true,
+            sampledAt: self::T0,
+            batches: [],
+            keys: [],
+            workers: [],
+            growthBytesPerDay: [],
+            recentWarnings: [
+                new LogRecentEntry(self::T0 * 1000 + 250, 'worker-monopolistic-5.log', 'slow query', null),
+                new LogRecentEntry(self::T0 * 1000, 'daemon.log', 'retrying', 3),
+            ],
+        );
+
+        $restored = $this->roundTrip($index);
+
+        $this->assertEquals($index->recentWarnings, $restored->recentWarnings);
+        $this->assertNull($restored->recentWarnings[0]->traceFrames);
+        $this->assertSame([], $restored->recentErrors);
+    }
+
+    /**
+     * A node running the build before the ring existed says nothing about warnings, and its frame is
+     * still a frame (HIL-868).
+     */
+    public function testAPayloadWithoutTheRingOfWarningsReadsAsNoWarnings(): void
+    {
+        $payload = $this->payload();
+        unset($payload[NodeLogIndexSignalData::recentWarnings]);
+
+        $restored = NodeLogIndexSignalData::fromArray($payload)->toIndex();
+
+        $this->assertSame([], $restored->recentWarnings);
         $this->assertCount(1, $restored->batches);
     }
 

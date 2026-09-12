@@ -23,6 +23,11 @@ use Hilos\Log\LogLinePage;
  * the receiver never rebuilds a class from it, so a nested DTO would be typing nobody reads.
  * Nothing derived travels either - no line numbers, no parsed time - because the reader does not
  * count them, and a number computed on this side would disagree with the file.
+ *
+ * A read opened on an anchor says whether the anchor was found ({@see $anchorFound}, HIL-868).
+ * Not finding it is a state as well, and the page is then the ordinary one from the tail: the
+ * flag is what lets the screen say this is not the place it asked for, rather than show the tail
+ * as if it were.
  */
 final class LogsReadLinesReplyDTO extends ActionReplyDTO
 {
@@ -38,6 +43,9 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
     /** Reply key: whether older matching lines remain beyond this page. */
     public const string hasMore = 'hasMore';
 
+    /** Reply key: whether the anchor the read asked for was found; null when it asked for none (HIL-868). */
+    public const string anchorFound = 'anchorFound';
+
     /** Line key: the line text, without its trailing newline. */
     public const string text = 'text';
 
@@ -52,12 +60,14 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
      * @param list<array{text: string, level: string, isContinuation: bool}> $lines Matched lines, oldest first
      * @param ?int $nextCursor Byte offset of the page before this one, or null when none remains
      * @param bool $hasMore Whether older matching lines remain beyond this page
+     * @param ?bool $anchorFound Whether the anchor the read asked for was found, or null when it asked for none
      */
     public function __construct(
         public readonly bool $readable,
         public readonly array $lines,
         public readonly ?int $nextCursor,
         public readonly bool $hasMore,
+        public readonly ?bool $anchorFound = null,
     ) {
     }
 
@@ -74,6 +84,50 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
             lines: self::linesFromPage($page),
             nextCursor: $page->nextCursor,
             hasMore: $page->hasMore,
+        );
+    }
+
+    /**
+     * Builds the reply from a page read FORWARD from the line an anchor was found on (HIL-868).
+     *
+     * The cursor is replaced, and the reason is the contract rather than the page: {@see $nextCursor}
+     * means "where to read back from for the page before this one", and the page before one that
+     * starts on the anchor ends exactly at the anchor. The Earlier button therefore works on it
+     * without knowing how the page was fetched, where the forward read's own cursor would point past
+     * the page instead of before it.
+     *
+     * @param LogLinePage $page Page read forward from the anchor, the anchor's own line first
+     * @param int $anchorOffset Byte offset of the line the anchor was found on
+     * @return self Reply carrying that page, found
+     */
+    public static function fromAnchoredPage(LogLinePage $page, int $anchorOffset): self
+    {
+        return new self(
+            readable: $page->readable,
+            lines: self::linesFromPage($page),
+            nextCursor: $anchorOffset > 0 ? $anchorOffset : null,
+            hasMore: $anchorOffset > 0,
+            anchorFound: true,
+        );
+    }
+
+    /**
+     * Builds the reply from the ordinary page from the tail that stands in for an anchor not found (HIL-868).
+     *
+     * The rotation carried the file off, the entry lies beyond what the search reads back, or the
+     * moment is newer than the file: all three answer alike, with the tail and the flag down.
+     *
+     * @param LogLinePage $page Page read backwards from the tail, unavailable one included
+     * @return self Reply carrying that page, not found
+     */
+    public static function fromMissedAnchor(LogLinePage $page): self
+    {
+        return new self(
+            readable: $page->readable,
+            lines: self::linesFromPage($page),
+            nextCursor: $page->nextCursor,
+            hasMore: $page->hasMore,
+            anchorFound: false,
         );
     }
 
@@ -132,6 +186,7 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
             lines: $lines,
             nextCursor: self::optionalInt($data, self::nextCursor),
             hasMore: self::requireBool($data, self::hasMore),
+            anchorFound: self::optionalBool($data, self::anchorFound),
         );
     }
 
@@ -145,6 +200,7 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
             self::lines => $this->lines,
             self::nextCursor => $this->nextCursor,
             self::hasMore => $this->hasMore,
+            self::anchorFound => $this->anchorFound,
         ];
     }
 }

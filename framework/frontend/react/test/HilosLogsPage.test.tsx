@@ -4,7 +4,7 @@ import { HilosPages, OVERVIEW_SIGNAL, createSignal } from '@hilos/core'
 import type {
   HilosConnection,
   HilosLogsOverview,
-  HilosLogsOverviewError,
+  HilosLogsOverviewRecentEntry,
   HilosLogsOverviewNode,
   HilosPageIdentity,
   HilosRouter,
@@ -51,6 +51,8 @@ function overview(
     nodes: [],
     recentErrors: [],
     recentErrorsCapped: false,
+    recentWarnings: [],
+    recentWarningsCapped: false,
     filesystemFreeBytes: null,
     filesystemTotalBytes: null,
     freeSpaceThresholdPercent: null,
@@ -58,10 +60,10 @@ function overview(
   }
 }
 
-/** One failure of the recent-errors panel. */
+/** One entry of the recent-failures panel. */
 function failure(
-  overrides: Partial<HilosLogsOverviewError> = {},
-): HilosLogsOverviewError {
+  overrides: Partial<HilosLogsOverviewRecentEntry> = {},
+): HilosLogsOverviewRecentEntry {
   return {
     nodeId: '',
     stream: 'worker-monopolistic-5.error.log',
@@ -283,12 +285,12 @@ describe('HilosLogsPage', () => {
     const { connection, push } = makeConnection()
     const container = mountPage(connection)
 
-    expect(byId(container, 'hilos-logs-recent-errors-empty')).toBeNull()
+    expect(byId(container, 'hilos-logs-recent-empty')).toBeNull()
 
     push(overview({ available: false }))
 
-    expect(byId(container, 'hilos-logs-recent-errors-empty')).toBeNull()
-    expect(byId(container, 'hilos-logs-recent-errors')).toBeNull()
+    expect(byId(container, 'hilos-logs-recent-empty')).toBeNull()
+    expect(byId(container, 'hilos-logs-recent')).toBeNull()
   })
 
   it('says the hour was quiet in words, rather than showing an empty list', () => {
@@ -297,13 +299,13 @@ describe('HilosLogsPage', () => {
 
     push(overview({ recentErrors: [] }))
 
-    expect(textOf(container, 'hilos-logs-recent-errors-empty')).toContain(
+    expect(textOf(container, 'hilos-logs-recent-empty')).toContain(
       'No errors in the last hour',
     )
-    expect(byId(container, 'hilos-logs-recent-errors')).toBeNull()
+    expect(byId(container, 'hilos-logs-recent-row')).toBeNull()
   })
 
-  it('leads a row into the viewer on the file that line is in', () => {
+  it('leads a row into the viewer on the line itself', () => {
     const { connection, push } = makeConnection()
     const container = mountPage(connection)
 
@@ -311,9 +313,9 @@ describe('HilosLogsPage', () => {
       overview({ recentErrors: [failure({ stream: 'worker-0.error.log' })] }),
     )
 
-    const row = byId(container, 'hilos-logs-recent-error')
+    const row = byId(container, 'hilos-logs-recent-row')
     expect(row?.getAttribute('href')).toBe(
-      '/hilos/logs/view/-/live/worker-0.error.log',
+      `/hilos/logs/view/-/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
     )
     expect(row?.textContent).toContain('login action failed')
   })
@@ -332,11 +334,67 @@ describe('HilosLogsPage', () => {
     )
 
     const badges = container.querySelectorAll(
-      '[data-id="hilos-logs-recent-error-trace"]',
+      '[data-id="hilos-logs-recent-row-trace"]',
     )
     expect(badges).toHaveLength(1)
     expect(badges[0].textContent).toContain('3')
-    expect(textOf(container, 'hilos-logs-recent-errors-count')).toBe('2')
+    expect(textOf(container, 'hilos-logs-recent-count-errors')).toBe('2')
+  })
+
+  it('draws both tabs, each counting its own list by its own flag', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+
+    push(
+      overview({
+        recentErrors: [failure()],
+        recentWarnings: [failure(), failure()],
+        recentWarningsCapped: true,
+      }),
+    )
+
+    expect(textOf(container, 'hilos-logs-recent-count-errors')).toBe('1')
+    expect(textOf(container, 'hilos-logs-recent-count-warnings')).toBe('2+')
+    expect(
+      byId(container, 'hilos-logs-recent-tab-errors')?.getAttribute(
+        'aria-selected',
+      ),
+    ).toBe('true')
+  })
+
+  it('shows the warnings on a click of their tab, from the frame it already holds', () => {
+    // The connection stub can send nothing: a tab that asked the server would throw.
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+    push(
+      overview({
+        recentErrors: [failure({ message: 'login action failed' })],
+        recentWarnings: [failure({ message: 'slow query', traceFrames: null })],
+      }),
+    )
+
+    act(() => {
+      byId(container, 'hilos-logs-recent-tab-warnings')?.click()
+    })
+
+    const rows = container.querySelectorAll('[data-id="hilos-logs-recent-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].textContent).toContain('slow query')
+    expect(rows[0].textContent).toContain('WARNING')
+  })
+
+  it('gives each tab its own good news', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+    push(overview({ recentErrors: [failure()] }))
+
+    act(() => {
+      byId(container, 'hilos-logs-recent-tab-warnings')?.click()
+    })
+
+    expect(textOf(container, 'hilos-logs-recent-empty')).toContain(
+      'No warnings in the last hour',
+    )
   })
 
   it('leaves the takeout banner out entirely when nothing is waiting', () => {

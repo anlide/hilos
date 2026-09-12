@@ -15,8 +15,10 @@ use Hilos\Utils\Logger;
  * means start at the anchor's natural end. Up to {@see $limit} lines that pass the optional
  * {@see $levelFilter} (a {@see Logger} `LEVEL_*` value) and {@see $substring} filter are returned.
  * {@see $inheritedLevel} carries the running level across a cut, so a live tail resuming mid-entry keeps
- * the stack trace of an ERROR classified as ERROR (HIL-389). Internal read value-object, not a signal
- * payload.
+ * the stack trace of an ERROR classified as ERROR (HIL-389). {@see $maxWindowBytes} caps a backward scan
+ * alone and means "read no further back than this": a scan looking for a level a healthy stream rarely
+ * holds would otherwise read that stream whole on every pass (HIL-868); null grows the window to the start
+ * of the file, as before. Internal read value-object, not a signal payload.
  */
 final class LogReadQuery
 {
@@ -35,6 +37,8 @@ final class LogReadQuery
      * @param ?string $inheritedLevel Entry level (a {@see Logger} `LEVEL_*` value) inherited from the page before this
      *     one, so a continuation opening this page keeps its entry's level; null starts the scan at the reader's
      *     {@see Logger::LEVEL_INFO} default
+     * @param ?int $maxWindowBytes Furthest a backward scan reads back from where it starts, in bytes, or null to grow
+     *     to the start of the file; ignored by a forward read
      */
     public function __construct(
         public readonly string $anchor,
@@ -43,6 +47,7 @@ final class LogReadQuery
         public readonly ?string $levelFilter = null,
         public readonly ?string $substring = null,
         public readonly ?string $inheritedLevel = null,
+        public readonly ?int $maxWindowBytes = null,
     ) {
     }
 }

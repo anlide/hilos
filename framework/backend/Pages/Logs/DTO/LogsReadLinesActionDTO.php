@@ -18,9 +18,11 @@ use Hilos\Utils\Logger;
  * path: the backend assembles the path under the log root, so a browser cannot name a place in
  * the file system at all. The reader's traversal guard stays as the second line, not the first.
  *
- * Read direction is not carried. Both the first page and the Earlier button read backwards from
- * the tail, and a field nobody sets would be filled in by guesswork the day someone needs the
- * other direction (HIL-389 will declare its own when it does).
+ * Read direction is not carried. The first page and the Earlier button read backwards from the
+ * tail, and a read opened on an anchor ({@see self::anchorAtMs}, HIL-868) reads forward from the
+ * entry it names: the anchor already says which way, and a direction field would be a second
+ * opinion about it. An anchor starts a page and a cursor continues one, so a request carrying
+ * both is refused rather than resolved by guesswork.
  */
 final class LogsReadLinesActionDTO extends ActionPayloadDTO
 {
@@ -51,6 +53,9 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
     /** Payload key: byte offset the previous page ended at, absent on the first page. */
     public const string cursor = 'cursor';
 
+    /** Payload key: unix milliseconds of the entry to open the file on, absent for a read from the tail (HIL-868). */
+    public const string anchorAtMs = 'anchorAtMs';
+
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $source Which half of the store to read
@@ -59,6 +64,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
      * @param ?string $level Level filter, or null for any level
      * @param ?string $substring Substring filter, or null for no substring filter
      * @param ?int $cursor Byte offset to continue from, or null for the first page
+     * @param ?int $anchorAtMs Unix milliseconds of the entry to open the file on, or null for a read from the tail
      */
     public function __construct(
         public readonly string $nodeId,
@@ -68,6 +74,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
         public readonly ?string $level,
         public readonly ?string $substring,
         public readonly ?int $cursor,
+        public readonly ?int $anchorAtMs = null,
     ) {
     }
 
@@ -88,8 +95,9 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain a FIELD_DATA wrapper)
      * @return static Instance
-     * @throws InvalidFormatException When the source, the stream, the batch stamp, the level or
-     *     the cursor is absent where required, or holds a value the reader cannot act on
+     * @throws InvalidFormatException When the source, the stream, the batch stamp, the level, the
+     *     cursor or the anchor is absent where required, holds a value the reader cannot act on, or
+     *     the cursor and the anchor arrive together
      */
     public static function fromArray(array $data): static
     {
@@ -126,6 +134,14 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
             throw new InvalidFormatException('Cursor precedes the start of the file');
         }
 
+        $anchorAtMs = self::optionalInt($inner, self::anchorAtMs);
+        if ($anchorAtMs !== null && $anchorAtMs < 0) {
+            throw new InvalidFormatException('Anchor precedes the epoch');
+        }
+        if ($anchorAtMs !== null && $cursor !== null) {
+            throw new InvalidFormatException('A read either continues a page from a cursor or opens one on an anchor, not both');
+        }
+
         return new static(
             nodeId: self::requireString($inner, self::nodeId),
             source: $source,
@@ -136,6 +152,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
             level: $level,
             substring: self::optionalString($inner, self::substring),
             cursor: $cursor,
+            anchorAtMs: $anchorAtMs,
         );
     }
 
@@ -152,6 +169,7 @@ final class LogsReadLinesActionDTO extends ActionPayloadDTO
             self::level => $this->level,
             self::substring => $this->substring,
             self::cursor => $this->cursor,
+            self::anchorAtMs => $this->anchorAtMs,
         ];
     }
 }

@@ -10,9 +10,9 @@ use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
-use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogGrowthWindow;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogRecentEntry;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -55,6 +55,9 @@ final class LogStoreAgentIndexTest extends TestCase
 
     /** Free-space threshold no fallback would produce, so an index carrying it read the environment. */
     private const string A_THRESHOLD_OF_ITS_OWN = '35';
+
+    /** Bytes of ordinary lines appended past a warning, above the 64 KiB window one warnings scan reads back. */
+    private const int FLOOD_BYTES = 70000;
 
     /**
      * @var int Baseline the agent tests place their walks relative to. It is the real clock,
@@ -399,7 +402,7 @@ final class LogStoreAgentIndexTest extends TestCase
         $this->assertSame(
             ['the newest failure', 'watchdog mail is not configured', 'login action failed'],
             array_map(
-                static fn (LogErrorEntry $entry): string => $entry->message,
+                static fn (LogRecentEntry $entry): string => $entry->message,
                 $agent->index()->recentErrors,
             ),
         );
@@ -479,6 +482,153 @@ final class LogStoreAgentIndexTest extends TestCase
     }
 
     /**
+     * A warning has no file of its own, so the ring is gathered from every stream that writes one,
+     * and ordered across them the way the errors are (HIL-868).
+     */
+    public function testTheWarningRingIsGatheredAcrossStreamsNewestFirst(): void
+    {
+        $this->writeErrorLines('worker-monopolistic-5.log', [
+            $this->errorLine('2026-09-06 10:00:00.100', 'WARNING: slow query'),
+            $this->errorLine('2026-09-06 10:00:01.000', 'request served'),
+            $this->errorLine('2026-09-06 10:00:02.100', 'WARNING: the newest warning'),
+        ]);
+        $this->writeErrorLines('daemon.log', [
+            $this->errorLine('2026-09-06 10:00:01.100', 'WARNING: watchdog mail is not configured'),
+            $this->errorLine('2026-09-06 10:00:03.100', 'ERROR: not a warning'),
+        ]);
+        $agent = $this->startedAgent();
+
+        $this->assertSame(
+            ['the newest warning', 'watchdog mail is not configured', 'slow query'],
+            array_map(
+                static fn (LogRecentEntry $entry): string => $entry->message,
+                $agent->index()->recentWarnings,
+            ),
+        );
+        $this->assertSame('worker-monopolistic-5.log', $agent->index()->recentWarnings[0]->stream);
+    }
+
+    /**
+     * What PHP printed past the Logger carries no stamp of the Logger's, so nothing orders it or cuts
+     * it off by the panel's hour — and a line stamped by hand in there is no exception.
+     */
+    public function testTheRawPairIsLeftOutOfTheWarningScan(): void
+    {
+        $this->writeErrorLines('daemon-raw.log', [
+            $this->errorLine('2026-09-06 10:00:00.100', 'WARNING: printed past the Logger'),
+        ]);
+        $agent = $this->startedAgent();
+
+        $this->assertSame([], $agent->index()->recentWarnings);
+    }
+
+    /**
+     * Every live stream is a candidate, so a scan of the ones that did not move would cost a window
+     * of every file on every walk for nothing.
+     */
+    public function testAStreamWhoseWeightHasNotMovedIsNotScannedForWarningsAgain(): void
+    {
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the first warning')]);
+        $agent = $this->startedAgent();
+
+        // Same length, different text: only a second scan could show the new line.
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the OTHER warning')]);
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertSame('the first warning', $agent->index()->recentWarnings[0]->message);
+    }
+
+    /**
+     * The ring exists for exactly this: the scan reads one window back from the end, and a warning
+     * the stream has since grown past is outside it but still happened.
+     */
+    public function testAWarningTheStreamHasGrownPastStaysInTheRing(): void
+    {
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: before the flood')]);
+        $agent = $this->startedAgent();
+
+        $this->appendLines('worker-1.log', $this->flood('2026-09-06 10:00:01.000'));
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertSame(
+            ['before the flood'],
+            array_map(static fn (LogRecentEntry $entry): string => $entry->message, $agent->index()->recentWarnings),
+        );
+    }
+
+    /**
+     * Two windows over a stream that grew by a line see the same warning twice, and it is one warning.
+     */
+    public function testAWarningSeenByTwoScansIsOneEntry(): void
+    {
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: seen twice')]);
+        $agent = $this->startedAgent();
+
+        $this->appendLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:01.000', 'request served')]);
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertCount(1, $agent->index()->recentWarnings);
+    }
+
+    /**
+     * The rows lead into a live file, and after a rotation the lines are in a batch — the same honest
+     * emptiness the error tail has.
+     */
+    public function testARotationTakesTheWarningRingWithIt(): void
+    {
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: before the rotation')]);
+        $agent = $this->startedAgent();
+        $this->assertCount(1, $agent->index()->recentWarnings);
+
+        $this->rotate('2026-08-01-00-00-00');
+        $agent->walkStore($this->t0 + 60);
+
+        $this->assertSame([], $agent->index()->recentWarnings);
+    }
+
+    /**
+     * "We do not know" empties both feeds together: a ring held over would read as "no warnings since".
+     */
+    public function testAnUnreadableStoreReportsBothFeedsEmpty(): void
+    {
+        $this->writeErrorLines('daemon-error.log', [$this->errorLine('2026-09-06 10:00:00.100', 'login action failed')]);
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.200', 'WARNING: slow query')]);
+        $agent = $this->startedAgent();
+        $this->assertCount(1, $agent->index()->recentErrors);
+        $this->assertCount(1, $agent->index()->recentWarnings);
+
+        putenv(EnvConstants::DAEMON_LOG_FILE->name);
+        $agent->onStart();
+
+        $this->assertFalse($agent->index()->available);
+        $this->assertSame([], $agent->index()->recentErrors);
+        $this->assertSame([], $agent->index()->recentWarnings);
+    }
+
+    /**
+     * A new warning leaves the node on the next frame rather than on the keepalive one, on an axis of
+     * its own: the errors did not move, and their axis says so.
+     */
+    public function testANewWarningRaisesItsOwnAxisAndLeavesTheErrorsOneDown(): void
+    {
+        $this->writeErrorLines('worker-1.log', [$this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the first warning')]);
+        $agent = $this->startedAgent();
+
+        $agent->walkStore($this->t0 + 60);
+        $this->assertFalse($agent->lastDelta()?->recentWarningsChanged, 'A walk that found the same lines says nothing');
+
+        $this->writeErrorLines('worker-1.log', [
+            $this->errorLine('2026-09-06 10:00:00.100', 'WARNING: the first warning'),
+            $this->errorLine('2026-09-06 10:00:05.100', 'WARNING: and then another one'),
+        ]);
+        $agent->walkStore($this->t0 + 120);
+
+        $this->assertTrue($agent->lastDelta()?->recentWarningsChanged);
+        $this->assertFalse($agent->lastDelta()?->recentErrorsChanged);
+        $this->assertFalse($agent->lastDelta()?->isEmpty());
+    }
+
+    /**
      * The disk the store sits on reaches the index beside the store's own figures (HIL-869), and
      * so does the threshold this node resolved for itself: the page holding the cluster picture
      * knows neither for anybody but itself.
@@ -546,6 +696,37 @@ final class LogStoreAgentIndexTest extends TestCase
     private function writeErrorLines(string $name, array $lines): void
     {
         file_put_contents($this->dir . DIRECTORY_SEPARATOR . $name, implode("\n", $lines) . "\n");
+    }
+
+    /**
+     * Appends whole lines to one live stream.
+     *
+     * @param string $name Basename of the stream
+     * @param list<string> $lines Lines in file order, without their trailing newline
+     */
+    private function appendLines(string $name, array $lines): void
+    {
+        file_put_contents($this->dir . DIRECTORY_SEPARATOR . $name, implode("\n", $lines) . "\n", FILE_APPEND);
+    }
+
+    /**
+     * Ordinary lines weighing more than one warnings scan reads back.
+     *
+     * @param string $stamp Local time every line carries, milliseconds included
+     *
+     * @return list<string> Lines in file order, without their trailing newline
+     */
+    private function flood(string $stamp): array
+    {
+        $lines = [];
+        $written = 0;
+        while ($written < self::FLOOD_BYTES) {
+            $line = $this->errorLine($stamp, 'request served ' . count($lines));
+            $lines[] = $line;
+            $written += strlen($line) + 1;
+        }
+
+        return $lines;
     }
 
     /**

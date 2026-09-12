@@ -470,6 +470,7 @@ export function logKeyViewerPath(row: HilosLogKeyRow): string {
     nodeId: row.node ?? '',
     source,
     stream: row.key,
+    anchorAtMs: null,
   })
 }
 

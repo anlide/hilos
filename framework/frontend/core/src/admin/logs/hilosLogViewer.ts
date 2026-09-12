@@ -96,6 +96,9 @@ const LOG_VIEWER_SOURCE_PARAM = 'source'
 /** Route param naming the stream, matching the `{stream?}` slot of the viewer route. */
 const LOG_VIEWER_STREAM_PARAM = 'stream'
 
+/** Route param naming the moment of the entry the viewer is opened on, unix milliseconds. */
+const LOG_VIEWER_ANCHOR_PARAM = 'anchor'
+
 /**
  * How near the bottom the reader counts as being AT it, in pixels.
  *
@@ -205,6 +208,8 @@ const logsReadLinesReplySchema = z.looseObject({
   lines: z.array(logViewerLineSchema),
   nextCursor: z.number().nullable(),
   hasMore: z.boolean(),
+  // Absent from a reply to a read that named no anchor, null from an owner saying so.
+  anchorFound: z.boolean().nullable().optional(),
 })
 
 /** One line as it comes off the wire, before it is keyed and laid out. */
@@ -248,6 +253,15 @@ export interface HilosLogViewerSelection {
   readonly source: typeof LOG_SOURCE_LIVE | number | null
   /** The file name inside that source, or null when unchosen. */
   readonly stream: string | null
+  /**
+   * Unix milliseconds of the entry the viewer was opened on, or null.
+   *
+   * Only an address naming all three slots before it carries one: the slots are
+   * positional, and an anchor behind an unchosen stream would name a place in a file
+   * nobody chose. It belongs to that one line of that one file, so anything the
+   * operator does next drops it.
+   */
+  readonly anchorAtMs: number | null
 }
 
 /** One line as the pane lays it out: the cut-off time, the level, and what is left. */
@@ -278,6 +292,8 @@ export interface HilosLogViewerEntry extends HilosLogViewerLine {
    * to do with.
    */
   readonly orphan: boolean
+  /** Whether this is the entry the viewer was opened on, drawn highlighted. */
+  readonly anchored: boolean
 }
 
 /** One line as it was read, with the identity its entry is keyed by. */
@@ -302,6 +318,8 @@ export type HilosLogViewerNotice =
   | 'dropped'
   /** The follow ended on the server's side. */
   | 'stopped'
+  /** The entry the address named is not in the file, and the pane shows its end instead. */
+  | 'anchorMissing'
 
 /**
  * One item of the feed: a line that was read, or a note about what happened
@@ -382,12 +400,17 @@ export function readLogViewerAddress(
   const node = params[LOG_VIEWER_NODE_PARAM]
   const source = params[LOG_VIEWER_SOURCE_PARAM]
   const stream = params[LOG_VIEWER_STREAM_PARAM]
+  const anchor = params[LOG_VIEWER_ANCHOR_PARAM]
 
   return {
     nodeId:
       node === undefined ? null : node === LOG_NODE_SELF_SEGMENT ? '' : node,
     source: source === undefined ? null : readSourceSegment(source),
     stream: stream === undefined ? null : stream,
+    anchorAtMs:
+      anchor === undefined || stream === undefined
+        ? null
+        : readAnchorSegment(anchor),
   }
 }
 
@@ -398,6 +421,8 @@ export function readLogViewerAddress(
  * would name a different file rather than a partly known one. The level, the
  * substring and the byte cursor are deliberately absent — the first two change
  * every half minute, and the third stops meaning anything at the next rotation.
+ * The place an entry was written at travels as its moment instead, which a
+ * rotation does not take away.
  *
  * @param selection The file currently being read.
  */
@@ -415,6 +440,9 @@ export function logViewerPath(selection: HilosLogViewerSelection): string {
       selection.nodeId === '' ? LOG_NODE_SELF_SEGMENT : selection.nodeId,
     [LOG_VIEWER_SOURCE_PARAM]: String(selection.source),
     [LOG_VIEWER_STREAM_PARAM]: selection.stream,
+    ...(selection.anchorAtMs === null
+      ? {}
+      : { [LOG_VIEWER_ANCHOR_PARAM]: String(selection.anchorAtMs) }),
   })
 }
 
@@ -743,6 +771,8 @@ export interface HilosLogViewer {
   /**
    * Choose another file, keeping the stream when the new place also has it.
    *
+   * An entry the viewer was opened on is dropped: another file is never that place.
+   *
    * @param change The slots that change; the others are kept.
    */
   select(change: Partial<HilosLogViewerSelection>): void
@@ -762,7 +792,8 @@ export interface HilosLogViewer {
    * Raise or lower the Follow switch.
    *
    * Lowering it pours the buffer into the feed rather than throwing it away: the
-   * lines already arrived and are real.
+   * lines already arrived and are real. Raising it on a viewer opened on an entry
+   * moves off that entry and reads the tail anew.
    *
    * @param next Whether the reader wants the tail.
    */
@@ -773,7 +804,10 @@ export interface HilosLogViewer {
    * @param next Whether the reader is at the tail.
    */
   setPinned(next: boolean): void
-  /** Pour the buffer into the feed and stick to the tail again. */
+  /**
+   * Pour the buffer into the feed and stick to the tail again; on a viewer opened on
+   * an entry, move off it and read the tail anew with the switch raised.
+   */
   returnToTail(): void
   /** Read the page before the oldest line held, keeping what is already shown. */
   readOlder(): void
@@ -813,15 +847,22 @@ export function createHilosLogViewer(
   const refusal = createSignal<string | null>(null)
   // The switch stands up by default: an operator opening a live file is looking
   // at what is happening now, and asking them to turn that on is asking twice.
-  const followRequested = createSignal(true)
+  // Opened on an entry it stands down instead: starting the tail answers with the
+  // end of the file, which is exactly the place the reader did not ask for.
+  const followRequested = createSignal(selection.get().anchorAtMs === null)
   const following = createSignal(false)
   const canFollow = computedSignal(
     () => selection.get().source === LOG_SOURCE_LIVE,
   )
-  const pinned = createSignal(true)
+  // Opened on an entry the pane is not stuck to the tail: the entry comes first on
+  // its page, and the pane stays at the top by itself.
+  const pinned = createSignal(selection.get().anchorAtMs === null)
   const pendingLines = createSignal(0)
   const teardown: Unsubscribe[] = []
   let cursor: number | null = null
+  // The line the anchored read found, drawn highlighted; null when the viewer was
+  // not opened on an entry, did not find it, or has moved off it.
+  let anchoredLineId: string | null = null
   let page = 0
   // What arrived while the reader was above the tail, and how many lines fell out
   // of the front of it. The dropped count is held apart from the buffer so that
@@ -847,7 +888,7 @@ export function createHilosLogViewer(
   const publish = (items: readonly HilosLogViewerFeedItem[]): void => {
     const kept = trimFeedItems(items, LOG_VIEWER_FEED_MAX_LINES)
     feed.set(kept)
-    rows.set(toLogViewerRows(kept))
+    rows.set(toLogViewerRows(kept, anchoredLineId))
   }
 
   const store = (
@@ -952,9 +993,14 @@ export function createHilosLogViewer(
     }
 
     // Reading older lines leaves the tail alone: the two travel in opposite
-    // directions and the operator asked for both.
+    // directions and the operator asked for both. A first page opened on an entry
+    // never starts the tail — the start answers with the end of the file.
+    const anchorAtMs = older ? null : current.anchorAtMs
     const starts =
-      !older && current.source === LOG_SOURCE_LIVE && followRequested.get()
+      !older &&
+      anchorAtMs === null &&
+      current.source === LOG_SOURCE_LIVE &&
+      followRequested.get()
     if (!older) {
       unfollow(!starts)
     }
@@ -988,6 +1034,8 @@ export function createHilosLogViewer(
             level: level.get() === '' ? null : level.get(),
             substring: substring.get() === '' ? null : substring.get(),
             cursor: older ? cursor : null,
+            // Only when there is one: an ordinary read says nothing about an anchor.
+            ...(anchorAtMs === null ? {} : { anchorAtMs }),
           },
           { replySchema: logsReadLinesReplySchema },
         )
@@ -1015,10 +1063,32 @@ export function createHilosLogViewer(
           // tail that has just been called off.
           following.set(true)
         }
-        // Older lines go ABOVE what is shown, and the view holds its scroll
-        // position, so the page the operator was reading does not move.
+        const items = store(reply.lines)
+        if (older) {
+          // Older lines go ABOVE what is shown, and the view holds its scroll
+          // position, so the page the operator was reading does not move.
+          publish([...items, ...feed.get()])
+
+          return
+        }
+
+        const first = items[0]
+        anchoredLineId =
+          reply.anchorFound === true && first?.kind === 'line'
+            ? first.line.id
+            : null
+        // An entry that is not there any more is said so above the tail standing in
+        // for it: showing the tail in silence would pass it off as the place.
         publish(
-          older ? [...store(reply.lines), ...feed.get()] : store(reply.lines),
+          reply.anchorFound === false
+            ? [
+                note(
+                  'anchorMissing',
+                  'The entry this link points at is no longer in this file. Showing the end of the file instead.',
+                ),
+                ...items,
+              ]
+            : items,
         )
       },
       (error: unknown) => {
@@ -1116,6 +1186,7 @@ export function createHilosLogViewer(
       nodeId: current.nodeId ?? (single ? '' : null),
       source: current.source ?? LOG_SOURCE_LIVE,
       stream: current.stream,
+      anchorAtMs: current.anchorAtMs,
     })
   }
 
@@ -1125,12 +1196,47 @@ export function createHilosLogViewer(
       nodeId: change.nodeId === undefined ? current.nodeId : change.nodeId,
       source: change.source === undefined ? current.source : change.source,
       stream: change.stream === undefined ? current.stream : change.stream,
+      // Another file is never the place an anchor named, so choosing one drops it.
+      anchorAtMs: null,
     }
+    anchoredLineId = null
     selection.set(
       change.stream === undefined ? withKeptStream(catalog.get(), next) : next,
     )
     ownPath = logViewerPath(selection.get())
     address.replacePath(ownPath)
+    read(false)
+  }
+
+  /**
+   * Move off the entry the viewer was opened on.
+   *
+   * Anything the operator does next — another level, a substring, the tail — asks a
+   * different question than "show me that line", and an address still carrying the
+   * anchor would go on promising a place the pane no longer shows. A reload keeps
+   * the anchor only because the address was never touched.
+   */
+  const dropAnchor = (): void => {
+    if (selection.get().anchorAtMs === null) {
+      return
+    }
+
+    anchoredLineId = null
+    selection.set({ ...selection.get(), anchorAtMs: null })
+    ownPath = logViewerPath(selection.get())
+    address.replacePath(ownPath)
+  }
+
+  /**
+   * Leave the entry for the tail: the ordinary first read, with the switch raised.
+   *
+   * There is no buffer to pour on a viewer opened on an entry — the tail never ran —
+   * so raising the switch and going back to the tail are one and the same movement.
+   */
+  const leaveAnchorForTail = (): void => {
+    dropAnchor()
+    followRequested.set(true)
+    pinned.set(true)
     read(false)
   }
 
@@ -1151,14 +1257,22 @@ export function createHilosLogViewer(
     refusal,
     select: choose,
     setLevel(next) {
+      dropAnchor()
       level.set(next)
       read(false)
     },
     setSubstring(next) {
+      dropAnchor()
       substring.set(next)
       read(false)
     },
     setFollow(next) {
+      if (next && selection.get().anchorAtMs !== null) {
+        leaveAnchorForTail()
+
+        return
+      }
+
       followRequested.set(next)
       if (next) {
         if (canFollow.get()) {
@@ -1182,6 +1296,12 @@ export function createHilosLogViewer(
       pinned.set(next)
     },
     returnToTail() {
+      if (selection.get().anchorAtMs !== null) {
+        leaveAnchorForTail()
+
+        return
+      }
+
       drain()
       pinned.set(true)
     },
@@ -1241,6 +1361,12 @@ export function createHilosLogViewer(
           ownPath = null
           if (!sameSelection(next, selection.get())) {
             selection.set(next)
+            // An address naming an entry opens the pane on it the way entering by
+            // one does: the tail stays down and the pane is not stuck to it.
+            if (next.anchorAtMs !== null) {
+              followRequested.set(false)
+              pinned.set(false)
+            }
             read(false)
           }
         }),
@@ -1266,9 +1392,12 @@ export function createHilosLogViewer(
  * file, not to the error that was being written when the old one was carried off.
  *
  * @param items The accumulated feed, oldest first.
+ * @param anchoredLineId The id of the line the viewer was opened on, whose entry is
+ *   drawn highlighted, or null when there is none.
  */
 export function toLogViewerRows(
   items: readonly HilosLogViewerFeedItem[],
+  anchoredLineId: string | null = null,
 ): readonly HilosLogViewerRow[] {
   const rows: (EntryDraft | HilosLogViewerRow)[] = []
   let open: EntryDraft | null = null
@@ -1304,6 +1433,7 @@ export function toLogViewerRows(
         text: frame,
       })),
       orphan: line.isContinuation,
+      anchored: line.id === anchoredLineId,
     }
     rows.push(open)
   }
@@ -1320,6 +1450,7 @@ interface EntryDraft {
   text: string
   frames: HilosLogViewerLine[]
   orphan: boolean
+  anchored: boolean
 }
 
 /** How many of the feed's items are lines; the notes are not lines. */
@@ -1418,6 +1549,19 @@ function readSourceSegment(segment: string): typeof LOG_SOURCE_LIVE | number {
 }
 
 /**
+ * Reads an anchor address segment: all digits is the moment of an entry, anything
+ * else is no anchor at all.
+ *
+ * Not a refusal: the address came from outside — typed, pasted, cut short — and a
+ * place that cannot be read still leaves a file that can be.
+ *
+ * @param segment The anchor segment of the address.
+ */
+function readAnchorSegment(segment: string): number | null {
+  return /^\d+$/.test(segment) ? Number(segment) : null
+}
+
+/**
  * Keeps the chosen stream across a change of node or source when the new place
  * also holds it, and drops it when it does not.
  *
@@ -1443,7 +1587,7 @@ function withKeptStream(
 }
 
 /**
- * Whether two selections name the same file.
+ * Whether two selections name the same file and the same place in it.
  *
  * @param one The first selection.
  * @param other The second selection.
@@ -1455,6 +1599,7 @@ function sameSelection(
   return (
     one.nodeId === other.nodeId &&
     one.source === other.source &&
-    one.stream === other.stream
+    one.stream === other.stream &&
+    one.anchorAtMs === other.anchorAtMs
   )
 }

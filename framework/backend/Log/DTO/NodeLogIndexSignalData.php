@@ -9,8 +9,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\LogErrorEntry;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogRecentEntry;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogWorkerSummary;
@@ -46,10 +46,10 @@ use Hilos\Log\NodeLogIndex;
  * confirmation lives in a marker file on that machine, and a page worker holding the cluster
  * picture knows its own log root, its own window and its own settings and no other node's.
  *
- * Three of them are allowed to be absent, all because a node running the previous build says
+ * Four of them are allowed to be absent, all because a node running the previous build says
  * nothing about them: {@see self::dueFromArray()} says why for the verdict, {@see self::carrying}
- * reads as "not being carried" when it is missing, and {@see self::errorsFromArray()} reads a
- * missing tail of failures as an empty one.
+ * reads as "not being carried" when it is missing, and {@see self::recentFromArray()} reads a
+ * missing tail of failures and a missing ring of warnings as empty ones.
  */
 final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -85,6 +85,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
 
     /** Payload key: last failures written to the reporting node's live error streams, newest first. */
     public const string recentErrors = 'recentErrors';
+
+    /** Payload key: last warnings the reporting node found in its live streams, newest first; absent from a node predating it. */
+    public const string recentWarnings = 'recentWarnings';
 
     /** Payload key: free bytes on the filesystem holding the reporting node's log root, absent when not known. */
     public const string filesystemFreeBytes = 'filesystemFreeBytes';
@@ -151,16 +154,16 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     /** Key and worker row key: summed size in bytes across the live file and every batch. */
     public const string totalBytes = 'totalBytes';
 
-    /** Error row key: instant the line was written, unix milliseconds in the reporting node's own zone. */
+    /** Recent entry row key: instant the line was written, unix milliseconds in the reporting node's own zone. */
     public const string atMs = 'atMs';
 
-    /** Error row key: basename of the live stream the line was read from. */
+    /** Recent entry row key: basename of the live stream the line was read from. */
     public const string stream = 'stream';
 
-    /** Error row key: line text, already cut to the reporting node's limit. */
+    /** Recent entry row key: line text, already cut to the reporting node's limit. */
     public const string message = 'message';
 
-    /** Error row key: frames in the entry's stack trace, absent when the entry carries none. */
+    /** Recent entry row key: frames in the entry's stack trace, absent when the entry carries none. */
     public const string traceFrames = 'traceFrames';
 
     /**
@@ -174,7 +177,8 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $logDirectory Absolute log root of the reporting node, or null when its environment names none
      * @param int $takeoutUndoWindowSeconds Seconds a confirmed batch is protected from the pruner on the reporting node
      * @param list<int> $dueBatchTimestamps Batches the reporting node's retention rule recommends carrying off, ascending
-     * @param list<LogErrorEntry> $recentErrors Last failures written to the reporting node's live error streams, newest first
+     * @param list<LogRecentEntry> $recentErrors Last failures written to the reporting node's live error streams, newest first
+     * @param list<LogRecentEntry> $recentWarnings Last warnings the reporting node found in its live streams, newest first
      * @param ?int $filesystemFreeBytes Free bytes on the filesystem holding the log root, or null when not known
      * @param ?int $filesystemTotalBytes Whole size of that filesystem in bytes, or null when not known
      * @param ?int $freeSpaceThresholdPercent Share of the volume the node keeps free, or null when it did not say
@@ -191,6 +195,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         public readonly int $takeoutUndoWindowSeconds = 0,
         public readonly array $dueBatchTimestamps = [],
         public readonly array $recentErrors = [],
+        public readonly array $recentWarnings = [],
         public readonly ?int $filesystemFreeBytes = null,
         public readonly ?int $filesystemTotalBytes = null,
         public readonly ?int $freeSpaceThresholdPercent = null,
@@ -217,6 +222,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             takeoutUndoWindowSeconds: $index->takeoutUndoWindowSeconds,
             dueBatchTimestamps: $index->dueBatchTimestamps,
             recentErrors: $index->recentErrors,
+            recentWarnings: $index->recentWarnings,
             filesystemFreeBytes: $index->filesystemFreeBytes,
             filesystemTotalBytes: $index->filesystemTotalBytes,
             freeSpaceThresholdPercent: $index->freeSpaceThresholdPercent,
@@ -249,8 +255,12 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             self::takeoutUndoWindowSeconds => $this->takeoutUndoWindowSeconds,
             self::dueBatchTimestamps => $this->dueBatchTimestamps,
             self::recentErrors => array_map(
-                static fn (LogErrorEntry $entry): array => self::errorToArray($entry),
+                static fn (LogRecentEntry $entry): array => self::recentToArray($entry),
                 $this->recentErrors,
+            ),
+            self::recentWarnings => array_map(
+                static fn (LogRecentEntry $entry): array => self::recentToArray($entry),
+                $this->recentWarnings,
             ),
             self::filesystemFreeBytes => $this->filesystemFreeBytes,
             self::filesystemTotalBytes => $this->filesystemTotalBytes,
@@ -303,7 +313,8 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             logDirectory: self::optionalString($data, self::logDirectory),
             takeoutUndoWindowSeconds: self::requireInt($data, self::takeoutUndoWindowSeconds),
             dueBatchTimestamps: self::dueFromArray($data),
-            recentErrors: self::errorsFromArray($data),
+            recentErrors: self::recentFromArray($data, self::recentErrors),
+            recentWarnings: self::recentFromArray($data, self::recentWarnings),
             filesystemFreeBytes: self::optionalInt($data, self::filesystemFreeBytes),
             filesystemTotalBytes: self::optionalInt($data, self::filesystemTotalBytes),
             freeSpaceThresholdPercent: self::optionalInt($data, self::freeSpaceThresholdPercent),
@@ -329,6 +340,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
             takeoutUndoWindowSeconds: $this->takeoutUndoWindowSeconds,
             dueBatchTimestamps: $this->dueBatchTimestamps,
             recentErrors: $this->recentErrors,
+            recentWarnings: $this->recentWarnings,
             filesystemFreeBytes: $this->filesystemFreeBytes,
             filesystemTotalBytes: $this->filesystemTotalBytes,
             // A node predating the key said nothing about its threshold, and the index carries the
@@ -517,10 +529,10 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
-     * @param LogErrorEntry $entry Failure to lay out
-     * @return array<string, mixed> Error row
+     * @param LogRecentEntry $entry Entry of either feed to lay out
+     * @return array<string, mixed> Recent entry row
      */
-    private static function errorToArray(LogErrorEntry $entry): array
+    private static function recentToArray(LogRecentEntry $entry): array
     {
         return [
             self::atMs => $entry->atMs,
@@ -531,29 +543,32 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
-     * Reads the tail of failures the reporting node keeps for the overview panel (HIL-867).
+     * Reads one feed the reporting node keeps for the overview panel: the tail of failures (HIL-867)
+     * or the ring of warnings (HIL-868).
      *
-     * Absent reads as an empty tail, for the reason {@see self::dueFromArray()} gives about the
-     * verdict beside it: a node still running the build before this key existed says nothing about
-     * failures, and refusing its frame over that would take its whole store off the cluster
-     * picture. The rows themselves are strict once the key is there — a row is a measurement of a
-     * line that was really written, and an entry repaired here would point an administrator at a
-     * file to open over something nobody logged.
+     * Absent reads as an empty feed, for the reason {@see self::dueFromArray()} gives about the
+     * verdict beside it: a node still running the build before the key existed says nothing about
+     * it, and refusing its frame over that would take its whole store off the cluster picture. The
+     * rows themselves are strict once the key is there — a row is a measurement of a line that was
+     * really written, and an entry repaired here would point an administrator at a file to open
+     * over something nobody logged. Both feeds are read by this one method, since a second reading
+     * of the same row would be a second answer to what a row is.
      *
      * @param array<string, mixed> $data Wire form of one node's index
-     * @return list<LogErrorEntry> Failures in the order the node lists them
+     * @param string $listKey Payload key holding the feed, {@see self::recentErrors} or {@see self::recentWarnings}
+     * @return list<LogRecentEntry> Entries in the order the node lists them
      * @throws InvalidFormatException When the key carries a row that is not an object, or a row
      *     with a field absent or of the wrong type
      */
-    private static function errorsFromArray(array $data): array
+    private static function recentFromArray(array $data, string $listKey): array
     {
         $entries = [];
-        foreach (self::optionalArray($data, self::recentErrors) ?? [] as $row) {
+        foreach (self::optionalArray($data, $listKey) ?? [] as $row) {
             if (!is_array($row)) {
-                throw new InvalidFormatException('Node log index carries a recent error that is not an object');
+                throw new InvalidFormatException('Node log index carries a recent entry that is not an object under key ' . $listKey);
             }
 
-            $entries[] = new LogErrorEntry(
+            $entries[] = new LogRecentEntry(
                 atMs: self::requireInt($row, self::atMs),
                 stream: self::requireString($row, self::stream),
                 message: self::requireString($row, self::message),

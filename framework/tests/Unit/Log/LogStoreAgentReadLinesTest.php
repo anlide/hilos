@@ -45,6 +45,12 @@ final class LogStoreAgentReadLinesTest extends TestCase
     /** @var string Name of the rotated batch the archive fixture is written into */
     private const string BATCH_DIR = '2026-08-01-00-00-00';
 
+    /** @var int Bytes of unstamped lines put between an entry and the end of its file, past the 8 MiB an anchored read searches back */
+    private const int PAST_THE_ANCHOR_SEARCH_BYTES = 9 * 1024 * 1024;
+
+    /** @var int Lines in a file one line longer than the page the owner reads */
+    private const int ONE_PAST_A_PAGE_LINES = 205;
+
     private string $dir = '';
 
     private string $logFile = '';
@@ -99,6 +105,131 @@ final class LogStoreAgentReadLinesTest extends TestCase
             ['[2026-08-01 00:00:00.000] first', '[2026-08-01 00:00:01.000] ERROR: second'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
+    }
+
+    /**
+     * A row of the recent-failures panel opens the file on the entry it names: that line comes
+     * first and what was written after it follows, and the page's cursor is the ordinary one, so
+     * the Earlier button reads what came before the entry (HIL-868).
+     */
+    public function testAnAnchoredReadOpensThePageOnTheEntryAndReadsOnFromIt(): void
+    {
+        $lines = [
+            '[2026-08-01 00:00:00.000] booted',
+            '[2026-08-01 00:00:01.000] served',
+            '[2026-08-01 00:00:02.500] ERROR: the entry the row names',
+            '#0 /app/a.php(7): a()',
+            '[2026-08-01 00:00:03.000] served again',
+        ];
+        $this->write('worker-0.log', implode("\n", $lines) . "\n");
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'worker-0.log',
+            anchorAtMs: $this->milliseconds('2026-08-01 00:00:02', 500),
+        ));
+
+        $reply = $this->acked();
+        $this->assertTrue($reply[LogsReadLinesReplyDTO::anchorFound]);
+        $this->assertSame(
+            array_slice($lines, 2),
+            array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
+        );
+        $this->assertSame(strlen($lines[0]) + strlen($lines[1]) + 2, $reply[LogsReadLinesReplyDTO::nextCursor]);
+        $this->assertTrue($reply[LogsReadLinesReplyDTO::hasMore]);
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'worker-0.log',
+            cursor: $reply[LogsReadLinesReplyDTO::nextCursor],
+        ));
+
+        $earlier = $this->acked();
+        $this->assertSame(
+            array_slice($lines, 0, 2),
+            array_column($earlier[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
+        );
+        $this->assertNull($earlier[LogsReadLinesReplyDTO::anchorFound]);
+    }
+
+    /**
+     * A rotation started this file after the entry had left: every line is later than the moment,
+     * and the answer is the tail with the flag down rather than the first line passed off as the place.
+     */
+    public function testAnAnchorTheFileDoesNotHoldAnswersTheTailAndSaysSo(): void
+    {
+        $lines = ['[2026-08-01 00:00:05.000] first after the rotation', '[2026-08-01 00:00:06.000] next'];
+        $this->write('worker-0.log', implode("\n", $lines) . "\n");
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'worker-0.log',
+            anchorAtMs: $this->milliseconds('2026-08-01 00:00:02', 500),
+        ));
+
+        $reply = $this->acked();
+        $this->assertFalse($reply[LogsReadLinesReplyDTO::anchorFound]);
+        $this->assertTrue($reply[LogsReadLinesReplyDTO::readable]);
+        $this->assertSame($lines, array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text));
+    }
+
+    /**
+     * The search is one read on a click and has a ceiling: an entry further back than that is
+     * answered like one that is not there.
+     */
+    public function testAnAnchorBeyondTheSearchAnswersTheTailToo(): void
+    {
+        $last = '[2026-08-01 00:00:09.000] the last line';
+        // Written a block at a time: the file is bigger than what a test may hold in memory at once.
+        $handle = fopen($this->dir . DIRECTORY_SEPARATOR . 'worker-0.log', 'wb');
+        $this->assertNotFalse($handle);
+        fwrite($handle, "[2026-08-01 00:00:02.500] ERROR: the entry the row names\n");
+        $block = str_repeat("#0 /app/src/Service/Handler.php(120): Handler->handle()\n", 1000);
+        for ($written = 0; $written < self::PAST_THE_ANCHOR_SEARCH_BYTES; $written += strlen($block)) {
+            fwrite($handle, $block);
+        }
+        fwrite($handle, $last . "\n");
+        fclose($handle);
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'worker-0.log',
+            anchorAtMs: $this->milliseconds('2026-08-01 00:00:02', 500),
+        ));
+
+        $reply = $this->acked();
+        $this->assertFalse($reply[LogsReadLinesReplyDTO::anchorFound]);
+        $texts = array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text);
+        $this->assertSame($last, $texts[count($texts) - 1]);
+    }
+
+    /**
+     * Without an anchor nothing about the read moved: backwards from the tail, the cursor of the
+     * page before it, and no word about an anchor at all — the Earlier button depends on exactly this.
+     */
+    public function testAReadWithoutAnAnchorIsTheOrdinaryTailRead(): void
+    {
+        $lines = [];
+        for ($index = 0; $index < self::ONE_PAST_A_PAGE_LINES; $index++) {
+            $lines[] = "[2026-08-01 00:00:00.000] line {$index}";
+        }
+        $this->write('worker-0.log', implode("\n", $lines) . "\n");
+        $firstShown = self::ONE_PAST_A_PAGE_LINES - 200;
+
+        $this->read($this->request(LogsReadLinesActionDTO::SOURCE_LIVE, null, 'worker-0.log'));
+
+        $reply = $this->acked();
+        $this->assertSame(
+            array_slice($lines, $firstShown),
+            array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
+        );
+        $this->assertTrue($reply[LogsReadLinesReplyDTO::hasMore]);
+        $this->assertSame(strlen(implode("\n", array_slice($lines, 0, $firstShown))) + 1, $reply[LogsReadLinesReplyDTO::nextCursor]);
+        $this->assertNull($reply[LogsReadLinesReplyDTO::anchorFound]);
     }
 
     /**
@@ -229,6 +360,8 @@ final class LogStoreAgentReadLinesTest extends TestCase
      * @param string $stream File name of the stream inside the source
      * @param ?string $level Level filter, or null for any level
      * @param ?string $requestId Request id to answer on, or null for an untracked read
+     * @param ?int $cursor Byte offset to continue from, or null for the first page
+     * @param ?int $anchorAtMs Unix milliseconds of the entry to open the file on, or null for a read from the tail
      * @return LogsReadLinesSignalData Frame the owner receives
      */
     private function request(
@@ -237,6 +370,8 @@ final class LogStoreAgentReadLinesTest extends TestCase
         string $stream,
         ?string $level = null,
         ?string $requestId = self::REQUEST_ID,
+        ?int $cursor = null,
+        ?int $anchorAtMs = null,
     ): LogsReadLinesSignalData {
         return new LogsReadLinesSignalData(
             nodeId: '',
@@ -245,11 +380,38 @@ final class LogStoreAgentReadLinesTest extends TestCase
             stream: $stream,
             level: $level,
             substring: null,
-            cursor: null,
+            cursor: $cursor,
+            anchorAtMs: $anchorAtMs,
             acceptKey: self::ACCEPT_KEY,
             action: HilosSignalConstants::LOGS_READ_LINES,
             requestId: $requestId,
         );
+    }
+
+    /**
+     * Hands one read to a fresh owner, the way the viewer page's frame reaches it.
+     *
+     * @param LogsReadLinesSignalData $request Frame the owner receives
+     */
+    private function read(LogsReadLinesSignalData $request): void
+    {
+        new LogStoreAgent()->onSignalAgent(
+            new AgentSignalData($request),
+            'agent',
+            HilosSignalConstants::LOGS_AGENT_READ_LINES,
+        );
+    }
+
+    /**
+     * The unix milliseconds a line stamped with this local time is read as.
+     *
+     * @param string $stamp Local time without milliseconds
+     * @param int $milliseconds Millisecond part of the stamp
+     * @return int Unix milliseconds
+     */
+    private function milliseconds(string $stamp, int $milliseconds): int
+    {
+        return strtotime($stamp) * 1000 + $milliseconds;
     }
 
     /**

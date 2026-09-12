@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
+use DateTimeImmutable;
+use Generator;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -24,6 +26,8 @@ use Hilos\Utils\Logger;
  * in {@see CHUNK_SIZE} steps until it holds one match more than the page was asked for, so large files are
  * never loaded whole for the common tail case. The extra match is what answers "is there an older page":
  * bytes before the page can be all non-matching under a filter, so only a found match proves one remains.
+ * A query may cap that growth ({@see LogReadQuery::$maxWindowBytes}): a scan stopped by its ceiling has not
+ * looked past it and answers "maybe" from the window's boundary instead (HIL-868).
  * Level detection is per line: a recognized prefix
  * (`[ERROR]`/`ERROR:` and the like, or the `agentId|level|message` agent-pipe format under
  * {@see Logger::AGENT_LOG_MARKER}) updates a running level, a line without one is a continuation that
@@ -47,13 +51,19 @@ final class LogLineReader
      * Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix a fresh log entry starts with.
      *
      * Public because the same prefix is what tells a fresh entry from a continuation for anyone
-     * reading these files, not just for this scan: {@see LogErrorTailReader} lifts the stamp out of
-     * it (HIL-867). A second copy of the pattern would be a second answer to "what is an entry".
+     * reading these files, not just for this scan: {@see LogRecentTailReader} takes the entry's text
+     * apart after it (HIL-867). A second copy of the pattern would be a second answer to "what is an entry".
      */
     public const string TIMESTAMP_PREFIX_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /';
 
-    /** Window growth step (bytes) for the backward tail scan. */
+    /** Window growth step (bytes) for the backward tail scan and the anchor search. */
     private const int CHUNK_SIZE = 65536;
+
+    /** Format of the timestamp {@see TIMESTAMP_PREFIX_PATTERN} matches, with milliseconds. */
+    private const string TIMESTAMP_FORMAT = 'Y-m-d H:i:s.v';
+
+    /** Format printing a parsed timestamp back as unix milliseconds. */
+    private const string UNIX_MILLISECONDS_FORMAT = 'Uv';
 
     /**
      * Recognized new-entry level prefixes, tested in order against the text after the `[timestamp] `.
@@ -142,6 +152,138 @@ final class LogLineReader
         $size = filesize($path);
 
         return $size === false ? null : $size;
+    }
+
+    /**
+     * Read the stamp a line opens with as unix milliseconds.
+     *
+     * The stamp names no zone — the file carries the local time of the node that wrote it — so it is
+     * resolved in the timezone of this process, which is right exactly because the reader runs on that
+     * node: the one place the file can be opened at all. Public for the reason
+     * {@see TIMESTAMP_PREFIX_PATTERN} is: "when was this line written" has one answer, and both the
+     * recent-failures reader ({@see LogRecentTailReader}) and the anchor search ({@see locate()}) ask it
+     * (HIL-868).
+     *
+     * @param string $text Line text as read from the file
+     *
+     * @return ?int Unix milliseconds, or null when the line does not open with a stamp
+     */
+    public static function stampMilliseconds(string $text): ?int
+    {
+        if (preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) !== 1) {
+            return null;
+        }
+
+        $parsed = DateTimeImmutable::createFromFormat(self::TIMESTAMP_FORMAT, substr($match[0], 1, -2));
+
+        return $parsed === false ? null : (int)$parsed->format(self::UNIX_MILLISECONDS_FORMAT);
+    }
+
+    /**
+     * Take the level prefix off the text of an entry, leaving what the entry says (HIL-868).
+     *
+     * What counts as a prefix, in either form — `[WARNING] ` and `WARNING: ` — is the table the level of a line is
+     * read off ({@see LEVEL_PREFIXES}), so a reader that shows the level on its own does not show it twice. Public
+     * for the reason {@see TIMESTAMP_PREFIX_PATTERN} is: "where does the text of an entry begin" has one answer, and
+     * the recent-failures reader ({@see LogRecentTailReader}) asks it.
+     *
+     * @param string $afterTimestamp Text following the `[timestamp] ` prefix
+     *
+     * @return string The same text without its level prefix, or unchanged when it opens with none
+     */
+    public static function textAfterLevel(string $afterTimestamp): string
+    {
+        foreach (array_keys(self::LEVEL_PREFIXES) as $prefix) {
+            if (str_starts_with($afterTimestamp, $prefix)) {
+                return substr($afterTimestamp, strlen($prefix));
+            }
+        }
+
+        return $afterTimestamp;
+    }
+
+    /**
+     * Find where in a log file the entry written at a given moment begins (HIL-868).
+     *
+     * Walks back from the end of the file one {@see CHUNK_SIZE} chunk at a time, newest line first, looking for
+     * the last stamped line earlier than `$atMs`; the place is the stamped line right after it. The walk stops
+     * at that boundary — nothing further back can move the answer — or at the start of the file, or once it
+     * has gone `$maxWindowBytes` back. Each chunk is scanned once, so the search costs the distance to the
+     * place rather than that distance squared, which over the megabytes an anchored read allows is the
+     * difference between a click and a stall.
+     *
+     * A place is claimed only where it is proven. Past a boundary, the first line not earlier than the moment
+     * is the place. With no boundary in reach, only a line stamped exactly `$atMs` is: a later one could be
+     * the first line of a file that rotation started after the entry had left, or a line written long after
+     * a place that lies beyond the ceiling, and opening the viewer there would claim a place that is not it.
+     * Lines without a stamp — continuations, what PHP printed past the Logger — are stepped over, since
+     * nothing orders them.
+     *
+     * @param string $relativePath Path of the target file relative to the log root
+     * @param int $atMs Moment the entry was written, unix milliseconds
+     * @param int $maxWindowBytes Furthest the search reads back from the end of the file, in bytes
+     *
+     * @return ?int Byte offset of the line the entry begins on, or null when the file is unreadable or outside
+     *     the log root, every line is older than `$atMs`, or the place is not proven within the ceiling
+     */
+    public function locate(string $relativePath, int $atMs, int $maxWindowBytes): ?int
+    {
+        $path = $this->resolveReadablePath($relativePath);
+        if ($path === null) {
+            return null;
+        }
+
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return null;
+        }
+
+        $fileSize = filesize($path);
+        if ($fileSize === false || $fileSize === 0) {
+            fclose($handle);
+
+            return null;
+        }
+
+        $floor = max(0, $fileSize - max(1, $maxWindowBytes));
+        $chunkStart = $fileSize;
+        $unscannedEnd = $fileSize;
+        $placeOffset = null;
+        $placeStamp = null;
+        while (true) {
+            $chunkStart = max($floor, $chunkStart - self::CHUNK_SIZE);
+            fseek($handle, $chunkStart);
+            $buffer = fread($handle, $unscannedEnd - $chunkStart);
+            if ($buffer === false) {
+                fclose($handle);
+
+                return null;
+            }
+
+            // Newest line first: the first line earlier than the moment is the boundary, and the place is
+            // the line walked just before reaching it.
+            foreach (array_reverse(iterator_to_array(self::stampedLines($buffer, $chunkStart)), true) as $offset => $stamp) {
+                if ($stamp < $atMs) {
+                    fclose($handle);
+
+                    return $placeOffset;
+                }
+                $placeOffset = $offset;
+                $placeStamp = $stamp;
+            }
+
+            if ($chunkStart === $floor) {
+                fclose($handle);
+
+                return $placeStamp === $atMs ? $placeOffset : null;
+            }
+
+            // The fragment in front of the chunk's first whole line is read again, whole, with the next chunk.
+            $firstNewline = strpos($buffer, "\n");
+            if ($firstNewline !== false) {
+                $unscannedEnd = $chunkStart + $firstNewline + 1;
+            }
+        }
     }
 
     /**
@@ -255,6 +397,9 @@ final class LogLineReader
      *
      * One match beyond the page is what {@see tailPageFromMatches()} reads the "older page remains" answer off,
      * so the window keeps growing past a full page until either that match turns up or the file runs out on the left.
+     * A third reason to stop is the query's {@see LogReadQuery::$maxWindowBytes}, and it sits beside the other two
+     * rather than replacing either (HIL-868): a window that holds the extra match still answers by it, and only a
+     * window that reaches the ceiling without one answers from its boundary ({@see tailPageAtCeiling()}).
      *
      * @param string $path Canonical file path
      * @param LogReadQuery $query Query providing the cursor and filters
@@ -284,9 +429,10 @@ final class LogLineReader
             return new LogLinePage(true, [], null, false);
         }
 
+        $ceiling = $query->maxWindowBytes === null ? $end : min($end, max(1, $query->maxWindowBytes));
         $windowSize = 0;
         while (true) {
-            $windowSize = min($end, $windowSize + self::CHUNK_SIZE);
+            $windowSize = min($ceiling, $windowSize + self::CHUNK_SIZE);
             $windowStart = $end - $windowSize;
             fseek($handle, $windowStart);
             $buffer = fread($handle, $windowSize);
@@ -301,6 +447,11 @@ final class LogLineReader
                 fclose($handle);
 
                 return self::tailPageFromMatches($matches, $limit);
+            }
+            if ($windowSize === $ceiling) {
+                fclose($handle);
+
+                return self::tailPageAtCeiling($matches, $buffer, $windowStart);
             }
         }
     }
@@ -365,6 +516,63 @@ final class LogLineReader
         $hasMore = count($matches) > $limit;
 
         return new LogLinePage(true, $lines, $hasMore ? $earliestOffset : null, $hasMore);
+    }
+
+    /**
+     * Take every match of a window its ceiling stopped, handing the window's own boundary back as the cursor.
+     *
+     * A window stopped by {@see LogReadQuery::$maxWindowBytes} did not look past its left edge, so it cannot say
+     * whether an older match remains; the honest answer is "there may be — read on from here" (HIL-868). The
+     * boundary is the start of the first line the window read whole: {@see matchWindow()} dropped the fragment
+     * in front of it, and a cursor at the raw edge would hand the next page that line cut in two. A window
+     * holding no whole line at all — one line longer than the ceiling — gives its raw edge instead, so a caller
+     * paging on still moves back rather than being handed the page it already has.
+     *
+     * @param list<array{offset: int, line: LogLine}> $matches Matched lines with offsets, in file order, no more than the page holds
+     * @param string $buffer Raw bytes of the window
+     * @param int $windowStart Absolute byte offset the buffer begins at, above zero
+     *
+     * @return LogLinePage Every match in file order, flagged as possibly preceded by older ones before the boundary
+     */
+    private static function tailPageAtCeiling(array $matches, string $buffer, int $windowStart): LogLinePage
+    {
+        $firstNewline = strpos($buffer, "\n");
+        $firstWholeLine = $firstNewline === false ? null : $windowStart + $firstNewline + 1;
+        $boundary = $firstWholeLine === null || $firstWholeLine === $windowStart + strlen($buffer) ? $windowStart : $firstWholeLine;
+        $lines = array_map(static fn (array $match): LogLine => $match['line'], $matches);
+
+        return new LogLinePage(true, $lines, $boundary, true);
+    }
+
+    /**
+     * Walk the whole stamped lines of a backward window, yielding where each begins and when it was written.
+     *
+     * The first line is skipped when the window does not start at the beginning of the file: it is a fragment,
+     * and its stamp — if the cut happened to leave one — would belong to a line this window never saw whole.
+     *
+     * @param string $buffer Raw bytes of the window
+     * @param int $windowStart Absolute byte offset the buffer begins at
+     *
+     * @return Generator<int, int> Absolute line offset → unix milliseconds of its stamp, in file order
+     */
+    private static function stampedLines(string $buffer, int $windowStart): Generator
+    {
+        $length = strlen($buffer);
+        $position = 0;
+        if ($windowStart > 0) {
+            $firstNewline = strpos($buffer, "\n");
+            $position = $firstNewline === false ? $length : $firstNewline + 1;
+        }
+
+        while ($position < $length) {
+            $newline = strpos($buffer, "\n", $position);
+            $lineEnd = $newline === false ? $length : $newline + 1;
+            $stamp = self::stampMilliseconds(substr($buffer, $position, $lineEnd - $position));
+            if ($stamp !== null) {
+                yield $windowStart + $position => $stamp;
+            }
+            $position = $lineEnd;
+        }
     }
 
     /**

@@ -25,6 +25,7 @@ final class NodeLogIndexDelta
      * @param list<int> $verdictChangedBatchTimestamps Rotation batches the retention rule started or stopped recommending since the previous index
      * @param bool $availabilityChanged Whether the store crossed between readable and unreadable
      * @param bool $recentErrorsChanged Whether the tail of failures this node keeps for the overview panel moved
+     * @param bool $recentWarningsChanged Whether the ring of warnings this node keeps for the overview panel moved
      */
     public function __construct(
         public readonly array $appearedKeys,
@@ -37,6 +38,7 @@ final class NodeLogIndexDelta
         public readonly array $verdictChangedBatchTimestamps,
         public readonly bool $availabilityChanged,
         public readonly bool $recentErrorsChanged,
+        public readonly bool $recentWarningsChanged,
     ) {
     }
 
@@ -72,8 +74,13 @@ final class NodeLogIndexDelta
      * whatever moves next, or, on a quiet installation, for the keepalive frame a minute later,
      * while the panel that exists to say "go and look at this" showed the one before it.
      *
+     * And so does the ring of warnings, on an axis beside it rather than folded into it (HIL-868).
+     * The reason is the same, and the axis is a second one because the two feeds move
+     * independently: a new warning says nothing about the errors, and one axis over both would be
+     * raised for a feed in which nothing happened.
+     *
      * @return bool True when nothing appeared, grew, vanished, changed its confirmation, changed
-     *     its retention verdict, moved the tail of failures or changed side
+     *     its retention verdict, moved either feed of recent failures or changed side
      */
     public function isEmpty(): bool
     {
@@ -86,6 +93,7 @@ final class NodeLogIndexDelta
             && $this->withdrawnBatchTimestamps === []
             && $this->verdictChangedBatchTimestamps === []
             && !$this->recentErrorsChanged
+            && !$this->recentWarningsChanged
             && !$this->availabilityChanged;
     }
 }

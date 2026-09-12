@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Logs;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Hilos\Constants\HilosPageConstants;
@@ -24,6 +25,7 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogTotals;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogRecentEntry;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -67,15 +69,15 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
 
     /**
-     * @var int How far back the recent-errors panel looks. The window is applied HERE and not on
-     *     the nodes (HIL-867): nodes report what they hold with their own stamps, and three
-     *     clocks cutting three windows would show a different panel depending on whose frame
-     *     arrived last.
+     * @var int How far back the recent-failures panel looks, on both of its tabs. The window is
+     *     applied HERE and not on the nodes (HIL-867): nodes report what they hold with their own
+     *     stamps, and three clocks cutting three windows would show a different panel depending
+     *     on whose frame arrived last.
      */
-    private const int RECENT_ERRORS_WINDOW_SECONDS = 3600;
+    private const int RECENT_WINDOW_SECONDS = 3600;
 
-    /** @var int Rows the panel carries; past it the screen's counter reads "10+" */
-    private const int RECENT_ERRORS_LIMIT = 10;
+    /** @var int Rows each tab of the panel carries; past it that tab's counter reads "10+" */
+    private const int RECENT_LIMIT = 10;
 
     /**
      * @var string Instant of a failure as the panel receives it: ISO 8601 like every other time on
@@ -174,12 +176,21 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
 
     /**
      * @var list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}>
-     *     Rows of the recent-errors panel, newest first, already cut to the window and the limit
+     *     Rows of the errors tab of the recent-failures panel, newest first, already cut to the window and the limit
      */
     private static array $logsOverviewRecentErrors = [];
 
-    /** @var bool Whether the list above was cut at the limit, so the screen's counter says "10+" */
+    /** @var bool Whether the list above was cut at the limit, so the errors tab's counter says "10+" */
     private static bool $logsOverviewRecentErrorsCapped = false;
+
+    /**
+     * @var list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}>
+     *     Rows of the warnings tab, newest first, already cut to the window and the limit (HIL-868)
+     */
+    private static array $logsOverviewRecentWarnings = [];
+
+    /** @var bool Whether the list above was cut at the limit, so the warnings tab's counter says "10+" */
+    private static bool $logsOverviewRecentWarningsCapped = false;
 
     /**
      * Remove a connection from the subscriber set after {@see self::onUnsubscribe()} or when the connection
@@ -344,7 +355,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         }
         self::$logsOverviewBatchesDueForTakeout = $batchesDueForTakeout;
         self::$logsOverviewNodes = $nodes;
-        self::fillRecentErrors($index->nodes(), time());
+        self::fillRecent($index->nodes(), time());
     }
 
     /**
@@ -524,7 +535,27 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Merge every node's tail of failures into the one list the panel draws (HIL-867).
+     * Merge every node's feeds into the two lists the panel draws, errors and warnings (HIL-867, HIL-868).
+     *
+     * Each list is cut to the limit on its own and says so on its own: a tab counts what it shows,
+     * and warnings past the limit say nothing about how many errors there were.
+     *
+     * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture, the nameless one included
+     * @param int $now Unix timestamp the window is measured back from
+     */
+    private static function fillRecent(array $slots, int $now): void
+    {
+        $failures = self::recentRows($slots, $now, static fn (NodeLogIndex $index): array => $index->recentErrors);
+        self::$logsOverviewRecentErrorsCapped = count($failures) > self::RECENT_LIMIT;
+        self::$logsOverviewRecentErrors = array_slice($failures, 0, self::RECENT_LIMIT);
+
+        $warnings = self::recentRows($slots, $now, static fn (NodeLogIndex $index): array => $index->recentWarnings);
+        self::$logsOverviewRecentWarningsCapped = count($warnings) > self::RECENT_LIMIT;
+        self::$logsOverviewRecentWarnings = array_slice($warnings, 0, self::RECENT_LIMIT);
+    }
+
+    /**
+     * Merge one feed of every node into one list, newest first and cut to the window (HIL-867).
      *
      * The nodes report what they hold, stamped; the window is cut here, by the page's own clock,
      * so the panel says the same thing whichever node's frame arrived last. Newest first, and a
@@ -534,22 +565,29 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * The nameless slot is in, where the table above skips it: a single-node installation has no
      * table and all of the failures, and the row still has to name a file to open.
      *
+     * Both feeds go through this one method (HIL-868): the window, the order and the shape of a row
+     * are the same question for errors and for warnings, and a second copy would part ways on the
+     * first edit.
+     *
      * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture, the nameless one included
      * @param int $now Unix timestamp the window is measured back from
+     * @param Closure(NodeLogIndex): list<LogRecentEntry> $entriesOf Which feed of a node's index to read
+     * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Every row
+     *     inside the window, newest first, not yet cut to the limit
      */
-    private static function fillRecentErrors(array $slots, int $now): void
+    private static function recentRows(array $slots, int $now, Closure $entriesOf): array
     {
-        $oldestShown = ($now - self::RECENT_ERRORS_WINDOW_SECONDS) * TimeConstants::MS_PER_SECOND;
+        $oldestShown = ($now - self::RECENT_WINDOW_SECONDS) * TimeConstants::MS_PER_SECOND;
 
-        $failures = [];
+        $rows = [];
         foreach ($slots as $slot) {
             $nodeId = $slot->nodeId ?? HilosLogsOverviewSignalData::SELF_NODE_ID;
-            foreach ($slot->index->recentErrors as $entry) {
+            foreach ($entriesOf($slot->index) as $entry) {
                 if ($entry->atMs < $oldestShown) {
                     continue;
                 }
 
-                $failures[] = [
+                $rows[] = [
                     self::SORTED_BY => $entry->atMs,
                     self::SORTED_ROW => [
                         HilosLogsOverviewSignalData::nodeId => $nodeId,
@@ -562,13 +600,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             }
         }
 
-        usort($failures, static fn (array $first, array $second): int => self::compareFailures($first, $second));
+        usort($rows, static fn (array $first, array $second): int => self::compareFailures($first, $second));
 
-        self::$logsOverviewRecentErrorsCapped = count($failures) > self::RECENT_ERRORS_LIMIT;
-        self::$logsOverviewRecentErrors = array_column(
-            array_slice($failures, 0, self::RECENT_ERRORS_LIMIT),
-            self::SORTED_ROW,
-        );
+        return array_column($rows, self::SORTED_ROW);
     }
 
     /**
@@ -702,6 +736,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewFreeSpaceThresholdPercent = null;
         self::$logsOverviewRecentErrors = [];
         self::$logsOverviewRecentErrorsCapped = false;
+        self::$logsOverviewRecentWarnings = [];
+        self::$logsOverviewRecentWarningsCapped = false;
     }
 
     /**
@@ -740,6 +776,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             nodes: self::$logsOverviewNodes,
             recentErrors: self::$logsOverviewRecentErrors,
             recentErrorsCapped: self::$logsOverviewRecentErrorsCapped,
+            recentWarnings: self::$logsOverviewRecentWarnings,
+            recentWarningsCapped: self::$logsOverviewRecentWarningsCapped,
             filesystemFreeBytes: self::$logsOverviewFilesystemFreeBytes,
             filesystemTotalBytes: self::$logsOverviewFilesystemTotalBytes,
             freeSpaceThresholdPercent: self::$logsOverviewFreeSpaceThresholdPercent,

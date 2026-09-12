@@ -4,30 +4,33 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
-use DateTimeImmutable;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Utils\Logger;
 
 /**
- * Stateless read service turning the tail of one live error stream into panel entries (HIL-867).
+ * Stateless read service turning the tail of one live stream into entries of the recent-failures panel (HIL-867).
  *
  * Sits on top of {@see LogLineReader}: that reads the last lines of a file, this decides which of
- * them are entries and what each one says. The shape it expects is the one {@see Logger} writes —
+ * them are entries and what each one says. Both of the panel's tabs are read here (HIL-868): errors
+ * off the tail of an error stream as it stands, warnings off the tail of an ordinary stream under a
+ * level filter and a window ceiling — a warning has no file of its own, and a stream without one
+ * would otherwise be read whole. The shape it expects is the one {@see Logger} writes —
  * `[YYYY-MM-DD HH:MM:SS.mmm] text{"context":…}` — with the context, stack trace and all, encoded as
  * JSON inside the very same line. That is why an entry here is one line and never a run of them,
  * and why the line has to be taken apart rather than shown whole: one such line weighed four
- * kilobytes on a live stand.
+ * kilobytes on a live stand. The level prefix a line of an ordinary stream opens with comes off
+ * too ({@see LogLineReader::textAfterLevel()}): the tab an entry sits in already names its level,
+ * and the row draws it as a tag of its own (HIL-868).
  *
  * A line without a timestamp is dropped rather than shown with a made-up time. Error streams hold
- * no continuation lines by construction, but the file is an ordinary file and anything may append
- * to it past the Logger — and an entry that cannot be ordered cannot be cut off by the panel's
+ * no continuation lines by construction, while an ordinary stream may, and anything may append to
+ * either past the Logger — and an entry that cannot be ordered cannot be cut off by the panel's
  * window either, so silence is the honest answer.
  *
- * The stamp is read in the timezone of the process doing the reading, which is the node that wrote
- * the file: the file itself carries local time and names no zone, so only that node can resolve it.
+ * When a line was written is {@see LogLineReader::stampMilliseconds()}'s answer, not this reader's.
  * Holds no state; an unreadable or missing file yields an empty list, not a refusal.
  */
-final class LogErrorTailReader
+final class LogRecentTailReader
 {
     /**
      * Start of the JSON context {@see Logger} appends to an entry, separated from the text by a space.
@@ -40,15 +43,9 @@ final class LogErrorTailReader
     /** Splits a stack trace rendered by `Throwable::getTraceAsString()` into frames. */
     private const string TRACE_FRAME_SEPARATOR = '/\R/';
 
-    /** Format of the timestamp {@see LogLineReader::TIMESTAMP_PREFIX_PATTERN} matches, with milliseconds. */
-    private const string TIMESTAMP_FORMAT = 'Y-m-d H:i:s.v';
-
-    /** Format printing a parsed timestamp back as unix milliseconds. */
-    private const string UNIX_MILLISECONDS_FORMAT = 'Uv';
-
     /**
      * @param LogLineReader $lineReader Reader over the log root the streams live in
-     * @param int $messageMaxChars Maximum length of {@see LogErrorEntry::$message}; the rest stays in the viewer
+     * @param int $messageMaxChars Maximum length of {@see LogRecentEntry::$message}; the rest stays in the viewer
      */
     public function __construct(
         private readonly LogLineReader $lineReader,
@@ -57,16 +54,22 @@ final class LogErrorTailReader
     }
 
     /**
-     * Read the newest entries of one live error stream.
+     * Read the newest entries of one live stream.
      *
      * @param string $basename Basename of the live stream under the log root
      * @param int $limit Maximum number of lines to take from the end of the file
+     * @param ?string $level Keep only lines of this level (a {@see Logger} `LEVEL_*` value), or null to take every line
+     * @param ?int $maxWindowBytes Furthest to read back from the end of the file, in bytes, or null to read back as far
+     *     as the page needs
      *
-     * @return list<LogErrorEntry> Entries newest first; empty when the file is unreadable or holds no entry
+     * @return list<LogRecentEntry> Entries newest first; empty when the file is unreadable or holds no entry
      */
-    public function readStream(string $basename, int $limit): array
+    public function readStream(string $basename, int $limit, ?string $level = null, ?int $maxWindowBytes = null): array
     {
-        $page = $this->lineReader->read($basename, new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: $limit));
+        $page = $this->lineReader->read(
+            $basename,
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: $limit, levelFilter: $level, maxWindowBytes: $maxWindowBytes),
+        );
 
         $entries = [];
         foreach ($page->lines as $line) {
@@ -85,20 +88,20 @@ final class LogErrorTailReader
      * @param string $text Line text as read from the file
      * @param string $basename Basename of the stream the line came from
      *
-     * @return ?LogErrorEntry Parsed entry, or null when the line carries no timestamp to order it by
+     * @return ?LogRecentEntry Parsed entry, or null when the line carries no timestamp to order it by
      */
-    private function parse(string $text, string $basename): ?LogErrorEntry
+    private function parse(string $text, string $basename): ?LogRecentEntry
     {
         if (preg_match(LogLineReader::TIMESTAMP_PREFIX_PATTERN, $text, $match) !== 1) {
             return null;
         }
 
-        $stamp = self::stampToMilliseconds(substr($match[0], 1, -2));
+        $stamp = LogLineReader::stampMilliseconds($text);
         if ($stamp === null) {
             return null;
         }
 
-        $rest = substr($text, strlen($match[0]));
+        $rest = LogLineReader::textAfterLevel(substr($text, strlen($match[0])));
         $message = $rest;
         $traceFrames = null;
         $offset = 0;
@@ -112,21 +115,7 @@ final class LogErrorTailReader
             $offset = $opening + 1;
         }
 
-        return new LogErrorEntry($stamp, $basename, mb_substr($message, 0, $this->messageMaxChars), $traceFrames);
-    }
-
-    /**
-     * Read the local timestamp of an entry as unix milliseconds.
-     *
-     * @param string $stamp Timestamp text taken from between the brackets of the line prefix
-     *
-     * @return ?int Unix milliseconds in this process's timezone, or null when the text is not a time
-     */
-    private static function stampToMilliseconds(string $stamp): ?int
-    {
-        $parsed = DateTimeImmutable::createFromFormat(self::TIMESTAMP_FORMAT, $stamp);
-
-        return $parsed === false ? null : (int)$parsed->format(self::UNIX_MILLISECONDS_FORMAT);
+        return new LogRecentEntry($stamp, $basename, mb_substr($message, 0, $this->messageMaxChars), $traceFrames);
     }
 
     /**

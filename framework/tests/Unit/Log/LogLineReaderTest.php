@@ -17,7 +17,9 @@ use PHPUnit\Framework\TestCase;
  * Drives a fixture log file mirroring real {@see Logger} output — timestamped INFO/ERROR/WARNING/DEBUG
  * entries, a wrapped stack trace, and an agent-pipe line — and locks: forward and backward pagination
  * cursors, the per-line level heuristic, continuation inheritance (so an ERROR filter also carries the
- * stack trace), the level and substring filters, and the traversal/availability guard.
+ * stack trace), the level and substring filters, and the traversal/availability guard. Also locks the
+ * window ceiling a backward scan may be given, the stamp of a line, and the search for the line an entry
+ * was written on (HIL-868).
  */
 final class LogLineReaderTest extends TestCase
 {
@@ -47,6 +49,16 @@ final class LogLineReaderTest extends TestCase
      * can say whether an older match remains.
      */
     private const int PADDING_BYTES = 70000;
+
+    /**
+     * Ceiling put on the backward reads of the window-ceiling and anchor-search tests.
+     *
+     * Below the reader's own 64 KiB window step, so the ceiling rather than the step decides where the first window ends.
+     */
+    private const int CEILING_BYTES = 4096;
+
+    /** The reader's own window step, which the chunk-edge test has to know to place a line across it. */
+    private const int WINDOW_STEP_BYTES = 65536;
 
     protected function setUp(): void
     {
@@ -289,6 +301,177 @@ final class LogLineReaderTest extends TestCase
         $this->assertNull($page->nextCursor);
     }
 
+    public function testTailStoppedByItsCeilingReadsNoFurtherAndHandsBackTheWindowBoundary(): void
+    {
+        $lines = $this->needlesAroundPadding();
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        $page = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 3, substring: 'needle', maxWindowBytes: self::CEILING_BYTES),
+        );
+
+        // The old needle lies behind the ceiling, so the scan cannot tell whether an older match is there: it says
+        // "maybe" and names the first line it read whole as the place to go on from.
+        $this->assertSame(
+            [$lines[count($lines) - 1]],
+            array_map(static fn (LogLine $line): string => $line->text, $page->lines),
+        );
+        $this->assertTrue($page->hasMore);
+        $windowStart = filesize($this->root . DIRECTORY_SEPARATOR . 'worker-1.log') - self::CEILING_BYTES;
+        $this->assertSame(
+            min(array_filter($this->lineOffsets($lines), static fn (int $offset): bool => $offset > $windowStart)),
+            $page->nextCursor,
+        );
+
+        $rest = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, cursor: $page->nextCursor, limit: 3, substring: 'needle'),
+        );
+
+        $this->assertSame([$lines[0]], array_map(static fn (LogLine $line): string => $line->text, $rest->lines));
+        $this->assertFalse($rest->hasMore);
+    }
+
+    public function testTailWithoutACeilingStillAnswersByTheMatchPastThePage(): void
+    {
+        $lines = $this->needlesAroundPadding();
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        // The ceiling is a third reason to stop, not a replacement for the rule HIL-882 put in: without one the
+        // window still grows to the start of the file and answers "no older page" exactly.
+        $page = $reader->read(
+            'worker-1.log',
+            new LogReadQuery(LogReadQuery::ANCHOR_TAIL, limit: 3, substring: 'needle'),
+        );
+
+        $this->assertSame(
+            [$lines[0], $lines[count($lines) - 1]],
+            array_map(static fn (LogLine $line): string => $line->text, $page->lines),
+        );
+        $this->assertFalse($page->hasMore);
+        $this->assertNull($page->nextCursor);
+    }
+
+    public function testStampMillisecondsReadsTheStampALineOpensWith(): void
+    {
+        $this->assertSame(
+            $this->milliseconds('2026-07-28 12:00:00', 250),
+            LogLineReader::stampMilliseconds('[2026-07-28 12:00:00.250] WARNING: retrying'),
+        );
+        // A continuation and an agent-pipe line do not open with a stamp, so nothing orders them.
+        $this->assertNull(LogLineReader::stampMilliseconds(self::FIXTURE[2]['text']));
+        $this->assertNull(LogLineReader::stampMilliseconds(self::FIXTURE[6]['text']));
+    }
+
+    public function testTextAfterLevelTakesOffEitherFormOfTheLevelPrefixAndNothingElse(): void
+    {
+        $this->assertSame('retrying', LogLineReader::textAfterLevel('[WARNING] retrying'));
+        $this->assertSame('retrying', LogLineReader::textAfterLevel('WARNING: retrying'));
+        $this->assertSame('connection failed', LogLineReader::textAfterLevel('ERROR: connection failed'));
+        // Text that only mentions a level opens with no prefix, and a line without one stays as it is.
+        $this->assertSame('WARNING retrying', LogLineReader::textAfterLevel('WARNING retrying'));
+        $this->assertSame('server started', LogLineReader::textAfterLevel('server started'));
+    }
+
+    public function testLocateFindsTheLineAnEntryWasWrittenOn(): void
+    {
+        $this->writeFixture('worker-1.log');
+        $reader = new LogLineReader($this->root);
+
+        // The WARNING entry is stamped .003 and follows an ERROR whose trace runs over two unstamped lines.
+        $this->assertSame(
+            $this->lineOffsets(array_column(self::FIXTURE, 'text'))[4],
+            $reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:00', 3), self::CEILING_BYTES),
+        );
+    }
+
+    public function testLocateBetweenTwoLinesLandsOnTheLaterOne(): void
+    {
+        $lines = ['[2026-07-28 12:00:00.001] before', '[2026-07-28 12:00:00.009] after'];
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        // The earlier line inside the window proves the boundary, so the first line past it is the place.
+        $this->assertSame(
+            $this->lineOffsets($lines)[1],
+            $reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:00', 5), self::CEILING_BYTES),
+        );
+    }
+
+    public function testLocateFindsAPlaceSeveralWindowStepsBack(): void
+    {
+        $lines = ['[2026-07-28 12:00:00.000] before', ...$this->needlesAroundPadding()];
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+        $offsets = $this->lineOffsets($lines);
+
+        // The old needle is the first line not earlier than .001, the first padding line the first not earlier than
+        // 12:00:01 — both more than one window step from the end, each found past the boundary the walk reaches.
+        $this->assertSame($offsets[1], $reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:00', 1), self::PADDING_BYTES * 2));
+        $this->assertSame($offsets[2], $reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:01', 0), self::PADDING_BYTES * 2));
+    }
+
+    public function testLocateReadsWholeTheLineAWindowStepCutsInTwo(): void
+    {
+        $lines = $this->needlesAroundPadding();
+        $offsets = $this->lineOffsets($lines);
+        $fileSize = $offsets[count($offsets) - 1] + strlen($lines[count($lines) - 1]) + 1;
+        $cut = max(array_keys(array_filter($offsets, static fn (int $offset): bool => $offset < $fileSize - self::WINDOW_STEP_BYTES)));
+        foreach ($lines as $index => $line) {
+            if ($index === $cut) {
+                $lines[$index] = str_replace('12:00:01.000]', '12:00:01.500]', $line);
+            } elseif ($index > $cut) {
+                $lines[$index] = str_replace('12:00:01.000]', '12:00:01.900]', $line);
+            }
+        }
+        $this->writeLines('worker-1.log', $lines);
+        $reader = new LogLineReader($this->root);
+
+        // The entry's line starts before the edge of the first chunk and ends after it: dropped there as a fragment,
+        // it has to be read again whole with the next chunk, or the place would land one line off.
+        $this->assertSame(
+            $offsets[$cut],
+            $reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:01', 500), self::PADDING_BYTES * 2),
+        );
+    }
+
+    public function testLocateAnswersNullForAMomentNewerThanTheLastLine(): void
+    {
+        $this->writeFixture('worker-1.log');
+        $reader = new LogLineReader($this->root);
+
+        $this->assertNull($reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:00', 7), self::CEILING_BYTES));
+    }
+
+    public function testLocateAnswersNullWhenThePlaceLiesBeyondTheCeiling(): void
+    {
+        $this->writeLines('worker-1.log', $this->needlesAroundPadding());
+        $reader = new LogLineReader($this->root);
+        $atMs = $this->milliseconds('2026-07-28 12:00:00', 1);
+
+        // Within reach of a generous ceiling the old needle is found at the start of the file; behind a tight one the
+        // window holds only later lines, which prove nothing, so no place is claimed.
+        $this->assertSame(0, $reader->locate('worker-1.log', $atMs, self::PADDING_BYTES * 2));
+        $this->assertNull($reader->locate('worker-1.log', $atMs, self::CEILING_BYTES));
+    }
+
+    public function testLocateAtTheStartOfTheFileClaimsOnlyTheExactMoment(): void
+    {
+        $this->writeLines('worker-1.log', [
+            '[2026-07-28 12:00:00.005] first line after rotation',
+            '[2026-07-28 12:00:00.006] next',
+        ]);
+        $reader = new LogLineReader($this->root);
+
+        // No earlier line is left to prove a boundary: an entry older than the file went away with the rotated one,
+        // and opening the viewer on the first line would claim that line is the place.
+        $this->assertNull($reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:00', 2), self::CEILING_BYTES));
+        $this->assertSame(0, $reader->locate('worker-1.log', $this->milliseconds('2026-07-28 12:00:00', 5), self::CEILING_BYTES));
+    }
+
     public function testMissingFileYieldsUnavailable(): void
     {
         $reader = new LogLineReader($this->root);
@@ -327,6 +510,57 @@ final class LogLineReaderTest extends TestCase
     private function writeLines(string $name, array $lines): void
     {
         file_put_contents($this->root . DIRECTORY_SEPARATOR . $name, implode("\n", $lines) . "\n");
+    }
+
+    /**
+     * An old needle at the start of a file, more than one window step of later padding, and a recent needle at its end.
+     *
+     * @return list<string> Lines in file order
+     */
+    private function needlesAroundPadding(): array
+    {
+        $lines = ['[2026-07-28 12:00:00.001] needle old'];
+        $written = 0;
+        while ($written < self::PADDING_BYTES) {
+            $padding = '[2026-07-28 12:00:01.000] unrelated ' . count($lines);
+            $lines[] = $padding;
+            $written += strlen($padding) + 1;
+        }
+        $lines[] = '[2026-07-28 12:00:02.000] needle recent';
+
+        return $lines;
+    }
+
+    /**
+     * Byte offset each line starts at once written by {@see writeLines()}.
+     *
+     * @param list<string> $lines Lines in file order
+     *
+     * @return list<int> Start offset of each line, in the same order
+     */
+    private function lineOffsets(array $lines): array
+    {
+        $offsets = [];
+        $offset = 0;
+        foreach ($lines as $line) {
+            $offsets[] = $offset;
+            $offset += strlen($line) + 1;
+        }
+
+        return $offsets;
+    }
+
+    /**
+     * The unix milliseconds a line stamped with this local time must be read as.
+     *
+     * @param string $stamp Local time without milliseconds
+     * @param int $milliseconds Millisecond part of the stamp
+     *
+     * @return int Unix milliseconds
+     */
+    private function milliseconds(string $stamp, int $milliseconds): int
+    {
+        return strtotime($stamp) * 1000 + $milliseconds;
     }
 
     /**

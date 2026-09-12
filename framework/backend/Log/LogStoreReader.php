@@ -56,11 +56,14 @@ final class LogStoreReader
      * @param list<string> $daemonBasenames Exact basenames of the daemon's own logs, classified as {@see self::CLASS_DAEMON}
      * @param ?string $daemonErrorBasename Basename of the daemon's own error stream, the one name
      *     {@see isErrorStream()} cannot derive from a suffix, or null when the env does not configure one
+     * @param list<string> $rawBasenames Basenames of the raw pair beside the daemon's streams ({@see DaemonRawStream}),
+     *     the names {@see isRawStream()} recognizes
      */
     public function __construct(
         private readonly ?string $logDirectory,
         private readonly array $daemonBasenames = [],
         private readonly ?string $daemonErrorBasename = null,
+        private readonly array $rawBasenames = [],
     ) {
     }
 
@@ -88,6 +91,7 @@ final class LogStoreReader
             dirname($daemonLogFile),
             self::daemonBasenames($daemonLogFile, $errorLogFile),
             $errorLogFile === null ? null : basename($errorLogFile),
+            self::rawBasenames($daemonLogFile, $errorLogFile),
         );
     }
 
@@ -127,16 +131,31 @@ final class LogStoreReader
      */
     private static function daemonBasenames(string $daemonLogFile, ?string $errorLogFile): array
     {
-        $basenames = [
-            basename($daemonLogFile),
-            basename(DaemonRawStream::pathFor($daemonLogFile)),
-        ];
-        if ($errorLogFile === null) {
-            return $basenames;
+        $basenames = [basename($daemonLogFile)];
+        if ($errorLogFile !== null) {
+            $basenames[] = basename($errorLogFile);
         }
 
-        $basenames[] = basename($errorLogFile);
-        $basenames[] = basename(DaemonRawStream::pathFor($errorLogFile));
+        return [...$basenames, ...self::rawBasenames($daemonLogFile, $errorLogFile)];
+    }
+
+    /**
+     * Basenames of the raw stream beside each daemon stream the env names.
+     *
+     * The one derivation both the daemon class and {@see isRawStream()} read, so the raw name is not
+     * worked out twice (HIL-868).
+     *
+     * @param string $daemonLogFile Value of `DAEMON_LOG_FILE`, already resolved by the caller
+     * @param ?string $errorLogFile Value of `DAEMON_ERROR_LOG_FILE`, or null when the env carries none
+     *
+     * @return list<string> One raw basename per daemon stream the env names
+     */
+    private static function rawBasenames(string $daemonLogFile, ?string $errorLogFile): array
+    {
+        $basenames = [basename(DaemonRawStream::pathFor($daemonLogFile))];
+        if ($errorLogFile !== null) {
+            $basenames[] = basename(DaemonRawStream::pathFor($errorLogFile));
+        }
 
         return $basenames;
     }
@@ -229,6 +248,24 @@ final class LogStoreReader
     {
         return str_ends_with($basename, LogStreamConstants::ERROR_STREAM_SUFFIX)
             || $basename === $this->daemonErrorBasename;
+    }
+
+    /**
+     * Whether a live stream is one of the raw pair beside the daemon's streams (HIL-868).
+     *
+     * What lands there is whatever PHP printed past the Logger ({@see DaemonRawStream}), and none of it
+     * carries the Logger's stamp: a line from it cannot be ordered against the lines of other streams,
+     * nor cut off by a time window. A scan that orders and windows what it finds — the warnings of the
+     * recent-failures panel read every live stream — skips these, since reading them whole would be
+     * paying for lines it has to drop.
+     *
+     * @param string $basename Basename of a live stream, as {@see LogStoreSnapshot::liveFiles()} names it
+     *
+     * @return bool Whether the stream is one of the raw pair
+     */
+    public function isRawStream(string $basename): bool
+    {
+        return in_array($basename, $this->rawBasenames, true);
     }
 
     /**

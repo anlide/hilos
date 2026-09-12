@@ -45,9 +45,13 @@ with an `.error.log` twin for the worker's stderr, written by the **master** out
 of the pipes a worker's `Logger` echoes into (`WorkerServer::saveWorkerOutput()`,
 once a second and when the worker dies); `agent-<id>.log` and its `.error.log`
 twin, cut out of the same pipes by the agent marker (`Logger::AGENT_LOG_MARKER`)
-and named by the agent's id, not its type. Where each of these streams lands,
-and what lands beside them past the `Logger`, is the map HIL-872 drew
-(`hilos-ops/maps/HIL-872-log-streams.md`).
+and named by the agent's id, not its type. The level the marker carries as a
+field of its own is written into `agent-<id>.log` between the stamp and the
+text — `[stamp] [WARNING] text`, the form `Logger` writes when it shows the level
+— so a reader tells an agent's warning from its info; the `.error.log` twin
+keeps the bare `[stamp] text` of every error stream (HIL-868). Where each of
+these streams lands, and what lands beside them past the `Logger`, is the map
+HIL-872 drew (`hilos-ops/maps/HIL-872-log-streams.md`).
 Routing a line through the owner is forbidden: it would turn logging in the
 whole framework upside down, put an agent on the path of every message of every
 process, and buy nothing, because the owner measures files and does not care who
@@ -273,7 +277,7 @@ and the archive layout is known in exactly one process.
 A read goes the long way round, and the page steps out of its own action:
 
 ```
-browser: logs_read_lines(nodeId, source, batchTimestamp, stream, cursor, level, substring)
+browser: logs_read_lines(nodeId, source, batchTimestamp, stream, cursor | anchorAtMs, level, substring)
   → AbstractHilosLogsViewPage::onAction()   checks the node still exists, DEFERS its ack
   → logs_agent_read_lines                   NODE_FIELD = nodeId → forwarded over the peer channel
   → LogStoreAgent::handleReadLines()        reads the page, acks the browser's socket directly
@@ -292,9 +296,19 @@ recorded where the person waiting cannot see it. An unreadable file is not such
 a failure — a missing file, a batch carried off, a refused path all come back as
 a successful page with `readable` false, the way the whole index answers.
 
-Reading runs backwards and only backwards: the first page and the *Earlier*
-button are the same tail query with and without a cursor. Following is a
-different mechanism:
+An ordinary read runs backwards: the first page and the *Earlier* button are
+the same tail query with and without a cursor. The one forward read is a read
+opened on an **anchor** (HIL-868) — the unix milliseconds of an entry, which is
+what a row of the recent-failures panel puts into the viewer address. The owner
+finds the line that entry was written on (`LogLineReader::locate()`, searching
+back at most 8 MiB and claiming a place only where an earlier line or an exact
+stamp proves it), reads forward from it, and hands back the anchor's own offset
+as the cursor, so *Earlier* works on that page unchanged. An anchor it cannot
+find — the rotation took the file, the entry is beyond the search, the moment is
+newer than the file — answers with the ordinary tail and `anchorFound` false.
+The anchor is a time and not a byte offset because an offset stops meaning
+anything at the next rotation, and a cursor and an anchor never travel together:
+one continues a page, the other starts one. Following is a different mechanism:
 
 - `logs_follow_start` is one action, not two, because "show me the end, now
   follow it" as two calls would lose whatever was written between them. The

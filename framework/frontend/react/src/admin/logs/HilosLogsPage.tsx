@@ -10,34 +10,48 @@
 // headless's (hilosLogsOverview); this view owns only the markup, so a project mounts
 // it by passing its HilosLogsOverviewContext. Bootstrap classes only
 // (styling-rules.md).
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
-  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
+  formatLogsOverviewRecentAt,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
-  hasLogsOverviewRecentErrors,
+  hasLogsOverviewRecent,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  logLevelVariant,
   logsOverviewBatchesNote,
-  logsOverviewErrorOrigin,
-  logsOverviewErrorPath,
   logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
-  logsOverviewRecentErrors,
-  logsOverviewRecentErrorsBadge,
+  logsOverviewRecent,
+  logsOverviewRecentBadge,
+  logsOverviewRecentEmptyLead,
+  logsOverviewRecentEmptyTitle,
+  logsOverviewRecentLead,
+  logsOverviewRecentLevel,
+  logsOverviewRecentOrigin,
+  logsOverviewRecentPath,
+  logsOverviewRecentTabLabel,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
+  RECENT_TAB_ERRORS,
+  RECENT_TAB_WARNINGS,
 } from '@hilos/core'
-import type { HilosLogsOverviewContext } from '@hilos/core'
+import type { HilosLogsOverviewContext, HilosLogsRecentTab } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { useSignal } from '../../useSignal.js'
+
+/** The tabs of the recent-failures panel, in the order they stand. */
+const RECENT_TABS: readonly HilosLogsRecentTab[] = [
+  RECENT_TAB_ERRORS,
+  RECENT_TAB_WARNINGS,
+]
 
 /** Props for {@link HilosLogsPage}. */
 export interface HilosLogsPageProps {
@@ -85,9 +99,13 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
   // The panel of last failures. It is drawn only where there ARE figures: saying
   // "nothing has gone wrong" about a picture that has not arrived would be good news
   // made up, and that is the one thing an empty state here must never look like.
-  const recentErrors = logsOverviewRecentErrors(overview)
-  const hasRecentErrors = hasLogsOverviewRecentErrors(overview)
-  const recentErrorsBadge = logsOverviewRecentErrorsBadge(overview)
+  // The open tab is the screen's own state: both lists ride every frame, so a click
+  // on a tab asks the server for nothing.
+  const [recentTab, setRecentTab] =
+    useState<HilosLogsRecentTab>(RECENT_TAB_ERRORS)
+  const recentEntries = logsOverviewRecent(overview, recentTab)
+  const hasRecent = hasLogsOverviewRecent(overview, recentTab)
+  const recentLevel = logsOverviewRecentLevel(recentTab)
 
   return (
     <HilosAdminPage
@@ -237,91 +255,116 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
             <>
               <div className="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
                 <h2 className="h6 text-uppercase text-body-secondary mb-0">
-                  Recent errors
+                  Recent failures
                 </h2>
-                <span
-                  className="badge text-bg-danger"
-                  data-id="hilos-logs-recent-errors-count"
-                >
-                  {recentErrorsBadge}
-                </span>
-                <span className="ms-auto small text-body-secondary">
-                  Over the last hour
-                </span>
               </div>
               <p className="small text-body-secondary">
-                An error asks somebody to go and look at it. Each line leads
-                into the journal it was written in — the same node, the same
-                file.
+                {logsOverviewRecentLead(recentTab)}
               </p>
-              {/* The row leads to the FILE and not to the line: the viewer address
-              has no anchor for a line yet, and "the same place" is the next step
-              rather than this one. */}
-              {hasRecentErrors ? (
-                <div
-                  className="border rounded-3 overflow-hidden mb-2"
-                  data-id="hilos-logs-recent-errors"
+              {/* Two tabs and never one feed: warnings always outnumber errors and
+              would bury them. */}
+              <div
+                className="border rounded-3 overflow-hidden mb-2"
+                data-id="hilos-logs-recent"
+              >
+                <ul
+                  className="nav nav-tabs px-2 pt-2 bg-body-tertiary"
+                  role="tablist"
+                  data-id="hilos-logs-recent-tabs"
                 >
-                  {recentErrors.map((error, index) => (
-                    <HilosLink
-                      key={index}
-                      to={logsOverviewErrorPath(error)}
-                      className="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
-                      data-id="hilos-logs-recent-error"
-                    >
-                      <span className="small fw-semibold text-danger flex-shrink-0">
-                        ERROR
-                      </span>
-                      <span className="small text-body-secondary flex-shrink-0">
-                        {formatLogsOverviewErrorAt(error.at)}
-                      </span>
-                      <span className="flex-grow-1 small">
-                        {error.message}
-                        <span className="d-block text-body-secondary">
-                          {logsOverviewErrorOrigin(overview, error)}
-                        </span>
-                      </span>
-                      {error.traceFrames === null ? null : (
+                  {RECENT_TABS.map((tab) => (
+                    <li key={tab} className="nav-item" role="presentation">
+                      <button
+                        type="button"
+                        role="tab"
+                        className={`nav-link py-1 px-3 small${recentTab === tab ? ' active' : ''}`}
+                        aria-selected={recentTab === tab}
+                        aria-controls="hilos-logs-recent-panel"
+                        data-id={`hilos-logs-recent-tab-${tab}`}
+                        onClick={() => setRecentTab(tab)}
+                      >
+                        {logsOverviewRecentTabLabel(tab)}
                         <span
-                          className="badge text-bg-light border flex-shrink-0"
-                          title="This error carries a stack trace"
-                          data-id="hilos-logs-recent-error-trace"
+                          className={`badge ms-1 text-bg-${logLevelVariant(logsOverviewRecentLevel(tab))}`}
+                          data-id={`hilos-logs-recent-count-${tab}`}
                         >
-                          <i
-                            className="bi bi-info-circle me-1"
-                            aria-hidden="true"
-                          />
-                          {error.traceFrames}
+                          {logsOverviewRecentBadge(overview, tab)}
                         </span>
-                      )}
+                      </button>
+                    </li>
+                  ))}
+                  <li
+                    className="ms-auto small text-body-secondary py-1"
+                    role="presentation"
+                  >
+                    Over the last hour
+                  </li>
+                </ul>
+                <div id="hilos-logs-recent-panel" role="tabpanel">
+                  {hasRecent ? (
+                    recentEntries.map((entry, index) => (
+                      <HilosLink
+                        key={index}
+                        to={logsOverviewRecentPath(entry)}
+                        className="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
+                        data-id="hilos-logs-recent-row"
+                      >
+                        <span
+                          className={`small fw-semibold flex-shrink-0 text-${logLevelVariant(recentLevel)}`}
+                        >
+                          {recentLevel}
+                        </span>
+                        <span className="small text-body-secondary flex-shrink-0">
+                          {formatLogsOverviewRecentAt(entry.at)}
+                        </span>
+                        <span className="flex-grow-1 small">
+                          {entry.message}
+                          <span className="d-block text-body-secondary">
+                            {logsOverviewRecentOrigin(overview, entry)}
+                          </span>
+                        </span>
+                        {entry.traceFrames === null ? null : (
+                          <span
+                            className="badge text-bg-light border flex-shrink-0"
+                            title="This entry carries a stack trace"
+                            data-id="hilos-logs-recent-row-trace"
+                          >
+                            <i
+                              className="bi bi-info-circle me-1"
+                              aria-hidden="true"
+                            />
+                            {entry.traceFrames}
+                          </span>
+                        )}
+                        <i
+                          className="bi bi-chevron-right text-body-secondary flex-shrink-0"
+                          aria-hidden="true"
+                        />
+                      </HilosLink>
+                    ))
+                  ) : (
+                    /* Good news, and it must not read as "no data": the picture IS
+                    here, and it says nothing of this kind happened in the window. */
+                    <div
+                      className="p-3 d-flex align-items-center gap-3 bg-body-tertiary"
+                      data-id="hilos-logs-recent-empty"
+                    >
                       <i
-                        className="bi bi-chevron-right text-body-secondary flex-shrink-0"
+                        className="bi bi-check2-circle fs-4 text-success"
                         aria-hidden="true"
                       />
-                    </HilosLink>
-                  ))}
-                </div>
-              ) : (
-                /* Good news, and it must not read as "no data": the picture IS here,
-                and it says nothing went wrong in the window. */
-                <div
-                  className="border rounded-3 p-3 mb-2 d-flex align-items-center gap-3 bg-body-tertiary"
-                  data-id="hilos-logs-recent-errors-empty"
-                >
-                  <i
-                    className="bi bi-check2-circle fs-4 text-success"
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <div className="fw-semibold small">
-                      No errors in the last hour
+                      <div>
+                        <div className="fw-semibold small">
+                          {logsOverviewRecentEmptyTitle(recentTab)}
+                        </div>
+                        <div className="small text-body-secondary">
+                          {logsOverviewRecentEmptyLead(recentTab)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="small text-body-secondary">
-                      Nothing has asked for attention in that time.
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
             </>
           ) : null}
 

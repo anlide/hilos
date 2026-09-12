@@ -411,6 +411,62 @@ describe('HilosLogsViewPage', () => {
       'The file was rotated. Reading continues from the start of the new one.',
     )
   })
+
+  it('frames the entry a link opened the viewer on, and no other', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    await nextTick()
+
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [
+        wireLine(
+          '[2026-09-06 10:00:02.250] ERROR: the entry the row named',
+          'ERROR',
+        ),
+        wireLine('[2026-09-06 10:00:03.000] INFO: what happened next'),
+      ],
+      nextCursor: 4096,
+      hasMore: true,
+      anchorFound: true,
+    })
+    await flushPromises()
+
+    const anchored = wrapper.findAll('[data-id="hilos-log-entry-anchor"]')
+    expect(anchored).toHaveLength(1)
+    expect(anchored[0].text()).toContain('the entry the row named')
+    expect(wrapper.findAll('[aria-current="location"]')).toHaveLength(1)
+  })
+
+  it('says in the feed that the entry a link named is not in the file any more', async () => {
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, {
+      ...LIVE_FILE,
+      anchor: '1788000000250',
+    })
+    pushCatalog(catalog())
+    await nextTick()
+
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [wireLine('[2026-09-06 11:00:00.000] INFO: the end of the file')],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: false,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-id="hilos-log-notice"]').text()).toBe(
+      'The entry this link points at is no longer in this file. Showing the end of the file instead.',
+    )
+    expect(wrapper.find('[data-id="hilos-log-entry-anchor"]').exists()).toBe(
+      false,
+    )
+  })
 })
 
 /**

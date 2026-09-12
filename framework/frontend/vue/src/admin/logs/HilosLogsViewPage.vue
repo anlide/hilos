@@ -165,6 +165,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
   skipped: 'bi-fast-forward',
   dropped: 'bi-scissors',
   stopped: 'bi-stop-circle',
+  anchorMissing: 'bi-geo-alt',
 }
 
 // The pane is the scrolling element, so it is the one whose position answers
@@ -455,13 +456,24 @@ function toggle(entry: HilosLogViewerEntry): void {
               ></i>
               <span>{{ row.text }}</span>
             </div>
-            <div v-else data-id="hilos-log-entry">
+            <!-- The entry a link opened the viewer on is framed so the eye lands on it;
+            it comes first on its page, so nothing has to scroll to it. -->
+            <div
+              v-else
+              data-id="hilos-log-entry"
+              :class="{
+                'border border-primary rounded-1 bg-primary-subtle':
+                  row.anchored,
+              }"
+              :aria-current="row.anchored ? 'location' : undefined"
+            >
               <div
                 class="d-flex gap-2 px-3 py-1 font-monospace small text-break border-start border-4"
                 :class="[
                   `border-${logLevelVariant(row.level)}`,
                   { 'opacity-75': row.orphan },
                 ]"
+                :data-id="row.anchored ? 'hilos-log-entry-anchor' : undefined"
               >
                 <span
                   class="fw-semibold text-nowrap"

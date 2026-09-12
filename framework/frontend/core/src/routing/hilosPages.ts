@@ -197,7 +197,7 @@ export const HILOS_ROUTE_DECLARATIONS: Record<string, HilosRouteDeclaration> = {
   [HilosPages.LOGS_ROTATIONS]: { path: '/hilos/logs/rotations', admin: true },
   [HilosPages.LOGS_SETTINGS]: { path: '/hilos/logs/settings', admin: true },
   [HilosPages.LOGS_VIEW]: {
-    path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}',
+    path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}/{anchor?}',
     admin: true,
   },
   [HilosPages.USERS]: { path: '/hilos/users', admin: true },

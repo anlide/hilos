@@ -84,6 +84,7 @@ final class LogsViewPageReadLinesTest extends TestCase
                 level: 'ERROR',
                 substring: 'timeout',
                 cursor: 4096,
+                anchorAtMs: null,
                 acceptKey: self::ACCEPT_KEY,
                 action: HilosSignalConstants::LOGS_READ_LINES,
                 requestId: self::REQUEST_ID,

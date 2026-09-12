@@ -72,6 +72,12 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Payload key: whether that list was cut at the limit, which the screen reads as "10+". */
     public const string recentErrorsCapped = 'recentErrorsCapped';
 
+    /** Payload key: the cluster's last warnings inside the panel's window, newest first (HIL-868). */
+    public const string recentWarnings = 'recentWarnings';
+
+    /** Payload key: whether the warnings list was cut at the limit, which its tab reads as "10+". */
+    public const string recentWarningsCapped = 'recentWarningsCapped';
+
     /**
      * Payload key: free bytes on the filesystem holding the log root (HIL-869).
      *
@@ -111,7 +117,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     public const string traceFrames = 'traceFrames';
 
     /**
-     * Value of {@see self::nodeId} in an error row from an installation whose nodes have no names.
+     * Value of {@see self::nodeId} in a row of either recent feed from an installation whose nodes have no names.
      *
      * A value and not an absence, which is why it is spelled out here rather than left to a
      * fallback: the viewer address reads the empty id as "the node you are on" and draws it as its
@@ -139,6 +145,9 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      *     Last failures across the cluster inside the panel's window, newest first; the node id is
      *     an empty string in a single-node installation, which is what the viewer address expects
      * @param bool $recentErrorsCapped Whether that list was cut at the limit, so the screen says "10+"
+     * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentWarnings
+     *     Last warnings across the cluster inside the panel's window, newest first, in the same row as the failures
+     * @param bool $recentWarningsCapped Whether the warnings list was cut at the limit, so its tab says "10+"
      * @param ?int $filesystemFreeBytes Free bytes on this installation's log filesystem, null in a cluster or when not known
      * @param ?int $filesystemTotalBytes Whole size of that filesystem, null in a cluster or when not known
      * @param ?int $freeSpaceThresholdPercent Share of the volume kept free, null in a cluster or when not known
@@ -157,6 +166,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
         public readonly array $nodes,
         public readonly array $recentErrors = [],
         public readonly bool $recentErrorsCapped = false,
+        public readonly array $recentWarnings = [],
+        public readonly bool $recentWarningsCapped = false,
         public readonly ?int $filesystemFreeBytes = null,
         public readonly ?int $filesystemTotalBytes = null,
         public readonly ?int $freeSpaceThresholdPercent = null,
@@ -182,6 +193,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::nodes => $this->nodes,
             self::recentErrors => $this->recentErrors,
             self::recentErrorsCapped => $this->recentErrorsCapped,
+            self::recentWarnings => $this->recentWarnings,
+            self::recentWarningsCapped => $this->recentWarningsCapped,
             self::filesystemFreeBytes => $this->filesystemFreeBytes,
             self::filesystemTotalBytes => $this->filesystemTotalBytes,
             self::freeSpaceThresholdPercent => $this->freeSpaceThresholdPercent,
@@ -213,8 +226,10 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             keysWithoutGrowthWindow: self::optionalNonNegativeInt($data[self::keysWithoutGrowthWindow] ?? null),
             batchesDueForTakeout: self::optionalNonNegativeInt($data[self::batchesDueForTakeout] ?? null),
             nodes: self::nodeRows($data),
-            recentErrors: self::errorRows($data),
+            recentErrors: self::recentRows($data, self::recentErrors),
             recentErrorsCapped: ($data[self::recentErrorsCapped] ?? null) === true,
+            recentWarnings: self::recentRows($data, self::recentWarnings),
+            recentWarningsCapped: ($data[self::recentWarningsCapped] ?? null) === true,
             filesystemFreeBytes: self::optionalNonNegativeInt($data[self::filesystemFreeBytes] ?? null),
             filesystemTotalBytes: self::optionalNonNegativeInt($data[self::filesystemTotalBytes] ?? null),
             freeSpaceThresholdPercent: self::optionalNonNegativeInt($data[self::freeSpaceThresholdPercent] ?? null),
@@ -266,7 +281,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     }
 
     /**
-     * Reads the panel's rows back, refusing one that is not a row (HIL-867).
+     * Reads one feed of the panel back — errors or warnings — refusing a row that is not one (HIL-867, HIL-868).
      *
      * Every field of a row is required but the frame count, and the node id is required as a
      * STRING that may be empty: a single-node installation has no name to give, and the address
@@ -274,17 +289,21 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * count keeps its null, which is the difference between "there is a stack to look at" and
      * "there is not" — read as zero it would put a badge on every row.
      *
+     * Both feeds share this reader because they share the row: a second reading of it would be a
+     * second answer to what a row of the panel is.
+     *
      * @param array<string, mixed> $data Wire form of the overview
-     * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Rows of the panel
+     * @param string $listKey Payload key holding the feed, {@see self::recentErrors} or {@see self::recentWarnings}
+     * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Rows of that tab
      * @throws InvalidFormatException When the list is absent, holds a row that is not an object, or
      *     a row omits a field it has no meaning without
      */
-    private static function errorRows(array $data): array
+    private static function recentRows(array $data, string $listKey): array
     {
         $rows = [];
-        foreach (self::requireArray($data, self::recentErrors) as $row) {
+        foreach (self::requireArray($data, $listKey) as $row) {
             if (!is_array($row)) {
-                throw new InvalidFormatException('Logs overview carries a recent error that is not an object');
+                throw new InvalidFormatException('Logs overview carries a recent entry that is not an object under key ' . $listKey);
             }
 
             $rows[] = [

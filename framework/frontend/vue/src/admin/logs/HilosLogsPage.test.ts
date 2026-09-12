@@ -5,7 +5,7 @@ import { HilosPages, createSignal, OVERVIEW_SIGNAL } from '@hilos/core'
 import type {
   HilosConnection,
   HilosLogsOverview,
-  HilosLogsOverviewError,
+  HilosLogsOverviewRecentEntry,
   HilosLogsOverviewNode,
   HilosRouter,
   PageRouteMatch,
@@ -51,6 +51,8 @@ function overview(
     nodes: [],
     recentErrors: [],
     recentErrorsCapped: false,
+    recentWarnings: [],
+    recentWarningsCapped: false,
     filesystemFreeBytes: null,
     filesystemTotalBytes: null,
     freeSpaceThresholdPercent: null,
@@ -58,10 +60,10 @@ function overview(
   }
 }
 
-/** One failure of the recent-errors panel. */
+/** One entry of the recent-failures panel. */
 function failure(
-  overrides: Partial<HilosLogsOverviewError> = {},
-): HilosLogsOverviewError {
+  overrides: Partial<HilosLogsOverviewRecentEntry> = {},
+): HilosLogsOverviewRecentEntry {
   return {
     nodeId: '',
     stream: 'worker-monopolistic-5.error.log',
@@ -252,19 +254,17 @@ describe('HilosLogsPage', () => {
     const { connection, push } = makeConnection()
     const wrapper = mountPage(connection)
 
-    expect(
-      wrapper.find('[data-id="hilos-logs-recent-errors-empty"]').exists(),
-    ).toBe(false)
+    expect(wrapper.find('[data-id="hilos-logs-recent-empty"]').exists()).toBe(
+      false,
+    )
 
     push(overview({ available: false }))
     await nextTick()
 
-    expect(
-      wrapper.find('[data-id="hilos-logs-recent-errors-empty"]').exists(),
-    ).toBe(false)
-    expect(wrapper.find('[data-id="hilos-logs-recent-errors"]').exists()).toBe(
+    expect(wrapper.find('[data-id="hilos-logs-recent-empty"]').exists()).toBe(
       false,
     )
+    expect(wrapper.find('[data-id="hilos-logs-recent"]').exists()).toBe(false)
   })
 
   it('says the hour was quiet in words, rather than showing an empty list', async () => {
@@ -275,14 +275,14 @@ describe('HilosLogsPage', () => {
     await nextTick()
 
     expect(
-      wrapper.find('[data-id="hilos-logs-recent-errors-empty"]').text(),
+      wrapper.find('[data-id="hilos-logs-recent-empty"]').text(),
     ).toContain('No errors in the last hour')
-    expect(wrapper.find('[data-id="hilos-logs-recent-errors"]').exists()).toBe(
+    expect(wrapper.find('[data-id="hilos-logs-recent-row"]').exists()).toBe(
       false,
     )
   })
 
-  it('leads a row into the viewer on the file that line is in', async () => {
+  it('leads a row into the viewer on the line itself', async () => {
     const { connection, push } = makeConnection()
     const wrapper = mountPage(connection)
 
@@ -293,10 +293,10 @@ describe('HilosLogsPage', () => {
     )
     await nextTick()
 
-    const row = wrapper.find('[data-id="hilos-logs-recent-error"]')
+    const row = wrapper.find('[data-id="hilos-logs-recent-row"]')
     expect(row.exists()).toBe(true)
     expect(row.attributes('href')).toBe(
-      '/hilos/logs/view/-/live/worker-0.error.log',
+      `/hilos/logs/view/-/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
     )
     expect(row.text()).toContain('login action failed')
   })
@@ -315,12 +315,75 @@ describe('HilosLogsPage', () => {
     )
     await nextTick()
 
-    const badges = wrapper.findAll('[data-id="hilos-logs-recent-error-trace"]')
+    const badges = wrapper.findAll('[data-id="hilos-logs-recent-row-trace"]')
     expect(badges).toHaveLength(1)
     expect(badges[0].text()).toContain('3')
     expect(
-      wrapper.find('[data-id="hilos-logs-recent-errors-count"]').text(),
+      wrapper.find('[data-id="hilos-logs-recent-count-errors"]').text(),
     ).toBe('2')
+  })
+
+  it('draws both tabs, each counting its own list by its own flag', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    push(
+      overview({
+        recentErrors: [failure()],
+        recentWarnings: [failure(), failure()],
+        recentWarningsCapped: true,
+      }),
+    )
+    await nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-count-errors"]').text(),
+    ).toBe('1')
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-count-warnings"]').text(),
+    ).toBe('2+')
+    expect(
+      wrapper
+        .find('[data-id="hilos-logs-recent-tab-errors"]')
+        .attributes('aria-selected'),
+    ).toBe('true')
+  })
+
+  it('shows the warnings on a click of their tab, from the frame it already holds', async () => {
+    // The connection stub can send nothing: a tab that asked the server would throw.
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+    push(
+      overview({
+        recentErrors: [failure({ message: 'login action failed' })],
+        recentWarnings: [failure({ message: 'slow query', traceFrames: null })],
+      }),
+    )
+    await nextTick()
+
+    await wrapper
+      .find('[data-id="hilos-logs-recent-tab-warnings"]')
+      .trigger('click')
+
+    const rows = wrapper.findAll('[data-id="hilos-logs-recent-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].text()).toContain('slow query')
+    expect(rows[0].text()).toContain('WARNING')
+  })
+
+  it('gives each tab its own good news', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+    push(overview({ recentErrors: [failure()] }))
+    await nextTick()
+
+    await wrapper
+      .find('[data-id="hilos-logs-recent-tab-warnings"]')
+      .trigger('click')
+
+    expect(
+      wrapper.find('[data-id="hilos-logs-recent-empty"]').text(),
+    ).toContain('No warnings in the last hour')
   })
 
   it('leaves the takeout banner out entirely when nothing is waiting', async () => {

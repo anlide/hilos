@@ -452,5 +452,6 @@ export function logWorkerViewerPath(row: HilosLogWorkerRow): string {
     nodeId: row.node ?? '',
     source,
     stream: row.key,
+    anchorAtMs: null,
   })
 }

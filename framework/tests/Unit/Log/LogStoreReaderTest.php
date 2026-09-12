@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Log;
 
 use Hilos\Constants\LogRotationConstants;
+use Hilos\Log\DaemonRawStream;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\LogStoreReader;
 use PHPUnit\Framework\TestCase;
@@ -222,6 +223,19 @@ final class LogStoreReaderTest extends TestCase
         $this->assertFalse($reader->isErrorStream('worker-1.log'));
     }
 
+    public function testTheRawPairIsRecognizedAndNoOtherStreamIs(): void
+    {
+        $reader = $this->reader();
+
+        // A raw line carries no Logger stamp to order it or cut it off by, so the warnings scan skips these two by name.
+        $this->assertTrue($reader->isRawStream('daemon-raw.log'));
+        $this->assertTrue($reader->isRawStream('daemon-error-raw.log'));
+        $this->assertFalse($reader->isRawStream(self::DAEMON_LOG));
+        $this->assertFalse($reader->isRawStream(self::DAEMON_ERROR_LOG));
+        $this->assertFalse($reader->isRawStream('worker-1.log'));
+        $this->assertFalse($reader->isRawStream('worker-monopolistic-5.error.log'));
+    }
+
     public function testWithoutAConfiguredErrorLogOnlyTheSuffixNamesAnErrorStream(): void
     {
         $reader = new LogStoreReader($this->dir, [self::DAEMON_LOG]);
@@ -231,13 +245,19 @@ final class LogStoreReaderTest extends TestCase
     }
 
     /**
-     * Reader over the fixture directory, knowing the two daemon basenames and which of them is the error one.
+     * Reader over the fixture directory, knowing the two daemon basenames, which of them is the error one, and
+     * the raw pair beside them named the way the environment reading derives it.
      *
      * @return LogStoreReader Reader bound to the temp log root
      */
     private function reader(): LogStoreReader
     {
-        return new LogStoreReader($this->dir, [self::DAEMON_LOG, self::DAEMON_ERROR_LOG], self::DAEMON_ERROR_LOG);
+        return new LogStoreReader(
+            $this->dir,
+            [self::DAEMON_LOG, self::DAEMON_ERROR_LOG],
+            self::DAEMON_ERROR_LOG,
+            [DaemonRawStream::pathFor(self::DAEMON_LOG), DaemonRawStream::pathFor(self::DAEMON_ERROR_LOG)],
+        );
     }
 
     /**

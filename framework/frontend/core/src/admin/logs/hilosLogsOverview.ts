@@ -62,26 +62,36 @@ export const OVERVIEW_NODE_TOTAL_BYTES_FIELD = 'filesystemTotalBytes'
 /** Row payload key of the share of the volume that node keeps free, in percent. */
 export const OVERVIEW_NODE_THRESHOLD_FIELD = 'freeSpaceThresholdPercent'
 
+// Row payload keys of the recent-failures panel. One row shape serves both of its
+// tabs: an error and a warning are the same kind of entry, and only which lines were
+// picked differs between them.
+
 /**
- * Row payload key of the node a failure was written on.
+ * Row payload key of the node an entry was written on.
  *
  * Empty in an installation whose nodes have no names, and that empty string is a
- * value rather than an absence: {@link logsOverviewErrorPath} reads it as "the node
+ * value rather than an absence: {@link logsOverviewRecentPath} reads it as "the node
  * you are on", where a missing id would mean no file was named at all.
  */
-export const OVERVIEW_ERROR_NODE_ID_FIELD = 'nodeId'
+export const OVERVIEW_RECENT_NODE_ID_FIELD = 'nodeId'
 
-/** Row payload key of the live stream a failure was written to. */
-export const OVERVIEW_ERROR_STREAM_FIELD = 'stream'
+/** Row payload key of the live stream an entry was written to. */
+export const OVERVIEW_RECENT_STREAM_FIELD = 'stream'
 
-/** Row payload key of when a failure was written, ISO 8601 with milliseconds. */
-export const OVERVIEW_ERROR_AT_FIELD = 'at'
+/** Row payload key of when an entry was written, ISO 8601 with milliseconds. */
+export const OVERVIEW_RECENT_AT_FIELD = 'at'
 
-/** Row payload key of the failure's text, already cut by the node that read it. */
-export const OVERVIEW_ERROR_MESSAGE_FIELD = 'message'
+/** Row payload key of the entry's text, already cut by the node that read it. */
+export const OVERVIEW_RECENT_MESSAGE_FIELD = 'message'
 
-/** Row payload key of the frames in a failure's stack trace, null when it has none. */
-export const OVERVIEW_ERROR_TRACE_FRAMES_FIELD = 'traceFrames'
+/** Row payload key of the frames in an entry's stack trace, null when it has none. */
+export const OVERVIEW_RECENT_TRACE_FRAMES_FIELD = 'traceFrames'
+
+/** The tab of the recent-failures panel that lists errors; the one a screen opens on. */
+export const RECENT_TAB_ERRORS = 'errors'
+
+/** The tab of the recent-failures panel that lists warnings. */
+export const RECENT_TAB_WARNINGS = 'warnings'
 
 /**
  * One row of the per-node table.
@@ -104,19 +114,19 @@ const overviewNodeSchema = z.looseObject({
 })
 
 /**
- * One row of the recent-errors panel.
+ * One row of the recent-failures panel, in either of its tabs.
  *
  * Every field but the frame count is a string the node measured, so none of them is
  * nullable: a row exists because a line was really written. The frame count keeps its
  * null, which is the difference between "there is a stack to look at" and "there is
  * not" — read as a zero it would put a badge on every row.
  */
-const recentErrorSchema = z.looseObject({
-  [OVERVIEW_ERROR_NODE_ID_FIELD]: z.string(),
-  [OVERVIEW_ERROR_STREAM_FIELD]: z.string(),
-  [OVERVIEW_ERROR_AT_FIELD]: z.string(),
-  [OVERVIEW_ERROR_MESSAGE_FIELD]: z.string(),
-  [OVERVIEW_ERROR_TRACE_FRAMES_FIELD]: z.number().nullable(),
+const recentEntrySchema = z.looseObject({
+  [OVERVIEW_RECENT_NODE_ID_FIELD]: z.string(),
+  [OVERVIEW_RECENT_STREAM_FIELD]: z.string(),
+  [OVERVIEW_RECENT_AT_FIELD]: z.string(),
+  [OVERVIEW_RECENT_MESSAGE_FIELD]: z.string(),
+  [OVERVIEW_RECENT_TRACE_FRAMES_FIELD]: z.number().nullable(),
 })
 
 /**
@@ -135,8 +145,10 @@ const overviewSchema = z.looseObject({
   keysWithoutGrowthWindow: z.number().nullable(),
   batchesDueForTakeout: z.number().nullable(),
   nodes: z.array(overviewNodeSchema),
-  recentErrors: z.array(recentErrorSchema),
+  recentErrors: z.array(recentEntrySchema),
   recentErrorsCapped: z.boolean(),
+  recentWarnings: z.array(recentEntrySchema),
+  recentWarningsCapped: z.boolean(),
   // The header half of the same three fields the rows carry: a single-node
   // installation has no row to put its disk in, a cluster leaves these null and
   // answers per node. Exactly one half is ever filled.
@@ -148,8 +160,18 @@ const overviewSchema = z.looseObject({
 /** One node's row of the per-node table. */
 export type HilosLogsOverviewNode = z.infer<typeof overviewNodeSchema>
 
-/** One failure of the recent-errors panel. */
-export type HilosLogsOverviewError = z.infer<typeof recentErrorSchema>
+/** One entry of the recent-failures panel, an error or a warning. */
+export type HilosLogsOverviewRecentEntry = z.infer<typeof recentEntrySchema>
+
+/**
+ * Which tab of the recent-failures panel is open.
+ *
+ * A state of the screen and not of the data: both lists arrive in every frame, so a
+ * view keeps the open tab to itself and switching it asks the server for nothing.
+ */
+export type HilosLogsRecentTab =
+  | typeof RECENT_TAB_ERRORS
+  | typeof RECENT_TAB_WARNINGS
 
 /** The screen as the page answers a subscription with it. */
 export type HilosLogsOverview = z.infer<typeof overviewSchema>
@@ -614,52 +636,129 @@ export function logsOverviewForecastNote(
 }
 
 /**
- * The failures the panel draws, newest first.
+ * The entries one tab of the panel draws, newest first.
  *
- * Empty before the first frame, which is not the same as "no failures": the panel is
- * not drawn at all until there is a picture, because saying "nothing has gone wrong"
- * about what we have not been told would be good news made up.
+ * Empty before the first frame, which is not the same as "nothing went wrong": the
+ * panel is not drawn at all until there is a picture, because saying so about what we
+ * have not been told would be good news made up. Both lists arrive in every frame, so
+ * switching the tab asks the server for nothing.
  *
  * @param overview The latest screen, or null before the first frame arrives.
+ * @param tab The tab being drawn.
  */
-export function logsOverviewRecentErrors(
+export function logsOverviewRecent(
   overview: HilosLogsOverview | null,
-): HilosLogsOverviewError[] {
-  return overview === null ? [] : overview.recentErrors
+  tab: HilosLogsRecentTab,
+): HilosLogsOverviewRecentEntry[] {
+  if (overview === null) {
+    return []
+  }
+
+  return tab === RECENT_TAB_ERRORS
+    ? overview.recentErrors
+    : overview.recentWarnings
 }
 
 /**
- * Whether the panel has a list to draw, as opposed to its good-news plaque.
+ * Whether a tab has a list to draw, as opposed to its good-news plaque.
  *
  * @param overview The latest screen, or null before the first frame arrives.
+ * @param tab The tab being drawn.
  */
-export function hasLogsOverviewRecentErrors(
+export function hasLogsOverviewRecent(
   overview: HilosLogsOverview | null,
+  tab: HilosLogsRecentTab,
 ): boolean {
-  return logsOverviewRecentErrors(overview).length > 0
+  return logsOverviewRecent(overview, tab).length > 0
 }
 
 /**
- * The counter beside the heading, which says `10+` once the list was cut.
+ * The counter inside a tab, which says `10+` once that tab's list was cut.
  *
- * The plus is not a hedge: the nodes send their newest failures and the page cuts
- * the window, so a list that reached the limit says there were at least that many.
- * A list that did not reach it names its length exactly.
+ * The plus is not a hedge: the nodes send their newest entries and the page cuts the
+ * window, so a list that reached the limit says there were at least that many. Each tab
+ * reads its own flag — warnings past the limit say nothing about how many errors there
+ * were.
  *
  * @param overview The latest screen, or null before the first frame arrives.
+ * @param tab The tab the counter sits in.
  */
-export function logsOverviewRecentErrorsBadge(
+export function logsOverviewRecentBadge(
   overview: HilosLogsOverview | null,
+  tab: HilosLogsRecentTab,
 ): string {
-  const errors = logsOverviewRecentErrors(overview)
+  const entries = logsOverviewRecent(overview, tab)
+  const capped =
+    tab === RECENT_TAB_ERRORS
+      ? overview?.recentErrorsCapped
+      : overview?.recentWarningsCapped
 
-  return overview?.recentErrorsCapped === true
-    ? `${errors.length}+`
-    : String(errors.length)
+  return capped === true ? `${entries.length}+` : String(entries.length)
 }
 
 /**
- * When a failure was written, to the second and in the reader's own locale.
+ * The level every row of a tab carries, which is also what colors its tag and its
+ * counter through the viewer's `logLevelVariant()`.
+ *
+ * @param tab The tab being drawn.
+ */
+export function logsOverviewRecentLevel(
+  tab: HilosLogsRecentTab,
+): 'ERROR' | 'WARNING' {
+  return tab === RECENT_TAB_ERRORS ? 'ERROR' : 'WARNING'
+}
+
+/**
+ * The caption of a tab.
+ *
+ * @param tab The tab being captioned.
+ */
+export function logsOverviewRecentTabLabel(tab: HilosLogsRecentTab): string {
+  return tab === RECENT_TAB_ERRORS ? 'Errors' : 'Warnings'
+}
+
+/**
+ * The sentence under the heading, saying what the open tab is for.
+ *
+ * An error and a warning ask different things of the reader, and that difference is
+ * why they are two tabs and never one feed: warnings always outnumber errors and would
+ * bury them.
+ *
+ * @param tab The open tab.
+ */
+export function logsOverviewRecentLead(tab: HilosLogsRecentTab): string {
+  return tab === RECENT_TAB_ERRORS
+    ? 'An error asks somebody to go and look at it. Each line opens its journal on the entry itself — the same node, the same file, the same place.'
+    : 'A warning asks nobody to go anywhere yet: it says things are holding up. Each line opens its journal on the entry itself — the same node, the same file, the same place.'
+}
+
+/**
+ * The headline of a tab's good-news plaque.
+ *
+ * @param tab The tab with nothing to list.
+ */
+export function logsOverviewRecentEmptyTitle(tab: HilosLogsRecentTab): string {
+  return tab === RECENT_TAB_ERRORS
+    ? 'No errors in the last hour'
+    : 'No warnings in the last hour'
+}
+
+/**
+ * The line under that headline.
+ *
+ * Its own for each tab, because the good news is not the same: no error means nothing
+ * needed attention, no warning means nothing was even straining.
+ *
+ * @param tab The tab with nothing to list.
+ */
+export function logsOverviewRecentEmptyLead(tab: HilosLogsRecentTab): string {
+  return tab === RECENT_TAB_ERRORS
+    ? 'Nothing has asked for attention in that time.'
+    : 'Nothing has been straining in that time either.'
+}
+
+/**
+ * When an entry was written, to the second and in the reader's own locale.
  *
  * The date is left out where the rotation tile keeps it: everything in this panel
  * happened within the last hour, and a date on every row would be the same date
@@ -667,7 +766,7 @@ export function logsOverviewRecentErrorsBadge(
  *
  * @param at The instant as ISO 8601, as the node that wrote the line read it.
  */
-export function formatLogsOverviewErrorAt(at: string): string {
+export function formatLogsOverviewRecentAt(at: string): string {
   const parsed = new Date(at)
 
   return Number.isNaN(parsed.getTime())
@@ -676,7 +775,7 @@ export function formatLogsOverviewErrorAt(at: string): string {
 }
 
 /**
- * Where a failure was written: the stream, and the node too when there is one.
+ * Where an entry was written: the stream, and the node too when there is one.
  *
  * The node is named only in an installation that has node names — the same rule the
  * rest of the screen keeps, and the reason it is asked of the picture rather than of
@@ -684,30 +783,37 @@ export function formatLogsOverviewErrorAt(at: string): string {
  * a signal that this installation is single-node.
  *
  * @param overview The latest screen, or null before the first frame arrives.
- * @param error The failure the row draws.
+ * @param entry The entry the row draws.
  */
-export function logsOverviewErrorOrigin(
+export function logsOverviewRecentOrigin(
   overview: HilosLogsOverview | null,
-  error: HilosLogsOverviewError,
+  entry: HilosLogsOverviewRecentEntry,
 ): string {
   return hasLogsOverviewNodes(overview)
-    ? `${error.nodeId} · ${error.stream}`
-    : error.stream
+    ? `${entry.nodeId} · ${entry.stream}`
+    : entry.stream
 }
 
 /**
- * The address a row leads to: the viewer, on the live file this line is in.
+ * The address a row leads to: the viewer, on the live file this line is in, opened on
+ * the line itself.
  *
- * On the FILE and not on the line — the viewer address has no anchor for a line yet.
- * The row still answers "where do I go from here" rather than dropping the reader at
- * the top of a journal to search it themselves.
+ * The place is the moment the line was written, taken from the instant the row prints:
+ * the viewer finds the line by time, because a byte offset would stop naming it at the
+ * next rotation, and no second field travels for it. An instant that cannot be read
+ * leads to the file without a place rather than to a made-up one.
  *
- * @param error The failure the row draws.
+ * @param entry The entry the row draws.
  */
-export function logsOverviewErrorPath(error: HilosLogsOverviewError): string {
+export function logsOverviewRecentPath(
+  entry: HilosLogsOverviewRecentEntry,
+): string {
+  const atMs = Date.parse(entry.at)
+
   return logViewerPath({
-    nodeId: error.nodeId,
+    nodeId: entry.nodeId,
     source: LOG_SOURCE_LIVE,
-    stream: error.stream,
+    stream: entry.stream,
+    anchorAtMs: Number.isNaN(atMs) ? null : atMs,
   })
 }

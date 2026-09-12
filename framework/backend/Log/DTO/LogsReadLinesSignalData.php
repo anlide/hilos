@@ -15,7 +15,7 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 /**
  * Viewer page → {@see LogStoreAgent} payload for the logs_agent_read_lines signal.
  *
- * The read request as it travels to the node that owns the file: the seven fields the browser
+ * The read request as it travels to the node that owns the file: the eight fields the browser
  * asked with, plus the three that let the answer find its way back. The page does not answer
  * this action itself ({@see AbstractHilosLogsViewPage::onAction()} defers it), so the owner is
  * the last step and needs the accept key, the action name and the request id the browser minted.
@@ -43,6 +43,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
      * @param ?string $level Level filter, or null for any level
      * @param ?string $substring Substring filter, or null for no substring filter
      * @param ?int $cursor Byte offset to continue from, or null for the first page
+     * @param ?int $anchorAtMs Unix milliseconds of the entry to open the file on, or null for a read from the tail
      * @param string $acceptKey Accept key of the connection waiting for the answer
      * @param string $action Action name the reply acknowledges
      * @param ?string $requestId Request id the browser minted, or null when the read was not tracked
@@ -55,6 +56,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
         public readonly ?string $level,
         public readonly ?string $substring,
         public readonly ?int $cursor,
+        public readonly ?int $anchorAtMs,
         public readonly string $acceptKey,
         public readonly string $action,
         public readonly ?string $requestId,
@@ -84,6 +86,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
             level: $dto->level,
             substring: $dto->substring,
             cursor: $dto->cursor,
+            anchorAtMs: $dto->anchorAtMs,
             acceptKey: $acceptKey,
             action: $action,
             requestId: $requestId,
@@ -103,6 +106,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
             LogsReadLinesActionDTO::level => $this->level,
             LogsReadLinesActionDTO::substring => $this->substring,
             LogsReadLinesActionDTO::cursor => $this->cursor,
+            LogsReadLinesActionDTO::anchorAtMs => $this->anchorAtMs,
             self::acceptKey => $this->acceptKey,
             self::action => $this->action,
             self::requestId => $this->requestId,
@@ -125,6 +129,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
             level: self::optionalString($data, LogsReadLinesActionDTO::level),
             substring: self::optionalString($data, LogsReadLinesActionDTO::substring),
             cursor: self::optionalInt($data, LogsReadLinesActionDTO::cursor),
+            anchorAtMs: self::optionalInt($data, LogsReadLinesActionDTO::anchorAtMs),
             acceptKey: self::requireString($data, self::acceptKey),
             action: self::requireString($data, self::action),
             requestId: self::optionalString($data, self::requestId),

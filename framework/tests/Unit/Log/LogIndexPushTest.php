@@ -200,7 +200,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testADeltaWithNothingInItIsEmpty(): void
     {
-        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, false)->isEmpty());
+        $this->assertTrue(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, false, false)->isEmpty());
     }
 
     /**
@@ -210,7 +210,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testCrossingIntoUnavailabilityCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], true, false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], true, false, false)->isEmpty());
     }
 
     /**
@@ -220,7 +220,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAConfirmedBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], [], false, false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [1756166400], [], [], false, false, false)->isEmpty());
     }
 
     /**
@@ -230,7 +230,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAWithdrawnBatchCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], [], false, false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [1756166400], [], false, false, false)->isEmpty());
     }
 
     /**
@@ -240,7 +240,7 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAChangedVerdictCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [1756166400], false, false)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [1756166400], false, false, false)->isEmpty());
     }
 
     /**
@@ -250,7 +250,16 @@ final class LogIndexPushTest extends TestCase
      */
     public function testAMovedErrorTailCountsAsAChangeOnItsOwn(): void
     {
-        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, true)->isEmpty());
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, true, false)->isEmpty());
+    }
+
+    /**
+     * And the ring of warnings on its own (HIL-868): the newest warning on a quiet node would
+     * otherwise wait for the keepalive frame a minute later.
+     */
+    public function testADeltaCarryingOnlyAMovedRingOfWarningsIsNotEmpty(): void
+    {
+        $this->assertFalse(new NodeLogIndexDelta([], [], [], [], [], [], [], [], false, false, true)->isEmpty());
     }
 
     public function testTheWrittenSettingSetsTheInterval(): void

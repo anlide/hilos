@@ -48,6 +48,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\LogLineReader;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Socket\Client\ClientInterface;
@@ -803,6 +804,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /**
      * Write agent logs to separate files
      *
+     * A line of the main stream names its level ({@see withLevelAfterStamp()}); a line of the `.error.log` twin
+     * does not, as no error stream does.
+     *
      * @param array<string, array<string, array<string>>> $agentLogs Agent logs [agentId][level][] = message
      * @param string $logDirectory Log directory
      * @param bool $isStderr Whether this is from stderr
@@ -816,15 +820,40 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             foreach ($levels as $level => $messages) {
                 // Determine log file extension
                 // ERROR level or stderr -> .error.log, otherwise -> .log
-                $extension = ($level === Logger::LEVEL_ERROR || $isStderr) ? LogStreamConstants::ERROR_STREAM_SUFFIX : self::LOG_EXTENSION;
+                $toErrorStream = $level === Logger::LEVEL_ERROR || $isStderr;
+                $extension = $toErrorStream ? LogStreamConstants::ERROR_STREAM_SUFFIX : self::LOG_EXTENSION;
                 $agentLogFile = $logDirectory . '/' . self::AGENT_LOG_PREFIX . "{$safeAgentId}{$extension}";
 
                 // Write messages
                 foreach ($messages as $message) {
-                    file_put_contents($agentLogFile, $message . "\n", FILE_APPEND | LOCK_EX);
+                    $line = $toErrorStream ? $message : self::withLevelAfterStamp($level, $message);
+                    file_put_contents($agentLogFile, $line . "\n", FILE_APPEND | LOCK_EX);
                 }
             }
         }
+    }
+
+    /**
+     * Put an agent line's level between its stamp and its text, the form {@see Logger} writes when it shows the level.
+     *
+     * The level crosses the pipe as a field of its own and would otherwise stop here: the file then holds a bare
+     * `[stamp] text`, which {@see LogLineReader} reads as INFO whatever the agent logged, and an agent's warnings
+     * never reach the warnings feed (HIL-868). The stamp is already in the message ({@see Logger::logAgent()}), so
+     * the level goes after it, where the reader looks for one. A message without a stamp is no entry the reader
+     * could tell the level of wherever the prefix went, so it is written as it came.
+     *
+     * @param string $level Level field of the agent pipe line
+     * @param string $message Message field of the agent pipe line, `[stamp] text`
+     *
+     * @return string Line for the agent's main stream, without the trailing newline
+     */
+    private static function withLevelAfterStamp(string $level, string $message): string
+    {
+        if (preg_match(LogLineReader::TIMESTAMP_PREFIX_PATTERN, $message, $match) !== 1) {
+            return $message;
+        }
+
+        return $match[0] . "[{$level}] " . substr($message, strlen($match[0]));
     }
 
     /**

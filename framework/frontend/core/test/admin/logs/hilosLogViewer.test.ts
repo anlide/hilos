@@ -18,6 +18,7 @@ import {
   LOGS_VIEWER_SIGNAL_SCHEMAS,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
+  type HilosLogViewer,
   type HilosLogViewerAddress,
   type HilosLogViewerCatalog,
   type HilosLogViewerContext,
@@ -116,6 +117,7 @@ function selection(
     nodeId: 'node-1',
     source: 'live',
     stream: 'worker-0.log',
+    anchorAtMs: null,
     ...overrides,
   }
 }
@@ -262,7 +264,7 @@ function paramsOf(pathname: string): Record<string, string> {
     .replace('/hilos/logs/view', '')
     .split('/')
     .filter(Boolean)
-  const names = ['nodeId', 'source', 'stream']
+  const names = ['nodeId', 'source', 'stream', 'anchor']
 
   return Object.fromEntries(tail.map((value, index) => [names[index], value]))
 }
@@ -296,7 +298,12 @@ describe('readLogViewerAddress', () => {
         source: String(BATCH),
         stream: 'worker-0.log',
       }),
-    ).toEqual({ nodeId: 'node-2', source: BATCH, stream: 'worker-0.log' })
+    ).toEqual({
+      nodeId: 'node-2',
+      source: BATCH,
+      stream: 'worker-0.log',
+      anchorAtMs: null,
+    })
   })
 
   it('reads the single-node segment as the name that node reports under', () => {
@@ -307,7 +314,39 @@ describe('readLogViewerAddress', () => {
         source: 'live',
         stream: 'daemon.log',
       }),
-    ).toEqual({ nodeId: '', source: 'live', stream: 'daemon.log' })
+    ).toEqual({
+      nodeId: '',
+      source: 'live',
+      stream: 'daemon.log',
+      anchorAtMs: null,
+    })
+  })
+
+  it('reads the fourth segment as the moment of the entry to open on', () => {
+    expect(
+      readLogViewerAddress({
+        nodeId: 'node-2',
+        source: 'live',
+        stream: 'worker-0.log',
+        anchor: '1788000000250',
+      }).anchorAtMs,
+    ).toBe(1788000000250)
+  })
+
+  it('reads an anchor it cannot make out as none, keeping the file the address names', () => {
+    expect(
+      readLogViewerAddress({
+        nodeId: 'node-2',
+        source: 'live',
+        stream: 'worker-0.log',
+        anchor: 'yesterday',
+      }),
+    ).toEqual({
+      nodeId: 'node-2',
+      source: 'live',
+      stream: 'worker-0.log',
+      anchorAtMs: null,
+    })
   })
 
   it('leaves every unfilled slot unchosen', () => {
@@ -315,6 +354,7 @@ describe('readLogViewerAddress', () => {
       nodeId: null,
       source: null,
       stream: null,
+      anchorAtMs: null,
     })
   })
 })
@@ -332,6 +372,18 @@ describe('logViewerPath', () => {
     expect(logViewerPath(selection({ nodeId: '' }))).toBe(
       '/hilos/logs/view/-/live/worker-0.log',
     )
+  })
+
+  it('writes the moment of the entry as the fourth segment', () => {
+    expect(logViewerPath(selection({ anchorAtMs: 1788000000250 }))).toBe(
+      '/hilos/logs/view/node-1/live/worker-0.log/1788000000250',
+    )
+  })
+
+  it('names no place in a file nobody chose, anchor or not', () => {
+    expect(
+      logViewerPath(selection({ stream: null, anchorAtMs: 1788000000250 })),
+    ).toBe('/hilos/logs/view')
   })
 
   it('stays bare while any slot is unchosen', () => {
@@ -811,6 +863,7 @@ describe('createHilosLogViewer', () => {
       nodeId: 'node-2',
       source: 'live',
       stream: null,
+      anchorAtMs: null,
     })
     expect(address.written).toEqual(['/hilos/logs/view'])
   })
@@ -853,6 +906,7 @@ describe('createHilosLogViewer', () => {
       nodeId: 'node-2',
       source: 'live',
       stream: 'daemon.log',
+      anchorAtMs: null,
     })
   })
 
@@ -1142,5 +1196,115 @@ describe('the live tail', () => {
       notice: 'dropped',
       text: '3 lines were dropped while you were away.',
     })
+  })
+})
+
+describe('createHilosLogViewer opened on an entry', () => {
+  /** A row of the recent-failures panel leads here: a live file and the moment of one entry in it. */
+  const ANCHORED = '/hilos/logs/view/node-1/live/worker-0.log/1788000000250'
+
+  it('asks for the page starting on the entry, and does not start the tail', () => {
+    const { context, actions, address } = viewer(ANCHORED)
+    const view = createHilosLogViewer(context, address)
+
+    view.start()
+
+    expect(actions.sent).toHaveLength(1)
+    expect(actions.sent[0].action).toBe(LOGS_READ_LINES_ACTION)
+    expect(actions.lastRead()).toMatchObject({
+      stream: 'worker-0.log',
+      cursor: null,
+      anchorAtMs: 1788000000250,
+    })
+    // A raised switch over a tail that is not running would lie in the most
+    // visible place on the screen, and the pane must not be pulled to the end.
+    expect(view.followRequested.get()).toBe(false)
+    expect(view.following.get()).toBe(false)
+    expect(view.pinned.get()).toBe(false)
+  })
+
+  it('marks the entry the page starts on, and no other', async () => {
+    const { context, actions, address } = viewer(ANCHORED)
+    const view = createHilosLogViewer(context, address)
+    view.start()
+
+    actions.answer(actions.sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [
+        wireLine('[2026-09-06 10:00:02.250] ERROR: the entry the row named'),
+        wireLine('[2026-09-06 10:00:03.000] INFO: what happened next'),
+      ],
+      nextCursor: 4096,
+      hasMore: true,
+      anchorFound: true,
+    })
+    await Promise.resolve()
+
+    expect(
+      view.rows.get().map((row) => row.kind === 'entry' && row.anchored),
+    ).toEqual([true, false])
+  })
+
+  it('says so above the tail when the entry is not in the file any more', async () => {
+    const { context, actions, address } = viewer(ANCHORED)
+    const view = createHilosLogViewer(context, address)
+    view.start()
+
+    actions.answer(actions.sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [wireLine('[2026-09-06 11:00:00.000] INFO: the end of the file')],
+      nextCursor: null,
+      hasMore: false,
+      anchorFound: false,
+    })
+    await Promise.resolve()
+
+    const rows = view.rows.get()
+    expect(rows[0]).toMatchObject({ kind: 'notice', notice: 'anchorMissing' })
+    expect(
+      rows.slice(1).map((row) => row.kind === 'entry' && row.anchored),
+    ).toEqual([false])
+  })
+
+  it('reads the entry again after a reconnect, since the address still names it', () => {
+    const { context, connection, actions, address } = viewer(ANCHORED)
+    createHilosLogViewer(context, address).start()
+
+    connection.reconnect()
+
+    expect(actions.lastRead()).toMatchObject({ anchorAtMs: 1788000000250 })
+  })
+
+  it('drops the anchor from the address and from the read on whatever the operator does next', () => {
+    const moves: ((view: HilosLogViewer) => void)[] = [
+      (view) => view.setLevel('ERROR'),
+      (view) => view.setSubstring('deadlock'),
+      (view) => view.select({ stream: 'daemon.log' }),
+      (view) => view.setFollow(true),
+      (view) => view.returnToTail(),
+    ]
+    for (const move of moves) {
+      const { context, actions, address } = viewer(ANCHORED)
+      const view = createHilosLogViewer(context, address)
+      view.start()
+
+      move(view)
+
+      expect(address.written.at(-1)).not.toContain('1788000000250')
+      expect(view.selection.get().anchorAtMs).toBeNull()
+      expect(actions.lastRead()).not.toHaveProperty('anchorAtMs')
+    }
+  })
+
+  it('raises the switch and reads the tail when the operator goes back to it', () => {
+    const { context, actions, address } = viewer(ANCHORED)
+    const view = createHilosLogViewer(context, address)
+    view.start()
+
+    view.returnToTail()
+
+    expect(view.followRequested.get()).toBe(true)
+    expect(view.pinned.get()).toBe(true)
+    expect(actions.sent.at(-1)?.action).toBe(LOGS_FOLLOW_START_ACTION)
   })
 })

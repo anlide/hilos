@@ -19,32 +19,41 @@ import {
   signal,
 } from '@angular/core'
 import {
-  HILOS_PAGE_ROUTES,
-  HilosPages,
   createHilosLogsOverview,
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
-  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
+  formatLogsOverviewRecentAt,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
-  hasLogsOverviewRecentErrors,
+  hasLogsOverviewRecent,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  logLevelVariant,
   logsOverviewBatchesNote,
-  logsOverviewErrorOrigin,
-  logsOverviewErrorPath,
   logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
-  logsOverviewRecentErrors,
-  logsOverviewRecentErrorsBadge,
+  logsOverviewRecent,
+  logsOverviewRecentBadge,
+  logsOverviewRecentEmptyLead,
+  logsOverviewRecentEmptyTitle,
+  logsOverviewRecentLead,
+  logsOverviewRecentLevel,
+  logsOverviewRecentOrigin,
+  logsOverviewRecentPath,
+  logsOverviewRecentTabLabel,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
+  RECENT_TAB_ERRORS,
+  RECENT_TAB_WARNINGS,
   subscribeSignal,
 } from '@hilos/core'
 import type {
   HilosLogsOverview,
   HilosLogsOverviewContext,
-  HilosLogsOverviewError,
+  HilosLogsOverviewRecentEntry,
+  HilosLogsRecentTab,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -194,84 +203,115 @@ import { HilosLink } from '../../HilosLink.js'
         @if (state() === 'figures') {
           <div class="d-flex flex-wrap align-items-baseline gap-2 mb-2 mt-4">
             <h2 class="h6 text-uppercase text-body-secondary mb-0">
-              Recent errors
+              Recent failures
             </h2>
-            <span
-              class="badge text-bg-danger"
-              data-id="hilos-logs-recent-errors-count"
-            >
-              {{ recentErrorsBadge() }}
-            </span>
-            <span class="ms-auto small text-body-secondary">
-              Over the last hour
-            </span>
           </div>
-          <p class="small text-body-secondary">
-            An error asks somebody to go and look at it. Each line leads into
-            the journal it was written in — the same node, the same file.
-          </p>
-          <!-- The row leads to the FILE and not to the line: the viewer address has
-          no anchor for a line yet, and "the same place" is the next step rather than
-          this one. -->
-          @if (hasRecentErrors()) {
-            <div
-              class="border rounded-3 overflow-hidden mb-2"
-              data-id="hilos-logs-recent-errors"
+          <p class="small text-body-secondary">{{ recentLead() }}</p>
+          <!-- Two tabs and never one feed: warnings always outnumber errors and would
+          bury them. -->
+          <div
+            class="border rounded-3 overflow-hidden mb-2"
+            data-id="hilos-logs-recent"
+          >
+            <ul
+              class="nav nav-tabs px-2 pt-2 bg-body-tertiary"
+              role="tablist"
+              data-id="hilos-logs-recent-tabs"
             >
-              @for (error of recentErrors(); track $index) {
-                <a
-                  [hilosLink]="errorPath(error)"
-                  class="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
-                  data-id="hilos-logs-recent-error"
-                >
-                  <span class="small fw-semibold text-danger flex-shrink-0"
-                    >ERROR</span
+              @for (tab of recentTabs; track tab) {
+                <li class="nav-item" role="presentation">
+                  <button
+                    type="button"
+                    role="tab"
+                    class="nav-link py-1 px-3 small"
+                    [class.active]="recentTab() === tab"
+                    [attr.aria-selected]="recentTab() === tab"
+                    aria-controls="hilos-logs-recent-panel"
+                    [attr.data-id]="'hilos-logs-recent-tab-' + tab"
+                    (click)="recentTab.set(tab)"
                   >
-                  <span class="small text-body-secondary flex-shrink-0">
-                    {{ formatErrorAt(error.at) }}
-                  </span>
-                  <span class="flex-grow-1 small">
-                    {{ error.message }}
-                    <span class="d-block text-body-secondary">
-                      {{ errorOrigin(error) }}
-                    </span>
-                  </span>
-                  @if (error.traceFrames !== null) {
+                    {{ recentTabLabel(tab) }}
                     <span
-                      class="badge text-bg-light border flex-shrink-0"
-                      title="This error carries a stack trace"
-                      data-id="hilos-logs-recent-error-trace"
+                      class="badge ms-1"
+                      [class]="'text-bg-' + levelVariant(recentLevelOf(tab))"
+                      [attr.data-id]="'hilos-logs-recent-count-' + tab"
                     >
-                      <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                      {{ error.traceFrames }}
+                      {{ recentBadge(tab) }}
                     </span>
-                  }
+                  </button>
+                </li>
+              }
+              <li
+                class="ms-auto small text-body-secondary py-1"
+                role="presentation"
+              >
+                Over the last hour
+              </li>
+            </ul>
+            <div id="hilos-logs-recent-panel" role="tabpanel">
+              @if (hasRecent()) {
+                @for (entry of recentEntries(); track $index) {
+                  <a
+                    [hilosLink]="recentPath(entry)"
+                    class="d-flex align-items-start gap-2 py-2 px-2 border-bottom text-decoration-none link-body-emphasis"
+                    data-id="hilos-logs-recent-row"
+                  >
+                    <span
+                      class="small fw-semibold flex-shrink-0"
+                      [class]="'text-' + levelVariant(recentLevel())"
+                      >{{ recentLevel() }}</span
+                    >
+                    <span class="small text-body-secondary flex-shrink-0">
+                      {{ formatRecentAt(entry.at) }}
+                    </span>
+                    <span class="flex-grow-1 small">
+                      {{ entry.message }}
+                      <span class="d-block text-body-secondary">
+                        {{ recentOrigin(entry) }}
+                      </span>
+                    </span>
+                    @if (entry.traceFrames !== null) {
+                      <span
+                        class="badge text-bg-light border flex-shrink-0"
+                        title="This entry carries a stack trace"
+                        data-id="hilos-logs-recent-row-trace"
+                      >
+                        <i
+                          class="bi bi-info-circle me-1"
+                          aria-hidden="true"
+                        ></i>
+                        {{ entry.traceFrames }}
+                      </span>
+                    }
+                    <i
+                      class="bi bi-chevron-right text-body-secondary flex-shrink-0"
+                      aria-hidden="true"
+                    ></i>
+                  </a>
+                }
+              } @else {
+                <!-- Good news, and it must not read as "no data": the picture IS here,
+                and it says nothing of this kind happened in the window. -->
+                <div
+                  class="p-3 d-flex align-items-center gap-3 bg-body-tertiary"
+                  data-id="hilos-logs-recent-empty"
+                >
                   <i
-                    class="bi bi-chevron-right text-body-secondary flex-shrink-0"
+                    class="bi bi-check2-circle fs-4 text-success"
                     aria-hidden="true"
                   ></i>
-                </a>
+                  <div>
+                    <div class="fw-semibold small">
+                      {{ recentEmptyTitle() }}
+                    </div>
+                    <div class="small text-body-secondary">
+                      {{ recentEmptyLead() }}
+                    </div>
+                  </div>
+                </div>
               }
             </div>
-          } @else {
-            <!-- Good news, and it must not read as "no data": the picture IS here,
-            and it says nothing went wrong in the window. -->
-            <div
-              class="border rounded-3 p-3 mb-2 d-flex align-items-center gap-3 bg-body-tertiary"
-              data-id="hilos-logs-recent-errors-empty"
-            >
-              <i
-                class="bi bi-check2-circle fs-4 text-success"
-                aria-hidden="true"
-              ></i>
-              <div>
-                <div class="fw-semibold small">No errors in the last hour</div>
-                <div class="small text-body-secondary">
-                  Nothing has asked for attention in that time.
-                </div>
-              </div>
-            </div>
-          }
+          </div>
         }
 
         @if (clustered()) {
@@ -469,17 +509,36 @@ export class HilosLogsPage {
   // The panel of last failures. It is drawn only where there ARE figures: saying
   // "nothing has gone wrong" about a picture that has not arrived would be good news
   // made up, and that is the one thing an empty state here must never look like.
-  protected readonly recentErrors = computed(() =>
-    logsOverviewRecentErrors(this.overview()),
+  // The open tab is the screen's own state: both lists ride every frame, so a click
+  // on a tab asks the server for nothing.
+  protected readonly recentTabs: readonly HilosLogsRecentTab[] = [
+    RECENT_TAB_ERRORS,
+    RECENT_TAB_WARNINGS,
+  ]
+  protected readonly recentTab = signal<HilosLogsRecentTab>(RECENT_TAB_ERRORS)
+  protected readonly recentEntries = computed(() =>
+    logsOverviewRecent(this.overview(), this.recentTab()),
   )
-  protected readonly hasRecentErrors = computed(() =>
-    hasLogsOverviewRecentErrors(this.overview()),
+  protected readonly hasRecent = computed(() =>
+    hasLogsOverviewRecent(this.overview(), this.recentTab()),
   )
-  protected readonly recentErrorsBadge = computed(() =>
-    logsOverviewRecentErrorsBadge(this.overview()),
+  protected readonly recentLevel = computed(() =>
+    logsOverviewRecentLevel(this.recentTab()),
   )
-  protected readonly formatErrorAt = formatLogsOverviewErrorAt
-  protected readonly errorPath = logsOverviewErrorPath
+  protected readonly recentLead = computed(() =>
+    logsOverviewRecentLead(this.recentTab()),
+  )
+  protected readonly recentEmptyTitle = computed(() =>
+    logsOverviewRecentEmptyTitle(this.recentTab()),
+  )
+  protected readonly recentEmptyLead = computed(() =>
+    logsOverviewRecentEmptyLead(this.recentTab()),
+  )
+  protected readonly recentLevelOf = logsOverviewRecentLevel
+  protected readonly recentTabLabel = logsOverviewRecentTabLabel
+  protected readonly levelVariant = logLevelVariant
+  protected readonly formatRecentAt = formatLogsOverviewRecentAt
+  protected readonly recentPath = logsOverviewRecentPath
 
   constructor() {
     // The frame arrives once as the answer to the subscription and again on every
@@ -500,15 +559,24 @@ export class HilosLogsPage {
   }
 
   /**
-   * Where a failure was written, as the row's sub-line says it.
+   * Where an entry was written, as the row's sub-line says it.
    *
    * A method and not a bound function, because the origin is asked of the whole
    * picture and not of the row: the row's empty node id is a value, not a sign that
    * this installation runs on one machine.
    *
-   * @param error The failure the row draws.
+   * @param entry The entry the row draws.
    */
-  protected errorOrigin(error: HilosLogsOverviewError): string {
-    return logsOverviewErrorOrigin(this.overview(), error)
+  protected recentOrigin(entry: HilosLogsOverviewRecentEntry): string {
+    return logsOverviewRecentOrigin(this.overview(), entry)
+  }
+
+  /**
+   * The counter inside one tab, read off the whole picture by that tab's own flag.
+   *
+   * @param tab The tab the counter sits in.
+   */
+  protected recentBadge(tab: HilosLogsRecentTab): string {
+    return logsOverviewRecentBadge(this.overview(), tab)
   }
 }

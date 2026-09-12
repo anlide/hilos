@@ -3,26 +3,33 @@ import { describe, expect, it } from 'vitest'
 import {
   formatLogsOverviewBytes,
   formatLogsOverviewCount,
-  formatLogsOverviewErrorAt,
   formatLogsOverviewGrowth,
+  formatLogsOverviewRecentAt,
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
-  hasLogsOverviewRecentErrors,
+  hasLogsOverviewRecent,
   logsOverviewBatchesNote,
-  logsOverviewErrorOrigin,
-  logsOverviewErrorPath,
   logsOverviewForecastNote,
   logsOverviewGrowthNote,
   logsOverviewNodesDue,
-  logsOverviewRecentErrors,
-  logsOverviewRecentErrorsBadge,
+  logsOverviewRecent,
+  logsOverviewRecentBadge,
+  logsOverviewRecentEmptyLead,
+  logsOverviewRecentEmptyTitle,
+  logsOverviewRecentLead,
+  logsOverviewRecentLevel,
+  logsOverviewRecentOrigin,
+  logsOverviewRecentPath,
+  logsOverviewRecentTabLabel,
   logsOverviewState,
   logsOverviewTakeoutHeadline,
   LOGS_OVERVIEW_SIGNAL_SCHEMAS,
   OVERVIEW_SIGNAL,
+  RECENT_TAB_ERRORS,
+  RECENT_TAB_WARNINGS,
   type HilosLogsOverview,
-  type HilosLogsOverviewError,
   type HilosLogsOverviewNode,
+  type HilosLogsOverviewRecentEntry,
 } from '../../../src/admin/logs/hilosLogsOverview.js'
 
 function node(
@@ -60,6 +67,8 @@ function overview(
     nodes: [],
     recentErrors: [],
     recentErrorsCapped: false,
+    recentWarnings: [],
+    recentWarningsCapped: false,
     filesystemFreeBytes: null,
     filesystemTotalBytes: null,
     freeSpaceThresholdPercent: null,
@@ -68,8 +77,8 @@ function overview(
 }
 
 function failure(
-  overrides: Partial<HilosLogsOverviewError> = {},
-): HilosLogsOverviewError {
+  overrides: Partial<HilosLogsOverviewRecentEntry> = {},
+): HilosLogsOverviewRecentEntry {
   return {
     nodeId: '',
     stream: 'worker-monopolistic-5.error.log',
@@ -115,16 +124,20 @@ describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
     expect(parsed.success).toBe(true)
   })
 
-  it('accepts the panel of failures, the null frame count included', () => {
+  it('accepts both feeds of the panel, the null frame count included', () => {
     const parsed = LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse(
       overview({
         recentErrors: [failure(), failure({ traceFrames: null })],
         recentErrorsCapped: true,
+        recentWarnings: [failure({ message: 'slow query' })],
       }),
     )
 
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.recentErrors[1].traceFrames).toBeNull()
+    expect(parsed.success && parsed.data.recentWarnings[0].message).toBe(
+      'slow query',
+    )
   })
 
   it('tolerates a field it has never heard of, so a newer backend still reaches the screen', () => {
@@ -339,46 +352,82 @@ describe('logsOverviewTakeoutHeadline', () => {
   })
 })
 
-describe('logsOverviewRecentErrors', () => {
-  it('has nothing to draw before a picture arrives, which is not the same as no failures', () => {
-    expect(logsOverviewRecentErrors(null)).toEqual([])
-    expect(hasLogsOverviewRecentErrors(null)).toBe(false)
+describe('logsOverviewRecent', () => {
+  it('has nothing to draw on either tab before a picture arrives, which is not the same as nothing wrong', () => {
+    expect(logsOverviewRecent(null, RECENT_TAB_ERRORS)).toEqual([])
+    expect(hasLogsOverviewRecent(null, RECENT_TAB_WARNINGS)).toBe(false)
   })
 
-  it('draws the list the page sent, in the order it sent it', () => {
-    const newest = failure({ message: 'the newest one' })
-    const older = failure({ message: 'the older one' })
+  it('draws each tab its own list, in the order the page sent it', () => {
+    const error = failure({ message: 'login action failed' })
+    const newest = failure({ message: 'the newest warning' })
+    const older = failure({ message: 'the older warning' })
+    const screen = overview({
+      recentErrors: [error],
+      recentWarnings: [newest, older],
+    })
 
-    expect(
-      logsOverviewRecentErrors(overview({ recentErrors: [newest, older] })),
-    ).toEqual([newest, older])
-    expect(
-      hasLogsOverviewRecentErrors(overview({ recentErrors: [newest, older] })),
-    ).toBe(true)
+    expect(logsOverviewRecent(screen, RECENT_TAB_ERRORS)).toEqual([error])
+    expect(logsOverviewRecent(screen, RECENT_TAB_WARNINGS)).toEqual([
+      newest,
+      older,
+    ])
+  })
+
+  it('keeps the good news on the tab with nothing while the other one lists', () => {
+    const screen = overview({ recentWarnings: [failure()] })
+
+    expect(hasLogsOverviewRecent(screen, RECENT_TAB_ERRORS)).toBe(false)
+    expect(hasLogsOverviewRecent(screen, RECENT_TAB_WARNINGS)).toBe(true)
   })
 })
 
-describe('logsOverviewRecentErrorsBadge', () => {
+describe('logsOverviewRecentBadge', () => {
   it('names the length exactly while the list was not cut', () => {
     expect(
-      logsOverviewRecentErrorsBadge(
+      logsOverviewRecentBadge(
         overview({ recentErrors: [failure(), failure(), failure()] }),
+        RECENT_TAB_ERRORS,
       ),
     ).toBe('3')
   })
 
-  it('says there were at least that many once the page cut the list', () => {
-    expect(
-      logsOverviewRecentErrorsBadge(
-        overview({ recentErrors: [failure()], recentErrorsCapped: true }),
-      ),
-    ).toBe('1+')
+  it('says there were at least that many by the flag of its own tab alone', () => {
+    const screen = overview({
+      recentErrors: [failure()],
+      recentWarnings: [failure(), failure()],
+      recentWarningsCapped: true,
+    })
+
+    expect(logsOverviewRecentBadge(screen, RECENT_TAB_WARNINGS)).toBe('2+')
+    expect(logsOverviewRecentBadge(screen, RECENT_TAB_ERRORS)).toBe('1')
   })
 })
 
-describe('formatLogsOverviewErrorAt', () => {
+describe('the words of a tab', () => {
+  it('gives each tab its own level, caption, lead and good news', () => {
+    expect(logsOverviewRecentLevel(RECENT_TAB_ERRORS)).toBe('ERROR')
+    expect(logsOverviewRecentLevel(RECENT_TAB_WARNINGS)).toBe('WARNING')
+    expect(logsOverviewRecentTabLabel(RECENT_TAB_ERRORS)).toBe('Errors')
+    expect(logsOverviewRecentTabLabel(RECENT_TAB_WARNINGS)).toBe('Warnings')
+    expect(logsOverviewRecentEmptyTitle(RECENT_TAB_ERRORS)).toBe(
+      'No errors in the last hour',
+    )
+    expect(logsOverviewRecentEmptyTitle(RECENT_TAB_WARNINGS)).toBe(
+      'No warnings in the last hour',
+    )
+    expect(logsOverviewRecentEmptyLead(RECENT_TAB_WARNINGS)).not.toBe(
+      logsOverviewRecentEmptyLead(RECENT_TAB_ERRORS),
+    )
+    expect(logsOverviewRecentLead(RECENT_TAB_WARNINGS)).not.toBe(
+      logsOverviewRecentLead(RECENT_TAB_ERRORS),
+    )
+  })
+})
+
+describe('formatLogsOverviewRecentAt', () => {
   it('prints the time of day and leaves the date out, since every row shares it', () => {
-    const printed = formatLogsOverviewErrorAt('2026-09-06T10:00:02.125+00:00')
+    const printed = formatLogsOverviewRecentAt('2026-09-06T10:00:02.125+00:00')
 
     expect(printed).toBe(
       new Date('2026-09-06T10:00:02.125+00:00').toLocaleTimeString(),
@@ -387,16 +436,16 @@ describe('formatLogsOverviewErrorAt', () => {
   })
 
   it('answers a dash to an instant it cannot read, rather than the words Invalid Date', () => {
-    expect(formatLogsOverviewErrorAt('whenever')).toBe('—')
+    expect(formatLogsOverviewRecentAt('whenever')).toBe('—')
   })
 })
 
-describe('logsOverviewErrorOrigin', () => {
+describe('logsOverviewRecentOrigin', () => {
   it('names the node only where an installation has node names', () => {
     const clustered = overview({ nodes: [node({ nodeId: 'node-2' })] })
 
     expect(
-      logsOverviewErrorOrigin(
+      logsOverviewRecentOrigin(
         clustered,
         failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
       ),
@@ -405,7 +454,7 @@ describe('logsOverviewErrorOrigin', () => {
 
   it('names the stream alone on one machine, where there is no node to speak of', () => {
     expect(
-      logsOverviewErrorOrigin(
+      logsOverviewRecentOrigin(
         overview(),
         failure({ stream: 'worker-0.error.log' }),
       ),
@@ -413,19 +462,31 @@ describe('logsOverviewErrorOrigin', () => {
   })
 })
 
-describe('logsOverviewErrorPath', () => {
-  it('leads to the viewer on the live file the line is in', () => {
+describe('logsOverviewRecentPath', () => {
+  it('opens the viewer on the live file, at the moment the line was written', () => {
     expect(
-      logsOverviewErrorPath(
+      logsOverviewRecentPath(
         failure({ nodeId: 'node-2', stream: 'worker-0.error.log' }),
       ),
-    ).toBe('/hilos/logs/view/node-2/live/worker-0.error.log')
+    ).toBe(
+      `/hilos/logs/view/node-2/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
+    )
   })
 
   it('reads the empty node id as the machine the reader is on', () => {
-    expect(logsOverviewErrorPath(failure({ stream: 'daemon-error.log' }))).toBe(
-      '/hilos/logs/view/-/live/daemon-error.log',
+    expect(
+      logsOverviewRecentPath(failure({ stream: 'daemon-error.log' })),
+    ).toBe(
+      `/hilos/logs/view/-/live/daemon-error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
     )
+  })
+
+  it('leads to the file without a place when the instant cannot be read', () => {
+    expect(
+      logsOverviewRecentPath(
+        failure({ at: 'whenever', stream: 'worker-0.log' }),
+      ),
+    ).toBe('/hilos/logs/view/-/live/worker-0.log')
   })
 })
 
