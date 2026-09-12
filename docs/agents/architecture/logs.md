@@ -2,7 +2,8 @@
 
 Read this before touching the log directory of a node from code, adding a link to
 the chain that carries a node's log index to a screen, adding or reading a log
-setting, or changing what happens to an archived batch.
+setting, changing what happens to an archived batch, or adding to or taking away
+from what a container prints to `docker logs`.
 
 The logs feature is the part of the framework that measures, shows, rotates and
 carries off the files every Hilos process writes. Its machinery is
@@ -37,10 +38,16 @@ owner has not already put there — and answers no question about any of it.
 
 ## The Node Agent Owns The Directory, Not The Lines (HIL-753)
 
-The ownership is of the **directory**. The lines are written by the processes
-that log, through `Logger`, each into its own file — `daemon.log` and
-`daemon-error.log` for the master, `worker-<n>.log` and
-`worker-monopolistic-<n>.log` for the workers, `agent-<type>.log` for an agent.
+The ownership is of the **directory**. The lines reach their files without the
+owner, through `Logger` — `daemon.log` and `daemon-error.log`, written by the
+master itself; `worker-regular-<n>.log` and `worker-monopolistic-<n>.log`, each
+with an `.error.log` twin for the worker's stderr, written by the **master** out
+of the pipes a worker's `Logger` echoes into (`WorkerServer::saveWorkerOutput()`,
+once a second and when the worker dies); `agent-<id>.log` and its `.error.log`
+twin, cut out of the same pipes by the agent marker (`Logger::AGENT_LOG_MARKER`)
+and named by the agent's id, not its type. Where each of these streams lands,
+and what lands beside them past the `Logger`, is the map HIL-872 drew
+(`hilos-ops/maps/HIL-872-log-streams.md`).
 Routing a line through the owner is forbidden: it would turn logging in the
 whole framework upside down, put an agent on the path of every message of every
 process, and buy nothing, because the owner measures files and does not care who
@@ -110,6 +117,37 @@ crossing — and keys and batches coming and going are `DEBUG`, visible under
 investigation and nowhere else. A line per walk would be the biggest thing in
 the index.
 
+## The Container Log Is A Glance, Not The Record (HIL-872)
+
+`docker logs` of a node carries the **watchdog's voice and the details of a
+daemon crash, and nothing else**. The watchdog (`docker.php`, PID 1) configures
+only its error-log address and never calls `Logger::setLogFile()`, so its whole
+feed is echoed to the container's stdout; the daemon (`daemon.php`, its child)
+sets both addresses and echoes nothing, and what PHP prints past the `Logger` —
+a fatal, a warning nobody caught — goes to the raw pair beside the daemon's
+files, not to the container. The owner decided it this way on 12.09.2026, in
+these words: the container log is where you look for a **quick assessment** of
+the situation; for a deep one there are the full log files. So how complete
+`docker logs` is — "minimal, within reason". Completeness lives in the log
+directory of the node, which the Logs section reads.
+
+- Do not add a stream to the container log — not the master's journal, not a
+  worker's, not an agent's, not the daemon's raw output. A proposal to make
+  `docker logs` complete is a proposal to reopen this decision, and it needs a
+  reason the owner did not already weigh.
+- Do not silence the watchdog there either: every line it writes through
+  `Logger` belongs in the container log, its complaint about a file the start
+  rotation could not move included `(not in the code yet — HIL-1016)`.
+- A daemon that died leaves its reason in the container log: the tail of what
+  it printed before dying, on the first failure and not only once the run of
+  failures reaches `DAEMON_FAILED_START_THRESHOLD`
+  `(not in the code yet — HIL-1014)`, quoted from the raw stream PHP actually
+  prints its fatal to under the image's ini `(not in the code yet — HIL-1015)`.
+- What the watchdog does about a crash beyond that line — the sweep, the
+  restart interval, the escalation and its letter — is
+  [daemon-lifecycle.md](daemon-lifecycle.md), "Container watchdog and crash
+  recovery".
+
 ## The Circulation: Node Index, Cluster Picture, Page Portion (HIL-754, HIL-755, HIL-756)
 
 Three layers, three holders, and each layer is a whole copy handed on, never a
@@ -154,8 +192,8 @@ branch. A frame **replaces** that node's slot; nothing is merged and no
 timestamp is compared, because a node's frames travel one link of the mesh that
 does not reorder them, while dropping a frame as "older" would stick forever the
 first time a node's clock was wound back. Streams are counted per (key, node)
-pair and never folded by name: the same `worker-0.log` on two nodes is two
-files, rotated and carried off apart.
+pair and never folded by name: the same `worker-regular-1.log` on two nodes is
+two files, rotated and carried off apart.
 
 **Which nodes exist is not the aggregator's to say.** A node is in the picture
 because it reported, and the last frame always arrived before the machine fell
@@ -749,3 +787,7 @@ Remember the outcome, speak on its change, clear on recovery.
   over the live socket. A follow driven end to end from a browser is
   `(not in the code yet — HIL-395)`; rotation, takeout and pruning driven end to
   end are `(not in the code yet — HIL-763)`.
+- Where every stream lands, proven on a live stand by a run and not by reading
+  — the rows of the HIL-872 map as a repeatable check
+  `(not in the code yet — HIL-1018)`; until then the evidence is that leaf's
+  one-off measurement.

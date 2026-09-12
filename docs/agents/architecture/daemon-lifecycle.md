@@ -11,9 +11,14 @@
    there, so an operator setting up a node learns the set one restart at a time. The check
    runs ahead of `Logger::setLogFile()` — `DAEMON_LOG_FILE` is itself required and may be
    one of the missing ones, and a `Logger` with no file writes to stdout/stderr, which is
-   where `docker logs` reads. Only the daemon checks: in a container `docker.php` is the
-   watchdog and runs `daemon.php` as its child, so the containerized start passes through
-   here anyway, and the worker comes up under a daemon that already answered.
+   where `docker logs` reads when the two log addresses themselves are the missing ones:
+   the watchdog then hands the child its own descriptors. With the addresses set and
+   another name missing, the list lands in the daemon's raw output pair, and the container
+   log shows it once the watchdog quotes the daemon's last words on the first failure
+   `(not in the code yet — HIL-1014)`. Only the daemon checks: in a container
+   `docker.php` is the watchdog and runs `daemon.php` as its child, so the containerized
+   start passes through here anyway, and the worker comes up under a daemon that already
+   answered.
 2. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
    whose live schema is not classified for anonymization. Only a project declaring
    `HilosFeature::BACKUP` is asked at all — such a node keeps copies of a database it
@@ -58,12 +63,16 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
 - **Shout, but keep trying.** A start that dies before reaching
   `DAEMON_MIN_RESTART_INTERVAL` counts as failed; reaching it resets the count. Once the
   run of failures hits `DAEMON_FAILED_START_THRESHOLD` (default 3) the watchdog logs an
-  error with the count, the last attempt's uptime, and the tail of
-  `DAEMON_ERROR_LOG_FILE`. It does **not** give up or exit: the cause may be external and
-  temporary (a database still coming up, memory pressure), and the compose restart policy
-  is deliberately left alone. The reason comes from the error-log file and not from
-  `Process::getStdErr()` — the daemon's stderr is redirected to that file, so the process
-  has no stderr pipe to read.
+  error with the count, the last attempt's uptime, and the tail of the daemon's raw
+  stderr stream — `daemon-error-raw.log`, the twin `DaemonRawStream` derives from
+  `DAEMON_ERROR_LOG_FILE` (HIL-480) — because a fatal is printed by PHP past the `Logger`
+  and lands in the raw pair, not in the file the `Logger` writes. It does **not** give up
+  or exit: the cause may be external and temporary (a database still coming up, memory
+  pressure), and the compose restart policy is deliberately left alone. The reason comes
+  from that file and not from `Process::getStdErr()` — the daemon's stderr is redirected
+  to it, so the process has no stderr pipe to read. Under the PHP defaults of the image
+  (`display_errors=1`, `log_errors=0`) the fatal is printed to stdout, so the tail is
+  taken from the raw stream PHP actually prints to `(not in the code yet — HIL-1015)`.
 - **Say one thing when you die, and nothing else (HIL-617).** The watchdog is simple, and
   there is no watchdog for the watchdog. Its own failure is *not* damped by a per-iteration
   `try/catch`, not retried, and not handed to project code through a hook: it mails one
@@ -114,12 +123,13 @@ letter and no timed reminder.
   they misfire. What an operator can do is give `WATCHDOG_ALERT_SMTP_HOST` an IP address:
   then there is no lookup at all.
 
-**The daemon owns its log files.** `startDaemon()` hands its stdout and stderr to
-`DAEMON_LOG_FILE` and `DAEMON_ERROR_LOG_FILE` as file descriptors, so the daemon's output is
-written by the kernel and never passes through the watchdog: there is nothing for
-`tickDaemon()` to tee into the watchdog's own log, and it does not try. The single exception
-is the failed-start escalation above, which reads the tail of the error file — a deliberate
-read of a file, not of a stream.
+**The daemon owns its log files.** `startDaemon()` hands its stdout and stderr to the raw
+twins of `DAEMON_LOG_FILE` and `DAEMON_ERROR_LOG_FILE` — `daemon-raw.log` and
+`daemon-error-raw.log`, named by `DaemonRawStream` (HIL-480) — as file descriptors, so the
+daemon's output is written by the kernel and never passes through the watchdog: there is
+nothing for `tickDaemon()` to tee into the watchdog's own log, and it does not try. The
+single exception is the failed-start escalation above, which reads the tail of the raw
+error stream — a deliberate read of a file, not of a stream.
 
 **The watchdog's own errors land in the same error file.** `DockerApplication::run()` calls
 `Logger::setErrorLogFile(DAEMON_ERROR_LOG_FILE)` at startup and deliberately does *not* call
@@ -128,6 +138,10 @@ read of a file, not of a stream.
 additionally appended to the file. So both halves of an incident (the daemon's crash trail
 and the watchdog's stop/restart trail) end up in one file, the one the Hilos logs admin page
 already reads. The daemon does the same for its own process next to `setLogFile()`.
+
+What the container log is *for* — the watchdog's voice and the details of a daemon crash,
+and nothing else — is the owner's rule in [logs.md](logs.md), "The Container Log Is A
+Glance, Not The Record"; read it before adding a line to `docker logs` or taking one away.
 
 The cluster harness guards this end to end: `cluster start <node>` reuses the existing
 container instead of recreating it, and scenario 9 (`cluster_e2e.py`) SIGKILLs the daemon
