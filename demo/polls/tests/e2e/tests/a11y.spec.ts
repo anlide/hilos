@@ -134,3 +134,31 @@ test('the sign-in card holds room for a refusal before there is one', async ({
   )
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
 })
+
+test('an admin screen holds the refusal region before there is a refusal', async ({
+  page,
+}) => {
+  // The same shape one layer up: the plate of a tracked action stands in a
+  // permanent live region, and the room under it is held by an invisible twin
+  // (HIL-887). A region inserted together with its own text announces nothing,
+  // which is why it has to be there first. Angular has no component world of
+  // its own yet (HIL-848), so this is where its copy of the component is
+  // proved.
+  await grantAdminToSelf(page)
+
+  await gotoPage(page, '/hilos/logs/settings')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(
+    page.getByTestId('hilos-setting-preset-settings-link'),
+  ).toBeVisible()
+
+  const slot = page.getByTestId('hilos-action-error-slot')
+  await expect(slot).toBeAttached()
+  await expect(slot).toHaveAttribute('role', 'alert')
+  await expect(slot).toHaveAttribute('aria-live', 'assertive')
+  await expect(page.getByTestId('hilos-action-error-idle')).toHaveAttribute(
+    'aria-hidden',
+    'true',
+  )
+  await expect(page.getByTestId('hilos-action-error')).toHaveCount(0)
+})

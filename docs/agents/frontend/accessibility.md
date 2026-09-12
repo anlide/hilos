@@ -138,13 +138,17 @@ The rules to apply when building a view or an SDK component:
   status that should be announced uses `role="status" aria-live="polite"`. Use
   sparingly, and reserve `role="alert" aria-live="assertive"` for a failure: a
   toast earns the interrupt only at `error` severity, while `success` and `info`
-  go polite rather than cut into what the user is listening to. Six references,
-  all of them permanent nodes: the page-change announcement and the connection
-  indicator (`framework/frontend/vue/src/HilosLayout.vue`), the toast stack
-  (`framework/frontend/vue/src/HilosToastHost.vue`), the sign-in screen
+  go polite rather than cut into what the user is listening to. Seven
+  references, all of them permanent nodes: the page-change announcement and the
+  connection indicator (`framework/frontend/vue/src/HilosLayout.vue`), the toast
+  stack (`framework/frontend/vue/src/HilosToastHost.vue`), the sign-in screen
   (`framework/frontend/vue/src/auth/HilosAuthSurface.vue`), the profile page
-  (`demo/chat/frontend/src/views/Profile/Profile.vue`) and the user-rename
-  dialog (`framework/frontend/vue/src/admin/users/HilosUserPage.vue`).
+  (`demo/chat/frontend/src/views/Profile/Profile.vue`), the user-rename dialog
+  (`framework/frontend/vue/src/admin/users/HilosUserPage.vue`) and the refusal
+  of a tracked action (`framework/frontend/vue/src/HilosActionError.vue`),
+  whose region is the slot the plate stands in — the plate itself carries no
+  role, and the room stays taken by an invisible twin while there is nothing to
+  announce.
 - **The room belongs to the block, the voice to the surface.** A form's refusal
   is drawn by `HilosFormError`, which holds its one line of room and carries no
   role; the announcement comes from a live region that outlives the block — on

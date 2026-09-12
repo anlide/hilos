@@ -141,6 +141,15 @@ does it — by default, with no flag (`useTrackedAction()` in Vue and React,
   in the place reserved for it — and on an admin surface with the type badge and
   detail panel beside it (HIL-779). The corner still carries it as well: the
   toast is what reaches a person who has already looked away.
+  The place is reserved always, and by the component itself: with nothing to
+  say it draws an invisible twin of the plate, which is exactly as tall as the
+  plate would be. So the form does not move when a refusal arrives — and it
+  does not move for a long one either, because the plate is one line at any
+  length: the sentence truncates, and the whole of it is read in the detail
+  panel behind a button that stands on every refusal (HIL-887). A surface that
+  answers the same action somewhere else — a confirmation of its own — passes
+  `suppressed` instead of dropping the component: the room has to stay, or
+  opening the confirmation moves the page under its own backdrop.
 - **Failure text is backend-authored too.** The driver prints what the reply
   carried; its own phrasing is left for the outcomes no backend sentence exists
   for — the timeout, the dropped connection, the unreadable reply.

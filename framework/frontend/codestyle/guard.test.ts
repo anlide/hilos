@@ -26,6 +26,7 @@ import { checkRepository as checkBrowserValueDeclared } from './browserValueDecl
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkStyleInline } from './inlineStyle.js'
 import { checkRepository as checkStyleSheetHome } from './styleSheetHome.js'
+import { checkRepository as checkVueTemplateRef } from './vueTemplateRef.js'
 import { checkRepository as checkWireKeyCase } from './wireKeyCase.js'
 
 /** framework/frontend/codestyle → framework/frontend → framework → the repository. */
@@ -46,6 +47,7 @@ const RULES = [
   checkE2ePageGoto,
   checkStyleInline,
   checkStyleSheetHome,
+  checkVueTemplateRef,
   checkWireKeyCase,
 ]
 

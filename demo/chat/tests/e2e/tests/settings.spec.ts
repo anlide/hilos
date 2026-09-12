@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -24,6 +24,41 @@ async function openSettings(page: Page): Promise<void> {
 async function isolate(page: Page, key: string): Promise<void> {
   await page.getByTestId('hilos-table-search').fill(key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+}
+
+/**
+ * Open the edit dialog on a key and type a value the catalog rule refuses,
+ * leaving the dialog armed and the value field for the caller to measure.
+ *
+ * @param page The page the settings table is open on
+ * @param key The catalog key whose row is edited
+ * @returns The value field, still holding what was typed into it
+ */
+async function typeRefusedValue(page: Page, key: string): Promise<Locator> {
+  await page.getByTestId(`hilos-settings-edit-${key}`).click()
+  await page.getByTestId('hilos-settings-edit-custom').check()
+  const value = page.getByTestId('hilos-settings-edit-value')
+  await value.fill('')
+  await value.pressSequentially('-1', { delay: 10 })
+
+  return value
+}
+
+/**
+ * The box of an element that has to be on screen. A geometry test comparing two
+ * absent boxes passes on nothing, so an absent one stops the test right here.
+ *
+ * @param locator The element to measure
+ * @returns Its box, whose y and height are what the geometry cases compare
+ * @throws Error When the element is not rendered, and so cannot be measured
+ */
+async function boxOf(locator: Locator): Promise<{ y: number; height: number }> {
+  const box = await locator.boundingBox()
+  if (box === null) {
+    throw new Error('the element is not on screen and cannot be measured')
+  }
+
+  return box
 }
 
 test('lists settings in the server window and filters from the search box', async ({
@@ -300,14 +335,26 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await openSettings(page)
   await isolate(page, key)
 
-  await page.getByTestId(`hilos-settings-edit-${key}`).click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  const value = page.getByTestId('hilos-settings-edit-value')
-  await value.fill('')
-  await value.pressSequentially('-1', { delay: 10 })
+  const value = await typeRefusedValue(page, key)
 
+  // The room for a refusal is held before there is one, and nothing in it looks
+  // like a refusal: the live region stands there, the red plate does not
+  // (HIL-887).
+  const slot = page.getByTestId('hilos-action-error-slot')
+  await expect(slot).toBeAttached()
+  await expect(page.getByTestId('hilos-action-error')).toHaveCount(0)
+
+  // Measured once the submit has been scrolled to, not before: the click would
+  // scroll it there itself, and a body that moved under the measurement would
+  // answer for the plate.
   const save = page.getByTestId('hilos-settings-edit-save')
+  await save.scrollIntoViewIfNeeded()
+  await expect(save).toBeVisible()
   await expect(save).toBeEnabled()
+  const roomIdle = await boxOf(slot)
+  const fieldIdle = await boxOf(value)
+
+  await save.focus()
   await save.click()
 
   // The dialog stays open with the refusal above the field, and the value the
@@ -316,6 +363,12 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await expect(refusal).toBeVisible()
   await expect(refusal).toContainText('Value must be an integer of 0 or more')
   await expect(value).toHaveValue('-1')
+
+  // The plate landed in room that was already taken: the region is the height it
+  // stood at while empty, and the field under it did not move. That is what the
+  // invisible twin is for.
+  expect((await boxOf(slot)).height).toBe(roomIdle.height)
+  expect((await boxOf(value)).y).toBe(fieldIdle.y)
 
   // No detail badge: a sentence written for a person is shown in full, so there
   // is nothing the framework held back to reveal.
@@ -328,4 +381,49 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
   const row = page.getByTestId(`hilos-table-row-${key}`)
   await expect(row).toContainText('default')
+})
+
+test('a refusal too long for the line still moves nothing under it', async ({
+  page,
+}) => {
+  // The proof that the plate is one line at any length: at 375 the sentence does
+  // not fit, and a plate that wrapped would grow and push the field down.
+  //
+  // Only the measurement is narrow. The journey to the dialog runs at the usual
+  // width, the way logs-rotation.spec.ts narrows an already-open modal: the
+  // admin table is not what is under test here, and driving it on a phone would
+  // put its own troubles into this verdict.
+  //
+  // The key is the one the case above uses, and sharing it is safe — a refused
+  // write leaves the catalog exactly as it found it.
+  const key = 'logs.archive_retention.keep_batches'
+
+  await signUpAdmin(page)
+  await openSettings(page)
+  await isolate(page, key)
+
+  const value = await typeRefusedValue(page, key)
+
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+
+  const slot = page.getByTestId('hilos-action-error-slot')
+  const save = page.getByTestId('hilos-settings-edit-save')
+  await save.scrollIntoViewIfNeeded()
+  await expect(save).toBeVisible()
+  await expect(save).toBeEnabled()
+  const roomIdle = await boxOf(slot)
+  const fieldIdle = await boxOf(value)
+
+  await save.focus()
+  await save.click()
+
+  const refusal = page.getByTestId('hilos-action-error')
+  await expect(refusal).toBeVisible()
+  await expect(refusal).toContainText('Value must be an integer of 0 or more')
+
+  expect((await boxOf(slot)).height).toBe(roomIdle.height)
+  expect((await boxOf(value)).y).toBe(fieldIdle.y)
+
+  await page.setViewportSize(desktop)
 })

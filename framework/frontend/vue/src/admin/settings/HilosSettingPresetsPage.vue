@@ -16,10 +16,12 @@ nothing and sends the new state to every open tab on its next tick. There is no
 optimistic drawing — a rewrite of several keys can be refused by the rule on any
 one of them. A refusal shows where the person acted (inside the confirmation when
 they came through it, above the cards when the click applied at once) and, by the
-driver's default, as a toast; a success speaks too, in a sentence the backend
-writes, because putting the values back leaves a card that was lit already and
-changes nothing but the shade of its border (toasts.md). Bootstrap classes only
-(styling-rules.md). -->
+driver's default, as a toast; the plate above the cards goes quiet rather than
+away while the confirmation is open, because dropping it would move the page
+under its own backdrop and hand it back shifted; a success speaks too, in a
+sentence the backend writes, because putting the values back leaves a card
+that was lit already and changes nothing but the shade of its border
+(toasts.md). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSettingPresets,
@@ -174,7 +176,7 @@ function valueLines(preset: HilosSettingPreset): string[] {
       {{ vocabulary.unknownSelectionNote }}
     </p>
 
-    <HilosActionError v-if="!confirmOpen" :action="applyAction" />
+    <HilosActionError :action="applyAction" :suppressed="confirmOpen" />
 
     <div class="row row-cols-1 row-cols-md-3 g-3 mb-2">
       <div v-for="preset in cards" :key="preset.name" class="col">

@@ -42,6 +42,7 @@ layer's specifics on top.
 | [local-variables.md](local-variables.md) | PHP | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | both | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |
 | [scaffold-markers.md](scaffold-markers.md) | both | leaving code/config wired but intentionally unused — marking a scaffold or a deliberate keep so a dead-code sweep does not cull it |
+| [vue-template-refs.md](vue-template-refs.md) | frontend | reading a prop or a composable's value inside a Vue `<template>` — why a ref held as a field stays a ref there, and how it is unwrapped |
 | [warnings-and-ide.md](warnings-and-ide.md) | frontend | silencing a toolchain/IDE warning — the zero-warning bar, the canonical-shape-over-suppression priority, TSDoc-all-params, Angular data-id placement |
 
 The rules here complement the architecture guides in `docs/agents/`.
