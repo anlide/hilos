@@ -17,19 +17,23 @@ import {
   hasCustomValue,
   HilosPages,
   isOrphanSetting,
+  resolveSettingEdit,
   SETTING_KEY_FIELD,
   SETTING_VALUE_FIELD,
   type HilosSettingRow,
   type HilosSettingsContext,
   type HilosTableColumnOf,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
+import ConflictActions from '../../ConflictActions.vue'
+import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
+import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 import HilosSettingValueCell from './HilosSettingValueCell.vue'
 
@@ -77,6 +81,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
 // Edit dialog: one row's custom value (or a reset back to the catalog default).
 const editOpen = ref(false)
 const editRow = ref<HilosSettingRow | null>(null)
+const editBaseline = ref<string | null>(null)
 const editValue = ref('')
 const editUseCustom = ref(false)
 const editAction = useTrackedAction()
@@ -100,9 +105,25 @@ const editValueBool = computed({
 const editOverride = computed<string | null>(() =>
   editUseCustom.value ? String(editValue.value) : null,
 )
-const editDirty = computed(
-  () => !!editRow.value && editOverride.value !== editRow.value.overrideValue,
+const viewportRows = useSignal(settingsTable.rows)
+const live = computed(() =>
+  resolveSettingEdit(
+    viewportRows.value,
+    editRow.value?.key ?? '',
+    editBaseline.value,
+    editOverride.value,
+  ),
 )
+const editDirty = computed(() => live.value.dirty)
+const editTitle = computed(() =>
+  editRow.value ? `Edit · ${editRow.value.key}` : 'Edit setting',
+)
+const editConflictNote = computed(() =>
+  live.value.incoming === null
+    ? 'The custom value was removed elsewhere and the key is back on its catalog default. Choose how to resolve.'
+    : `The value changed elsewhere to "${live.value.incoming}". Choose how to resolve.`,
+)
+const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 
 // Delete dialog: orphan keys only (not in the catalog).
 const deleteOpen = ref(false)
@@ -114,6 +135,14 @@ const {
   run: runDeleteAction,
   clearError: clearDeleteError,
 } = deleteAction
+const deleteLive = computed(() =>
+  resolveSettingEdit(
+    viewportRows.value,
+    deleteRow.value?.key ?? '',
+    null,
+    null,
+  ),
+)
 
 function openEdit(row: HilosSettingRow): void {
   // Flush pending so the dialog edits the latest committed row; a row removed by
@@ -129,6 +158,7 @@ function openEdit(row: HilosSettingRow): void {
   // carries a value of its own.
   editUseCustom.value = isOrphanSetting(fresh) || hasCustomValue(fresh)
   editValue.value = fresh.overrideValue ?? fresh.value ?? ''
+  editBaseline.value = fresh.overrideValue
   editOpen.value = true
 }
 
@@ -136,15 +166,46 @@ function closeEdit(): void {
   editOpen.value = false
 }
 
+function rechargeFromIncoming(): void {
+  const row = editRow.value
+  if (!row) {
+    return
+  }
+  const incoming = live.value.incoming
+  editUseCustom.value = incoming !== null || isOrphanSetting(row)
+  editValue.value = incoming ?? row.value ?? ''
+  editBaseline.value = incoming
+}
+
+watch(
+  () => live.value.status,
+  (status) => {
+    if (!editOpen.value) {
+      return
+    }
+    if (status === 'incoming' || status === 'converged') {
+      rechargeFromIncoming()
+    }
+  },
+)
+
+function acceptMine(): void {
+  editBaseline.value = live.value.incoming
+}
+
+function acceptTheirs(): void {
+  rechargeFromIncoming()
+}
+
 // Authoritative-backend: dispatch the tracked action, close on its `::success`
 // reply; a failure toasts and stays open so the entered value survives.
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value) {
+  if (!row || editBusy.value || live.value.gone) {
     return
   }
   const next = editOverride.value
-  if (next === row.overrideValue) {
+  if (next === live.value.incoming) {
     closeEdit()
 
     return
@@ -182,7 +243,7 @@ function closeDelete(): void {
 
 async function submitDelete(): Promise<void> {
   const row = deleteRow.value
-  if (!row || deleteBusy.value) {
+  if (!row || deleteBusy.value || deleteLive.value.gone) {
     return
   }
   if (await runDeleteAction(sendSettingDelete(row.key))) {
@@ -258,10 +319,12 @@ async function submitDelete(): Promise<void> {
 
     <HilosModal
       v-model="editOpen"
-      :title="editRow ? `Edit · ${editRow.key}` : 'Edit setting'"
       :confirm-on-close="editDirty"
       @cancel="closeEdit"
     >
+      <template #header>
+        <ConflictHeader :title="editTitle" :conflict="live.conflict" />
+      </template>
       <HilosActionError :action="editAction" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="!isOrphanSetting(editRow)" class="mb-3">
@@ -315,6 +378,21 @@ async function submitDelete(): Promise<void> {
             />
           </template>
         </div>
+        <div
+          v-if="live.conflict"
+          class="alert alert-warning mt-2 mb-0"
+          data-id="hilos-settings-edit-conflict"
+        >
+          {{ editConflictNote }}
+        </div>
+        <div
+          v-if="live.gone"
+          class="alert alert-warning mt-2 mb-0"
+          data-id="hilos-settings-edit-gone"
+        >
+          This setting was deleted elsewhere. Your text stays here to copy - it
+          can no longer be saved.
+        </div>
       </form>
       <template #actions="{ requestClose }">
         <button
@@ -325,15 +403,27 @@ async function submitDelete(): Promise<void> {
         >
           Cancel
         </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="editLoading"
-          :disabled="!editDirty || editBusy"
-          data-id="hilos-settings-edit-save"
-          @click="submitEdit"
+        <ConflictActions
+          :conflict="live.conflict"
+          :disable-save="!editDirty || editBusy || live.gone"
+          :mergeable="false"
+          :save-label="editSaveLabel"
+          @save="submitEdit"
+          @accept-mine="acceptMine"
+          @accept-theirs="acceptTheirs"
         >
-          Save
-        </LoadingButton>
+          <template #save-button="{ disabled, onSave }">
+            <LoadingButton
+              class="btn-primary"
+              :loading="editLoading"
+              :disabled="disabled"
+              data-id="hilos-settings-edit-save"
+              @click="onSave"
+            >
+              {{ editSaveLabel }}
+            </LoadingButton>
+          </template>
+        </ConflictActions>
       </template>
     </HilosModal>
 
@@ -352,6 +442,13 @@ async function submitDelete(): Promise<void> {
       <p v-if="deleteRow" class="mb-0 mt-2">
         <code>{{ deleteRow.key }}</code>
       </p>
+      <p
+        v-if="deleteLive.gone"
+        class="mb-0 mt-2 text-body-secondary"
+        data-id="hilos-settings-delete-gone"
+      >
+        This setting was already deleted elsewhere.
+      </p>
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -364,6 +461,7 @@ async function submitDelete(): Promise<void> {
         <LoadingButton
           class="btn-danger"
           :loading="deleteLoading"
+          :disabled="deleteBusy || deleteLive.gone"
           data-id="hilos-settings-delete-confirm"
           @click="submitDelete"
         >

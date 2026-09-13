@@ -20,6 +20,7 @@ import {
   createHilosSettingsTable,
   hasCustomValue,
   isOrphanSetting,
+  resolveSettingEdit,
 } from '@hilos/core'
 import type {
   HilosSettingRow,
@@ -27,11 +28,14 @@ import type {
   HilosTableColumnOf,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 import { HilosSettingValueCell } from './HilosSettingValueCell.js'
 
@@ -84,6 +88,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // Edit dialog: one row's custom value (or a reset back to the catalog default).
   const [editOpen, setEditOpen] = useState(false)
   const [editRow, setEditRow] = useState<HilosSettingRow | null>(null)
+  const [editBaseline, setEditBaseline] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [editUseCustom, setEditUseCustom] = useState(false)
   const edit = useTrackedAction()
@@ -99,7 +104,46 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // input yields a number, while the row override and the wire are strings, so an
   // un-normalized value would never match the echoed row. Null leaves the default.
   const editOverride: string | null = editUseCustom ? String(editValue) : null
-  const editDirty = !!editRow && editOverride !== editRow.overrideValue
+  const viewportRows = useSignal(settings.controller.rows)
+  const live = resolveSettingEdit(
+    viewportRows,
+    editRow?.key ?? '',
+    editBaseline,
+    editOverride,
+  )
+  const deleteLive = resolveSettingEdit(
+    viewportRows,
+    deleteRow?.key ?? '',
+    null,
+    null,
+  )
+  const editDirty = live.dirty
+  const editTitle = editRow ? `Edit · ${editRow.key}` : 'Edit setting'
+  const editSaveLabel = live.gone ? 'Deleted' : 'Save'
+  const editConflictNote =
+    live.incoming === null
+      ? 'The custom value was removed elsewhere and the key is back on its catalog default. Choose how to resolve.'
+      : `The value changed elsewhere to "${live.incoming}". Choose how to resolve.`
+
+  function rechargeFromIncoming(row: HilosSettingRow): void {
+    const incoming = live.incoming
+    setEditUseCustom(incoming !== null || isOrphanSetting(row))
+    setEditValue(incoming ?? row.value ?? '')
+    setEditBaseline(incoming)
+  }
+
+  useEffect(() => {
+    if (!editOpen || !editRow) {
+      return
+    }
+    if (live.status !== 'incoming' && live.status !== 'converged') {
+      return
+    }
+    const incoming = live.incoming
+    setEditUseCustom(incoming !== null || isOrphanSetting(editRow))
+    setEditValue(incoming ?? editRow.value ?? '')
+    setEditBaseline(incoming)
+  }, [editOpen, editRow, live.status, live.incoming])
 
   function openEdit(row: HilosSettingRow): void {
     // Flush pending so the dialog edits the latest committed row; a row removed
@@ -115,6 +159,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     // carries a value of its own.
     setEditUseCustom(isOrphanSetting(fresh) || hasCustomValue(fresh))
     setEditValue(fresh.overrideValue ?? fresh.value ?? '')
+    setEditBaseline(fresh.overrideValue)
     setEditOpen(true)
   }
 
@@ -125,11 +170,11 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
   // reply; a failure toasts and stays open so the entered value survives.
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy) {
+    if (!editRow || edit.busy || live.gone) {
       return
     }
     const next = editOverride
-    if (next === editRow.overrideValue) {
+    if (next === live.incoming) {
       closeEdit()
 
       return
@@ -166,11 +211,21 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   async function submitDelete(): Promise<void> {
-    if (!deleteRow || del.busy) {
+    if (!deleteRow || del.busy || deleteLive.gone) {
       return
     }
     if (await del.run(actions.sendSettingDelete(deleteRow.key))) {
       closeDelete()
+    }
+  }
+
+  function acceptMine(): void {
+    setEditBaseline(live.incoming)
+  }
+
+  function acceptTheirs(): void {
+    if (editRow) {
+      rechargeFromIncoming(editRow)
     }
   }
 
@@ -243,9 +298,9 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
       <HilosModal
         open={editOpen}
-        title={editRow ? `Edit · ${editRow.key}` : 'Edit setting'}
         confirmOnClose={editDirty}
         onClose={closeEdit}
+        header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
         actions={({ requestClose }) => (
           <>
             <button
@@ -256,15 +311,26 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             >
               Cancel
             </button>
-            <LoadingButton
-              className="btn-primary"
-              loading={edit.loading}
-              disabled={!editDirty || edit.busy}
-              data-id="hilos-settings-edit-save"
-              onClick={() => void submitEdit()}
-            >
-              Save
-            </LoadingButton>
+            <ConflictActions
+              conflict={live.conflict}
+              disableSave={!editDirty || edit.busy || live.gone}
+              mergeable={false}
+              saveLabel={editSaveLabel}
+              onSave={() => void submitEdit()}
+              onAcceptMine={acceptMine}
+              onAcceptTheirs={acceptTheirs}
+              saveButton={({ disabled, onSave }) => (
+                <LoadingButton
+                  className="btn-primary"
+                  loading={edit.loading}
+                  disabled={disabled}
+                  data-id="hilos-settings-edit-save"
+                  onClick={onSave}
+                >
+                  {editSaveLabel}
+                </LoadingButton>
+              )}
+            />
           </>
         )}
       >
@@ -347,6 +413,23 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                 )}
               </div>
             ) : null}
+            {live.conflict ? (
+              <div
+                className="alert alert-warning mt-2 mb-0"
+                data-id="hilos-settings-edit-conflict"
+              >
+                {editConflictNote}
+              </div>
+            ) : null}
+            {live.gone ? (
+              <div
+                className="alert alert-warning mt-2 mb-0"
+                data-id="hilos-settings-edit-gone"
+              >
+                This setting was deleted elsewhere. Your text stays here to copy
+                - it can no longer be saved.
+              </div>
+            ) : null}
           </form>
         ) : null}
       </HilosModal>
@@ -370,6 +453,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             <LoadingButton
               className="btn-danger"
               loading={del.loading}
+              disabled={del.busy || deleteLive.gone}
               data-id="hilos-settings-delete-confirm"
               onClick={() => void submitDelete()}
             >
@@ -386,6 +470,14 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         {deleteRow ? (
           <p className="mb-0 mt-2">
             <code>{deleteRow.key}</code>
+          </p>
+        ) : null}
+        {deleteLive.gone ? (
+          <p
+            className="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-settings-delete-gone"
+          >
+            This setting was already deleted elsewhere.
           </p>
         ) : null}
       </HilosModal>

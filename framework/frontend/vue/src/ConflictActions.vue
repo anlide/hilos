@@ -14,8 +14,14 @@ withDefaults(
     disableSave?: boolean
     /** Save button label. */
     saveLabel?: string
+    /**
+     * Whether the Merge resolution is offered. Settings hide it: splicing two
+     * typed values is not a value the server will accept. Defaults to true so
+     * surfaces that can merge (a display name) keep the button without opting in.
+     */
+    mergeable?: boolean
   }>(),
-  { conflict: false, disableSave: false, saveLabel: 'Save' },
+  { conflict: false, disableSave: false, saveLabel: 'Save', mergeable: true },
 )
 
 const emit = defineEmits<{
@@ -65,6 +71,7 @@ function onSave(): void {
         Take theirs
       </button>
       <button
+        v-if="mergeable"
         type="button"
         class="btn btn-outline-secondary btn-sm"
         data-id="conflict-merge"

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
-import { ActionLifecycle, ScopeManager, createSignal } from '@hilos/core'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import {
+  ActionLifecycle,
+  HilosPages,
+  ScopeManager,
+  createSignal,
+} from '@hilos/core'
 import type {
   HilosRouter,
   HilosSettingsContext,
@@ -13,9 +18,9 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
-      page: '',
+      page: HilosPages.SETTINGS,
       params: {},
-      admin: false,
+      admin: true,
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
@@ -59,17 +64,19 @@ function slot(
   }
 }
 
-function seededContext(rows: SettingSlot[]): HilosSettingsContext {
+function seededContext(initial: SettingSlot[]): {
+  context: HilosSettingsContext
+  pushUpdate: (next: SettingSlot) => void
+  pushRemove: (key: string) => void
+} {
+  let rows = initial.slice()
   const scopes = new ScopeManager()
-  scopes.openPage('hilos_settings')
-  // A connection double that answers each viewport request with a window built
-  // from the seeded rows — the server-windowed table's data path in one hop.
+  scopes.openPage(HilosPages.SETTINGS)
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
-  // The window this table would be served, by whichever road it arrives on: the page's
-  // own answer at bind time, or a reply to a window the reader changed.
+  const deltaListeners = new Set<(signal: { data: unknown }) => void>()
   const serveWindow = (
-    page = 'hilos_settings',
-    tableKey = 'settings',
+    page: string = HilosPages.SETTINGS,
+    tableKey: string = 'settings',
   ): void => {
     const data = {
       page,
@@ -79,6 +86,9 @@ function seededContext(rows: SettingSlot[]): HilosSettingsContext {
         slots: { settings },
       })),
       totalCount: rows.length,
+      totalExact: true,
+      firstAnchor: null,
+      lastAnchor: null,
       offset: 0,
       limit: 10,
     }
@@ -88,9 +98,6 @@ function seededContext(rows: SettingSlot[]): HilosSettingsContext {
   }
 
   const connection = {
-    // The first window arrives with the page's own answer now (HIL-642), and binding is
-    // when that answer would have landed — so this double serves it there rather than in
-    // reply to a request the table no longer makes on mount.
     registerTableWindow(): void {
       serveWindow()
     },
@@ -107,22 +114,57 @@ function seededContext(rows: SettingSlot[]): HilosSettingsContext {
     ): () => void {
       if (event === 'tableWindow') {
         windowListeners.add(listener)
+
+        return () => windowListeners.delete(listener)
+      }
+      if (event === 'tableViewportDelta') {
+        deltaListeners.add(listener)
+
+        return () => deltaListeners.delete(listener)
       }
 
-      return () => windowListeners.delete(listener)
+      return () => {}
     },
   }
-  // The page only dispatches on submit; a fake source keeps the lifecycle inert
-  // for a render test (the build ships only src modules, never doubles).
   const actions = new ActionLifecycle({
     sendAction: () => false,
     on: () => () => {},
   })
 
   return {
-    connection: connection as unknown as HilosSettingsContext['connection'],
-    scopes,
-    actions,
+    context: {
+      connection: connection as unknown as HilosSettingsContext['connection'],
+      scopes,
+      actions,
+    },
+    pushUpdate(next: SettingSlot): void {
+      rows = rows.map((row) => (row.key === next.key ? next : row))
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.SETTINGS,
+            tableKey: 'settings',
+            kind: 'row_updated',
+            rowKey: next.key,
+            row: { rowKey: next.key, slots: { settings: next } },
+          },
+        })
+      }
+    },
+    pushRemove(key: string): void {
+      rows = rows.filter((row) => row.key !== key)
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.SETTINGS,
+            tableKey: 'settings',
+            kind: 'row_removed',
+            rowKey: key,
+            reason: 'deleted',
+          },
+        })
+      }
+    },
   }
 }
 
@@ -156,7 +198,7 @@ describe('HilosSettingsPage', () => {
           value: '10',
           defaultValue: '10',
         }),
-      ]),
+      ]).context,
     )
     expect(
       container.querySelectorAll('[data-id^="hilos-table-row-"]').length,
@@ -180,7 +222,7 @@ describe('HilosSettingsPage', () => {
           overrideValue: 'x',
           defaultValue: null,
         }),
-      ]),
+      ]).context,
     )
     expect(
       container.querySelector('[data-id="hilos-settings-delete-legacy"]'),
@@ -197,7 +239,7 @@ describe('HilosSettingsPage', () => {
     const { container } = renderPage(
       seededContext([
         slot({ key: 'site_name', valueSource: 'default', value: 'd' }),
-      ]),
+      ]).context,
     )
     const button = container.querySelector(
       '[data-id="hilos-settings-edit-site_name"]',
@@ -211,7 +253,7 @@ describe('HilosSettingsPage', () => {
     const { container } = renderPage(
       seededContext([
         slot({ key: 'site_name', valueSource: 'default', value: 'd' }),
-      ]),
+      ]).context,
     )
     fireEvent.click(
       container.querySelector(
@@ -237,7 +279,7 @@ describe('HilosSettingsPage', () => {
           valueSource: 'override',
           overrideValue: 'Hilos',
         }),
-      ]),
+      ]).context,
     )
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
     fireEvent.click(
@@ -246,5 +288,168 @@ describe('HilosSettingsPage', () => {
       ) as Element,
     )
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+  })
+
+  it('reloads a pristine edit when the live row changes elsewhere', () => {
+    const { context, pushUpdate } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    const input = document.querySelector(
+      '[data-id="hilos-settings-edit-value"]',
+    ) as HTMLInputElement
+    expect(input.value).toBe('Hilos')
+
+    act(() => {
+      pushUpdate(
+        slot({
+          key: 'site_name',
+          valueSource: 'override',
+          value: 'Elsewhere',
+          overrideValue: 'Elsewhere',
+        }),
+      )
+    })
+
+    expect(input.value).toBe('Elsewhere')
+    expect(document.querySelector('[data-id="conflict-badge"]')).toBeNull()
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-settings-edit-save"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true)
+  })
+
+  it('surfaces a conflict on a dirty edit and hides merge', () => {
+    const { context, pushUpdate } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    fireEvent.change(
+      document.querySelector(
+        '[data-id="hilos-settings-edit-value"]',
+      ) as HTMLInputElement,
+      { target: { value: 'Mine' } },
+    )
+    act(() => {
+      pushUpdate(
+        slot({
+          key: 'site_name',
+          valueSource: 'override',
+          value: 'Theirs',
+          overrideValue: 'Theirs',
+        }),
+      )
+    })
+
+    expect(document.querySelector('[data-id="conflict-badge"]')).not.toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-conflict"]')
+        ?.textContent,
+    ).toContain('The value changed elsewhere to "Theirs"')
+    expect(document.querySelector('[data-id="conflict-merge"]')).toBeNull()
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-settings-edit-save"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true)
+  })
+
+  it('Take theirs sets the field to the live value and locks save', () => {
+    const { context, pushUpdate } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    const input = document.querySelector(
+      '[data-id="hilos-settings-edit-value"]',
+    ) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Mine' } })
+    act(() => {
+      pushUpdate(
+        slot({
+          key: 'site_name',
+          valueSource: 'override',
+          value: 'Theirs',
+          overrideValue: 'Theirs',
+        }),
+      )
+    })
+    fireEvent.click(
+      document.querySelector('[data-id="conflict-accept-theirs"]') as Element,
+    )
+
+    expect(input.value).toBe('Theirs')
+    expect(document.querySelector('[data-id="conflict-badge"]')).toBeNull()
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-settings-edit-save"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true)
+  })
+
+  it('locks save and names the gone row when it is removed under the modal', () => {
+    const { context, pushRemove } = seededContext([
+      slot({
+        key: 'legacy',
+        valueSource: 'orphan',
+        value: 'x',
+        overrideValue: 'x',
+        defaultValue: null,
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-legacy"]',
+      ) as Element,
+    )
+    act(() => {
+      pushRemove('legacy')
+    })
+
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-gone"]'),
+    ).not.toBeNull()
+    const save = document.querySelector(
+      '[data-id="hilos-settings-edit-save"]',
+    ) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    expect(save.textContent?.trim()).toBe('Deleted')
   })
 })

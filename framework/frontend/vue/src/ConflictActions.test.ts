@@ -33,4 +33,12 @@ describe('ConflictActions', () => {
     await wrapper.find('[data-id="conflict-save"]').trigger('click')
     expect(wrapper.emitted('save')).toHaveLength(1)
   })
+
+  it('hides the merge button when mergeable is false', () => {
+    const wrapper = mount(ConflictActions, {
+      props: { conflict: true, mergeable: false },
+    })
+    expect(wrapper.find('[data-id="conflict-accept-mine"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(false)
+  })
 })

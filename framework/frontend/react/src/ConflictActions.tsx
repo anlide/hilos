@@ -15,6 +15,12 @@ export interface ConflictActionsProps {
   disableSave?: boolean
   /** Save button label. */
   saveLabel?: string
+  /**
+   * Whether the Merge resolution is offered. Settings hide it: splicing two
+   * typed values is not a value the server will accept. Defaults to true so
+   * surfaces that can merge (a display name) keep the button without opting in.
+   */
+  mergeable?: boolean
   /** Save the resolved draft. */
   onSave?: () => void
   /** Resolve a conflict by keeping the user's draft. */
@@ -37,6 +43,7 @@ export function ConflictActions({
   conflict = false,
   disableSave = false,
   saveLabel = 'Save',
+  mergeable = true,
   onSave,
   onAcceptMine,
   onAcceptTheirs,
@@ -79,14 +86,16 @@ export function ConflictActions({
           >
             Take theirs
           </button>
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
-            data-id="conflict-merge"
-            onClick={() => onMerge?.()}
-          >
-            Merge
-          </button>
+          {mergeable ? (
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              data-id="conflict-merge"
+              onClick={() => onMerge?.()}
+            >
+              Merge
+            </button>
+          ) : null}
         </>
       ) : null}
     </div>

@@ -1,8 +1,9 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
+import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-import { typeInto } from '../helpers/session'
+import { clickSubmit, typeInto } from '../helpers/session'
 
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
 // framework HilosViewportTable over the live socket. The window comes from the
@@ -25,6 +26,40 @@ async function openSettings(page: Page): Promise<void> {
 async function isolate(page: Page, key: string): Promise<void> {
   await page.getByTestId('hilos-table-search').fill(key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+}
+
+/**
+ * Open a key's edit dialog, turn the custom switch on, type `value`, and save.
+ * The catalog default is left behind; the caller waits on the live row (or the
+ * other tab's open modal) for the echo.
+ *
+ * @param page The settings page
+ * @param key The catalog key
+ * @param value The custom override to persist
+ */
+async function saveCustomValue(
+  page: Page,
+  key: string,
+  value: string,
+): Promise<void> {
+  await page.getByTestId(`hilos-settings-edit-${key}`).click()
+  await page.getByTestId('hilos-settings-edit-custom').check()
+  await typeInto(page.getByTestId('hilos-settings-edit-value'), value)
+  await clickSubmit(page.getByTestId('hilos-settings-edit-save'))
+}
+
+/**
+ * Drop the key back to its catalog default so a later spec (or a retry) does
+ * not inherit this run's override.
+ *
+ * @param page The settings page
+ * @param key The catalog key
+ */
+async function resetToDefault(page: Page, key: string): Promise<void> {
+  await dismissToasts(page)
+  await page.getByTestId(`hilos-settings-edit-${key}`).click()
+  await page.getByTestId('hilos-settings-edit-custom').uncheck()
+  await clickSubmit(page.getByTestId('hilos-settings-edit-save'))
 }
 
 /**
@@ -300,6 +335,117 @@ test('the edit dialog opens on the value the other tab just wrote', async ({
   await page.getByTestId('hilos-settings-edit-example_string').click()
   await page.getByTestId('hilos-settings-edit-custom').uncheck()
   await page.getByTestId('hilos-settings-edit-save').click()
+  await tabB.close()
+})
+
+test('an open pristine edit reloads when the other tab saves', async ({
+  page,
+}) => {
+  // Distinct from the other two-tab keys in this file: parallel workers share
+  // the database, and this case needs a string with no catalog rule.
+  const key = 'default_bot_url'
+  await signUpAdmin(page)
+  const tabB = await page.context().newPage()
+  await openSettings(page)
+  await openSettings(tabB)
+  await isolate(page, key)
+  await isolate(tabB, key)
+
+  // Tab B opens and does not type: a pristine modal must follow the live row.
+  // The switch may already be on (an env overlay or an empty stored URL); that
+  // is still pristine as long as the field is not edited.
+  await tabB.getByTestId(`hilos-settings-edit-${key}`).click()
+  await expect(tabB.getByTestId('hilos-settings-edit-custom')).toBeVisible()
+
+  await saveCustomValue(page, key, 'elsewhere-url')
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    'elsewhere-url',
+  )
+
+  await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
+    'elsewhere-url',
+  )
+  await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+  await tabB.getByTestId('modal-close').click()
+
+  await resetToDefault(page, key)
+  await tabB.close()
+})
+
+test('a dirty open edit conflicts when the other tab saves, with no Merge', async ({
+  page,
+}) => {
+  const key = 'default_bot_model'
+  await signUpAdmin(page)
+  const tabB = await page.context().newPage()
+  await openSettings(page)
+  await openSettings(tabB)
+  await isolate(page, key)
+  await isolate(tabB, key)
+
+  await tabB.getByTestId(`hilos-settings-edit-${key}`).click()
+  await tabB.getByTestId('hilos-settings-edit-custom').check()
+  await typeInto(tabB.getByTestId('hilos-settings-edit-value'), 'mine-model')
+
+  await saveCustomValue(page, key, 'theirs-model')
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    'theirs-model',
+  )
+
+  await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
+  await expect(tabB.getByTestId('hilos-settings-edit-conflict')).toContainText(
+    'The value changed elsewhere to "theirs-model"',
+  )
+  await expect(tabB.getByTestId('conflict-merge')).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+
+  await tabB.getByTestId('conflict-accept-theirs').click()
+  await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
+    'theirs-model',
+  )
+  await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+  await tabB.getByTestId('modal-close').click()
+
+  await resetToDefault(page, key)
+  await tabB.close()
+})
+
+test('Keep mine on a dirty conflict saves the typed value in both tabs', async ({
+  page,
+}) => {
+  const key = 'default_bot_provider'
+  await signUpAdmin(page)
+  const tabB = await page.context().newPage()
+  await openSettings(page)
+  await openSettings(tabB)
+  await isolate(page, key)
+  await isolate(tabB, key)
+
+  await tabB.getByTestId(`hilos-settings-edit-${key}`).click()
+  await tabB.getByTestId('hilos-settings-edit-custom').check()
+  await typeInto(tabB.getByTestId('hilos-settings-edit-value'), 'mine-provider')
+
+  await saveCustomValue(page, key, 'theirs-provider')
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    'theirs-provider',
+  )
+  await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
+
+  await tabB.getByTestId('conflict-accept-mine').click()
+  await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+  const save = tabB.getByTestId('hilos-settings-edit-save')
+  await expect(save).toBeEnabled()
+  await clickSubmit(save)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    'mine-provider',
+  )
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    'mine-provider',
+  )
+
+  await resetToDefault(page, key)
   await tabB.close()
 })
 

@@ -5,12 +5,14 @@ import {
   hasCustomValue,
   isOrphanSetting,
   resolveHilosSettingRow,
+  resolveSettingEdit,
   type HilosSettingRow,
   type HilosSettingsContext,
   type SettingValueSource,
 } from '../../../src/admin/settings/hilosSettings.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { type TableViewportRow } from '../../../src/table/TableViewportController.js'
 
 /** Build a settings table row whose inline `settings` slot carries the given fields. */
 function settingsRow(
@@ -97,6 +99,143 @@ describe('hasCustomValue', () => {
     expect(hasCustomValue(rowWithSource('orphan', 'mine'))).toBe(true)
     expect(hasCustomValue(rowWithSource('default'))).toBe(false)
     expect(hasCustomValue(rowWithSource('reference'))).toBe(false)
+  })
+})
+
+/** One live viewport row; tests fill only the fields they assert on. */
+function viewportRow(
+  over: Partial<TableViewportRow<HilosSettingRow>> & { rowKey: string },
+): TableViewportRow<HilosSettingRow> {
+  return {
+    row: {
+      key: over.rowKey,
+      type: 'string',
+      value: 'v',
+      overrideValue: null,
+      defaultValue: 'd',
+      defaultReferenceKey: null,
+      valueSource: 'default',
+    },
+    placeholder: false,
+    pending: null,
+    highlighted: false,
+    selected: false,
+    expanded: false,
+    staleSources: [],
+    ...over,
+  }
+}
+
+describe('resolveSettingEdit', () => {
+  const key = 'chat_bot_language'
+  const row = (
+    overrideValue: string | null,
+  ): TableViewportRow<HilosSettingRow> =>
+    viewportRow({
+      rowKey: key,
+      row: {
+        key,
+        type: 'string',
+        value: overrideValue ?? 'en',
+        overrideValue,
+        defaultValue: 'en',
+        defaultReferenceKey: null,
+        valueSource: overrideValue === null ? 'default' : 'override',
+      },
+    })
+
+  it('classifies unchanged when nobody moved the override', () => {
+    expect(resolveSettingEdit([row('en')], key, 'en', 'en')).toEqual({
+      incoming: 'en',
+      gone: false,
+      status: 'unchanged',
+      conflict: false,
+      dirty: false,
+    })
+  })
+
+  it('classifies user when only the draft moved', () => {
+    expect(resolveSettingEdit([row('en')], key, 'en', 'de')).toEqual({
+      incoming: 'en',
+      gone: false,
+      status: 'user',
+      conflict: false,
+      dirty: true,
+    })
+  })
+
+  it('classifies incoming when only the live row moved', () => {
+    expect(resolveSettingEdit([row('de')], key, 'en', 'en')).toEqual({
+      incoming: 'de',
+      gone: false,
+      status: 'incoming',
+      conflict: false,
+      dirty: true,
+    })
+  })
+
+  it('classifies converged when both sides arrived at the same override', () => {
+    expect(resolveSettingEdit([row('de')], key, 'en', 'de')).toEqual({
+      incoming: 'de',
+      gone: false,
+      status: 'converged',
+      conflict: false,
+      dirty: false,
+    })
+  })
+
+  it('classifies conflict when both sides moved to different overrides', () => {
+    expect(resolveSettingEdit([row('de')], key, 'en', 'fr')).toEqual({
+      incoming: 'de',
+      gone: false,
+      status: 'conflict',
+      conflict: true,
+      dirty: true,
+    })
+  })
+
+  it('is gone when the key is not in the window', () => {
+    expect(resolveSettingEdit([], key, 'en', 'en')).toEqual({
+      incoming: 'en',
+      gone: true,
+      status: 'unchanged',
+      conflict: false,
+      dirty: false,
+    })
+  })
+
+  it('is gone when the live row is a placeholder', () => {
+    expect(
+      resolveSettingEdit(
+        [viewportRow({ rowKey: key, row: null, placeholder: true })],
+        key,
+        'en',
+        'fr',
+      ),
+    ).toEqual({
+      incoming: 'en',
+      gone: true,
+      status: 'unchanged',
+      conflict: false,
+      dirty: false,
+    })
+  })
+
+  it('is gone when a removal is waiting on the row', () => {
+    expect(
+      resolveSettingEdit(
+        [viewportRow({ rowKey: key, pending: 'remove' })],
+        key,
+        'en',
+        'fr',
+      ),
+    ).toEqual({
+      incoming: 'en',
+      gone: true,
+      status: 'unchanged',
+      conflict: false,
+      dirty: false,
+    })
   })
 })
 

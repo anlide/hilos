@@ -11,17 +11,24 @@
 // HilosSettingsContext — its scope manager and its connection — and the framework
 // owns the rest.
 
+import { type HilosConnection } from '../../connection/HilosConnection.js'
 import {
   ActionLifecycle,
   type ActionHandle,
 } from '../../connection/actionLifecycle.js'
-import { type HilosConnection } from '../../connection/HilosConnection.js'
+import {
+  threeWayMerge,
+  type ThreeWayMergeStatus,
+} from '../../conflict/threeWayMerge.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { readString, readStringOrNull } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { TableViewportController } from '../../table/TableViewportController.js'
+import {
+  TableViewportController,
+  type TableViewportRow,
+} from '../../table/TableViewportController.js'
 
 /** Where a setting's effective value comes from. */
 export type SettingValueSource = 'default' | 'reference' | 'override' | 'orphan'
@@ -186,6 +193,64 @@ export function isOrphanSetting(row: HilosSettingRow): boolean {
  */
 export function hasCustomValue(row: HilosSettingRow): boolean {
   return row.overrideValue !== null
+}
+
+/**
+ * The live state of one settings edit modal: the committed override on the
+ * subscribed row, whether that row has gone, and the three-way merge of the
+ * open-time snapshot against the draft the modal would persist.
+ */
+export interface SettingEditState {
+  /** The live row's overrideValue, or the open-time snapshot when the row is gone. */
+  readonly incoming: string | null
+  /** True when the row is missing, a placeholder, or waiting on a removal. */
+  readonly gone: boolean
+  /** The three-way merge classification; `unchanged` when the row is gone. */
+  readonly status: ThreeWayMergeStatus
+  /** True only while both sides diverged and the row is still there. */
+  readonly conflict: boolean
+  /** True when the draft differs from the live override and the row is still there. */
+  readonly dirty: boolean
+}
+
+/**
+ * Classify an open settings edit against the live table window. The modal
+ * stays subscribed to the same row the table already shows; this is the
+ * headless merge that decides whether to reload, conflict, or lock save.
+ *
+ * @param rows The live viewport rows the settings table is showing.
+ * @param key The setting key the modal opened on; empty when none is open.
+ * @param baseline The overrideValue captured when the modal opened.
+ * @param draft The override the modal would persist right now (`null` = catalog default).
+ */
+export function resolveSettingEdit(
+  rows: readonly TableViewportRow<HilosSettingRow>[],
+  key: string,
+  baseline: string | null,
+  draft: string | null,
+): SettingEditState {
+  const view = key === '' ? undefined : rows.find((row) => row.rowKey === key)
+  const gone =
+    view === undefined || view.placeholder || view.pending === 'remove'
+  if (gone) {
+    return {
+      incoming: baseline,
+      gone: true,
+      status: 'unchanged',
+      conflict: false,
+      dirty: false,
+    }
+  }
+  const incoming = view.row?.overrideValue ?? null
+  const merge = threeWayMerge(baseline, draft, incoming)
+
+  return {
+    incoming,
+    gone: false,
+    status: merge.status,
+    conflict: merge.conflict,
+    dirty: draft !== incoming,
+  }
 }
 
 /** The settings table handle a settings view drives: the controller plus its mount lifecycle. */

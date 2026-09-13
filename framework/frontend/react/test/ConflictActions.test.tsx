@@ -76,4 +76,12 @@ describe('ConflictActions', () => {
     expect(custom.disabled).toBe(true)
     expect(container.querySelector('[data-id="conflict-save"]')).toBeNull()
   })
+
+  it('hides the merge button when mergeable is false', () => {
+    const { container } = render(<ConflictActions conflict mergeable={false} />)
+    expect(
+      container.querySelector('[data-id="conflict-accept-mine"]'),
+    ).not.toBeNull()
+    expect(container.querySelector('[data-id="conflict-merge"]')).toBeNull()
+  })
 })

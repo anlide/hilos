@@ -66,14 +66,16 @@ export interface ConflictSaveButtonContext {
       >
         Take theirs
       </button>
-      <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm"
-        data-id="conflict-merge"
-        (click)="merge.emit()"
-      >
-        Merge
-      </button>
+      @if (mergeable()) {
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          data-id="conflict-merge"
+          (click)="merge.emit()"
+        >
+          Merge
+        </button>
+      }
     }
   `,
 })
@@ -84,6 +86,12 @@ export class ConflictActions {
   readonly disableSave = input(false)
   /** Save button label. */
   readonly saveLabel = input('Save')
+  /**
+   * Whether the Merge resolution is offered. Settings hide it: splicing two
+   * typed values is not a value the server will accept. Defaults to true so
+   * surfaces that can merge (a display name) keep the button without opting in.
+   */
+  readonly mergeable = input(true)
 
   /** Save the resolved draft. */
   readonly save = output<void>()

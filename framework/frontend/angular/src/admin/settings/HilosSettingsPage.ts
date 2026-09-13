@@ -18,6 +18,7 @@ import {
   effect,
   input,
   signal,
+  untracked,
 } from '@angular/core'
 import {
   HilosPages,
@@ -27,13 +28,18 @@ import {
   createHilosSettingsTable,
   hasCustomValue,
   isOrphanSetting,
+  resolveSettingEdit,
+  subscribeSignal,
 } from '@hilos/core'
 import type {
   HilosSettingRow,
   HilosSettingsContext,
   HilosTableColumnOf,
+  TableViewportRow,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -75,6 +81,8 @@ function inputStep(type: string | undefined): 'any' | undefined {
     HilosActionError,
     LoadingButton,
     HilosSettingValueCell,
+    ConflictActions,
+    ConflictHeader,
   ],
   template: `
     <hilos-admin-page [page]="page">
@@ -141,9 +149,14 @@ function inputStep(type: string | undefined): 'any' | undefined {
       <hilos-modal
         [open]="editOpen()"
         (openChange)="editOpen.set($event)"
-        [title]="editTitle()"
         [confirmOnClose]="editDirty()"
       >
+        <h5
+          hilosConflictHeader
+          modalHeader
+          [title]="editTitle()"
+          [conflict]="live().conflict"
+        ></h5>
         <hilos-action-error [action]="edit" />
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
@@ -209,6 +222,23 @@ function inputStep(type: string | undefined): 'any' | undefined {
                 }
               </div>
             }
+            @if (live().conflict) {
+              <div
+                class="alert alert-warning mt-2 mb-0"
+                data-id="hilos-settings-edit-conflict"
+              >
+                {{ editConflictNote() }}
+              </div>
+            }
+            @if (live().gone) {
+              <div
+                class="alert alert-warning mt-2 mb-0"
+                data-id="hilos-settings-edit-gone"
+              >
+                This setting was deleted elsewhere. Your text stays here to copy
+                - it can no longer be saved.
+              </div>
+            }
           </form>
         }
         <ng-template #modalActions let-requestClose="requestClose">
@@ -220,16 +250,33 @@ function inputStep(type: string | undefined): 'any' | undefined {
           >
             Cancel
           </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="edit.loading()"
-            [disabled]="!editDirty() || edit.busy()"
-            data-id="hilos-settings-edit-save"
-            (click)="submitEdit()"
+          <div
+            hilosConflictActions
+            [conflict]="live().conflict"
+            [disableSave]="!editDirty() || edit.busy() || live().gone"
+            [mergeable]="false"
+            [saveLabel]="editSaveLabel()"
+            (save)="submitEdit()"
+            (acceptMine)="acceptMine()"
+            (acceptTheirs)="acceptTheirs()"
           >
-            Save
-          </button>
+            <ng-template
+              #saveButton
+              let-disabled="disabled"
+              let-onSave="onSave"
+            >
+              <button
+                hilosLoadingButton
+                class="btn-primary"
+                [loading]="edit.loading()"
+                [disabled]="disabled"
+                data-id="hilos-settings-edit-save"
+                (click)="onSave()"
+              >
+                {{ editSaveLabel() }}
+              </button>
+            </ng-template>
+          </div>
         </ng-template>
       </hilos-modal>
 
@@ -250,6 +297,14 @@ function inputStep(type: string | undefined): 'any' | undefined {
             <code>{{ row.key }}</code>
           </p>
         }
+        @if (deleteLive().gone) {
+          <p
+            class="mb-0 mt-2 text-body-secondary"
+            data-id="hilos-settings-delete-gone"
+          >
+            This setting was already deleted elsewhere.
+          </p>
+        }
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -263,6 +318,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
             hilosLoadingButton
             class="btn-danger"
             [loading]="del.loading()"
+            [disabled]="del.busy() || deleteLive().gone"
             data-id="hilos-settings-delete-confirm"
             (click)="submitDelete()"
           >
@@ -292,9 +348,13 @@ export class HilosSettingsPage {
   // Edit dialog: one row's custom value (or a reset back to the catalog default).
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosSettingRow | null>(null)
+  protected readonly editBaseline = signal<string | null>(null)
   protected readonly editValue = signal('')
   protected readonly editUseCustom = signal(false)
   protected readonly edit = createHilosTrackedAction()
+  protected readonly viewportRows = signal<
+    readonly TableViewportRow<HilosSettingRow>[]
+  >([])
 
   // Delete dialog: orphan keys only (not in the catalog).
   protected readonly deleteOpen = signal(false)
@@ -311,10 +371,38 @@ export class HilosSettingsPage {
   protected readonly editOverride = computed<string | null>(() =>
     this.editUseCustom() ? String(this.editValue()) : null,
   )
-  protected readonly editDirty = computed(() => {
-    const row = this.editRow()
+  protected readonly live = computed(() =>
+    resolveSettingEdit(
+      this.viewportRows(),
+      this.editRow()?.key ?? '',
+      this.editBaseline(),
+      this.editOverride(),
+    ),
+  )
+  protected readonly deleteLive = computed(() =>
+    resolveSettingEdit(
+      this.viewportRows(),
+      this.deleteRow()?.key ?? '',
+      null,
+      null,
+    ),
+  )
+  protected readonly editDirty = computed(() => this.live().dirty)
+  protected readonly editSaveLabel = computed(() =>
+    this.live().gone ? 'Deleted' : 'Save',
+  )
+  protected readonly editConflictNote = computed(() => {
+    if (this.live().incoming === null) {
+      return (
+        'The custom value was removed elsewhere and the key is back on ' +
+        'its catalog default. Choose how to resolve.'
+      )
+    }
 
-    return !!row && this.editOverride() !== row.overrideValue
+    return (
+      `The value changed elsewhere to "${this.live().incoming}". ` +
+      'Choose how to resolve.'
+    )
   })
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
@@ -330,10 +418,28 @@ export class HilosSettingsPage {
   constructor() {
     // Bind the server-windowed table to the connection and request the first
     // window once the context input is bound; unbind on destroy or context swap.
+    // Mirror the live rows the same way the viewport table does: the controller
+    // arrives through a computed, so hilosSignal cannot take it at field init.
     effect((onCleanup) => {
       const settings = this.settings()
       settings.start()
-      onCleanup(() => settings.dispose())
+      this.viewportRows.set(settings.controller.rows.get())
+      const unsubscribe = subscribeSignal(settings.controller.rows, (rows) =>
+        this.viewportRows.set(rows),
+      )
+      onCleanup(() => {
+        unsubscribe()
+        settings.dispose()
+      })
+    })
+    effect(() => {
+      const status = this.live().status
+      const open = this.editOpen()
+      untracked(() => {
+        if (open && (status === 'incoming' || status === 'converged')) {
+          this.rechargeFromIncoming()
+        }
+      })
     })
   }
 
@@ -351,7 +457,27 @@ export class HilosSettingsPage {
     // carries a value of its own.
     this.editUseCustom.set(isOrphanSetting(fresh) || hasCustomValue(fresh))
     this.editValue.set(fresh.overrideValue ?? fresh.value ?? '')
+    this.editBaseline.set(fresh.overrideValue)
     this.editOpen.set(true)
+  }
+
+  private rechargeFromIncoming(): void {
+    const row = this.editRow()
+    if (!row) {
+      return
+    }
+    const incoming = this.live().incoming
+    this.editUseCustom.set(incoming !== null || isOrphanSetting(row))
+    this.editValue.set(incoming ?? row.value ?? '')
+    this.editBaseline.set(incoming)
+  }
+
+  protected acceptMine(): void {
+    this.editBaseline.set(this.live().incoming)
+  }
+
+  protected acceptTheirs(): void {
+    this.rechargeFromIncoming()
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
@@ -359,11 +485,11 @@ export class HilosSettingsPage {
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.editRow()
-    if (!row || this.edit.busy()) {
+    if (!row || this.edit.busy() || this.live().gone) {
       return
     }
     const next = this.editOverride()
-    if (next === row.overrideValue) {
+    if (next === this.live().incoming) {
       this.editOpen.set(false)
 
       return
@@ -397,7 +523,7 @@ export class HilosSettingsPage {
 
   protected async submitDelete(): Promise<void> {
     const row = this.deleteRow()
-    if (!row || this.del.busy()) {
+    if (!row || this.del.busy() || this.deleteLive().gone) {
       return
     }
     if (await this.del.run(this.actions().sendSettingDelete(row.key))) {

@@ -629,6 +629,7 @@ export {
 } from './admin/users/hilosUsers.js'
 export {
   resolveHilosSettingRow,
+  resolveSettingEdit,
   isOrphanSetting,
   hasCustomValue,
   createHilosSettingsTable,
@@ -636,6 +637,7 @@ export {
   SETTING_KEY_FIELD,
   SETTING_VALUE_FIELD,
   type SettingValueSource,
+  type SettingEditState,
   type HilosSettingRow,
   type HilosSettingsContext,
   type HilosSettingsTable,
