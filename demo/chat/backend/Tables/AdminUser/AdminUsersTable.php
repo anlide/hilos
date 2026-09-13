@@ -11,7 +11,6 @@ use Demo\Chat\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -274,11 +273,10 @@ final class AdminUsersTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Configures the row shape and item actions used by the admin users table.
+     * Configures the row shape used by the admin users table.
      */
     protected function init(): void
     {
         $this->setRowClass(AdminUserTableRow::class);
-        $this->setItemActionsClass(AdminUserItemActions::class);
     }
 }

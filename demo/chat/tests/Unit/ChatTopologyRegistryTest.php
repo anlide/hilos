@@ -946,12 +946,12 @@ final class ChatTopologyRegistryTest extends TestCase
      * A ceiling and not the exact rows: an addition paints this red, a removal passes quietly,
      * because nothing should stand in the way of a debt getting smaller. Asserting the exact
      * contents instead would paint this test red on every PARTING - the one move the list
-     * exists to bring about. Seven database collections carry it today, and no runtime collection
+     * exists to bring about. Five database collections carry it today, and no runtime collection
      * is shared here at all.
      */
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
-        $this->assertLessThanOrEqual(7, count(Hilos::SHARED_DB_OWNERS));
+        $this->assertLessThanOrEqual(5, count(Hilos::SHARED_DB_OWNERS));
         $this->assertSame([], Hilos::SHARED_RT_OWNERS);
     }
 

@@ -45,7 +45,10 @@
         ]
     },
     "config": {
-        "process-timeout": 0
+        "process-timeout": 0,
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
     },
     "scripts": {
         "ollama:start": "docker compose -f framework/docker/docker-compose.yml --profile ollama up -d",

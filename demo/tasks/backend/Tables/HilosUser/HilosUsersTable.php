@@ -11,7 +11,6 @@ use Demo\Tasks\Database\View\Item\User as DbUser;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
-use Demo\Tasks\Tables\HilosUser\Actions\HilosUserItemActions;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Source\SourceChange;
@@ -187,11 +186,10 @@ final class HilosUsersTable extends AbstractHilosUsersTable
     }
 
     /**
-     * Configures the row shape and item actions used by the Hilos users table.
+     * Configures the row shape used by the Hilos users table.
      */
     protected function init(): void
     {
         $this->setRowClass(HilosUserTableRow::class);
-        $this->setItemActionsClass(HilosUserItemActions::class);
     }
 }

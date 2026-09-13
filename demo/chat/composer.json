@@ -36,7 +36,10 @@
         }
     },
     "config": {
-        "process-timeout": 0
+        "process-timeout": 0,
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
     },
     "scripts": {
         "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
@@ -105,4 +108,3 @@
         "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down && composer run test:e2e-full"
     }
 }
-

@@ -465,15 +465,7 @@ final class Hilos extends HilosFacade
      */
     public const array SHARED_DB_OWNERS = [
         ChatDbContext::users => [
-            SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class, DemoHilosAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
-        ],
-        ChatDbContext::events => [
-            SharedOwnersKey::OWNERS => [ChatAgent::class, DemoHilosAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
-        ],
-        ChatDbContext::eventUserRenames => [
-            SharedOwnersKey::OWNERS => [ChatAgent::class, DemoHilosAgent::class],
+            SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
         ],
         HilosDbContext::identities => [
