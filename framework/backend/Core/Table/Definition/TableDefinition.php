@@ -292,11 +292,11 @@ abstract class TableDefinition implements ArrayAccess
      * its index travel as one change; the rules and the refusals are in
      * `docs/agents/frontend/table-sort-orders.md`.
      *
-     * Every component names a field of {@see sortableFields()}, and every component of one order
-     * runs the same way: a declaration that mixes directions or names a field outside the map is
-     * passed over as though it were not written, because neither can be honoured by an index
-     * this side can vouch for. The primary key is not part of a declaration — the query boundary
-     * settles the order with it.
+     * Every component names a field of {@see sortableFields()}: a declaration that names a field
+     * outside the map is passed over as though it were not written, because it has no column to
+     * reach. Directions may differ from one component to the next, as long as the index under the
+     * order is declared with the same directions. The primary key is not part of a declaration —
+     * the query boundary settles the order with it.
      *
      * The key is the order's own slug, which is what the frontend builds the
      * `hilos-table-order-<orderKey>` selector out of; it stays on this side of the wire, the
