@@ -11,11 +11,15 @@ Rules are layered:
 
 - `agents.md` contains repository-wide hard stops and navigation.
 - `docs/agents/*` contains the canonical task-specific rules.
-- `skills/hilos-*` contains Codex wrappers only; do not treat them as a separate
-  source of truth.
+- `skills/hilos-*` holds wrappers for the CLI agents — Codex and Cursor alike;
+  do not treat them as a separate source of truth.
 
 When changing DB entity shape, RT item shape, signal DTO payloads, declarative
 routing, or page/worker routes, stop and ask the user for explicit confirmation
 as described in `agents.md`.
 
-Do not run `git commit` or `git push`.
+Never run `git push`. Publishing is the owner's, and a hook enforces it.
+
+Commit only the leaf you were given, and only on its own `HIL-<n>` branch —
+that is how the headless line records work, and a turn that refuses to commit
+loses it. Outside a leaf of your own, do not commit at all.
