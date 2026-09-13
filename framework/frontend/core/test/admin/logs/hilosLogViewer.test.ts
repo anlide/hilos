@@ -919,13 +919,70 @@ describe('createHilosLogViewer', () => {
     view.start()
 
     view.setLevel('ERROR')
-    view.setSubstring('deadlock')
+    view.editSubstring('deadlock')
+    view.applySubstring()
 
     expect(actions.lastRead().level).toBe('ERROR')
     expect(actions.lastRead().substring).toBe('deadlock')
     // Every change reads from the tail: a byte offset into the previous answer
     // means nothing in a differently filtered one.
     expect(actions.lastRead().cursor).toBeNull()
+  })
+
+  it('asks the server nothing while the substring is only typed', () => {
+    const { context, actions, address } = viewer(
+      '/hilos/logs/view/node-1/live/worker-0.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    view.setFollow(false)
+    view.start()
+    const asked = actions.sent.length
+
+    view.editSubstring('deadlock')
+
+    expect(actions.sent).toHaveLength(asked)
+    expect(view.substring.get()).toBe('')
+    expect(view.substringDraft.get()).toBe('deadlock')
+  })
+
+  it('reads the unfiltered lines again when a cleared field is applied', () => {
+    const { context, actions, address } = viewer(
+      '/hilos/logs/view/node-1/live/worker-0.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    view.setFollow(false)
+    view.start()
+    view.editSubstring('deadlock')
+    view.applySubstring()
+
+    view.editSubstring('')
+    view.applySubstring()
+
+    expect(actions.lastRead().substring).toBeNull()
+    expect(actions.lastRead().cursor).toBeNull()
+  })
+
+  it('says the field is unapplied from the typing until the texts agree again', () => {
+    const { context, address } = viewer(
+      '/hilos/logs/view/node-1/live/worker-0.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    view.setFollow(false)
+    view.start()
+    expect(view.substringDirty.get()).toBe(false)
+
+    view.editSubstring('deadlock')
+    expect(view.substringDirty.get()).toBe(true)
+
+    view.applySubstring()
+    expect(view.substringDirty.get()).toBe(false)
+
+    view.editSubstring('dead')
+    expect(view.substringDirty.get()).toBe(true)
+
+    // Typed back to what was applied: nothing was pressed, and nothing is stale.
+    view.editSubstring('deadlock')
+    expect(view.substringDirty.get()).toBe(false)
   })
 
   it('reads from the tail again on a reconnect, with the cursor thrown away', () => {
@@ -1278,7 +1335,10 @@ describe('createHilosLogViewer opened on an entry', () => {
   it('drops the anchor from the address and from the read on whatever the operator does next', () => {
     const moves: ((view: HilosLogViewer) => void)[] = [
       (view) => view.setLevel('ERROR'),
-      (view) => view.setSubstring('deadlock'),
+      (view) => {
+        view.editSubstring('deadlock')
+        view.applySubstring()
+      },
       (view) => view.select({ stream: 'daemon.log' }),
       (view) => view.setFollow(true),
       (view) => view.returnToTail(),

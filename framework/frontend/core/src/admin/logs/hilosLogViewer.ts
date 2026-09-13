@@ -760,6 +760,10 @@ export interface HilosLogViewer {
   readonly level: ReadonlySignal<string>
   /** Substring asked of the server, empty for no substring. */
   readonly substring: ReadonlySignal<string>
+  /** What stands in the substring field, applied or not. */
+  readonly substringDraft: ReadonlySignal<string>
+  /** Whether what stands in the field differs from what was asked of the server. */
+  readonly substringDirty: ReadonlySignal<boolean>
   /** True while a page of lines is being waited for. */
   readonly busy: ReadonlySignal<boolean>
   /** Whether the named file could be read at all; false is a state, not a fault. */
@@ -783,11 +787,21 @@ export interface HilosLogViewer {
    */
   setLevel(level: string): void
   /**
-   * Ask the server for lines carrying a substring.
+   * Put text into the substring field without asking the server anything.
    *
-   * @param substring The text to look for, or empty for no substring.
+   * Typing is not applying: the feed goes on answering for the substring last
+   * applied, and `substringDirty` says so until the two agree again.
+   *
+   * @param next The text standing in the field.
    */
-  setSubstring(substring: string): void
+  editSubstring(next: string): void
+  /**
+   * Ask the server for lines carrying the text that stands in the field.
+   *
+   * Applying the same text again is a plain re-read: a reply to the read it
+   * replaces is dropped by the generation, so nothing waits for it.
+   */
+  applySubstring(): void
   /**
    * Raise or lower the Follow switch.
    *
@@ -841,6 +855,12 @@ export function createHilosLogViewer(
   const rows = createSignal<readonly HilosLogViewerRow[]>([])
   const level = createSignal('')
   const substring = createSignal('')
+  const substringDraft = createSignal('')
+  // Computed rather than a flag: agreement of the two texts is what "applied"
+  // means, and a flag would have to be lowered at every place they meet again.
+  const substringDirty = computedSignal(
+    () => substringDraft.get() !== substring.get(),
+  )
   const busy = createSignal(false)
   const readable = createSignal(true)
   const hasMore = createSignal(false)
@@ -1251,6 +1271,8 @@ export function createHilosLogViewer(
     pendingLines,
     level,
     substring,
+    substringDraft,
+    substringDirty,
     busy,
     readable,
     hasMore,
@@ -1261,9 +1283,12 @@ export function createHilosLogViewer(
       level.set(next)
       read(false)
     },
-    setSubstring(next) {
+    editSubstring(next) {
+      substringDraft.set(next)
+    },
+    applySubstring() {
       dropAnchor()
-      substring.set(next)
+      substring.set(substringDraft.get())
       read(false)
     },
     setFollow(next) {

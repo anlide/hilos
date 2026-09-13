@@ -78,6 +78,8 @@ const selection = useSignal(viewer.selection)
 const rows = useSignal(viewer.rows)
 const level = useSignal(viewer.level)
 const substring = useSignal(viewer.substring)
+const substringDraft = useSignal(viewer.substringDraft)
+const substringDirty = useSignal(viewer.substringDirty)
 const busy = useSignal(viewer.busy)
 const readable = useSignal(viewer.readable)
 const hasMore = useSignal(viewer.hasMore)
@@ -151,8 +153,12 @@ function onLevel(event: Event): void {
   viewer.setLevel((event.target as HTMLSelectElement).value)
 }
 
-function onSubstring(event: Event): void {
-  viewer.setSubstring((event.target as HTMLInputElement).value)
+function onSubstringInput(event: Event): void {
+  viewer.editSubstring((event.target as HTMLInputElement).value)
+}
+
+function applySubstring(): void {
+  viewer.applySubstring()
 }
 
 function onFollow(event: Event): void {
@@ -339,15 +345,27 @@ function toggle(entry: HilosLogViewerEntry): void {
           <label class="visually-hidden" for="hilos-log-substring">
             Search inside the lines
           </label>
-          <input
-            id="hilos-log-substring"
-            type="search"
-            class="form-control form-control-sm"
-            placeholder="Search inside the lines"
-            :value="substring"
-            data-id="hilos-log-substring"
-            @change="onSubstring"
-          />
+          <div class="input-group input-group-sm">
+            <input
+              id="hilos-log-substring"
+              type="search"
+              class="form-control"
+              placeholder="Search inside the lines"
+              :value="substringDraft"
+              data-id="hilos-log-substring"
+              @input="onSubstringInput"
+              @keydown.enter="applySubstring"
+            />
+            <button
+              type="button"
+              class="btn"
+              :class="substringDirty ? 'btn-primary' : 'btn-outline-secondary'"
+              data-id="hilos-log-search"
+              @click="applySubstring"
+            >
+              <i class="bi bi-search me-1" aria-hidden="true"></i>Search
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -364,6 +382,14 @@ function toggle(entry: HilosLogViewerEntry): void {
       </button>
       <span class="small text-body-secondary" data-id="hilos-log-count">
         {{ entryCount }} entries shown
+      </span>
+      <span
+        v-if="substringDirty"
+        class="small text-warning-emphasis"
+        role="status"
+        data-id="hilos-log-search-pending"
+      >
+        Not applied yet — press Search
       </span>
       <span
         v-if="following"

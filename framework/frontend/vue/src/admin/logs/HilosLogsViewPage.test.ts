@@ -325,6 +325,56 @@ describe('HilosLogsViewPage', () => {
     ).toBeDefined()
   })
 
+  it('asks the server nothing while the substring is only typed, and says so', async () => {
+    const { connection, pushCatalog, sent } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    const asked = sent.length
+
+    await wrapper.find('[data-id="hilos-log-substring"]').setValue('deadlock')
+
+    expect(sent).toHaveLength(asked)
+    expect(wrapper.find('[data-id="hilos-log-search-pending"]').text()).toBe(
+      'Not applied yet — press Search',
+    )
+  })
+
+  it('applies the typed substring on the Search button, and drops the note', async () => {
+    const { connection, pushCatalog, sent } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    await wrapper.find('[data-id="hilos-log-substring"]').setValue('deadlock')
+    const asked = sent.length
+
+    await wrapper.find('[data-id="hilos-log-search"]').trigger('click')
+
+    expect(sent).toHaveLength(asked + 1)
+    expect(sent.at(-1)?.data).toMatchObject({ substring: 'deadlock' })
+    expect(wrapper.find('[data-id="hilos-log-search-pending"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('applies the same substring on Enter as on the button', async () => {
+    const { connection, pushCatalog, sent } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    const field = wrapper.find('[data-id="hilos-log-substring"]')
+    await field.setValue('deadlock')
+    const asked = sent.length
+
+    await field.trigger('keydown', { key: 'Enter' })
+
+    expect(sent).toHaveLength(asked + 1)
+    expect(sent.at(-1)?.data).toMatchObject({ substring: 'deadlock' })
+    expect(wrapper.find('[data-id="hilos-log-search-pending"]').exists()).toBe(
+      false,
+    )
+  })
+
   it('greys the Follow switch out on an archived batch and says why', async () => {
     // Greyed out says "not applicable here", not "you turned it off": the switch
     // keeps its own position, so coming back to the live journal resumes the tail

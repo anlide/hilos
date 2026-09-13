@@ -191,15 +191,28 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
             <label class="visually-hidden" for="hilos-log-substring">
               Search inside the lines
             </label>
-            <input
-              id="hilos-log-substring"
-              type="search"
-              class="form-control form-control-sm"
-              placeholder="Search inside the lines"
-              [value]="substring()"
-              data-id="hilos-log-substring"
-              (change)="onSubstring($event)"
-            />
+            <div class="input-group input-group-sm">
+              <input
+                id="hilos-log-substring"
+                type="search"
+                class="form-control"
+                placeholder="Search inside the lines"
+                [value]="substringDraft()"
+                data-id="hilos-log-substring"
+                (input)="onSubstringInput($event)"
+                (keydown.enter)="onSubstringApply()"
+              />
+              <button
+                type="button"
+                class="btn"
+                [class.btn-primary]="substringDirty()"
+                [class.btn-outline-secondary]="!substringDirty()"
+                data-id="hilos-log-search"
+                (click)="onSubstringApply()"
+              >
+                <i class="bi bi-search me-1" aria-hidden="true"></i>Search
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -217,6 +230,15 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
         <span class="small text-body-secondary" data-id="hilos-log-count">
           {{ entryCount() }} entries shown
         </span>
+        @if (substringDirty()) {
+          <span
+            class="small text-warning-emphasis"
+            role="status"
+            data-id="hilos-log-search-pending"
+          >
+            Not applied yet — press Search
+          </span>
+        }
         @if (following()) {
           <span
             class="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
@@ -434,6 +456,8 @@ export class HilosLogsViewPage {
   protected readonly rows = signal<readonly HilosLogViewerRow[]>([])
   protected readonly level = signal('')
   protected readonly substring = signal('')
+  protected readonly substringDraft = signal('')
+  protected readonly substringDirty = signal(false)
   protected readonly busy = signal(false)
   protected readonly readable = signal(true)
   protected readonly hasMore = signal(false)
@@ -498,6 +522,8 @@ export class HilosLogsViewPage {
         this.mirror(viewer.rows, this.rows.set),
         this.mirror(viewer.level, this.level.set),
         this.mirror(viewer.substring, this.substring.set),
+        this.mirror(viewer.substringDraft, this.substringDraft.set),
+        this.mirror(viewer.substringDirty, this.substringDirty.set),
         this.mirror(viewer.busy, this.busy.set),
         this.mirror(viewer.readable, this.readable.set),
         this.mirror(viewer.hasMore, this.hasMore.set),
@@ -579,8 +605,12 @@ export class HilosLogsViewPage {
     this.viewer().setLevel((event.target as HTMLSelectElement).value)
   }
 
-  protected onSubstring(event: Event): void {
-    this.viewer().setSubstring((event.target as HTMLInputElement).value)
+  protected onSubstringInput(event: Event): void {
+    this.viewer().editSubstring((event.target as HTMLInputElement).value)
+  }
+
+  protected onSubstringApply(): void {
+    this.viewer().applySubstring()
   }
 
   protected onFollow(event: Event): void {

@@ -124,6 +124,8 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   const rows = useSignal(viewer.rows)
   const level = useSignal(viewer.level)
   const substring = useSignal(viewer.substring)
+  const substringDraft = useSignal(viewer.substringDraft)
+  const substringDirty = useSignal(viewer.substringDirty)
   const busy = useSignal(viewer.busy)
   const readable = useSignal(viewer.readable)
   const hasMore = useSignal(viewer.hasMore)
@@ -195,25 +197,6 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
     }
     // The pin is read but is not what re-runs this: sticking follows the rows.
   }, [rows])
-
-  // The substring is a field of the read request, so it is sent when the field is
-  // COMMITTED — on blur, on Enter, on the search box's own clear button — and not on
-  // every keystroke, which would be one read per character. React models onChange as
-  // the input event and has no prop for the DOM change event, so this is the one
-  // place the port reaches past it to the element.
-  const substringField = useRef<HTMLInputElement | null>(null)
-
-  useEffect(() => {
-    const element = substringField.current
-    if (element === null) {
-      return
-    }
-
-    const commit = (): void => viewer.setSubstring(element.value)
-    element.addEventListener('change', commit)
-
-    return () => element.removeEventListener('change', commit)
-  }, [viewer])
 
   // Which stacks are open, by entry key. The key survives a page of older lines
   // arriving above, so an opened stack stays open when the pane grows upwards.
@@ -376,15 +359,31 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
             <label className="visually-hidden" htmlFor="hilos-log-substring">
               Search inside the lines
             </label>
-            <input
-              id="hilos-log-substring"
-              ref={substringField}
-              type="search"
-              className="form-control form-control-sm"
-              placeholder="Search inside the lines"
-              defaultValue={substring}
-              data-id="hilos-log-substring"
-            />
+            <div className="input-group input-group-sm">
+              <input
+                id="hilos-log-substring"
+                type="search"
+                className="form-control"
+                placeholder="Search inside the lines"
+                value={substringDraft}
+                data-id="hilos-log-substring"
+                onChange={(event) => viewer.editSubstring(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    viewer.applySubstring()
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className={`btn ${substringDirty ? 'btn-primary' : 'btn-outline-secondary'}`}
+                data-id="hilos-log-search"
+                onClick={() => viewer.applySubstring()}
+              >
+                <i className="bi bi-search me-1" aria-hidden="true" />
+                Search
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -403,6 +402,15 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
         <span className="small text-body-secondary" data-id="hilos-log-count">
           {entryCount} entries shown
         </span>
+        {substringDirty ? (
+          <span
+            className="small text-warning-emphasis"
+            role="status"
+            data-id="hilos-log-search-pending"
+          >
+            Not applied yet — press Search
+          </span>
+        ) : null}
         {following ? (
           <span
             className="ms-auto badge text-bg-success-subtle text-success-emphasis border border-success-subtle"
