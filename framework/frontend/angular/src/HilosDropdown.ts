@@ -6,7 +6,10 @@
 // item, so a project customizes the look by filling those templates, never by
 // re-implementing the behavior. The selection is the two-way `value` binding.
 // Outside-click and Escape close it, arrow keys rove the options, and the
-// listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md).
+// listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md). A
+// substituted option (projected #option) must itself carry role="option" and
+// aria-selected — the <li> is presentational, and the SDK does not write the
+// option role for a project.
 // Exported as part of the public SDK surface (index.ts) and kept intentionally:
 // no in-repo consumer mounts one today, but it stays a tier-1 building block for
 // any catalog/option select — live API, not dead code.
@@ -105,7 +108,7 @@ export interface DropdownOptionContext<V extends string | number> {
         (keydown.escape)="onEscape($event)"
       >
         @for (item of options(); track item.value) {
-          <li>
+          <li role="presentation">
             @if (option(); as row) {
               <ng-container
                 [ngTemplateOutlet]="row"
@@ -131,10 +134,12 @@ export interface DropdownOptionContext<V extends string | number> {
           </li>
         }
         @if (options().length === 0) {
-          <li>
+          <li role="presentation">
             <span
               class="dropdown-item disabled text-body-secondary"
               data-id="hilos-dropdown-empty"
+              role="option"
+              aria-disabled="true"
               >{{ emptyText() }}</span
             >
           </li>

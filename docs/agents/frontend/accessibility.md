@@ -124,6 +124,11 @@ The rules to apply when building a view or an SDK component:
   an `aria-label` (not just a placeholder); the loading row is `role="status"`;
   the Apply control names its pending count; the page indicator reads "Page N of
   M". Name every table through the `label` prop.
+- **A listbox owns only `option` and `group`.** An intermediate `<li>`
+  carries `role="presentation"` so the listbox owns the options directly;
+  `HilosDropdown`'s empty row is one `role="option"` with `aria-disabled`; a
+  substituted option (slot / render prop / projected template) carries
+  `role="option"` and `aria-selected` itself — the SDK does not wrap it.
 - **Icon-only controls** carry an `aria-label`; their `<i class="bi …">` is
   `aria-hidden="true"`.
 - **A control that can be disabled does not explain itself with a title.** A
@@ -213,3 +218,5 @@ it. See [testing.md](../testing.md).
 8. Extend `a11y.spec.ts` for the new structure where it is worth a guard.
 9. A live region is declared in advance and stands there permanently; the
    visible block showing the same text does not repeat its role.
+10. A substituted node carries the role it replaces; an intermediate list
+    wrapper is marked presentational.

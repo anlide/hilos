@@ -7,9 +7,12 @@
 // re-implementing the behavior. The selection is a controlled pair — `value` in,
 // `onChange` out. Outside-click and Escape close it, arrow keys rove the
 // options, and the listbox/option ARIA roles ship by default (a11y is v1,
-// styling-rules.md). Exported as part of the public SDK surface (index.ts) and
-// kept intentionally: no in-repo consumer mounts one today, but it stays a
-// tier-1 building block for any catalog/option select — live API, not dead code.
+// styling-rules.md). A substituted option (render prop option) must itself
+// carry role="option" and aria-selected — the <li> is presentational, and the
+// SDK does not write the option role for a project. Exported as part of the
+// public SDK surface (index.ts) and kept intentionally: no in-repo consumer
+// mounts one today, but it stays a tier-1 building block for any catalog/option
+// select — live API, not dead code.
 // The primitive ships in all three view layers at parity; what differs is only
 // the form the look is substituted through — render props here, slots in Vue,
 // projected templates in Angular (multiframework-core.md).
@@ -226,7 +229,7 @@ export function HilosDropdown<V extends string | number>({
         onKeyDown={onMenuKeydown}
       >
         {options.map((item) => (
-          <li key={String(item.value)}>
+          <li key={String(item.value)} role="presentation">
             {option ? (
               option({
                 option: item,
@@ -257,10 +260,12 @@ export function HilosDropdown<V extends string | number>({
           </li>
         ))}
         {options.length === 0 && (
-          <li>
+          <li role="presentation">
             <span
               className="dropdown-item disabled text-body-secondary"
               data-id="hilos-dropdown-empty"
+              role="option"
+              aria-disabled="true"
             >
               {emptyText}
             </span>

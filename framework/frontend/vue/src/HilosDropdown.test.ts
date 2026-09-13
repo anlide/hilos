@@ -108,6 +108,13 @@ describe('HilosDropdown', () => {
     expect(toggle.attributes('aria-haspopup')).toBe('listbox')
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(menu.attributes('role')).toBe('listbox')
+
+    // The listbox owns options, not listitems: every wrapping <li> is presentational.
+    const items = menu.findAll('li')
+    expect(items).toHaveLength(OPTIONS.length)
+    for (const item of items) {
+      expect(item.attributes('role')).toBe('presentation')
+    }
   })
 
   it('opens on the toggle and closes on the next click', async () => {
@@ -232,8 +239,12 @@ describe('HilosDropdown', () => {
       emptyText: 'Nothing to pick',
     })
 
-    expect(wrapper.find('[data-id="hilos-dropdown-empty"]').text()).toBe(
-      'Nothing to pick',
+    const empty = wrapper.find('[data-id="hilos-dropdown-empty"]')
+    expect(empty.text()).toBe('Nothing to pick')
+    expect(empty.attributes('role')).toBe('option')
+    expect(empty.attributes('aria-disabled')).toBe('true')
+    expect(empty.element.parentElement?.getAttribute('role')).toBe(
+      'presentation',
     )
     expect(optionButtons(wrapper)).toHaveLength(0)
   })

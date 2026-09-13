@@ -6,7 +6,10 @@ toggling and outside-click are owned here, like HilosModal). It is slot-first:
 customizes the look by filling slots, never by re-implementing the behavior —
 "template inheritance" via slots (sdk-packaging.md). v-model is the selected
 value. Outside-click and Escape close it, arrow keys rove the options, and the
-listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md).
+listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md). A
+substituted option (slot #option) must itself carry role="option" and
+aria-selected — the <li> is presentational, and the SDK does not write the
+option role for a project.
 Exported as part of the public SDK surface (index.ts) and kept intentionally: no
 in-repo consumer mounts one today (the settings page dropped its free "add a
 setting" dialog — data-model.md, "Cataloged tables"), but it stays a tier-1
@@ -185,7 +188,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       @keydown="onMenuKeydown"
       @keydown.esc.prevent="close(true)"
     >
-      <li v-for="option in options" :key="String(option.value)">
+      <li
+        v-for="option in options"
+        :key="String(option.value)"
+        role="presentation"
+      >
         <slot
           name="option"
           :option="option"
@@ -211,10 +218,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           </button>
         </slot>
       </li>
-      <li v-if="options.length === 0">
+      <li v-if="options.length === 0" role="presentation">
         <span
           class="dropdown-item disabled text-body-secondary"
           data-id="hilos-dropdown-empty"
+          role="option"
+          aria-disabled="true"
           >{{ emptyText }}</span
         >
       </li>

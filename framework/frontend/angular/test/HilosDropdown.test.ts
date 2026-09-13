@@ -150,6 +150,13 @@ describe('HilosDropdown', () => {
     expect(toggle.getAttribute('aria-haspopup')).toBe('listbox')
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(menu.getAttribute('role')).toBe('listbox')
+
+    // The listbox owns options, not listitems: every wrapping <li> is presentational.
+    const items = Array.from(menu.querySelectorAll(':scope > li'))
+    expect(items).toHaveLength(OPTIONS.length)
+    for (const item of items) {
+      expect(item.getAttribute('role')).toBe('presentation')
+    }
   })
 
   it('opens on the toggle and closes on the next click', () => {
@@ -292,9 +299,11 @@ describe('HilosDropdown', () => {
   it('shows the empty text when there are no options', () => {
     const fixture = mountHost([], 'Nothing to pick')
 
-    expect(byId(fixture, 'hilos-dropdown-empty').textContent).toBe(
-      'Nothing to pick',
-    )
+    const empty = byId(fixture, 'hilos-dropdown-empty')
+    expect(empty.textContent).toBe('Nothing to pick')
+    expect(empty.getAttribute('role')).toBe('option')
+    expect(empty.getAttribute('aria-disabled')).toBe('true')
+    expect(empty.parentElement?.getAttribute('role')).toBe('presentation')
     expect(optionButtons(fixture)).toHaveLength(0)
   })
 
