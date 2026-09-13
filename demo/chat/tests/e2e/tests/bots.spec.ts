@@ -2,26 +2,81 @@ import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
+import { clickSubmit, typeInto } from '../helpers/session'
+import {
+  expectTableTotal,
+  goToLastPage,
+  tableRowKeyByText,
+  tableRowKeys,
+  tableTotal,
+} from '../helpers/table'
 
-// Bots admin e2e: /hilos/app/bots renders the bots table over the live socket,
-// and the create / edit / delete dialogs round-trip through the backend
-// (AdminBotsPage), the row appearing, updating, and leaving the live table with no
-// document reload. Bot names are stamped unique so a retry (which reuses the same
-// database) never collides with an earlier attempt's leftover row.
+// Bots admin e2e: /hilos/app/bots draws the bots table over the live socket, and
+// the create / edit / delete dialogs round-trip through the backend
+// (AdminBotsPage). What the file pins is where a bot turns up in a window after a
+// write — the outcomes of the table mockup (mockups/components/table, "a foreign
+// new record lands by its place, not by the edge of the list"):
 //
-// The demo seeds enough bots to paginate (>10), and a new row is appended LIVE
-// only to a window on the last page with room — the server appends at the tail,
-// never re-sorting a frozen window (table-subscription.md). So a create test first
-// pages to the last page; there the new bot shows at once, with no Apply gate (an
-// append is not pending like a cross-connection edit). Each test deletes the bot it
-// made so the shared database stays at its seed.
+// - a bot this tab created applies at once, at the place the sort gives it;
+// - a bot another tab created at the tail of a window with room arrives on its own;
+// - one created above the window is announced by the strip and moves nothing, and
+//   Show asks for the window again at the place the reader stands;
+// - one created inside the window moves nothing but the count — the view draws a
+//   strip for "above" only (design debt D-041), so the count is all there is to see;
+// - a value another tab edited, leaving the row in its place, lands at once,
+//   highlighted and with no gate.
+//
+// The table orders by name ascending, naturally and without case
+// (BotsTable::defaultSort, InMemoryTableFilter::compareValues), ten rows a window
+// (BotsTable::windowSize). The seed holds twenty bots, Alex … Lily on the first
+// page and Marcus … Victor on the second: two FULL pages, so the seed alone has no
+// last page with room, and a test that needs one makes it. Every name below is
+// chosen against that order — `AAA …` before every seeded bot, `Dave …` between
+// Dasha and David (inside the first window), `ZZ …` after all of them.
+//
+// Counts are read relative to where a test found them, never as a literal: in the
+// container a failed attempt is retried on the SAME database, and a bot it left
+// behind must not make the retry hopeless. For the same reason the number in an
+// `AAA` name falls as time goes on, so the newest `AAA` bot sorts before one an
+// earlier attempt left. Resetting the database is the run's job, not the spec's
+// (docs/agents/testing.md, re-running tests).
+//
+// Bots are created with Active off. An active bot starts its agent, and the
+// agent's runtime status is a second writer to the same row; an inactive one
+// leaves the table moved by nothing but what the test does.
+//
+// The file runs serially: there is one bots table, and the tests reason about
+// exact places and counts in it. In the container there is one worker anyway, but
+// the config lets a host run spread tests over workers, where two of them would
+// rewrite each other's windows.
 //
 // The page is an ADMIN-level surface (HIL-652), so every test takes the grant
-// first — the route's `admin: true` marker is shell cosmetics and opens nothing.
-// A second tab of the same browser context inherits the session cookie, so it
-// signs in once per test and not once per tab.
+// first. A second tab of the same browser context inherits the session cookie but
+// opens a socket of its own, and the table tells its own writes from foreign ones
+// by socket — so a second tab is a foreign writer.
 
-/** Open the bots admin and wait for the live window's first row; the caller is admin already. */
+test.describe.configure({ mode: 'serial' })
+
+/** Rows in a window of the bots table (BotsTable::windowSize). */
+const WINDOW = 10
+
+/**
+ * A name that sorts before every seeded bot and before any `AAA` bot an earlier
+ * attempt left behind: the table compares the number naturally, and it falls as
+ * time goes on.
+ *
+ * @param stamp The test's time stamp.
+ * @returns The bot name.
+ */
+function nameBeforeAll(stamp: number): string {
+  return `AAA ${Number.MAX_SAFE_INTEGER - stamp}`
+}
+
+/**
+ * Open the bots admin and wait for the live window's first row; the caller is admin already.
+ *
+ * @param page The Playwright page.
+ */
 async function openBots(page: Page): Promise<void> {
   await gotoPage(page, '/hilos/app/bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -31,51 +86,101 @@ async function openBots(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
-/** Page to the last window so a newly created row appends onto the visible page. */
-async function goToLastPage(page: Page): Promise<void> {
-  const pager = page.getByTestId('hilos-table-page')
-  for (;;) {
-    const match = /(\d+)\s*\/\s*(\d+)/.exec((await pager.textContent()) ?? '')
-    if (!match || Number(match[1]) >= Number(match[2])) {
-      break
-    }
-    await page.getByTestId('hilos-table-next').click()
-    await expect(pager).toContainText(`${Number(match[1]) + 1} / ${match[2]}`)
-  }
-}
-
-/** Create a bot through the add dialog; the caller is already on the last page. */
+/**
+ * Create an inactive bot through the add dialog.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param name The bot's name.
+ */
 async function createBot(page: Page, name: string): Promise<void> {
   await page.getByTestId('admin-bots-add').click()
-  const nameField = page.getByTestId('admin-bots-name')
-  await nameField.fill('')
-  await nameField.pressSequentially(name, { delay: 10 })
-  await page.getByTestId('admin-bots-description').fill('made by e2e')
-  await page.getByTestId('admin-bots-save').click()
+  await typeInto(page.getByTestId('admin-bots-name'), name)
+  await typeInto(page.getByTestId('admin-bots-description'), 'made by e2e')
+  await page.getByTestId('admin-bots-active').uncheck()
+  await clickSubmit(page.getByTestId('admin-bots-save'))
   // Settle before the caller asserts the new row: the save is in flight until the
   // backend echo closes the dialog. Asserting the row through an open dialog races
   // the reply (settle-before-assert).
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
-/** Delete a bot row by name and wait for it to leave the table. */
-async function deleteBot(page: Page, name: string): Promise<void> {
-  await page
-    .locator('tbody tr', { hasText: name })
-    .getByRole('button', { name: 'Delete' })
-    .click()
-  await page.getByTestId('admin-bots-delete-confirm').click()
-  await expect(page.locator('tbody tr', { hasText: name })).toHaveCount(0)
+/**
+ * Change a bot's description through the edit dialog. The name stays, so the row
+ * keeps its place in the order.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param rowKey The bot's row key.
+ * @param description The new description.
+ */
+async function editBotDescription(
+  page: Page,
+  rowKey: string,
+  description: string,
+): Promise<void> {
+  await page.getByTestId(`admin-bots-edit-${rowKey}`).click()
+  await typeInto(page.getByTestId('admin-bots-description'), description)
+  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
-// HIL-376: disabled — flaky live-table append onto the last page (goToLastPage
-// pagination timing); the appended bot lands on the next page, off the viewport.
-test.fixme('creates, edits, and deletes a bot through the live table', async ({
+/**
+ * Delete a bot this page shows and wait for it to leave the window.
+ *
+ * Its controls are what says it left, not its slot: the deleting tab keeps the
+ * slot as the table's "Removed" placeholder until the next window
+ * (TableViewportController.applyOwnDelta), and the placeholder carries the row's
+ * data-id but none of the page's cells.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param rowKey The bot's row key.
+ */
+async function deleteBot(page: Page, rowKey: string): Promise<void> {
+  await page.getByTestId(`admin-bots-delete-${rowKey}`).click()
+  await clickSubmit(page.getByTestId('admin-bots-delete-confirm'))
+  await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
+  await expect(page.getByTestId(`admin-bots-delete-${rowKey}`)).toHaveCount(0)
+}
+
+/**
+ * Count the table windows the server sends a page, from the moment of the call.
+ *
+ * The one wait with no trace on screen: Show asks for the window again at the
+ * place the reader stands, and when nothing arrived after that place the answer
+ * draws exactly the rows already drawn. Only the frame says the answer came. Call
+ * it before the page opens its socket.
+ *
+ * @param page The Playwright page to listen on.
+ * @returns A reader of the number of `table_window` frames received so far.
+ */
+function countTableWindows(page: Page): () => number {
+  let windows = 0
+  page.on('websocket', (socket) => {
+    socket.on('framereceived', (frame) => {
+      if (typeof frame.payload !== 'string') {
+        return
+      }
+      try {
+        if (
+          (JSON.parse(frame.payload) as { type?: unknown }).type ===
+          'table_window'
+        ) {
+          windows += 1
+        }
+      } catch {
+        // Not one of ours; the socket also carries the keepalive text ping.
+      }
+    })
+  })
+
+  return () => windows
+}
+
+test('a bot created here takes the place the sort gives it, and edits and deletes live', async ({
   page,
 }) => {
   const stamp = Date.now()
-  const name = `E2E Created ${stamp}`
-  const renamed = `E2E Renamed ${stamp}`
+  const name = nameBeforeAll(stamp)
+  const description = `edited by e2e ${stamp}`
 
   await signUpAdmin(page)
 
@@ -86,94 +191,199 @@ test.fixme('creates, edits, and deletes a bot through the live table', async ({
 
   await openBots(page)
   const loadsAfterColdLoad = fullLoads
-  await goToLastPage(page)
+  const base = await tableTotal(page)
 
-  // Create: exactly one row appears once the backend echoes it — the DB bot and
-  // its runtime status fold into a single row, not two — and the dialog closes.
+  // Create: the row goes in at once where the order puts it — first, not at the
+  // tail — and no Apply stands between the author and its own row.
   await createBot(page, name)
-  await expect(page.locator('tbody tr', { hasText: name })).toHaveCount(1)
-  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+  await expectTableTotal(page, base + 1)
+  const key = await tableRowKeyByText(page, name)
+  expect((await tableRowKeys(page))[0]).toBe(key)
+  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  // Edit: rename through the same dialog; the live row re-renders and closes.
-  await page
-    .locator('tbody tr', { hasText: name })
-    .getByRole('button', { name: 'Edit' })
-    .click()
-  await page.getByTestId('admin-bots-name').fill(renamed)
-  await page.getByTestId('admin-bots-save').click()
-  await expect(page.locator('tbody tr', { hasText: renamed })).toHaveCount(1)
-  await expect(page.locator('tbody tr', { hasText: name })).toHaveCount(0)
+  // Edit the description: the value lands in place, the row keeps its slot.
+  await editBotDescription(page, key, description)
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+    description,
+  )
+  expect((await tableRowKeys(page))[0]).toBe(key)
+  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  // Delete: the row leaves the live table.
-  await deleteBot(page, renamed)
+  // Delete: the bot leaves the window and the count goes back.
+  await deleteBot(page, key)
+  await expectTableTotal(page, base)
 
-  // The whole CRUD tour stayed in one live document.
+  // The whole tour stayed in one live document.
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
 
-// HIL-376: disabled — under the full run a cross-tab append arrives gated as
-// pending/Apply instead of applying at once; passes in isolation.
-test.fixme('a bot created in one tab appears live in another with no pending gate', async ({
+test('a bot created in another tab arrives on its own at the tail of a window with room', async ({
   page,
 }) => {
   const stamp = Date.now()
-  const name = `E2E Live ${stamp}`
+  const filler = `ZZ ${stamp} filler`
+  const tail = `ZZ ${stamp} tail`
 
   await signUpAdmin(page)
+  await openBots(page)
+  const base = await tableTotal(page)
 
+  // Tab A makes the page with room: the filler sorts after every bot, onto a page
+  // A is not showing, so A sees the count and not the row.
+  await createBot(page, filler)
+  await expectTableTotal(page, base + 1)
+
+  // Tab B opens cold after it and goes to that last page, where the filler is the
+  // last row of a window with room.
   const tabB = await page.context().newPage()
   let tabBLoads = 0
   tabB.on('load', () => {
     tabBLoads += 1
   })
-
-  await openBots(page)
   await openBots(tabB)
-  const tabBLoadsAfterColdLoad = tabBLoads
-  await goToLastPage(page)
+  await expectTableTotal(tabB, base + 1)
   await goToLastPage(tabB)
+  const tabBLoadsAfterColdLoad = tabBLoads
+  const fillerKey = await tableRowKeyByText(tabB, filler)
+  const keysBefore = await tableRowKeys(tabB)
+  expect(keysBefore.at(-1)).toBe(fillerKey)
+  expect(keysBefore.length).toBeLessThan(WINDOW)
 
-  // Tab A creates a bot on the last page.
-  await createBot(page, name)
-  await expect(page.locator('tbody tr', { hasText: name })).toHaveCount(1)
-
-  // Tab B, also on the last page with room, picks up the new row LIVE: it appears
-  // at the tail with no Apply control — an append applies at once, not gated like
-  // an edit from another connection — and with no document reload.
-  await expect(tabB.locator('tbody tr', { hasText: name })).toHaveCount(1)
+  // A creates the tail. At B it sorts after the last row shown, into the free
+  // slot, and shifts nothing: it arrives on its own, with no Apply, no strip and
+  // no document reload.
+  await createBot(page, tail)
+  const tailKey = await tableRowKeyByText(tabB, tail)
+  expect(await tableRowKeys(tabB)).toEqual([...keysBefore, tailKey])
+  await expectTableTotal(tabB, base + 2)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-table-announce')).toHaveCount(0)
   expect(tabBLoads).toBe(tabBLoadsAfterColdLoad)
 
-  // Cleanup: delete the bot so the shared database stays at its seed.
+  // Cleanup: B is the tab that shows both.
+  await deleteBot(tabB, tailKey)
+  await deleteBot(tabB, fillerKey)
   await tabB.close()
-  await deleteBot(page, name)
 })
 
-// HIL-376: disabled — same flaky live-table append onto the last page as the two
-// tests above (goToLastPage pagination timing), just the single-tab sibling that
-// slipped through the original quarantine.
-test.fixme('creating a bot applies at once in the creating tab with no Apply gate', async ({
+test('a bot created above the window is announced, and Show brings the window level', async ({
+  page,
+}) => {
+  const name = nameBeforeAll(Date.now())
+
+  await signUpAdmin(page)
+
+  const tabB = await page.context().newPage()
+  const tableWindowsOfB = countTableWindows(tabB)
+  await openBots(page)
+  await openBots(tabB)
+  await goToLastPage(tabB)
+  const base = await tableTotal(tabB)
+  const keysBefore = await tableRowKeys(tabB)
+
+  // A creates a bot that sorts before every other: first on A's own window, and
+  // on a page above the one B is standing on.
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  // B is told, and nothing moves: the strip names the row, the rows shown are the
+  // rows that were shown, and nothing waits behind Apply.
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toContainText('1 new row above the window')
+  await expect(tabB.getByTestId('hilos-table-announce-show')).toBeVisible()
+  await expectTableTotal(tabB, base + 1)
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  // Show asks for the window again at the place B stands, the same answer a
+  // reload of that window gives: the strip goes, and a window arrives holding the
+  // rows after that place — which a row above it did not touch.
+  const tableWindowsBeforeShow = tableWindowsOfB()
+  await tabB.getByTestId('hilos-table-announce-show').click()
+  await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
+  await expect(strip).toHaveCount(0)
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expectTableTotal(tabB, base + 1)
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  // Cleanup: A shows the bot it made.
+  await tabB.close()
+  await deleteBot(page, key)
+})
+
+test('a bot created inside the window moves nothing but the count', async ({
+  page,
+}) => {
+  const name = `Dave ${Date.now()}`
+
+  await signUpAdmin(page)
+
+  const tabB = await page.context().newPage()
+  await openBots(page)
+  await openBots(tabB)
+  const base = await tableTotal(tabB)
+  const keysBefore = await tableRowKeys(tabB)
+
+  // A creates a bot that sorts between Dasha and David, between two rows both
+  // tabs are showing on the first page.
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  // The count is the only trace the announcement leaves at B, so wait for it
+  // first: "nothing changed" asserted before the frame came proves nothing.
+  await expectTableTotal(tabB, base + 1)
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  // The view draws the strip for rows above the window only (D-041).
+  await expect(tabB.getByTestId('hilos-table-announce')).toHaveCount(0)
+
+  // Cleanup: A shows the bot it made.
+  await tabB.close()
+  await deleteBot(page, key)
+})
+
+test('a value edited in another tab lands in place, highlighted and with no gate', async ({
   page,
 }) => {
   const stamp = Date.now()
-  const name = `E2E Own ${stamp}`
+  const name = nameBeforeAll(stamp)
+  const description = `edited by e2e ${stamp}`
 
   await signUpAdmin(page)
   await openBots(page)
-  await goToLastPage(page)
+
+  // A creates the bot BEFORE B opens, so B's cold first window already holds it
+  // and no announcement takes part.
   await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
 
-  // The new row shows at once and no pending Apply control appears: the creating
-  // tab's own append lands live, never queued behind Apply.
-  await expect(page.locator('tbody tr', { hasText: name })).toHaveCount(1)
-  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  const row = tabB.getByTestId(`hilos-table-row-${key}`)
+  await expect(row).toBeVisible()
 
-  await deleteBot(page, name)
+  await editBotDescription(page, key, description)
+
+  // The class first. The highlight lasts two seconds (HIGHLIGHT_MS in
+  // TableViewportController) and, unlike every other cap of the run, is not
+  // stretched by host load; the dialog at A closes on the server's reply, after the
+  // change went out, so the two seconds are plenty — as long as no other wait
+  // stands in front of this one.
+  await expect(row).toHaveClass(/\btable-success\b/)
+  await expect(row).toContainText(description)
+  const pendingMove = tabB.getByTestId(`hilos-table-pending-move-${key}`)
+  const pendingRemove = tabB.getByTestId(`hilos-table-pending-remove-${key}`)
+  await expect(pendingMove).toHaveCount(0)
+  await expect(pendingRemove).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  // Cleanup: A shows the bot it made.
+  await tabB.close()
+  await deleteBot(page, key)
 })
 
-// HIL-376: muted alongside the flaky bots family per request. This nav smoke is
-// NOT itself flaky — re-enable it once the live-table append flake root is fixed.
-test.fixme('reaches the bots admin from the dashboard', async ({ page }) => {
+test('reaches the bots admin from the dashboard', async ({ page }) => {
   await signUpAdmin(page)
   await gotoPage(page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')

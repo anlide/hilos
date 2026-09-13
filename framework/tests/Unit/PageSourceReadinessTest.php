@@ -15,6 +15,8 @@ use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\AbstractPage;
@@ -25,6 +27,9 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -272,6 +277,26 @@ final class PageSourceReadinessTest extends TestCase
     }
 
     /**
+     * A table registered in TABLES is walked like a browser-only source: a page showing one reads
+     * what its rows draw from, and does not have to repeat it in READS_* to be served (HIL-376).
+     */
+    public function testATableRegisteredInTablesNamesItsSourcesToo(): void
+    {
+        $context = new class extends BrowserContext {
+        };
+        $context->bindHilosFacade(PageSourceReadinessTestTablesHilos::class);
+
+        $this->assertSame(
+            [self::COLLECTION],
+            $context->rtSourceKeysOfPage(PageSourceReadinessTestTablesHilos::PAGE),
+        );
+        $this->assertSame(
+            [self::OTHER_COLLECTION],
+            $context->dbSourceKeysOfPage(PageSourceReadinessTestTablesHilos::PAGE),
+        );
+    }
+
+    /**
      * Puts the test topology and the test page registry where the worker looks for them.
      *
      * @param list<string> $rtCollectionKeys RT collections the bound source projects rows from
@@ -468,6 +493,65 @@ final class PageSourceReadinessTestHilos extends Hilos
     protected static function createDb(): DbContext
     {
         return new PageSourceReadinessTestDbContext();
+    }
+}
+
+/**
+ * Project facade binding one page to a table registered in TABLES and to no browser-only source.
+ */
+final class PageSourceReadinessTestTablesHilos extends Hilos
+{
+    public const string PAGE = 'page_source_readiness_tables_page';
+
+    public const array TABLES = [
+        PageSourceReadinessTestRegisteredTable::TABLE => PageSourceReadinessTestRegisteredTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        self::PAGE => [PageSourceReadinessTestRegisteredTable::TABLE => []],
+    ];
+
+    /**
+     * @return DbContext Test DB context, for the abstract facade contract alone
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PageSourceReadinessTestDbContext();
+    }
+}
+
+/**
+ * A registered table drawing its rows from one RT and one DB collection.
+ */
+final class PageSourceReadinessTestRegisteredTable extends TableDefinition
+{
+    public const string TABLE = 'pageSourceReadinessRegistered';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => PageSourceReadinessTest::COLLECTION,
+                ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => PageSourceReadinessTest::OTHER_COLLECTION,
+                ],
+            ],
+        ],
+    ];
+
+    /**
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Never returned; these cases build no snapshot
+     * @throws RuntimeException Always
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        throw new RuntimeException('not used in test');
     }
 }
 

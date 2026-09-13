@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -32,9 +31,6 @@ use Hilos\HilosException;
  */
 final class AdminBotsPage extends AbstractPage
 {
-    /** @var list<string> The bot rows its actions create and edit */
-    public const array READS_DB = [ChatDbContext::bots];
-
     public const string PAGE = PageConstants::ADMIN_BOTS;
 
     public const PageReach REACH = PageReach::ROUTE;

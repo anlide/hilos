@@ -1620,7 +1620,7 @@ abstract class BrowserContext
     {
         $collectionKeys = [];
         foreach ($this->resolveBrowserPageBindings($page) as $binding) {
-            $sourceConfig = $this->resolveBrowserOnlyConfig($binding->browserKey);
+            $sourceConfig = $this->topologySourceConfig($binding->browserKey);
             if ($sourceConfig === null) {
                 continue;
             }
@@ -1639,6 +1639,37 @@ abstract class BrowserContext
         }
 
         return $collectionKeys;
+    }
+
+    /**
+     * Resolves the browser config one page binding names, from topology alone.
+     *
+     * A browser-only source and a table registered in TABLES alike: a page showing a registered
+     * table draws its rows from that table's sources exactly as it would from a browser-only one,
+     * and walking past it left the page subscribed without interest in them - a collection nobody
+     * else on the worker read was then refused and the table never drew (HIL-376). Unlike
+     * {@see self::browserConfig()} it asks the facade's constants and not the live table context,
+     * because the walk promises an answer out of declarations rather than out of live state.
+     *
+     * @param string $browserKey Browser source or registered table key
+     * @return ?BrowserSourceConfig Browser config of the bound source, or null when topology names none
+     */
+    private function topologySourceConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        $browserConfig = $this->resolveBrowserOnlyConfig($browserKey);
+        if ($browserConfig !== null) {
+            return $browserConfig;
+        }
+
+        $tableClass = $this->hilosClass::TABLES[$browserKey] ?? null;
+        if (!is_string($tableClass)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $tableBrowserConfig */
+        $tableBrowserConfig = $tableClass::BROWSER;
+
+        return BrowserSourceConfig::fromArray($tableBrowserConfig);
     }
 
     /**
