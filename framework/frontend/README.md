@@ -22,6 +22,21 @@ docker compose -f framework/docker/docker-compose.frontend.yml \
 
 For example, append `npm install` or `npm run build` as `<command>`.
 
+## Angular versions are pinned
+
+Every `@angular/*` dependency — in this workspace and in `demo/polls/frontend` —
+is declared as an exact version, never a caret, and both roots declare the same
+one. Angular's own packages hold each other to an exact version in their
+`peerDependencies`, so a single caret resolved one minor ahead of its siblings
+drags the whole framework with it, and the lockfile shows it as an ordinary
+neighbour bump. The only step that notices is the AOT build (`ng-packagr`, i.e.
+`npm run build` for `@hilos/angular`); check, unit, lint and format-check all
+stay green on the mixed framework (HIL-848). So: adding a new `@angular/*`
+package means writing the version already installed in the tree, and upgrading
+Angular is a deliberate edit of both roots in one change, never a side effect of
+installing something else. `typescript` carries a tilde for the same reason —
+`@angular/compiler-cli` requires `typescript >=6.0 <6.1`.
+
 ## Commands
 
 | Command | What it does |
