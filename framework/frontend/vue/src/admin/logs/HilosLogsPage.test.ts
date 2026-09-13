@@ -41,6 +41,8 @@ function overview(
     available: true,
     totalRotationsAllTime: 384,
     lastRotationAt: '2026-09-02T03:00:00+00:00',
+    logKeysPerDaemon: 4,
+    totalWeightDaemonKeysBytes: 220 * 1024 * 1024,
     logKeysPerAgent: 14,
     totalWeightAgentKeysBytes: 940 * 1024 * 1024,
     logKeysPerWorker: 9,
@@ -155,6 +157,21 @@ describe('HilosLogsPage', () => {
     expect(wrapper.find('[data-id="hilos-logs-tile-agents"]').text()).toContain(
       '—',
     )
+    expect(wrapper.find('[data-id="hilos-logs-tile-daemon"]').text()).toContain(
+      '—',
+    )
+  })
+
+  it('draws the daemon streams as a class of their own, count and weight together', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+
+    push(overview())
+    await nextTick()
+
+    const tile = wrapper.find('[data-id="hilos-logs-tile-daemon"]').text()
+    expect(tile).toContain('4')
+    expect(tile).toContain('220.0 MB')
   })
 
   it('keeps the tiles empty in the fault state too, where a zero would be a claim', async () => {
@@ -166,6 +183,8 @@ describe('HilosLogsPage', () => {
         available: false,
         totalRotationsAllTime: null,
         lastRotationAt: null,
+        logKeysPerDaemon: null,
+        totalWeightDaemonKeysBytes: null,
         logKeysPerAgent: null,
         totalWeightAgentKeysBytes: null,
         logKeysPerWorker: null,
@@ -186,6 +205,9 @@ describe('HilosLogsPage', () => {
     expect(
       wrapper.find('[data-id="hilos-logs-tile-workers"]').text(),
     ).toContain('—')
+    expect(wrapper.find('[data-id="hilos-logs-tile-daemon"]').text()).toContain(
+      '—',
+    )
   })
 
   it('drops the per-node table entirely in a single-node installation', async () => {

@@ -113,7 +113,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
       body={
         <>
           <div
-            className="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 mb-4 mt-1"
+            className="row row-cols-1 row-cols-sm-2 g-3 mb-3"
             data-id="hilos-logs-tiles"
           >
             <div className="col">
@@ -172,6 +172,40 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                     {growthForecast}
                   </div>
                 ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* One set of the three stream classes, in the order of the filters on the
+          streams screen: daemon, agents, workers. A row of its own rather than a fifth
+          tile in the row above: a class missing from a set of three is seen at once,
+          and at the tail of a list of five it is not - which is how the daemon streams
+          stayed off this screen. */}
+          <div
+            className="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4"
+            data-id="hilos-logs-class-tiles"
+          >
+            <div className="col">
+              <div className="border rounded-3 p-3 h-100">
+                <div className="d-flex align-items-center gap-2 text-body-secondary mb-1">
+                  <i className="bi bi-hdd-stack" aria-hidden="true" />
+                  <span className="small">Daemon streams</span>
+                </div>
+                <div
+                  className="fs-4 lh-1 mb-1"
+                  data-id="hilos-logs-tile-daemon"
+                >
+                  {formatLogsOverviewCount(overview?.logKeysPerDaemon ?? null)}{' '}
+                  <span className="fs-6 text-body-secondary">
+                    ·{' '}
+                    {formatLogsOverviewBytes(
+                      overview?.totalWeightDaemonKeysBytes ?? null,
+                    )}
+                  </span>
+                </div>
+                <div className="small text-body-secondary">
+                  The raw pair counted in
+                </div>
               </div>
             </div>
 

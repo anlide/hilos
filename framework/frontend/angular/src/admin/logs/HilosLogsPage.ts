@@ -68,7 +68,7 @@ import { HilosLink } from '../../HilosLink.js'
     <hilos-admin-page [page]="page">
       <ng-container ngProjectAs="[body]">
         <div
-          class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 mb-4 mt-1"
+          class="row row-cols-1 row-cols-sm-2 g-3 mb-3"
           data-id="hilos-logs-tiles"
         >
           <div class="col">
@@ -121,6 +121,39 @@ import { HilosLink } from '../../HilosLink.js'
                   {{ forecast }}
                 </div>
               }
+            </div>
+          </div>
+        </div>
+
+        <!-- One set of the three stream classes, in the order of the filters on the
+        streams screen: daemon, agents, workers. A row of its own rather than a fifth
+        tile in the row above: a class missing from a set of three is seen at once,
+        and at the tail of a list of five it is not - which is how the daemon streams
+        stayed off this screen. -->
+        <div
+          class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4"
+          data-id="hilos-logs-class-tiles"
+        >
+          <div class="col">
+            <div class="border rounded-3 p-3 h-100">
+              <div
+                class="d-flex align-items-center gap-2 text-body-secondary mb-1"
+              >
+                <i class="bi bi-hdd-stack" aria-hidden="true"></i>
+                <span class="small">Daemon streams</span>
+              </div>
+              <div class="fs-4 lh-1 mb-1" data-id="hilos-logs-tile-daemon">
+                {{ formatCount(overview()?.logKeysPerDaemon ?? null) }}
+                <span class="fs-6 text-body-secondary">
+                  ·
+                  {{
+                    formatBytes(overview()?.totalWeightDaemonKeysBytes ?? null)
+                  }}
+                </span>
+              </div>
+              <div class="small text-body-secondary">
+                The raw pair counted in
+              </div>
             </div>
           </div>
 

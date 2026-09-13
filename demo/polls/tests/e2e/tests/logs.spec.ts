@@ -26,6 +26,7 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
   await expect(page.getByTestId('hilos-admin-children')).toBeVisible()
   await expect(page.getByTestId('hilos-logs-tiles')).toBeVisible()
+  await expect(page.getByTestId('hilos-logs-class-tiles')).toBeVisible()
 
   // The three windowed lists. Each is served by its own browser table, registered
   // against its page on the backend; the rows depend on what the stand has logged,

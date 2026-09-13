@@ -129,6 +129,12 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /** @var ?string Latest rotation time (ISO 8601); null if none or unavailable. */
     private static ?string $logsOverviewLastRotationAt = null;
 
+    /** @var ?int Distinct daemon stream basenames, the raw pair included (archive + live); null when unavailable */
+    private static ?int $logKeysPerDaemon = null;
+
+    /** @var ?int Sum of daemon log file sizes in bytes; null when unavailable */
+    private static ?int $totalWeightDaemonKeysBytes = null;
+
     /** @var ?int Distinct agent-*.log basenames (archive + live); null when unavailable */
     private static ?int $logKeysPerAgent = null;
 
@@ -326,7 +332,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewAvailable = true;
         self::$logsOverviewTotalRotationsAllTime = $totals->batchCount;
         self::$logsOverviewLastRotationAt = self::rotationAt($totals->lastRotationAt);
-        // The daemon's own streams (HIL-753) are a third class here and belong to neither tile.
+        self::$logKeysPerDaemon = self::countOf($totals, LogKeySummary::CLASS_DAEMON);
+        self::$totalWeightDaemonKeysBytes = self::bytesOf($totals, LogKeySummary::CLASS_DAEMON);
         self::$logKeysPerAgent = self::countOf($totals, LogKeySummary::CLASS_AGENT);
         self::$totalWeightAgentKeysBytes = self::bytesOf($totals, LogKeySummary::CLASS_AGENT);
         self::$logKeysPerWorker = self::countOf($totals, LogKeySummary::CLASS_WORKER);
@@ -723,6 +730,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$logsOverviewAvailable = false;
         self::$logsOverviewTotalRotationsAllTime = null;
         self::$logsOverviewLastRotationAt = null;
+        self::$logKeysPerDaemon = null;
+        self::$totalWeightDaemonKeysBytes = null;
         self::$logKeysPerAgent = null;
         self::$totalWeightAgentKeysBytes = null;
         self::$logKeysPerWorker = null;
@@ -766,6 +775,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             available: self::$logsOverviewAvailable,
             totalRotationsAllTime: self::$logsOverviewTotalRotationsAllTime,
             lastRotationAt: self::$logsOverviewLastRotationAt,
+            logKeysPerDaemon: self::$logKeysPerDaemon,
+            totalWeightDaemonKeysBytes: self::$totalWeightDaemonKeysBytes,
             logKeysPerAgent: self::$logKeysPerAgent,
             totalWeightAgentKeysBytes: self::$totalWeightAgentKeysBytes,
             logKeysPerWorker: self::$logKeysPerWorker,

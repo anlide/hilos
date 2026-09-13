@@ -42,6 +42,12 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /** Payload key: newest rotation anywhere in the cluster, ISO 8601. */
     public const string lastRotationAt = 'lastRotationAt';
 
+    /** Payload key: distinct daemon stream names, the raw pair beside them included. */
+    public const string logKeysPerDaemon = 'logKeysPerDaemon';
+
+    /** Payload key: what the daemon streams weigh. */
+    public const string totalWeightDaemonKeysBytes = 'totalWeightDaemonKeysBytes';
+
     /** Payload key: distinct agent stream names across archive and live. */
     public const string logKeysPerAgent = 'logKeysPerAgent';
 
@@ -130,6 +136,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * @param ?bool $available Whether the cluster's log stores could be read, null while no merged picture has arrived
      * @param ?int $totalRotationsAllTime Number of rotation timestamp folders (null if unavailable)
      * @param ?string $lastRotationAt ISO 8601 datetime of the latest rotation (null if none or unavailable)
+     * @param ?int $logKeysPerDaemon Distinct daemon stream basenames, the raw pair included (null if unavailable)
+     * @param ?int $totalWeightDaemonKeysBytes Sum of daemon log file sizes (null if unavailable)
      * @param ?int $logKeysPerAgent Distinct agent-*.log basenames across archive and live (null if unavailable)
      * @param ?int $totalWeightAgentKeysBytes Sum of agent log file sizes across all batches and live (null if unavailable)
      * @param ?int $logKeysPerWorker Distinct worker + worker-monopolistic basenames (null if unavailable)
@@ -156,6 +164,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
         public readonly ?bool $available,
         public readonly ?int $totalRotationsAllTime,
         public readonly ?string $lastRotationAt,
+        public readonly ?int $logKeysPerDaemon,
+        public readonly ?int $totalWeightDaemonKeysBytes,
         public readonly ?int $logKeysPerAgent,
         public readonly ?int $totalWeightAgentKeysBytes,
         public readonly ?int $logKeysPerWorker,
@@ -183,6 +193,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::available => $this->available,
             self::totalRotationsAllTime => $this->totalRotationsAllTime,
             self::lastRotationAt => $this->lastRotationAt,
+            self::logKeysPerDaemon => $this->logKeysPerDaemon,
+            self::totalWeightDaemonKeysBytes => $this->totalWeightDaemonKeysBytes,
             self::logKeysPerAgent => $this->logKeysPerAgent,
             self::totalWeightAgentKeysBytes => $this->totalWeightAgentKeysBytes,
             self::logKeysPerWorker => $this->logKeysPerWorker,
@@ -218,6 +230,8 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             available: is_bool($available) ? $available : null,
             totalRotationsAllTime: is_int($total) ? $total : (is_numeric($total) ? (int) $total : null),
             lastRotationAt: is_string($last) ? $last : null,
+            logKeysPerDaemon: self::optionalNonNegativeInt($data[self::logKeysPerDaemon] ?? null),
+            totalWeightDaemonKeysBytes: self::optionalNonNegativeInt($data[self::totalWeightDaemonKeysBytes] ?? null),
             logKeysPerAgent: self::optionalNonNegativeInt($data[self::logKeysPerAgent] ?? null),
             totalWeightAgentKeysBytes: self::optionalNonNegativeInt($data[self::totalWeightAgentKeysBytes] ?? null),
             logKeysPerWorker: self::optionalNonNegativeInt($data[self::logKeysPerWorker] ?? null),

@@ -57,6 +57,8 @@ function overview(
     available: true,
     totalRotationsAllTime: 384,
     lastRotationAt: '2026-09-02T03:00:00+00:00',
+    logKeysPerDaemon: 4,
+    totalWeightDaemonKeysBytes: 220,
     logKeysPerAgent: 14,
     totalWeightAgentKeysBytes: 940,
     logKeysPerWorker: 9,
@@ -102,6 +104,25 @@ describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
 
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.available).toBeNull()
+  })
+
+  it('carries the daemon streams as a class of their own, beside the agents and the workers', () => {
+    const parsed =
+      LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse(overview())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.logKeysPerDaemon).toBe(4)
+    expect(parsed.success && parsed.data.totalWeightDaemonKeysBytes).toBe(220)
+  })
+
+  it('accepts a daemon pair that is null, which is a picture that has not arrived', () => {
+    const parsed = LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].safeParse(
+      overview({ logKeysPerDaemon: null, totalWeightDaemonKeysBytes: null }),
+    )
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.logKeysPerDaemon).toBeNull()
+    expect(parsed.success && parsed.data.totalWeightDaemonKeysBytes).toBeNull()
   })
 
   it('accepts a node row whose every figure is null, which is a node nobody could read', () => {

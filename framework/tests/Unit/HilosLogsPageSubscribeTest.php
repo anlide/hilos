@@ -135,6 +135,8 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $overview = $this->overview();
         $this->assertTrue($overview->available);
         $this->assertSame(1, $overview->totalRotationsAllTime);
+        $this->assertSame(1, $overview->logKeysPerDaemon);
+        $this->assertSame(200, $overview->totalWeightDaemonKeysBytes);
         $this->assertSame(1, $overview->logKeysPerAgent);
         $this->assertSame(100, $overview->totalWeightAgentKeysBytes);
         $this->assertSame(1, $overview->logKeysPerWorker);
@@ -156,8 +158,30 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $overview = $this->overview();
         $this->assertNull($overview->available);
         $this->assertNull($overview->totalRotationsAllTime);
+        $this->assertNull($overview->logKeysPerDaemon);
         $this->assertNull($overview->logKeysPerAgent);
         $this->assertNull($overview->totalWeightWorkerKeysBytes);
+    }
+
+    /**
+     * A picture that holds no daemon stream gives zeros for that class and not null: the picture
+     * was taken and the class was not found in it, which is a measurement - null would tell the
+     * screen nobody looked.
+     */
+    public function testAPictureWithoutDaemonStreamsCountsThemAsZero(): void
+    {
+        $this->fileThePicture(
+            self::nodeSlot('node-1', keys: [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], 100)]),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertTrue($overview->available);
+        $this->assertSame(0, $overview->logKeysPerDaemon);
+        $this->assertSame(0, $overview->totalWeightDaemonKeysBytes);
+        $this->assertSame(1, $overview->logKeysPerAgent);
     }
 
     /**
@@ -852,6 +876,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
                         keys: [
                             new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], $this->keyBytes),
                             new LogKeySummary('worker-0.log', LogKeySummary::CLASS_WORKER, true, [], 300),
+                            new LogKeySummary('daemon.log', LogKeySummary::CLASS_DAEMON, true, [], 200),
                         ],
                         workers: [],
                         growthBytesPerDay: [],

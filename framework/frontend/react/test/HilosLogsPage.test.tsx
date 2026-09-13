@@ -41,6 +41,8 @@ function overview(
     available: true,
     totalRotationsAllTime: 384,
     lastRotationAt: '2026-09-02T03:00:00+00:00',
+    logKeysPerDaemon: 4,
+    totalWeightDaemonKeysBytes: 220 * 1024 * 1024,
     logKeysPerAgent: 14,
     totalWeightAgentKeysBytes: 940 * 1024 * 1024,
     logKeysPerWorker: 9,
@@ -206,6 +208,17 @@ describe('HilosLogsPage', () => {
     expect(textOf(container, 'hilos-logs-tile-rotation')).toBe('—')
     expect(textOf(container, 'hilos-logs-tile-growth')).toBe('—')
     expect(textOf(container, 'hilos-logs-tile-agents')).toContain('—')
+    expect(textOf(container, 'hilos-logs-tile-daemon')).toContain('—')
+  })
+
+  it('draws the daemon streams as a class of their own, count and weight together', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+
+    push(overview())
+
+    expect(textOf(container, 'hilos-logs-tile-daemon')).toContain('4')
+    expect(textOf(container, 'hilos-logs-tile-daemon')).toContain('220.0 MB')
   })
 
   it('keeps the tiles empty in the fault state too, where a zero would be a claim', () => {
@@ -217,6 +230,8 @@ describe('HilosLogsPage', () => {
         available: false,
         totalRotationsAllTime: null,
         lastRotationAt: null,
+        logKeysPerDaemon: null,
+        totalWeightDaemonKeysBytes: null,
         logKeysPerAgent: null,
         totalWeightAgentKeysBytes: null,
         logKeysPerWorker: null,
@@ -230,6 +245,7 @@ describe('HilosLogsPage', () => {
     expect(byId(container, 'hilos-logs-empty-unreadable')).not.toBeNull()
     expect(textOf(container, 'hilos-logs-tile-rotation')).toBe('—')
     expect(textOf(container, 'hilos-logs-tile-workers')).toContain('—')
+    expect(textOf(container, 'hilos-logs-tile-daemon')).toContain('—')
   })
 
   it('drops the per-node table entirely in a single-node installation', () => {

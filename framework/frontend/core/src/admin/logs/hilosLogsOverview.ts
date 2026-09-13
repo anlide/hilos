@@ -137,6 +137,8 @@ const overviewSchema = z.looseObject({
   available: z.boolean().nullable(),
   totalRotationsAllTime: z.number().nullable(),
   lastRotationAt: z.string().nullable(),
+  logKeysPerDaemon: z.number().nullable(),
+  totalWeightDaemonKeysBytes: z.number().nullable(),
   logKeysPerAgent: z.number().nullable(),
   totalWeightAgentKeysBytes: z.number().nullable(),
   logKeysPerWorker: z.number().nullable(),
