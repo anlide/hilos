@@ -31,6 +31,9 @@ declare(strict_types=1);
  *                `hilos-framework-test-network` at
  *                `framework/docker/docker-compose.yml:266`. Empty on a `project` stand, which
  *                finds its networks by project label.
+ *   holdsDatabase whether the stand holds a database the collector must ask; false
+ *                means there is nothing to ask, and is not the same as a database that
+ *                failed to come up.
  */
 
 return [
@@ -42,6 +45,7 @@ return [
         'mode' => 'profile',
         'profiles' => ['test'],
         'networks' => ['hilos-framework_hilos-framework-test-network'],
+        'holdsDatabase' => true,
     ],
     [
         'id' => 'frontend',
@@ -51,6 +55,7 @@ return [
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
+        'holdsDatabase' => false,
     ],
     [
         'id' => 'chat',
@@ -60,6 +65,7 @@ return [
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
+        'holdsDatabase' => true,
     ],
     [
         'id' => 'tasks',
@@ -69,6 +75,7 @@ return [
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
+        'holdsDatabase' => true,
     ],
     [
         'id' => 'polls',
@@ -78,6 +85,7 @@ return [
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
+        'holdsDatabase' => true,
     ],
     [
         'id' => 'cluster',
@@ -87,5 +95,6 @@ return [
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
+        'holdsDatabase' => true,
     ],
 ];

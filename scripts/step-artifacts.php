@@ -299,7 +299,9 @@ function collectStepArtifacts(
     $missing = [...$missing, ...$probe['missing']];
     if ($probe['state'] === 'up' && $stand !== null) {
         $missing = [...$missing, ...collectDockerArtifacts($root, $stand, $probe, $path, $deadline)];
-        $missing = [...$missing, ...collectDatabaseArtifacts($root, $stand, $probe, $path, $deadline)];
+        if (standHoldsDatabase($stand)) {
+            $missing = [...$missing, ...collectDatabaseArtifacts($root, $stand, $probe, $path, $deadline)];
+        }
     }
 
     if (artifactReasonNeedsTriage($reason)) {
@@ -804,27 +806,72 @@ function collectDockerArtifacts(string $root, array $stand, array $probe, string
     $cwd = $root . '/' . $stand['cwd'];
     $missing = [];
     foreach ($probe['containers'] as $container) {
-        $id = $container['ID'] ?? null;
-        $service = $container['Service'] ?? null;
-        if (!is_string($id) || !is_string($service)) {
+        $fileName = containerLogFileName($probe['containers'], $container);
+        if ($fileName === null) {
             continue;
         }
         if (!artifactBudgetLeft($deadline)) {
-            $missing[] = 'docker: out of budget before the logs of ' . $service;
+            $missing[] = 'docker: out of budget before the logs of ' . $container['Service'];
             break;
         }
         // By id rather than by name: the id is what ps just handed over, and a
         // container renamed between the two calls would otherwise be logged as absent.
         $missing = [...$missing, ...runArtifactCommand(
             'docker',
-            'docker logs --tail ' . DOCKER_LOG_TAIL_LINES . ' ' . escapeshellarg($id)
-                . ' > ' . escapeshellarg($path . '/docker/logs/' . $service . '.log') . ' 2>&1',
+            'docker logs --tail ' . DOCKER_LOG_TAIL_LINES . ' ' . escapeshellarg($container['ID'])
+                . ' > ' . escapeshellarg($path . '/docker/logs/' . $fileName) . ' 2>&1',
             $cwd,
             ARTIFACT_COMMAND_TIMEOUT_SECONDS,
         )['missing']];
     }
 
     return $missing;
+}
+
+/**
+ * The log file a container's stdout is kept under, unique within this snapshot.
+ *
+ * A service that appears once keeps the name the collector has always used. Two
+ * runners of the same service — the frontend stand's parallel fe-build and
+ * fe-checks — would otherwise overwrite each other, and which one kept the bare
+ * name would depend on the order `ps` listed them.
+ *
+ * @param array<int, array<string, mixed>> $containers What `docker compose ps` listed.
+ * @param array<string, mixed> $container The one row whose file is being named.
+ * @return string|null Null when the row has no string id or service.
+ */
+function containerLogFileName(array $containers, array $container): ?string
+{
+    $id = $container['ID'] ?? null;
+    $service = $container['Service'] ?? null;
+    if (!is_string($id) || !is_string($service)) {
+        return null;
+    }
+
+    $sameService = 0;
+    foreach ($containers as $candidate) {
+        if (($candidate['Service'] ?? null) === $service) {
+            $sameService++;
+        }
+    }
+
+    return $sameService === 1 ? $service . '.log' : $service . '-' . $id . '.log';
+}
+
+/**
+ * Whether the collector should ask this stand for its database.
+ *
+ * A stand that holds none is not a stand whose database failed to come up: the
+ * missing line for a labeled container would be a false absence. The default is
+ * true so a forgotten key keeps today's behavior and is caught by the unit that
+ * requires every record to say.
+ *
+ * @param array<string, mixed>|null $stand The registry record, or none when the step named no stand.
+ * @return bool True when the stand exists and holds a database.
+ */
+function standHoldsDatabase(?array $stand): bool
+{
+    return $stand !== null && ($stand['holdsDatabase'] ?? true) === true;
 }
 
 /**

@@ -38,6 +38,7 @@ final class StepArtifactsTest extends TestCase
         'mode' => 'project',
         'profiles' => [],
         'networks' => [],
+        'holdsDatabase' => true,
     ];
 
     /** The framework stand: one profile inside a compose file that also holds the preview lane. */
@@ -49,7 +50,15 @@ final class StepArtifactsTest extends TestCase
         'mode' => 'profile',
         'profiles' => ['test'],
         'networks' => ['hilos-framework_hilos-framework-test-network'],
+        'holdsDatabase' => true,
     ];
+
+    /**
+     * Steps that name no stand on purpose. framework-image builds an image and
+     * never raises a container; a new step without a key must be added here
+     * rather than hide as "this one has none".
+     */
+    private const array STEPS_WITHOUT_A_STAND = ['framework-image'];
 
     /** A green step is named green, so that the directory being full says nothing on its own. */
     public function testNamesAGreenStepGreen(): void
@@ -147,6 +156,96 @@ final class StepArtifactsTest extends TestCase
             }
             $this->assertContains($step['stand'], $stands, 'step ' . $step['id'] . ' names an unknown stand');
         }
+    }
+
+    /**
+     * A step that runs inside a stand names it. A step that does not is listed in
+     * STEPS_WITHOUT_A_STAND, so a forgotten key cannot hide as "this one has none".
+     */
+    public function testEveryStepEitherNamesAStandOrIsListedAsHoldingNone(): void
+    {
+        $steps = require __DIR__ . '/../../../scripts/test-suite.php';
+
+        $this->assertNotSame([], $steps);
+        foreach ($steps as $step) {
+            if (array_key_exists('stand', $step)) {
+                $this->assertNotContains(
+                    $step['id'],
+                    self::STEPS_WITHOUT_A_STAND,
+                    'step ' . $step['id'] . ' names a stand yet is listed as holding none',
+                );
+                continue;
+            }
+            $this->assertContains(
+                $step['id'],
+                self::STEPS_WITHOUT_A_STAND,
+                'step ' . $step['id'] . ' names no stand and is not listed as holding none',
+            );
+        }
+    }
+
+    /** Every stand in the registry says whether it holds a database. */
+    public function testEveryStandSaysWhetherItHoldsADatabase(): void
+    {
+        $stands = require __DIR__ . '/../../../scripts/test-stands.php';
+
+        $this->assertNotSame([], $stands);
+        foreach ($stands as $stand) {
+            $this->assertArrayHasKey(
+                'holdsDatabase',
+                $stand,
+                'stand ' . $stand['id'] . ' does not say whether it holds a database',
+            );
+        }
+    }
+
+    /** A stand that holds no database is not asked for one. */
+    public function testAsksNoDatabaseOfAStandThatHoldsNone(): void
+    {
+        $frontend = standById($this->repositoryRoot(), 'frontend');
+
+        $this->assertNotNull($frontend);
+        $this->assertFalse(standHoldsDatabase($frontend));
+    }
+
+    /** A demo stand that holds a database is asked for it. */
+    public function testAsksTheDatabaseOfAStandThatHoldsOne(): void
+    {
+        $this->assertTrue(standHoldsDatabase(self::DEMO_STAND));
+    }
+
+    /** A service that appears once keeps the log name the collector has always used. */
+    public function testNamesAContainerLogByItsServiceWhenItIsTheOnlyOne(): void
+    {
+        $containers = [
+            ['ID' => 'abc123', 'Service' => 'hilos-frontend-cli'],
+        ];
+
+        $this->assertSame(
+            'hilos-frontend-cli.log',
+            containerLogFileName($containers, $containers[0]),
+        );
+    }
+
+    /**
+     * Two containers of one service each get the id in the file name, so neither
+     * overwrites the other and neither name depends on the order `ps` listed them.
+     */
+    public function testTellsTwoContainersOfOneServiceApartInTheirLogNames(): void
+    {
+        $containers = [
+            ['ID' => 'aaa111', 'Service' => 'hilos-frontend-cli'],
+            ['ID' => 'bbb222', 'Service' => 'hilos-frontend-cli'],
+        ];
+
+        $this->assertSame(
+            'hilos-frontend-cli-aaa111.log',
+            containerLogFileName($containers, $containers[0]),
+        );
+        $this->assertSame(
+            'hilos-frontend-cli-bbb222.log',
+            containerLogFileName($containers, $containers[1]),
+        );
     }
 
     /**
