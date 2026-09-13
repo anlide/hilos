@@ -3,11 +3,11 @@
 // history screen — carrying a batch off, and taking that word back (HIL-759) —
 // plus the fourth batch state the badge has to name (HIL-870).
 //
-// Only the cases about the withdrawal and about the takeout modal's promise are
-// here, by the same names the other two shells give them. The empty states, the
-// filters and the sub-line are the core headless's discrimination and are proved
-// once, in the peers; a third copy of them would test @hilos/core through three
-// view layers rather than test this view.
+// Only the cases about the withdrawal, about the takeout modal's promise and about
+// the Files cell are here, by the same names the other two shells give them. The
+// empty states, the filters and the sub-line are the core headless's
+// discrimination and are proved once, in the peers; a third copy of them would
+// test @hilos/core through three view layers rather than test this view.
 //
 // The world below — the connection, the action lifecycle and the row on the wire —
 // is the React peer's, moved over verbatim: it is written against @hilos/core and
@@ -187,6 +187,7 @@ function batch(
     node: null,
     path: 'archive/2027-01-15-08-00-00/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    daemonFileCount: 3,
     agentFileCount: 12,
     workerFileCount: 8,
     workerMonopolisticFileCount: 2,
@@ -341,6 +342,25 @@ describe('HilosLogsRotationsPage', () => {
     ).toContain('text-bg-info')
     expect(allById(fixture, 'hilos-rotation-takeout')).toHaveLength(0)
     expect(allById(fixture, 'hilos-rotation-undo')).toHaveLength(0)
+  })
+
+  /**
+   * The Files cell names every class of stream in the batch, the daemon's own
+   * first, so the counts add up to what the weight beside them is taken over.
+   */
+  it('shows the four file counts in the Files cell, daemon first', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const fixture = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch()])
+    fixture.detectChanges()
+
+    expect(
+      (fixture.nativeElement as HTMLElement)
+        .querySelector('[data-id^="hilos-table-row-"] td.small')
+        ?.textContent?.trim(),
+    ).toBe('3 / 12 / 8 / 2')
   })
 
   it('offers the withdrawal only on a batch somebody said was carried off', () => {

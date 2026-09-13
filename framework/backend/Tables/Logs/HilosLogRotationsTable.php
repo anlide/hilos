@@ -299,10 +299,11 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
                 HilosLogRotationsTableRow::node => $slot->nodeId,
                 HilosLogRotationsTableRow::path => $path,
                 HilosLogRotationsTableRow::absolutePath => self::absolutePath($slot->index->logDirectory, $path),
+                HilosLogRotationsTableRow::daemonFileCount => $batch->daemonFileCount,
                 HilosLogRotationsTableRow::agentFileCount => $batch->agentFileCount,
                 HilosLogRotationsTableRow::workerFileCount => $batch->workerFileCount,
                 HilosLogRotationsTableRow::workerMonopolisticFileCount => $batch->workerMonopolisticFileCount,
-                // Every class of stream, the daemon's own included: this is what the directory costs.
+                // The same four classes the counts above name, so the weight is what those files cost.
                 HilosLogRotationsTableRow::bytes => $batch->agentBytes + $batch->workerBytes
                     + $batch->workerMonopolisticBytes + $batch->daemonBytes,
                 HilosLogRotationsTableRow::retentionState => self::retentionState($batch, isset($due[$batch->timestamp])),

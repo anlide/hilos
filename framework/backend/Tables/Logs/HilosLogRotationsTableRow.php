@@ -23,10 +23,10 @@ use Hilos\Log\LogBatchSummary;
  * fragment and replaced with a reference, which would strip every other field off this row
  * ({@see AbstractTableRow}).
  *
- * The three file counts are the classes an operator can act on — agent, worker, and the
- * monopolistic workers apart from the rest. The daemon's own streams are a fourth class and
- * are deliberately absent from the counts while being part of {@see $bytes}: the weight is
- * what the directory costs on disk, and the daemon files cost it too.
+ * The four file counts name every file of the batch by the stream that wrote it — the daemon's
+ * own, agent, worker, and the monopolistic workers apart from the rest — and {@see $bytes} is
+ * the weight of exactly those files. Counts and weight are taken over one set, so a row always
+ * agrees with itself: no class of stream is weighed without being counted.
  */
 final class HilosLogRotationsTableRow extends AbstractTableRow
 {
@@ -51,6 +51,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
      */
     public const string absolutePath = 'absolutePath';
 
+    public const string daemonFileCount = 'daemonFileCount';
     public const string agentFileCount = 'agentFileCount';
     public const string workerFileCount = 'workerFileCount';
     public const string workerMonopolisticFileCount = 'workerMonopolisticFileCount';
@@ -74,6 +75,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
      * @param string $path Archive directory of the batch, relative to the node's log root
      * @param ?string $absolutePath Archive directory of the batch on its own node, null when that
      *     node named no log root
+     * @param int $daemonFileCount Number of the daemon's own stream files in the batch
      * @param int $agentFileCount Number of agent files in the batch
      * @param int $workerFileCount Number of worker files in the batch (monopolistic ones apart)
      * @param int $workerMonopolisticFileCount Number of monopolistic worker files in the batch
@@ -88,6 +90,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
         public ?string $node,
         public string $path,
         public ?string $absolutePath,
+        public int $daemonFileCount,
         public int $agentFileCount,
         public int $workerFileCount,
         public int $workerMonopolisticFileCount,
@@ -130,6 +133,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             self::node => $this->node,
             self::path => $this->path,
             self::absolutePath => $this->absolutePath,
+            self::daemonFileCount => $this->daemonFileCount,
             self::agentFileCount => $this->agentFileCount,
             self::workerFileCount => $this->workerFileCount,
             self::workerMonopolisticFileCount => $this->workerMonopolisticFileCount,
@@ -154,6 +158,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
             node: self::optionalString($data, self::node),
             path: self::requireString($data, self::path),
             absolutePath: self::optionalString($data, self::absolutePath),
+            daemonFileCount: self::requireInt($data, self::daemonFileCount),
             agentFileCount: self::requireInt($data, self::agentFileCount),
             workerFileCount: self::requireInt($data, self::workerFileCount),
             workerMonopolisticFileCount: self::requireInt($data, self::workerMonopolisticFileCount),

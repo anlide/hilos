@@ -54,6 +54,8 @@ export interface HilosLogRotationRow {
    * command, which is the only place a machine's private layout belongs.
    */
   readonly absolutePath: string | null
+  /** The daemon's own stream files in the batch. */
+  readonly daemonFileCount: number
   /** Agent files in the batch. */
   readonly agentFileCount: number
   /** Worker files in the batch, the monopolistic ones apart. */
@@ -94,6 +96,9 @@ const ROTATION_PATH_FIELD = 'path'
 
 /** Row payload key of the archive directory as addressed on its own node. */
 const ROTATION_ABSOLUTE_PATH_FIELD = 'absolutePath'
+
+/** Row payload key of the daemon's own stream file count. */
+const ROTATION_DAEMON_FILE_COUNT_FIELD = 'daemonFileCount'
 
 /** Row payload key of the agent file count. */
 const ROTATION_AGENT_FILE_COUNT_FIELD = 'agentFileCount'
@@ -250,6 +255,7 @@ export function resolveHilosLogRotationRow(row: TableRow): HilosLogRotationRow {
     // Null is a node that named no log root — an older build reporting an index
     // frame without one — and not an address that happens to be blank.
     absolutePath: readStringOrNull(slot, ROTATION_ABSOLUTE_PATH_FIELD),
+    daemonFileCount: readNumber(slot, ROTATION_DAEMON_FILE_COUNT_FIELD),
     agentFileCount: readNumber(slot, ROTATION_AGENT_FILE_COUNT_FIELD),
     workerFileCount: readNumber(slot, ROTATION_WORKER_FILE_COUNT_FIELD),
     workerMonopolisticFileCount: readNumber(
@@ -649,17 +655,19 @@ export const HILOS_ROTATION_STATE_OPTIONS: readonly HilosRotationStateOption[] =
   ]
 
 /**
- * The three file counts of the Files column — agent, worker, monopolistic worker.
+ * The four file counts of the Files column — daemon, agent, worker, monopolistic
+ * worker, in that order.
  *
- * The daemon's own streams are a fourth class and deliberately absent: they are the
- * node's own log rather than anything the installation runs, and the overview
- * leaves them out of its two tiles for the same reason. They are still inside the
- * weight, because the directory costs what it costs.
+ * Together they name every file of the batch, and the weight beside them is what
+ * exactly those files cost, so the row agrees with itself. Every count is printed,
+ * zeros included: the reading is positional, and a skipped zero would shift the
+ * classes after it.
  *
  * @param row The batch row to format.
  */
 export function formatRotationFileCounts(row: HilosLogRotationRow): string {
   return [
+    row.daemonFileCount,
     row.agentFileCount,
     row.workerFileCount,
     row.workerMonopolisticFileCount,

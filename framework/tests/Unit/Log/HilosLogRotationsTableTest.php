@@ -413,16 +413,23 @@ final class HilosLogRotationsTableTest extends TestCase
     }
 
     /**
-     * The weight is what the directory costs, so every class of stream counts toward it - including
-     * the daemon's own, which the three file counts on the screen deliberately leave out.
+     * The counts and the weight are taken over one set of files: the four counts, the daemon's own
+     * streams included, add up to every file of the batch, and the weight is what those files cost.
      */
-    public function testTheWeightCountsEveryStreamClassWhileTheCountsShowThree(): void
+    public function testTheFourCountsAddUpToEveryFileTheWeightIsTakenOver(): void
     {
-        $this->picture($this->node('node-1', [self::NOW], bytesPerBatch: 10));
+        $slot = $this->node('node-1', [self::NOW], bytesPerBatch: 10);
+        $this->picture($slot);
 
         $row = $this->rows(new TableQueryDTO())[0];
+        $batch = $slot->index->batches[0];
 
         $this->assertSame(40, $row->bytes);
+        $this->assertSame(4, $row->daemonFileCount);
+        $this->assertSame(
+            $batch->daemonFileCount + $batch->agentFileCount + $batch->workerFileCount + $batch->workerMonopolisticFileCount,
+            $row->daemonFileCount + $row->agentFileCount + $row->workerFileCount + $row->workerMonopolisticFileCount,
+        );
         $this->assertSame(1, $row->agentFileCount);
         $this->assertSame(2, $row->workerFileCount);
         $this->assertSame(3, $row->workerMonopolisticFileCount);

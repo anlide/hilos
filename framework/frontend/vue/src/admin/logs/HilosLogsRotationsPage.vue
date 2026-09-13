@@ -96,8 +96,8 @@ const searchPlaceholder = computed(() =>
 )
 
 // Declared as the loose HilosTableColumn rather than the row-typed form: the Files
-// column is three counts at once and belongs to no single field, so keying it to
-// one of them would name the column after a third of what it shows. The sortable
+// column is four counts at once and belongs to no single field, so keying it to
+// one of them would name the column after a quarter of what it shows. The sortable
 // keys are the exported wire constants, which is where a typo would actually cost
 // something — they travel to the backend as the sort field.
 //
@@ -469,7 +469,7 @@ const legendOpen = ref(false)
       >
         Files
       </button>
-      — three numbers in a row: agent / worker / monopolistic worker.
+      — four numbers in a row: daemon / agent / worker / monopolistic worker.
     </p>
 
     <HilosModal
@@ -597,9 +597,15 @@ const legendOpen = ref(false)
     <HilosModal v-model="legendOpen" title="What is in a batch">
       <p>
         A batch is one archive directory, written by one rotation on one node.
-        The three numbers count the files in it by the stream that wrote them:
+        The four numbers count the files in it by the stream that wrote them:
       </p>
       <ul class="mb-3">
+        <li>
+          <strong>daemon</strong> — the node's own two streams, daemon.log and
+          daemon-error.log. The raw pair beside them stays live through an
+          ordinary rotation and joins a batch only when the daemon restarts, the
+          one pass that takes everything.
+        </li>
         <li><strong>agent</strong> — one file per agent that logged.</li>
         <li>
           <strong>worker</strong> — one per worker process, the monopolistic
@@ -611,9 +617,10 @@ const legendOpen = ref(false)
         </li>
       </ul>
       <p class="mb-0">
-        The daemon's own two files are a fourth class and are not counted here —
-        they belong to the node rather than to anything the installation runs.
-        The weight column still includes them: that is what the directory costs.
+        The four numbers add up to every file of the batch, and the weight
+        beside them is what those files cost. Nothing in a batch goes unnamed: a
+        class left out of the counts but kept in the weight makes the two stop
+        agreeing, and the row reads as a counting error.
       </p>
 
       <template #actions="{ requestClose }">

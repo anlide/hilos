@@ -36,6 +36,7 @@ function row(
     node: 'node-1',
     path: 'archive/2027-01-15-08-00-00/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    daemonFileCount: 2,
     agentFileCount: 12,
     workerFileCount: 8,
     workerMonopolisticFileCount: 2,
@@ -76,6 +77,7 @@ describe('resolveHilosLogRotationRow', () => {
         node: 'node-2',
         path: 'archive/2027-01-15-08-00-00/',
         absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+        daemonFileCount: 3,
         agentFileCount: 11,
         workerFileCount: 8,
         workerMonopolisticFileCount: 2,
@@ -91,6 +93,7 @@ describe('resolveHilosLogRotationRow', () => {
       node: 'node-2',
       path: 'archive/2027-01-15-08-00-00/',
       absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+      daemonFileCount: 3,
       agentFileCount: 11,
       workerFileCount: 8,
       workerMonopolisticFileCount: 2,
@@ -244,8 +247,14 @@ describe('formatRotationWeight', () => {
 })
 
 describe('formatRotationFileCounts', () => {
-  it('shows the three classes an operator acts on, daemon streams apart', () => {
-    expect(formatRotationFileCounts(row())).toBe('12 / 8 / 2')
+  it('shows all four classes, daemon first, so they add up to every file of the batch', () => {
+    expect(formatRotationFileCounts(row())).toBe('2 / 12 / 8 / 2')
+  })
+
+  it('prints a zero rather than skipping it, because the reading is positional', () => {
+    expect(formatRotationFileCounts(row({ daemonFileCount: 0 }))).toBe(
+      '0 / 12 / 8 / 2',
+    )
   })
 })
 

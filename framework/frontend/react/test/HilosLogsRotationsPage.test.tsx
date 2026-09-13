@@ -178,6 +178,7 @@ function batch(
     node: null,
     path: 'archive/2027-01-15-08-00-00/',
     absolutePath: '/var/log/hilos/archive/2027-01-15-08-00-00/',
+    daemonFileCount: 3,
     agentFileCount: 12,
     workerFileCount: 8,
     workerMonopolisticFileCount: 2,
@@ -326,6 +327,23 @@ describe('HilosLogsRotationsPage', () => {
 
     expect(subLine(container)).not.toBeNull()
     expect(subLine(container)?.textContent).toBe('1.5 GB')
+  })
+
+  /**
+   * The Files cell names every class of stream in the batch, the daemon's own
+   * first, so the counts add up to what the weight beside them is taken over.
+   */
+  it('shows the four file counts in the Files cell, daemon first', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const container = mountPage(connection)
+
+    pushHeader(header())
+    pushWindow([batch()])
+
+    expect(
+      container.querySelector('[data-id^="hilos-table-row-"] td.small')
+        ?.textContent,
+    ).toBe('3 / 12 / 8 / 2')
   })
 
   it('carries the node into that sub-line as well where nodes have names', () => {
@@ -556,7 +574,7 @@ describe('HilosLogsRotationsPage', () => {
     )
   })
 
-  it('opens the legend modal, which is where the three numbers are explained', () => {
+  it('opens the legend modal, which is where the four numbers are explained', () => {
     const { connection } = makeConnection()
     const container = mountPage(connection)
 
