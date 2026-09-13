@@ -182,10 +182,10 @@ services:
       - stand-gateway-local
     ports:
       # Expose ports to host for local frontend access
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_PORT:-8090}:8090"
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_COMM_PORT:-8091}:8091"
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_PORT:-8092}:8092"
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_HTML_PORT:-8093}:8093"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_HOST_PORT:-8090}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_COMM_HOST_PORT:-8091}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_HOST_PORT:-8092}:8092"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_HTML_HOST_PORT:-8093}:8093"
     restart: unless-stopped
     networks:
       hilos-demo-chat-local-network:
@@ -293,7 +293,7 @@ services:
       # The dev page is served by Vite, not nginx, so the app's same-origin
       # /ws default cannot reach the daemon; point it at the published
       # WebSocket port instead (see frontend/src/connection.ts).
-      VITE_WS_URL: "ws://localhost:${WEBSOCKET_PORT:-8092}"
+      VITE_WS_URL: "ws://localhost:${WEBSOCKET_HOST_PORT:-8092}"
       # Attachment downloads proxy same-origin (Vite → daemon) so the session
       # cookie rides along; in-network the daemon's HTTP router is chat-local:8090.
       VITE_ATTACHMENT_TARGET: "http://chat-local:8090"

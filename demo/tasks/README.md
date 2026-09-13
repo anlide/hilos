@@ -59,6 +59,7 @@ The daemon applies migrations on startup. Endpoints (defaults):
 | Endpoint | URL |
 |---|---|
 | Frontend dev server (HMR) | http://localhost:5174 |
+| Built frontend behind nginx (`daemon-start-build`) | https://localhost:444 |
 | phpMyAdmin | http://localhost:8081 |
 | Mailpit (mail, SMS and Telegram of the stand) | http://localhost:8026 |
 | Daemon status API | http://localhost:8098/status |
@@ -69,6 +70,12 @@ Every channel of the stand ends in that inbox: mail goes to Mailpit over SMTP,
 and an SMS or Telegram message is caught by the stand gateway and forwarded
 there as a letter to `<number>@sms.stand` or `<number>@telegram.stand`, with
 the message text as its subject. There is no file with the code on disk.
+
+These host-side ports are compose *interpolation* values, so `.env` cannot
+change them — compose reads them from the shell environment or from
+`docker/.env` before any container exists (`HTTP_STATUS_HOST_PORT=18090 composer
+run daemon-start`). A port written into `.env` is silently ignored: that file is
+the container `env_file`.
 
 ## Stack commands
 

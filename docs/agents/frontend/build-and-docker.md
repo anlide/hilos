@@ -47,8 +47,8 @@ look at that file at all. Compose interpolation reads the shell environment and 
 `.env` sitting **next to the compose file**, i.e. `docker/.env`.
 
 So a host-port override (`NGINX_HTTPS_PORT`, `MYSQL_HOST_PORT`, `PHPMYADMIN_PORT`,
-`FRONTEND_DEV_PORT`, and — for demos that publish the daemon directly —
-`HTTP_STATUS_HOST_PORT` / `WORKER_COMM_HOST_PORT` / `WEBSOCKET_HOST_PORT`) only
+`MAILPIT_HTTP_PORT`, `FRONTEND_DEV_PORT`, `HTTP_STATUS_HOST_PORT`,
+`WORKER_COMM_HOST_PORT`, `WEBSOCKET_HOST_PORT`, or `FRONTEND_HTML_HOST_PORT`) only
 takes effect from `docker/.env` (or the shell); the same line placed in the demo
 `../.env` is silently ignored, because a published port is chosen before the
 container the env_file would feed ever exists.

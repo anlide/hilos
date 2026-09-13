@@ -104,6 +104,51 @@ final class DemoStackComposeGuardTest extends TestCase
     }
 
     /**
+     * Every host-port interpolation of a local stack is shown in that stack's example file.
+     *
+     * @return void
+     */
+    public function testLocalPublishedPortKnobsAreListedInExamples(): void
+    {
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            if (!str_ends_with($relativePath, '/docker/docker-compose.local.yml')) {
+                continue;
+            }
+
+            $examplePath = dirname($path) . '/.env.example';
+            $this->assertFileExists($examplePath, "{$relativePath}: docker/.env.example is missing");
+            $example = file_get_contents($examplePath);
+            $this->assertIsString($example, "{$relativePath}: docker/.env.example is unreadable");
+
+            foreach ($this->servicesOf($path) as $lines) {
+                $inPorts = false;
+                foreach ($lines as $line) {
+                    if (trim($line) === 'ports:') {
+                        $inPorts = true;
+                        continue;
+                    }
+
+                    if ($inPorts && preg_match('/^ {4}[A-Za-z0-9_.-]+:/', $line) === 1) {
+                        $inPorts = false;
+                    }
+
+                    if (!$inPorts || preg_match_all('/\$\{([A-Z0-9_]+)(?::-[^}]*)?}/', $line, $matches) === 0) {
+                        continue;
+                    }
+
+                    foreach ($matches[1] as $name) {
+                        $this->assertMatchesRegularExpression(
+                            '/^#\s*' . preg_quote($name, '/') . '=/m',
+                            $example,
+                            "{$relativePath}: {$name} is published but absent from docker/.env.example"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Every compose file of every demo, keyed by its path from the repository root.
      *
      * @return array<string, string> Repository-relative path => absolute path

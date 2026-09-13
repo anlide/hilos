@@ -90,6 +90,12 @@ From `demo/chat/`, everything in containers:
    file with the code on disk; the dev stack (`docker-compose.dev.yml`)
    publishes its own Mailpit on http://localhost:8028.
 
+These host-side ports are compose *interpolation* values, so `.env` cannot
+change them — compose reads them from the shell environment or from
+`docker/.env` before any container exists (`HTTP_STATUS_HOST_PORT=18090 composer
+run daemon-start`). A port written into `.env` is silently ignored: that file is
+the container `env_file`.
+
 ### Stop the stack
 
 ```bash
