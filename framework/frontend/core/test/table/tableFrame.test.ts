@@ -7,7 +7,12 @@ import { type ActionHandle } from '../../src/connection/actionLifecycle.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import { TableViewportController } from '../../src/table/TableViewportController.js'
 import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
-import { type HilosTableFrame } from '../../src/table/tableFrame.js'
+import { createSignal } from '../../src/state/signal.js'
+import {
+  HILOS_TABLE_FACET_OPTION_LIMIT,
+  type HilosTableFilterOption,
+  type HilosTableFrame,
+} from '../../src/table/tableFrame.js'
 
 function makeController(
   frame?: HilosTableFrame,
@@ -280,6 +285,168 @@ function rows(count: number, from = 0): TableRow[] {
     slots: {},
   }))
 }
+
+describe('TableViewportController frame facets', () => {
+  /**
+   * A controller that asks for counts, its frame opening with a channel dropdown
+   * whose options the test supplies ahead of the backups filters.
+   *
+   * @param options The channel dropdown's options, read fresh like a page's own.
+   * @return The controller, the declarations it sent, the windows it sent, and a window opener.
+   */
+  function makeCounted(options: () => readonly HilosTableFilterOption[]) {
+    const declared: Array<Readonly<Record<string, readonly unknown[]>>> = []
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendFacets: (facets) => declared.push(facets),
+      frame: {
+        ...backupsFrame,
+        filters: [
+          { kind: 'select', key: 'channel', label: 'Channel', options },
+          ...(backupsFrame.filters ?? []),
+        ],
+      },
+    })
+    const open = (): void =>
+      controller.ingestWindow([], 0, true, null, null, 10)
+
+    return { controller, declared, sent, open }
+  }
+
+  const twoChannels = (): readonly HilosTableFilterOption[] => [
+    { value: 'email', label: 'Email' },
+    { value: 'sms', label: 'SMS' },
+  ]
+
+  it('declares the options of its dropdown filters once the first window lands, and once', () => {
+    const { declared, open } = makeCounted(twoChannels)
+    expect(declared).toEqual([])
+
+    open()
+    open()
+
+    expect(declared).toEqual([
+      { channel: ['email', 'sms'], kind: ['full', 'partial'] },
+    ])
+  })
+  it('leaves a dropdown offering more than twenty options out of the declaration', () => {
+    const many = Array.from(
+      { length: HILOS_TABLE_FACET_OPTION_LIMIT + 1 },
+      (_, index) => ({ value: `channel-${index}`, label: `Channel ${index}` }),
+    )
+    const { declared, open } = makeCounted(() => many)
+
+    open()
+
+    expect(declared).toEqual([{ kind: ['full', 'partial'] }])
+  })
+  it('declares nothing while no dropdown offers anything to count', () => {
+    const declared: Array<Readonly<Record<string, readonly unknown[]>>> = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => undefined,
+      sendFacets: (facets) => declared.push(facets),
+      frame: { ...backupsFrame, filters: [] },
+    })
+
+    controller.ingestWindow([], 0, true, null, null, 10)
+
+    expect(declared).toEqual([])
+  })
+  it('declares again when the options of a dropdown change after the first window', () => {
+    const channels = createSignal<readonly HilosTableFilterOption[]>([])
+    const { declared, open } = makeCounted(() => channels.get())
+    open()
+
+    channels.set(twoChannels())
+
+    expect(declared).toEqual([
+      { channel: [], kind: ['full', 'partial'] },
+      { channel: ['email', 'sms'], kind: ['full', 'partial'] },
+    ])
+  })
+
+  it('sends no frame for a change before the first window, which carries it instead', () => {
+    const channels = createSignal<readonly HilosTableFilterOption[]>([])
+    const { declared, open } = makeCounted(() => channels.get())
+
+    channels.set(twoChannels())
+    expect(declared).toEqual([])
+    open()
+
+    expect(declared).toEqual([
+      { channel: ['email', 'sms'], kind: ['full', 'partial'] },
+    ])
+  })
+  it('shows no numbers until counts arrive, and never beside a range or a toggle', () => {
+    const { controller } = makeCounted(twoChannels)
+
+    expect(controller.frame.filters.get().map((view) => view.facets)).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ])
+  })
+
+  it('lays each frame of counts over the ones held, filter by filter', () => {
+    const { controller } = makeCounted(twoChannels)
+
+    controller.ingestFacetCounts({
+      channel: {
+        any: { count: 500, exact: false },
+        options: {
+          email: { count: 412, exact: true },
+          sms: { count: 88, exact: true },
+        },
+      },
+      kind: {
+        any: { count: 30, exact: true },
+        options: { full: { count: 20, exact: true } },
+      },
+    })
+    controller.ingestFacetCounts({
+      kind: {
+        any: { count: 12, exact: true },
+        options: { full: { count: 0, exact: true } },
+      },
+    })
+
+    const [channel, kind, range, toggle] = controller.frame.filters.get()
+    expect(channel?.facets?.any).toEqual({ count: 500, exact: false })
+    expect(channel?.facets?.options.get('email')).toEqual({
+      count: 412,
+      exact: true,
+    })
+    expect(kind?.facets?.any).toEqual({ count: 12, exact: true })
+    expect(kind?.facets?.options.get('full')).toEqual({ count: 0, exact: true })
+    expect(range?.facets).toBeNull()
+    expect(toggle?.facets).toBeNull()
+  })
+
+  it('reports its options with the window it holds, and never inside a window it sends', () => {
+    const { controller, sent, open } = makeCounted(twoChannels)
+    expect(controller.descriptor()).toBeNull()
+
+    open()
+    controller.setFilter('channel', 'email')
+
+    expect(controller.descriptor()?.facets).toEqual({
+      channel: ['email', 'sms'],
+      kind: ['full', 'partial'],
+    })
+    expect(sent.at(-1)?.facets).toBeUndefined()
+  })
+
+  it('reports no options with its window when it asks for no counts', () => {
+    const { controller, open } = makeController(backupsFrame)
+    open()
+
+    expect(controller.descriptor()?.facets).toBeUndefined()
+  })
+})
 
 describe('TableViewportController frame footer', () => {
   it('numbers the shown rows from one, and says a first page has nothing before it', () => {

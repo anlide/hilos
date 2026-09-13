@@ -281,9 +281,10 @@ Several filter-map entries are set in one window change with `setFilters()`, and
 `initialFilter`, not an empty map, since a route preset arrives that way. Search
 is cleared along with them, being an entry of the same map.
 
-The declaration carries no facet counts (a number beside an option is HIL-240)
-and no executor for a bulk action: what an operation does to each row, and how it
-names the ones it left alone, is the bulk-action contract below.
+The declaration carries no counts beside its options — those are the table's to
+take, and they arrive on a frame of their own ("Facet counts" below) — and no
+executor for a bulk action: what an operation does to each row, and how it names
+the ones it left alone, is the bulk-action contract below.
 
 ### The panel a row expands into
 
@@ -551,6 +552,89 @@ counted **from the start of the set**, because "the nearer end" is derived from
 the exact total. For the same reason no page is refused as lying past the end —
 there is no known end — and an empty window is a legitimate answer.
 
+## Facet counts
+
+A dropdown filter can show beside each option **how many rows picking it would
+leave** — "full 412", "partial 88" — and beside "Any" the size of the set with
+the filter lifted. The number is there so that a choice is not made blind. It
+filters nothing, and the value, the badge, the reset, the search and the footer
+behave as they do without it.
+
+**Only the table can count.** The open filter map becomes a condition inside the
+table and nowhere else, so the question goes to the table
+(`ViewportTable::facetCounts`), which hands its own count of a set to
+`TableFacetTally::forFilters`. The tally decides which sets are counted; the table
+counts each of them the way it serves a window. A second description of the
+`WHERE` written for the numbers' sake would drift from the first, and the drift
+would show as a number the window, once picked, does not agree with. The default
+answer is null — "cannot count" — and a table giving it keeps a dropdown with no
+numbers.
+
+**An option is counted over the set without its own filter**: every other filter
+and the search stand, and the filter itself is set to that option. Counted with
+the filter in place, every option but the picked one would answer zero, and "how
+many would this leave" would have no answer. "Any" is the same set with the
+filter lifted and nothing in its place.
+
+**Each count stops at the ceiling** the window's own count stops at, and says so:
+`exact: false` is drawn as "500+". A set held in PHP memory is counted exactly,
+as its window is. One grouped query over an input cut at the ceiling was
+rejected on purpose — its numbers would be the spread of the first 500 rows
+passed off as the spread of the set. The price is one count per option, which is
+why a dropdown offering **more than 20 options** (`TableConstants::FACET_OPTION_LIMIT`,
+`HILOS_TABLE_FACET_OPTION_LIMIT`) is not counted at all: numbers beside some
+options and none beside the rest would read as zeros.
+
+Three forms of a number and no more: the count, "500+", and 0 — written, not
+left out, because "this leaves nothing" is exactly what the number is shown for.
+
+### Two frames
+
+- **`table_facets`** (client → server) — `{ page, tableKey, facets }`, the option
+  values to count, by filter key. The controller sends it when the table's first window lands, if there is
+  anything to count — not at construction, where a socket still connecting would
+  drop it — and again whenever the options change after that; an empty map drops
+  the list. The server keeps the list beside the connection's window
+  (`SubscriptionRegistry`) and not inside it: the viewport is rebuilt from every
+  window frame, and the list has to outlive all of them.
+- **`table_facet_counts`** (server → client) —
+  `{ page, tableKey, facets: { <filterKey>: { any: {count, exact}, options: { <String(value)>: {count, exact} } } } }`.
+  A filter the table does not count is absent altogether; there is no empty entry
+  that could be drawn as a row of zeros.
+
+The counts travel in a frame of their own rather than inside `table_window`: the
+view declares its options when it mounts, and the first window has left with the
+page's answer by then. The live count of the set travels the same way.
+
+### When the counts are sent
+
+By the server, without being asked again:
+
+- **when `table_facets` arrives** — every declared filter;
+- **after a `table_viewport` window, only for the filters whose set moved.** A
+  filter's counts move when the search or any *other* filter changed, so changing
+  one filter counts all the others again and not itself. A page turn, a new size
+  or a new order changes no filter and sends nothing. The first window a table has
+  on the connection sends every count;
+- **after the `page_response` of a subscription whose reported window names
+  `facets`** — a tab coming back after a broken socket reports its options with
+  its window (`TableViewportDescriptor.facets`) and gets its counts back. The
+  counts follow the answer: before it the table has no window to hold them.
+
+A live change of a row does not move the counts. Correcting a number would take
+the row's previous value — the per-source mechanism the count's ceiling declined
+— and the numbers catch up with the next change of the set.
+
+### What the client holds
+
+`ingestFacetCounts` lays a frame over the counts held, filter by filter: a frame
+naming one filter leaves the others where they were. While a window change is
+waiting the previous numbers stay, as the footer's do. `HilosTableFilterView.facets`
+is null until the first counts arrive, and for good when the filter is not a
+dropdown, the table does not count, or the list is over the limit. A count that
+failed is the same null to the reader — and a line in the log with the table,
+the page and the connection; the window the counts follow is untouched.
+
 ## Showing work in progress
 
 Running work is **not a record of the set**, and it does not get a row. A
@@ -746,7 +830,9 @@ Everything inside the root keeps the `hilos-table-*` prefix:
 
 - **frame:** `hilos-table-title`, `hilos-table-main-action`,
   `hilos-table-search`, `hilos-table-filters`,
-  `hilos-table-filter-<filterKey>`, `hilos-table-order`,
+  `hilos-table-filter-<filterKey>`, `hilos-table-facet-<filterKey>-<value>` — the
+  number beside one option of a dropdown filter, keyed by `String(value)`,
+  `hilos-table-facet-<filterKey>-any` — the number beside "Any", `hilos-table-order`,
   `hilos-table-order-<orderKey>`, `hilos-table-sort-<key>`. The "Order" menu's
   first item is the way back to the order the table opened in, and it answers to
   the one key no table declares: `hilos-table-order-opening`;
@@ -853,6 +939,7 @@ an address does not:
 | the `ORDER BY` and the window query | `framework/backend/Database/Object/Objects.php` |
 | the headless state machine | `framework/frontend/core/src/table/TableViewportController.ts` |
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
+| the counts beside a filter's options | `framework/backend/Core/Table/TableFacetTally.php`, `framework/backend/Core/Browser/Context/BrowserContext.php` (`sendTableFacetCounts`), `framework/backend/Core/Page/PageSignalRouter.php` (`recountFacets`) |
 | the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
 | the card, the cell slots and the two branches as they are drawn | `framework/frontend/vue/src/HilosViewportTable.vue` |
 | the words a quiet source is marked with, and the columns it froze | `framework/frontend/core/src/table/tableStaleness.ts` |

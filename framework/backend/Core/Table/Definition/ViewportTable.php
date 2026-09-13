@@ -16,6 +16,8 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\HilosException;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
+use Hilos\Core\Table\TableFacetTally;
 
 /**
  * Contract for a table that can serve a server-windowed viewport.
@@ -107,6 +109,30 @@ interface ViewportTable
      * @return ?bool Whether the row is in the set, or null when this table cannot answer
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool;
+
+    /**
+     * Counts how many rows each option of the table's filters would leave.
+     *
+     * This is the number beside an option in the filter's dropdown. Only the table can take it:
+     * the open filter map becomes a condition inside the table and nowhere else, so the framework
+     * knows neither what a filter key means nor how to count by it. The options themselves are the
+     * client's - a page declares them on the front end - and arrive in `$wanted`.
+     *
+     * Most tables answer by handing their own count of a set to {@see TableFacetTally::forFilters()},
+     * which decides which sets are counted and leaves the condition written once, in the table.
+     *
+     * Null is a real answer and means "this table cannot count", the way it does for
+     * {@see containsRow()}: the dropdown is drawn as it always was, with no numbers. A filter the
+     * table does not count is absent from the map it returns, and a filter it was not asked about
+     * is absent too.
+     *
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search
+     *     scoped by {@see scopeSearch()}
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return ?array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts by
+     *     filter key, or null when this table cannot count
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array;
 
     /**
      * Places one row against a boundary of a window, in the order that window asked for.

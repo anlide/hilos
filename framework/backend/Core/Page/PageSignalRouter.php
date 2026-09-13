@@ -66,6 +66,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -552,6 +553,7 @@ class PageSignalRouter
      */
     private function runTableViewportFrame(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
+        $previous = Hilos::$sr?->getTableViewport($data->acceptKey, $data->tableKey);
         $viewport = new TableViewportSubscription(
             tableKey: $data->tableKey,
             filter: $data->filter,
@@ -570,7 +572,118 @@ class PageSignalRouter
             Logger::info(
                 "Table window refused: page={$name}, table={$data->tableKey}, acceptKey={$data->acceptKey}",
             );
+
+            return;
         }
+
+        $this->recountFacets($name, $data->acceptKey, $viewport, $previous);
+    }
+
+    /**
+     * Dispatches a client's table_facets frame: the options it asks counts beside, for one table.
+     *
+     * Parked until the connection is identified and subscribed to the page, exactly as the viewport
+     * frame is, because the counts re-check the page guards a window re-checks.
+     *
+     * @param WebSocketTableFacetsSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     * @throws InvalidArgumentException When the facet-counts signal cannot be named
+     */
+    public function dispatchTableFacets(WebSocketTableFacetsSignalDTO $data, string $source, string $name): void
+    {
+        if ($data->acceptKey === '' || $data->tableKey === '') {
+            return;
+        }
+
+        if ($this->parkUntilIdentified(PendingFrameKind::TableFacets, $data, $source, $name)) {
+            return;
+        }
+
+        $this->runTableFacetsFrame($data, $source, $name);
+    }
+
+    /**
+     * Records the options a connection asked counts beside, and answers with the counts at once.
+     *
+     * The list is kept beside the connection's window rather than inside it, and after this the
+     * server sends the counts again on its own whenever the set changes ({@see self::recountFacets()}):
+     * the client never comes back for them. A table with no window on this connection yet gets its
+     * counts with its first window instead.
+     *
+     * @param WebSocketTableFacetsSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     */
+    private function runTableFacetsFrame(WebSocketTableFacetsSignalDTO $data, string $source, string $name): void
+    {
+        Hilos::$sr?->setTableFacets($data->acceptKey, $data->tableKey, $data->facets);
+
+        $viewport = Hilos::$sr?->getTableViewport($data->acceptKey, $data->tableKey);
+        if ($viewport !== null) {
+            Hilos::$browser?->sendTableFacetCounts($name, $data->acceptKey, $viewport);
+        }
+    }
+
+    /**
+     * Sends again the counts a new window moved, and only those.
+     *
+     * The counts of a filter are taken over the set with that filter lifted, so they move when the
+     * search or any OTHER filter changes, and stay where they are when the filter itself does. A page
+     * turn, a new size or a new order change no filter at all and move nothing. A window with no
+     * predecessor on this connection is its first, and every count goes out with it.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection the window was served to
+     * @param TableViewportSubscription $viewport Window just served
+     * @param ?TableViewportSubscription $previous Window it replaced, or null when it is the first
+     */
+    private function recountFacets(
+        string $page,
+        string $acceptKey,
+        TableViewportSubscription $viewport,
+        ?TableViewportSubscription $previous,
+    ): void {
+        if (Hilos::$sr === null || Hilos::$sr->getTableFacets($acceptKey, $viewport->tableKey) === []) {
+            return;
+        }
+
+        if ($previous === null) {
+            Hilos::$browser?->sendTableFacetCounts($page, $acceptKey, $viewport);
+
+            return;
+        }
+
+        $changed = self::changedFilterKeys($previous->filter, $viewport->filter);
+        $moved = array_values(array_filter(
+            array_map(
+                static fn(int|string $key): string => (string) $key,
+                array_keys(Hilos::$sr->getTableFacets($acceptKey, $viewport->tableKey)),
+            ),
+            static fn(string $key): bool => array_diff($changed, [$key]) !== [],
+        ));
+        if ($moved !== []) {
+            Hilos::$browser?->sendTableFacetCounts($page, $acceptKey, $viewport, $moved);
+        }
+    }
+
+    /**
+     * Names the filter-map keys whose value differs between two windows, the search among them.
+     *
+     * @param array<string, mixed> $before Filter map of the window replaced
+     * @param array<string, mixed> $after Filter map of the window served
+     * @return list<string> Keys set, cleared or changed between the two
+     */
+    private static function changedFilterKeys(array $before, array $after): array
+    {
+        $changed = [];
+        foreach (array_keys($before + $after) as $key) {
+            if (!array_key_exists($key, $before) || !array_key_exists($key, $after) || $before[$key] !== $after[$key]) {
+                $changed[] = (string) $key;
+            }
+        }
+
+        return $changed;
     }
 
     /**
@@ -1444,15 +1557,16 @@ class PageSignalRouter
      * it at all, which is the framework default - never reaches the queue.
      *
      * @param PendingFrameKind $kind Which door the frame arrived at
-     * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data
-     *     Frame as it arrived
+     * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
+     *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO $data Frame as it arrived
      * @param string $source Signal source the frame was dispatched with
      * @param string $name Signal name the frame was dispatched with
      * @return bool True when the frame has been parked and must not run now
      */
     private function parkUntilIdentified(
         PendingFrameKind $kind,
-        WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data,
+        WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
+            |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO $data,
         string $source,
         string $name,
     ): bool {
@@ -1500,7 +1614,7 @@ class PageSignalRouter
             return false;
         }
 
-        return $kind !== PendingFrameKind::TableViewport || $this->subscribedToPage($acceptKey, $name);
+        return !$kind->waitsForPageSubscription() || $this->subscribedToPage($acceptKey, $name);
     }
 
     /**
@@ -1538,7 +1652,7 @@ class PageSignalRouter
         if (Hilos::$browser?->connectionIdentity($acceptKey)->pending === true) {
             $unmet[] = 'identity';
         }
-        if ($kind === PendingFrameKind::TableViewport && !$this->subscribedToPage($acceptKey, $name)) {
+        if ($kind->waitsForPageSubscription() && !$this->subscribedToPage($acceptKey, $name)) {
             $unmet[] = 'subscription';
         }
 
@@ -1638,8 +1752,10 @@ class PageSignalRouter
                     $this->runPageUpdateSubscriptionFrame($data, $frame->source, $frame->name);
                 } elseif ($data instanceof WebSocketActionSignalDTO) {
                     $this->runActionFrame($data, $frame->source);
-                } else {
+                } elseif ($data instanceof WebSocketTableViewportSignalDTO) {
                     $this->runTableViewportFrame($data, $frame->source, $frame->name);
+                } else {
+                    $this->runTableFacetsFrame($data, $frame->source, $frame->name);
                 }
             } catch (Throwable $e) {
                 Logger::error(

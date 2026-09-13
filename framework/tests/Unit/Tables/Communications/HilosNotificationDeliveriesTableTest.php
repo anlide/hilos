@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Tables\Communications;
 
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
@@ -193,6 +194,36 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     }
 
     /**
+     * Each option is counted under the journal's own condition with its filter swapped for that option
+     * and the others standing, and "any" with the filter lifted; a period offers no options to count.
+     */
+    public function testAnOptionIsCountedWithItsOwnFilterSwappedAndTheOthersStanding(): void
+    {
+        $table = $this->table();
+
+        $facets = $table->facetCounts(
+            new TableQueryDTO(filter: [
+                HilosNotificationDeliveriesTable::FILTER_CHANNEL => 'email',
+                HilosNotificationDeliveriesTable::FILTER_STATUS => 'failed',
+            ]),
+            [
+                HilosNotificationDeliveriesTable::FILTER_CHANNEL => ['email', 'sms'],
+                HilosNotificationDeliveriesTable::FILTER_FROM => ['2026-07-01'],
+            ],
+        );
+
+        self::assertSame([HilosNotificationDeliveriesTable::FILTER_CHANNEL], array_keys($facets));
+        self::assertSame(
+            [
+                [' WHERE nd.status = ?', ['failed']],
+                [' WHERE nd.channel = ? AND nd.status = ?', ['email', 'failed']],
+                [' WHERE nd.channel = ? AND nd.status = ?', ['sms', 'failed']],
+            ],
+            $table->countedWheres,
+        );
+    }
+
+    /**
      * Runs a requested order through the table's own map, the way getPage() does before the query.
      *
      * @param HilosNotificationDeliveriesTable $table Table whose map decides
@@ -213,11 +244,28 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
      * Builds a table subclass that exposes the protected SQL builders for testing.
      *
      * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy:
-     *     callable, exposedSortableFields: callable, exposedRowFromSql: callable} Table with exposed builders
+     *     callable, exposedSortableFields: callable, exposedRowFromSql: callable, countedWheres: list<array{0: string, 1: list<mixed>}>}
+     *     Table with exposed builders
      */
     private function table(): HilosNotificationDeliveriesTable
     {
         return new class extends HilosNotificationDeliveriesTable {
+            /** @var list<array{0: string, 1: list<mixed>}> WHERE clauses of the sets the journal was asked to count */
+            public array $countedWheres = [];
+
+            /**
+             * Records the condition a set is counted under instead of running it.
+             *
+             * @param TableQueryDTO $query Query whose search and filters describe the set
+             * @return TableFacetCountDTO Count standing in for the database's
+             */
+            protected function countSet(TableQueryDTO $query): TableFacetCountDTO
+            {
+                $this->countedWheres[] = $this->buildWhere($query);
+
+                return new TableFacetCountDTO(0, true);
+            }
+
             /**
              * @param TableQueryDTO $query Window query
              * @return array{0: string, 1: list<mixed>} WHERE clause and its params

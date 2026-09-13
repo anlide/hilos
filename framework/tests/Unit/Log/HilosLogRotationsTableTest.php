@@ -434,6 +434,35 @@ final class HilosLogRotationsTableTest extends TestCase
     }
 
     /**
+     * The node counts are taken under the chosen state and the state counts across both nodes; the
+     * kept value narrows nothing, so its count is the whole history, which is what picking it shows.
+     */
+    public function testTheOptionCountsAreTheTotalsTheirWindowsWouldShow(): void
+    {
+        $this->picture(
+            $this->node('node-1', [self::NOW - 3 * self::DAY, self::NOW - 2 * self::DAY], due: [self::NOW - 3 * self::DAY]),
+            $this->node('node-2', [self::NOW - self::DAY]),
+        );
+
+        $facets = new HilosLogRotationsTable()->facetCounts(
+            new TableQueryDTO(filter: [HilosLogRotationsTable::FILTER_STATE => HilosLogRotationsTable::STATE_DUE]),
+            [
+                HilosLogRotationsTable::FILTER_NODE => ['node-1', 'node-2'],
+                HilosLogRotationsTable::FILTER_STATE => [HilosLogRotationsTable::STATE_KEPT, HilosLogRotationsTable::STATE_DUE],
+            ],
+        );
+
+        $node = $facets[HilosLogRotationsTable::FILTER_NODE];
+        $this->assertSame(1, $node[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(1, $node[TableConstants::FACET_KEY_OPTIONS]['node-1']->count);
+        $this->assertSame(0, $node[TableConstants::FACET_KEY_OPTIONS]['node-2']->count);
+        $state = $facets[HilosLogRotationsTable::FILTER_STATE];
+        $this->assertSame(3, $state[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(3, $state[TableConstants::FACET_KEY_OPTIONS][HilosLogRotationsTable::STATE_KEPT]->count);
+        $this->assertSame(1, $state[TableConstants::FACET_KEY_OPTIONS][HilosLogRotationsTable::STATE_DUE]->count);
+    }
+
+    /**
      * Runs one window and hands back its typed rows.
      *
      * @param TableQueryDTO $query Window query

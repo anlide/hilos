@@ -97,4 +97,36 @@ final class TableWindowDescriptorDTOTest extends TestCase
         $this->assertArrayNotHasKey(WebSocketPageSubscribeSignalDTO::TABLE_WINDOWS, $frame->toArray());
         $this->assertSame([], WebSocketPageSubscribeSignalDTO::fromArray($frame->toArray())->tableWindows);
     }
+
+    public function testTheOptionsATabAskedCountsBesideSurviveTheirWireForm(): void
+    {
+        $restored = TableWindowDescriptorDTO::fromArray(
+            new TableWindowDescriptorDTO(limit: 10, facets: ['channel' => ['email', 'sms']])->toArray(),
+        );
+
+        $this->assertSame(['channel' => ['email', 'sms']], $restored->facets);
+    }
+
+    /**
+     * A tab coming back after a broken socket keeps its window over a malformed option: the option
+     * costs its own number, and the descriptor is not refused for it.
+     */
+    public function testAMalformedOptionIsDroppedAndTheWindowIsKept(): void
+    {
+        $restored = TableWindowDescriptorDTO::fromArray([
+            TableWindowDescriptorDTO::LIMIT => 10,
+            TableWindowDescriptorDTO::FACETS => ['channel' => ['email', ['nested']], 'status' => 'failed'],
+        ]);
+
+        $this->assertSame(10, $restored->limit);
+        $this->assertSame(['channel' => ['email']], $restored->facets);
+    }
+
+    public function testADescriptorThatAskedForNoCountsCarriesNoKeyForThem(): void
+    {
+        $this->assertArrayNotHasKey(
+            TableWindowDescriptorDTO::FACETS,
+            new TableWindowDescriptorDTO(limit: 10)->toArray(),
+        );
+    }
 }

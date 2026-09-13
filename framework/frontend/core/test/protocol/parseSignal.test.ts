@@ -320,6 +320,32 @@ describe('parseSignal', () => {
     }
   })
 
+  it('parses a table_facet_counts frame', () => {
+    const result = parseSignal(
+      '{"type":"table_facet_counts","data":{"page":"p","tableKey":"t","facets":{"channel":{"any":{"count":500,"exact":false},"options":{"email":{"count":412,"exact":true},"sms":{"count":0,"exact":true}}}}}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableFacetCounts') {
+      expect(result.signal.data.facets.channel).toEqual({
+        any: { count: 500, exact: false },
+        options: {
+          email: { count: 412, exact: true },
+          sms: { count: 0, exact: true },
+        },
+      })
+    }
+  })
+
+  it('refuses a table_facet_counts frame whose count is not a whole number', () => {
+    const result = parseSignal(
+      '{"type":"table_facet_counts","data":{"page":"p","tableKey":"t","facets":{"channel":{"any":{"count":"many","exact":false},"options":{}}}}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure.kind).toBe('invalid-signal-data')
+    }
+  })
+
   it('parses a table_viewport_append frame', () => {
     const result = parseSignal(
       '{"type":"table_viewport_append","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"totalCount":4,"totalExact":true,"pageCount":1}}',

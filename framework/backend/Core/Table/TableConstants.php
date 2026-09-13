@@ -77,6 +77,27 @@ final class TableConstants
     public const int COUNT_CEILING = 500;
 
     /**
+     * Options a filter may offer and still have each of them counted.
+     *
+     * Every option is counted by a query of its own, so a list of a hundred options would order a
+     * hundred counts on every change of the set. A longer list is not counted at all rather than
+     * counted in part: a number beside some options and none beside the rest reads as zero.
+     */
+    public const int FACET_OPTION_LIMIT = 20;
+
+    /** Facet key: the count of the set with the filter lifted altogether, the "any" option. */
+    public const string FACET_KEY_ANY = 'any';
+
+    /** Facet key: the counts of the options, keyed by the option value as text. */
+    public const string FACET_KEY_OPTIONS = 'options';
+
+    /** Facet count key: the number of rows, or the ceiling it stopped at. */
+    public const string FACET_KEY_COUNT = 'count';
+
+    /** Facet count key: whether that number is the size of the set rather than the ceiling. */
+    public const string FACET_KEY_EXACT = 'exact';
+
+    /**
      * Rows a bulk run keeps in flight - handed out in one tick, and awaiting a verdict at once.
      *
      * One bound serves both counts. Handing the whole target to the owner at once floods its

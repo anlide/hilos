@@ -29,6 +29,16 @@ final class SubscriptionRegistry
     private array $tableViewports = [];
 
     /**
+     * @var array<string, array<string, array<string, list<int|float|string|bool>>>> Options to count beside each
+     *     table's filters, keyed by accept key, then table key, then filter key
+     *
+     * Beside the viewports and not inside them: a viewport is rebuilt from every window frame, and a
+     * list kept on it would be lost the first time the reader turned a page. The view declares the
+     * list once, when it mounts, and it has to outlive every window after that.
+     */
+    private array $tableFacetRequests = [];
+
+    /**
      * @var array<string, true> Accept keys already told their page could not be delivered
      *
      * One bit per subscription, not per failure. A broken declaration or a refused read is
@@ -150,6 +160,7 @@ final class SubscriptionRegistry
 
         unset($this->pages[$acceptKey]);
         unset($this->tableViewports[$acceptKey]);
+        unset($this->tableFacetRequests[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
     }
 
@@ -252,6 +263,7 @@ final class SubscriptionRegistry
         unset($this->pages[$acceptKey]);
         unset($this->groups[$acceptKey]);
         unset($this->tableViewports[$acceptKey]);
+        unset($this->tableFacetRequests[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
     }
 
@@ -347,6 +359,49 @@ final class SubscriptionRegistry
         unset($this->tableViewports[$acceptKey][$tableKey]);
         if (($this->tableViewports[$acceptKey] ?? null) === []) {
             unset($this->tableViewports[$acceptKey]);
+        }
+        $this->forgetTableFacets($acceptKey, $tableKey);
+    }
+
+    /**
+     * Stores or replaces the options a connection asked counts beside, for one table's filters.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key the options are for
+     * @param array<string, list<int|float|string|bool>> $facets Options to count, by filter key
+     */
+    public function setTableFacets(string $acceptKey, string $tableKey, array $facets): void
+    {
+        if ($acceptKey === '') {
+            return;
+        }
+
+        $this->tableFacetRequests[$acceptKey][$tableKey] = $facets;
+    }
+
+    /**
+     * Returns the options a connection asked counts beside for one table, empty when it asked for none.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return array<string, list<int|float|string|bool>> Options to count, by filter key
+     */
+    public function getTableFacets(string $acceptKey, string $tableKey): array
+    {
+        return $this->tableFacetRequests[$acceptKey][$tableKey] ?? [];
+    }
+
+    /**
+     * Removes the options a connection asked counts beside for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     */
+    public function forgetTableFacets(string $acceptKey, string $tableKey): void
+    {
+        unset($this->tableFacetRequests[$acceptKey][$tableKey]);
+        if (($this->tableFacetRequests[$acceptKey] ?? null) === []) {
+            unset($this->tableFacetRequests[$acceptKey]);
         }
     }
 

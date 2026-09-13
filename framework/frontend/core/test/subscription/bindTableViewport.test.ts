@@ -12,6 +12,7 @@ import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 import {
   type TableAnnouncePlacement,
+  type TableFacetCountsByFilter,
   type TableSortOrder,
   type TableViewportDelta,
   type TableWindowSink,
@@ -20,6 +21,7 @@ import { type HilosTableBulkReport } from '../../src/table/tableBulk.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
 import {
   type TableBulkReportSignal,
+  type TableFacetCountsSignal,
   type TableProgressSignal,
   type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
@@ -44,6 +46,9 @@ function fakeConnection() {
   >()
   const progressListeners = new Set<(signal: TableProgressSignal) => void>()
   const bulkReportListeners = new Set<(signal: TableBulkReportSignal) => void>()
+  const facetCountListeners = new Set<
+    (signal: TableFacetCountsSignal) => void
+  >()
   const projectListeners = new Set<(signal: ProjectSignal) => void>()
   const registered = new Map<string, TableWindowDescriptorSource>()
 
@@ -113,6 +118,14 @@ function fakeConnection() {
 
           return () => bulkReportListeners.delete(typed)
         }
+        case 'tableFacetCounts': {
+          const typed = listener as unknown as (
+            signal: TableFacetCountsSignal,
+          ) => void
+          facetCountListeners.add(typed)
+
+          return () => facetCountListeners.delete(typed)
+        }
         default: {
           const typed = listener as unknown as (
             signal: TableViewportDeltaSignal,
@@ -180,6 +193,11 @@ function fakeConnection() {
         listener({ data } as unknown as TableBulkReportSignal)
       }
     },
+    emitFacetCounts(data: TableFacetCountsSignal['data']): void {
+      for (const listener of facetCountListeners) {
+        listener({ data } as unknown as TableFacetCountsSignal)
+      }
+    },
   }
 }
 
@@ -213,6 +231,7 @@ function fakeSink(): TableWindowSink & {
   progress: HilosTableProgressFrame[]
   snapshots: Array<readonly HilosTableProgressFrame[]>
   bulkReports: HilosTableBulkReport[]
+  facetCounts: TableFacetCountsByFilter[]
 } {
   const windows: Array<{
     rows: readonly TableRow[]
@@ -246,6 +265,7 @@ function fakeSink(): TableWindowSink & {
   const progress: HilosTableProgressFrame[] = []
   const snapshots: Array<readonly HilosTableProgressFrame[]> = []
   const bulkReports: HilosTableBulkReport[] = []
+  const facetCounts: TableFacetCountsByFilter[] = []
 
   return {
     windows,
@@ -257,6 +277,10 @@ function fakeSink(): TableWindowSink & {
     progress,
     snapshots,
     bulkReports,
+    facetCounts,
+    ingestFacetCounts(facets) {
+      facetCounts.push(facets)
+    },
     ingestWindow(
       rows,
       totalCount,
@@ -731,6 +755,30 @@ describe('bindTableViewport', () => {
     })
 
     expect(sink.counts).toEqual([{ totalCount: 9, totalExact: true }])
+  })
+
+  it('routes the counts beside the filter options addressed to the table, dropping other tables', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+    const facets = {
+      channel: {
+        any: { count: 500, exact: false },
+        options: { email: { count: 412, exact: true } },
+      },
+    }
+
+    connection.emitFacetCounts({ page: 'main', tableKey: 'other', facets })
+    connection.emitFacetCounts({
+      page: 'elsewhere',
+      tableKey: 'settings',
+      facets,
+    })
+    connection.emitFacetCounts({ page: 'main', tableKey: 'settings', facets })
+
+    expect(sink.facetCounts).toEqual([facets])
   })
 
   it('routes an announcement addressed to the table, dropping other tables', () => {

@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -28,6 +29,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\DatabaseException;
@@ -602,6 +604,29 @@ abstract class TableDefinition implements ArrayAccess
      * @throws Throwable Whatever the concrete table's row source raises
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        return null;
+    }
+
+    /**
+     * Counts how many rows each option of the table's filters would leave.
+     *
+     * The default is "cannot count", and it is the default because a filter key means nothing to
+     * this class: the condition it becomes is written inside the concrete table. A table that
+     * declares filters overrides this and hands its own count of a set to
+     * {@see TableFacetTally::forFilters()}.
+     *
+     * There is no helper for a table served straight from one collection, unlike
+     * {@see containsRowInDbCollection()}: no such table carries filters of its own today, and a
+     * helper with no caller would describe a guess.
+     *
+     * @param TableQueryDTO $query Window query whose search and filters describe the set
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return ?array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts by
+     *     filter key, or null when this table cannot count
+     * @throws Throwable Whatever the concrete table's row source raises
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
         return null;
     }

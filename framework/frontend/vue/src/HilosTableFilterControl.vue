@@ -9,7 +9,11 @@ Vue view layer on purpose: it is not exported from index.ts, for the reason the
 bar is not. -->
 <script setup lang="ts" generic="R">
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
-import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
+import type {
+  HilosTableFacetCount,
+  HilosTableFilterView,
+  TableViewportController,
+} from '@hilos/core'
 
 import HilosDropdown from './HilosDropdown.vue'
 import type { HilosDropdownOption } from './hilosDropdown.js'
@@ -74,6 +78,49 @@ function onSelect(index: number): void {
     filter.key,
     index === NO_CHOICE ? undefined : declaredOptions.value[index]?.value,
   )
+}
+
+// --- select counts --------------------------------------------------------
+
+// The number beside an option is read out of the counts by the option's place,
+// the same place the primitive carries: "no choice" answers with the set the
+// filter lifted, a declared option with its own count, found under the text of
+// its value — which is how the server keys it.
+function facetCount(index: number): HilosTableFacetCount | undefined {
+  const facets = props.view.facets
+  if (facets === null) {
+    return undefined
+  }
+  if (index === NO_CHOICE) {
+    return facets.any
+  }
+  const option = declaredOptions.value[index]
+
+  return option === undefined
+    ? undefined
+    : facets.options.get(String(option.value))
+}
+
+// Three forms and no more: the number, "500+" where the count stopped at its
+// ceiling, and 0 — which is written, because "this leaves nothing" is the point.
+// Null where there is no count to write, and nothing is drawn there.
+function facetText(index: number): string | null {
+  const count = facetCount(index)
+  if (count === undefined) {
+    return null
+  }
+
+  return count.exact ? String(count.count) : `${count.count}+`
+}
+
+function facetDataId(index: number): string {
+  const filter = props.view.filter
+  const option = declaredOptions.value[index]
+  const key = filter.kind === 'select' ? filter.key : dataId.value
+  const value =
+    index === NO_CHOICE || option === undefined ? 'any' : String(option.value)
+
+  return `hilos-table-facet-${key}-${value}`
 }
 
 // --- date range -----------------------------------------------------------
@@ -177,6 +224,34 @@ function onToggle(event: Event): void {
     >
       <template #toggle="{ label }">
         <span class="text-truncate">{{ view.filter.label }}: {{ label }}</span>
+      </template>
+      <!-- Only once counts have arrived: until then, and for a table that does not
+      count, the list is the one the primitive draws, not one with blanks in it.
+      The item keeps the primitive's own shape, and the number stands at the right,
+      muted on every item but the picked one, where it would not read. -->
+      <template
+        v-if="view.facets !== null"
+        #option="{ option, selected, select }"
+      >
+        <button
+          type="button"
+          class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+          :class="{ active: selected }"
+          :disabled="option.disabled"
+          role="option"
+          :aria-selected="selected"
+          :data-id="`hilos-dropdown-option-${option.value}`"
+          @click="select"
+        >
+          <span class="text-truncate">{{ option.label }}</span>
+          <span
+            v-if="facetText(option.value) !== null"
+            class="ms-auto small flex-shrink-0"
+            :class="{ 'text-body-secondary': !selected }"
+            :data-id="facetDataId(option.value)"
+            >{{ facetText(option.value) }}</span
+          >
+        </button>
       </template>
     </HilosDropdown>
   </div>

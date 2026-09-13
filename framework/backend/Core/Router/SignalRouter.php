@@ -47,6 +47,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
@@ -778,6 +779,30 @@ class SignalRouter
     }
 
     /**
+     * Stores or replaces the options a connection asked counts beside, for one table's filters.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key the options are for
+     * @param array<string, list<int|float|string|bool>> $facets Options to count, by filter key
+     */
+    public function setTableFacets(string $acceptKey, string $tableKey, array $facets): void
+    {
+        $this->subscriptions->setTableFacets($acceptKey, $tableKey, $facets);
+    }
+
+    /**
+     * Returns the options a connection asked counts beside for one table, empty when it asked for none.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return array<string, list<int|float|string|bool>> Options to count, by filter key
+     */
+    public function getTableFacets(string $acceptKey, string $tableKey): array
+    {
+        return $this->subscriptions->getTableFacets($acceptKey, $tableKey);
+    }
+
+    /**
      * Records that a connection's page could not be delivered, and answers whether to say so.
      *
      * @param string $acceptKey Client accept key
@@ -1271,6 +1296,7 @@ class SignalRouter
             SignalTypeConstants::PAGE_ACCESS_REASSESS => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : null,
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : null,
+            SignalTypeConstants::TABLE_FACETS => $data instanceof WebSocketTableFacetsSignalDTO ? $data->page : null,
             // Unsubscribe carries the page in the signal name, which SignalDTO
             // guarantees is non-empty.
             SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),

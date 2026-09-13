@@ -7,6 +7,7 @@ import {
   FIELD_ANCHOR,
   FIELD_ANCHOR_DIRECTION,
   FIELD_DATA,
+  FIELD_FACETS,
   FIELD_FILTER,
   FIELD_GROUP,
   FIELD_LIMIT,
@@ -23,6 +24,7 @@ import {
   SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+  SIGNAL_TYPE_TABLE_FACETS,
   SIGNAL_TYPE_TABLE_VIEWPORT,
   SESSION_ROTATE_COOKIE_SUFFIX,
 } from '../protocol/constants.js'
@@ -43,6 +45,7 @@ import {
   type TableViewportAnnounceSignal,
   type TableViewportAppendSignal,
   type TableViewportOwnCreateSignal,
+  type TableFacetCountsSignal,
   type TableViewportCountSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
@@ -114,6 +117,12 @@ export interface TableViewportDescriptor {
   readonly anchor: TableAnchor | null
   readonly anchorDirection: TableAnchorDirection
   readonly pageIndex: number | null
+  /**
+   * The options of the table's filters whose counts it asked for, by filter key —
+   * carried when a page subscribe reports the window, so a tab coming back after a
+   * broken socket gets its counts again. Absent when it asked for none.
+   */
+  readonly facets?: Readonly<Record<string, readonly unknown[]>>
 }
 
 /**
@@ -218,6 +227,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableViewportDelta: TableViewportDeltaSignal
   /** A live table count update (`table_viewport_count`): the new total/page count for the window. */
   tableViewportCount: TableViewportCountSignal
+  /** Counts beside the options of a table's filters (`table_facet_counts`): laid over the ones held, filter by filter. */
+  tableFacetCounts: TableFacetCountsSignal
   /** A live table tail append (`table_viewport_append`): a new row added at the window's end. */
   tableViewportAppend: TableViewportAppendSignal
   /** The receiver's own new row (`table_viewport_own_create`), already placed at its index. */
@@ -769,6 +780,33 @@ export class HilosConnection {
   }
 
   /**
+   * Send a table facets frame — `{type:'table_facets', page, tableKey, facets}` —
+   * naming the options of one table's filters whose counts this connection wants.
+   * The server keeps the list beside the table's window, answers with
+   * `table_facet_counts` at once, and sends the counts again by itself after every
+   * change of the set. Returns false, sending nothing, unless the connection is
+   * `connected`, like {@link send}.
+   *
+   * @param page The page the table belongs to.
+   * @param tableKey The table key the options are for.
+   * @param facets The option values to count, by filter key.
+   */
+  sendTableFacets(
+    page: string,
+    tableKey: string,
+    facets: Readonly<Record<string, readonly unknown[]>>,
+  ): boolean {
+    return this.send(
+      JSON.stringify({
+        [FIELD_TYPE]: SIGNAL_TYPE_TABLE_FACETS,
+        [FIELD_PAGE]: page,
+        [FIELD_TABLE_KEY]: tableKey,
+        [FIELD_FACETS]: facets,
+      }),
+    )
+  }
+
+  /**
    * Record that one table is holding a window on this connection, so a re-subscribe reports it.
    *
    * A second registration under the same key replaces the first: one table of one page has
@@ -902,6 +940,9 @@ export class HilosConnection {
         break
       case 'tableViewportCount':
         this.emitter.emit('tableViewportCount', signal)
+        break
+      case 'tableFacetCounts':
+        this.emitter.emit('tableFacetCounts', signal)
         break
       case 'tableViewportAppend':
         this.emitter.emit('tableViewportAppend', signal)

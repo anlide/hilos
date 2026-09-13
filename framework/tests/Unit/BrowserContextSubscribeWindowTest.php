@@ -25,6 +25,8 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
+use Hilos\Core\Table\DTO\TableFacetCountsSignalData;
 use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -37,6 +39,7 @@ use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -320,6 +323,56 @@ final class BrowserContextSubscribeWindowTest extends TestCase
 
         return $windows[$tableKey];
     }
+
+    public function testTheCountsATabReportedAskingForFollowTheAnswerInAFrameOfTheirOwn(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        Hilos::$sr->reportTableWindows('ak-1', [
+            SubscribeWindowUnitTable::TABLE => new TableWindowDescriptorDTO(
+                limit: 2,
+                facets: [SubscribeWindowUnitTable::FILTER_LABEL => ['Alpha', 'Delta']],
+            ),
+        ]);
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        // A tab back from a broken socket is the only side that still knows which options it asked
+        // counts beside, and the counts go out after the answer: before it the table has no window.
+        $this->assertSame(
+            [SubscribeWindowUnitTable::FILTER_LABEL => ['Alpha', 'Delta']],
+            Hilos::$sr->getTableFacets('ak-1', SubscribeWindowUnitTable::TABLE),
+        );
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        $counts = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalTypeConstants::TABLE_FACET_COUNTS, $counts?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $counts->data);
+        $this->assertInstanceOf(TableFacetCountsSignalData::class, $counts->data->data);
+        $options = $counts->data->data->facets->filters[SubscribeWindowUnitTable::FILTER_LABEL][TableConstants::FACET_KEY_OPTIONS];
+        $this->assertSame(1, $options['Alpha']->count);
+        $this->assertSame(0, $options['Delta']->count);
+    }
+
+    public function testASubscriptionThatAskedForNoCountsIsAnsweredWithTheAnswerAlone(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
 }
 
 final class SubscribeWindowRecordingSignalRouter extends SignalRouter
@@ -418,6 +471,9 @@ final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnap
     public const string TABLE = 'subscribeWindowUnitTable';
     public const string SLOT = 'subscribeWindowUnitRows';
 
+    /** Filter key the fixture counts its rows by. */
+    public const string FILTER_LABEL = 'label';
+
     /**
      * @param list<SubscribeWindowUnitRow> $rows Snapshot rows the table owns
      * @param list<TableProgressDTO> $progress Bars the table says are running on it
@@ -458,6 +514,29 @@ final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnap
     public function defaultSort(): ?TableSortOrderDTO
     {
         return TableSortOrderDTO::of(new TableSortDTO('key'));
+    }
+
+    /**
+     * Counts the injected rows by label.
+     *
+     * @param TableQueryDTO $query Window query whose filters describe the set
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts by filter key
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
+    {
+        return TableFacetTally::forFilters(
+            $query,
+            array_intersect_key($wanted, [self::FILTER_LABEL => true]),
+            fn(TableQueryDTO $set): TableFacetCountDTO => new TableFacetCountDTO(
+                count(array_filter(
+                    $this->rows,
+                    static fn(SubscribeWindowUnitRow $row): bool => !array_key_exists(self::FILTER_LABEL, $set->filter)
+                        || $set->filter[self::FILTER_LABEL] === $row->toArray()[self::FILTER_LABEL],
+                )),
+                true,
+            ),
+        );
     }
 
     /**

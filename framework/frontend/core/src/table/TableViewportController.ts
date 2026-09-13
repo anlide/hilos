@@ -33,6 +33,7 @@ import { type TableRow } from '../state/TableRowsStore.js'
 import {
   computedSignal,
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
@@ -42,7 +43,10 @@ import {
 } from './tableBulk.js'
 import { hilosTableCard } from './tableCard.js'
 import {
+  HILOS_TABLE_FACET_OPTION_LIMIT,
   type HilosTableBody,
+  type HilosTableFacetCount,
+  type HilosTableFacets,
   type HilosTableFilterView,
   type HilosTableFooter,
   type HilosTableFrame,
@@ -277,6 +281,21 @@ export interface TableViewportRow<R> {
 }
 
 /**
+ * The counts beside a table's filter options as a `table_facet_counts` frame
+ * carries them: filter by filter, `any` plus one count per option keyed by the
+ * option value as text. A frame names only the filters whose counts moved.
+ */
+export type TableFacetCountsByFilter = Readonly<
+  Record<
+    string,
+    {
+      readonly any: HilosTableFacetCount
+      readonly options: Readonly<Record<string, HilosTableFacetCount>>
+    }
+  >
+>
+
+/**
  * The sink the subscription wiring feeds a table's window snapshot and live
  * changes into — implemented by {@link TableViewportController} and held untyped
  * by the subscription wiring, since nothing on it depends on the row type `R`.
@@ -309,6 +328,7 @@ export interface TableWindowSink {
   ingestBulkReport(report: HilosTableBulkReport): void
   descriptor(): TableViewportDescriptor | null
   ingestCount(totalCount: number, totalExact: boolean): void
+  ingestFacetCounts(facets: TableFacetCountsByFilter): void
   ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void
   ingestOwnCreate(
     row: TableRow,
@@ -338,6 +358,17 @@ export interface TableViewportControllerOptions<R> {
    * server answers with a `table_window` the controller ingests.
    */
   sendViewport: (descriptor: TableViewportDescriptor) => void
+  /**
+   * Send the options of this table's dropdown filters whose counts it wants —
+   * typically `HilosConnection.sendTableFacets` bound to this table's page and
+   * key. Called once the first window has landed, when there is anything to
+   * count, and again whenever the options change after that; the server then
+   * sends the counts by itself.
+   *
+   * SCAFFOLD: no table passes it yet — the counts are drawn in the filter bar,
+   * and the pages move onto the declared frame in HIL-819.
+   */
+  sendFacets?: (facets: Readonly<Record<string, readonly unknown[]>>) => void
   /** Initial filter map; empty by default. */
   initialFilter?: Record<string, unknown>
   /**
@@ -368,6 +399,16 @@ export interface TableViewportControllerOptions<R> {
 
 export class TableViewportController<R> implements TableWindowSink {
   private readonly filterSignal: WritableSignal<Record<string, unknown>>
+
+  /** Counts beside the options of the dropdown filters, by filter key, laid over one frame at a time. */
+  private readonly facetCountsSignal = createSignal<
+    Readonly<Record<string, HilosTableFacets>>
+  >({})
+
+  /** Option values of the dropdown filters short enough to count, by filter key: what is declared to the server. */
+  private readonly facetOptions: ReadonlySignal<
+    Readonly<Record<string, readonly unknown[]>>
+  >
 
   private readonly orderSignal: WritableSignal<TableSortOrder | undefined>
 
@@ -663,6 +704,7 @@ export class TableViewportController<R> implements TableWindowSink {
     const declaration = options.frame ?? null
     const filterViews = computedSignal<readonly HilosTableFilterView[]>(() => {
       const filter = this.filterSignal.get()
+      const counts = this.facetCountsSignal.get()
 
       return (declaration?.filters ?? []).map((declared) => {
         if (declared.kind === 'date_range') {
@@ -673,6 +715,7 @@ export class TableViewportController<R> implements TableWindowSink {
             filter: declared,
             value: { from, to },
             active: from !== undefined || to !== undefined,
+            facets: null,
           }
         }
 
@@ -680,12 +723,49 @@ export class TableViewportController<R> implements TableWindowSink {
           filter: declared,
           value: filter[declared.key],
           active: filter[declared.key] !== undefined,
+          facets:
+            declared.kind === 'select' ? (counts[declared.key] ?? null) : null,
         }
       })
     })
     const activeFilterCount = computedSignal(
       () => filterViews.get().filter((view) => view.active).length,
     )
+    this.facetOptions = computedSignal(() => {
+      const declared: Record<string, readonly unknown[]> = {}
+      for (const filter of declaration?.filters ?? []) {
+        if (filter.kind !== 'select') {
+          continue
+        }
+        const offered = filter.options()
+        if (offered.length <= HILOS_TABLE_FACET_OPTION_LIMIT) {
+          declared[filter.key] = offered.map((option) => option.value)
+        }
+      }
+
+      return declared
+    })
+    const sendFacets = options.sendFacets
+    if (sendFacets !== undefined) {
+      // Declared once the first window has landed and not before: that window came over a
+      // connected socket and the server holds it, while a declaration sent at construction
+      // would be dropped by a socket that is still connecting, and nothing would send it
+      // again. The flag goes true once and never back, so this fires once.
+      subscribeSignal(this.loadedSignal, () => {
+        const declared = this.facetOptions.get()
+        if (Object.keys(declared).length > 0) {
+          sendFacets(declared)
+        }
+      })
+      // After that every change of the options is declared, the empty declaration
+      // included, which is how the server drops a list. A change before the first window
+      // needs no frame of its own: the options are read fresh when that window lands.
+      subscribeSignal(this.facetOptions, (declared) => {
+        if (this.loadedSignal.get()) {
+          sendFacets(declared)
+        }
+      })
+    }
     this.frameState = {
       declaration,
       card: declaration ? hilosTableCard(declaration.columns) : null,
@@ -1233,6 +1313,31 @@ export class TableViewportController<R> implements TableWindowSink {
       lastAnchor,
       limit,
     )
+  }
+
+  /**
+   * Ingest the counts beside the options of this table's dropdown filters
+   * (`table_facet_counts`), laid over the ones held filter by filter: a frame names
+   * only the filters whose counts moved, and changing one filter moves the counts of
+   * every other filter while its own stay where they were. Like the total, counts
+   * describe the set rather than a row, so they are never gated as pending.
+   *
+   * @param facets The counts the frame carried, by filter key.
+   */
+  ingestFacetCounts(facets: TableFacetCountsByFilter): void {
+    const held = { ...this.facetCountsSignal.get() }
+    for (const [filterKey, facet] of Object.entries(facets)) {
+      held[filterKey] = {
+        any: { count: facet.any.count, exact: facet.any.exact },
+        options: new Map(
+          Object.entries(facet.options).map(([option, count]) => [
+            option,
+            { count: count.count, exact: count.exact },
+          ]),
+        ),
+      }
+    }
+    this.facetCountsSignal.set(held)
   }
 
   /**
@@ -2056,10 +2161,21 @@ export class TableViewportController<R> implements TableWindowSink {
    * to report — it does not know its own size or order until one arrives — and says so; that
    * is the cold entry, and the table's own declaration answers for it.
    *
+   * A table that declares its options for counting reports them with the window, so the
+   * counts come back with it; the window frames it sends while mounted carry none.
+   *
    * @return The current descriptor, or null while no window has arrived.
    */
   descriptor(): TableViewportDescriptor | null {
-    return this.loadedSignal.get() ? this.currentDescriptor() : null
+    if (!this.loadedSignal.get()) {
+      return null
+    }
+    const facets = this.facetOptions.get()
+
+    return this.options.sendFacets !== undefined &&
+      Object.keys(facets).length > 0
+      ? { ...this.currentDescriptor(), facets }
+      : this.currentDescriptor()
   }
 
   /** The viewport descriptor for the current filter, order, size and address. */

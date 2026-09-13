@@ -83,6 +83,8 @@ export {
   type HilosTableBody,
   type HilosTableBulkAction,
   type HilosTableEmpty,
+  type HilosTableFacetCount,
+  type HilosTableFacets,
   type HilosTableFilter,
   type HilosTableFilterOption,
   type HilosTableFilterView,

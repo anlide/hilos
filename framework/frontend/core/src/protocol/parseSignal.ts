@@ -16,6 +16,7 @@ import {
   SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
   SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE,
+  SIGNAL_TYPE_TABLE_FACET_COUNTS,
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
   SIGNAL_TYPE_TABLE_WINDOW,
@@ -27,6 +28,7 @@ import {
   actionSuccessSignalDataSchema,
   tableWindowSignalDataSchema,
   tableViewportDeltaSignalDataSchema,
+  tableFacetCountsSignalDataSchema,
   tableViewportCountSignalDataSchema,
   tableViewportAnnounceSignalDataSchema,
   tableViewportAppendSignalDataSchema,
@@ -37,6 +39,7 @@ import {
   type SignalEnvelope,
   type TableWindowSignalData,
   type TableViewportDeltaSignalData,
+  type TableFacetCountsSignalData,
   type TableViewportCountSignalData,
   type TableViewportAnnounceSignalData,
   type TableViewportAppendSignalData,
@@ -122,6 +125,11 @@ export type ParsedSignal =
       envelope: SignalEnvelope
     }
   | {
+      kind: 'tableFacetCounts'
+      data: TableFacetCountsSignalData
+      envelope: SignalEnvelope
+    }
+  | {
       kind: 'tableViewportAppend'
       data: TableViewportAppendSignalData
       envelope: SignalEnvelope
@@ -172,6 +180,11 @@ export type TableViewportDeltaSignal = Extract<
 export type TableViewportCountSignal = Extract<
   ParsedSignal,
   { kind: 'tableViewportCount' }
+>
+
+export type TableFacetCountsSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableFacetCounts' }
 >
 export type TableViewportAppendSignal = Extract<
   ParsedSignal,
@@ -476,6 +489,31 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableViewportCount',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_FACET_COUNTS: {
+      const data = tableFacetCountsSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_FACET_COUNTS,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableFacetCounts',
           data: data.data,
           envelope: envelope.data,
         },

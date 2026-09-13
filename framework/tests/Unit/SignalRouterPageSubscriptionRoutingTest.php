@@ -23,6 +23,7 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -55,6 +56,21 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
                 new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
                 new SignalName(SignalRouterTopologyTestPage::PAGE),
                 new WebSocketTableViewportSignalDTO('accept-key', SignalRouterTopologyTestPage::PAGE, 'settings'),
+            )),
+        );
+    }
+
+    public function testTableFacetsRoutesThroughProjectTopology(): void
+    {
+        $this->assertEquals(
+            [
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
+            ],
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::TABLE_FACETS),
+                new SignalName(SignalRouterTopologyTestPage::PAGE),
+                new WebSocketTableFacetsSignalDTO('accept-key', SignalRouterTopologyTestPage::PAGE, 'settings'),
             )),
         );
     }

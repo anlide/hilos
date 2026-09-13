@@ -26,6 +26,11 @@ use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDeliver
 use Hilos\Database\SqlSortDirection;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
+use Hilos\Core\Table\TableFacetTally;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseParamsException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
 
 /**
  * Framework delivery-logs table: the admin journal of channel deliveries (HIL-201).
@@ -95,6 +100,14 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     /** Hard window cap applied when a caller asks for an unbounded snapshot of this unbounded table. */
     private const int DEFAULT_LIMIT = 50;
 
+    /** Filters whose options the journal counts: the two that offer a list, a period having no options to count. */
+    private const array FACETED_FILTERS = [self::FILTER_CHANNEL, self::FILTER_STATUS];
+
+    /** Row source every read of the journal runs over: each delivery with the notification it carried. */
+    private const string JOIN = '`' . self::DELIVERY_TABLE . '` ' . self::DELIVERY_ALIAS
+        . ' LEFT JOIN `' . self::NOTIFICATION_TABLE . '` n ON n.' . EntityNotification::id
+        . ' = nd.' . EntityNotificationDelivery::notification_id;
+
     /**
      * Declares how many rows the first window of the delivery journal carries.
      *
@@ -141,6 +154,30 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
                 self::ROW_SLOT => $row->toArray(),
             ],
         ];
+    }
+
+    /**
+     * Counts the options of the channel filter and the status filter against the journal.
+     *
+     * Each set is counted by {@see countSet()}, which writes its condition with the same
+     * {@see buildWhere()} a window is served by, so the number beside an option is the total the
+     * window would report once that option is picked - stopped at the same ceiling.
+     *
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts of the
+     *     channel and status options that were asked about
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When a count query fails
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
+    {
+        return TableFacetTally::forFilters(
+            $query,
+            array_intersect_key($wanted, array_flip(self::FACETED_FILTERS)),
+            $this->countSet(...),
+        );
     }
 
     /**
@@ -198,15 +235,9 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         [$where, $params] = $this->buildWhere($query);
         $limit = $query->limit === TableConstants::NO_LIMIT ? self::DEFAULT_LIMIT : $query->limit;
 
-        $join = '`' . self::DELIVERY_TABLE . '` ' . self::DELIVERY_ALIAS
-            . ' LEFT JOIN `' . self::NOTIFICATION_TABLE . '` n ON n.' . EntityNotification::id
-            . ' = nd.' . EntityNotificationDelivery::notification_id;
-
-        $capped = TableConstants::COUNT_CEILING + 1;
-        $countSql = 'SELECT COUNT(*) AS cnt FROM (SELECT 1 FROM ' . $join . $where . " LIMIT {$capped}) AS `capped`";
-        $counted = (int) (Database::sql($countSql, $params)->firstRow()['cnt'] ?? 0);
-        $totalExact = $counted <= TableConstants::COUNT_CEILING;
-        $totalCount = $totalExact ? $counted : TableConstants::COUNT_CEILING;
+        $counted = TableFacetTally::cappedSqlCount(self::JOIN, $where, $params);
+        $totalCount = $counted->count;
+        $totalExact = $counted->exact;
 
         $orderColumns = $this->orderColumns($query);
         $plan = TableWindowPlan::forQuery($query->withLimit($limit), $orderColumns, $totalCount, $totalExact);
@@ -232,7 +263,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             . ' n.' . EntityNotification::user_id . ' AS user_id,'
             . ' n.' . EntityNotification::type . ' AS notification_type,'
             . ' n.' . EntityNotification::title . ' AS notification_title'
-            . ' FROM ' . $join
+            . ' FROM ' . self::JOIN
             . $where
             . self::renderOrderBy($plan->orderBy)
             . " LIMIT {$plan->limit} OFFSET {$plan->offset}";
@@ -252,6 +283,22 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             firstAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns),
             lastAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[count($rows) - 1], $anchorColumns),
         );
+    }
+
+    /**
+     * Counts one set of the journal up to the ceiling, the count a window of that set would report.
+     *
+     * @param TableQueryDTO $query Query whose search and filters describe the set
+     * @return TableFacetCountDTO Deliveries in the set, or the ceiling with the word that it stopped there
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When the count query fails
+     */
+    protected function countSet(TableQueryDTO $query): TableFacetCountDTO
+    {
+        [$where, $params] = $this->buildWhere($query);
+
+        return TableFacetTally::cappedSqlCount(self::JOIN, $where, $params);
     }
 
     /**

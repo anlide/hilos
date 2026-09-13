@@ -138,6 +138,72 @@ describe('HilosTableFilterControl, select', () => {
   })
 })
 
+describe('HilosTableFilterControl, counts', () => {
+  const COUNTS = {
+    kind: {
+      any: { count: 500, exact: false },
+      options: {
+        full: { count: 412, exact: true },
+        '2': { count: 0, exact: true },
+      },
+    },
+  }
+
+  it('draws the list as it always was while no counts have arrived', () => {
+    const { controller, view } = makeController(KIND_FILTER)
+    const wrapper = mountControl(controller, view())
+
+    expect(wrapper.findAll('[data-id^="hilos-table-facet-"]')).toHaveLength(0)
+    expect(
+      wrapper
+        .findAll('[data-id^="hilos-dropdown-option-"]')
+        .map((option) => option.text()),
+    ).toEqual(['Any', 'Full', 'Partial'])
+  })
+
+  it('writes each option its number, the ceiling as "500+" and an empty one as 0', () => {
+    const { controller, view } = makeController(KIND_FILTER)
+    controller.ingestFacetCounts(COUNTS)
+    const wrapper = mountControl(controller, view())
+
+    expect(wrapper.find('[data-id="hilos-table-facet-kind-any"]').text()).toBe(
+      '500+',
+    )
+    expect(wrapper.find('[data-id="hilos-table-facet-kind-full"]').text()).toBe(
+      '412',
+    )
+    expect(wrapper.find('[data-id="hilos-table-facet-kind-2"]').text()).toBe(
+      '0',
+    )
+    expect(
+      wrapper.find('[data-id="hilos-dropdown-option-0"] .text-truncate').text(),
+    ).toBe('Full')
+  })
+
+  it('still sends the declared value of the option picked', async () => {
+    const { controller, sent, view } = makeController(KIND_FILTER)
+    controller.ingestFacetCounts(COUNTS)
+    const wrapper = mountControl(controller, view())
+
+    await wrapper.find('[data-id="hilos-dropdown-option-1"]').trigger('click')
+
+    expect(sent.at(-1)?.filter).toEqual({ kind: 2 })
+  })
+
+  it('mutes the number of every option but the one picked', () => {
+    const { controller, view } = makeController(KIND_FILTER, { kind: 'full' })
+    controller.ingestFacetCounts(COUNTS)
+    const wrapper = mountControl(controller, view())
+
+    expect(
+      wrapper.find('[data-id="hilos-table-facet-kind-full"]').classes(),
+    ).not.toContain('text-body-secondary')
+    expect(
+      wrapper.find('[data-id="hilos-table-facet-kind-any"]').classes(),
+    ).toContain('text-body-secondary')
+  })
+})
+
 describe('HilosTableFilterControl, date range', () => {
   it('sends BOTH bounds in one window change when only one is touched', async () => {
     const { controller, sent, view } = makeController(PERIOD_FILTER, {

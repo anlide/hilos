@@ -25,6 +25,8 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
+use Hilos\Core\Table\DTO\TableFacetCountsSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
@@ -35,6 +37,8 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -221,6 +225,123 @@ final class BrowserContextTableWindowTest extends TestCase
         $this->assertStringContainsString(TableWindowUnitBrowserContext::PAGE, $logged);
         $this->assertStringContainsString('label', $logged);
     }
+
+    public function testTheCountsGoToTheConnectionThatAskedInAFrameOfTheirOwn(): void
+    {
+        $this->mountLabelledRows();
+        Hilos::$sr->setTableFacets('ak-1', TableWindowUnitTable::TABLE, [
+            TableWindowUnitTable::FILTER_LABEL => ['Alpha', 'Beta', 'Gamma'],
+        ]);
+
+        new TableWindowUnitBrowserContext()->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(
+                tableKey: TableWindowUnitTable::TABLE,
+                filter: [TableWindowUnitTable::FILTER_LABEL => 'Beta'],
+                limit: 1,
+            ),
+        );
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_FACET_COUNTS, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $frame = $signal->data->data;
+        $this->assertInstanceOf(TableFacetCountsSignalData::class, $frame);
+        $this->assertSame(TableWindowUnitBrowserContext::PAGE, $frame->page);
+        $this->assertSame(TableWindowUnitTable::TABLE, $frame->tableKey);
+        // Counted over the set with the label filter lifted, so picking Beta does not zero the others.
+        $label = $frame->facets->filters[TableWindowUnitTable::FILTER_LABEL];
+        $this->assertSame(3, $label[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(1, $label[TableConstants::FACET_KEY_OPTIONS]['Alpha']->count);
+        $this->assertSame(2, $label[TableConstants::FACET_KEY_OPTIONS]['Beta']->count);
+        $this->assertSame(0, $label[TableConstants::FACET_KEY_OPTIONS]['Gamma']->count);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testOnlyTheFiltersNamedAreCountedAgain(): void
+    {
+        $this->mountLabelledRows();
+        Hilos::$sr->setTableFacets('ak-1', TableWindowUnitTable::TABLE, [
+            TableWindowUnitTable::FILTER_LABEL => ['Alpha'],
+            TableWindowUnitTable::FILTER_REFUSED => ['x'],
+        ]);
+
+        // The refusing filter would fail the whole count; left out of the recount, it is never asked.
+        new TableWindowUnitBrowserContext()->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1),
+            [TableWindowUnitTable::FILTER_LABEL],
+        );
+
+        $data = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(WebSocketSignalData::class, $data);
+        $this->assertInstanceOf(TableFacetCountsSignalData::class, $data->data);
+        $this->assertSame([TableWindowUnitTable::FILTER_LABEL], array_keys($data->data->facets->filters));
+    }
+
+    public function testAConnectionThatAskedForNoCountsIsSentNone(): void
+    {
+        $this->mountLabelledRows();
+
+        new TableWindowUnitBrowserContext()->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1),
+        );
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testATableThatCannotCountIsSentNoFrame(): void
+    {
+        $this->mountLabelledRows();
+        Hilos::$sr->setTableFacets('ak-1', TableWindowRefusedRowTable::TABLE, ['status' => ['failed']]);
+
+        new TableWindowUnitBrowserContext()->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowRefusedRowTable::TABLE, limit: 1),
+        );
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * A number beside an option is not worth the window it follows: a count that fails sends
+     * nothing and stops here, rather than reaching the worker the frame was dispatched on.
+     */
+    public function testACountThatFailsSendsNoFrameAndStopsHere(): void
+    {
+        $this->mountLabelledRows();
+        Hilos::$sr->setTableFacets('ak-1', TableWindowUnitTable::TABLE, [TableWindowUnitTable::FILTER_REFUSED => ['x']]);
+
+        new TableWindowUnitBrowserContext()->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1),
+        );
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * Mounts a router and the fixture tables over three rows, two of which share a label.
+     */
+    private function mountLabelledRows(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new TableWindowUnitTableContext([
+            new TableWindowUnitRow('a', 'Alpha'),
+            new TableWindowUnitRow('b', 'Beta'),
+            new TableWindowUnitRow('c', 'Beta'),
+        ]);
+        Hilos::$table->configure();
+    }
 }
 
 final class TableWindowUnitBrowserContext extends BrowserContext
@@ -309,6 +430,12 @@ final class TableWindowUnitTable extends TableDefinition implements SelfSnapshot
     public const string TABLE = 'windowUnitTable';
     public const string SLOT = 'windowUnitRows';
 
+    /** Filter key the fixture counts its rows by. */
+    public const string FILTER_LABEL = 'label';
+
+    /** Filter key the fixture refuses to count by, standing in for a count that fails. */
+    public const string FILTER_REFUSED = 'refused';
+
     /**
      * @param list<TableWindowUnitRow> $rows Snapshot rows the table owns
      */
@@ -343,6 +470,34 @@ final class TableWindowUnitTable extends TableDefinition implements SelfSnapshot
                 self::SLOT => $row->toArray(),
             ],
         ];
+    }
+
+    /**
+     * Counts the injected rows by label, and refuses when asked about the refusing filter.
+     *
+     * @param TableQueryDTO $query Window query whose filters describe the set
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts by filter key
+     * @throws InvalidFormatException When asked to count by the filter this fixture refuses
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
+    {
+        if (array_key_exists(self::FILTER_REFUSED, $wanted)) {
+            throw new InvalidFormatException('This table cannot count by that filter');
+        }
+
+        return TableFacetTally::forFilters(
+            $query,
+            array_intersect_key($wanted, [self::FILTER_LABEL => true]),
+            fn(TableQueryDTO $set): TableFacetCountDTO => new TableFacetCountDTO(
+                count(array_filter(
+                    $this->rows,
+                    static fn(TableWindowUnitRow $row): bool => !array_key_exists(self::FILTER_LABEL, $set->filter)
+                        || $set->filter[self::FILTER_LABEL] === $row->label,
+                )),
+                true,
+            ),
+        );
     }
 
     /**

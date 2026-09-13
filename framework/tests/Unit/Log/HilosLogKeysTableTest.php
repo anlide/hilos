@@ -219,6 +219,47 @@ final class HilosLogKeysTableTest extends TestCase
     }
 
     /**
+     * The number beside an option is the total its window would show once picked: the node counts are
+     * taken under the chosen class, the class counts on every class the search left, and neither
+     * counts the daemon's own streams the list never shows.
+     */
+    public function testTheOptionCountsAreTheTotalsTheirWindowsWouldShow(): void
+    {
+        $this->picture(
+            $this->node('node-1', [
+                $this->summary('api.log'),
+                $this->summary('worker-0.log', LogKeySummary::CLASS_WORKER),
+                $this->summary('daemon.log', LogKeySummary::CLASS_DAEMON),
+            ]),
+            $this->node('node-2', [$this->summary('api.log')]),
+        );
+        $table = new HilosLogKeysTable();
+
+        $facets = $table->facetCounts(
+            $table->scopeSearch(new TableQueryDTO(
+                search: 'node-1',
+                filter: [HilosLogKeysTable::FILTER_CLASS => LogKeySummary::CLASS_AGENT],
+            )),
+            [
+                HilosLogKeysTable::FILTER_NODE => ['node-1', 'node-2'],
+                HilosLogKeysTable::FILTER_CLASS => [LogKeySummary::CLASS_AGENT, LogKeySummary::CLASS_WORKER],
+                'growth' => ['fast'],
+            ],
+        );
+
+        $this->assertSame([HilosLogKeysTable::FILTER_NODE, HilosLogKeysTable::FILTER_CLASS], array_keys($facets));
+        $node = $facets[HilosLogKeysTable::FILTER_NODE];
+        $this->assertSame(1, $node[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(1, $node[TableConstants::FACET_KEY_OPTIONS]['node-1']->count);
+        $this->assertSame(0, $node[TableConstants::FACET_KEY_OPTIONS]['node-2']->count);
+        $class = $facets[HilosLogKeysTable::FILTER_CLASS];
+        $this->assertSame(2, $class[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertTrue($class[TableConstants::FACET_KEY_ANY]->exact);
+        $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_AGENT]->count);
+        $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_WORKER]->count);
+    }
+
+    /**
      * Runs one window and hands back its typed rows.
      *
      * @param TableQueryDTO $query Window query

@@ -25,11 +25,15 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -53,6 +57,9 @@ final class PageSignalRouterPendingFrameTest extends TestCase
     private const string ACCEPT_KEY = 'ak-pending-1';
 
     private const int USER_ID = 27;
+
+    /** Options the fixture table's view declared, three filters so a recount can leave one out. */
+    private const array FACETS = ['channel' => ['email', 'sms'], 'status' => ['failed', 'sent'], 'node' => ['node-1']];
 
     protected function setUp(): void
     {
@@ -358,6 +365,148 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $this->assertSame(['subscribe'], $this->page($factory)->handled);
     }
 
+    public function testAFacetsFrameWaitsForTheSubscriptionAndIsAnsweredWithTheCounts(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        Hilos::$sr?->setTableViewport(self::ACCEPT_KEY, new TableViewportSubscription(tableKey: PendingFrameTestPage::TABLE_KEY));
+
+        $router->dispatchTableFacets(
+            new WebSocketTableFacetsSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, self::FACETS),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        // Held like a viewport frame: the counts re-check the same page guards a window does.
+        $this->assertSame([], $browser->facetCounts);
+
+        $this->registerSubscription([]);
+        $router->releasePendingFrames();
+
+        $this->assertSame(self::FACETS, Hilos::$sr?->getTableFacets(self::ACCEPT_KEY, PendingFrameTestPage::TABLE_KEY));
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, null]], $browser->facetCounts);
+    }
+
+    public function testTheFirstWindowOfATableCarriesEveryCount(): void
+    {
+        [$browser, $router] = $this->mountFacetedTable();
+
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, null]], $browser->facetCounts);
+    }
+
+    /**
+     * A filter's counts are taken with that filter lifted, so choosing a channel moves the counts of
+     * the status and the node and leaves the channel counts exactly where they were.
+     */
+    public function testChangingOneFilterCountsEveryOtherFilterAgainButNotItsOwn(): void
+    {
+        [$browser, $router] = $this->mountFacetedTable();
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+        $browser->facetCounts = [];
+
+        $router->dispatchTableViewport($this->viewportFrame(['channel' => 'email']), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, ['status', 'node']]], $browser->facetCounts);
+    }
+
+    public function testChangingTheSearchCountsEveryFilterAgain(): void
+    {
+        [$browser, $router] = $this->mountFacetedTable();
+        $router->dispatchTableViewport($this->viewportFrame(['channel' => 'email']), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+        $browser->facetCounts = [];
+
+        $router->dispatchTableViewport(
+            $this->viewportFrame(['channel' => 'email', TableConstants::FILTER_KEY_SEARCH => 'ada']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, ['channel', 'status', 'node']]], $browser->facetCounts);
+    }
+
+    /**
+     * A page turn, a new size and a new order leave the set as it was, so no count is taken again.
+     */
+    public function testTurningThePageResizingOrReorderingCountsNothingAgain(): void
+    {
+        [$browser, $router] = $this->mountFacetedTable();
+        $router->dispatchTableViewport($this->viewportFrame(['channel' => 'email']), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+        $browser->facetCounts = [];
+
+        $router->dispatchTableViewport(
+            $this->viewportFrame(['channel' => 'email'], pageIndex: 2),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+        $router->dispatchTableViewport(
+            $this->viewportFrame(['channel' => 'email'], limit: 50),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+        $router->dispatchTableViewport(
+            $this->viewportFrame(['channel' => 'email'], sort: TableSortOrderDTO::of(new TableSortDTO('key', TableConstants::ORDER_DESC))),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        $this->assertSame([], $browser->facetCounts);
+    }
+
+    public function testATableWhoseViewDeclaredNoOptionsIsNeverCounted(): void
+    {
+        [$browser, $router] = $this->mountFacetedTable([]);
+
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+        $router->dispatchTableViewport($this->viewportFrame(['channel' => 'email']), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        $this->assertSame([], $browser->facetCounts);
+    }
+
+    /**
+     * Mounts an identified, subscribed connection whose view declared options for the fixture table.
+     *
+     * @param array<string, list<int|float|string|bool>> $facets Options the view declared, by filter key
+     * @return array{0: PendingFrameTestBrowser, 1: PageSignalRouter} Browser fixture and router under test
+     */
+    private function mountFacetedTable(array $facets = self::FACETS): array
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        Hilos::$sr?->setTableFacets(self::ACCEPT_KEY, PendingFrameTestPage::TABLE_KEY, $facets);
+
+        return [$browser, $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()))];
+    }
+
+    /**
+     * Builds one viewport frame for the fixture table.
+     *
+     * @param array<string, mixed> $filter Filter map the window asks for
+     * @param int $limit Window size
+     * @param ?int $pageIndex Page the window jumps to, or null for the first window
+     * @param ?TableSortOrderDTO $sort Order the window asks for, or null for none
+     * @return WebSocketTableViewportSignalDTO Viewport frame
+     */
+    private function viewportFrame(
+        array $filter,
+        int $limit = 25,
+        ?int $pageIndex = null,
+        ?TableSortOrderDTO $sort = null,
+    ): WebSocketTableViewportSignalDTO {
+        return new WebSocketTableViewportSignalDTO(
+            acceptKey: self::ACCEPT_KEY,
+            page: PendingFrameTestPage::PAGE,
+            tableKey: PendingFrameTestPage::TABLE_KEY,
+            filter: $filter,
+            sort: $sort,
+            limit: $limit,
+            pageIndex: $pageIndex,
+        );
+    }
+
     /**
      * Puts a live page subscription for the test connection into the registry.
      *
@@ -533,6 +682,9 @@ final class PendingFrameTestBrowser extends BrowserContext
     /** Whether the page guards refuse the next subscription verdict. */
     public bool $refuseSubscriptionAccess = false;
 
+    /** @var list<array{0: string, 1: ?list<string>}> Tables whose counts were sent, with the filters they were narrowed to */
+    public array $facetCounts = [];
+
     public function __construct()
     {
         parent::__construct();
@@ -581,6 +733,19 @@ final class PendingFrameTestBrowser extends BrowserContext
         $this->windows[] = $viewport->tableKey;
 
         return true;
+    }
+
+    /**
+     * Records the counts being sent instead of counting a table nothing mounted.
+     *
+     * @param string $page Page the table belongs to (unused)
+     * @param string $acceptKey Connection the counts are for (unused)
+     * @param TableViewportSubscription $viewport Window whose set would be counted
+     * @param ?list<string> $only Filters to count again, or null for every declared filter
+     */
+    public function sendTableFacetCounts(string $page, string $acceptKey, TableViewportSubscription $viewport, ?array $only = null): void
+    {
+        $this->facetCounts[] = [$viewport->tableKey, $only];
     }
 }
 

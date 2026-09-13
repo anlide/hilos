@@ -24,6 +24,23 @@ enum PendingFrameKind: string
     /** A table_viewport frame, whose window delivery re-checks the page guards. */
     case TableViewport = 'table_viewport';
 
+    /** A table_facets frame, whose counts re-check the page guards the way a window does. */
+    case TableFacets = 'table_facets';
+
     /** A page_update_subscription frame, judged like a subscribe but on the merged params. */
     case PageUpdateSubscription = 'page_update_subscription';
+
+    /**
+     * Whether a frame at this door also waits for the page subscription it is addressed to.
+     *
+     * The two table doors do: what they deliver re-checks the page guards, and those guards read
+     * the subscription's params - judged without it they judge an empty param set, which is a
+     * different question from the one the client asked.
+     *
+     * @return bool Whether the frame waits for its page subscription as well as for the identity
+     */
+    public function waitsForPageSubscription(): bool
+    {
+        return $this === self::TableViewport || $this === self::TableFacets;
+    }
 }

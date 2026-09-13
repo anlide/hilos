@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 
 /**
@@ -27,8 +28,8 @@ final class PendingFrame
     /**
      * @param string $acceptKey Accept key of the connection whose identity is awaited
      * @param PendingFrameKind $kind Which door the frame was stopped at
-     * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data
-     *     Frame as it arrived
+     * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
+     *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO $data Frame as it arrived
      * @param string $source Signal source the frame was dispatched with
      * @param string $name Signal name the frame was dispatched with (page name for the page doors)
      * @param float $deadline Unix seconds after which the frame is judged whether or not the identity arrived
@@ -37,7 +38,7 @@ final class PendingFrame
         public readonly string $acceptKey,
         public readonly PendingFrameKind $kind,
         public readonly WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO
-            |WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data,
+            |WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO $data,
         public readonly string $source,
         public readonly string $name,
         public readonly float $deadline,

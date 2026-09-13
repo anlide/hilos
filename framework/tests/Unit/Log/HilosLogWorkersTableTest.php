@@ -246,6 +246,40 @@ final class HilosLogWorkersTableTest extends TestCase
     }
 
     /**
+     * The window of monopolistic streams on node 2 is empty, and the type counts still say how many
+     * streams node 2 has: a filter's own choice never zeroes the options it offers.
+     */
+    public function testAFiltersOwnChoiceDoesNotZeroItsOptions(): void
+    {
+        $this->picture(
+            $this->node('node-1', [$this->summary('worker-0.log'), $this->summary('worker-1.log', monopolistic: true)]),
+            $this->node('node-2', [$this->summary('worker-0.log'), $this->summary('worker-2.log')]),
+        );
+
+        $facets = new HilosLogWorkersTable()->facetCounts(
+            new TableQueryDTO(filter: [
+                HilosLogWorkersTable::FILTER_NODE => 'node-2',
+                HilosLogWorkersTable::FILTER_TYPE => HilosLogWorkersTable::TYPE_MONOPOLISTIC,
+            ]),
+            [
+                HilosLogWorkersTable::FILTER_NODE => ['node-1', 'node-2', 'node-3'],
+                HilosLogWorkersTable::FILTER_TYPE => [HilosLogWorkersTable::TYPE_REGULAR, HilosLogWorkersTable::TYPE_MONOPOLISTIC],
+            ],
+        );
+
+        $node = $facets[HilosLogWorkersTable::FILTER_NODE];
+        $this->assertSame(1, $node[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(1, $node[TableConstants::FACET_KEY_OPTIONS]['node-1']->count);
+        $this->assertSame(0, $node[TableConstants::FACET_KEY_OPTIONS]['node-2']->count);
+        $this->assertSame(0, $node[TableConstants::FACET_KEY_OPTIONS]['node-3']->count);
+        $type = $facets[HilosLogWorkersTable::FILTER_TYPE];
+        $this->assertSame(2, $type[TableConstants::FACET_KEY_ANY]->count);
+        // The regular value narrows nothing, so its count is the whole node's, the window it would show.
+        $this->assertSame(2, $type[TableConstants::FACET_KEY_OPTIONS][HilosLogWorkersTable::TYPE_REGULAR]->count);
+        $this->assertSame(0, $type[TableConstants::FACET_KEY_OPTIONS][HilosLogWorkersTable::TYPE_MONOPOLISTIC]->count);
+    }
+
+    /**
      * Runs one window and hands back its typed rows.
      *
      * @param TableQueryDTO $query Window query

@@ -94,4 +94,58 @@ readonly class TableQueryDTO
             $this->searchableFields,
         );
     }
+
+    /**
+     * Returns the same window with one filter lifted.
+     *
+     * This is the set a count beside a filter's options is taken over: the options of a filter are
+     * the choices that filter could make, so the set they are counted against is the one it has not
+     * narrowed yet - every other filter and the search still apply.
+     *
+     * @param string $key Filter-map key to lift
+     * @return self Same window, narrowed by every filter but that one
+     */
+    public function withoutFilter(string $key): self
+    {
+        $filter = $this->filter;
+        unset($filter[$key]);
+
+        return new self(
+            $this->search,
+            $this->sort,
+            $this->limit,
+            $filter,
+            $this->anchor,
+            $this->anchorDirection,
+            $this->pageIndex,
+            $this->searchableFields,
+        );
+    }
+
+    /**
+     * Returns the same window with one filter set to one value.
+     *
+     * The condition the value becomes is still the table's to write: the query only carries the
+     * value in the open map, the way a window chosen in the filter bar carries it.
+     *
+     * @param string $key Filter-map key to set
+     * @param mixed $value Value the filter narrows by
+     * @return self Same window, narrowed by that value in place of whatever the filter held
+     */
+    public function withFilter(string $key, mixed $value): self
+    {
+        $filter = $this->filter;
+        $filter[$key] = $value;
+
+        return new self(
+            $this->search,
+            $this->sort,
+            $this->limit,
+            $filter,
+            $this->anchor,
+            $this->anchorDirection,
+            $this->pageIndex,
+            $this->searchableFields,
+        );
+    }
 }

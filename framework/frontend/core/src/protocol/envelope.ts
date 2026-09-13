@@ -206,6 +206,42 @@ export type TableViewportCountSignalData = z.infer<
 >
 
 /**
+ * One count beside an option of a table's filter: how many rows picking it would
+ * leave, and whether that number is the size of the set rather than the ceiling
+ * the count stopped at — `exact: false` is drawn as "500+".
+ */
+export const tableFacetCountSchema = z.looseObject({
+  count: z.number().int(),
+  exact: z.boolean(),
+})
+
+/**
+ * Payload of the framework facet counts frame (`type: 'table_facet_counts'`, PHP
+ * `TableFacetCountsSignalData`): the counts beside the options of one table's
+ * filters, filter by filter. Each filter carries `any` — the set with that filter
+ * lifted — and one count per option, keyed by the option value as text.
+ *
+ * A frame need not name every filter: it carries the ones whose counts moved, and
+ * the client lays them over the counts it holds. A filter the table does not count
+ * is absent, which is how "no numbers here" is said.
+ */
+export const tableFacetCountsSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  facets: z.record(
+    z.string(),
+    z.looseObject({
+      any: tableFacetCountSchema,
+      options: z.record(z.string(), tableFacetCountSchema),
+    }),
+  ),
+})
+
+export type TableFacetCountsSignalData = z.infer<
+  typeof tableFacetCountsSignalDataSchema
+>
+
+/**
  * Payload of the framework table viewport announcement
  * (`type: 'table_viewport_announce'`, PHP `TableViewportAnnounceDTO`): word that a
  * row was created which this window cannot show, and where it fell — `above` the

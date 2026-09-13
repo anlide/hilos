@@ -8,6 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 
 /**
@@ -49,6 +50,9 @@ final class TableWindowDescriptorDTO extends BaseDTO
     /** Wire key: the zero-based page the window jumped to. */
     public const string PAGE_INDEX = 'pageIndex';
 
+    /** Wire key: the options of the table's filters the tab asked counts beside, by filter key. */
+    public const string FACETS = 'facets';
+
     /**
      * Creates one window descriptor.
      *
@@ -58,6 +62,8 @@ final class TableWindowDescriptorDTO extends BaseDTO
      * @param ?TableAnchorDTO $anchor Place the window is taken from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page the window jumped to, or null when it is paged by anchor
+     * @param array<string, list<int|float|string|bool>> $facets Options the tab asked counts beside, by filter key;
+     *     empty when it asked for none
      */
     public function __construct(
         public readonly array $filter = [],
@@ -66,6 +72,7 @@ final class TableWindowDescriptorDTO extends BaseDTO
         public readonly ?TableAnchorDTO $anchor = null,
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public readonly ?int $pageIndex = null,
+        public readonly array $facets = [],
     ) {
     }
 
@@ -95,6 +102,10 @@ final class TableWindowDescriptorDTO extends BaseDTO
             $result[self::SORT] = $this->sort->toArray();
         }
 
+        if ($this->facets !== []) {
+            $result[self::FACETS] = $this->facets;
+        }
+
         return $result;
     }
 
@@ -104,6 +115,10 @@ final class TableWindowDescriptorDTO extends BaseDTO
      * The size of the window is the one thing a descriptor is not a descriptor without: a tab
      * reports a window it is holding, and a window it is holding has a size. Everything else is
      * omitted where there is nothing to say — an empty filter, no ordering, the edge of the set.
+     *
+     * The options the tab asked counts beside are read the way the facets frame reads them, a
+     * malformed option dropped rather than refused: a tab coming back after a broken socket must not
+     * lose its window over a number beside an option.
      *
      * @param array<string, mixed> $data Source data
      * @return static Descriptor of the window the tab holds
@@ -129,6 +144,7 @@ final class TableWindowDescriptorDTO extends BaseDTO
                 : TableAnchorDirection::tryFrom($direction)
                     ?? throw new InvalidFormatException('Table window descriptor carries an unknown anchor direction'),
             pageIndex: $pageIndex,
+            facets: TableFacetTally::wantedOptions(self::optionalArray($data, self::FACETS) ?? []),
         );
     }
 }

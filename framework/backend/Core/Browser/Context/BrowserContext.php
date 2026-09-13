@@ -27,6 +27,8 @@ use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\DTO\BrowserTableWindow;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Table\DTO\TableFacetCountsSignalData;
+use Hilos\Core\Table\DTO\TableFacetsDTO;
 use Hilos\Database\Context\DbContext;
 use Hilos\HilosException;
 use Hilos\Core\Topology\TopologyValidator;
@@ -379,6 +381,16 @@ abstract class BrowserContext
                 targetAcceptKey: $acceptKey,
             ),
         );
+
+        // The counts beside a table's filter options follow the answer rather than ride in it: they
+        // are a frame of their own, and the client has somewhere to put them only once the answer
+        // has opened the table's window.
+        foreach (array_keys($windows) as $tableKey) {
+            $viewport = Hilos::$sr->getTableViewport($acceptKey, (string) $tableKey);
+            if ($viewport !== null) {
+                $this->sendTableFacetCounts($page, $acceptKey, $viewport);
+            }
+        }
     }
 
     /**
@@ -494,6 +506,80 @@ abstract class BrowserContext
     }
 
     /**
+     * Sends the counts beside the options of one table's filters to the connection that asked for them.
+     *
+     * The options are the ones this connection declared for the table, and the set they are counted
+     * over is the one its window describes, so every number agrees with the window the reader is
+     * looking at. `$only` narrows the counts to the filters whose numbers moved: changing one filter
+     * moves the counts of every other filter and leaves its own where they were.
+     *
+     * The page guards are re-checked first, as a window re-checks them: the counts are data from the
+     * table, and a subscription the guards refuse is served none of it.
+     *
+     * Nothing here fails the caller. A table that cannot count answers null and no frame goes out,
+     * which the dropdown reads as "no numbers". A count that fails does the same and leaves a line in
+     * the log: the window these numbers follow is already on its way and whole, and a number beside
+     * an option is not worth it.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection the counts are for
+     * @param TableViewportSubscription $viewport Window whose search and filters describe the set
+     * @param ?list<string> $only Filters to count again, or null for every filter the connection declared
+     * @throws InvalidArgumentException When the facet-counts signal cannot be named
+     */
+    public function sendTableFacetCounts(string $page, string $acceptKey, TableViewportSubscription $viewport, ?array $only = null): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        $table = Hilos::$table?->get($viewport->tableKey);
+        if (!$table instanceof ViewportTable) {
+            return;
+        }
+
+        $wanted = Hilos::$sr->getTableFacets($acceptKey, $viewport->tableKey);
+        if ($only !== null) {
+            $wanted = array_intersect_key($wanted, array_flip($only));
+        }
+        if ($wanted === []) {
+            return;
+        }
+
+        try {
+            $pageConfig = $this->pageConfig($page);
+            $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+            if ($pageConfig !== null && !$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
+                return;
+            }
+
+            $facets = $table->facetCounts($table->scopeSearch($this->viewportQuery($viewport)), $wanted);
+        } catch (Throwable $e) {
+            // Without this line a dropdown with no numbers because the count failed would look
+            // exactly like one whose table never counted - the same silence the live count's row
+            // question was given a line for.
+            Logger::error(
+                "Facet counts were not sent after the count failed: table={$viewport->tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+
+            return;
+        }
+
+        if ($facets === null || $facets === []) {
+            return;
+        }
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_FACET_COUNTS,
+            new TableFacetCountsSignalData($page, $viewport->tableKey, new TableFacetsDTO($facets)),
+            $acceptKey,
+        );
+    }
+
+    /**
      * Runs one window and records what it delivered to the connection that asked for it.
      *
      * Both frames that carry a window end here — the page subscription's `windows` section and
@@ -603,6 +689,11 @@ abstract class BrowserContext
     ): ?array {
         $viewport = $this->subscriptionViewport($acceptKey, $tableKey, $table, $reported);
         Hilos::$sr?->setTableViewport($acceptKey, $viewport);
+        if ($reported !== null) {
+            // The options a tab asked counts beside travel in its report for the reason its window
+            // does: after a broken socket the tab is the only side that still knows them.
+            Hilos::$sr?->setTableFacets($acceptKey, $tableKey, $reported->facets);
+        }
 
         try {
             $window = $this->buildTableWindow($table, $viewport, $page);

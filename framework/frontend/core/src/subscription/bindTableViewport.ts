@@ -5,7 +5,7 @@
 // handing each its data (table-subscription.md). The binder subscribes the
 // connection's table_window / table_viewport_delta / table_viewport_count /
 // table_viewport_append / table_viewport_own_create / table_viewport_announce /
-// table_progress signals, drops everything not addressed to this table or whose
+// table_progress / table_facet_counts signals, drops everything not addressed to this table or whose
 // page is no longer current, normalizes the rows into the page scope, and feeds
 // the sink. The returned unbind drops every subscription on the view's unmount.
 
@@ -144,6 +144,17 @@ export function bindTableViewport(
     sink.ingestCount(data.totalCount, data.totalExact)
   })
 
+  // The counts beside the table's filter options arrive on a frame of their own, after the
+  // window they describe, and name only the filters whose counts moved: the controller lays
+  // them over the counts it holds.
+  const unsubscribeFacetCounts = connection.on('tableFacetCounts', (signal) => {
+    const data = signal.data
+    if (data.tableKey !== address.tableKey || data.page !== address.page) {
+      return
+    }
+    sink.ingestFacetCounts(data.facets)
+  })
+
   const unsubscribeAppend = connection.on('tableViewportAppend', (signal) => {
     const data = signal.data
     if (data.tableKey !== address.tableKey || data.page !== address.page) {
@@ -241,6 +252,7 @@ export function bindTableViewport(
     unsubscribePageWindow()
     unsubscribeDelta()
     unsubscribeCount()
+    unsubscribeFacetCounts()
     unsubscribeAppend()
     unsubscribeOwnCreate()
     unsubscribeAnnounce()

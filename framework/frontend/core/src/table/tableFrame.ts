@@ -152,6 +152,32 @@ export interface HilosTableFrame {
 }
 
 /**
+ * Options a dropdown filter may offer and still have each of them counted — the
+ * backend's `TableConstants::FACET_OPTION_LIMIT`. A longer list is not declared
+ * for counting at all: numbers beside some options and none beside the rest
+ * would read as zeros.
+ */
+export const HILOS_TABLE_FACET_OPTION_LIMIT = 20
+
+/**
+ * How many rows picking one option would leave. `exact` false means "at least
+ * this many": the count stopped at its ceiling and is drawn as "500+".
+ */
+export interface HilosTableFacetCount {
+  readonly count: number
+  readonly exact: boolean
+}
+
+/**
+ * The counts beside one dropdown filter: `any` for the set with the filter
+ * lifted, and one count per option, keyed by `String(option.value)`.
+ */
+export interface HilosTableFacets {
+  readonly any: HilosTableFacetCount
+  readonly options: ReadonlyMap<string, HilosTableFacetCount>
+}
+
+/**
  * One declared filter together with the value it currently holds — what a
  * control in the bar renders itself from.
  */
@@ -166,6 +192,12 @@ export interface HilosTableFilterView {
   readonly value: unknown
   /** Whether the filter holds a value — what the "2 filters" badge counts. */
   readonly active: boolean
+  /**
+   * The counts beside this filter's options, or null while there are none: a
+   * filter that is not a dropdown, a table that does not count, a list too long
+   * to count, or no counts arrived yet. The dropdown is drawn as always then.
+   */
+  readonly facets: HilosTableFacets | null
 }
 
 /**

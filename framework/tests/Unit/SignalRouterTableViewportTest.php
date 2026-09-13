@@ -68,4 +68,13 @@ final class SignalRouterTableViewportTest extends TestCase
         // them, and the window they name may by then be one the tab has moved on from.
         $this->assertSame([], $router->takeReportedTableWindows('ak'));
     }
+
+    public function testSetAndGetTableFacetsThroughTheRouter(): void
+    {
+        $router = new SignalRouter();
+        $router->setTableFacets('ak', 'deliveries', ['channel' => ['email', 'sms']]);
+
+        $this->assertSame(['channel' => ['email', 'sms']], $router->getTableFacets('ak', 'deliveries'));
+        $this->assertSame([], $router->getTableFacets('ak', 'workers'));
+    }
 }

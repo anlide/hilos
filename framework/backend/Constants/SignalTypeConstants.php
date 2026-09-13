@@ -81,6 +81,9 @@ final class SignalTypeConstants
     /** @var string Table viewport signal type (client-to-server window descriptor for one table) */
     public const string TABLE_VIEWPORT = 'table_viewport';
 
+    /** @var string Table facets signal type (client-to-server options of a table's filters to count beside them) */
+    public const string TABLE_FACETS = 'table_facets';
+
     /** @var string Table window signal type (server-to-client window snapshot for one table) */
     public const string TABLE_WINDOW = 'table_window';
 
@@ -89,6 +92,9 @@ final class SignalTypeConstants
 
     /** @var string Table viewport count signal type (server-to-client live page/total count update for one table) */
     public const string TABLE_VIEWPORT_COUNT = 'table_viewport_count';
+
+    /** @var string Table facet counts signal type (server-to-client counts beside the options of one table's filters) */
+    public const string TABLE_FACET_COUNTS = 'table_facet_counts';
 
     /** @var string Table viewport append signal type (server-to-client live tail append for one table) */
     public const string TABLE_VIEWPORT_APPEND = 'table_viewport_append';

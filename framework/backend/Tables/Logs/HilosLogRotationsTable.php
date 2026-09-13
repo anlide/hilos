@@ -27,6 +27,8 @@ use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
+use Hilos\Core\Table\TableFacetTally;
 
 /**
  * Framework log-rotations table: the archived rotation batches of every node (HIL-387).
@@ -110,6 +112,9 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     /** Stands in for the node in a row key when the installation has no node id at all. */
     private const string ROW_KEY_NODELESS = '-';
 
+    /** Filters whose options this table counts: both of them, the rows being in memory already. */
+    private const array FACETED_FILTERS = [self::FILTER_NODE, self::FILTER_STATE];
+
     /**
      * Declares how many rows the first window of the rotations table carries.
      *
@@ -156,6 +161,34 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
                 self::ROW_SLOT => $row->toArray(),
             ],
         ];
+    }
+
+    /**
+     * Counts the options of the node filter and the state filter against the rotation history.
+     *
+     * Each set is narrowed by {@see narrow()} and searched by the same in-memory filter a window
+     * is, so the number beside an option is the total that window would report. The rows are
+     * projected once for every set, and nothing is capped: they are in hand, and the count is exact.
+     *
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts of the
+     *     node and state options that were asked about
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
+    {
+        $rows = $this->collectRows();
+
+        return TableFacetTally::forFilters(
+            $query,
+            array_intersect_key($wanted, array_flip(self::FACETED_FILTERS)),
+            fn(TableQueryDTO $set): TableFacetCountDTO => new TableFacetCountDTO(
+                $this->filterInMemory($this->narrow($rows, $set), $set)->totalCount,
+                true,
+            ),
+        );
     }
 
     /**

@@ -362,6 +362,25 @@ describe('table viewport send', () => {
     })
   })
 
+  it('frames the options of a table filter to count while connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    const sent = connection.sendTableFacets('hilos_deliveries', 'deliveries', {
+      channel: ['email', 'sms'],
+    })
+
+    expect(sent).toBe(true)
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_facets',
+      page: 'hilos_deliveries',
+      tableKey: 'deliveries',
+      facets: { channel: ['email', 'sms'] },
+    })
+  })
+
   it('an order of more than one column rides as the list of its components', () => {
     const { connection } = createConnection()
     connection.connect()

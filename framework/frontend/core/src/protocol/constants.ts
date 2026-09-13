@@ -70,6 +70,9 @@ export const SIGNAL_TYPE_ACTION_SUCCESS = 'action_success'
 /** Client frame `type` setting a table's window (PHP `SignalTypeConstants::TABLE_VIEWPORT`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT = 'table_viewport'
 
+/** Client frame `type` naming the options of a table's filters to count (PHP `SignalTypeConstants::TABLE_FACETS`). */
+export const SIGNAL_TYPE_TABLE_FACETS = 'table_facets'
+
 /** Server frame `type` replying a table window snapshot (PHP `SignalTypeConstants::TABLE_WINDOW`). */
 export const SIGNAL_TYPE_TABLE_WINDOW = 'table_window'
 
@@ -78,6 +81,9 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT_DELTA = 'table_viewport_delta'
 
 /** Server frame `type` carrying a live table count update (PHP `SignalTypeConstants::TABLE_VIEWPORT_COUNT`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_COUNT = 'table_viewport_count'
+
+/** Server frame `type` carrying the counts beside a table's filter options (PHP `SignalTypeConstants::TABLE_FACET_COUNTS`). */
+export const SIGNAL_TYPE_TABLE_FACET_COUNTS = 'table_facet_counts'
 
 /** Server frame `type` carrying a live table tail append (PHP `SignalTypeConstants::TABLE_VIEWPORT_APPEND`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_APPEND = 'table_viewport_append'
@@ -120,6 +126,9 @@ export const FIELD_TABLE_KEY = 'tableKey'
 
 /** Viewport frame key carrying the filter map (PHP `SignalPayloadConstants::FIELD_FILTER`). */
 export const FIELD_FILTER = 'filter'
+
+/** Facets frame key carrying the options to count, by filter key (PHP `WebSocketTableFacetsSignalDTO::FACETS`). */
+export const FIELD_FACETS = 'facets'
 
 /** Viewport frame key carrying the order as a list of `{field, direction}` (PHP `SignalPayloadConstants::FIELD_SORT`). */
 export const FIELD_SORT = 'sort'
