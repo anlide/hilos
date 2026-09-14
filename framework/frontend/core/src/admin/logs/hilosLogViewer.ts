@@ -39,6 +39,7 @@ import {
   ActionError,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatBytes } from '../../format/bytes.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
@@ -1166,7 +1167,7 @@ export function createHilosLogViewer(
       items = [
         note(
           'skipped',
-          `Jumped over ${formatLogViewerBytes(frame.skippedBytes)} to catch up.`,
+          `Jumped over ${formatBytes(frame.skippedBytes)} to catch up.`,
         ),
       ]
     } else if (frame.stopped) {
@@ -1515,27 +1516,6 @@ function trimFeedItems(
   }
 
   return items.slice(cut)
-}
-
-/**
- * A byte figure in the largest unit that leaves a readable number, for the note
- * saying how much the owner jumped over.
- *
- * A fourth copy of one body, and deliberately so: hoisting the shared helper
- * would edit three modules this leaf has no business in (P-231).
- *
- * @param bytes The figure, in bytes.
- */
-function formatLogViewerBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
 }
 
 /** Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix, capturing the clock time. */

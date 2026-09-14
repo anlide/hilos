@@ -17,6 +17,7 @@
 
 import { z } from 'zod'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatBytes } from '../../format/bytes.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
@@ -431,7 +432,7 @@ export function formatLogKeyState(row: HilosLogKeyRow): string {
  * @param row The stream row to format.
  */
 export function formatLogKeyWeight(row: HilosLogKeyRow): string {
-  return formatLogKeyBytes(row.bytes)
+  return formatBytes(row.bytes)
 }
 
 /**
@@ -444,7 +445,7 @@ export function formatLogKeyWeight(row: HilosLogKeyRow): string {
  * @param row The stream row to format.
  */
 export function formatLogKeyGrowth(row: HilosLogKeyRow): string {
-  return row.growthPerDay === null ? '—' : formatLogKeyBytes(row.growthPerDay)
+  return row.growthPerDay === null ? '—' : formatBytes(row.growthPerDay)
 }
 
 /**
@@ -472,22 +473,4 @@ export function logKeyViewerPath(row: HilosLogKeyRow): string {
     stream: row.key,
     anchorAtMs: null,
   })
-}
-
-/**
- * A byte figure in the largest unit that leaves a readable number — the one place
- * this module turns bytes into words, for a weight and a daily growth alike.
- *
- * @param bytes The figure, in bytes.
- */
-function formatLogKeyBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
 }

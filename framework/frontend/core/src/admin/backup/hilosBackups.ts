@@ -18,6 +18,7 @@ import {
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatBytes } from '../../format/bytes.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
@@ -568,15 +569,7 @@ export function formatBackupSize(row: HilosBackupRow): string {
   if (row.sizeBytes <= 0) {
     return '—'
   }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = row.sizeBytes
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
+  return formatBytes(row.sizeBytes)
 }
 
 /**

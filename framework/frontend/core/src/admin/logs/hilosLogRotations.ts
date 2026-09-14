@@ -25,6 +25,7 @@ import {
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatBytes } from '../../format/bytes.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readNumber,
@@ -531,7 +532,7 @@ export function rotationsEmptyState(
  * @param row The batch row to format.
  */
 export function formatRotationWeight(row: HilosLogRotationRow): string {
-  return formatRotationBytes(row.bytes)
+  return formatBytes(row.bytes)
 }
 
 /**
@@ -701,7 +702,7 @@ export function formatRotationRule(header: HilosLogRotationsHeader): string {
   }
   if (header.rotationMaxLiveSizeBytes > 0) {
     axes.push(
-      `when the live logs reach ${formatRotationBytes(header.rotationMaxLiveSizeBytes)}`,
+      `when the live logs reach ${formatBytes(header.rotationMaxLiveSizeBytes)}`,
     )
   }
 
@@ -760,23 +761,4 @@ function formatRotationDuration(seconds: number): string {
   }
 
   return `${seconds} s`
-}
-
-/**
- * A byte figure in the largest unit that leaves a readable number — the one place
- * this module turns bytes into words, for a measured batch and a configured
- * threshold alike.
- *
- * @param bytes The figure, in bytes.
- */
-function formatRotationBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
 }
