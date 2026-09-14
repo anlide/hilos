@@ -150,9 +150,9 @@ final class WatchdogAlertMailer
      *
      * @param int $failedStarts How many starts in a row died before reaching the minimum uptime
      * @param float $lastUptimeSeconds How long the last failed start survived, in seconds
-     * @param string $errorLogTail Tail of the daemon error log the watchdog already read
+     * @param string $outputTail Tail of what the daemon printed, for the alert email
      */
-    public function sendDaemonFailedStart(int $failedStarts, float $lastUptimeSeconds, string $errorLogTail): void
+    public function sendDaemonFailedStart(int $failedStarts, float $lastUptimeSeconds, string $outputTail): void
     {
         $node = self::nodeName();
         $this->send(
@@ -162,7 +162,7 @@ final class WatchdogAlertMailer
             . number_format($lastUptimeSeconds, 2) . "s.\n"
             . "The watchdog keeps retrying and does not give up.\n"
             . "\n"
-            . 'Reason: ' . self::shortReason($errorLogTail) . "\n",
+            . 'Reason: ' . self::shortReason($outputTail) . "\n",
         );
     }
 
@@ -262,7 +262,7 @@ final class WatchdogAlertMailer
     }
 
     /**
-     * Picks the one line of the error-log tail worth mailing.
+     * Picks the one line of the output tail worth mailing.
      *
      * The last non-empty line is the innermost thing that went wrong; everything above it is
      * the stack that led there, which stays in the log where it belongs.

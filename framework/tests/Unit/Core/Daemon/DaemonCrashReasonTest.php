@@ -12,8 +12,8 @@ final class DaemonCrashReasonTest extends TestCase
     public function testSignalTakesPrecedenceOverExitCode(): void
     {
         self::assertSame(
-            'killed by signal 9, survived 0.02s. Last daemon output: (error log is empty)',
-            DaemonCrashReason::render(137, 9, 0.02, '(error log is empty)'),
+            'killed by signal 9, survived 0.02s. Last daemon output: (the daemon printed nothing)',
+            DaemonCrashReason::render(137, 9, 0.02, '(the daemon printed nothing)'),
         );
     }
 
@@ -33,8 +33,8 @@ final class DaemonCrashReasonTest extends TestCase
     public function testUnknownExitStatusAndTwoDecimalUptimeAreRendered(): void
     {
         self::assertSame(
-            'exit status unknown, survived 3.10s. Last daemon output: (error log is empty)',
-            DaemonCrashReason::render(null, null, 3.1, '(error log is empty)'),
+            'exit status unknown, survived 3.10s. Last daemon output: (the daemon printed nothing)',
+            DaemonCrashReason::render(null, null, 3.1, '(the daemon printed nothing)'),
         );
     }
 }

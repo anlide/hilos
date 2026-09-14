@@ -71,18 +71,20 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
 - **Shout, but keep trying.** A start that dies before reaching
   `DAEMON_MIN_RESTART_INTERVAL` counts as failed; reaching it resets the count. Every
   unexpected stop is logged immediately with the process's terminating signal (preferred
-  over an exit code), exit code or unknown status, the uptime, and the tail of the daemon's
-  raw stderr stream — `daemon-error-raw.log`, the twin `DaemonRawStream` derives from
-  `DAEMON_ERROR_LOG_FILE` (HIL-480). Once the run reaches
-  `DAEMON_FAILED_START_THRESHOLD` (default 3), the watchdog adds a line about the series
-  and sends its alert email; the series line does not repeat the tail that the individual
-  failure already logged. It does **not** give up or exit: the cause may be external and
-  temporary (a database still coming up, memory pressure), and the compose restart policy
-  is deliberately left alone. The reason comes from the raw file and not from
-  `Process::getStdErr()` — the daemon's stderr is redirected to it, so the process has no
-  stderr pipe to read. Under the PHP defaults of the image (`display_errors=1`,
-  `log_errors=0`) a fatal is printed to stdout, so the tail must be taken from the raw
-  stream PHP actually prints to `(not in the code yet — HIL-1015)`.
+  over an exit code), exit code or unknown status, the uptime, and what the daemon printed
+  since this start across up to three streams in fixed order (`daemon-error.log`,
+  `daemon-raw.log`, `daemon-error-raw.log`) within a shared 2000-byte budget. Because
+  descriptors are kept open across daemon restarts and files may survive, stream sizes are
+  marked at daemon start, and the quote only includes output appended after that mark.
+  Once the run reaches `DAEMON_FAILED_START_THRESHOLD` (default 3), the watchdog adds a
+  line about the series and sends its alert email; the series line does not repeat the tail
+  that the individual failure already logged. It does **not** give up or exit: the cause
+  may be external and temporary (a database still coming up, memory pressure), and the
+  compose restart policy is deliberately left alone. The reason comes from the files and
+  not from `Process::getStdErr()` — the daemon's stdout and stderr are redirected to files,
+  so the process has no pipe to read. Under the PHP defaults of the image (`display_errors=1`,
+  `log_errors=0`) a fatal is printed to stdout, master failures land in stderr, and deaths
+  from unhandled warnings are caught by the node error log.
 - **Say one thing when you die, and nothing else (HIL-617).** The watchdog is simple, and
   there is no watchdog for the watchdog. Its own failure is *not* damped by a per-iteration
   `try/catch`, not retried, and not handed to project code through a hook: it mails one

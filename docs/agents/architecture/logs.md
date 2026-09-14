@@ -142,11 +142,13 @@ directory of the node, which the Logs section reads.
 - Do not silence the watchdog there either: every line it writes through
   `Logger` belongs in the container log, its complaint about a file the start
   rotation could not move included `(not in the code yet — HIL-1016)`.
-- A daemon that died leaves its reason in the container log: the tail of what
-  it printed before dying, on the first failure and not only once the run of
-  failures reaches `DAEMON_FAILED_START_THRESHOLD`, quoted from the raw stream
-  PHP actually prints its fatal to under the image's ini
-  `(not in the code yet — HIL-1015)`.
+- A daemon that died leaves its reason in the container log: on the first failure
+  and not only once the run of failures reaches `DAEMON_FAILED_START_THRESHOLD`,
+  quoting only what THIS daemon run printed across up to three streams in fixed
+  order (`daemon-error.log`, `daemon-raw.log`, `daemon-error-raw.log`) within a
+  shared 2000-byte budget divided equally between non-empty chunks. Quoting the
+  node error log excerpt at crash time is the single owner-approved exception
+  (14.09.2026) to the rule above against adding the master's journal as a stream.
 - What the watchdog does about a crash beyond that line — the sweep, the
   restart interval, the escalation and its letter — is
   [daemon-lifecycle.md](daemon-lifecycle.md), "Container watchdog and crash

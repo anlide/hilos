@@ -34,14 +34,17 @@ use Throwable;
  */
 class DockerManager extends BaseManager
 {
-    /** How much of the daemon error log the failed-start escalation quotes. */
-    private const int ERROR_LOG_TAIL_BYTES = 2000;
+    /** How much of what the daemon printed the crash record quotes, across all its streams. */
+    private const int DAEMON_OUTPUT_TAIL_BYTES = 2000;
 
     /** @var bool Flag for daemon restart mode */
     private bool $shouldRestart = false;
 
     /** @var ?Process Shared Process variable for the class */
     private ?Process $process = null;
+
+    /** @var ?DaemonOutputQuote What the daemon has printed since this start, or null before the first start */
+    private ?DaemonOutputQuote $outputQuote = null;
 
     /** @var ?float Timestamp of last error-based restart attempt */
     private ?float $lastErrorRestartTime = null;
@@ -233,14 +236,14 @@ class DockerManager extends BaseManager
                     // Error-based restart - record timestamp and reset logging flag
                     $this->lastErrorRestartTime = microtime(true);
                     $this->restartIntervalLogged = false;
-                    // Keep the tail read ahead of the watchdog's own line: today's raw source excludes
-                    // that line, but HIL-1015 may include the Logger-written daemon error stream.
-                    $errorLogTail = $this->readErrorLogTail();
+                    // Keep the tail read ahead of the watchdog's own line: the order is essential because
+                    // the watchdog reads a file it also writes, and reading after logging would quote itself.
+                    $outputTail = $this->readDaemonOutputTail();
                     Logger::error(
                         'Daemon process has stopped unexpectedly: '
-                        . DaemonCrashReason::render($exitCode, $termSignal, $uptime, $errorLogTail),
+                        . DaemonCrashReason::render($exitCode, $termSignal, $uptime, $outputTail),
                     );
-                    $this->recordFailedStart($uptime, $errorLogTail);
+                    $this->recordFailedStart($uptime, $outputTail);
                 }
             }
         } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
@@ -267,10 +270,10 @@ class DockerManager extends BaseManager
      * silent about it.
      *
      * @param float $uptime How long the failed start survived, in seconds
-     * @param string $errorLogTail Tail of the daemon error log for the alert email
+     * @param string $outputTail Tail of what the daemon printed, for the alert email
      * @throws EnvException If the failed-start threshold env value is missing or invalid
      */
-    private function recordFailedStart(float $uptime, string $errorLogTail): void
+    private function recordFailedStart(float $uptime, string $outputTail): void
     {
         $this->consecutiveFailedStarts++;
         $threshold = Hilos::$env[EnvConstants::DAEMON_FAILED_START_THRESHOLD]->int();
@@ -285,7 +288,7 @@ class DockerManager extends BaseManager
         );
 
         if ($this->consecutiveFailedStarts === $threshold) {
-            $this->alertMailer?->sendDaemonFailedStart($this->consecutiveFailedStarts, $uptime, $errorLogTail);
+            $this->alertMailer?->sendDaemonFailedStart($this->consecutiveFailedStarts, $uptime, $outputTail);
         }
     }
 
@@ -309,43 +312,19 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Reads the tail of the daemon's raw stderr for the crash record and alert email.
+     * Reads what the daemon printed during this run for the crash record and alert email.
      *
-     * The daemon's stderr is redirected straight to a file rather than to a pipe,
-     * so the watchdog cannot read it from the process: {@see Process::getStdErr()} only
-     * returns what a pipe descriptor buffered. Reading the file is what actually puts
-     * the reason in front of whoever sees the escalation.
+     * Three streams are quoted:
+     * 1. Node error log — captures deaths from unhandled E_WARNING where the error handler consumed the text;
+     * 2. Stdout raw twin — captures PHP fatals bypassing shutdownHandler;
+     * 3. Stderr raw twin — captures master environment failures printed to error_log.
      *
-     * It is the raw stream and not the Logger's own error log: a fatal is printed by PHP past
-     * the Logger, so that is where it lands, and reading the other file would leave the
-     * crash record quoting an empty tail.
-     *
-     * @return string Tail of the raw error stream, or a note when it is unconfigured or unreadable
+     * @return string Tail of what the daemon printed, or an indicator note
      */
-    private function readErrorLogTail(): string
+    private function readDaemonOutputTail(): string
     {
-        // Its own note, separate from the one below: "not configured" is cured by a line in .env,
-        // "not readable" by permissions or a disk, and the escalation mail carries the difference.
-        $errorLogFile = DaemonLogAddress::configured(EnvConstants::DAEMON_ERROR_LOG_FILE);
-        if ($errorLogFile === null) {
-            return '(error log is not configured)';
-        }
-
-        $path = DaemonRawStream::pathFor($errorLogFile);
-        // warning-suppressed: the error log may not exist yet, the escalation says it is not readable
-        $size = @filesize($path);
-        if ($size === false) {
-            return '(error log is not readable)';
-        }
-
-        $offset = max(0, $size - self::ERROR_LOG_TAIL_BYTES);
-        // warning-suppressed: the log can rotate away between the size and the read, the escalation says the tail is empty
-        $tail = @file_get_contents($path, false, null, $offset);
-        if ($tail === false || trim($tail) === '') {
-            return '(error log is empty)';
-        }
-
-        return trim($tail);
+        // Branch is unreachable in practice: crashes only happen after startDaemon has run.
+        return $this->outputQuote?->render(self::DAEMON_OUTPUT_TAIL_BYTES) ?? DaemonOutputQuote::PRINTED_NOTHING;
     }
 
     /**
@@ -398,6 +377,12 @@ class DockerManager extends BaseManager
                 }
             }
         }
+
+        // (1) The raw pair is opened Process::PIPE_APPEND (:413,:417) and survives a daemon restart,
+        // while startup rotation runs once per watchdog run (:102), so without a mark the quote would
+        // name an earlier crash. (2) The watchdog writes its own ERROR lines to the same daemon-error.log
+        // (DockerApplication.php:76-80), and taking the mark here leaves its previous line behind the quote.
+        $this->outputQuote = DaemonOutputQuote::markedAt($logFile, $errorLogFile);
 
         // Create Process object with stdout and stderr redirected to files. An address that was
         // never named has no raw stream to sit beside, so there is nothing to hand pathFor(); the
