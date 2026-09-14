@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
+use Hilos\Constants\LogStreamConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DockerManager;
 use Hilos\Constants\LogRotationConstants;
@@ -138,7 +139,7 @@ final class LogRotator
             return LogRotationReport::nothingToRotate();
         }
 
-        $logFiles = glob($this->logDirectory . '/*.log');
+        $logFiles = glob($this->logDirectory . '/' . LogStreamConstants::LIVE_STREAM_GLOB);
         if ($logFiles === false) {
             return LogRotationReport::nothingToRotate();
         }

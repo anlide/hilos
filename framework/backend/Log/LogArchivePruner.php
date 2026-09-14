@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use Hilos\Backup\BackupCreator;
+use Hilos\Constants\LogStreamConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Utils\Helpers\FileSystemHelper;
 
@@ -37,7 +38,6 @@ use Hilos\Utils\Helpers\FileSystemHelper;
 final class LogArchivePruner
 {
     /** Suffix of the files rotation moves into a batch; everything else there belongs to somebody. */
-    private const string LOG_FILE_SUFFIX = '.log';
 
     /**
      * @param string $logDirectory Log root of this node, the directory holding the archive subtree
@@ -100,7 +100,7 @@ final class LogArchivePruner
                     continue;
                 }
                 $path = $directory . DIRECTORY_SEPARATOR . $name;
-                if (is_file($path) && str_ends_with($name, self::LOG_FILE_SUFFIX)) {
+                if (is_file($path) && str_ends_with($name, LogStreamConstants::STREAM_SUFFIX)) {
                     $logFiles[] = $path;
 
                     continue;

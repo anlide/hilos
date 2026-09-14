@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Constants\LogStreamConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
@@ -98,7 +99,7 @@ HELP;
 
         $sweeper->emptyDirectory($root . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME);
         $sweeper->emptyDirectory($root . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_STAGING_SUBDIR_NAME);
-        $sweeper->removeMatching($root . DIRECTORY_SEPARATOR . '*.log');
+        $sweeper->removeMatching($root . DIRECTORY_SEPARATOR . LogStreamConstants::LIVE_STREAM_GLOB);
 
         if ($sweeper->failed() !== []) {
             echo 'Log root ' . $root . ' was left with ' . count($sweeper->failed()) . " path(s) behind:\n";

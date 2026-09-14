@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
+use Hilos\Constants\LogStreamConstants;
 use Hilos\Core\Daemon\DockerManager;
 
 /**
@@ -40,7 +41,7 @@ final class DaemonRawStream
 
         $extensionAt = strrpos($basename, '.');
         if ($extensionAt === false) {
-            return $directory . $basename . self::SUFFIX . '.log';
+            return $directory . $basename . self::SUFFIX . LogStreamConstants::STREAM_SUFFIX;
         }
 
         return $directory . substr($basename, 0, $extensionAt) . self::SUFFIX . substr($basename, $extensionAt);

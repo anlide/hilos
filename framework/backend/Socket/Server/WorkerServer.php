@@ -133,15 +133,6 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /** @var string PHP binary used to spawn worker processes */
     private const string PHP_BINARY = 'php';
 
-    /** @var string Standard log file extension */
-    private const string LOG_EXTENSION = '.log';
-
-    /** @var string Worker log file name prefix */
-    private const string WORKER_LOG_PREFIX = 'worker-';
-
-    /** @var string Agent log file name prefix */
-    private const string AGENT_LOG_PREFIX = 'agent-';
-
     /** @var string Regex pattern for sanitizing agent ID in log file names */
     private const string AGENT_ID_SANITIZE_PATTERN = '/[^a-zA-Z0-9_-]/';
 
@@ -706,14 +697,16 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         // Read stdout and write to file
         $stdout = $process->getStdOut();
         if (!empty($stdout)) {
-            $stdoutFile = $logDirectory . '/' . self::WORKER_LOG_PREFIX . "{$workerType}-{$workerIndex}" . self::LOG_EXTENSION;
+            $stdoutFile = $logDirectory . '/' . LogStreamConstants::WORKER_STREAM_PREFIX
+                . $workerType . LogStreamConstants::WORKER_TYPE_SEPARATOR . $workerIndex . LogStreamConstants::STREAM_SUFFIX;
             $this->processWorkerOutput($stdout, $stdoutFile, $logDirectory, false);
         }
 
         // Read stderr and write to file
         $stderr = $process->getStdErr();
         if (!empty($stderr)) {
-            $stderrFile = $logDirectory . '/' . self::WORKER_LOG_PREFIX . "{$workerType}-{$workerIndex}" . LogStreamConstants::ERROR_STREAM_SUFFIX;
+            $stderrFile = $logDirectory . '/' . LogStreamConstants::WORKER_STREAM_PREFIX
+                . $workerType . LogStreamConstants::WORKER_TYPE_SEPARATOR . $workerIndex . LogStreamConstants::ERROR_STREAM_SUFFIX;
             $this->processWorkerOutput($stderr, $stderrFile, $logDirectory, true);
         }
     }
@@ -821,8 +814,8 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
                 // Determine log file extension
                 // ERROR level or stderr -> .error.log, otherwise -> .log
                 $toErrorStream = $level === Logger::LEVEL_ERROR || $isStderr;
-                $extension = $toErrorStream ? LogStreamConstants::ERROR_STREAM_SUFFIX : self::LOG_EXTENSION;
-                $agentLogFile = $logDirectory . '/' . self::AGENT_LOG_PREFIX . "{$safeAgentId}{$extension}";
+                $extension = $toErrorStream ? LogStreamConstants::ERROR_STREAM_SUFFIX : LogStreamConstants::STREAM_SUFFIX;
+                $agentLogFile = $logDirectory . '/' . LogStreamConstants::AGENT_STREAM_PREFIX . $safeAgentId . $extension;
 
                 // Write messages
                 foreach ($messages as $message) {

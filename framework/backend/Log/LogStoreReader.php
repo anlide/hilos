@@ -41,15 +41,6 @@ final class LogStoreReader
     /** Index key for `worker-monopolistic-*.log` streams. */
     public const string CLASS_WORKER_MONOPOLISTIC = 'workerMonopolistic';
 
-    /** Filename prefix of a monopolistic worker log; checked before {@see PREFIX_WORKER}. */
-    private const string PREFIX_WORKER_MONOPOLISTIC = 'worker-monopolistic-';
-
-    /** Filename prefix of a regular worker log. */
-    private const string PREFIX_WORKER = 'worker-';
-
-    /** Filename prefix of an agent log. */
-    private const string PREFIX_AGENT = 'agent-';
-
     /**
      * @param ?string $logDirectory Log root holding the live `*.log` files and the staging and archive
      *     subtrees, or null when it could not be resolved
@@ -448,7 +439,7 @@ final class LogStoreReader
         $worker = [];
         $workerMonopolistic = [];
 
-        $files = glob($dir . DIRECTORY_SEPARATOR . '*.log');
+        $files = glob($dir . DIRECTORY_SEPARATOR . LogStreamConstants::LIVE_STREAM_GLOB);
         if ($files === false) {
             return null;
         }
@@ -465,11 +456,11 @@ final class LogStoreReader
             }
             if (in_array($name, $this->daemonBasenames, true)) {
                 $daemon[$name] = $size;
-            } elseif (str_starts_with($name, self::PREFIX_WORKER_MONOPOLISTIC)) {
+            } elseif (str_starts_with($name, LogStreamConstants::MONOPOLISTIC_WORKER_STREAM_PREFIX)) {
                 $workerMonopolistic[$name] = $size;
-            } elseif (str_starts_with($name, self::PREFIX_WORKER)) {
+            } elseif (str_starts_with($name, LogStreamConstants::WORKER_STREAM_PREFIX)) {
                 $worker[$name] = $size;
-            } elseif (str_starts_with($name, self::PREFIX_AGENT)) {
+            } elseif (str_starts_with($name, LogStreamConstants::AGENT_STREAM_PREFIX)) {
                 $agent[$name] = $size;
             }
         }
