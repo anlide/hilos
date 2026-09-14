@@ -12,8 +12,7 @@ use Hilos\Core\Page\PageReach;
 /**
  * AbstractHilosPrivacyPage - Abstract base for the Hilos public Privacy page.
  *
- * A static, content-only framework page: it declares no BROWSER data source and
- * sends no page payload (the visible content is rendered client-side), so a
+ * The page declares no BROWSER data source and sends no page payload, so a
  * subscribe to it is valid yet answered with nothing. Projects implement a
  * concrete class (e.g. Demo\Chat\Pages\Hilos\PrivacyPage) binding the owning
  * agent type.

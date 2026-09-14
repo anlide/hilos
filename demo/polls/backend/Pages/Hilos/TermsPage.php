@@ -10,8 +10,8 @@ use Hilos\Pages\AbstractHilosTermsPage;
 /**
  * TermsPage - Terms page implementation for the polls demo.
  *
- * Static, content-only: the framework page sends no payload; the visible
- * content is the frontend view. Only the owning agent type is bound here.
+ * The framework page sends no payload; only the owning agent type is bound
+ * here.
  */
 final class TermsPage extends AbstractHilosTermsPage
 {

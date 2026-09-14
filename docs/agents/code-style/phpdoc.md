@@ -242,6 +242,44 @@ Not checked automatically. `proof` and `evidence` are legitimate words in auth
 code, where a verification code really does prove ownership of an address, so
 no grep separates this form from that one.
 
+## A comment does not describe what the frontend draws
+
+This section holds for every comment in a backend PHP file — a docblock and a
+`//` line alike — because the claim it forbids reads the same in both.
+
+Do not describe in a comment what the frontend draws for the class the comment
+sits on — the visible content, what is rendered client-side, what the reader
+sees on screen. A sentence like that does not describe the class; it describes
+a screen the class never sees, and it is wrong the moment that screen changes.
+
+The cure is to state the class's own side of the wire — what payload it sends,
+what a subscribe to it is answered with, which agent type is bound, what access
+level applies — and, where the reader genuinely needs the pointer, a `{@see}`
+to the SDK component that draws it. If nothing but the screen was in the
+sentence, delete it: the four public page classes (`AbstractHilosAboutPage`
+and its siblings) say nothing about their screens and lose nothing by it.
+
+The reason is that a backend class cannot know what the frontend rendered: the
+view lives in another package, comes in one flavor per view framework, and
+grows behavior on a leaf of its own. So a sentence of this kind is not merely
+prone to going stale — it is unprovable from the file it sits in, which is the
+same argument the section above makes about a read-back. Rewriting it in newer
+words keeps it alive as something a later leaf must remember to update;
+removing the form is what closes it.
+
+The boundary is the wire fact and the class's own contract, which both stay
+legitimate. Naming a payload field and what the screen does with it describes
+the wire, and the wire is this file's business. Stating that a surface
+deliberately asks the backend for nothing is a claim about this class's
+contract — `AbstractHilosAboutPage` keeps exactly such a sentence about its
+support block, because it is the one place in the code that says why the class
+has no seam.
+
+Not checked automatically. `frontend` and `client-side` are legitimate words
+elsewhere in the backend — a signal router names the client side of a wire, a
+DTO says what the frontend sends — so no grep separates this form from that
+one.
+
 ## Example
 
 ```php
