@@ -144,9 +144,9 @@ directory of the node, which the Logs section reads.
   rotation could not move included `(not in the code yet — HIL-1016)`.
 - A daemon that died leaves its reason in the container log: the tail of what
   it printed before dying, on the first failure and not only once the run of
-  failures reaches `DAEMON_FAILED_START_THRESHOLD`
-  `(not in the code yet — HIL-1014)`, quoted from the raw stream PHP actually
-  prints its fatal to under the image's ini `(not in the code yet — HIL-1015)`.
+  failures reaches `DAEMON_FAILED_START_THRESHOLD`, quoted from the raw stream
+  PHP actually prints its fatal to under the image's ini
+  `(not in the code yet — HIL-1015)`.
 - What the watchdog does about a crash beyond that line — the sweep, the
   restart interval, the escalation and its letter — is
   [daemon-lifecycle.md](daemon-lifecycle.md), "Container watchdog and crash

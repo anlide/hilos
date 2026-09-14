@@ -27,6 +27,7 @@ class Process
     public const string STATUS_RUNNING = 'running';
     public const string STATUS_STOPPED = 'stopped';
     public const string STATUS_SIGNALED = 'signaled';
+    public const string STATUS_TERM_SIGNAL = 'termsig';
     public const string STATUS_EXIT_CODE = 'exitcode';
 
     // Process descriptor types
@@ -75,6 +76,9 @@ class Process
 
     /** @var ?int Captured process exit code, or null if not yet known */
     private ?int $exitCode = null;
+
+    /** @var ?int Captured terminating signal number, or null if not yet known */
+    private ?int $termSignal = null;
 
     /** @var array<string, mixed> Last observed status; returned after the process is closed */
     private array $lastStatus = [self::STATUS_RUNNING => false];
@@ -251,6 +255,14 @@ class Process
         ) {
             $this->exitCode = $status[self::STATUS_EXIT_CODE];
         }
+        if ($this->termSignal === null
+            && !$status[self::STATUS_RUNNING]
+            && $status[self::STATUS_SIGNALED] === true
+            && isset($status[self::STATUS_TERM_SIGNAL])
+            && $status[self::STATUS_TERM_SIGNAL] > 0
+        ) {
+            $this->termSignal = $status[self::STATUS_TERM_SIGNAL];
+        }
 
         $this->lastStatus = $status;
         return $status;
@@ -264,6 +276,16 @@ class Process
     public function getExitCode(): ?int
     {
         return $this->exitCode;
+    }
+
+    /**
+     * Get the signal that terminated the process.
+     *
+     * @return ?int Signal number, or null if the process was not signaled or it could not be determined
+     */
+    public function getTermSignal(): ?int
+    {
+        return $this->termSignal;
     }
 
     /**

@@ -219,6 +219,8 @@ class DockerManager extends BaseManager
         $status = $this->process->getStatus();
         if ($status[Process::STATUS_RUNNING] !== true) {
             $uptime = $this->processStartTime === null ? 0.0 : microtime(true) - $this->processStartTime;
+            $exitCode = $this->process->getExitCode();
+            $termSignal = $this->process->getTermSignal();
             $this->process = null;
             $this->processStartTime = null;
 
@@ -231,12 +233,13 @@ class DockerManager extends BaseManager
                     // Error-based restart - record timestamp and reset logging flag
                     $this->lastErrorRestartTime = microtime(true);
                     $this->restartIntervalLogged = false;
-                    // The tail is read BEFORE the line below is written. The watchdog's own errors go
-                    // to DAEMON_ERROR_LOG_FILE as well - DockerApplication points Logger there - so a
-                    // tail read afterwards ends with this very sentence, while the escalation is about
-                    // what the DAEMON said before it died, not about the watchdog noticing that it did.
+                    // Keep the tail read ahead of the watchdog's own line: today's raw source excludes
+                    // that line, but HIL-1015 may include the Logger-written daemon error stream.
                     $errorLogTail = $this->readErrorLogTail();
-                    Logger::error("Daemon process has stopped unexpectedly");
+                    Logger::error(
+                        'Daemon process has stopped unexpectedly: '
+                        . DaemonCrashReason::render($exitCode, $termSignal, $uptime, $errorLogTail),
+                    );
                     $this->recordFailedStart($uptime, $errorLogTail);
                 }
             }
@@ -264,8 +267,7 @@ class DockerManager extends BaseManager
      * silent about it.
      *
      * @param float $uptime How long the failed start survived, in seconds
-     * @param string $errorLogTail Tail of the daemon error log, read before the watchdog logged
-     *     the death itself into that same file
+     * @param string $errorLogTail Tail of the daemon error log for the alert email
      * @throws EnvException If the failed-start threshold env value is missing or invalid
      */
     private function recordFailedStart(float $uptime, string $errorLogTail): void
@@ -279,7 +281,7 @@ class DockerManager extends BaseManager
         Logger::error(
             "Daemon failed to start {$this->consecutiveFailedStarts} times in a row"
             . ' (last attempt survived ' . number_format($uptime, 2) . 's).'
-            . ' Watchdog keeps retrying. Last daemon errors: ' . $errorLogTail,
+            . ' Watchdog keeps retrying; each failure is logged with its own reason.',
         );
 
         if ($this->consecutiveFailedStarts === $threshold) {
@@ -307,7 +309,7 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Reads the tail of the daemon's raw stderr for the escalation record.
+     * Reads the tail of the daemon's raw stderr for the crash record and alert email.
      *
      * The daemon's stderr is redirected straight to a file rather than to a pipe,
      * so the watchdog cannot read it from the process: {@see Process::getStdErr()} only
@@ -316,7 +318,7 @@ class DockerManager extends BaseManager
      *
      * It is the raw stream and not the Logger's own error log: a fatal is printed by PHP past
      * the Logger, so that is where it lands, and reading the other file would leave the
-     * escalation quoting an empty tail.
+     * crash record quoting an empty tail.
      *
      * @return string Tail of the raw error stream, or a note when it is unconfigured or unreadable
      */

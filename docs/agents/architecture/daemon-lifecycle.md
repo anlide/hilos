@@ -14,8 +14,8 @@
    where `docker logs` reads when the two log addresses themselves are the missing ones:
    the watchdog then hands the child its own descriptors. With the addresses set and
    another name missing, the list lands in the daemon's raw output pair, and the container
-   log shows it once the watchdog quotes the daemon's last words on the first failure
-   `(not in the code yet — HIL-1014)`. Only the daemon checks: in a container
+   log shows it once the watchdog quotes the daemon's last words on the first failure.
+   Only the daemon checks: in a container
    `docker.php` is the watchdog and runs `daemon.php` as its child, so the containerized
    start passes through here anyway, and the worker comes up under a daemon that already
    answered.
@@ -61,18 +61,20 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
     parent is the watchdog itself — without the skip, every single restart would wait out
     the full 5s grace and then SIGKILL a corpse.
 - **Shout, but keep trying.** A start that dies before reaching
-  `DAEMON_MIN_RESTART_INTERVAL` counts as failed; reaching it resets the count. Once the
-  run of failures hits `DAEMON_FAILED_START_THRESHOLD` (default 3) the watchdog logs an
-  error with the count, the last attempt's uptime, and the tail of the daemon's raw
-  stderr stream — `daemon-error-raw.log`, the twin `DaemonRawStream` derives from
-  `DAEMON_ERROR_LOG_FILE` (HIL-480) — because a fatal is printed by PHP past the `Logger`
-  and lands in the raw pair, not in the file the `Logger` writes. It does **not** give up
-  or exit: the cause may be external and temporary (a database still coming up, memory
-  pressure), and the compose restart policy is deliberately left alone. The reason comes
-  from that file and not from `Process::getStdErr()` — the daemon's stderr is redirected
-  to it, so the process has no stderr pipe to read. Under the PHP defaults of the image
-  (`display_errors=1`, `log_errors=0`) the fatal is printed to stdout, so the tail is
-  taken from the raw stream PHP actually prints to `(not in the code yet — HIL-1015)`.
+  `DAEMON_MIN_RESTART_INTERVAL` counts as failed; reaching it resets the count. Every
+  unexpected stop is logged immediately with the process's terminating signal (preferred
+  over an exit code), exit code or unknown status, the uptime, and the tail of the daemon's
+  raw stderr stream — `daemon-error-raw.log`, the twin `DaemonRawStream` derives from
+  `DAEMON_ERROR_LOG_FILE` (HIL-480). Once the run reaches
+  `DAEMON_FAILED_START_THRESHOLD` (default 3), the watchdog adds a line about the series
+  and sends its alert email; the series line does not repeat the tail that the individual
+  failure already logged. It does **not** give up or exit: the cause may be external and
+  temporary (a database still coming up, memory pressure), and the compose restart policy
+  is deliberately left alone. The reason comes from the raw file and not from
+  `Process::getStdErr()` — the daemon's stderr is redirected to it, so the process has no
+  stderr pipe to read. Under the PHP defaults of the image (`display_errors=1`,
+  `log_errors=0`) a fatal is printed to stdout, so the tail must be taken from the raw
+  stream PHP actually prints to `(not in the code yet — HIL-1015)`.
 - **Say one thing when you die, and nothing else (HIL-617).** The watchdog is simple, and
   there is no watchdog for the watchdog. Its own failure is *not* damped by a per-iteration
   `try/catch`, not retried, and not handed to project code through a hook: it mails one

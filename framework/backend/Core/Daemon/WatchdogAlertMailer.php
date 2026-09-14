@@ -144,9 +144,9 @@ final class WatchdogAlertMailer
      *
      * The caller sends this once per run of failures, not once per failure: a node restarting
      * every {@see EnvConstants::DAEMON_MIN_RESTART_INTERVAL} seconds would otherwise mail at
-     * that rate. The loud log line the watchdog already writes is unaffected and keeps its
-     * full error-log tail — only the last non-empty line of it travels, because an application
-     * log with stack traces has no business going out through a mail relay.
+     * that rate. Every failed start already writes its full error-log tail, while the series
+     * line does not repeat it. Only the last non-empty line travels in this separate channel,
+     * because an application log with stack traces has no business going out through a mail relay.
      *
      * @param int $failedStarts How many starts in a row died before reaching the minimum uptime
      * @param float $lastUptimeSeconds How long the last failed start survived, in seconds
