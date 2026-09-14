@@ -27,8 +27,11 @@ import {
   PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
+  SESSION_ACK_REGISTERED,
   SIGNAL_CODE_SEND_PROGRESS,
+  SIGNAL_HANDSHAKE_RESPONSE,
   type ActionHandle,
+  type AuthGate,
   type HilosAuthContext,
   type HilosConnection,
 } from '@hilos/core'
@@ -36,9 +39,14 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAuthSurface } from '../src/auth/HilosAuthSurface.js'
+import { HilosAuthGateContext } from '../src/auth/hilosAuthGateContext.js'
 
 /** The dispatch calls one mounted surface made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
+
+// The session slot the surface reads its ack from — the default of
+// `sessionPendingAck`, which is what the surface asks for (sessionScope.ts).
+const PENDING_ACK_SLOT = 'pendingAck'
 
 // The session slot the surface reads the delivery answer from — the default of
 // `sessionCodeDelivery` (sessionScope.ts).
@@ -91,10 +99,35 @@ function contextAnswering(
 ): {
   context: HilosAuthContext
   dispatched: Dispatched
+  emitProjectSignal: (signal: { type: string; data: unknown }) => void
 } {
   const dispatched: Dispatched = []
+  const projectListeners: Array<
+    (signal: { type: string; data: unknown }) => void
+  > = []
   const connection = {
-    on: vi.fn().mockReturnValue(() => undefined),
+    on: vi.fn((event: string, listener: (payload: never) => void) => {
+      if (event === 'projectSignal') {
+        projectListeners.push(
+          listener as unknown as (signal: {
+            type: string
+            data: unknown
+          }) => void,
+        )
+      }
+
+      return () => {
+        const index = projectListeners.indexOf(
+          listener as unknown as (signal: {
+            type: string
+            data: unknown
+          }) => void,
+        )
+        if (index >= 0) {
+          projectListeners.splice(index, 1)
+        }
+      }
+    }),
   } as unknown as HilosConnection
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
@@ -130,6 +163,11 @@ function contextAnswering(
 
   return {
     dispatched,
+    emitProjectSignal: (signal: { type: string; data: unknown }): void => {
+      for (const listener of projectListeners) {
+        listener(signal)
+      }
+    },
     context: createHilosAuthContext({
       connection,
       scopes: new ScopeManager(),
@@ -366,6 +404,19 @@ function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
+function gateDouble(): { gate: AuthGate; dismissed: ReturnType<typeof vi.fn> } {
+  const dismissed = vi.fn()
+
+  return {
+    dismissed,
+    gate: {
+      modalOpen: createSignal(false),
+      requireAuth: vi.fn(),
+      dismiss: dismissed,
+    },
+  }
+}
+
 /** Let every pending microtask and the render that follows it settle. */
 async function flush(): Promise<void> {
   await act(async () => {
@@ -444,6 +495,34 @@ describe('HilosAuthSurface', () => {
     expect(byId('auth-icon-passkey')).toBeNull()
     expect(byId('auth-icon-magic-link')).toBeNull()
     expect(byId('auth-channel-sms')).toBeNull()
+  })
+
+  it('takes the finished panel away when a handshake says the session owes nothing', async () => {
+    const { context, emitProjectSignal } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+    ])
+    const { gate, dismissed } = gateDouble()
+    render(
+      <HilosAuthGateContext.Provider value={gate}>
+        <HilosAuthSurface context={context} />
+      </HilosAuthGateContext.Provider>,
+    )
+
+    context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+    await flush()
+    expect(byId('auth-continue')).not.toBeNull()
+
+    // The clearing frame never arrived; a later handshake restates that the
+    // session owes nothing. The panel comes down from that fact, not from the
+    // session slot changing — that slot is still the standing mark.
+    emitProjectSignal({
+      type: SIGNAL_HANDSHAKE_RESPONSE,
+      data: { data: { pendingAck: null } },
+    })
+    await flush()
+
+    expect(byId('auth-continue')).toBeNull()
+    expect(dismissed).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the submit path alive: the lookup reveals the password and submit signs in', async () => {

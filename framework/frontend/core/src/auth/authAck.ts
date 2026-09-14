@@ -2,11 +2,12 @@
 // auth machine has to stand to draw it (HIL-422). The mark travels as a value,
 // the machine speaks in step+intent, and the screen falls out of the pair the
 // machine already knows (authFlow.ts DONE_SCREENS) — so this module maps the
-// value onto that pair and owns nothing else. A view applies the result through
-// `applyExternal`, the same door a converge comes in by, which is why the flow
-// machine itself needs no branch for acks at all. A mark that CLEARS is not this
-// module's business either: a view answers it, because only a view knows whether
-// the panel is still what its screen shows (HIL-865).
+// value onto that pair. A view applies the result through `applyExternal`, the
+// same door a converge comes in by, which is why the flow machine itself needs
+// no branch for acks at all. A mark that CLEARS is this module's decision
+// (`shouldLowerAckPanel`) and the view's execution: the function says whether
+// the standing panel is still owed, and only a view knows whether the panel it
+// is showing is the one the mark raised (HIL-865, HIL-955).
 
 import {
   SESSION_ACK_PASSWORD_CHANGED,
@@ -42,4 +43,29 @@ export function authAckToFlowPatch(
     default:
       return null
   }
+}
+
+/**
+ * Whether a handshake that says the session owes nothing should take the
+ * standing panel down (HIL-955).
+ *
+ * The first member is the RAW value off the frame, never
+ * {@link authAckToFlowPatch} of it: an ack kind this build cannot draw
+ * returns a null patch and still means the session owes a sentence.
+ *
+ * @param params The three facts the rule reads.
+ * @param params.ackOnHandshake The raw ack off the handshake_response frame.
+ * @param params.panelRaisedByAck Whether this panel was raised by the mark.
+ * @param params.step The step the auth machine is standing on.
+ */
+export function shouldLowerAckPanel(params: {
+  ackOnHandshake: string | null
+  panelRaisedByAck: boolean
+  step: AuthFlowState['step']
+}): boolean {
+  return (
+    params.ackOnHandshake === null &&
+    params.panelRaisedByAck &&
+    params.step === 'done'
+  )
 }

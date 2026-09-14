@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { authAckToFlowPatch } from '../../src/auth/authAck.js'
+import {
+  authAckToFlowPatch,
+  shouldLowerAckPanel,
+} from '../../src/auth/authAck.js'
 import {
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
@@ -29,5 +32,54 @@ describe('authAckToFlowPatch', () => {
   it('asks for nothing for a kind this build has no screen for', () => {
     expect(authAckToFlowPatch('auth_teleported')).toBeNull()
     expect(authAckToFlowPatch('')).toBeNull()
+  })
+})
+
+describe('shouldLowerAckPanel', () => {
+  it('lowers when the handshake owes nothing, the mark raised the panel, and the machine stands on done', () => {
+    expect(
+      shouldLowerAckPanel({
+        ackOnHandshake: null,
+        panelRaisedByAck: true,
+        step: 'done',
+      }),
+    ).toBe(true)
+  })
+
+  it('refuses when the frame names any non-empty ack, including a kind this build cannot draw', () => {
+    expect(
+      shouldLowerAckPanel({
+        ackOnHandshake: SESSION_ACK_PASSWORD_CHANGED,
+        panelRaisedByAck: true,
+        step: 'done',
+      }),
+    ).toBe(false)
+    expect(
+      shouldLowerAckPanel({
+        ackOnHandshake: 'auth_teleported',
+        panelRaisedByAck: true,
+        step: 'done',
+      }),
+    ).toBe(false)
+  })
+
+  it('refuses when the panel was not raised by the mark', () => {
+    expect(
+      shouldLowerAckPanel({
+        ackOnHandshake: null,
+        panelRaisedByAck: false,
+        step: 'done',
+      }),
+    ).toBe(false)
+  })
+
+  it('refuses off the done step', () => {
+    expect(
+      shouldLowerAckPanel({
+        ackOnHandshake: null,
+        panelRaisedByAck: true,
+        step: 'identifier',
+      }),
+    ).toBe(false)
   })
 })

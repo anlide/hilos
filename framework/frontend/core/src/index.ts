@@ -189,6 +189,7 @@ export {
 } from './subscription/bindTableViewport.js'
 export {
   bindSessionScope,
+  handshakeResponseAck,
   sessionUserName,
   sessionUserId,
   sessionUserIsAdmin,
@@ -197,6 +198,7 @@ export {
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionCodeDelivery,
+  SIGNAL_HANDSHAKE_RESPONSE,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
@@ -253,7 +255,7 @@ export {
   type HilosPushSubscriptionStore,
 } from './notifications/pushSubscription.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
-export { authAckToFlowPatch } from './auth/authAck.js'
+export { authAckToFlowPatch, shouldLowerAckPanel } from './auth/authAck.js'
 export {
   createAuthActions,
   toFlowPatch,

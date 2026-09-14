@@ -30,6 +30,7 @@ import {
   ScopeManager,
   SESSION_ACK_REGISTERED,
   SIGNAL_CODE_SEND_PROGRESS,
+  SIGNAL_HANDSHAKE_RESPONSE,
   type ActionHandle,
   type AuthGate,
   type HilosAuthContext,
@@ -96,10 +97,35 @@ type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 function passwordOnlyContext(refuseLogin = false): {
   context: HilosAuthContext
   dispatched: Dispatched
+  emitProjectSignal: (signal: { type: string; data: unknown }) => void
 } {
   const dispatched: Dispatched = []
+  const projectListeners: Array<
+    (signal: { type: string; data: unknown }) => void
+  > = []
   const connection = {
-    on: vi.fn().mockReturnValue(() => undefined),
+    on: vi.fn((event: string, listener: (payload: never) => void) => {
+      if (event === 'projectSignal') {
+        projectListeners.push(
+          listener as unknown as (signal: {
+            type: string
+            data: unknown
+          }) => void,
+        )
+      }
+
+      return () => {
+        const index = projectListeners.indexOf(
+          listener as unknown as (signal: {
+            type: string
+            data: unknown
+          }) => void,
+        )
+        if (index >= 0) {
+          projectListeners.splice(index, 1)
+        }
+      }
+    }),
   } as unknown as HilosConnection
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
@@ -135,6 +161,11 @@ function passwordOnlyContext(refuseLogin = false): {
 
   return {
     dispatched,
+    emitProjectSignal: (signal: { type: string; data: unknown }): void => {
+      for (const listener of projectListeners) {
+        listener(signal)
+      }
+    },
     context: createHilosAuthContext({
       connection,
       scopes: new ScopeManager(),
@@ -515,6 +546,31 @@ describe('HilosAuthSurface', () => {
     // The other tab pressed Continue; the server cleared the row and published
     // the cleared mark back here. That, and nothing local, is what closes it.
     context.scopes.session.data.set(PENDING_ACK_SLOT, null)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-continue"]').exists()).toBe(false)
+    expect(dismissed).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes the finished panel away when a handshake says the session owes nothing', async () => {
+    const { context, emitProjectSignal } = passwordOnlyContext()
+    const { gate, dismissed } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+
+    context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-continue"]').exists()).toBe(true)
+
+    // The clearing frame never arrived; a later handshake restates that the
+    // session owes nothing. The panel comes down from that fact, not from the
+    // session slot changing — that slot is still the standing mark.
+    emitProjectSignal({
+      type: SIGNAL_HANDSHAKE_RESPONSE,
+      data: { data: { pendingAck: null } },
+    })
     await flush(wrapper)
 
     expect(wrapper.find('[data-id="auth-continue"]').exists()).toBe(false)

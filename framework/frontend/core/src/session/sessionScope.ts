@@ -178,6 +178,28 @@ export interface SessionScopeOptions {
 }
 
 /**
+ * The pending-ack kind a handshake_response frame carries, or null when the
+ * session owes nothing.
+ *
+ * Read off the FRAME, not the session scope: the surface and
+ * {@link bindSessionScope} listen to the same emitter, and a plan that depends
+ * on which listener ran first is a plan that breaks when a project moves a
+ * line. Absent, null, a non-string and the empty string all mean the session
+ * owes nothing (HIL-955).
+ *
+ * @param data The `data` of a handshake_response frame, the shape
+ *   {@link bindSessionScope} ingests.
+ */
+export function handshakeResponseAck(data: unknown): string | null {
+  if (typeof data !== 'object' || data === null) {
+    return null
+  }
+  const ack = (data as ScopePayloadWire).data?.[DEFAULT_PENDING_ACK_SLOT]
+
+  return typeof ack === 'string' && ack !== '' ? ack : null
+}
+
+/**
  * Ingest every handshake response into the session scope, resolving the current
  * user under its slot. Register this before the socket opens so the first
  * response lands.

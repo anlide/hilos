@@ -31,8 +31,10 @@ import {
 import {
   AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
+  SIGNAL_HANDSHAKE_RESPONSE,
   authAckToFlowPatch,
   authConvergeSignalSchema,
+  handshakeResponseAck,
   CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
   CODE_SEND_STATE_QUEUED,
@@ -52,6 +54,7 @@ import {
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
+  shouldLowerAckPanel,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   toFlowPatch,
@@ -272,6 +275,11 @@ const expiresAt = useSignal(auth.expiresAt)
 // stale copy of state the framework already owns.
 const resumable = useSignal(sessionPendingAuthStep(context.scopes))
 const ack = useSignal(sessionPendingAck(context.scopes))
+// Whether THIS panel was raised by the mark. A handshake that says the session
+// owes nothing lowers only that panel, never the initiator's: they stand on
+// done from the action reply before the frame carrying the mark arrives
+// (HIL-955). Not a signal — the screen does not draw it.
+let panelRaisedByAck = false
 // What this installation can send a one-time code to, read the same way and for
 // the same reason (HIL-830): the browser half cannot know the backend's mail and
 // channel configuration, so it is told rather than asked to have an opinion.
@@ -883,7 +891,10 @@ function focusStep(): void {
 // them.
 watch(
   () => state.value.step,
-  () => {
+  (step, previous) => {
+    if (previous === 'done' && step !== 'done') {
+      panelRaisedByAck = false
+    }
     void nextTick(focusStep)
   },
 )
@@ -910,6 +921,7 @@ watch(pending, (busy) => {
 watch(ack, (value, previous) => {
   const patch = authAckToFlowPatch(value)
   if (patch !== null) {
+    panelRaisedByAck = true
     auth.applyExternal(patch)
 
     return
@@ -921,6 +933,7 @@ watch(ack, (value, previous) => {
   // dispatch that cleared the mark cannot land on the emptied machine. It comes
   // first: dismiss() usually unmounts the surface, and a reset after it would
   // run for nothing wherever the surface does stay (the anonymous-session modal).
+  panelRaisedByAck = false
   auth.reset()
   gate?.dismiss()
 })
@@ -972,6 +985,7 @@ function applyTripOutcome(outcome: OAuthTripOutcome): void {
 
 let stopWatchingChannels: (() => void) | null = null
 let stopWatchingConverge: (() => void) | null = null
+let stopWatchingHandshake: (() => void) | null = null
 let stopWatchingTrip: (() => void) | null = null
 let clock: ReturnType<typeof setInterval> | null = null
 
@@ -1013,6 +1027,27 @@ onMounted(() => {
     },
   )
 
+  stopWatchingHandshake = context.connection.on(
+    'projectSignal',
+    (signal: ProjectSignal) => {
+      if (signal.type !== SIGNAL_HANDSHAKE_RESPONSE) {
+        return
+      }
+      if (
+        !shouldLowerAckPanel({
+          ackOnHandshake: handshakeResponseAck(signal.data),
+          panelRaisedByAck,
+          step: auth.flow.get().step,
+        })
+      ) {
+        return
+      }
+      panelRaisedByAck = false
+      auth.reset()
+      gate?.dismiss()
+    },
+  )
+
   clock = setInterval(() => {
     now.value = Date.now()
   }, COUNTDOWN_TICK_MS)
@@ -1030,6 +1065,7 @@ onMounted(() => {
   applyReportedStep(resumable.value)
   const patch = authAckToFlowPatch(ack.value)
   if (patch !== null) {
+    panelRaisedByAck = true
     auth.applyExternal(patch)
   }
 })
@@ -1039,6 +1075,8 @@ onUnmounted(() => {
   stopWatchingChannels = null
   stopWatchingConverge?.()
   stopWatchingConverge = null
+  stopWatchingHandshake?.()
+  stopWatchingHandshake = null
   stopWatchingTrip?.()
   stopWatchingTrip = null
   if (clock !== null) {

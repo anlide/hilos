@@ -160,8 +160,9 @@ export function createAuthGate(options: AuthGateOptions): AuthGate {
   // The ack is a surface trigger in its own right: it can land in a tab that was
   // not signing anybody in (the other window of the same session), and there the
   // panel is the only thing that would ever open the surface. Raising it is all
-  // the gate does with the mark — the ack going empty is answered by the view,
-  // the only place that knows whether the panel is still what the screen shows.
+  // the gate does with the mark — lowering is the view's, because only the view
+  // knows whether the panel it is showing is the one the mark raised, and
+  // whether a handshake that now says nothing is owed should take it down.
   if (pendingAck !== undefined) {
     subscribeSignal(pendingAck, (ack) => {
       if (ack !== null) {

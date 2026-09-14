@@ -37,6 +37,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import {
   AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
+  SIGNAL_HANDSHAKE_RESPONSE,
   authAckToFlowPatch,
   authConvergeSignalSchema,
   CODE_SEND_STATE_FAILED,
@@ -48,6 +49,7 @@ import {
   createAuthFlow,
   createOAuthLogin,
   hilosCodeSendProgress,
+  handshakeResponseAck,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
   oauthTripMessage,
@@ -58,6 +60,7 @@ import {
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
+  shouldLowerAckPanel,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   toFlowPatch,
@@ -400,6 +403,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const ack = useSignal(pendingAck)
   const reportedStep = useSignal(pendingAuthStep)
   const codeDelivery = useSignal(codeDeliverySignal)
+  // Whether THIS panel was raised by the mark. A handshake that says the session
+  // owes nothing lowers only that panel, never the initiator's: they stand on
+  // done from the action reply before the frame carrying the mark arrives
+  // (HIL-955). A ref, not state — the screen does not draw it.
+  const panelRaisedByAck = useRef(false)
 
   // Set on mount when an OAuth email collision armed a pending link (HIL-282):
   // the account already exists, so the surface pre-fills its address and shows a
@@ -770,6 +778,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     if (previousStep.current === state.step) {
       return
     }
+    if (previousStep.current === 'done' && state.step !== 'done') {
+      panelRaisedByAck.current = false
+    }
     previousStep.current = state.step
     focusStep()
   }, [state.step])
@@ -801,6 +812,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     const previous = previousAck.current
     previousAck.current = ack
     if (patch !== null) {
+      panelRaisedByAck.current = true
       auth.applyExternal(patch)
 
       return
@@ -813,6 +825,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     // comes first: dismiss() usually unmounts the surface, and a reset after it
     // would run for nothing wherever the surface does stay (the modal an
     // anonymous session keeps).
+    panelRaisedByAck.current = false
     auth.reset()
     gate?.dismiss()
   }, [ack, auth, gate])
@@ -926,6 +939,27 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       },
     )
 
+    const stopWatchingHandshake = context.connection.on(
+      'projectSignal',
+      (signal: ProjectSignal) => {
+        if (signal.type !== SIGNAL_HANDSHAKE_RESPONSE) {
+          return
+        }
+        if (
+          !shouldLowerAckPanel({
+            ackOnHandshake: handshakeResponseAck(signal.data),
+            panelRaisedByAck: panelRaisedByAck.current,
+            step: auth.flow.get().step,
+          })
+        ) {
+          return
+        }
+        panelRaisedByAck.current = false
+        auth.reset()
+        gate?.dismiss()
+      },
+    )
+
     const clock = setInterval(() => {
       setNow(Date.now())
     }, COUNTDOWN_TICK_MS)
@@ -978,12 +1012,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     auth.resume(pendingAuthStep.get())
     const patch = authAckToFlowPatch(pendingAck.get())
     if (patch !== null) {
+      panelRaisedByAck.current = true
       auth.applyExternal(patch)
     }
 
     return () => {
       stopWatchingChannels()
       stopWatchingConverge()
+      stopWatchingHandshake()
       stopWatchingTrip()
       clearInterval(clock)
     }
@@ -992,6 +1028,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     authActions,
     oauth,
     context,
+    gate,
     pendingAuthStep,
     pendingAck,
     applyFromServer,

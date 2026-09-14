@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   bindSessionScope,
+  handshakeResponseAck,
   sessionUserName,
   sessionUserIsAdmin,
   sessionUserId,
@@ -379,5 +380,31 @@ describe('sessionScope', () => {
     })
 
     expect(step.get()).toBeNull()
+  })
+})
+
+describe('handshakeResponseAck', () => {
+  it('returns a kind the frame carries', () => {
+    expect(
+      handshakeResponseAck({
+        data: { pendingAck: SESSION_ACK_REGISTERED },
+      }),
+    ).toBe(SESSION_ACK_REGISTERED)
+  })
+
+  it('returns null when the frame carries null', () => {
+    expect(handshakeResponseAck({ data: { pendingAck: null } })).toBeNull()
+  })
+
+  it('returns null when the frame carries the empty string', () => {
+    expect(handshakeResponseAck({ data: { pendingAck: '' } })).toBeNull()
+  })
+
+  it('returns null when the plain section is absent', () => {
+    expect(
+      handshakeResponseAck({
+        entities: { currentUser: { id: 1, name: 'Ada' } },
+      }),
+    ).toBeNull()
   })
 })

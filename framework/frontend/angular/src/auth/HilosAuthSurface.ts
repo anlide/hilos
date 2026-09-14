@@ -40,6 +40,7 @@ import type { WritableSignal } from '@angular/core'
 import {
   AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
+  SIGNAL_HANDSHAKE_RESPONSE,
   authAckToFlowPatch,
   authConvergeSignalSchema,
   CODE_SEND_STATE_FAILED,
@@ -51,6 +52,7 @@ import {
   createAuthFlow,
   createOAuthLogin,
   hilosCodeSendProgress,
+  handshakeResponseAck,
   oauthTrip,
   oauthTripMessage,
   oauthTripTitle,
@@ -61,6 +63,7 @@ import {
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
+  shouldLowerAckPanel,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
   subscribeSignal,
@@ -1162,6 +1165,11 @@ export class HilosAuthSurface {
   // to an empty mark that closes a finished panel, and the first binding has no
   // transition behind it.
   private previousAck: string | null = null
+  // Whether THIS panel was raised by the mark. A handshake that says the session
+  // owes nothing lowers only that panel, never the initiator's: they stand on
+  // done from the action reply before the frame carrying the mark arrives
+  // (HIL-955). A plain field, not a signal — the screen does not draw it.
+  private panelRaisedByAck = false
 
   protected readonly heading = computed(() =>
     this.screenKey() === 'confirm_identifier' &&
@@ -1556,6 +1564,27 @@ export class HilosAuthSurface {
         },
       )
 
+      const stopWatchingHandshake = context.connection.on(
+        'projectSignal',
+        (signal: ProjectSignal) => {
+          if (signal.type !== SIGNAL_HANDSHAKE_RESPONSE) {
+            return
+          }
+          if (
+            !shouldLowerAckPanel({
+              ackOnHandshake: handshakeResponseAck(signal.data),
+              panelRaisedByAck: this.panelRaisedByAck,
+              step: auth.flow.get().step,
+            })
+          ) {
+            return
+          }
+          this.panelRaisedByAck = false
+          auth.reset()
+          this.gate?.dismiss()
+        },
+      )
+
       const clock = setInterval(() => {
         this.now.set(Date.now())
       }, COUNTDOWN_TICK_MS)
@@ -1598,12 +1627,14 @@ export class HilosAuthSurface {
       this.applyReportedStep(auth, this.pendingAuthStep().get())
       const patch = authAckToFlowPatch(this.pendingAck().get())
       if (patch !== null) {
+        this.panelRaisedByAck = true
         auth.applyExternal(patch)
       }
 
       onCleanup(() => {
         stopWatchingChannels()
         stopWatchingConverge()
+        stopWatchingHandshake()
         stopWatchingTrip()
         clearInterval(clock)
       })
@@ -1630,6 +1661,9 @@ export class HilosAuthSurface {
     // focus trap already relies on.
     effect(() => {
       const step = this.state().step
+      if (step !== 'done') {
+        this.panelRaisedByAck = false
+      }
       const field = {
         identifier: this.identifierInput(),
         consent: this.consentInput(),
@@ -1682,6 +1716,7 @@ export class HilosAuthSurface {
       this.previousAck = ack
       const patch = authAckToFlowPatch(ack)
       if (patch !== null) {
+        this.panelRaisedByAck = true
         this.auth().applyExternal(patch)
 
         return
@@ -1694,6 +1729,7 @@ export class HilosAuthSurface {
       // It comes first: dismiss() usually unmounts the surface, and a reset
       // after it would run for nothing wherever the surface does stay (the
       // modal an anonymous session keeps).
+      this.panelRaisedByAck = false
       this.auth().reset()
       this.gate?.dismiss()
     })
