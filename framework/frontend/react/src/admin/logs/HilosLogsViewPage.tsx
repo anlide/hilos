@@ -182,10 +182,11 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
     )
   }
 
-  // Sticking to the bottom happens after the rows are drawn and BEFORE the browser
-  // paints, because the height to scroll to does not exist until the rows are in
-  // the DOM and a painted frame at the old offset is a visible jerk on every batch
-  // of lines.
+  // The pane is at the bottom whenever the viewer is pinned, which is a rule
+  // about both the rows and the pin. Sticking happens after the rows are drawn
+  // and BEFORE the browser paints, because the height to scroll to does not
+  // exist until the rows are in the DOM and a painted frame at the old offset
+  // is a visible jerk on every batch of lines.
   useLayoutEffect(() => {
     if (!pinned) {
       return
@@ -195,8 +196,7 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
     if (element !== null) {
       element.scrollTop = element.scrollHeight
     }
-    // The pin is read but is not what re-runs this: sticking follows the rows.
-  }, [rows])
+  }, [rows, pinned])
 
   // Which stacks are open, by entry key. The key survives a page of older lines
   // arriving above, so an opened stack stays open when the pane grows upwards.

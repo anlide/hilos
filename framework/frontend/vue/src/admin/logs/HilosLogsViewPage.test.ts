@@ -448,6 +448,25 @@ describe('HilosLogsViewPage', () => {
     )
   })
 
+  it('takes the pane back to the tail when the reader goes back with nothing waiting', async () => {
+    const { connection, pushCatalog } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+
+    const pane = wrapper.find('[data-id="hilos-log-pane"]').element
+    await scrollUp(pane)
+
+    expect(wrapper.find('[data-id="hilos-log-back-to-tail"]').text()).toBe(
+      'Back to the tail',
+    )
+
+    await wrapper.find('[data-id="hilos-log-back-to-tail"]').trigger('click')
+    await nextTick()
+
+    expect(pane.scrollTop).toBe(1000)
+  })
+
   it('draws a note as a row of the feed, in the reading where it happened', async () => {
     const { connection, pushCatalog, pushAppended, sent } = makeConnection()
     const wrapper = mountPage(connection, LIVE_FILE)

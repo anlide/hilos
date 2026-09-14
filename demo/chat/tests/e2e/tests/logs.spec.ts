@@ -110,6 +110,40 @@ test('follows a live log file: an appended line arrives on its own, and one appe
     page.getByTestId('hilos-log-entry').filter({ hasText: `${waiting} #1` }),
   ).toBeVisible()
 
+  // The poured line is in the DOM either way; only the pane's position proves the
+  // press took the reader to the tail, not merely rebuilt the feed under their
+  // old offset. "At the very bottom" is the honest assertion: the view writes
+  // scrollTop = scrollHeight and the browser clamps it.
+  await expect
+    .poll(
+      () =>
+        pane.evaluate(
+          (element) =>
+            element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+    )
+    .toBeLessThanOrEqual(1)
+
+  // The owner's repro: nothing arrived while they were up, so drain() is a no-op
+  // and only the pin rising can move the pane. A suite that never takes this
+  // path stays green over the live bug.
+  await pane.evaluate((element) => {
+    element.scrollTop = 0
+  })
+  await expect(backToTail).toBeVisible()
+  await backToTail.click()
+  await expect
+    .poll(
+      () =>
+        pane.evaluate(
+          (element) =>
+            element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
+    )
+    .toBeLessThanOrEqual(1)
+
   // The Follow switch was not touched once in the whole scenario, which is the
   // decision this asserts: scrolling releases the stickiness, not the tail.
 })

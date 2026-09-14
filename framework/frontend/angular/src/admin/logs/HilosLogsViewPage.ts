@@ -545,7 +545,8 @@ export class HilosLogsViewPage {
     // Sticking to the bottom happens after the rows are drawn, because the height to
     // scroll to does not exist until then; an ordinary effect would let the browser
     // paint one frame with the old scroll position and the pane would jump on every
-    // batch of lines.
+    // batch of lines. The pin is read inside this effect on purpose: the effect is
+    // reactive, and the pane must follow the pin as well as the rows.
     afterRenderEffect(() => {
       this.rows()
       if (!this.pinned()) {

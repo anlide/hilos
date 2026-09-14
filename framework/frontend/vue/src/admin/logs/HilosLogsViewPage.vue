@@ -194,9 +194,10 @@ function onScroll(): void {
   )
 }
 
-// Sticking to the bottom happens after the rows are drawn, because the height to
-// scroll to does not exist until then (the same move as demo/chat's Main.vue).
-watch(rows, async () => {
+// The pane is at the bottom whenever the viewer is pinned, which is a rule
+// about both the rows and the pin. The scroll waits for nextTick because the
+// height to scroll to does not exist until the rows are drawn.
+watch([rows, pinned], async () => {
   if (!pinned.value) {
     return
   }

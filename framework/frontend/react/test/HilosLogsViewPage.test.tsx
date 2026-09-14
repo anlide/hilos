@@ -466,6 +466,24 @@ describe('HilosLogsViewPage', () => {
     expect(byId(container, 'hilos-log-back-to-tail')).toBeNull()
   })
 
+  it('takes the pane back to the tail when the reader goes back with nothing waiting', () => {
+    const { connection, pushCatalog } = makeConnection()
+    const container = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    const pane = byId(container, 'hilos-log-pane') as HTMLElement
+    scrollUp(pane)
+
+    expect(byId(container, 'hilos-log-back-to-tail')?.textContent).toBe(
+      'Back to the tail',
+    )
+
+    act(() => {
+      fireEvent.click(byId(container, 'hilos-log-back-to-tail') as HTMLElement)
+    })
+
+    expect(pane.scrollTop).toBe(1000)
+  })
+
   it('draws a note as a row of the feed, in the reading where it happened', () => {
     const { connection, pushCatalog, pushAppended, sent } = makeConnection()
     const container = mountPage(connection, LIVE_FILE)
