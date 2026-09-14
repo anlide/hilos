@@ -6,9 +6,9 @@ namespace Hilos\Core\TruthSource;
 
 use Closure;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
-use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
@@ -64,7 +64,7 @@ final class OwnershipDeclaration
      * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
      * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform
      */
-        public static function dbCollectionsOf(string $agentClass): array
+    public static function dbCollectionsOf(string $agentClass): array
     {
         return self::declaredCollectionsOf($agentClass, static fn (string $class): array => $class::OWNS_DB);
     }
