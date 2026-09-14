@@ -477,8 +477,11 @@ mounts connections at the presence stage answers null from
 `sessionConnectionsSource()`, so the worker asks the row about a null hash and
 refuses the subscription with `PageServiceUnavailableException` — while the
 welcome, which derives the hash on the master and needs no roster at all, has
-already told that browser it is inside. The two verdicts part company only
-there, and only for a project standing on the presence stage.
+already told that browser it is inside. `SessionStageStartupGuard` refuses that
+configuration before the daemon composes or binds a server. Its daemon error
+names the mounted roster, the runtime context that mounted it, the presence base
+it extends, and the session-stage base it must extend instead, so the project
+author fixes the mount rather than meeting a half-working verification window.
 
 **The welcome is personalized; the broadcast is addressed by browser.** Every
 connection is answered with a welcome computed for itself, which is why a reload
