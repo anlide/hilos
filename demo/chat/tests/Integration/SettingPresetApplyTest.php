@@ -13,6 +13,7 @@ use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -289,12 +290,13 @@ final class SettingPresetApplyTest extends IntegrationTestCase
     private function withSettingsWriter(callable $body): void
     {
         $agent = new SettingsLibraryAgent();
-        OwnershipDeclaration::claimDb($agent::class, $agent->getId());
+        OwnershipDeclaration::claimAll($agent);
 
         try {
             $this->underAgent($agent, $body);
         } finally {
             TruthSourceRegistry::unregisterAgent($agent->getId());
+            RtTruthSourceRegistry::unregisterAgent($agent->getId());
             $this->removeTheRowsTheGroupWrote();
         }
     }

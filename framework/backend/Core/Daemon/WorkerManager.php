@@ -751,19 +751,11 @@ abstract class WorkerManager extends BaseManager
         // agent this worker holds, and one the tracker has never heard of is never idle.
         $this->agentIdleTracker->noteStarted($agentId, microtime(true));
         // Before the start hook and not inside it: an agent writes its first row within onStart(),
-        // so the claim has to stand by then - this is the same beat at which the helper calls the
-        // hook still makes take effect. Reading the class rather than the instance is what lets
-        // the same declaration be answered where no instance exists at all. Both halves stand here
-        // for that one reason; the runtime half also travels to the node, but not from this line -
-        // notifyRtSourcesRegistered() below asks the registry once the hook has returned.
-        // The narrow halves ask the INSTANCE for the rows it holds, and this is the one place that
-        // is allowed to: the reader interest was raised above and off the class, while a claim is
-        // laid on something already alive.
+        // so the claim has to stand by then. The hook stands outside the try block because its
+        // failure means it opened nothing and has nothing to close, so the catch block below
+        // rolls back the claims without needing to call onStop().
         try {
-            OwnershipDeclaration::claimDb($agent::class, $agentId);
-            OwnershipDeclaration::claimRt($agent::class, $agentId);
-            OwnershipDeclaration::claimDbRows($agent);
-            OwnershipDeclaration::claimRtRows($agent);
+            OwnershipDeclaration::claimAll($agent);
         } catch (Throwable $refusal) {
             // Half the claims may already stand, and the agent is in the manager since
             // createAndAddAgent() above: without this the worker would hold an agent nobody ever

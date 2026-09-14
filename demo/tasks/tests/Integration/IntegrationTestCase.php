@@ -11,6 +11,7 @@ use Demo\Tasks\Agents\TasksAgent;
 use Demo\Tasks\Database\Database;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -241,25 +242,14 @@ abstract class IntegrationTestCase extends TestCase
     /**
      * Starts one agent the way a node does: its declared claims first, then the hook.
      *
-     * The order is the mechanism and not a tidiness. An agent writes its first row inside
-     * {@see AbstractAgent::onStart()}, so the grant has to stand by then - which is why
-     * {@see WorkerManager} lays it before calling the hook and why a case that calls the hook
-     * itself has to do the same. A case that skips this finds every write of the agent refused
-     * with "no truth source registered", however correct the declaration on its class is.
-     *
-     * Both halves and both widths, exactly as the worker asks for them: the whole-collection
-     * claims are read off the CLASS, and the by-row claims off the INSTANCE, which is the only
-     * thing that knows which rows it holds.
+     * @see OwnershipDeclaration::claimAll()
      *
      * @param AbstractAgent $agent Agent to claim for and start
      * @throws HilosException When the agent's own startup fails
      */
     protected function startAgent(AbstractAgent $agent): void
     {
-        OwnershipDeclaration::claimDb($agent::class, $agent->getId());
-        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
-        OwnershipDeclaration::claimDbRows($agent);
-        OwnershipDeclaration::claimRtRows($agent);
+        OwnershipDeclaration::claimAll($agent);
 
         $agent->onStart();
     }
@@ -301,6 +291,7 @@ abstract class IntegrationTestCase extends TestCase
     protected function tearDown(): void
     {
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
     }
 }

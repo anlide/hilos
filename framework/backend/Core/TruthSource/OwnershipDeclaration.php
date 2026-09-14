@@ -8,6 +8,7 @@ use Closure;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
@@ -33,12 +34,37 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 final class OwnershipDeclaration
 {
     /**
+     * Registers every collection the agent declares, database and runtime, whole and by rows.
+     *
+     * The order is the mechanism and not a tidiness. An agent writes its first row inside
+     * {@see AbstractAgent::onStart()}, so the grant has to stand by then - which is why
+     * {@see WorkerManager} lays it before calling the hook. A caller that skips this finds
+     * every write of the agent refused with "no truth source registered", however correct
+     * the declaration on its class is.
+     *
+     * Both halves and both widths, exactly as the worker asks for them: the whole-collection
+     * claims are read off the CLASS (which lets the declaration be answered where no instance exists),
+     * and the by-row claims off the INSTANCE, which is the only thing that knows which rows it holds.
+     *
+     * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
+     * @throws ClaimWidthConflictException When one collection is named by both widths of a half
+     * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
+     */
+    public static function claimAll(AbstractAgent $agent): void
+    {
+        self::claimDb($agent::class, $agent->getId());
+        self::claimRt($agent::class, $agent->getId());
+        self::claimDbRows($agent);
+        self::claimRtRows($agent);
+    }
+
+    /**
      * The database collections a class owns, its parents' claims folded in.
      *
      * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
      * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform
      */
-    public static function dbCollectionsOf(string $agentClass): array
+        public static function dbCollectionsOf(string $agentClass): array
     {
         return self::declaredCollectionsOf($agentClass, static fn (string $class): array => $class::OWNS_DB);
     }

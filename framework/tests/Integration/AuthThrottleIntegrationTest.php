@@ -258,8 +258,7 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     private function startedAgent(): AuthThrottleAgent
     {
         $agent = new AuthThrottleAgent();
-        OwnershipDeclaration::claimDb($agent::class, $agent->getId());
-        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
+        OwnershipDeclaration::claimAll($agent);
         $agent->onStart();
 
         return $agent;
