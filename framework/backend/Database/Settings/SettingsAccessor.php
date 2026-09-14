@@ -30,6 +30,9 @@ class SettingsAccessor implements ArrayAccess
      */
     private string $catalogClass = SettingsCatalogStub::class;
 
+    /** @var ?array<string, array<string, mixed>> Catalog as the provider named it, resolved once per accessor */
+    private ?array $catalogCache = null;
+
     /**
      * Creates a settings accessor backed by the given catalog provider.
      *
@@ -41,13 +44,24 @@ class SettingsAccessor implements ArrayAccess
     }
 
     /**
-     * Returns the settings catalog for this accessor.
+     * Returns the settings catalog for this accessor, asking the provider once.
+     *
+     * The catalog is a declaration, not a value: the provider builds the same array from the same
+     * literals every call, so keeping the first answer changes nothing an owner can observe. It is
+     * remembered because one index read consults it three times — the key check in offsetGet, the type
+     * in typeFor, and the value in effectiveValueFor — while a settings screen row asks it four or more times.
+     *
+     * One section of the catalog derives its defaults from the environment (LogSettingsCatalog
+     * pulls env values for disk threshold and push interval defaults, included in each demo catalog).
+     * The cached catalog does not become stale: the only mechanism in the process that re-reads env is
+     * Hilos::reloadEnv(), called exclusively by BaseManager::handleRestart(), which immediately sets
+     * shouldExit, so a running daemon process never continues with reloaded environment values.
      *
      * @return array<string, array<string, mixed>> Catalog keyed by setting key
      */
     protected function getCatalog(): array
     {
-        return $this->catalogClass::getCatalog();
+        return $this->catalogCache ??= $this->catalogClass::getCatalog();
     }
 
     /**
