@@ -44,6 +44,9 @@ import { bindPageReady } from '../../src/subscription/pageReadyGate.js'
 /** The provider the fixture's trips are for. */
 const GITHUB = 'oauth:github'
 
+/** A second provider, so a start over a live trip can name a different one. */
+const GOOGLE = 'oauth:google'
+
 /** The absolute URL the daemon answers a start with. */
 const AUTHORIZE_URL = 'https://github.test/login/oauth/authorize?state=abc'
 
@@ -175,6 +178,7 @@ function tripWorld(): TripWorld {
     channels: [],
     oauthProviders: [
       { key: GITHUB, label: 'Continue with GitHub', name: 'GitHub' },
+      { key: GOOGLE, label: 'Continue with Google', name: 'Google' },
     ],
     termsPath: '/terms',
     privacyPath: '/privacy',
@@ -493,8 +497,9 @@ describe('the OAuth trip machine', () => {
     const abandoned = world.oauth.startOAuthLogin(GITHUB)
     const first = world.opened
 
-    // The person gives up waiting and starts again; the window is reused, so the
-    // second trip is the one they are now standing in front of.
+    // The person gives up waiting and starts again; the new start closed the
+    // previous window and ended that trip, so the second is the one they are now
+    // standing in front of.
     world.holdStart = false
     world.opened = providerWindow()
     await world.oauth.startOAuthLogin(GITHUB)
@@ -505,8 +510,28 @@ describe('the OAuth trip machine', () => {
     await expect(abandoned).rejects.toThrow('Unknown provider.')
 
     expect(second?.closed).toBe(false)
-    expect(first?.closed).toBe(false)
+    expect(first?.closed).toBe(true)
+    expect(world.outcomes).toEqual([{ kind: 'canceled', message: '' }])
     expect(world.oauth.trip.get()?.phase).toBe('authorizing')
+  })
+
+  it('ends the live trip instead of taking its window', async () => {
+    const world = tripWorld()
+    await reachProvider(world)
+    const first = world.opened
+
+    world.opened = providerWindow()
+    await world.oauth.startOAuthLogin(GOOGLE)
+
+    expect(world.outcomes).toEqual([{ kind: 'canceled', message: '' }])
+    expect(first?.closed).toBe(true)
+    expect(world.oauth.trip.get()).toEqual({
+      phase: 'authorizing',
+      provider: GOOGLE,
+      providerName: 'Google',
+      intent: 'login',
+    })
+    expect(world.stashedAtOpen).toBe(GOOGLE)
   })
 
   it('cancels the trip and closes the window when the person cancels', async () => {
@@ -585,6 +610,30 @@ describe('the OAuth trip machine', () => {
 
     expect(world.dispatched).toHaveLength(1)
     expect(world.oauth.trip.get()?.phase).toBe('authorizing')
+  })
+
+  it('ignores a return from the window the previous trip stood in', async () => {
+    const world = tripWorld()
+    await reachProvider(world)
+    const first = world.opened
+
+    world.opened = providerWindow()
+    await world.oauth.startOAuthLogin(GOOGLE)
+
+    world.courier(
+      {
+        type: OAUTH_RETURN_MESSAGE_TYPE,
+        code: 'code-1',
+        state: 'state-1',
+        error: '',
+      },
+      { source: first },
+    )
+    await Promise.resolve()
+
+    expect(world.dispatched).toHaveLength(2)
+    expect(world.oauth.trip.get()?.phase).toBe('authorizing')
+    expect(world.outcomes).toEqual([{ kind: 'canceled', message: '' }])
   })
 
   it('exchanges the return over this window and moves to the exchanging phase', async () => {

@@ -154,8 +154,11 @@ export interface OAuthReturnMessage {
 }
 
 /**
- * The name given to the provider window. Named rather than anonymous so a second
- * start reuses the same window instead of leaving an orphan behind it.
+ * The name given to the provider window. Named rather than anonymous so a start
+ * after a reload can sit in a provider window that was still hanging: the trip is
+ * already gone from memory, and a constant name reuses that window instead of
+ * leaving an orphan behind it. A second start over a live trip does not reuse the
+ * window — it closes it first.
  */
 export const HILOS_OAUTH_WINDOW_NAME = 'hilosOAuth'
 
@@ -400,9 +403,10 @@ function providerNameOf(context: HilosAuthContext, provider: string): string {
 }
 
 /**
- * Open the provider window and record the trip it carries. Called from the click
- * handler with nothing awaited before it, so the browser still counts the window as
- * a gesture.
+ * Open the provider window and record the trip it carries. A trip that was already
+ * live ends first: this function does not only open, it also finishes the one that
+ * was standing. Called from the click handler with nothing awaited before it, so
+ * the browser still counts the window as a gesture.
  *
  * @param context The project auth context the wire dispatches over.
  * @param provider The provider key the trip is for.
@@ -416,6 +420,12 @@ function beginTrip(
   intent: OAuthTripIntent,
   signal?: AbortSignal,
 ): OAuthTripAttempt | null {
+  // End a live trip as a real cancellation, not a silent overwrite: its window
+  // closes, so window.open under the same name below gets a NEW browsing context,
+  // and the event.source gate in receiveOAuthReturn() can tell the documents
+  // apart again. The call sits ABOVE the stash because ending the trip clears
+  // that key.
+  cancelOAuthTrip()
   // Stashed BEFORE the window is opened, and that order is the whole of the cold
   // path: a window opened from this one starts with a COPY of this document's
   // session storage, taken at the moment it is created, so a write landing
@@ -470,9 +480,9 @@ function beginTrip(
  * for declining at the provider — all three are a decision, not a failure.
  *
  * A no-op when nothing is in flight. This is the one ending anybody may ask for at
- * any time — a surface unmounting, a second press of Cancel — so it is the one that
- * has to answer "there is no trip" with silence rather than with a cancellation
- * nobody made.
+ * any time — a surface unmounting, a second press of Cancel, a new start over a
+ * live trip — so it is the one that has to answer "there is no trip" with silence
+ * rather than with a cancellation nobody made.
  *
  * Exported on its own as well as through the client, for the same reason
  * {@link describeOAuthError} is: the waiting modal is mounted by the application
@@ -679,7 +689,12 @@ function readReturnMessage(data: unknown): OAuthReturnMessage | null {
  * site out; the source gate keeps out a message from another window of THIS site,
  * including one this page opened for something else. Neither alone is a check: the
  * provider key is read from the trip we started rather than from the message, so
- * even a message that passes both cannot name a provider of its own.
+ * even a message that passes both cannot name a provider of its own. The source
+ * gate compares WINDOWS, and the document in a window is replaceable, so what
+ * makes the comparison mean what it reads as is that a window never passes from a
+ * live trip to a live trip: a start closes the previous window before opening its
+ * own, and window.open under the same name after close() yields a new browsing
+ * context (checked on chromium, firefox, and webkit).
  *
  * @param context The project auth context the wire dispatches over.
  * @param event The received message event.
