@@ -142,14 +142,20 @@ final class LoggerTest extends TestCase
 
     /**
      * errorLog() with only the error log file set stamps the message and writes it there
-     * instead of falling through to error_log().
+     * instead of falling through to error_log(). This is the branch that reaches the error
+     * file alone, and it is why the watchdog's rotation complaint had to move off errorLog()
+     * onto error() (HIL-1016).
      */
-    public function testErrorLogWritesToErrorLogFileWithoutMainLogFile(): void
+    public function testErrorLogWithoutMainLogFileWritesOnlyToTheErrorLogFile(): void
     {
         $errorLogFile = $this->createTempLogFile();
         Logger::setErrorLogFile($errorLogFile);
 
+        ob_start();
         Logger::errorLog('raw failure');
+        $stdout = ob_get_clean();
+
+        $this->assertSame('', $stdout);
 
         $line = $this->readLogLine($errorLogFile);
         $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $line);

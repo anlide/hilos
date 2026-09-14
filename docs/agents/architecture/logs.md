@@ -141,7 +141,7 @@ directory of the node, which the Logs section reads.
   reason the owner did not already weigh.
 - Do not silence the watchdog there either: every line it writes through
   `Logger` belongs in the container log, its complaint about a file the start
-  rotation could not move included `(not in the code yet — HIL-1016)`.
+  rotation could not move included.
 - A daemon that died leaves its reason in the container log: on the first failure
   and not only once the run of failures reaches `DAEMON_FAILED_START_THRESHOLD`,
   quoting only what THIS daemon run printed across up to three streams in fixed

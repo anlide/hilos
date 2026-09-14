@@ -566,6 +566,9 @@ class DockerManager extends BaseManager
      * than inside the rotator, which reports what it did and lets each caller speak in its own
      * journal.
      *
+     * Failures are reported at error level so they reach the container log with the rest of the
+     * watchdog's voice and the error file at the same time, the watchdog having no main log of its own.
+     *
      * @throws LogRotationException If log directory operations fail
      */
     private function rotateLogs(): void
@@ -588,7 +591,7 @@ class DockerManager extends BaseManager
         }
 
         foreach ($report->failedFiles as $failedFile) {
-            Logger::errorLog("Log rotation could not move {$failedFile}");
+            Logger::error("Log rotation could not move {$failedFile}");
         }
     }
 
