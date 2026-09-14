@@ -21,6 +21,7 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
 - Who owns a node's log directory, and how a file on another node is read
   through the agent of the node that holds it: `docs/agents/architecture/logs.md`
 - Blocking risks in handlers or ticks: `docs/agents/antipatterns/blocking-in-ontick.md`
+- Moving long or blocking work out of an agent, and why a child process is not the way: `docs/agents/antipatterns/child-process-for-long-work.md`
 - Where a client presents a session token, key or signed state, and reading a query parameter: `docs/agents/antipatterns/secret-in-query.md`
 - Declaring what an agent owns and what it reads, and the operations a claim
   carries: `docs/agents/architecture/truth-source.md`

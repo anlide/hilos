@@ -5,7 +5,7 @@ A **monopolistic agent** runs in a dedicated worker process — one instance for
 ## When to use
 
 - Agent owns **shared mutable state** that must be consistent across workers
-- Agent performs **long or blocking operations** (LLM inference, heavy queries)
+- Agent performs **long or blocking operations** (LLM inference, heavy queries) — the only shape allowed for them: [../antipatterns/child-process-for-long-work.md](../antipatterns/child-process-for-long-work.md)
 - Agent is the **truth source** for DB or RT collections
 - Only one logical instance should ever exist (e.g. `ChatAgent`, `ChatContextAnalyzerAgent`)
 

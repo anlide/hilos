@@ -1,6 +1,6 @@
 ---
 name: hilos-agent-system
-description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened. Use it too when the agent answers for a table rather than for an entity — the surface a page draws over a set or over one instance, with the viewers' windows inside it.
+description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened. Use it too when the agent answers for a table rather than for an entity — the surface a page draws over a set or over one instance, with the viewers' windows inside it. Use it too when you are about to move long or blocking work out of an agent — a child process, a background script, a process of your own — and need to know which shapes this framework allows.
 ---
 
 # Hilos Agent System
@@ -28,6 +28,7 @@ Use this skill for agent business logic and registration work. Start by reading 
   `docs/agents/signals/screen-invalidation.md`
 - Asking for a node freeze before a destructive operation: `docs/agents/architecture/protected-mode.md`
 - Blocking anti-patterns: `docs/agents/antipatterns/blocking-in-ontick.md`
+- Moving long or blocking work out of an agent, and why a child process is not the way: `docs/agents/antipatterns/child-process-for-long-work.md`
 - Signal routing changes: use `$hilos-signals`
 
 ## Workflow
@@ -114,3 +115,4 @@ Use this skill for agent business logic and registration work. Start by reading 
   the claim over a row, and a NODE-scoped agent would claim the same keys on every
   node.
 - Never add Repository or Service layers above `DbCollection`.
+- Never spawn a child process to carry your own PHP work out of an agent; put the work in a monopolistic agent, whose worker is its own. An external binary the framework cannot replace is the exception — `docs/agents/antipatterns/child-process-for-long-work.md`.

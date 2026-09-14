@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Agent System"
   short_description: "Agent creation, lifecycle, and truth-source rules"
-  default_prompt: "Use $hilos-agent-system to create or change a Hilos agent, or to declare an agent that answers for a whole set of an entity, or for a table rather than for an entity."
+  default_prompt: "Use $hilos-agent-system to create or change a Hilos agent, or to declare an agent that answers for a whole set of an entity, or for a table rather than for an entity, or when you are about to move long or blocking work out of an agent into a process of your own."

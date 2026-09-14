@@ -138,6 +138,7 @@ Minimum ORM rules before editing:
 | [antipatterns/rt-write-outside-actions.md](docs/agents/antipatterns/rt-write-outside-actions.md) | any time you write to a runtime collection, or register one on an RtContext — writing state directly, or registering it without `setRepresent()`, keeps the data inside a single worker |
 | [antipatterns/secret-in-query.md](docs/agents/antipatterns/secret-in-query.md) | any time you read a query parameter, or choose where a client presents a session token, key, code or signed state |
 | [antipatterns/action-outside-its-lock.md](docs/agents/antipatterns/action-outside-its-lock.md) | any time you write an action that changes what its page does not own — a name moved to the owning agent, or a new action written straight onto it — and need to know what closes it |
+| [antipatterns/child-process-for-long-work.md](docs/agents/antipatterns/child-process-for-long-work.md) | any time you are about to move long or blocking work out of an agent — a child process, a background script, a process of your own — or weigh such an option |
 
 ## CLI
 

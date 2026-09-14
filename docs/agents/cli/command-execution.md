@@ -32,6 +32,8 @@ A command declares exactly one, through `CommandInterface::execution()`:
 | `cli-read` | Work in the CLI process that changes nothing. | yes |
 | `cli-offline-write` | Work in the CLI process that WRITES state; admissible only while no daemon runs. | yes |
 
+A `daemon-spawned` declaration is the entrance of a child the daemon already starts; it is not a licence to move new long work into one — see [../antipatterns/child-process-for-long-work.md](../antipatterns/child-process-for-long-work.md).
+
 The reason is a sentence in the declaration, not a comment near it:
 
 ```php

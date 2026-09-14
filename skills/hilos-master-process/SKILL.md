@@ -13,6 +13,7 @@ read the canonical rule before changing master-process code.
 - Heavy work in the master: `docs/agents/antipatterns/heavy-work-in-master.md`
 - Event loop and what blocks it: `docs/agents/architecture/event-loop.md`
 - Blocking in handlers and ticks: `docs/agents/antipatterns/blocking-in-ontick.md`
+- Moving long or blocking work out of an agent, and why a child process is not the way: `docs/agents/antipatterns/child-process-for-long-work.md`
 - The doors work leaves the master through:
   `docs/agents/architecture/daemon-lifecycle.md` (Handing work out of the master)
 
