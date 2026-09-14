@@ -286,8 +286,17 @@ Topic documents are referenced by filename; several are still being authored.
   only in the Bootstrap Sass layer (variables, maps, custom-utilities), each with
   a comment stating why Bootstrap utilities cannot achieve it. See
   [styling-rules.md](styling-rules.md).
-- **Showing a form's refusal never changes the form's height.** The room under
-  a form is taken before there is anything to say and is exactly one line tall:
+- **A live message never moves what sits under it.** A surface that has live
+  messages — a refusal, a strip about work running, a bar about rows that
+  arrived — takes their room before there is anything to say, and that room
+  keeps one height whatever arrives and however much of it: the message
+  truncates behind a button, counts instead of listing, or scrolls inside the
+  room. The room is an invisible twin of the same markup, never a height of
+  our own, and drawing the message over the content instead is a way around
+  the rule, not an alternative to it. See [styling-rules.md](styling-rules.md).
+- **Showing a form's refusal never changes the form's height** — the rule
+  above, at a form's refusal. The room under a form is taken before there is
+  anything to say and is exactly one line tall:
   the text is truncated, and the whole of it lives behind a button that stands
   at every refusal. It is drawn by the SDK component `HilosFormError` (Vue,
   React, Angular) — do not hand-write another copy. The row carries no role of

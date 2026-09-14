@@ -89,6 +89,41 @@ cannot be read where it is written (an identifier handed to `:style` instead of
 an object literal) is a violation of its own, because passing it would make the
 ban one indirection deep.
 
+## The room a live message takes
+
+A live message — a refusal, a strip saying work is running, a bar announcing
+rows that arrived — appears while somebody is reading what sits under it.
+Putting it into the flow moves that reading away, and taking it out moves it
+back. So a surface that has live messages **takes the room for them before
+there is anything to say, and that room never changes height**: not with the
+length of one message, not with the number of them, not with whether there is
+one at all.
+
+What arrives fits inside the room. How it fits is the message's business, and
+three ways are already in the tree: **truncate and hand over a button** — one
+line with an ellipsis, the whole of it behind a button beside it, which is
+what `HilosFormError` and `HilosActionError` do; **count instead of listing**
+— "and 2 more", the rest behind it; **scroll inside the room**, when the
+messages are many and equal.
+
+The room is held by an **invisible twin of the very same markup**, never by a
+height of our own: the twin is exactly as tall as the real block turns out to
+be at this width and this font, and a declaration of our own is not ours to
+write (the Sass layer above). `LoadingButton` holds the room for the text
+under its spinner this way, and both error plates copy it. Where one node
+changes its composition between a known set of states, the room is the
+tallest of them, held the same way.
+
+Drawing the message **over** the content instead — absolutely positioned, out
+of the flow — is not the other half of this rule but a way around it. It
+cures the jump and buys hiding, and what it hides is the thing being read.
+
+Two neighbours are not live messages in this sense. The toast stack has a
+surface of its own in the corner of the shell and moves nothing
+([toasts.md](toasts.md)). A row arriving in a table is data, not a message
+about it, and has a rule of its own
+([table-subscription.md](table-subscription.md)).
+
 ## Where Bootstrap lives — the SDK ships it
 
 Bootstrap is **not** a per-project dependency. The framework **view layers**
