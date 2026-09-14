@@ -131,17 +131,19 @@ per-project one. A project still themes at runtime with `data-bs-theme` and
 CSS-variable overrides. The view layer imports Bootstrap's **compiled**
 stylesheet directly and loads a thin Sass layer (`hilos-styles.scss`) **after**
 it for the few documented declarations stock utilities cannot express. The layer
-holds several of them and will hold more; each states in the file itself WHY no
-stock utility reaches it and WHAT it is for, and that comment — not a list kept
-somewhere else — is where a reader learns what lives there. Two of them belong
-to the modal: `.hilos-pre-wrap` (`white-space: pre-wrap`), which Bootstrap's
-white-space utilities stop short of, and `.hilos-modal-sheet`, the bottom sheet a
-narrow screen turns the dialog into, for which the nearest stock thing
-(`.modal-fullscreen-sm-down`) stretches the window over the whole screen instead.
-A full Sass re-compile of Bootstrap (overriding its variable and map defaults)
-stays deferred until a theme actually needs it; the thin layer covers the
-exceptions without it. Components otherwise depend only on
-stock Bootstrap classes, never on declarations a consumer would supply.
+is one file per view package — `framework/frontend/vue/src/hilos-styles.scss`,
+`framework/frontend/react/src/hilos-styles.scss`,
+`framework/frontend/angular/src/hilos-styles.scss` — and where it is allowed to
+live is guarded by `STYLE-SHEET-HOME`, whose `SANCTIONED_STYLE_SHEETS` in
+`framework/frontend/codestyle/styleSheetHome.ts` is that list; the guard judges
+the files of the layer, not the declarations inside them. What it holds is read
+in the files themselves: each declaration states WHY no stock utility reaches it
+and WHAT it is for, and that comment — not a list kept somewhere else — is where
+a reader learns what lives there. A full Sass re-compile of Bootstrap
+(overriding its variable and map defaults) stays deferred until a theme actually
+needs it; the thin layer covers the exceptions without it. Components otherwise
+depend only on stock Bootstrap classes, never on declarations a consumer would
+supply.
 
 **Angular delivers the layer consumer-side.** Because `@hilos/angular` cannot
 ship transitive CSS (ng-packagr emits no side-effect stylesheet), the Vue and
