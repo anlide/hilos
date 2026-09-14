@@ -233,54 +233,32 @@ sent from and dims that channel, as it did before. What is paid: a person can se
 the code field and be taken back a second later.
 
 **The refusal is not proved by e2e**, and that is said out loud so its absence is
-not read as coverage: a stand cannot kill its mail transport until the emulated
-service gateway exists (HIL-919). It is proved by the mail agent's unit test.
+not read as coverage: a stand cannot kill its mail transport until its emulated
+services can play a relay that refuses (HIL-918). It is proved by the mail
+agent's unit test.
 
 ## Where a Code Is Read on a Stand
 
 A stand delivers nothing to the outside world: every channel ends in the stand's
 Mailpit, and that inbox is the one place a code is read, by a spec and by a
-person alike.
+person alike. The machinery that gets it there — the gateway that catches SMS
+and Telegram, the addresses a caught message is re-addressed under, the daemon
+environment that points at it, and how the next channel joins — is the stand's
+own document, [stand-services.md](../stand-services.md); a code is one of its
+residents, not its definition.
 
-- **Mail** reaches Mailpit directly over SMTP. The daemon's transport points at
-  it (`MAIL_SMTP_HOST` / `MAIL_SMTP_PORT`, port 1025 inside the compose network,
-  `MAIL_SMTP_SECURITY=none`).
-- **SMS and Telegram** are caught by the stand gateway
-  (`framework/docker/stand-gateway`). The daemon's `SMS_ENDPOINT_URL` points at
-  the stack's gateway service, `http://<gateway>:18000/sms/send`, and its
-  `TELEGRAM_GATEWAY_ENDPOINT_URL` at `http://<gateway>:18000/telegram`, where
-  `<gateway>` is `stand-gateway-local` in chat's local stack and
-  `tasks-stand-gateway-local` / `polls-stand-gateway-local` in the other two
-  (the daemon's environment in each demo's `docker/docker-compose.local.yml`;
-  the dev and test stacks follow the same shape). The gateway forwards every
-  caught message to the same Mailpit as a letter before it answers the daemon:
-  on a stand, "delivered" means "readable".
-- **The letter's addresses carry the channel and the recipient.** The sender is
-  `<channel>@stand`, the recipient `<recipient>@<channel>.stand`: an SMS to
-  `+15550001` arrives from `sms@stand` to `+15550001@sms.stand`, a Telegram
-  message to `+15550001@telegram.stand` (`MailForwarder::senderAddress()`,
-  `MailForwarder::recipientAddress()`). A spec names the recipient it waits for;
-  the mailbox is shared by every spec on the stand, so "the newest letter" is
-  somebody else's as often as not.
-- **The subject is the message text**, cut to 120 characters, so the code reads
-  straight off the mailbox list without opening the letter
-  (`MailForwarder::subject()`). The body is `Channel: <channel>`,
-  `To: <recipient>`, `Sent: <time> UTC`, a `---` line, then the full text.
-- **On the test stack Mailpit publishes no host port**, on purpose
-  (`docker-compose.test.yml`, "No host ports"). The Playwright runner reads it
-  over `MAILPIT_URL=http://mailpit-test:8025`
-  (`demo/chat/tests/e2e/helpers/mail.ts`); a spec takes an SMS code through
-  `waitForSmsCode()` in `helpers/sms.ts` and a Telegram one through
-  `waitForTelegramCode()` in `helpers/telegram.ts`. A person reads on the local
-  or dev stack, where the Mailpit UI is published on a host port that each
-  demo's README lists.
+A spec reads the mailbox through `demo/chat/tests/e2e/helpers/mail.ts`, takes an
+SMS code through `waitForSmsCode()` in `helpers/sms.ts` and a Telegram one
+through `waitForTelegramCode()` in `helpers/telegram.ts`. A person reads on the
+local or dev stack, where the Mailpit UI is published on a host port that each
+demo's README lists.
 
 **An installation with NO stand reads the letter off disk, and that is the one
 place a code is read that way.** In the declared test mode the `.eml` is written
 into `MAIL_FILE_DIR` and the code is in it; the progress line says the letter was
 written rather than sent, so nobody waits for a delivery. Mail is the only channel
-this applies to — a stand's SMS and Telegram codes really are sent, to the gateway
-above, and off a stand there is nothing to read them from.
+this applies to — a stand's SMS and Telegram codes really are sent, to the stand's
+gateway, and off a stand there is nothing to read them from.
 
 There is no file with an SMS code on disk. `StubSmsProvider` used to write each
 message as a `.txt` artifact, and HIL-653 (commit `9c269667`) removed it: the
@@ -341,4 +319,4 @@ The declared test mode is pinned by `MailTransportConfigTest` (the four selectio
 address). None of it is proved by e2e, said out loud so its absence is not read as
 coverage: every stand pins `MAIL_TRANSPORT=smtp` at its own Mailpit, and proving the
 mark needs a stand with no relay — the same wall the refusal hits, lifted by the same
-leaf (HIL-919).
+epic (HIL-918).

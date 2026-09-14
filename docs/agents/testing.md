@@ -195,9 +195,8 @@ built-in server on port 18000, and the channel is the path prefix
 (`framework/docker/stand-gateway/src/Router.php`, `SmsRoutes.php`,
 `TelegramRoutes.php`); whatever it catches lands in Mailpit and is read by the
 helpers a spec already uses for a code — `demo/chat/tests/e2e/helpers/sms.ts`
-and `demo/chat/tests/e2e/helpers/telegram.ts`. That inbox is described in
-[architecture/verification-codes.md](architecture/verification-codes.md),
-section "Where a Code Is Read on a Stand".
+and `demo/chat/tests/e2e/helpers/telegram.ts`. That inbox, the house, and the
+rule for adding a resident are [stand-services.md](stand-services.md).
 
 Only when neither step applies may a unit test spawn a second process, and then
 the reason goes into the test's docblock. What such a test's own tooling erases,

@@ -151,6 +151,7 @@ Minimum ORM rules before editing:
 | File | Read when... |
 |---|---|
 | [testing.md](docs/agents/testing.md) | running unit / integration / e2e tests — **always** via the composer scripts, never `phpunit` directly |
+| [stand-services.md](docs/agents/stand-services.md) | a spec needs an external service on the stand: adding a channel or an emulator, choosing between a stub and an emulator, or reading where a caught message lands |
 
 ## Code Style Rules
 

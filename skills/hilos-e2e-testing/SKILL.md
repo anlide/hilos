@@ -17,6 +17,9 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   `docs/agents/frontend/testing-strategy.md`.
 - What is already in the shared toolbox: `framework/frontend/e2e/index.ts`.
 - Full-reset-per-test and the re-run contract: `docs/agents/testing.md`.
+- The spec needs an external service on the stand — adding a channel or an
+  emulator, a stub against an emulator, where a caught message lands:
+  `docs/agents/stand-services.md`.
 
 ## Workflow
 

@@ -19,6 +19,8 @@ use Hilos\Auth\OAuth\Exception\OAuthProviderException;
  * omitting a userinfo field: a code containing {@see MARKER_NO_EMAIL} resolves
  * with no email, one containing {@see MARKER_NO_NAME} with no name (HIL-573).
  * They are read as substrings, not as whole codes, so one code asks for both.
+ *
+ * SUNSET: the stand's emulated OAuth provider — HIL-923/HIL-924
  */
 final class StubOAuthProvider implements OfflineOAuthProvider
 {

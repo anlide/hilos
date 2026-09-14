@@ -31,9 +31,9 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    (`Hilos::PAGES` / `AGENTS` / `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS`), an e2e
    spec, or cross-connection behavior.
 2. A defect where two processes see different state goes down that ladder: e2e
-   first, the stand gateway when the missing participant is an external service,
-   a second process inside a unit test last and only with the reason written in
-   its docblock.
+   first, the stand gateway when the missing participant is an external service
+   (`docs/agents/stand-services.md`), a second process inside a unit test last
+   and only with the reason written in its docblock.
 3. Run the narrowest set the map prescribes for that class.
 4. Reach for the heavy suites — `test:e2e-full` per demo, the two-window tests, and
    the a11y tests (`a11y.spec.ts`) — only for cross-connection behavior (subscription /

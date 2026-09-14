@@ -17,6 +17,8 @@ use Hilos\Utils\Logger;
  *
  * A magic-link issue logs BOTH halves of its letter (HIL-606): the developer who
  * reads this line is standing on the sign-in screen and may finish with either.
+ *
+ * SUNSET: delivery through the stand's emulated services — no leaf yet
  */
 final class LogVerificationDeliverer implements VerificationDeliverer
 {
