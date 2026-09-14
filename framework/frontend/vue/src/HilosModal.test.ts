@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import HilosModal from './HilosModal.vue'
@@ -13,6 +13,10 @@ afterEach(() => {
   setClipboard(realClipboard)
   written.length = 0
 })
+
+// Vitest runs afterEach hooks last-in-first-out: unmount teleporting wrappers
+// before the cleanup above removes their DOM anchors.
+enableAutoUnmount(afterEach)
 
 /** Put a clipboard in the document, or take it away — plain http has none. */
 function setClipboard(clipboard: Clipboard | undefined): void {
@@ -41,6 +45,28 @@ describe('HilosModal', () => {
     mount(HilosModal, { props: { modelValue: true, title: 'Edit' } })
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(document.querySelector('.modal-backdrop')).not.toBeNull()
+  })
+
+  it('keeps scroll locked when an open modal contains a closed modal', () => {
+    mount({
+      components: { HilosModal },
+      template: `
+        <HilosModal :model-value="true">
+          <HilosModal :model-value="false" />
+        </HilosModal>
+      `,
+    })
+
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+  })
+
+  it('keeps scroll locked when one of two open modals closes', async () => {
+    const first = mount(HilosModal, { props: { modelValue: true } })
+    mount(HilosModal, { props: { modelValue: true } })
+
+    await first.setProps({ modelValue: false })
+
+    expect(document.body.classList.contains('modal-open')).toBe(true)
   })
 
   it('names the dialog from ariaLabelledby when it carries no visible title', () => {

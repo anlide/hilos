@@ -84,18 +84,6 @@ export function HilosLicensePage({
     setCopyStatus('')
   }, [visible])
 
-  // The modal is brought in only once there is a browser to hold it. This page
-  // is also rendered at build time by React's static server renderer, and
-  // HilosModal reads a core signal through useSyncExternalStore before it can
-  // return early on a closed dialog — a hook that carries no server snapshot and
-  // therefore throws during that render, taking the whole build with it. An
-  // effect never runs on the server, and nothing is lost by waiting for one: a
-  // closed modal portals nothing into the page anyway.
-  const [browserReady, setBrowserReady] = useState(false)
-  useEffect(() => {
-    setBrowserReady(true)
-  }, [])
-
   async function onCopy(): Promise<void> {
     const copied = await copyToClipboard(renderLicenseCsv(visible))
     setCopyStatus(
@@ -225,56 +213,54 @@ export function HilosLicensePage({
         </span>
       </div>
 
-      {browserReady ? (
-        <HilosModal
-          open={openEntry !== null}
-          title={
-            openEntry === null
-              ? ''
-              : `${openEntry.name} ${openEntry.version} · ${openEntry.license}`
-          }
-          onClose={() => setOpenEntry(null)}
-          actions={({ requestClose }) => (
-            <>
-              {openEntry !== null && openEntry.repository !== null ? (
-                <a
-                  href={openEntry.repository}
-                  className="btn btn-outline-secondary"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-id="license-repository"
-                >
-                  <i
-                    className="bi bi-box-arrow-up-right me-1"
-                    aria-hidden="true"
-                  />
-                  Repository
-                </a>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={requestClose}
+      <HilosModal
+        open={openEntry !== null}
+        title={
+          openEntry === null
+            ? ''
+            : `${openEntry.name} ${openEntry.version} · ${openEntry.license}`
+        }
+        onClose={() => setOpenEntry(null)}
+        actions={({ requestClose }) => (
+          <>
+            {openEntry !== null && openEntry.repository !== null ? (
+              <a
+                href={openEntry.repository}
+                className="btn btn-outline-secondary"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-id="license-repository"
               >
-                Close
-              </button>
-            </>
-          )}
-        >
-          {openEntry !== null && openEntry.licenseText !== null ? (
-            <HilosLongText
-              kind="output"
-              text={openEntry.licenseText}
-              dataId="license-text"
-            />
-          ) : (
-            <p className="small mb-0" data-id="license-text-missing">
-              This package ships no license file; the type above comes from its
-              manifest
-            </p>
-          )}
-        </HilosModal>
-      ) : null}
+                <i
+                  className="bi bi-box-arrow-up-right me-1"
+                  aria-hidden="true"
+                />
+                Repository
+              </a>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={requestClose}
+            >
+              Close
+            </button>
+          </>
+        )}
+      >
+        {openEntry !== null && openEntry.licenseText !== null ? (
+          <HilosLongText
+            kind="output"
+            text={openEntry.licenseText}
+            dataId="license-text"
+          />
+        ) : (
+          <p className="small mb-0" data-id="license-text-missing">
+            This package ships no license file; the type above comes from its
+            manifest
+          </p>
+        )}
+      </HilosModal>
     </HilosStaticPage>
   )
 }

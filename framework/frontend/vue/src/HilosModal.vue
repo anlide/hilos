@@ -24,13 +24,14 @@ renders and wires events. Bootstrap classes only, save for the one declaration
 the Sass layer names — the bottom sheet, which stock Bootstrap has nothing for;
 stacking is the teleport DOM order, not a hand-set z-index. -->
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import {
   FocusTrap,
   copyToClipboard,
   createModalController,
   isClipboardAvailable,
   lockBodyScroll,
+  type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
 
@@ -103,6 +104,7 @@ const emit = defineEmits<{
 const dialog = ref<HTMLElement>()
 const confirmDialog = ref<HTMLElement>()
 const trap = new FocusTrap()
+const scrollLockOwner: ScrollLockOwner = {}
 
 const modal = createModalController({
   confirmOnClose: () => props.confirmOnClose,
@@ -134,7 +136,7 @@ watch(
     // dialog: a reopened modal reporting "Copied" is reporting the last visit.
     copied.value = false
     if (open) {
-      lockBodyScroll(document)
+      lockBodyScroll(document, scrollLockOwner)
       void nextTick(() => {
         const root = activeRoot()
         if (root) {
@@ -142,12 +144,16 @@ watch(
         }
       })
     } else {
-      unlockBodyScroll(document)
+      unlockBodyScroll(scrollLockOwner)
       trap.release()
     }
   },
   { immediate: true },
 )
+
+onUnmounted(() => {
+  unlockBodyScroll(scrollLockOwner)
+})
 
 // Moving in and out of the confirm step keeps focus inside the visible dialog.
 watch(confirmVisible, () => {

@@ -21,22 +21,12 @@ in the static HTML, and everything browser-touching happens on the click.
 The page carries no `title` prop: the heading moves with the frame, and the
 project's file holds prose alone. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 
 import HilosStaticPage from '../HilosStaticPage.vue'
 import HilosSupportModal from './HilosSupportModal.vue'
 
 const open = ref(false)
-
-// The modal is brought in only once there is a browser to hold it, exactly as
-// the licence and privacy pages bring theirs in: this page is also rendered at
-// build time by a server renderer where `document` does not exist, and
-// HilosModal reads the document the moment it is mounted. A closed modal
-// teleports nothing into the page anyway.
-const browserReady = ref(false)
-onMounted(() => {
-  browserReady.value = true
-})
 </script>
 
 <template>
@@ -66,6 +56,6 @@ onMounted(() => {
       </button>
     </div>
 
-    <HilosSupportModal v-if="browserReady" v-model="open" />
+    <HilosSupportModal v-model="open" />
   </HilosStaticPage>
 </template>

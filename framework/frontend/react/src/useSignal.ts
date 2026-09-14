@@ -11,6 +11,8 @@ import type { ReadonlySignal } from '@hilos/core'
  *
  * The subscription follows the component lifecycle: React subscribes on
  * mount and releases the subscription on unmount or when `source` changes.
+ * `renderToStaticMarkup` uses the server snapshot reader while `createRoot`
+ * uses the browser reader; both deliberately read the value `source` holds.
  *
  * @param source The core signal to mirror.
  */
@@ -23,5 +25,5 @@ export function useSignal<T>(source: ReadonlySignal<T>): T {
     [source],
   )
   const getSnapshot = useCallback(() => source.get(), [source])
-  return useSyncExternalStore(subscribe, getSnapshot)
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

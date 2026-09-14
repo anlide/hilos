@@ -26,7 +26,7 @@ declaration is data and the sweep is a click handler — which is what lets
 /privacy be prerendered with this block whole and inert until the SPA mounts.
 Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   BROWSER_ERASE_ACTION,
   eraseBrowserValues,
@@ -65,15 +65,6 @@ const confirming = ref(false)
 
 /** What the erase did, once it has run; null while the block is still an offer. */
 const swept = ref<string[] | null>(null)
-
-// The modal is brought in only once there is a browser to hold it, exactly as the
-// licence page brings its own in: this page is also rendered at build time by a
-// server renderer where `document` does not exist, and HilosModal reads the
-// document the moment it is mounted. A closed modal teleports nothing anyway.
-const browserReady = ref(false)
-onMounted(() => {
-  browserReady.value = true
-})
 
 async function onConfirm(): Promise<void> {
   if (busy.value) {
@@ -151,7 +142,6 @@ async function onConfirm(): Promise<void> {
     </div>
 
     <HilosPrivacyEraseModal
-      v-if="browserReady"
       v-model="confirming"
       :labels="labels"
       :busy="busy"

@@ -48,6 +48,7 @@ import {
   createModalController,
   isClipboardAvailable,
   lockBodyScroll,
+  type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
 
@@ -227,6 +228,7 @@ export class HilosModal {
 
   private readonly doc = inject(DOCUMENT)
   private readonly trap = new FocusTrap()
+  private readonly scrollLockOwner: ScrollLockOwner = {}
   private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog')
   private readonly confirmDialog =
     viewChild<ElementRef<HTMLElement>>('confirmDialog')
@@ -262,10 +264,10 @@ export class HilosModal {
       // The label is the only thing the button says, so it starts over with the
       // dialog: a reopened modal reporting "Copied" is reporting the last visit.
       this.copied.set(false)
-      lockBodyScroll(this.doc)
+      lockBodyScroll(this.doc, this.scrollLockOwner)
       this.trap.activate(root)
       onCleanup(() => {
-        unlockBodyScroll(this.doc)
+        unlockBodyScroll(this.scrollLockOwner)
         this.trap.release()
       })
     })

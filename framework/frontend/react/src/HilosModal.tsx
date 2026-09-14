@@ -32,6 +32,7 @@ import {
   createModalController,
   isClipboardAvailable,
   lockBodyScroll,
+  type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
 
@@ -117,6 +118,7 @@ export function HilosModal({
   const dialogRef = useRef<HTMLDivElement>(null)
   const confirmRef = useRef<HTMLDivElement>(null)
   const trap = useRef(new FocusTrap()).current
+  const scrollLockOwner = useRef<ScrollLockOwner>({}).current
   const [copied, setCopied] = useState(false)
 
   // The controller reads its config live through a ref so it is created once.
@@ -143,17 +145,17 @@ export function HilosModal({
     // The label is the only thing the button says, so it starts over with the
     // dialog: a reopened modal reporting "Copied" is reporting the last visit.
     setCopied(false)
-    lockBodyScroll(document)
+    lockBodyScroll(document, scrollLockOwner)
     const root = dialogRef.current
     if (root) {
       trap.activate(root)
     }
 
     return () => {
-      unlockBodyScroll(document)
+      unlockBodyScroll(scrollLockOwner)
       trap.release()
     }
-  }, [open, modal, trap])
+  }, [open, modal, scrollLockOwner, trap])
 
   // Moving in and out of the confirm step keeps focus inside the visible dialog.
   useEffect(() => {

@@ -19,7 +19,7 @@ mounts. The two export buttons are therefore always rendered and never disabled 
 on an empty result they hand over the header row alone. Bootstrap classes only,
 no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   type HilosLicenseEntry,
   type HilosLicenseInventory,
@@ -74,17 +74,6 @@ const modalTitle = computed(() =>
     ? ''
     : `${openEntry.value.name} ${openEntry.value.version} · ${openEntry.value.license}`,
 )
-
-// The modal is brought in only once there is a browser to hold it. This page is
-// also rendered at build time by a server renderer where `document` does not
-// exist, and HilosModal reads the document the moment it is mounted — it
-// releases the background scroll lock even when it opens closed. onMounted never
-// runs on the server, and nothing is lost by waiting for it: a closed modal
-// teleports nothing into the page anyway.
-const browserReady = ref(false)
-onMounted(() => {
-  browserReady.value = true
-})
 
 const copyStatus = ref('')
 
@@ -226,7 +215,7 @@ function onDownload(): void {
       >
     </div>
 
-    <HilosModal v-if="browserReady" v-model="modalOpen" :title="modalTitle">
+    <HilosModal v-model="modalOpen" :title="modalTitle">
       <HilosLongText
         v-if="openEntry && openEntry.licenseText !== null"
         kind="output"

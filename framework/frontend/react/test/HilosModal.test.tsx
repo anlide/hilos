@@ -55,6 +55,34 @@ describe('HilosModal', () => {
     expect(document.body.classList.contains('modal-open')).toBe(true)
   })
 
+  it('keeps scroll locked when an open modal contains a closed modal', () => {
+    render(
+      <HilosModal open>
+        <HilosModal open={false} />
+      </HilosModal>,
+    )
+
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+  })
+
+  it('keeps scroll locked when one of two open modals closes', () => {
+    const view = render(
+      <>
+        <HilosModal open />
+        <HilosModal open />
+      </>,
+    )
+
+    view.rerender(
+      <>
+        <HilosModal open={false} />
+        <HilosModal open />
+      </>,
+    )
+
+    expect(document.body.classList.contains('modal-open')).toBe(true)
+  })
+
   it('moves focus into the dialog on open', () => {
     render(<HilosModal open />)
     expect(byId('modal')?.contains(document.activeElement)).toBe(true)

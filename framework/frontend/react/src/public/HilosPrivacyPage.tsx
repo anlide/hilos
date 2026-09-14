@@ -24,7 +24,7 @@
 // declaration is data and the sweep is a click handler — which is what lets
 // /privacy be prerendered with this block whole and inert until the SPA mounts.
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   BROWSER_ERASE_ACTION,
@@ -73,14 +73,6 @@ export function HilosPrivacyPage({
   const [confirming, setConfirming] = useState(false)
   /** What the erase did, once it has run; null while the block is still an offer. */
   const [swept, setSwept] = useState<string[] | null>(null)
-
-  // The modal is brought in only once there is a browser to hold it, exactly as
-  // the licence page brings its own in: this page is also rendered at build time
-  // by React's static server renderer, where HilosModal's own hooks throw.
-  const [browserReady, setBrowserReady] = useState(false)
-  useEffect(() => {
-    setBrowserReady(true)
-  }, [])
 
   async function onConfirm(): Promise<void> {
     if (erase.busy) {
@@ -163,16 +155,14 @@ export function HilosPrivacyPage({
         </div>
       )}
 
-      {browserReady ? (
-        <HilosPrivacyEraseModal
-          open={confirming}
-          labels={labels}
-          busy={erase.busy}
-          loading={erase.loading}
-          onClose={() => setConfirming(false)}
-          onConfirm={onConfirm}
-        />
-      ) : null}
+      <HilosPrivacyEraseModal
+        open={confirming}
+        labels={labels}
+        busy={erase.busy}
+        loading={erase.loading}
+        onClose={() => setConfirming(false)}
+        onConfirm={onConfirm}
+      />
     </HilosStaticPage>
   )
 }

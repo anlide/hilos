@@ -20,7 +20,7 @@
 //
 // The page carries no `title` prop: the heading moves with the frame, and the
 // project's file holds prose alone. Bootstrap classes only (styling-rules.md).
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosStaticPage } from '../HilosStaticPage.js'
@@ -40,15 +40,6 @@ export interface HilosAboutPageProps {
  */
 export function HilosAboutPage({ children }: HilosAboutPageProps) {
   const [open, setOpen] = useState(false)
-
-  // The modal is brought in only once there is a browser to hold it, exactly as
-  // the licence and privacy pages bring theirs in: this page is also rendered at
-  // build time by React's static server renderer, where HilosModal's own hooks
-  // throw. A closed modal portals nothing into the page anyway.
-  const [browserReady, setBrowserReady] = useState(false)
-  useEffect(() => {
-    setBrowserReady(true)
-  }, [])
 
   return (
     <HilosStaticPage title="About">
@@ -79,9 +70,7 @@ export function HilosAboutPage({ children }: HilosAboutPageProps) {
         </button>
       </div>
 
-      {browserReady ? (
-        <HilosSupportModal open={open} onClose={() => setOpen(false)} />
-      ) : null}
+      <HilosSupportModal open={open} onClose={() => setOpen(false)} />
     </HilosStaticPage>
   )
 }

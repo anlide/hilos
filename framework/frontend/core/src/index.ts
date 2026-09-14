@@ -144,7 +144,11 @@ export {
   type ModalControllerOptions,
 } from './primitives/modal.js'
 export { FocusTrap, focusableElements, focusInitial } from './dom/focusTrap.js'
-export { lockBodyScroll, unlockBodyScroll } from './dom/scrollLock.js'
+export {
+  lockBodyScroll,
+  unlockBodyScroll,
+  type ScrollLockOwner,
+} from './dom/scrollLock.js'
 export { copyToClipboard, isClipboardAvailable } from './dom/clipboard.js'
 export { downloadTextFile } from './dom/downloadTextFile.js'
 export {
