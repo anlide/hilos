@@ -211,9 +211,10 @@ guessed wrong would quietly lift a column out of the body of the card.
 A page that wants otherwise marks the column itself with `card`, the optional
 field of `HilosTableColumn`: `'title'`, `'badge'`, `'field'`, or `'hidden'` for a
 column the card leaves out — a table of eight columns is a scroll on a phone, and
-which of them are secondary is the page's own knowledge. The mark is read in one
-pass over the columns, so a place already taken makes the next claimant a field
-instead; the `actions` key outranks any mark on it, that column having no value
+which of them are secondary is the page's own knowledge. A mark outranks the
+default, wherever the marked column stands in the declaration. Where two columns
+carry the same mark, the first by declaration wins and the second becomes a
+field; the `actions` key outranks any mark on it, that column having no value
 of its own to title a card with. The mark changes nothing on a wide screen: the
 header, the column order, and sorting never read it.
 

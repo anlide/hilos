@@ -29,7 +29,8 @@ export interface HilosTableCard {
 }
 
 /**
- * Derives the card layout of a row from the declared columns, in one pass over them:
+ * Derives the card layout of a row from the declared columns — one pass over them,
+ * then the default title:
  *
  * - a column marked `hidden` is not in the card at all, and neither is one marked
  *   `detail` — the ticket that asked for the panel says that on a narrow screen such
@@ -38,8 +39,8 @@ export interface HilosTableCard {
  *   it is marked — it has no value of its own in the row, so making it the title
  *   would title the card with nothing;
  * - a column marked `title`, `badge` or `field` takes that place;
- * - any other column takes the title while it is still free, and becomes a field
- *   after that.
+ * - an unmarked column is a field; the head falls to the first unmarked column
+ *   only when no column asked for it.
  *
  * The title, the badge and the actions hold one column each. A second claimant to a
  * taken place becomes a field instead — quietly, without refusing to build the
@@ -54,6 +55,7 @@ export function hilosTableCard(
   let title: HilosTableColumn | null = null
   let badge: HilosTableColumn | null = null
   let actions: HilosTableColumn | null = null
+  let defaultTitleIndex: number | null = null
   const fields: HilosTableColumn[] = []
 
   for (const column of columns) {
@@ -97,11 +99,17 @@ export function hilosTableCard(
       continue
     }
 
-    if (title === null) {
-      title = column
-    } else {
-      fields.push(column)
+    if (defaultTitleIndex === null) {
+      defaultTitleIndex = fields.length
     }
+
+    fields.push(column)
+  }
+
+  if (title === null && defaultTitleIndex !== null) {
+    const [defaultTitle] = fields.splice(defaultTitleIndex, 1)
+
+    title = defaultTitle
   }
 
   return { title, badge, fields, actions }

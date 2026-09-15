@@ -108,6 +108,35 @@ describe('hilosTableCard', () => {
     expect(card.fields.map((column) => column.key)).toEqual(['kind'])
   })
 
+  it('lets a marked column take the title over an unmarked one declared above it', () => {
+    const card = hilosTableCard([
+      { key: 'created', label: 'Date' },
+      { key: 'name', label: 'Name', card: 'title' },
+    ])
+
+    expect(card.title?.key).toBe('name')
+  })
+
+  it('leaves the column the mark displaced a field in its declared place', () => {
+    const card = hilosTableCard([
+      { key: 'created', label: 'Date' },
+      { key: 'name', label: 'Name', card: 'title' },
+      { key: 'size', label: 'Size' },
+    ])
+
+    expect(card.fields.map((column) => column.key)).toEqual(['created', 'size'])
+  })
+
+  it('never lets a detail column claim the title with a mark', () => {
+    const card = hilosTableCard([
+      { key: 'lastError', label: 'Error', detail: true, card: 'title' },
+      { key: 'created', label: 'Date' },
+    ])
+
+    expect(card.title?.key).toBe('created')
+    expect(card.fields).toEqual([])
+  })
+
   it('lets the actions key outrank a mark on the actions column', () => {
     const card = hilosTableCard([
       { key: HILOS_TABLE_ACTIONS_KEY, label: '', card: 'title' },

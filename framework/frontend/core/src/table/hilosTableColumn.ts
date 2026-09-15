@@ -53,8 +53,9 @@ export interface HilosTableColumn {
   /**
    * Where this column goes in the card a row projects to on a narrow screen.
    * Absent means the default layout follows from the declaration order — the first
-   * column becomes the title and the rest become fields. The wide screen never
-   * reads this: a column kept out of the card keeps its place in the row.
+   * unmarked column becomes the title when no column claimed it, the rest become
+   * fields. The wide screen never reads this: a column kept out of the card keeps
+   * its place in the row.
    */
   card?: HilosTableCardSlot
   /**
