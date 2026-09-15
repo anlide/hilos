@@ -45,6 +45,8 @@ export interface HilosTableOrderView {
   readonly label: string
   /** Whether this is the order the window runs in right now. */
   readonly active: boolean
+  /** Whether this order runs over a column whose source is lagging. */
+  readonly stale: boolean
 }
 
 /**
@@ -122,6 +124,7 @@ export function hilosTableOrderLabel(
  * @param opening The order the table opened in, or undefined when it opened in none.
  * @param current The order the window runs in, or undefined when it runs in none.
  * @param columns The columns as the page declared them.
+ * @param staleSources The sources that froze in the window.
  * @returns The menu items, or an empty list when there is no menu to draw.
  */
 export function hilosTableOrderViews(
@@ -129,9 +132,20 @@ export function hilosTableOrderViews(
   opening: TableSortOrder | undefined,
   current: TableSortOrder | undefined,
   columns: readonly HilosTableColumn[],
+  staleSources: ReadonlySet<string>,
 ): readonly HilosTableOrderView[] {
   if (declared.length === 0) {
     return []
+  }
+
+  const isOrderStale = (order: TableSortOrder | undefined): boolean => {
+    if (order === undefined || order.length === 0 || staleSources.size === 0) {
+      return false
+    }
+    return order.some((component) => {
+      const column = columns.find(({ key }) => key === component.field)
+      return column?.source !== undefined && staleSources.has(column.source)
+    })
   }
 
   return [
@@ -139,11 +153,13 @@ export function hilosTableOrderViews(
       key: HILOS_TABLE_OPENING_ORDER_KEY,
       label: hilosTableOrderLabel(opening, columns),
       active: isSameOrder(opening, current),
+      stale: isOrderStale(opening),
     },
     ...declared.map(({ key, components }) => ({
       key,
       label: hilosTableOrderLabel(components, columns),
       active: isSameOrder(components, current),
+      stale: isOrderStale(components),
     })),
   ]
 }

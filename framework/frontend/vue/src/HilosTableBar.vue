@@ -10,7 +10,11 @@ it is not exported from index.ts, because a bar has no meaning away from the
 table it sits on (mockups/components/table section 7). -->
 <script setup lang="ts" generic="R">
 import { computed, ref } from 'vue'
-import { HILOS_TABLE_OPENING_ORDER_KEY, TABLE_ORDER_COPY } from '@hilos/core'
+import {
+  HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_ORDER_COPY,
+  TABLE_STALENESS_COPY,
+} from '@hilos/core'
 import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
 
 import HilosDropdown from './HilosDropdown.vue'
@@ -60,6 +64,11 @@ const filterCountLabel = computed(() =>
 
 const orderOptions = computed<HilosDropdownOption<string>[]>(() =>
   orders.value.map(({ key, label }) => ({ value: key, label })),
+)
+
+const staleOrderKeys = computed(
+  () =>
+    new Set(orders.value.filter((view) => view.stale).map((view) => view.key)),
 )
 
 // Null while the window runs in an order the menu does not offer — one that came
@@ -247,6 +256,16 @@ function onSearchInput(event: Event): void {
               @click="select()"
             >
               <span class="text-truncate">{{ option.label }}</span>
+              <template v-if="staleOrderKeys.has(option.value)">
+                <i
+                  class="bi bi-snow"
+                  :data-id="`hilos-table-order-stale-${option.value}`"
+                  aria-hidden="true"
+                ></i>
+                <span class="visually-hidden">{{
+                  TABLE_STALENESS_COPY.sortWarning
+                }}</span>
+              </template>
               <i
                 v-if="selected"
                 class="bi bi-check2 flex-shrink-0"

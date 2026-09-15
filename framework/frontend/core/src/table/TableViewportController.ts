@@ -68,6 +68,7 @@ import {
   type HilosTableOrderView,
   type HilosTableSortOrder,
 } from './tableSortOrder.js'
+import { hilosTableStaleSources } from './tableStaleness.js'
 /** Sort direction for the active sort field. */
 export type SortDirection = 'asc' | 'desc'
 
@@ -777,6 +778,7 @@ export class TableViewportController<R> implements TableWindowSink {
           this.openingOrder,
           this.orderSignal.get(),
           declaration?.columns ?? [],
+          hilosTableStaleSources(this.rows.get()),
         ),
       ),
       orderLabel: computedSignal(() =>

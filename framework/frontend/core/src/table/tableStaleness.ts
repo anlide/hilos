@@ -19,8 +19,8 @@ import { type HilosTableColumn } from './hilosTableColumn.js'
 import { type TableViewportRow } from './TableViewportController.js'
 
 /**
- * The words the freeze is spoken with — the bar over the table, the refusal the sort
- * control leaves behind, and the hidden text of the two snowflakes.
+ * The words the freeze is spoken with — the bar over the table, the warning the sort
+ * control carries, and the hidden text of the two snowflakes.
  *
  * The bar is three parts, as the mockup draws it: what froze, why, and that the rest
  * is live. `{columns}` is replaced with the labels of the frozen columns in
@@ -39,9 +39,9 @@ export const TABLE_STALENESS_COPY = {
   /** The bar when a source froze but no column said it is built from it. */
   barUnnamed:
     'Some values here are not updating: the link to their source was lost. The other columns are live.',
-  /** Why the header of a frozen column offers no sort control. */
-  sortRefusal:
-    'Sorting by this column is unavailable: its source is lagging, and an order over stale values would be a lie. Sort by another column.',
+  /** The warning the sort control of a frozen column carries. */
+  sortWarning:
+    'Sorting by this column may be wrong: its source is lagging, so the order runs over values that may be out of date.',
   /** The hidden words of the snowflake in the header of a frozen, unsortable column. */
   columnMark: "This column's source is lagging: its values may be out of date.",
   /** The hidden words of the snowflake in the row-state cell of a frozen row. */

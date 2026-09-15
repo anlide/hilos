@@ -417,14 +417,15 @@ function ariaSort(
   return component.direction === 'asc' ? 'ascending' : 'descending'
 }
 
-// The words a frozen header carries for a screen reader: the refusal of the sort
-// control that is no longer drawn, or — on a column that was never sortable — the
-// plain statement that its source is behind. The control is taken away rather than
-// disabled because a disabled button drops out of the focus order, and a reason
+// The words a frozen header carries for a screen reader: the warning the sort
+// control carries, or — on a column that was never sortable — the plain statement
+// that its source is behind. The control stays and the warning rides inside it,
+// keeping HIL-809's argument about disabled controls as the reason the button is
+// not greyed: a disabled button drops out of the focus order, and a warning
 // hung on it would never be read to the one reader who needs it most.
 function staleColumnText(column: HilosTableColumn): string {
   return column.sortable === true
-    ? TABLE_STALENESS_COPY.sortRefusal
+    ? TABLE_STALENESS_COPY.sortWarning
     : TABLE_STALENESS_COPY.columnMark
 }
 
@@ -602,31 +603,8 @@ function onSelectPage(event: Event): void {
               :class="column.headerClass"
               :aria-sort="ariaSort(column)"
             >
-              <!-- A column whose source is behind gets no sort control at all:
-              an order over stale values is as much a lie as an order over the
-              wrong ones. What stands in its place still reads the order that
-              IS standing — the arrow stays, only it is no longer a button. -->
-              <span
-                v-if="staleColumnKeys.has(column.key)"
-                class="d-inline-flex align-items-center gap-1"
-              >
-                {{ column.label }}
-                <i
-                  v-if="sortComponent(column.key) !== undefined"
-                  :class="['bi', sortIcon(column.key)]"
-                  aria-hidden="true"
-                ></i>
-                <i
-                  class="bi bi-snow"
-                  :data-id="`hilos-table-stale-column-${column.key}`"
-                  aria-hidden="true"
-                ></i>
-                <span class="visually-hidden">{{
-                  staleColumnText(column)
-                }}</span>
-              </span>
               <button
-                v-else-if="column.sortable"
+                v-if="column.sortable"
                 type="button"
                 class="btn btn-link p-0 text-reset text-decoration-none d-inline-flex align-items-center gap-1"
                 :data-id="`hilos-table-sort-${column.key}`"
@@ -645,7 +623,36 @@ function onSelectPage(event: Event): void {
                     }}
                   </span>
                 </template>
+                <template v-if="staleColumnKeys.has(column.key)">
+                  <i
+                    class="bi bi-snow"
+                    :data-id="`hilos-table-stale-column-${column.key}`"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    staleColumnText(column)
+                  }}</span>
+                </template>
               </button>
+              <span
+                v-else-if="staleColumnKeys.has(column.key)"
+                class="d-inline-flex align-items-center gap-1"
+              >
+                {{ column.label }}
+                <i
+                  v-if="sortComponent(column.key) !== undefined"
+                  :class="['bi', sortIcon(column.key)]"
+                  aria-hidden="true"
+                ></i>
+                <i
+                  class="bi bi-snow"
+                  :data-id="`hilos-table-stale-column-${column.key}`"
+                  aria-hidden="true"
+                ></i>
+                <span class="visually-hidden">{{
+                  staleColumnText(column)
+                }}</span>
+              </span>
               <template v-else>{{ column.label }}</template>
             </th>
             <th v-if="markColumn" scope="col" class="text-end">

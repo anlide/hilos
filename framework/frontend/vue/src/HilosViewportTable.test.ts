@@ -1830,33 +1830,51 @@ describe('HilosViewportTable marking a source that went quiet', () => {
     )
   })
 
-  it('takes the sort control off a quiet column and leaves the reason in its place', () => {
+  it('keeps the sort control on a quiet column and carries the warning inside it', () => {
     const { controller } = makeController()
     window(controller, ['connections'])
     const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
 
-    expect(wrapper.find('[data-id="hilos-table-sort-presence"]').exists()).toBe(
-      false,
-    )
+    const button = wrapper.find('[data-id="hilos-table-sort-presence"]')
+    expect(button.exists()).toBe(true)
     expect(wrapper.find('[data-id="hilos-table-sort-name"]').exists()).toBe(
       true,
     )
     expect(
-      wrapper.find('[data-id="hilos-table-stale-column-presence"]').exists(),
+      button.find('[data-id="hilos-table-stale-column-presence"]').exists(),
     ).toBe(true)
     expect(wrapper.findAll('thead th')[1]?.text()).toContain(
-      'Sorting by this column is unavailable',
+      'Sorting by this column may be wrong',
     )
   })
 
-  it('sends no viewport when the name of a quiet column is clicked', async () => {
+  it('sends a viewport when the name of a quiet column is clicked', async () => {
     const { controller, sent } = makeController()
     window(controller, ['connections'])
     const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
     sent.length = 0
-    await wrapper.findAll('thead th')[1]?.trigger('click')
+    await wrapper.find('[data-id="hilos-table-sort-presence"]').trigger('click')
 
-    expect(sent).toHaveLength(0)
+    expect(sent).toHaveLength(1)
+  })
+
+  it('numbers headers of a composite order whose first column is quiet and speaks both places', async () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    controller.setOrder([
+      { field: 'presence', direction: 'asc' },
+      { field: 'name', direction: 'desc' },
+    ])
+    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('th sup').map((mark) => mark.text())).toEqual([
+      '2',
+      '1',
+    ])
+    expect(
+      wrapper.findAll('th sup + .visually-hidden').map((mark) => mark.text()),
+    ).toEqual(['Sort column 2 of 2', 'Sort column 1 of 2'])
   })
 
   it('keeps the standing order over a column that went quiet readable', async () => {

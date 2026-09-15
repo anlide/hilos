@@ -58,13 +58,23 @@ describe('hilosTableOrderLabel', () => {
   })
 })
 
+const emptyStale = new Set<string>()
+
 describe('hilosTableOrderViews', () => {
   it('offers nothing at all to a table that declared no composite order', () => {
-    expect(hilosTableOrderViews([], byDate, byDate, columns)).toEqual([])
+    expect(
+      hilosTableOrderViews([], byDate, byDate, columns, emptyStale),
+    ).toEqual([])
   })
 
   it('puts the way home first and the declared orders after it, in declaration order', () => {
-    const views = hilosTableOrderViews(declared, byDate, byDate, columns)
+    const views = hilosTableOrderViews(
+      declared,
+      byDate,
+      byDate,
+      columns,
+      emptyStale,
+    )
 
     expect(views.map(({ key }) => key)).toEqual([
       HILOS_TABLE_OPENING_ORDER_KEY,
@@ -77,14 +87,26 @@ describe('hilosTableOrderViews', () => {
   it('keeps the way home on a table that opened in no order of its own', () => {
     // Without it a reader who left for a composite order would have no way back —
     // and on a narrow screen the menu is the only way to change the order at all.
-    const views = hilosTableOrderViews(declared, undefined, byChannel, columns)
+    const views = hilosTableOrderViews(
+      declared,
+      undefined,
+      byChannel,
+      columns,
+      emptyStale,
+    )
 
     expect(views[0]?.key).toBe(HILOS_TABLE_OPENING_ORDER_KEY)
     expect(views[0]?.label).toBe(TABLE_ORDER_COPY.defaultOrder)
   })
 
   it('marks exactly the order the window runs in', () => {
-    const views = hilosTableOrderViews(declared, byDate, byChannel, columns)
+    const views = hilosTableOrderViews(
+      declared,
+      byDate,
+      byChannel,
+      columns,
+      emptyStale,
+    )
 
     expect(views.filter(({ active }) => active).map(({ key }) => key)).toEqual([
       'by_channel',
@@ -93,9 +115,80 @@ describe('hilosTableOrderViews', () => {
 
   it('marks nothing while the window runs in an order that came from a header click', () => {
     const clicked: TableSortOrder = [{ field: 'channel', direction: 'asc' }]
-    const views = hilosTableOrderViews(declared, byDate, clicked, columns)
+    const views = hilosTableOrderViews(
+      declared,
+      byDate,
+      clicked,
+      columns,
+      emptyStale,
+    )
 
     expect(views.some(({ active }) => active)).toBe(false)
+  })
+
+  it('marks an order running over a column whose source is lagging', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+    ]
+    const staleSources = new Set(['channels'])
+    const views = hilosTableOrderViews(
+      declared,
+      byDate,
+      byChannel,
+      sourcedColumns,
+      staleSources,
+    )
+
+    expect(views.find(({ key }) => key === 'by_channel')?.stale).toBe(true)
+    expect(
+      views.find(({ key }) => key === HILOS_TABLE_OPENING_ORDER_KEY)?.stale,
+    ).toBe(false)
+  })
+
+  it('marks nothing when the set of stale sources is empty', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+    ]
+    const views = hilosTableOrderViews(
+      declared,
+      byDate,
+      byChannel,
+      sourcedColumns,
+      emptyStale,
+    )
+
+    expect(views.some(({ stale }) => stale)).toBe(false)
+  })
+
+  it('never marks a column with no declared source', () => {
+    const views = hilosTableOrderViews(
+      declared,
+      byDate,
+      byDate,
+      columns,
+      new Set(['channel', 'createdAt', 'state']),
+    )
+
+    expect(views.some(({ stale }) => stale)).toBe(false)
+  })
+
+  it('marks the way-home item by the same rule when opening order runs over a quiet column', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+    ]
+    const views = hilosTableOrderViews(
+      declared,
+      byChannel,
+      byDate,
+      sourcedColumns,
+      new Set(['channels']),
+    )
+
+    expect(views[0]?.key).toBe(HILOS_TABLE_OPENING_ORDER_KEY)
+    expect(views[0]?.stale).toBe(true)
   })
 })
 

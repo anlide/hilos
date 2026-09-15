@@ -7,6 +7,7 @@ import {
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
+  HilosTableColumn,
   HilosTableFrame,
   HilosTableSortOrder,
   TableSortOrder,
@@ -42,7 +43,7 @@ function makeController(
 
 // The two columns a composite order runs by, and the orders the table declares
 // over them — the shape the "Order" menu is drawn from.
-const ORDERED_COLUMNS = [
+const ORDERED_COLUMNS: readonly HilosTableColumn[] = [
   { key: 'channel', label: 'Kind', sortable: true },
   { key: 'createdAt', label: 'Date', sortable: true },
 ]
@@ -72,14 +73,17 @@ const OPENING_ORDER: TableSortOrder = [
  * A table that declares composite orders and has opened in one of its own — the
  * order only the first window can tell it, the way a page's answer does.
  */
-function makeOrdered(): {
+function makeOrdered(
+  columns: readonly HilosTableColumn[] = ORDERED_COLUMNS,
+  declaredOrders: readonly HilosTableSortOrder[] = DECLARED_ORDERS,
+): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
 } {
   const made = makeController(
-    { title: 'Deliveries', columns: ORDERED_COLUMNS },
+    { title: 'Deliveries', columns },
     undefined,
-    DECLARED_ORDERS,
+    declaredOrders,
   )
   made.controller.ingestSubscriptionWindow(
     [],
@@ -420,6 +424,101 @@ describe('HilosTableBar', () => {
     expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
       'Order: Kind ↑',
     )
+  })
+
+  it('marks an order running over a column of a frozen source and leaves it pickable', async () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+      { key: 'state', label: 'State', sortable: true },
+    ]
+    const orders: readonly HilosTableSortOrder[] = [
+      {
+        key: 'by_channel',
+        components: [
+          { field: 'channel', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+      {
+        key: 'by_state',
+        components: [
+          { field: 'state', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+    ]
+    const { controller, sent } = makeOrdered(sourcedColumns, orders)
+    controller.ingestWindow(
+      [{ rowKey: '1', slots: {}, staleSources: ['channels'] }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    const wrapper = mountBar(controller)
+
+    const staleMark = wrapper.find(
+      '[data-id="hilos-table-order-stale-by_channel"]',
+    )
+    expect(staleMark.exists()).toBe(true)
+    expect(staleMark.classes()).toContain('bi-snow')
+    expect(
+      wrapper.find('[data-id="hilos-table-order-by_channel"]').text(),
+    ).toContain('Sorting by this column may be wrong')
+
+    expect(
+      wrapper.find('[data-id="hilos-table-order-stale-by_state"]').exists(),
+    ).toBe(false)
+
+    await wrapper
+      .find('[data-id="hilos-table-order-by_channel"]')
+      .trigger('click')
+    expect(sent.at(-1)).toMatchObject({
+      sort: [
+        { field: 'channel', direction: 'asc' },
+        { field: 'createdAt', direction: 'desc' },
+      ],
+    })
+  })
+
+  it('marks no order when the set of frozen sources is empty', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+      { key: 'state', label: 'State', sortable: true },
+    ]
+    const orders: readonly HilosTableSortOrder[] = [
+      {
+        key: 'by_channel',
+        components: [
+          { field: 'channel', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+      {
+        key: 'by_state',
+        components: [
+          { field: 'state', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+    ]
+    const { controller } = makeOrdered(sourcedColumns, orders)
+    controller.ingestWindow(
+      [{ rowKey: '1', slots: {}, staleSources: [] }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    const wrapper = mountBar(controller)
+
+    expect(
+      wrapper.findAll('[data-id^="hilos-table-order-stale-"]'),
+    ).toHaveLength(0)
   })
 
   it('draws no main action when the table declares none', () => {

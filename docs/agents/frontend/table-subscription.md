@@ -797,17 +797,19 @@ yesterday's number in silence.
 
 What is stale is **marked in the three places the framework owns**: a bar above
 the table saying in words what froze, why, and that the rest is live; a snowflake
-in the header of every column built from a quiet source, where the sort control is
-no longer drawn; and a snowflake in the narrow row-state cell at the end of every
-row whose own values are behind. The mark the mockup draws *inside* the cells of
-the lagging column is **not one of them and cannot be**: the body of a row comes
-from the page through the `#row` slot, so the framework owns no cell to put an
-icon in — design debt `D-051`. Showing yesterday's number silently beside today's
-is the worst of the options, because it looks fresh. A lagging source does not
-block the rest — rows page, filter, and sort by the live columns — but **a column
-of a stale source cannot be sorted at all**: an order over stale values is
-indistinguishable from a wrong one. The other orders a table refuses, and what it
-answers, are in [table-sort-orders.md](table-sort-orders.md).
+in the header of every column built from a quiet source, carried inside its sort
+control alongside a hidden warning (or beside the label when unsortable); and a
+snowflake in the narrow row-state cell at the end of every row whose own values
+are behind. The mark the mockup draws *inside* the cells of the lagging column
+is **not one of them and cannot be**: the body of a row comes from the page through
+the `#row` slot, so the framework owns no cell to put an icon in — design debt
+`D-051`. Showing yesterday's number silently beside today's is the worst of the
+options, because it looks fresh. A lagging source does not block the rest — rows
+page, filter, and sort by live or stale columns alike — and **a column of a stale
+source still sorts**: the header button and the Order menu item remain live and
+carry a snowflake with a hidden warning saying what the order is worth
+(`sortWarning`). The other orders a table refuses, and what it answers, are in
+[table-sort-orders.md](table-sort-orders.md).
 
 ## Headless table state machine
 
