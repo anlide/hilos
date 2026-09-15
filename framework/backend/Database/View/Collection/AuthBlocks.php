@@ -118,6 +118,7 @@ final class AuthBlocks extends DbCollection
      *
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearAll(): int
@@ -131,6 +132,7 @@ final class AuthBlocks extends DbCollection
      * @param string $before Datetime a block must have lifted before to be deleted
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearServed(string $before): int
@@ -145,6 +147,7 @@ final class AuthBlocks extends DbCollection
      * @param string $identity Throttle identity (IP or session-token hash)
      * @return int Number of blocks deleted
      * @throws DatabaseException On database error while deleting the blocks
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearIdentity(string $scope, string $identity): int
@@ -163,6 +166,7 @@ final class AuthBlocks extends DbCollection
      * @param string $identity Throttle identity (IP or session-token hash)
      * @param string $action Throttled action name
      * @throws DatabaseException On database error while clearing the block
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function clearBlock(string $scope, string $identity, string $action): void

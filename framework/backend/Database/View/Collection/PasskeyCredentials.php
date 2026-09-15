@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Collection;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
@@ -57,6 +58,7 @@ final class PasskeyCredentials extends DbCollection
      * @throws EmptyValueException When credential id, public key or user handle is empty
      * @throws DuplicateValueException When a credential already exists for this credential id
      * @throws DatabaseException If the insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function createFromRegistration(
@@ -95,6 +97,7 @@ final class PasskeyCredentials extends DbCollection
      * @param string $credentialId Base64url credential id from the assertion
      * @return ?ObjectPasskeyCredential Credential object or null if not found
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByCredentialId(string $credentialId): ?ObjectPasskeyCredential
     {
@@ -111,6 +114,7 @@ final class PasskeyCredentials extends DbCollection
      * @param int $userId Owning user id
      * @return list<ObjectPasskeyCredential> Credential objects for the user (empty when none)
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function listByUser(int $userId): array
     {
@@ -128,6 +132,7 @@ final class PasskeyCredentials extends DbCollection
      *
      * @param int $identityId Owning `hilos_identity` anchor row id (type=passkey)
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
@@ -145,6 +150,7 @@ final class PasskeyCredentials extends DbCollection
      * @param string $userHandle WebAuthn user handle (binary) from the assertion
      * @return ?int Owning user id, or null when no credential carries the handle
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findUserByUserHandle(string $userHandle): ?int
     {

@@ -11,6 +11,8 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -66,6 +68,7 @@ final class Identities extends DbCollection
      * @param int $userId Owning user id
      * @return ?string Lowercased email of a verified email-bearing identity, or null when none
      * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findVerifiedEmailByUser(int $userId): ?string
     {
@@ -83,6 +86,7 @@ final class Identities extends DbCollection
      * @param int $userId Owning user id
      * @return ?string E.164 number of a verified `sms` identity, or null when none
      * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findVerifiedSmsByUser(int $userId): ?string
     {
@@ -155,6 +159,7 @@ final class Identities extends DbCollection
      * @param string $email Lowercased account email
      * @return ?int Owning user id of a verified email identity, or null when none
      * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findUserIdByVerifiedEmail(string $email): ?int
     {
@@ -173,6 +178,7 @@ final class Identities extends DbCollection
      * @param string $identifier Normalized identifier - a lowercased email or an E.164 phone
      * @return ?string Identity type of the verified row carrying it, or null when nobody has proven it
      * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findVerifiedTypeByIdentifier(string $identifier): ?string
     {
@@ -192,6 +198,7 @@ final class Identities extends DbCollection
      * @param string $email Lowercased account email
      * @return ?int Owning user id when the address is somebody's, or null when it is free
      * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findAccountIdByEmail(string $email): ?int
     {
@@ -215,6 +222,7 @@ final class Identities extends DbCollection
      * @param string $email Lowercased account email
      * @return ?int Owning user id of any email identity, or null when none
      * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findUserIdByEmail(string $email): ?int
     {
@@ -240,6 +248,7 @@ final class Identities extends DbCollection
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): Identity
     {
@@ -281,6 +290,7 @@ final class Identities extends DbCollection
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): Identity
     {
@@ -472,6 +482,7 @@ final class Identities extends DbCollection
      * @throws LogicException When a passkey identity is deleted directly while its credential is still stored
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException On database error while deleting the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
     public function deleteIdentity(int $userId, int $identityId): void
@@ -497,7 +508,10 @@ final class Identities extends DbCollection
      * @return int Number of identities re-pointed to the survivor
      * @throws LogicException When both accounts hold a password and no fate was named
      * @throws DatabaseException On database error while re-pointing the identities
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
     {
@@ -517,6 +531,7 @@ final class Identities extends DbCollection
      * @param int $toUserId Survivor user id that would receive them
      * @return bool True when both accounts hold a password and one of them must give way
      * @throws DatabaseException On database error while resolving the identities
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function passwordFateNeeded(int $fromUserId, int $toUserId): bool
     {

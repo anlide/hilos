@@ -182,6 +182,30 @@ final class SourceIndex
     }
 
     /**
+     * Stops at the nearest declaration even when its value is not a class, so an
+     * empty declaration on a child cannot silently expose a class named by an
+     * ancestor.
+     *
+     * @param string $class Fully qualified name of the class the constant is read on
+     * @param string $constant Constant name as written
+     * @return ?string Fully qualified class named by the winning declaration, or null when it names no class
+     */
+    public function resolveConstantClass(string $class, string $constant): ?string
+    {
+        $seen = [];
+        $current = $this->find($class);
+        while ($current !== null && !isset($seen[strtolower($current->name)])) {
+            if (isset($current->constants[$constant])) {
+                return $current->constantClasses[$constant] ?? null;
+            }
+            $seen[strtolower($current->name)] = true;
+            $current = $current->parent === null ? null : $this->find($current->parent);
+        }
+
+        return null;
+    }
+
+    /**
      * @param string $path File path, addressed from the base the index is built over
      * @param string $source File contents
      */
@@ -427,6 +451,7 @@ final class SourceIndex
         $methods = [];
         $properties = [];
         $constants = [];
+        $constantClasses = [];
         $doc = null;
         $modifiers = [];
         $typeTokens = [];
@@ -456,7 +481,17 @@ final class SourceIndex
                 continue;
             }
             if ($type === T_CONST) {
-                $constants = [...$constants, ...$this->readConstants()];
+                $declaredConstants = $this->readConstants();
+                $constants = [...$constants, ...$declaredConstants];
+                foreach ($declaredConstants as $constant => $value) {
+                    if (!str_ends_with($value, '::class')) {
+                        continue;
+                    }
+                    $resolved = $this->resolveTypeName(substr($value, 0, -strlen('::class')));
+                    if ($resolved !== null) {
+                        $constantClasses[$constant] = $resolved;
+                    }
+                }
                 [$doc, $modifiers, $typeTokens] = [null, [], []];
                 continue;
             }
@@ -506,6 +541,7 @@ final class SourceIndex
             $methods,
             $properties,
             $constants,
+            $constantClasses,
             $isAbstract,
             $line,
         );

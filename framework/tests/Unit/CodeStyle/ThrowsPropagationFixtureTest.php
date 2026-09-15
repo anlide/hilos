@@ -86,6 +86,9 @@ final class ThrowsPropagationFixtureTest extends TestCase
                 'THROWS-PROPAGATION ThrowsTree/Contract/AbstractSource.php:20 — AbstractSource::start() documents '
                     . 'OtherException that SourceInterface::start() does not declare (see '
                     . 'docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Support/ConstantBacked.php:17 — '
+                    . 'ConstantBacked::readsThroughTheConstant() does not propagate OtherException documented on '
+                    . 'Registry::name() (see docs/agents/code-style/phpdoc.md)',
                 'THROWS-PROPAGATION ThrowsTree/Support/Hooked.php:43 — Hooked::readsPastAnAttributeArray() does '
                     . 'not propagate OtherException documented on Registry::name() (see '
                     . 'docs/agents/code-style/phpdoc.md)',

@@ -169,8 +169,12 @@ documenting non-obvious error contracts.
 Checked automatically: `THROWS-PROPAGATION`, see
 [automated-checks.md](automated-checks.md). The check is narrower than this
 section by declaration — it judges the call forms whose target is written down,
-across every production root — so a green run answers for those forms wherever
-they sit, and the audit above answers for everything else.
+across every production root. It also judges `$this->objectCollection` in a View
+collection when that class declares `OBJECT_COLLECTION_CLASS`; the same name in an
+Actions class with no such constant is still outside it. A green run answers for
+those forms wherever they sit, and the audit above answers for everything else.
+The check judges tags a call requires, not tags left behind after a call is
+removed; after deleting a call, reread the caller's own `@throws`.
 
 Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee

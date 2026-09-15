@@ -19,6 +19,12 @@ final readonly class CallResolver
     private const string ARRAY_SUFFIX = '[]';
 
     /**
+     * Magic receivers the rule judges. The list is the boundary: a second receiver
+     * is added here explicitly rather than inferred by the mechanism.
+     */
+    private const array MAGIC_PROPERTY_CONSTANTS = ['objectCollection' => 'OBJECT_COLLECTION_CLASS'];
+
+    /**
      * @param SourceIndex $index Indexed tree the target is looked up in
      */
     public function __construct(private SourceIndex $index)
@@ -67,7 +73,11 @@ final readonly class CallResolver
             if ($current === null || str_ends_with($current, self::ARRAY_SUFFIX)) {
                 return null;
             }
-            $current = $this->lookupProperty($current, $step, []);
+            $class = $current;
+            $current = $this->lookupProperty($class, $step, []);
+            if ($current === null) {
+                $current = $this->magicPropertyType($class, $step);
+            }
         }
 
         return $current;
@@ -119,6 +129,18 @@ final readonly class CallResolver
         }
 
         return substr($iterated, 0, -strlen(self::ARRAY_SUFFIX));
+    }
+
+    /**
+     * @param string $class Fully qualified class the magic property is read on
+     * @param string $step Property name
+     * @return ?string Declared magic-property type, or null when this receiver is outside the rule
+     */
+    private function magicPropertyType(string $class, string $step): ?string
+    {
+        $constant = self::MAGIC_PROPERTY_CONSTANTS[$step] ?? null;
+
+        return $constant === null ? null : $this->index->resolveConstantClass($class, $constant);
     }
 
     /**
