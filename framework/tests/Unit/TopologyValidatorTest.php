@@ -47,6 +47,7 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\SqlIndexType;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
@@ -983,7 +984,7 @@ final class TopologyValidatorTest extends TestCase
             },
             [
                 "BROWSER_TABLES[browser_unindexed_join_table]: join column 'nickname' of source 'owners'"
-                . ' is neither the primary key nor the leftmost column of an index',
+                . ' is neither the primary key nor the leftmost column of an index that can answer a lookup by value',
             ],
         );
     }
@@ -1000,6 +1001,26 @@ final class TopologyValidatorTest extends TestCase
         TopologyBrowserIndexedJoinHilos::validateTopologyReferences();
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testABrowserJoinByAColumnWithOnlyFulltextIndexIsRefused(): void
+    {
+        $db = new TopologyMountedFulltextDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+        $runtime = new TopologyMountedRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserFulltextIndexedJoinHilos::validateTopologyReferences();
+            },
+            [
+                "BROWSER_TABLES[browser_fulltext_indexed_join_table]: join column 'owner_id' of source 'owners_fulltext'"
+                . ' is neither the primary key nor the leftmost column of an index that can answer a lookup by value',
+            ],
+        );
     }
 
     public function testInitRunsTopologyReferenceValidationAfterLayerInitialization(): void
@@ -3470,6 +3491,79 @@ final class TopologyBrowserIndexedJoinHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new TopologyMountedDbContext();
+    }
+}
+
+/**
+ * Minimal entity fixture whose only index is declared FULLTEXT on the join column.
+ */
+final class TopologyTestFulltextEntity extends Entity
+{
+    public const string _table = 'topology_test_fulltext';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'owner_id'];
+    public const array _types = ['id' => 'integer', 'owner_id' => 'integer'];
+    public const array _indexes = [
+        'ft_topology_test_owner' => [
+            Entity::INDEX_COLUMNS => ['owner_id'],
+            Entity::INDEX_TYPE => SqlIndexType::FULLTEXT,
+        ],
+    ];
+
+    public ?int $id = null;
+    public ?int $owner_id = null;
+}
+
+final class TopologyTestFulltextObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologyTestFulltextEntity::class;
+}
+
+final class TopologyTestFulltextObjects extends Objects
+{
+    public const string OBJECT_CLASS = TopologyTestFulltextObject::class;
+}
+
+final class TopologyMountedFulltextDbContext extends DbContext
+{
+    public function configure(): void
+    {
+        $this->_objectCollections['owners_fulltext'] = TopologyTestFulltextObjects::initEmpty();
+    }
+}
+
+final class TopologyBrowserFulltextIndexedJoinTable
+{
+    public const string TABLE = 'browser_fulltext_indexed_join_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners_fulltext',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners_fulltext',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'owner_id',
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserFulltextIndexedJoinHilos extends HilosFacade
+{
+    public const array BROWSER_TABLES = [
+        TopologyBrowserFulltextIndexedJoinTable::TABLE => TopologyBrowserFulltextIndexedJoinTable::class,
+    ];
+
+    protected static function createDb(): DbContext
+    {
+        return new TopologyMountedFulltextDbContext();
     }
 }
 

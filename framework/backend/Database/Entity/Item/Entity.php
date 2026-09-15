@@ -11,6 +11,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParam;
+use Hilos\Database\SqlIndexType;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\SqlSortDirection;
 
@@ -26,6 +27,8 @@ use Hilos\Database\SqlSortDirection;
  * - const array _indexes — index definitions (optional). An element of an index's column
  *   list is either a column name, which declares that column ascending, or an
  *   {@see Entity::INDEX_COLUMN} / {@see Entity::INDEX_DIRECTION} pair naming its direction.
+ *   An index definition may also specify {@see Entity::INDEX_TYPE} using {@see SqlIndexType}
+ *   constants (defaults to {@see SqlIndexType::BTREE} when omitted).
  * - const array|AnonymizationStrategy _pii — the personal-data verdict: a column to
  *   {@see AnonymizationStrategy} map, or {@see AnonymizationStrategy::PURGE} for a table
  *   emptied whole. Absent means the table was never classified, which is what the
@@ -60,6 +63,7 @@ abstract class Entity
     // Index definition keys (for _indexes array structure)
     public const string INDEX_COLUMNS = 'columns';
     public const string INDEX_UNIQUE = 'unique';
+    public const string INDEX_TYPE = 'type';
 
     // Keys of the pair form an element of INDEX_COLUMNS takes when it names a direction
     public const string INDEX_COLUMN = 'column';
@@ -604,6 +608,37 @@ abstract class Entity
         }
 
         return $components;
+    }
+
+    /**
+     * Reads the declared index type of an index definition.
+     *
+     * Omission means {@see SqlIndexType::BTREE}, matching all existing declarations in the tree.
+     *
+     * @param array<string, mixed> $definition One entry of the entity's _indexes
+     * @return string The declared index type
+     * @throws InvalidArgumentException When the declaration names an unknown index type
+     */
+    public static function indexType(array $definition): string
+    {
+        if (!isset($definition[self::INDEX_TYPE])) {
+            return SqlIndexType::BTREE;
+        }
+
+        $type = (string) $definition[self::INDEX_TYPE];
+        if (
+            $type !== SqlIndexType::BTREE
+            && $type !== SqlIndexType::FULLTEXT
+            && $type !== SqlIndexType::HASH
+            && $type !== SqlIndexType::RTREE
+        ) {
+            throw new InvalidArgumentException(
+                "Index type must be " . SqlIndexType::BTREE . ", " . SqlIndexType::FULLTEXT . ", "
+                . SqlIndexType::HASH . " or " . SqlIndexType::RTREE . ", got '{$type}'",
+            );
+        }
+
+        return $type;
     }
 
     /**

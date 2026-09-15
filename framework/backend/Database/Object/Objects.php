@@ -32,6 +32,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\SqlIndexType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlSortDirection;
 use Hilos\HilosException;
@@ -294,11 +295,12 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * The question a declaration is held against: reading a set by a column the table has no
      * index for turns a silently short answer into a silently full scan, which is the same
      * defect wearing a different cost. Only the LEFTMOST column of an index counts - that is the
-     * only position a lookup by one column can use.
+     * only position a lookup by one column can use. Indexes whose type cannot answer an equality
+     * lookup by value (such as FULLTEXT or RTREE) do not count.
      *
      * @param string $column Entity column name, or the object field name standing for it
      * @return bool True when an index of this entity begins with the column
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public function isIndexLeadColumn(string $column): bool
     {
@@ -314,6 +316,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             ? constant("{$entityClass}::" . Entity::META_INDEXES)
             : [];
         foreach ($indexes as $index) {
+            if (!SqlIndexType::answersEqualityLookup(Entity::indexType($index))) {
+                continue;
+            }
             $components = Entity::indexComponents($index);
             if ($components !== [] && $components[0]['column'] === $resolvedColumn) {
                 return true;

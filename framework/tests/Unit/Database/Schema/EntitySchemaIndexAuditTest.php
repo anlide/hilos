@@ -10,6 +10,7 @@ use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\EntitySchemaAxis;
 use Hilos\Database\Schema\EntitySchemaIndexAudit;
 use Hilos\Database\Schema\EntitySchemaMismatch;
+use Hilos\Database\SqlIndexType;
 use Hilos\Database\SqlSortDirection;
 use Hilos\Tests\Integration\EntitySchemaConsistencyTest;
 use PHPUnit\Framework\TestCase;
@@ -83,6 +84,9 @@ final class EntitySchemaIndexAuditTest extends TestCase
         $this->assertSame('(channel,created_at DESC)', $mismatches[0]->actual);
     }
 
+    /**
+     * A column the database stores without a collation (COLLATION null) reads as ascending.
+     */
     public function testAColumnTheDatabaseMarksWithNoCollationReadsAsAscending(): void
     {
         $mismatches = EntitySchemaIndexAudit::audit(
@@ -90,6 +94,49 @@ final class EntitySchemaIndexAuditTest extends TestCase
             self::TABLE,
             ['ft_message' => [Entity::INDEX_COLUMNS => ['message']]],
             [self::statisticsRow('ft_message', 'message', null)],
+            [],
+        );
+
+        $this->assertSame([], $mismatches);
+    }
+
+    public function testLiveFulltextIndexAgainstDeclarationWithoutTypeProducesFinding(): void
+    {
+        $mismatches = EntitySchemaIndexAudit::audit(
+            self::ENTITY,
+            self::TABLE,
+            ['ft_message' => [Entity::INDEX_COLUMNS => ['message']]],
+            [self::statisticsRow('ft_message', 'message', null, type: SqlIndexType::FULLTEXT)],
+            [],
+        );
+
+        $this->assertCount(1, $mismatches);
+        $this->assertSame('(message)', $mismatches[0]->expected);
+        $this->assertSame('FULLTEXT(message)', $mismatches[0]->actual);
+    }
+
+    public function testDeclaredFulltextIndexAgainstLiveRegularIndexProducesFinding(): void
+    {
+        $mismatches = EntitySchemaIndexAudit::audit(
+            self::ENTITY,
+            self::TABLE,
+            ['ft_message' => [Entity::INDEX_COLUMNS => ['message'], Entity::INDEX_TYPE => SqlIndexType::FULLTEXT]],
+            [self::statisticsRow('ft_message', 'message', 'A', type: SqlIndexType::BTREE)],
+            [],
+        );
+
+        $this->assertCount(1, $mismatches);
+        $this->assertSame('FULLTEXT(message)', $mismatches[0]->expected);
+        $this->assertSame('(message)', $mismatches[0]->actual);
+    }
+
+    public function testDeclaredFulltextIndexAgainstLiveFulltextIndexProducesNoFinding(): void
+    {
+        $mismatches = EntitySchemaIndexAudit::audit(
+            self::ENTITY,
+            self::TABLE,
+            ['ft_message' => [Entity::INDEX_COLUMNS => ['message'], Entity::INDEX_TYPE => SqlIndexType::FULLTEXT]],
+            [self::statisticsRow('ft_message', 'message', null, type: SqlIndexType::FULLTEXT)],
             [],
         );
 
@@ -195,6 +242,7 @@ final class EntitySchemaIndexAuditTest extends TestCase
      * @param string $column Column name at this position
      * @param ?string $collation `A`, `D`, or null where the index marks no direction
      * @param bool $unique Whether the index is unique
+     * @param string $type Index type (SqlIndexType constant)
      * @return array<string, mixed> One `information_schema.STATISTICS` row as the audit reads it
      */
     private static function statisticsRow(
@@ -202,12 +250,14 @@ final class EntitySchemaIndexAuditTest extends TestCase
         string $column,
         ?string $collation,
         bool $unique = false,
+        string $type = SqlIndexType::BTREE,
     ): array {
         return [
             EntitySchemaAudit::COL_INDEX_NAME => $index,
             EntitySchemaAudit::COL_NAME => $column,
             EntitySchemaAudit::COL_NON_UNIQUE => $unique ? 0 : 1,
             EntitySchemaAudit::COL_COLLATION => $collation,
+            EntitySchemaAudit::COL_INDEX_TYPE => $type,
         ];
     }
 }

@@ -249,7 +249,7 @@ final class TopologyValidator
      * @param list<array{registry: string, browserKey: string, sourceKey: string, column: string}> $joins
      *     Declared database joins, in declaration order
      * @param list<string> $errors Validation error accumulator
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     private function validateBrowserJoinColumns(array $joins, array &$errors): void
     {
@@ -264,7 +264,8 @@ final class TopologyValidator
             }
 
             $errors[] = "{$join['registry']}[{$join['browserKey']}]: join column '{$join['column']}'"
-                . " of source '{$join['sourceKey']}' is neither the primary key nor the leftmost column of an index";
+                . " of source '{$join['sourceKey']}' is neither the primary key"
+                . " nor the leftmost column of an index that can answer a lookup by value";
         }
     }
 

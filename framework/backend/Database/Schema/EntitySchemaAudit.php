@@ -43,7 +43,7 @@ use ReflectionClass;
 final class EntitySchemaAudit
 {
     /**
-     * `information_schema.COLUMNS` / `STATISTICS` / `KEY_COLUMN_USAGE` result keys. The four the
+     * `information_schema.COLUMNS` / `STATISTICS` / `KEY_COLUMN_USAGE` result keys. The five the
      * STATISTICS rows are read by are public because {@see EntitySchemaIndexAudit} is handed
      * those rows and reads them there; the query that names the columns still lives here, so
      * the keys are spelled once.
@@ -56,6 +56,7 @@ final class EntitySchemaAudit
     public const string COL_INDEX_NAME = 'INDEX_NAME';
     public const string COL_NON_UNIQUE = 'NON_UNIQUE';
     public const string COL_COLLATION = 'COLLATION';
+    public const string COL_INDEX_TYPE = 'INDEX_TYPE';
     private const string COL_CONSTRAINT_NAME = 'CONSTRAINT_NAME';
     private const string COL_REFERENCED_TABLE_NAME = 'REFERENCED_TABLE_NAME';
     private const string COL_TABLE_NAME = 'TABLE_NAME';
@@ -713,7 +714,7 @@ final class EntitySchemaAudit
     {
         Database::sql(
             'SELECT ' . self::COL_INDEX_NAME . ', SEQ_IN_INDEX, ' . self::COL_NAME . ', '
-            . self::COL_NON_UNIQUE . ', ' . self::COL_COLLATION
+            . self::COL_NON_UNIQUE . ', ' . self::COL_COLLATION . ', ' . self::COL_INDEX_TYPE
             . ' FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
             . ' ORDER BY ' . self::COL_INDEX_NAME . ', SEQ_IN_INDEX',
             SqlParamCollection::fromArray([$table]),

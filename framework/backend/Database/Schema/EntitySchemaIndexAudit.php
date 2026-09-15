@@ -6,6 +6,7 @@ namespace Hilos\Database\Schema;
 
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\SqlIndexType;
 use Hilos\Database\SqlSortDirection;
 
 /**
@@ -34,7 +35,7 @@ final class EntitySchemaIndexAudit
      * @param list<array<string, mixed>> $statistics Live `information_schema.STATISTICS` rows
      * @param list<string> $foreignKeyNames Constraint names of the table's foreign keys
      * @return list<EntitySchemaMismatch> Every divergence found on this axis
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public static function audit(
         string $entityClass,
@@ -49,6 +50,7 @@ final class EntitySchemaIndexAudit
         foreach ($indexes as $name => $definition) {
             $declaredColumns = Entity::indexComponents($definition);
             $declaredUnique = (bool) ($definition[Entity::INDEX_UNIQUE] ?? false);
+            $declaredType = Entity::indexType($definition);
 
             if (!isset($liveIndexes[$name])) {
                 $mismatches[] = new EntitySchemaMismatch(
@@ -56,21 +58,25 @@ final class EntitySchemaIndexAudit
                     $entityClass,
                     $table,
                     $name,
-                    'index ' . self::describeColumns($declaredColumns),
+                    'index ' . self::describeIndex($declaredColumns, $declaredUnique, $declaredType),
                     'missing',
                 );
                 continue;
             }
 
             $live = $liveIndexes[$name];
-            if ($live['columns'] !== $declaredColumns || $live['unique'] !== $declaredUnique) {
+            if (
+                $live['columns'] !== $declaredColumns
+                || $live['unique'] !== $declaredUnique
+                || $live['type'] !== $declaredType
+            ) {
                 $mismatches[] = new EntitySchemaMismatch(
                     EntitySchemaAxis::INDEX,
                     $entityClass,
                     $table,
                     $name,
-                    self::describeIndex($declaredColumns, $declaredUnique),
-                    self::describeIndex($live['columns'], $live['unique']),
+                    self::describeIndex($declaredColumns, $declaredUnique, $declaredType),
+                    self::describeIndex($live['columns'], $live['unique'], $live['type']),
                 );
             }
         }
@@ -83,7 +89,7 @@ final class EntitySchemaIndexAudit
                     $table,
                     $name,
                     'declared in _indexes',
-                    self::describeIndex($live['columns'], $live['unique']),
+                    self::describeIndex($live['columns'], $live['unique'], $live['type']),
                 );
             }
         }
@@ -93,13 +99,13 @@ final class EntitySchemaIndexAudit
 
     /**
      * Group STATISTICS rows into secondary indexes, dropping PRIMARY and any index that backs a
-     * foreign key. A column the database marks `D` is descending; anything else, NULL included,
-     * is ascending - a FULLTEXT index marks no direction at all, and reading that as descending
-     * would make every one of them a finding.
+     * foreign key. A column the database marks `D` is descending; anything else, NULL included
+     * (such as a FULLTEXT index, which records no direction), is ascending. The index type itself
+     * is read from INDEX_TYPE.
      *
      * @param list<array<string, mixed>> $statistics Live STATISTICS rows
      * @param list<string> $foreignKeyNames Constraint names of the table's foreign keys
-     * @return array<string, array{columns: list<array{column: string, direction: string}>, unique: bool}>
+     * @return array<string, array{columns: list<array{column: string, direction: string}>, unique: bool, type: string}>
      *     Secondary indexes by name, columns in sequence
      */
     private static function groupLiveIndexes(array $statistics, array $foreignKeyNames): array
@@ -110,7 +116,11 @@ final class EntitySchemaIndexAudit
             if ($name === EntitySchemaAudit::INDEX_PRIMARY || in_array($name, $foreignKeyNames, true)) {
                 continue;
             }
-            $indexes[$name] ??= ['columns' => [], 'unique' => (int) $row[EntitySchemaAudit::COL_NON_UNIQUE] === 0];
+            $indexes[$name] ??= [
+                'columns' => [],
+                'unique' => (int) $row[EntitySchemaAudit::COL_NON_UNIQUE] === 0,
+                'type' => (string) $row[EntitySchemaAudit::COL_INDEX_TYPE],
+            ];
             $indexes[$name]['columns'][] = [
                 'column' => (string) $row[EntitySchemaAudit::COL_NAME],
                 'direction' => $row[EntitySchemaAudit::COL_COLLATION] === self::COLLATION_DESCENDING
@@ -124,12 +134,20 @@ final class EntitySchemaIndexAudit
     /**
      * @param list<array{column: string, direction: string}> $columns Index columns in order
      * @param bool $unique Whether the index is unique
-     * @return string Human description, e.g. `unique(a,b)` or `(channel,created_at DESC)`
+     * @param string $type Index type (SqlIndexType constant)
+     * @return string Human description, e.g. `unique(a,b)` or `(channel,created_at DESC)` or `FULLTEXT(message)`
      */
-    private static function describeIndex(array $columns, bool $unique): string
+    private static function describeIndex(array $columns, bool $unique, string $type = SqlIndexType::BTREE): string
     {
-        // external-boundary: the neutral element of the signature — a plain index is spelled without the word
-        return ($unique ? 'unique' : '') . self::describeColumns($columns);
+        $prefix = [];
+        if ($unique) {
+            $prefix[] = 'unique';
+        }
+        if ($type !== SqlIndexType::BTREE) {
+            $prefix[] = $type;
+        }
+
+        return implode(' ', $prefix) . self::describeColumns($columns);
     }
 
     /**

@@ -56,7 +56,7 @@ enum EntitySchemaAxis: string
     case PRIMARY = 'primary';
 
     /**
-     * _indexes and the live secondary indexes disagree by name, by uniqueness, or by their
+     * _indexes and the live secondary indexes disagree by name, by uniqueness, by type, or by their
      * ordered columns - each of which carries the direction it is stored in, so an index that
      * kept its columns but lost a DESC is as much a divergence as one that lost a column.
      */
