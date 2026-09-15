@@ -78,7 +78,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
         $email = strtolower($dto->email);
         $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
         $outcome = new MagicLinkService()->send($email, $acting->sessionToken, $ticket);
-        $this->closeRefusedCodeSendLine($ticket, $outcome);
+        $this->closeRefusedCodeSendLine($ticket, StateHilosCodeSendAttempt::CHANNEL_EMAIL, $outcome);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);

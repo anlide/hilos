@@ -12,8 +12,9 @@ use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Verification\VerificationSendOutcome;
-use Hilos\Core\Exception\LogicException;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -87,6 +88,8 @@ final class CodeSendProgressLineTest extends TestCase
 
     protected function tearDown(): void
     {
+        putenv(EnvConstants::MAIL_TRANSPORT->name);
+        putenv(EnvConstants::MAIL_FILE_DIR->name);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosCodeSendAttempt::RT_COLLECTION);
         SourceChangeBus::reset();
         Hilos::$rt = $this->previousRt;
@@ -293,17 +296,31 @@ final class CodeSendProgressLineTest extends TestCase
 
         // A cooldown hold means an earlier code went out and IS the one the screen is waiting
         // for - the phone path answers its rate-limited arm the same way.
-        $commands->close(self::TICKET, VerificationSendOutcome::heldByCooldown(30));
+        $commands->close(self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL, VerificationSendOutcome::heldByCooldown(30));
         $this->assertSame(StateHilosCodeSendAttempt::STATE_SENT, $this->lastReportedStepState());
 
         // A cap refusal means nothing is travelling at all, so the line stops promising.
-        $commands->close(self::TICKET, VerificationSendOutcome::capReached());
+        $commands->close(self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL, VerificationSendOutcome::capReached());
         $this->assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $this->lastReportedStepState());
 
         // A send that really went out is left alone: the transport carrying it reports the rest,
         // and a word from here would be a second voice on one send.
-        $commands->close(self::TICKET, VerificationSendOutcome::sent(30));
+        $commands->close(self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL, VerificationSendOutcome::sent(30));
         $this->assertNull($this->lastReportedStepState());
+    }
+
+    public function testCooldownHoldOnDeclaredTestModeInstallationDoesNotClaimCodeWasSent(): void
+    {
+        putenv(EnvConstants::MAIL_TRANSPORT->name . '=file');
+        putenv(EnvConstants::MAIL_FILE_DIR->name . '=/tmp/hilos-mail');
+
+        $commands = new CodeSendProgressTestCommands(new CodeSendProgressTestUsersAgent());
+
+        $commands->close(self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL, VerificationSendOutcome::heldByCooldown(30));
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_NOT_SENT, $this->lastReportedStepState());
+
+        $commands->close(self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL, VerificationSendOutcome::capReached());
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $this->lastReportedStepState());
     }
 
     public function testEverySendGetsANameOfItsOwn(): void
@@ -446,10 +463,11 @@ final class CodeSendProgressTestCommands extends AbstractLibraryCommands
 {
     /**
      * @param string $ticket Ticket the line is following
+     * @param string $channel Channel the line belongs to
      * @param VerificationSendOutcome $outcome What the send gate answered
      */
-    public function close(string $ticket, VerificationSendOutcome $outcome): void
+    public function close(string $ticket, string $channel, VerificationSendOutcome $outcome): void
     {
-        $this->closeRefusedCodeSendLine($ticket, $outcome);
+        $this->closeRefusedCodeSendLine($ticket, $channel, $outcome);
     }
 }

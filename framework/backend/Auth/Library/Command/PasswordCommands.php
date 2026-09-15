@@ -160,7 +160,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             $email,
             $ticket,
         );
-        $this->closeRefusedCodeSendLine($ticket, $outcome);
+        $this->closeRefusedCodeSendLine($ticket, StateHilosCodeSendAttempt::CHANNEL_EMAIL, $outcome);
 
         $this->parkRegistrationWait($acting, $email);
 
@@ -246,7 +246,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             null,
             $ticket,
         );
-        $this->closeRefusedCodeSendLine($ticket, $outcome);
+        $this->closeRefusedCodeSendLine($ticket, StateHilosCodeSendAttempt::CHANNEL_EMAIL, $outcome);
         if ($outcome->sent) {
             $reservations->extendTo($acting->sessionToken);
         }

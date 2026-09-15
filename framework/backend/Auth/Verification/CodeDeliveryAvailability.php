@@ -77,6 +77,30 @@ final class CodeDeliveryAvailability
     }
 
     /**
+     * Whether this installation DECLARED that it writes letters instead of mailing them (HIL-827).
+     *
+     * The other side of {@see mailReachesARelay()} and not its negation: that one answers
+     * whether an address is a way to reach anybody, and says yes to a live relay and to the
+     * declared mode alike. This one separates those two, because a hand that has no transport
+     * outcome to report still has to know which of them it is standing on (HIL-1003).
+     *
+     * An unreadable mail configuration answers false, which leaves the caller saying what it
+     * said before this method existed. The opposite default to the one above, and for the same
+     * reason: there, failing open keeps a working installation open for registration; here, the
+     * safe answer is to change nothing about what the installation was already showing.
+     *
+     * @return bool True when the file transport is selected by hand and has a directory to write into
+     */
+    public function mailIsKeptAtHome(): bool
+    {
+        try {
+            return MailTransportConfig::fromEnv()->isTestMode();
+        } catch (HilosException) {
+            return false;
+        }
+    }
+
+    /**
      * Whether the resolved mail transport talks to a relay rather than writing a file.
      *
      * The file transport is the framework's fallback for a checkout with no relay: it

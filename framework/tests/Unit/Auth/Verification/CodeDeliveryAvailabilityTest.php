@@ -98,6 +98,48 @@ final class CodeDeliveryAvailabilityTest extends TestCase
     }
 
     /**
+     * The declared test mode means letters are kept at home on purpose.
+     */
+    public function testTheDeclaredTestModeKeepsMailAtHome(): void
+    {
+        putenv(EnvConstants::MAIL_TRANSPORT->name . '=file');
+        putenv(EnvConstants::MAIL_FILE_DIR->name . '=/tmp/hilos-mail');
+
+        self::assertTrue(new CodeDeliveryAvailability()->mailIsKeptAtHome());
+    }
+
+    /**
+     * A configured relay means mail leaves the installation and is not kept at home.
+     */
+    public function testAConfiguredRelayDoesNotKeepMailAtHome(): void
+    {
+        putenv(EnvConstants::MAIL_TRANSPORT->name . '=smtp');
+        putenv(EnvConstants::MAIL_SMTP_HOST->name . '=' . self::SMTP_HOST);
+
+        self::assertFalse(new CodeDeliveryAvailability()->mailIsKeptAtHome());
+    }
+
+    /**
+     * The file transport with no directory is an unconfigured fallback, not the declared mode.
+     */
+    public function testTheFileTransportWithNoDirectoryDoesNotKeepMailAtHome(): void
+    {
+        putenv(EnvConstants::MAIL_TRANSPORT->name . '=file');
+
+        self::assertFalse(new CodeDeliveryAvailability()->mailIsKeptAtHome());
+    }
+
+    /**
+     * Auto-selection with no relay host falls back to file, but is not the declared mode.
+     */
+    public function testAutoSelectionWithNoRelayHostDoesNotKeepMailAtHome(): void
+    {
+        putenv(EnvConstants::MAIL_SMTP_HOST->name . '=');
+
+        self::assertFalse(new CodeDeliveryAvailability()->mailIsKeptAtHome());
+    }
+
+    /**
      * A project that registered no code channel has nothing to send a phone code with.
      */
     public function testAnEmptyRegistryCannotReachAPhone(): void

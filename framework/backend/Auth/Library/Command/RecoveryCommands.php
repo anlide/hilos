@@ -76,7 +76,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
         if ($outcome === null) {
             throw new ValidationException(AuthMessages::NO_PASSWORD_TO_RESET);
         }
-        $this->closeRefusedCodeSendLine($ticket, $outcome);
+        $this->closeRefusedCodeSendLine($ticket, StateHilosCodeSendAttempt::CHANNEL_EMAIL, $outcome);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);

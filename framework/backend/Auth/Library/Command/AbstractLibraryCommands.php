@@ -12,6 +12,7 @@ use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Auth\Verification\VerificationSendOutcome;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -125,14 +126,17 @@ abstract class AbstractLibraryCommands
      *
      * The mapping is the phone path's, and for its reasons ({@see AuthCodeAgent}): a cooldown
      * hold means an earlier code went out and IS what the screen is waiting for, so the line
-     * says `sent`; a cap refusal means nothing is travelling at all, so it stops promising. A
-     * send that really went out is left alone - the transport carrying it reports the rest.
+     * says `sent` - unless this installation writes its letters instead of mailing them, where
+     * it closes with `not_sent` (HIL-1003); a cap refusal means nothing is travelling at all, so
+     * it stops promising. A send that really went out is left alone - the transport carrying it
+     * reports the rest.
      *
      * @param string $ticket Ticket the line is following
+     * @param string $channel Channel the line belongs to
      * @param VerificationSendOutcome $outcome What the send gate answered
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      */
-    protected function closeRefusedCodeSendLine(string $ticket, VerificationSendOutcome $outcome): void
+    protected function closeRefusedCodeSendLine(string $ticket, string $channel, VerificationSendOutcome $outcome): void
     {
         if ($outcome->sent) {
             return;
@@ -140,13 +144,37 @@ abstract class AbstractLibraryCommands
 
         $this->library->sendToAgent(
             HilosSignalConstants::HILOS_CODE_SEND_STEP,
-            CodeSendStepSignalData::step(
-                $ticket,
-                $outcome->capReached
-                    ? HilosCodeSendAttempt::STATE_FAILED
-                    : HilosCodeSendAttempt::STATE_SENT,
-            ),
+            CodeSendStepSignalData::step($ticket, $this->refusedLineState($channel, $outcome)),
         );
+    }
+
+    /**
+     * Which state a refused send leaves on the line.
+     *
+     * A cap refusal means nothing is travelling and no waiting fixes it, so the line stops
+     * promising. A cooldown hold means an earlier code went out and IS what the screen is
+     * waiting for - unless this installation writes its letters instead of mailing them, in
+     * which case the earlier code went nowhere either, and the line says so with the state
+     * HIL-827 added for exactly that installation.
+     *
+     * Only the mail channel is asked: the expert answers for mail, and a phone code held by
+     * the cooldown really did go out ({@see AuthCodeAgent::lineStateFor()}).
+     *
+     * @param string $channel Channel the line belongs to ({@see HilosCodeSendAttempt::CHANNEL_EMAIL} or a code channel key)
+     * @param VerificationSendOutcome $outcome What the send gate answered
+     * @return string State the line is closed with
+     */
+    private function refusedLineState(string $channel, VerificationSendOutcome $outcome): string
+    {
+        if ($outcome->capReached) {
+            return HilosCodeSendAttempt::STATE_FAILED;
+        }
+
+        if ($channel === HilosCodeSendAttempt::CHANNEL_EMAIL && new CodeDeliveryAvailability()->mailIsKeptAtHome()) {
+            return HilosCodeSendAttempt::STATE_NOT_SENT;
+        }
+
+        return HilosCodeSendAttempt::STATE_SENT;
     }
 
     /**
