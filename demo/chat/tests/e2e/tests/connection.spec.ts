@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-import { SESSION_COOKIE, signUp } from '../helpers/session'
+import { isSessionCookie, SESSION_COOKIE_PREFIX, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
@@ -72,10 +72,10 @@ test('renders the anonymous identity line when the cookie names no session', asy
   await gotoPage(page, '/')
 
   const session = (await context.cookies()).find(
-    (cookie) => cookie.name === SESSION_COOKIE,
+    (cookie) => isSessionCookie(cookie.name),
   )
   if (session === undefined) {
-    throw new Error(`the stand issued no ${SESSION_COOKIE} cookie`)
+    throw new Error(`the stand issued no ${SESSION_COOKIE_PREFIX}* cookie`)
   }
   await context.addCookies([{ ...session, value: orphanSessionToken() }])
 

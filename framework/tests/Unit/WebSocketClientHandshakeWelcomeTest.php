@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
@@ -39,6 +40,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
         putenv('HILOS_BUILD_TIMESTAMP');
+        putenv('HILOS_SESSION_COOKIE_NAME');
     }
 
     public function testWelcomeIsTheFirstFrameAfterThe101Response(): void
@@ -51,7 +53,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
                 'type' => 'handshake',
                 'data' => [
                     'build' => 'dev',
-                    'sessionCookieName' => 'hilos_session_token',
+                    'sessionCookieName' => SessionCookieName::resolve(),
                     'protectedMode' => [
                         'active' => false,
                         'operation' => null,
@@ -65,6 +67,16 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
             ],
             $welcome,
         );
+    }
+
+    public function testWelcomeCarriesOverriddenSessionCookieName(): void
+    {
+        putenv('HILOS_SESSION_COOKIE_NAME=custom_session_token');
+
+        $probe = $this->handshakenProbe();
+
+        $welcome = $this->decodeFirstFrameAfter101($probe->outboundBytes());
+        $this->assertSame('custom_session_token', $welcome['data']['sessionCookieName'] ?? null);
     }
 
     public function testWelcomeCarriesTheConfiguredBuildTimestamp(): void

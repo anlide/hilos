@@ -1,6 +1,6 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
-import { SESSION_COOKIE } from '../helpers/session'
+import { isSessionCookie } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // The erase on /privacy (HIL-839), and the three things only a real browser can
@@ -25,19 +25,19 @@ const OAUTH_PROVIDER_KEY = 'hilos.oauth.provider'
 const MAINTENANCE_HINT_KEY = 'hilos.protectedMode.hint'
 
 /**
- * Read one cookie out of the context's jar.
+ * Read one cookie matching a predicate out of the context's jar.
  *
  * @param context The browser context holding the jar.
- * @param name The cookie name to read.
+ * @param predicate Predicate to match the cookie name.
  * @returns The cookie's value, or the empty string when the jar holds none.
  */
 async function cookieValue(
   context: BrowserContext,
-  name: string,
+  predicate: (name: string) => boolean,
 ): Promise<string> {
   const cookies = await context.cookies()
 
-  return cookies.find((cookie) => cookie.name === name)?.value ?? ''
+  return cookies.find((cookie) => predicate(cookie.name))?.value ?? ''
 }
 
 test('the erase empties this browser and moves it onto a new session', async ({
@@ -58,7 +58,7 @@ test('the erase empties this browser and moves it onto a new session', async ({
   )
 
   // The identifier this browser arrived with: what the erase must change.
-  const arrived = await cookieValue(context, SESSION_COOKIE)
+  const arrived = await cookieValue(context, isSessionCookie)
   expect(arrived).not.toBe('')
 
   await page.getByTestId('privacy-erase').click()
@@ -97,7 +97,7 @@ test('the erase empties this browser and moves it onto a new session', async ({
   // The server half: the value arrives on the 101 of the reconnect the rotation
   // ticket triggers, a round trip after the outcome above was drawn.
   await expect(async () => {
-    const now = await cookieValue(context, SESSION_COOKIE)
+    const now = await cookieValue(context, isSessionCookie)
     expect(now).not.toBe('')
     expect(now).not.toBe(arrived)
   }).toPass()

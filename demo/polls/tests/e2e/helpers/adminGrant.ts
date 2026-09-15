@@ -19,10 +19,15 @@ const COMMAND_GRANT = 'admin:grant'
 const COMMAND_REVOKE = 'admin:revoke'
 
 /**
- * The session cookie the daemon sets on the 101, at its default name
- * (HILOS_SESSION_COOKIE_NAME renames it; no stand does).
+ * Session cookie prefix derived by the framework when HILOS_SESSION_COOKIE_NAME is unset.
+ * The auxiliary rotation cookie shares this prefix and ends with '_rotate'.
  */
-const SESSION_COOKIE = 'hilos_session_token'
+const SESSION_COOKIE_PREFIX = 'hilos_session_token_'
+const ROTATE_COOKIE_SUFFIX = '_rotate'
+
+function isSessionCookie(name: string): boolean {
+  return name.startsWith(SESSION_COOKIE_PREFIX) && !name.endsWith(ROTATE_COOKIE_SUFFIX)
+}
 
 /** What a command reply carries back over the socket. */
 type CommandReply = {
@@ -108,9 +113,9 @@ export async function setAdmin(userId: number, admin: boolean): Promise<void> {
  */
 export async function sessionToken(page: Page): Promise<string> {
   const cookies = await page.context().cookies()
-  const token = cookies.find((cookie) => cookie.name === SESSION_COOKIE)?.value
+  const token = cookies.find((cookie) => isSessionCookie(cookie.name))?.value
   if (token === undefined) {
-    throw new Error(`no ${SESSION_COOKIE} cookie on this context`)
+    throw new Error(`no ${SESSION_COOKIE_PREFIX}* cookie on this context`)
   }
 
   return token

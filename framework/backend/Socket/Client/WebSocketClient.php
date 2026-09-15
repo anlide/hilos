@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\ThrottleIdentity;
@@ -398,7 +399,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $secWebSocketAccept = base64_encode(sha1($key . WebSocketConstants::RFC6455_ACCEPT_MAGIC, true));
 
         $cookies = $this->parseCookies($headers);
-        $sessionCookieName = Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_NAME]->string();
+        $sessionCookieName = SessionCookieName::resolve();
 
         // A browser that just logged in comes back carrying the ticket its rotation was
         // announced with; anyone else carries nothing here and is served exactly as before.

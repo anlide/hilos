@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
@@ -130,6 +131,11 @@ class AdminCreateCommand implements CommandInterface, DatabaseFreeCommand
     public function getHelp(): string
     {
         $cookieEnv = EnvConstants::HILOS_SESSION_COOKIE_NAME->name;
+        try {
+            $cookieName = SessionCookieName::resolve();
+        } catch (EnvException) {
+            $cookieName = SessionCookieName::DERIVED_PREFIX . '<hash>';
+        }
 
         return <<<HELP
 Command: {$this->getName()} <sessionToken>
@@ -144,7 +150,7 @@ Description:
   Granting a session that is already an admin is not an error.
 
 Arguments:
-  <sessionToken>   Value of the session cookie (default name hilos_session_token,
+  <sessionToken>   Value of the session cookie (name {$cookieName},
                    renamed through {$cookieEnv}). Read it in the browser's DevTools under
                    Application - Cookies: the cookie is HttpOnly, so no page shows it.
 

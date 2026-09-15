@@ -259,7 +259,8 @@ enum EnvConstants
 
     /**
      * Name of the session-token cookie the daemon sets on the WebSocket
-     * handshake (101) when the client has none. Override to rename it.
+     * handshake (101) when the client has none. Derived from the declared
+     * database when unset; set to take the value verbatim.
      */
     case HILOS_SESSION_COOKIE_NAME;
 

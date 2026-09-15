@@ -1,9 +1,10 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
 import {
+  isRotateCookie,
+  isSessionCookie,
   nameFromEmail,
   register,
-  SESSION_COOKIE,
   uniqueEmail,
 } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
@@ -20,26 +21,23 @@ import { gotoPage } from '../helpers/page'
 // the case where a session cookie the attacker knows keeps working after the victim
 // logs in, so what must change is the VALUE, while the person stays signed in.
 
-/** The auxiliary cookie the ticket travels in (SessionRotationTicket::cookieName). */
-const ROTATE_COOKIE = 'hilos_session_token_rotate'
-
 /**
- * Read one cookie out of the context's jar.
+ * Read one cookie matching a predicate out of the context's jar.
  *
  * Through the jar rather than through `document.cookie`: the session cookie is
  * HttpOnly, so the page itself cannot see the very value this spec is about.
  *
  * @param context The browser context holding the jar.
- * @param name The cookie name to read.
+ * @param predicate Predicate to match the cookie name.
  * @returns The cookie's value, or the empty string when the jar holds none.
  */
 async function cookieValue(
   context: BrowserContext,
-  name: string,
+  predicate: (name: string) => boolean,
 ): Promise<string> {
   const cookies = await context.cookies()
 
-  return cookies.find((cookie) => cookie.name === name)?.value ?? ''
+  return cookies.find((cookie) => predicate(cookie.name))?.value ?? ''
 }
 
 test('a login moves the live session onto a new cookie value', async ({
@@ -51,7 +49,7 @@ test('a login moves the live session onto a new cookie value', async ({
 
   // The anonymous session the visitor already has: this is the value an attacker
   // would have planted, and the one that must stop naming the session.
-  const planted = await cookieValue(context, SESSION_COOKIE)
+  const planted = await cookieValue(context, isSessionCookie)
   expect(planted).not.toBe('')
 
   const email = uniqueEmail()
@@ -62,13 +60,13 @@ test('a login moves the live session onto a new cookie value', async ({
   // The new value arrives on the 101 of the reconnect the ticket triggers, which is a
   // round trip after the sign-in the assertion above already saw.
   await expect(async () => {
-    expect(await cookieValue(context, SESSION_COOKIE)).not.toBe(planted)
+    expect(await cookieValue(context, isSessionCookie)).not.toBe(planted)
   }).toPass()
 
   // And the ticket does not linger: the master erases the auxiliary cookie on the same
   // handshake it spends it on, so a replay has nothing to present.
   await expect(async () => {
-    expect(await cookieValue(context, ROTATE_COOKIE)).toBe('')
+    expect(await cookieValue(context, isRotateCookie)).toBe('')
   }).toPass()
 
   // The rotation is invisible to the person: still signed in, still on the same page.

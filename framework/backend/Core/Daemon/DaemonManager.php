@@ -8,6 +8,7 @@ use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\API\Router\HttpRouter;
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Cluster\AgentSignalMesh;
@@ -733,6 +734,9 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         Logger::info("Daemon started with epoll");
+        $sessionCookieName = SessionCookieName::resolve();
+        $cookieSource = SessionCookieName::isOverridden() ? 'override' : 'derived';
+        Logger::info("Session cookie '{$sessionCookieName}' ({$cookieSource})");
 
         // Main loop
         while ($this->shouldContinueRunning()) {

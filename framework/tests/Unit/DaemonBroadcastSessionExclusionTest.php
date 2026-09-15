@@ -58,6 +58,7 @@ final class DaemonBroadcastSessionExclusionTest extends TestCase
         $this->previousSignalRouter = Hilos::$sr;
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
+        putenv('HILOS_SESSION_COOKIE_NAME=hilos_session_token');
         $this->daemon = new BroadcastExclusionTestManager();
         $this->server = new BroadcastExclusionTestWebSocketServer();
         $this->daemon->registerServer($this->server);
@@ -67,6 +68,7 @@ final class DaemonBroadcastSessionExclusionTest extends TestCase
     {
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
+        putenv('HILOS_SESSION_COOKIE_NAME');
         putenv('HILOS_BUILD_TIMESTAMP');
 
         parent::tearDown();

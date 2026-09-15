@@ -53,6 +53,7 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
         Hilos::$sr = new SignalRouter();
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
+        putenv('HILOS_SESSION_COOKIE_NAME=hilos_session_token');
         $this->previousRt = Hilos::$rt;
         Hilos::$rt = new RotationTestRtContext();
         Hilos::$rt->mountFeatureRuntime([]);
@@ -67,6 +68,7 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
+        putenv('HILOS_SESSION_COOKIE_NAME');
     }
 
     public function testALiveTicketIssuesTheRotatedTokenInsteadOfTheCookieItWasSent(): void

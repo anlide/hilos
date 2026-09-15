@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router;
 
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionToken;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\TimeConstants;
@@ -46,7 +46,7 @@ class HttpRouter
     {
         $this->registry = new RouteRegistry();
         $this->resolver = new RouteResolver();
-        $this->sessionCookieName = Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_NAME]->string();
+        $this->sessionCookieName = SessionCookieName::resolve();
     }
 
     /**

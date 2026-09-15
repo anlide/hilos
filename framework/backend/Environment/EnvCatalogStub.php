@@ -224,7 +224,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             ),
             EnvConstants::HILOS_SESSION_COOKIE_NAME->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
-                'hilos_session_token',
+                '', // Empty default signals derivation from the declared database name
                 emptyIsMissing: true,
             ),
             EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE->name => self::entry(

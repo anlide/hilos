@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\API\Router\HttpRouter;
-use Hilos\Constants\EnvConstants;
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
@@ -162,7 +162,7 @@ final class HttpRouterSessionTokenSourceIntegrationTest extends AnalyticsSchemaI
      */
     private function sessionCookie(string $token): string
     {
-        $name = Hilos::$env[EnvConstants::HILOS_SESSION_COOKIE_NAME]->string();
+        $name = SessionCookieName::resolve();
 
         return "theme=dark; {$name}={$token}";
     }

@@ -42,12 +42,14 @@ final class WebSocketClientHandshakeSessionCookieTest extends TestCase
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
         $this->previousAppEnv = getenv('APP_ENV');
+        putenv('HILOS_SESSION_COOKIE_NAME=hilos_session_token');
     }
 
     protected function tearDown(): void
     {
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
+        putenv('HILOS_SESSION_COOKIE_NAME');
         putenv('HILOS_SESSION_COOKIE_MAX_AGE');
         // The suite itself runs under an APP_ENV; putting the captured value back rather
         // than unsetting it keeps a case in this file from deciding what the next file reads.

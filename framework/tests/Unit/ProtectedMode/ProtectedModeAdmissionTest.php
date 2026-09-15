@@ -51,6 +51,7 @@ final class ProtectedModeAdmissionTest extends TestCase
         Hilos::$sr = new SignalRouter();
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
+        putenv('HILOS_SESSION_COOKIE_NAME=hilos_session_token');
         $this->recorder = new RecordingAdmissionRecorder();
     }
 
@@ -59,6 +60,7 @@ final class ProtectedModeAdmissionTest extends TestCase
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
         Hilos::$rt = null;
+        putenv('HILOS_SESSION_COOKIE_NAME');
         putenv('HILOS_BUILD_TIMESTAMP');
 
         parent::tearDown();

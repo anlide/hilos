@@ -2,7 +2,7 @@ import net from 'node:net'
 import { randomBytes } from 'node:crypto'
 import type { BrowserContext } from '@playwright/test'
 
-import { SESSION_COOKIE } from './session'
+import { isSessionCookie } from './session'
 
 // The daemon command channel — the same socket the CLI test:protected-mode:*
 // commands speak. The Playwright runner has no PHP, so the e2e drives the freeze
@@ -95,7 +95,7 @@ export async function enterProtectedMode(
 export async function sessionTokenOf(context: BrowserContext): Promise<string> {
   const cookies = await context.cookies()
 
-  return cookies.find((cookie) => cookie.name === SESSION_COOKIE)?.value ?? ''
+  return cookies.find((cookie) => isSessionCookie(cookie.name))?.value ?? ''
 }
 
 /**
