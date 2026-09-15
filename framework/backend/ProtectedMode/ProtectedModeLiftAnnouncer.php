@@ -52,7 +52,7 @@ final class ProtectedModeLiftAnnouncer
     private const int SESSIONS_WAIT_SECONDS = 10;
 
     /** @var string Agent id this announcer's own log lines are filed under */
-    private const string LOG_AGENT_ID = 'protected-mode-lift';
+    public const string LOG_AGENT_ID = 'protected-mode-lift';
 
     /** @var int Logins a restore left on this node and the sessions library has not reported back */
     private int $sessionsOwed = 0;

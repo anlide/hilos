@@ -44,16 +44,12 @@ final class LogIndexFanOutIntegrationTest extends TestCase
     /** Past the subscriber's keepalive, so a claim goes out with nothing about it changed. */
     private const float PAST_THE_KEEPALIVE_SECONDS = 31.0;
 
-    private string $logFile = '';
-
     /** @var float Instant this case started, the origin every offset is measured from */
     private float $startedAt = 0.0;
 
     protected function setUp(): void
     {
-        // Outside any fixture on purpose: both agents log into the very directories they measure.
-        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-logindex-fanout-int-journal');
-        Logger::setLogFile($this->logFile);
+        Logger::resetLogFile();
         Hilos::$sr = new SignalRouter();
         // No runtime context, so no connection roster to reconcile the viewers against: these cases
         // are about the frames, and a project without connections keeps the set its pages keep.
@@ -67,9 +63,6 @@ final class LogIndexFanOutIntegrationTest extends TestCase
         $this->emptyTheMirror();
         Hilos::$sr = null;
         Logger::resetLogFile();
-        if (is_file($this->logFile)) {
-            unlink($this->logFile);
-        }
 
         parent::tearDown();
     }

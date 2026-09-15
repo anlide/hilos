@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\AgentLogStream;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
@@ -60,6 +61,10 @@ final class ProtectedModeAlertMailTest extends TestCase
         Logger::resetLogFile();
         if (is_file($this->logFile)) {
             unlink($this->logFile);
+        }
+        $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
+        if (is_file($agentLog)) {
+            unlink($agentLog);
         }
 
         putenv(EnvConstants::MAIL_WORKER_COUNT->name);
@@ -177,7 +182,9 @@ final class ProtectedModeAlertMailTest extends TestCase
         new ProtectedModeAlertNotifier()->notifyStuck(self::stuckParams(still: false));
 
         self::assertSame([], $mailer->sent);
-        self::assertStringContainsString('there is nobody to write to', (string)file_get_contents($this->logFile));
+        $agentLog = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeAlertNotifier::LOG_AGENT_ID, true);
+        self::assertFileExists($agentLog);
+        self::assertStringContainsString('there is nobody to write to', (string)file_get_contents($agentLog));
     }
 
     /**

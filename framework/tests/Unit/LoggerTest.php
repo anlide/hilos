@@ -240,6 +240,85 @@ final class LoggerTest extends TestCase
         $this->assertStringContainsString('agent message', $line);
     }
 
+    /**
+     * logAgentInfo() with a log file set writes to agent-<id>.log and leaves no marker anywhere.
+     */
+    public function testLogAgentInfoWithLogFileWritesAgentStreamAndNoMarker(): void
+    {
+        $dir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'hilos-logger-test-dir-' . mt_rand();
+        mkdir($dir, 0777, true);
+        $mainLogFile = $dir . DIRECTORY_SEPARATOR . 'daemon.log';
+        $errorLogFile = $dir . DIRECTORY_SEPARATOR . 'daemon-error.log';
+        file_put_contents($mainLogFile, '');
+        file_put_contents($errorLogFile, '');
+
+        Logger::setLogFile($mainLogFile);
+        Logger::setErrorLogFile($errorLogFile);
+
+        try {
+            ob_start();
+            Logger::logAgentInfo('agent-42', 'agent message');
+            $stdout = ob_get_clean();
+
+            $agentLogFile = $dir . DIRECTORY_SEPARATOR . 'agent-agent-42.log';
+            $this->assertFileExists($agentLogFile);
+            $agentContent = file_get_contents($agentLogFile);
+            $this->assertNotFalse($agentContent);
+            $this->assertStringContainsString('agent message', $agentContent);
+
+            $mainContent = file_get_contents($mainLogFile);
+            $this->assertNotFalse($mainContent);
+            $errorContent = file_get_contents($errorLogFile);
+            $this->assertNotFalse($errorContent);
+
+            $this->assertStringNotContainsString(Logger::AGENT_LOG_MARKER, $mainContent);
+            $this->assertStringNotContainsString(Logger::AGENT_LOG_MARKER, $errorContent);
+            $this->assertNotFalse($stdout);
+            $this->assertStringNotContainsString(Logger::AGENT_LOG_MARKER, $stdout);
+            $this->assertSame('', $stdout);
+            $this->assertSame('', $mainContent);
+            $this->assertSame('', $errorContent);
+        } finally {
+            $this->removeDirectory($dir);
+        }
+    }
+
+    /**
+     * logAgentError() with a log file set writes to agent-<id>.error.log and leaves no marker anywhere.
+     */
+    public function testLogAgentErrorWithLogFileWritesErrorStreamAndNoMarker(): void
+    {
+        $dir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'hilos-logger-test-dir-' . mt_rand();
+        mkdir($dir, 0777, true);
+        $mainLogFile = $dir . DIRECTORY_SEPARATOR . 'daemon.log';
+        $errorLogFile = $dir . DIRECTORY_SEPARATOR . 'daemon-error.log';
+        file_put_contents($mainLogFile, '');
+        file_put_contents($errorLogFile, '');
+
+        Logger::setLogFile($mainLogFile);
+        Logger::setErrorLogFile($errorLogFile);
+
+        try {
+            Logger::logAgentError('agent-42', 'agent error message');
+
+            $agentErrorLogFile = $dir . DIRECTORY_SEPARATOR . 'agent-agent-42.error.log';
+            $this->assertFileExists($agentErrorLogFile);
+            $agentContent = file_get_contents($agentErrorLogFile);
+            $this->assertNotFalse($agentContent);
+            $this->assertStringContainsString('agent error message', $agentContent);
+
+            $mainContent = file_get_contents($mainLogFile);
+            $this->assertNotFalse($mainContent);
+            $errorContent = file_get_contents($errorLogFile);
+            $this->assertNotFalse($errorContent);
+
+            $this->assertSame('', $mainContent);
+            $this->assertSame('', $errorContent);
+        } finally {
+            $this->removeDirectory($dir);
+        }
+    }
+
     private function createTempLogFile(): string
     {
         $path = tempnam(sys_get_temp_dir(), 'hilos-logger-test-');
@@ -255,5 +334,26 @@ final class LoggerTest extends TestCase
         $this->assertNotFalse($content);
 
         return rtrim($content, "\n");
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $items = scandir($dir);
+        if ($items === false) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir . DIRECTORY_SEPARATOR . $item;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
     }
 }

@@ -49,9 +49,21 @@ and named by the agent's id, not its type. The level the marker carries as a
 field of its own is written into `agent-<id>.log` between the stamp and the
 text — `[stamp] [WARNING] text`, the form `Logger` writes when it shows the level
 — so a reader tells an agent's warning from its info; the `.error.log` twin
-keeps the bare `[stamp] text` of every error stream (HIL-868). Where each of
-these streams lands, and what lands beside them past the `Logger`, is the map
-HIL-872 drew (`hilos-ops/maps/HIL-872-log-streams.md`).
+keeps the bare `[stamp] text` of every error stream (HIL-868).
+
+A line written through `Logger::logAgent*()` by code that runs IN the master (the
+protected-mode watchdog, its alert notifier, the lift announcer, the agent
+manager's stop-hook rescue) is filed straight into `agent-<id>.log` and its
+`.error.log` twin by the same `Logger` call (`AgentLogStream`, HIL-1017), because
+the master has no reader over its own output; the marker is for the pipe alone,
+and it never appears in a file. Two of these ids belong to no live agent —
+`protected-mode-watchdog` and `protected-mode-lift` — and that is deliberate: the
+reader classifies a stream by its filename prefix and asks no registry of agents.
+Such a line no longer reaches `daemon.log` or `daemon-error.log`, which is where
+an operator would have grepped for it until this leaf.
+
+Where each of these streams lands, and what lands beside them past the `Logger`,
+is the map HIL-872 drew (`hilos-ops/maps/HIL-872-log-streams.md`).
 Routing a line through the owner is forbidden: it would turn logging in the
 whole framework upside down, put an agent on the path of every message of every
 process, and buy nothing, because the owner measures files and does not care who

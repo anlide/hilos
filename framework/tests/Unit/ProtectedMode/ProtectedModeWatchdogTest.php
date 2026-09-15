@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\AgentLogStream;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
@@ -62,6 +63,9 @@ final class ProtectedModeWatchdogTest extends TestCase
     /** Temporary main log file the assertions read the written report back from */
     private string $logFile = '';
 
+    /** Temporary agent error log stream the watchdog writes into */
+    private string $agentLogFile = '';
+
     private ?EnvAccessor $previousEnv = null;
 
     private ?HilosMailer $previousMailer = null;
@@ -72,6 +76,8 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-protected-mode-watchdog');
         Logger::setLogFile($this->logFile);
+        $this->agentLogFile = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeWatchdog::LOG_AGENT_ID, true);
+        file_put_contents($this->agentLogFile, '');
 
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousMailer = Hilos::$mail;
@@ -86,6 +92,9 @@ final class ProtectedModeWatchdogTest extends TestCase
         Logger::resetLogFile();
         if (is_file($this->logFile)) {
             unlink($this->logFile);
+        }
+        if (is_file($this->agentLogFile)) {
+            unlink($this->agentLogFile);
         }
 
         putenv(EnvConstants::HILOS_PROTECTED_MODE_SILENCE_TIMEOUT->name);
@@ -290,6 +299,7 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, activatedAt: self::STARTED_AT + 3, startedAt: self::STARTED_AT + 3);
         file_put_contents($this->logFile, '');
+        file_put_contents($this->agentLogFile, '');
         $watchdog->tick(self::STARTED_AT + 4);
 
         $this->assertSame('', $this->written());
@@ -468,7 +478,7 @@ final class ProtectedModeWatchdogTest extends TestCase
      */
     private function written(): string
     {
-        return (string)file_get_contents($this->logFile);
+        return (string)file_get_contents($this->agentLogFile);
     }
 }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Utils;
 
+use Hilos\Log\AgentLogStream;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -439,6 +440,11 @@ class Logger
      * built. The daemon that picks these lines out of the agent's output and files them does
      * not ask again: a line that got here has already passed.
      *
+     * A process that declared a main log file is the master (the only caller of setLogFile()
+     * outside tests is framework/backend/Core/Daemon/DaemonApplication.php:75), it has no reader
+     * over its own output, and the line it writes is filed straight into the agent's stream
+     * instead of being marked for a reader that is not there.
+     *
      * @param string $agentId Agent ID
      * @param string $level Log level (INFO, ERROR, WARNING, DEBUG)
      * @param string $message Message
@@ -451,6 +457,13 @@ class Logger
         }
 
         $timestamp = TimeHelper::getTimestampWithMs();
+
+        if (self::$logFile !== null) {
+            AgentLogStream::append(dirname(self::$logFile), $agentId, $level, "[{$timestamp}] {$message}", $useStderr);
+
+            return;
+        }
+
         $logLine = self::AGENT_LOG_MARKER . "{$agentId}" . self::AGENT_LOG_FIELD_SEPARATOR
             . "{$level}" . self::AGENT_LOG_FIELD_SEPARATOR . "[{$timestamp}] {$message}";
 

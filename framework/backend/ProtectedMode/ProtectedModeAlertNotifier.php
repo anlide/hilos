@@ -42,7 +42,7 @@ use Throwable;
 final class ProtectedModeAlertNotifier
 {
     /** @var string Agent id this notifier's own log lines are filed under */
-    private const string LOG_AGENT_ID = 'protected-mode-watchdog';
+    public const string LOG_AGENT_ID = 'protected-mode-watchdog';
 
     /** @var string What separates one recipient address from the next in the environment value */
     private const string ADDRESS_SEPARATOR = ',';

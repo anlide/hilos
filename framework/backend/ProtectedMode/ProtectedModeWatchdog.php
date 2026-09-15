@@ -55,8 +55,8 @@ use Throwable;
  */
 final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
 {
-    /** @var string Agent id the watchdog's own log lines are filed under */
-    private const string LOG_AGENT_ID = 'protected-mode-watchdog';
+    /** @var string Agent id this watchdog's own log lines are filed under */
+    public const string LOG_AGENT_ID = 'protected-mode-watchdog';
 
     /**
      * @var int Seconds a quiesce round may stay open when the configured timeout cannot be read

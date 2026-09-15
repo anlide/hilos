@@ -53,8 +53,6 @@ final class LogStoreAgentRotationTest extends TestCase
 
     private string $dir = '';
 
-    private string $logFile = '';
-
     private ?EnvAccessor $previousEnv = null;
 
     protected function setUp(): void
@@ -64,10 +62,7 @@ final class LogStoreAgentRotationTest extends TestCase
         if (!mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
             $this->fail("Could not create fixture directory: {$this->dir}");
         }
-        // Outside the fixture on purpose: the agent logs into the very directory it rotates, and a
-        // journal written there would be one more file for the batch to carry off.
-        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-logstore-rotation-journal');
-        Logger::setLogFile($this->logFile);
+        Logger::resetLogFile();
 
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         Hilos::$env = new EnvAccessor();
@@ -94,9 +89,6 @@ final class LogStoreAgentRotationTest extends TestCase
         }
         Hilos::$sr = null;
         Logger::resetLogFile();
-        if (is_file($this->logFile)) {
-            unlink($this->logFile);
-        }
         $this->removeTree($this->dir);
     }
 
