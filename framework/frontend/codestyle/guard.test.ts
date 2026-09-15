@@ -26,6 +26,7 @@ import { checkRepository as checkBrowserValueDeclared } from './browserValueDecl
 import { checkRepository as checkDisabledTitle } from './disabledTitle.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkModalFocus } from './modalFocus.js'
+import { checkRepository as checkShellParity } from './shellParity.js'
 import { checkRepository as checkStyleInline } from './inlineStyle.js'
 import { checkRepository as checkStyleSheetHome } from './styleSheetHome.js'
 import { checkRepository as checkVueTemplateRef } from './vueTemplateRef.js'
@@ -49,6 +50,7 @@ const RULES = [
   checkDisabledTitle,
   checkE2ePageGoto,
   checkModalFocus,
+  checkShellParity,
   checkStyleInline,
   checkStyleSheetHome,
   checkVueTemplateRef,
