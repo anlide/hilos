@@ -6,6 +6,10 @@ import {
   type Page,
 } from '@playwright/test'
 
+import {
+  clearCustomSetting,
+  setCustomSetting,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { emitNotification } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
@@ -198,10 +202,7 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
 
   const save = page.getByTestId('hilos-settings-edit-save')
-  await page.getByTestId('hilos-settings-edit-example_boolean').click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  await page.getByTestId('hilos-settings-edit-value').check()
-  await save.click()
+  await setCustomSetting(page, 'example_boolean', true)
 
   // The dialog closes on the action's own `::success` reply, so its going is the
   // action settling — asserted before the toast, which the same reply raises.
@@ -222,9 +223,7 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await expect(toast).toHaveCount(0)
 
   // Reset the key back to its catalog default.
-  await page.getByTestId('hilos-settings-edit-example_boolean').click()
-  await page.getByTestId('hilos-settings-edit-custom').uncheck()
-  await save.click()
+  await clearCustomSetting(page, 'example_boolean')
   await expect(save).toHaveCount(0)
 })
 

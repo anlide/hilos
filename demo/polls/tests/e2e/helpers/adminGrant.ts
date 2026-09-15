@@ -1,7 +1,6 @@
-import net from 'node:net'
-import { randomBytes } from 'node:crypto'
 import { expect, type Page } from '@playwright/test'
 
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { gotoPage } from './page'
 
 // The daemon command channel — the same socket the CLI admin:create /
@@ -18,6 +17,12 @@ const COMMAND_CREATE = 'admin:create'
 const COMMAND_GRANT = 'admin:grant'
 const COMMAND_REVOKE = 'admin:revoke'
 
+const sendCommand = createCommandChannel({
+  host: COMMAND_HOST,
+  port: COMMAND_PORT,
+  timeoutMs: REPLY_TIMEOUT_MS,
+})
+
 /**
  * Session cookie prefix derived by the framework when HILOS_SESSION_COOKIE_NAME is unset.
  * The auxiliary rotation cookie shares this prefix and ends with '_rotate'.
@@ -27,70 +32,6 @@ const ROTATE_COOKIE_SUFFIX = '_rotate'
 
 function isSessionCookie(name: string): boolean {
   return name.startsWith(SESSION_COOKIE_PREFIX) && !name.endsWith(ROTATE_COOKIE_SUFFIX)
-}
-
-/** What a command reply carries back over the socket. */
-type CommandReply = {
-  status?: string
-  payload?: Record<string, unknown>
-}
-
-/**
- * Sends one command over the daemon command channel and resolves with its ok
- * payload, rejecting when the daemon refuses or stays silent.
- *
- * @param command Wire name of the command to send.
- * @param payload Request payload the agent reads.
- * @returns The reply payload of an ok reply.
- */
-function sendCommand(
-  command: string,
-  payload: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const request =
-      JSON.stringify({
-        correlationId: randomBytes(8).toString('hex'),
-        command,
-        payload,
-      }) + '\n'
-
-    const socket = net.connect(COMMAND_PORT, COMMAND_HOST)
-    let buffer = ''
-
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error(`No command-channel reply within ${REPLY_TIMEOUT_MS}ms`))
-    }, REPLY_TIMEOUT_MS)
-
-    socket.on('connect', () => {
-      socket.write(request)
-    })
-    socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString()
-      const newline = buffer.indexOf('\n')
-      if (newline === -1) {
-        return
-      }
-      clearTimeout(timer)
-      socket.destroy()
-
-      const reply = JSON.parse(buffer.slice(0, newline)) as CommandReply
-      if (reply.status === 'ok') {
-        resolve(reply.payload ?? {})
-      } else {
-        reject(
-          new Error(
-            `${command} failed: ${String(reply.payload?.message ?? 'unknown error')}`,
-          ),
-        )
-      }
-    })
-    socket.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-  })
 }
 
 /**

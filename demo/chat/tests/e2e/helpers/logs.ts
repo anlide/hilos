@@ -1,6 +1,6 @@
-import net from 'node:net'
 import { randomBytes } from 'node:crypto'
 
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import {
   deriveTimeoutScale,
   readHostPressure,
@@ -13,10 +13,9 @@ import {
 // what it would see in production. Appending to the file from here instead would
 // prove only that a file grew.
 //
-// The round-trip is a fourth local copy of the one in adminGrant.ts,
-// notifications.ts and protectedMode.ts on purpose: a shared helper would have
-// meant editing three files this leaf knows nothing about. The extraction is
-// filed as a proposal instead.
+// The round trip shared with adminGrant.ts, notifications.ts and protectedMode.ts
+// lives in the framework's node-side scripts; this helper keeps only the chat
+// address, command name and reply window.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
@@ -26,6 +25,12 @@ const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 const REPLY_TIMEOUT_MS = 10_000
 
 const APPEND_COMMAND = 'test:log:append'
+
+const sendCommand = createCommandChannel({
+  host: COMMAND_HOST,
+  port: COMMAND_PORT,
+  timeoutMs: REPLY_TIMEOUT_MS,
+})
 
 /**
  * The cap a wait on an appended line reaching the screen gets, in milliseconds.
@@ -85,68 +90,4 @@ export async function appendLogLines(
  */
 export function logMarker(label: string): string {
   return `${label}-${randomBytes(6).toString('hex')}`
-}
-
-/**
- * Sends one command over the daemon command channel and resolves its payload.
- *
- * @param command Command-channel wire name.
- * @param payload Request payload.
- * @returns The reply payload on success.
- */
-function sendCommand(
-  command: string,
-  payload: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const request =
-      JSON.stringify({
-        correlationId: randomBytes(8).toString('hex'),
-        command,
-        payload,
-      }) + '\n'
-
-    const socket = net.connect(COMMAND_PORT, COMMAND_HOST)
-    let buffer = ''
-
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(
-        new Error(
-          `No command-channel reply to ${command} within ${REPLY_TIMEOUT_MS}ms`,
-        ),
-      )
-    }, REPLY_TIMEOUT_MS)
-
-    socket.on('connect', () => {
-      socket.write(request)
-    })
-    socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString()
-      const newline = buffer.indexOf('\n')
-      if (newline === -1) {
-        return
-      }
-      clearTimeout(timer)
-      socket.destroy()
-
-      const reply = JSON.parse(buffer.slice(0, newline)) as {
-        status?: string
-        payload?: Record<string, unknown> & { message?: string }
-      }
-      if (reply.status === 'ok') {
-        resolve(reply.payload ?? {})
-      } else {
-        reject(
-          new Error(
-            `${command} failed: ${reply.payload?.message ?? 'unknown error'}`,
-          ),
-        )
-      }
-    })
-    socket.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-  })
 }

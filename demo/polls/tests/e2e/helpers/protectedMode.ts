@@ -1,6 +1,4 @@
-import net from 'node:net'
-import { randomBytes } from 'node:crypto'
-
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/protectedModeReAsk.mjs'
 
 // The daemon command channel — the same socket the CLI test:protected-mode:*
@@ -51,6 +49,13 @@ export interface ProtectedModeSnapshot {
   agentStartGateClosed: boolean
   passCount: number
 }
+
+const sendCommand = createCommandChannel({
+  host: COMMAND_HOST,
+  port: COMMAND_PORT,
+  timeoutMs: REPLY_TIMEOUT_MS,
+  refuse: (message) => new ProtectedModeCommandRefused(message),
+})
 
 /**
  * Takes the installation into protected mode through the live initiator agent.
@@ -194,11 +199,14 @@ export async function openProtectedModeIfAny(): Promise<void> {
 export async function inspectProtectedMode(
   timeoutMs = REPLY_TIMEOUT_MS,
 ): Promise<ProtectedModeSnapshot> {
-  return (await sendCommand(
-    INSPECT_COMMAND,
-    {},
+  const inspect = createCommandChannel({
+    host: COMMAND_HOST,
+    port: COMMAND_PORT,
     timeoutMs,
-  )) as unknown as ProtectedModeSnapshot
+    refuse: (message) => new ProtectedModeCommandRefused(message),
+  })
+
+  return (await inspect(INSPECT_COMMAND, {})) as unknown as ProtectedModeSnapshot
 }
 
 /**
@@ -282,70 +290,4 @@ function protectedModeReAskError(
   return new Error(
     `${command} was not answered; the node reads '${snapshot.phase}', so the command was not taken`,
   )
-}
-
-/**
- * Sends one command over the daemon command channel and resolves its payload.
- *
- * @param command Command-channel wire name.
- * @param payload Request payload.
- * @param timeoutMs How long to wait for the reply.
- * @returns The reply payload on success.
- */
-function sendCommand(
-  command: string,
-  payload: Record<string, unknown>,
-  timeoutMs = REPLY_TIMEOUT_MS,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const request =
-      JSON.stringify({
-        correlationId: randomBytes(8).toString('hex'),
-        command,
-        payload,
-      }) + '\n'
-
-    const socket = net.connect(COMMAND_PORT, COMMAND_HOST)
-    let buffer = ''
-
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(
-        new Error(
-          `No command-channel reply to ${command} within ${timeoutMs}ms`,
-        ),
-      )
-    }, timeoutMs)
-
-    socket.on('connect', () => {
-      socket.write(request)
-    })
-    socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString()
-      const newline = buffer.indexOf('\n')
-      if (newline === -1) {
-        return
-      }
-      clearTimeout(timer)
-      socket.destroy()
-
-      const reply = JSON.parse(buffer.slice(0, newline)) as {
-        status?: string
-        payload?: Record<string, unknown> & { message?: string }
-      }
-      if (reply.status === 'ok') {
-        resolve(reply.payload ?? {})
-      } else {
-        reject(
-          new ProtectedModeCommandRefused(
-            `${command} failed: ${reply.payload?.message ?? 'unknown error'}`,
-          ),
-        )
-      }
-    })
-    socket.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-  })
 }

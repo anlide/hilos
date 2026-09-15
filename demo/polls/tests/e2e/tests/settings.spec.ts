@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test'
+
+import {
+  clearCustomSetting,
+  setCustomSetting,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
@@ -61,10 +66,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await expect(integerRow).toContainText('default')
 
   // Add-by-key: open the on-default row, switch on a custom value, and save it.
-  await page.getByTestId('hilos-settings-edit-example_integer').click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  await page.getByTestId('hilos-settings-edit-value').fill('42')
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await setCustomSetting(page, 'example_integer', '42')
 
   // The custom value returns over the live table and the edit dialog closes.
   await expect(integerRow).toContainText('42')
@@ -72,9 +74,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
   // Reset back to the catalog default via the edit dialog's custom toggle.
-  await page.getByTestId('hilos-settings-edit-example_integer').click()
-  await page.getByTestId('hilos-settings-edit-custom').uncheck()
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await clearCustomSetting(page, 'example_integer')
   await expect(integerRow).toContainText('default')
   await expect(integerRow).not.toContainText('custom')
 

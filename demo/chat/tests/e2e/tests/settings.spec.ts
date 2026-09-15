@@ -1,6 +1,11 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
-import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  clearCustomSetting,
+  draftCustomSetting,
+  openSettingEdit,
+  setCustomSetting,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
@@ -26,58 +31,6 @@ async function openSettings(page: Page): Promise<void> {
 async function isolate(page: Page, key: string): Promise<void> {
   await page.getByTestId('hilos-table-search').fill(key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
-}
-
-/**
- * Open a key's edit dialog, turn the custom switch on, type `value`, and save.
- * The catalog default is left behind; the caller waits on the live row (or the
- * other tab's open modal) for the echo.
- *
- * @param page The settings page
- * @param key The catalog key
- * @param value The custom override to persist
- */
-async function saveCustomValue(
-  page: Page,
-  key: string,
-  value: string,
-): Promise<void> {
-  await page.getByTestId(`hilos-settings-edit-${key}`).click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  await typeInto(page.getByTestId('hilos-settings-edit-value'), value)
-  await clickSubmit(page.getByTestId('hilos-settings-edit-save'))
-}
-
-/**
- * Drop the key back to its catalog default so a later spec (or a retry) does
- * not inherit this run's override.
- *
- * @param page The settings page
- * @param key The catalog key
- */
-async function resetToDefault(page: Page, key: string): Promise<void> {
-  await dismissToasts(page)
-  await page.getByTestId(`hilos-settings-edit-${key}`).click()
-  await page.getByTestId('hilos-settings-edit-custom').uncheck()
-  await clickSubmit(page.getByTestId('hilos-settings-edit-save'))
-}
-
-/**
- * Open the edit dialog on a key and type a value the catalog rule refuses,
- * leaving the dialog armed and the value field for the caller to measure.
- *
- * @param page The page the settings table is open on
- * @param key The catalog key whose row is edited
- * @returns The value field, still holding what was typed into it
- */
-async function typeRefusedValue(page: Page, key: string): Promise<Locator> {
-  await page.getByTestId(`hilos-settings-edit-${key}`).click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  const value = page.getByTestId('hilos-settings-edit-value')
-  await value.fill('')
-  await value.pressSequentially('-1', { delay: 10 })
-
-  return value
 }
 
 /**
@@ -210,10 +163,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await expect(row).toContainText('default')
 
   // Add-by-key: open the on-default row, switch on a custom value, and save it.
-  await page.getByTestId('hilos-settings-edit-example_integer').click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  await page.getByTestId('hilos-settings-edit-value').fill('42')
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await setCustomSetting(page, 'example_integer', '42')
 
   // The success sentence is the backend's own, naming the key it saved: the
   // driver has none of its own to fall back on (HIL-770).
@@ -229,9 +179,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
   // Reset back to the catalog default.
-  await page.getByTestId('hilos-settings-edit-example_integer').click()
-  await page.getByTestId('hilos-settings-edit-custom').uncheck()
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await clearCustomSetting(page, 'example_integer')
   await expect(row).toContainText('default')
   await expect(row).not.toContainText('custom')
 
@@ -244,7 +192,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
 
   // And re-opening the dialog arms the switch from the value, not from the row:
   // off, with no value field behind it.
-  await page.getByTestId('hilos-settings-edit-example_integer').click()
+  await openSettingEdit(page, 'example_integer')
   await expect(page.getByTestId('hilos-settings-edit-custom')).not.toBeChecked()
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
   await page.getByTestId('modal-close').click()
@@ -267,10 +215,7 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
   const rowB = tabB.getByTestId('hilos-table-row-chat_bot_language')
 
   // Tab A sets a custom value and applies its own change at once (no Apply).
-  await page.getByTestId('hilos-settings-edit-chat_bot_language').click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  await page.getByTestId('hilos-settings-edit-value').fill('xx-test')
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await setCustomSetting(page, 'chat_bot_language', 'xx-test')
   await expect(rowA).toContainText('xx-test')
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
@@ -294,9 +239,7 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
   await expect(rowB).not.toHaveClass(/table-success/, { timeout: 10_000 })
 
   // Reset the key back to its catalog default.
-  await page.getByTestId('hilos-settings-edit-chat_bot_language').click()
-  await page.getByTestId('hilos-settings-edit-custom').uncheck()
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await clearCustomSetting(page, 'chat_bot_language')
   await expect(rowA).not.toContainText('xx-test')
   await tabB.close()
 })
@@ -314,17 +257,14 @@ test('the edit dialog opens on the value the other tab just wrote', async ({
   const rowB = tabB.getByTestId('hilos-table-row-example_string')
 
   // Tab A sets a custom value; tab B has it on screen before anyone opens a dialog.
-  await page.getByTestId('hilos-settings-edit-example_string').click()
-  await page.getByTestId('hilos-settings-edit-custom').check()
-  await page.getByTestId('hilos-settings-edit-value').fill('hello-modal')
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await setCustomSetting(page, 'example_string', 'hello-modal')
   await expect(rowB).toContainText('hello-modal')
 
   // The dialog is armed from what the row holds, so it edits the value that
   // arrived and never the one it replaced. Since HIL-793 there is nothing queued
   // to flush on the way in — a value that leaves the row in its place is applied
   // when it arrives, and applyAndResolve is left with the removals it still owns.
-  await tabB.getByTestId('hilos-settings-edit-example_string').click()
+  await openSettingEdit(tabB, 'example_string')
   await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
     'hello-modal',
   )
@@ -332,9 +272,7 @@ test('the edit dialog opens on the value the other tab just wrote', async ({
   await tabB.getByTestId('modal-close').click()
 
   // Reset the key back to its catalog default.
-  await page.getByTestId('hilos-settings-edit-example_string').click()
-  await page.getByTestId('hilos-settings-edit-custom').uncheck()
-  await page.getByTestId('hilos-settings-edit-save').click()
+  await clearCustomSetting(page, 'example_string')
   await tabB.close()
 })
 
@@ -354,10 +292,9 @@ test('an open pristine edit reloads when the other tab saves', async ({
   // Tab B opens and does not type: a pristine modal must follow the live row.
   // The switch may already be on (an env overlay or an empty stored URL); that
   // is still pristine as long as the field is not edited.
-  await tabB.getByTestId(`hilos-settings-edit-${key}`).click()
-  await expect(tabB.getByTestId('hilos-settings-edit-custom')).toBeVisible()
+  await openSettingEdit(tabB, key)
 
-  await saveCustomValue(page, key, 'elsewhere-url')
+  await setCustomSetting(page, key, 'elsewhere-url')
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
     'elsewhere-url',
   )
@@ -369,7 +306,7 @@ test('an open pristine edit reloads when the other tab saves', async ({
   await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
   await tabB.getByTestId('modal-close').click()
 
-  await resetToDefault(page, key)
+  await clearCustomSetting(page, key)
   await tabB.close()
 })
 
@@ -384,11 +321,9 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
   await isolate(page, key)
   await isolate(tabB, key)
 
-  await tabB.getByTestId(`hilos-settings-edit-${key}`).click()
-  await tabB.getByTestId('hilos-settings-edit-custom').check()
-  await typeInto(tabB.getByTestId('hilos-settings-edit-value'), 'mine-model')
+  await draftCustomSetting(tabB, key, 'mine-model')
 
-  await saveCustomValue(page, key, 'theirs-model')
+  await setCustomSetting(page, key, 'theirs-model')
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
     'theirs-model',
   )
@@ -408,7 +343,7 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
   await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
   await tabB.getByTestId('modal-close').click()
 
-  await resetToDefault(page, key)
+  await clearCustomSetting(page, key)
   await tabB.close()
 })
 
@@ -423,11 +358,9 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   await isolate(page, key)
   await isolate(tabB, key)
 
-  await tabB.getByTestId(`hilos-settings-edit-${key}`).click()
-  await tabB.getByTestId('hilos-settings-edit-custom').check()
-  await typeInto(tabB.getByTestId('hilos-settings-edit-value'), 'mine-provider')
+  await draftCustomSetting(tabB, key, 'mine-provider')
 
-  await saveCustomValue(page, key, 'theirs-provider')
+  await setCustomSetting(page, key, 'theirs-provider')
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
     'theirs-provider',
   )
@@ -445,7 +378,7 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
     'mine-provider',
   )
 
-  await resetToDefault(page, key)
+  await clearCustomSetting(page, key)
   await tabB.close()
 })
 
@@ -490,7 +423,7 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await openSettings(page)
   await isolate(page, key)
 
-  const value = await typeRefusedValue(page, key)
+  const value = await draftCustomSetting(page, key, '-1')
 
   // The room for a refusal is held before there is one, and nothing in it looks
   // like a refusal: the live region stands there, the red plate does not
@@ -557,7 +490,7 @@ test('a refusal too long for the line still moves nothing under it', async ({
   await openSettings(page)
   await isolate(page, key)
 
-  const value = await typeRefusedValue(page, key)
+  const value = await draftCustomSetting(page, key, '-1')
 
   const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
   await page.setViewportSize({ width: 375, height: desktop.height })

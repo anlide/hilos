@@ -116,18 +116,19 @@ e2e robust against copy and layout changes.
 `framework/frontend/e2e/` holds the e2e helpers that would read the same in any
 demo, because what they drive is the framework's own surface — the toast stack,
 the page outlet, the admin shell. A demo's own `tests/e2e/helpers/` keeps what
-belongs to that demo alone: its login, its fixtures, its command channel.
+belongs to that demo alone: its login, its fixtures, and its command-channel
+address and command names. The socket round trip itself is shared.
 
 **Look in the toolbox before writing driving code, and prefer what is already
 there** — a helper that exists has already been argued about once.
 
 **Grow it from the work.** When a spec needs a wait, a sweep or a round trip that
-another demo would need in the same words, put it in the toolbox rather than in a
-fourth local copy. The fourth copy is not hypothetical: `helpers/logs.ts` in chat
-says in its own comment that its command-channel round trip is the fourth copy of
-the one in `adminGrant.ts`, `notifications.ts` and `protectedMode.ts`, written
-that way because a shared helper would have meant editing three files that leaf
-knew nothing about. This folder is where that stops being the cheaper option.
+another demo would need in the same words, put it in a shared home rather than in
+a fourth local copy. The command-channel round trip reached that point in chat:
+`helpers/logs.ts` became the fourth copy beside `adminGrant.ts`,
+`notifications.ts` and `protectedMode.ts` because its leaf did not own the other
+three. The toolbox has since absorbed the browser-driving copies, and the
+scripts package has absorbed that node-side round trip.
 
 Two rules keep it working:
 
@@ -141,6 +142,13 @@ Two rules keep it working:
   whole repository, so no package boundary stands in between, and no install step
   is added to a suite.
 
+Node-side shared e2e mechanics do not move into this folder merely because an
+e2e spec calls them. A helper that drives the browser belongs here under the
+import-type rule above; a round trip that needs only `node:net` belongs in
+`framework/frontend/scripts/` beside `timeout-scale.mjs`. Nothing about that
+mechanic is Playwright's, and the scripts folder is a vitest project, so
+`commandChannel.mjs` carries the shared rule together with a running unit test.
+
 ### `dismissToasts(page)` — when the notice is in the way
 
 A toast stands over the bottom-right corner for twenty seconds and takes clicks
@@ -153,6 +161,21 @@ Call `dismissToasts(page)` after a step whose notice is not the subject of the
 spec, before the step that clicks what it may be covering. A spec that **is**
 about a notice asserts on it instead and never calls this — sweeping is how a
 spec says "this step is not about the notices", not a way to hide them.
+
+### The settings edit form — open, draft, set and clear
+
+The toolbox owns the moves of the framework settings dialog through
+`openSettingEdit`, `draftCustomSetting`, `setCustomSetting` and
+`clearCustomSetting`. They address the framework's stable controls, type string
+values through keyboard events, drive Save through its actionable states and
+settle on the dialog closing. `clearCustomSetting` also sweeps notices that may
+cover its row and returns immediately when the setting already uses its default.
+
+Use the whole-operation functions for setup and teardown, `openSettingEdit` when
+the dialog itself is the subject, and `draftCustomSetting` when a spec must
+assert on an unsaved value or a refusal. Keep table moves such as isolating a row
+and all assertions in the demo: those describe what the spec is proving, not how
+the shared framework form is driven.
 
 ## Opening a page — `gotoPage`, never `goto`
 

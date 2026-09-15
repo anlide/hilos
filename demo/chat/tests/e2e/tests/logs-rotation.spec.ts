@@ -1,5 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import {
+  clearCustomSetting,
+  setCustomSetting,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage, PAGE_READY } from '../helpers/page'
 
@@ -93,12 +97,7 @@ async function isolate(tab: Page, key: string): Promise<void> {
  */
 async function setSetting(tab: Page, key: string, value: string): Promise<void> {
   await isolate(tab, key)
-  await tab.getByTestId(`hilos-settings-edit-${key}`).click()
-  await tab.getByTestId('hilos-settings-edit-custom').check()
-  const field = tab.getByTestId('hilos-settings-edit-value')
-  await field.fill('')
-  await field.pressSequentially(value, { delay: 10 })
-  await tab.getByTestId('hilos-settings-edit-save').click()
+  await setCustomSetting(tab, key, value)
 
   // The dialog closes on the server's word, so its going is what says the value
   // was accepted and written; the row then reads as a custom value rather than
@@ -120,13 +119,7 @@ async function setSetting(tab: Page, key: string, value: string): Promise<void> 
 async function resetSetting(tab: Page, key: string): Promise<void> {
   await isolate(tab, key)
   const row = tab.getByTestId(`${ROW_ID_PREFIX}${key}`)
-  if (((await row.textContent()) ?? '').includes('custom') === false) {
-    return
-  }
-
-  await tab.getByTestId(`hilos-settings-edit-${key}`).click()
-  await tab.getByTestId('hilos-settings-edit-custom').uncheck()
-  await tab.getByTestId('hilos-settings-edit-save').click()
+  await clearCustomSetting(tab, key)
   await expect(row).toContainText('default')
 }
 

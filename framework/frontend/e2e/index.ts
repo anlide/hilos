@@ -15,3 +15,9 @@
 // runtime arrives through the `Page` it is handed.
 
 export { dismissToasts } from './toasts.js'
+export {
+  clearCustomSetting,
+  draftCustomSetting,
+  openSettingEdit,
+  setCustomSetting,
+} from './settings.js'

@@ -1,7 +1,6 @@
-import net from 'node:net'
-import { randomBytes } from 'node:crypto'
 import { expect, type Page } from '@playwright/test'
 
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { signUp } from './session'
 
 // The daemon command channel — the same socket the CLI admin:grant / admin:revoke
@@ -15,6 +14,12 @@ const REPLY_TIMEOUT_MS = 5_000
 /** The framework command names, as CliCommands spells them on the wire. */
 const COMMAND_GRANT = 'admin:grant'
 const COMMAND_REVOKE = 'admin:revoke'
+
+const sendCommand = createCommandChannel({
+  host: COMMAND_HOST,
+  port: COMMAND_PORT,
+  timeoutMs: REPLY_TIMEOUT_MS,
+})
 
 /**
  * Sets a user's admin flag over the daemon command channel, resolving once the
@@ -47,53 +52,6 @@ export async function signUpAdmin(page: Page): Promise<number> {
   return userId
 }
 
-export function setAdmin(userId: number, admin: boolean): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request =
-      JSON.stringify({
-        correlationId: randomBytes(8).toString('hex'),
-        command: admin ? COMMAND_GRANT : COMMAND_REVOKE,
-        payload: { userId, admin },
-      }) + '\n'
-
-    const socket = net.connect(COMMAND_PORT, COMMAND_HOST)
-    let buffer = ''
-
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error(`No command-channel reply within ${REPLY_TIMEOUT_MS}ms`))
-    }, REPLY_TIMEOUT_MS)
-
-    socket.on('connect', () => {
-      socket.write(request)
-    })
-    socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString()
-      const newline = buffer.indexOf('\n')
-      if (newline === -1) {
-        return
-      }
-      clearTimeout(timer)
-      socket.destroy()
-
-      const reply = JSON.parse(buffer.slice(0, newline)) as {
-        status?: string
-        payload?: { message?: string }
-      }
-      if (reply.status === 'ok') {
-        resolve()
-      } else {
-        reject(
-          new Error(
-            `${admin ? COMMAND_GRANT : COMMAND_REVOKE} failed: ` +
-              `${reply.payload?.message ?? 'unknown error'}`,
-          ),
-        )
-      }
-    })
-    socket.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-  })
+export async function setAdmin(userId: number, admin: boolean): Promise<void> {
+  await sendCommand(admin ? COMMAND_GRANT : COMMAND_REVOKE, { userId, admin })
 }
