@@ -123,6 +123,7 @@ import { LoadingButton } from '../../LoadingButton.js'
             [attr.minlength]="nameMin"
             [attr.maxlength]="nameMax"
             data-id="hilos-user-name-input"
+            data-autofocus
             [value]="draft()"
             (input)="onDraftInput($event)"
           />

@@ -800,6 +800,7 @@ function openOutcome(row: HilosBackupRow): void {
       :title="deleteRow ? `Delete · ${deleteRow.id}` : 'Delete backup'"
       :close-on-backdrop="!deleteBusy"
       :close-on-esc="!deleteBusy"
+      initial-focus="dialog"
       @cancel="closeDelete"
     >
       <HilosActionError :action="deleteAction" />
@@ -835,6 +836,7 @@ function openOutcome(row: HilosBackupRow): void {
       :title="HILOS_BACKUP_REOPEN_COPY.modalTitle"
       :close-on-backdrop="!reopenBusy"
       :close-on-esc="!reopenBusy"
+      initial-focus="dialog"
       @cancel="closeReopen"
     >
       <HilosActionError :action="reopenAction" />
@@ -864,6 +866,7 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="detailsOpen"
       :title="detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'"
+      initial-focus="dialog"
     >
       <HilosLongText
         kind="prose"
@@ -887,6 +890,7 @@ function openOutcome(row: HilosBackupRow): void {
       :title="
         blockedRow ? `Cannot restore · ${blockedRow.id}` : 'Cannot restore'
       "
+      initial-focus="dialog"
     >
       <HilosLongText
         kind="prose"
@@ -903,6 +907,7 @@ function openOutcome(row: HilosBackupRow): void {
     <HilosModal
       v-model="shipErrorOpen"
       :title="shipErrorRow ? `Copy failed · ${shipErrorRow.id}` : 'Copy failed'"
+      initial-focus="dialog"
     >
       <HilosLongText
         kind="prose"
@@ -956,6 +961,7 @@ function openOutcome(row: HilosBackupRow): void {
         :disabled="restoreBusy"
         :placeholder="restoreRow?.id"
         data-id="hilos-backup-restore-id"
+        data-autofocus
       />
       <template #actions="{ requestClose }">
         <button
@@ -982,6 +988,7 @@ function openOutcome(row: HilosBackupRow): void {
       v-model="cliOpen"
       :title="cliRow ? `How to restore · ${cliRow.id}` : 'How to restore'"
       :copy-text="cliRow ? formatRestoreCliCommand(cliRow) : ''"
+      initial-focus="dialog"
     >
       <p class="mb-2 text-body-secondary">
         Restoring is not offered from the browser on this environment. Run this
@@ -1016,6 +1023,7 @@ function openOutcome(row: HilosBackupRow): void {
       :title="
         outcomeRow ? `Restore · ${outcomeRow.id}` : 'Restore of this backup'
       "
+      initial-focus="dialog"
     >
       <p class="mb-2">
         Finished {{ outcomeRow?.restoreFinishedAt || '—' }} ·
@@ -1055,6 +1063,7 @@ function openOutcome(row: HilosBackupRow): void {
         autocomplete="off"
         :disabled="circleAddBusy"
         data-id="hilos-backup-circle-add-field"
+        data-autofocus
       />
       <template #actions="{ requestClose }">
         <button
@@ -1082,6 +1091,7 @@ function openOutcome(row: HilosBackupRow): void {
       :title="HILOS_BACKUP_CIRCLE_COPY.removeTitle"
       :close-on-backdrop="!circleRemoveBusy"
       :close-on-esc="!circleRemoveBusy"
+      initial-focus="dialog"
       @cancel="closeCircleRemove"
     >
       <HilosActionError :action="circleRemoveAction" />

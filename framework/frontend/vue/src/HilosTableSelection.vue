@@ -305,6 +305,7 @@ async function submitBulk(): Promise<void> {
   <HilosModal
     v-model="confirmOpen"
     :title="confirmAction?.label"
+    initial-focus="dialog"
     @cancel="closeConfirm"
   >
     <HilosActionError :action="bulkTracked" />

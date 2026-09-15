@@ -95,6 +95,7 @@ export function HilosFormError({ message, dataId }: HilosFormErrorProps) {
       <HilosModal
         open={detailOpen}
         title="Error details"
+        initialFocus="dialog"
         onClose={() => setDetailOpen(false)}
       >
         <p className="mb-0" data-id={`${dataId}-full`}>

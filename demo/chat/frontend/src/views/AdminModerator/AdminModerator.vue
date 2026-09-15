@@ -288,6 +288,7 @@ async function submitDelete(): Promise<void> {
               rows="4"
               required
               data-id="admin-moderator-prompt"
+              data-autofocus
             ></textarea>
           </div>
         </form>
@@ -317,6 +318,7 @@ async function submitDelete(): Promise<void> {
         title="Delete prompt piece"
         :close-on-backdrop="!deleteBusy"
         :close-on-esc="!deleteBusy"
+        initial-focus="dialog"
         @cancel="closeDelete"
       >
         <HilosActionError :action="deleteAction" />

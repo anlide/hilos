@@ -297,7 +297,12 @@ function onSearchInput(event: Event): void {
     filters has nothing to show here, and a closed HilosModal is not free —
     mounting one releases the background scroll lock, which is not this table's
     to release. -->
-    <HilosModal v-if="filters.length > 0" v-model="filtersOpen" title="Filters">
+    <HilosModal
+      v-if="filters.length > 0"
+      v-model="filtersOpen"
+      title="Filters"
+      initial-focus="inner"
+    >
       <div class="d-flex flex-column gap-3">
         <HilosTableFilterControl
           v-for="view in filters"

@@ -99,6 +99,7 @@ import type { HilosTrackedAction } from './hilosTrackedAction.js'
       (openChange)="detailOpen.set($event)"
       [title]="errorType() ?? 'Error details'"
       [copyText]="copyText()"
+      initialFocus="dialog"
     >
       <div class="d-flex flex-column gap-3">
         <hilos-long-text

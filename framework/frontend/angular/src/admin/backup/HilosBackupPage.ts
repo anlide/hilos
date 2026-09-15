@@ -471,6 +471,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [title]="deleteTitle()"
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="del" />
         <p class="mb-0 text-body-secondary">
@@ -509,6 +510,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [title]="reopenCopy.modalTitle"
         [closeOnBackdrop]="!reopen.busy()"
         [closeOnEsc]="!reopen.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="reopen" />
         <p class="mb-0 text-body-secondary">{{ reopenCopy.modalBody }}</p>
@@ -551,6 +553,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           autocomplete="off"
           [disabled]="circleAdd.busy()"
           data-id="hilos-backup-circle-add-field"
+          data-autofocus
           [value]="circleAddIdentifier()"
           (input)="onCircleAddIdentifier($event)"
         />
@@ -582,6 +585,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [title]="circleCopy.removeTitle"
         [closeOnBackdrop]="!circleRemove.busy()"
         [closeOnEsc]="!circleRemove.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="circleRemove" />
         <p class="mb-0 text-body-secondary">{{ circleCopy.removeBody }}</p>
@@ -615,6 +619,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [open]="detailsOpen()"
         (openChange)="detailsOpen.set($event)"
         [title]="detailsTitle()"
+        initialFocus="dialog"
       >
         <hilos-long-text
           kind="prose"
@@ -637,6 +642,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [open]="blockedOpen()"
         (openChange)="blockedOpen.set($event)"
         [title]="blockedTitle()"
+        initialFocus="dialog"
       >
         <hilos-long-text
           kind="prose"
@@ -658,6 +664,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [open]="shipErrorOpen()"
         (openChange)="shipErrorOpen.set($event)"
         [title]="shipErrorTitle()"
+        initialFocus="dialog"
       >
         <hilos-long-text
           kind="prose"
@@ -718,6 +725,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           [disabled]="restore.busy()"
           [attr.placeholder]="restoreRow()?.id"
           data-id="hilos-backup-restore-id"
+          data-autofocus
           [value]="restoreTyped()"
           (input)="onRestoreTyped($event)"
         />
@@ -748,6 +756,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         (openChange)="cliOpen.set($event)"
         [title]="cliTitle()"
         [copyText]="cliCommand()"
+        initialFocus="dialog"
       >
         <p class="mb-2 text-body-secondary">
           Restoring is not offered from the browser on this environment. Run
@@ -788,6 +797,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         [open]="outcomeOpen()"
         (openChange)="outcomeOpen.set($event)"
         [title]="outcomeTitle()"
+        initialFocus="dialog"
       >
         <p class="mb-2">
           Finished {{ outcomeRow()?.restoreFinishedAt || '—' }} ·

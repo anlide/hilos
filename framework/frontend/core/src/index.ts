@@ -143,7 +143,12 @@ export {
   type ModalController,
   type ModalControllerOptions,
 } from './primitives/modal.js'
-export { FocusTrap, focusableElements, focusInitial } from './dom/focusTrap.js'
+export {
+  FocusTrap,
+  focusableElements,
+  focusInitial,
+  type FocusPlacement,
+} from './dom/focusTrap.js'
 export {
   lockBodyScroll,
   unlockBodyScroll,

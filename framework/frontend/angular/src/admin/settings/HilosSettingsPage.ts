@@ -196,6 +196,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
                       type="checkbox"
                       class="form-check-input"
                       data-id="hilos-settings-edit-value"
+                      data-autofocus
                       [checked]="editValue() === '1'"
                       (change)="onValueCheckbox($event)"
                     />
@@ -216,6 +217,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
                     [attr.step]="editStep()"
                     class="form-control"
                     data-id="hilos-settings-edit-value"
+                    data-autofocus
                     [value]="editValue()"
                     (input)="onValueInput($event)"
                   />
@@ -286,6 +288,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [title]="deleteTitle()"
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="del" />
         <p class="mb-0 text-body-secondary">

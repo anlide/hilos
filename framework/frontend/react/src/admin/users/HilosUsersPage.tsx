@@ -156,6 +156,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         }
         closeOnBackdrop={!takeover.busy}
         closeOnEsc={!takeover.busy}
+        initialFocus="dialog"
         onClose={closeImpersonate}
         actions={({ requestClose }) => (
           <>

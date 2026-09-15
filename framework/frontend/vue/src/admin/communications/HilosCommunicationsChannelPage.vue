@@ -271,6 +271,7 @@ async function submitEdit(): Promise<void> {
             class="form-check-input"
             role="switch"
             data-id="hilos-channel-edit-value"
+            data-autofocus
           />
           <label class="form-check-label" for="hilos-channel-edit-value">
             {{ editRow.label }}
@@ -287,6 +288,7 @@ async function submitEdit(): Promise<void> {
             :step="editStep"
             class="form-control"
             data-id="hilos-channel-edit-value"
+            data-autofocus
           />
         </template>
       </form>

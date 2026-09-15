@@ -73,6 +73,7 @@ import { HilosModal } from './HilosModal.js'
       [open]="detailOpen()"
       (openChange)="detailOpen.set($event)"
       title="Error details"
+      initialFocus="dialog"
     >
       <p class="mb-0" [attr.data-id]="dataId() + '-full'">{{ shown() }}</p>
     </hilos-modal>

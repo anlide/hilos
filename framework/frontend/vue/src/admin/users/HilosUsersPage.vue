@@ -161,6 +161,7 @@ const columns: HilosTableColumnOf<HilosUserRow>[] = [
           ? `Impersonate · ${impersonateRow.name}`
           : 'Impersonate user'
       "
+      initial-focus="dialog"
       @cancel="closeImpersonate"
     >
       <HilosActionError :action="impersonateAction" />

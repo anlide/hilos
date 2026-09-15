@@ -220,6 +220,7 @@ export function HilosLicensePage({
             ? ''
             : `${openEntry.name} ${openEntry.version} · ${openEntry.license}`
         }
+        initialFocus="dialog"
         onClose={() => setOpenEntry(null)}
         actions={({ requestClose }) => (
           <>

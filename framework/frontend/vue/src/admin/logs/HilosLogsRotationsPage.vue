@@ -481,6 +481,7 @@ const legendOpen = ref(false)
       "
       :close-on-backdrop="!takeoutBusy"
       :close-on-esc="!takeoutBusy"
+      initial-focus="dialog"
     >
       <HilosActionError :action="takeoutAction" />
       <p>
@@ -556,6 +557,7 @@ const legendOpen = ref(false)
       title="Has the batch not been carried off?"
       :close-on-backdrop="!undoBusy"
       :close-on-esc="!undoBusy"
+      initial-focus="dialog"
     >
       <HilosActionError :action="undoAction" />
       <p>
@@ -594,7 +596,11 @@ const legendOpen = ref(false)
       </template>
     </HilosModal>
 
-    <HilosModal v-model="legendOpen" title="What is in a batch">
+    <HilosModal
+      v-model="legendOpen"
+      title="What is in a batch"
+      initial-focus="dialog"
+    >
       <p>
         A batch is one archive directory, written by one rotation on one node.
         The four numbers count the files in it by the stream that wrote them:

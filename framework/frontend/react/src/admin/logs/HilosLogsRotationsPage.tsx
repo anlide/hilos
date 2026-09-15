@@ -507,6 +507,7 @@ export function HilosLogsRotationsPage({
         }
         closeOnBackdrop={!takeout.busy}
         closeOnEsc={!takeout.busy}
+        initialFocus="dialog"
         onClose={() => setTakeoutOpen(false)}
         actions={({ requestClose }) => (
           <>
@@ -588,6 +589,7 @@ export function HilosLogsRotationsPage({
         title="Has the batch not been carried off?"
         closeOnBackdrop={!undo.busy}
         closeOnEsc={!undo.busy}
+        initialFocus="dialog"
         onClose={() => setUndoOpen(false)}
         actions={({ requestClose }) => (
           <>
@@ -632,6 +634,7 @@ export function HilosLogsRotationsPage({
       <HilosModal
         open={legendOpen}
         title="What is in a batch"
+        initialFocus="dialog"
         onClose={() => setLegendOpen(false)}
         actions={({ requestClose }) => (
           <button

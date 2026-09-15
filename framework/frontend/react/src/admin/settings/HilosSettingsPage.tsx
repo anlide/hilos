@@ -380,6 +380,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                       type="checkbox"
                       className="form-check-input"
                       data-id="hilos-settings-edit-value"
+                      data-autofocus
                       checked={editValue === '1'}
                       onChange={(event) =>
                         setEditValue(event.target.checked ? '1' : '0')
@@ -406,6 +407,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                       step={editStep}
                       className="form-control"
                       data-id="hilos-settings-edit-value"
+                      data-autofocus
                       value={editValue}
                       onChange={(event) => setEditValue(event.target.value)}
                     />
@@ -439,6 +441,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         title={deleteRow ? `Delete · ${deleteRow.key}` : 'Delete setting'}
         closeOnBackdrop={!del.busy}
         closeOnEsc={!del.busy}
+        initialFocus="dialog"
         onClose={closeDelete}
         actions={({ requestClose }) => (
           <>

@@ -207,6 +207,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             minLength={NAME_MIN}
             maxLength={NAME_MAX}
             data-id="hilos-user-name-input"
+            data-autofocus
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />

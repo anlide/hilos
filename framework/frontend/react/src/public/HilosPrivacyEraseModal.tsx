@@ -49,6 +49,7 @@ export function HilosPrivacyEraseModal({
       title="Erase everything this browser keeps?"
       closeOnBackdrop={!busy}
       closeOnEsc={!busy}
+      initialFocus="dialog"
       onClose={onClose}
       actions={({ requestClose }) => (
         <>

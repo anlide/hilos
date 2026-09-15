@@ -188,6 +188,7 @@ const SOURCE_LABEL: Record<string, string> = {
                   class="form-check-input"
                   role="switch"
                   data-id="hilos-channel-edit-value"
+                  data-autofocus
                   [checked]="editValue() === '1'"
                   (change)="onValueCheckbox($event)"
                 />
@@ -205,6 +206,7 @@ const SOURCE_LABEL: Record<string, string> = {
                 [attr.step]="editStep()"
                 class="form-control"
                 data-id="hilos-channel-edit-value"
+                data-autofocus
                 [value]="editValue()"
                 (input)="onValueInput($event)"
               />

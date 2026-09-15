@@ -39,6 +39,7 @@ const emit = defineEmits<{
     title="Erase everything this browser keeps?"
     :close-on-backdrop="!busy"
     :close-on-esc="!busy"
+    initial-focus="dialog"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <p class="mb-2">This will remove from this browser:</p>

@@ -215,7 +215,7 @@ function onDownload(): void {
       >
     </div>
 
-    <HilosModal v-model="modalOpen" :title="modalTitle">
+    <HilosModal v-model="modalOpen" :title="modalTitle" initial-focus="dialog">
       <HilosLongText
         v-if="openEntry && openEntry.licenseText !== null"
         kind="output"

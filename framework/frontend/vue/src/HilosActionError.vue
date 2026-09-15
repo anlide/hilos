@@ -128,6 +128,7 @@ watch(message, (next) => {
     v-model="detailOpen"
     :title="errorType ?? 'Error details'"
     :copy-text="copyText"
+    initial-focus="dialog"
   >
     <div class="d-flex flex-column gap-3">
       <HilosLongText

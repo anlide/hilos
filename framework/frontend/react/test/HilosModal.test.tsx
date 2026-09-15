@@ -88,6 +88,27 @@ describe('HilosModal', () => {
     expect(byId('modal')?.contains(document.activeElement)).toBe(true)
   })
 
+  it('focuses a marked child when the dialog opens', () => {
+    render(
+      <HilosModal open>
+        <input data-autofocus data-id="field" />
+      </HilosModal>,
+    )
+    expect(document.activeElement).toBe(byId('field'))
+  })
+
+  it('focuses the dialog when initialFocus is dialog', () => {
+    render(<HilosModal open initialFocus="dialog" />)
+    expect(document.activeElement).toBe(byId('modal'))
+  })
+
+  it('focuses the confirm dialog, not Discard, on the discard-confirm step', () => {
+    render(<HilosModal open confirmOnClose />)
+    fireEvent.click(byId('modal-close') as Element)
+    expect(document.activeElement).toBe(byId('modal-confirm'))
+    expect(document.activeElement).not.toBe(byId('modal-confirm-discard'))
+  })
+
   it('renders no footer at all when the dialog declares no actions', () => {
     render(<HilosModal open />)
     expect(document.querySelector('.modal-footer')).toBeNull()

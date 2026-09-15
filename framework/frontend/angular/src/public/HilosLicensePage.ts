@@ -170,6 +170,7 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
         [open]="openEntry() !== null"
         (openChange)="onModalOpen($event)"
         [title]="modalTitle()"
+        initialFocus="dialog"
       >
         @if (openEntry(); as entry) {
           @if (entry.licenseText !== null) {

@@ -80,6 +80,7 @@ function pick(key: HilosSupportTierKey): void {
   <HilosModal
     :model-value="modelValue"
     title="Support the project"
+    initial-focus="dialog"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <!-- The refusal is announced from here and not from the plate that shows

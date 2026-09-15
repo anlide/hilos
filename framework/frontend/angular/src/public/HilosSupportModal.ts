@@ -48,6 +48,7 @@ import { HilosModal } from '../HilosModal.js'
       [open]="open()"
       (openChange)="openChange.emit($event)"
       title="Support the project"
+      initialFocus="dialog"
     >
       <!-- The refusal is announced from here and not from the plate that shows
       it. The region lives inside the dialog because the dialog is aria-modal,

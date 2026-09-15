@@ -164,6 +164,7 @@ async function submitEdit(): Promise<void> {
               minlength="2"
               maxlength="64"
               data-id="admin-users-name"
+              data-autofocus
             />
           </div>
           <div class="mb-0">

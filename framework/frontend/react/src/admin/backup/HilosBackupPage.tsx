@@ -829,6 +829,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={deleteRow ? `Delete · ${deleteRow.id}` : 'Delete backup'}
         closeOnBackdrop={!del.busy}
         closeOnEsc={!del.busy}
+        initialFocus="dialog"
         onClose={closeDelete}
         actions={({ requestClose }) => (
           <>
@@ -868,6 +869,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={HILOS_BACKUP_REOPEN_COPY.modalTitle}
         closeOnBackdrop={!reopen.busy}
         closeOnEsc={!reopen.busy}
+        initialFocus="dialog"
         onClose={closeReopen}
         actions={({ requestClose }) => (
           <>
@@ -901,6 +903,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={
           detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'
         }
+        initialFocus="dialog"
         onClose={closeDetails}
         actions={({ requestClose }) => (
           <button
@@ -925,6 +928,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={
           blockedRow ? `Cannot restore · ${blockedRow.id}` : 'Cannot restore'
         }
+        initialFocus="dialog"
         onClose={() => setBlockedOpen(false)}
         actions={({ requestClose }) => (
           <button
@@ -948,6 +952,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={
           shipErrorRow ? `Copy failed · ${shipErrorRow.id}` : 'Copy failed'
         }
+        initialFocus="dialog"
         onClose={() => setShipErrorOpen(false)}
         actions={({ requestClose }) => (
           <button
@@ -1029,6 +1034,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           disabled={restore.busy}
           placeholder={restoreRow?.id}
           data-id="hilos-backup-restore-id"
+          data-autofocus
           value={restoreTyped}
           onChange={(event) => setRestoreTyped(event.target.value)}
         />
@@ -1038,6 +1044,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         open={cliOpen}
         title={cliRow ? `How to restore · ${cliRow.id}` : 'How to restore'}
         copyText={cliRow ? formatRestoreCliCommand(cliRow) : ''}
+        initialFocus="dialog"
         onClose={() => setCliOpen(false)}
         actions={({ requestClose }) => (
           <button
@@ -1078,6 +1085,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={
           outcomeRow ? `Restore · ${outcomeRow.id}` : 'Restore of this backup'
         }
+        initialFocus="dialog"
         onClose={() => setOutcomeOpen(false)}
         actions={({ requestClose }) => (
           <button
@@ -1144,6 +1152,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           autoComplete="off"
           disabled={circleAdd.busy}
           data-id="hilos-backup-circle-add-field"
+          data-autofocus
           value={circleAddIdentifier}
           onChange={(event) => setCircleAddIdentifier(event.target.value)}
         />
@@ -1154,6 +1163,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         title={HILOS_BACKUP_CIRCLE_COPY.removeTitle}
         closeOnBackdrop={!circleRemove.busy}
         closeOnEsc={!circleRemove.busy}
+        initialFocus="dialog"
         onClose={closeCircleRemove}
         actions={({ requestClose }) => (
           <>

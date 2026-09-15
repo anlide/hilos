@@ -36,10 +36,10 @@ The baseline, mandated since the first spec:
 
 - **Focus trap and focus return in modals.** Every edit surface is a modal
   (`HilosModal`); it traps focus while open, restores focus to the trigger on
-  close, closes on Esc, and exposes `role="dialog"` + `aria-modal` + an
-  accessible name — from its title when it draws one, and otherwise from the
-  heading that names it elsewhere (see below). See
-  [conflict-resolution.md](conflict-resolution.md).
+  close, names where focus lands when it opens, closes on Esc, and exposes
+  `role="dialog"` + `aria-modal` + an accessible name — from its title when it
+  draws one, and otherwise from the heading that names it elsewhere (see
+  below). See [conflict-resolution.md](conflict-resolution.md).
 - **Full keyboard operability.** Every interactive element is a real `<button>`,
   `<a>`, or form control (stock Bootstrap), so it is focusable and operable from
   the keyboard with no extra work. Never wire a click onto a non-interactive
@@ -50,6 +50,23 @@ The baseline, mandated since the first spec:
 - **Visible focus and adequate contrast.** Delivered by Bootstrap's
   `:focus-visible` rings and AA-tuned theme — kept intact by building from stock
   classes and never suppressing outlines.
+
+## Where focus lands when a modal opens
+
+Every modal names where focus lands, and the naming is visible at the mount.
+
+- A modal with something to fill marks that field with `data-autofocus`.
+- A modal with nothing to fill puts focus on the dialog itself — not on a
+  button, so Enter right after opening does nothing and the reader hears the
+  heading and the body from the start.
+- A body drawn by another component says `initialFocus="inner"` (Vue:
+  `initial-focus="inner"`), and the mark lives in that component.
+- With no mark and no declaration the dialog itself takes focus — the safe
+  default for a project that mounts the SDK, never the close button.
+
+The empty default of `initialFocus` means the mark is in this file. The confirm
+step a dirty close raises is always the dialog itself: it has a heading, a
+sentence and two buttons, never a field. Checked automatically: `MODAL-FOCUS`.
 
 ## A name that lives in another component
 
@@ -209,7 +226,8 @@ it. See [testing.md](../testing.md).
 2. Every control is a real interactive element with an accessible name;
    icon-only controls have `aria-label` and an `aria-hidden` icon.
 3. No information by color alone — pair every status color with text.
-4. An edit surface is a `HilosModal` (focus trap, return, Esc, named).
+4. An edit surface is a `HilosModal` (focus trap, return, Esc, named); it
+   declares where focus lands when it opens.
 5. A new table is named through `label` and keeps the SDK's ARIA cells.
 6. Build from stock Bootstrap classes; add no hand CSS, suppress no focus
    outline, add no `prefers-reduced-motion` override.

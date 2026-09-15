@@ -183,6 +183,7 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
         [title]="vocabulary().confirmTitle"
         [closeOnBackdrop]="!applyAction.busy()"
         [closeOnEsc]="!applyAction.busy()"
+        initialFocus="dialog"
         (cancel)="closeConfirm()"
       >
         <hilos-action-error [action]="applyAction" />

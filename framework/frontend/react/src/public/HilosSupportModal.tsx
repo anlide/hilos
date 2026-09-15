@@ -83,6 +83,7 @@ export function HilosSupportModal({ open, onClose }: HilosSupportModalProps) {
     <HilosModal
       open={open}
       title="Support the project"
+      initialFocus="dialog"
       onClose={onClose}
       actions={({ requestClose }) => (
         <>

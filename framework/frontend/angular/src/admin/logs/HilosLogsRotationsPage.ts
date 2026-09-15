@@ -295,6 +295,7 @@ const RETENTION_CLASS: Record<string, string> = {
         [title]="takeoutTitle()"
         [closeOnBackdrop]="!takeout.busy()"
         [closeOnEsc]="!takeout.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="takeout" />
         <p>
@@ -373,6 +374,7 @@ const RETENTION_CLASS: Record<string, string> = {
         title="Has the batch not been carried off?"
         [closeOnBackdrop]="!undo.busy()"
         [closeOnEsc]="!undo.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="undo" />
         <p>
@@ -412,7 +414,11 @@ const RETENTION_CLASS: Record<string, string> = {
         </ng-template>
       </hilos-modal>
 
-      <hilos-modal [(open)]="legendOpen" title="What is in a batch">
+      <hilos-modal
+        [(open)]="legendOpen"
+        title="What is in a batch"
+        initialFocus="dialog"
+      >
         <p>
           A batch is one archive directory, written by one rotation on one node.
           The four numbers count the files in it by the stream that wrote them:

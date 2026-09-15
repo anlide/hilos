@@ -125,6 +125,7 @@ const COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
         [title]="impersonateTitle()"
         [closeOnBackdrop]="!takeover.busy()"
         [closeOnEsc]="!takeover.busy()"
+        initialFocus="dialog"
       >
         <hilos-action-error [action]="takeover" />
         @if (impersonateRow(); as row) {

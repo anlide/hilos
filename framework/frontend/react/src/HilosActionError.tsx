@@ -134,6 +134,7 @@ export function HilosActionError({
         open={detailOpen}
         title={errorType ?? 'Error details'}
         copyText={copyText}
+        initialFocus="dialog"
         onClose={() => setDetailOpen(false)}
         actions={({ requestClose }) => (
           <button

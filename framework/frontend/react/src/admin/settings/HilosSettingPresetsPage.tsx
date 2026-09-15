@@ -311,6 +311,7 @@ export function HilosSettingPresetsPage({
         title={vocabulary.confirmTitle}
         closeOnBackdrop={!applyAction.busy}
         closeOnEsc={!applyAction.busy}
+        initialFocus="dialog"
         onClose={closeConfirm}
         actions={({ requestClose }) => (
           <>

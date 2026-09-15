@@ -219,4 +219,44 @@ describe('HilosModal', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
   })
+
+  it('focuses a marked child when the dialog opens', async () => {
+    mount(HilosModal, {
+      props: { modelValue: true },
+      slots: {
+        default: '<input data-autofocus data-id="field" />',
+      },
+    })
+    await flushPromises()
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-id="field"]'),
+    )
+  })
+
+  it('focuses the dialog when initialFocus is dialog', async () => {
+    mount(HilosModal, {
+      props: { modelValue: true, initialFocus: 'dialog' },
+    })
+    await flushPromises()
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-id="modal"]'),
+    )
+  })
+
+  it('focuses the confirm dialog, not Discard, on the discard-confirm step', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-id="modal-confirm"]'),
+    )
+    expect(document.activeElement).not.toBe(
+      document.querySelector('[data-id="modal-confirm-discard"]'),
+    )
+  })
 })

@@ -32,6 +32,7 @@ import { LoadingButton } from '../LoadingButton.js'
       title="Erase everything this browser keeps?"
       [closeOnBackdrop]="!busy()"
       [closeOnEsc]="!busy()"
+      initialFocus="dialog"
     >
       <p class="mb-2">This will remove from this browser:</p>
       <ul class="mb-3 ps-3" data-id="privacy-erase-list">

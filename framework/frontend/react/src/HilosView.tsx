@@ -114,6 +114,7 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
           open={modalOpen}
           ariaLabel="Sign in"
           ariaLabelledby={AUTH_SURFACE_HEADING_ID}
+          initialFocus="inner"
           onClose={() => authGate.dismiss()}
         >
           <AuthSurface />

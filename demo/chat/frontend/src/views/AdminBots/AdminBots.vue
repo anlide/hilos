@@ -313,6 +313,7 @@ async function submitDelete(): Promise<void> {
               class="form-control"
               required
               data-id="admin-bots-name"
+              data-autofocus
             />
           </div>
           <div class="mb-3">
@@ -398,6 +399,7 @@ async function submitDelete(): Promise<void> {
         :title="deleteRow ? `Delete · ${deleteRow.name}` : 'Delete bot'"
         :close-on-backdrop="!deleteBusy"
         :close-on-esc="!deleteBusy"
+        initial-focus="dialog"
         @cancel="closeDelete"
       >
         <HilosActionError :action="deleteAction" />

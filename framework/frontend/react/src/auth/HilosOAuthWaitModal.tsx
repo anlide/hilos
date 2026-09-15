@@ -36,6 +36,7 @@ export function HilosOAuthWaitModal() {
       title={trip ? oauthTripTitle(trip) : ''}
       closeOnEsc={cancelable}
       closeOnBackdrop={cancelable}
+      initialFocus="dialog"
       // The trip owns whether this is open, so refusing to cancel simply leaves
       // it open.
       onClose={cancelable ? cancelOAuthTrip : undefined}

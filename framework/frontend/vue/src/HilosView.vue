@@ -97,6 +97,7 @@ function onModalToggle(open: boolean): void {
     :model-value="modalOpen"
     aria-label="Sign in"
     :aria-labelledby="AUTH_SURFACE_HEADING_ID"
+    initial-focus="inner"
     @update:model-value="onModalToggle"
   >
     <component :is="props.authSurface" />

@@ -79,7 +79,7 @@ watch(shown, (value) => {
     </div>
   </div>
 
-  <HilosModal v-model="detailOpen" title="Error details">
+  <HilosModal v-model="detailOpen" title="Error details" initial-focus="dialog">
     <p class="mb-0" :data-id="`${dataId}-full`">{{ shown }}</p>
   </HilosModal>
 </template>

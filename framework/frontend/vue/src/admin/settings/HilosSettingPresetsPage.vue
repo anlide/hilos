@@ -272,6 +272,7 @@ function valueLines(preset: HilosSettingPreset): string[] {
       :title="vocabulary.confirmTitle"
       :close-on-backdrop="!applyBusy"
       :close-on-esc="!applyBusy"
+      initial-focus="dialog"
       @cancel="closeConfirm"
     >
       <HilosActionError :action="applyAction" />

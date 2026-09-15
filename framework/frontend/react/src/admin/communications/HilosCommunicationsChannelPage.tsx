@@ -316,6 +316,7 @@ export function HilosCommunicationsChannelPage({
                   className="form-check-input"
                   role="switch"
                   data-id="hilos-channel-edit-value"
+                  data-autofocus
                   checked={editValue === '1'}
                   onChange={(event) =>
                     setEditValue(event.target.checked ? '1' : '0')
@@ -342,6 +343,7 @@ export function HilosCommunicationsChannelPage({
                   step={editStep}
                   className="form-control"
                   data-id="hilos-channel-edit-value"
+                  data-autofocus
                   value={editValue}
                   onChange={(event) => setEditValue(event.target.value)}
                 />

@@ -359,6 +359,7 @@ async function submitDelete(): Promise<void> {
               type="checkbox"
               class="form-check-input"
               data-id="hilos-settings-edit-value"
+              data-autofocus
             />
             <label class="form-check-label" for="hilos-settings-edit-value">
               Enabled
@@ -375,6 +376,7 @@ async function submitDelete(): Promise<void> {
               :step="editStep"
               class="form-control"
               data-id="hilos-settings-edit-value"
+              data-autofocus
             />
           </template>
         </div>
@@ -432,6 +434,7 @@ async function submitDelete(): Promise<void> {
       :title="deleteRow ? `Delete · ${deleteRow.key}` : 'Delete setting'"
       :close-on-backdrop="!deleteBusy"
       :close-on-esc="!deleteBusy"
+      initial-focus="dialog"
       @cancel="closeDelete"
     >
       <HilosActionError :action="deleteAction" />

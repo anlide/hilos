@@ -38,6 +38,7 @@ import { hilosSignal } from '../hilosSignal.js'
       [title]="title()"
       [closeOnEsc]="cancelable()"
       [closeOnBackdrop]="cancelable()"
+      initialFocus="dialog"
       (cancel)="onCloseRequest()"
     >
       <div class="text-center py-2" data-id="auth-oauth-wait">

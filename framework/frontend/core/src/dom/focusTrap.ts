@@ -9,15 +9,33 @@
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+/**
+ * Where {@link focusInitial} puts keyboard focus when a dialog opens.
+ * `'marked'` reads the first `[data-autofocus]` and, finding none, the root;
+ * `'dialog'` focuses the root without looking.
+ */
+export type FocusPlacement = 'marked' | 'dialog'
+
 /** The tabbable elements inside `root`, in DOM order. */
 export function focusableElements(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
 }
 
-/** Focus the initial element: a `[data-autofocus]`, else the first focusable, else `root`. */
-export function focusInitial(root: HTMLElement): void {
+/**
+ * Focus the initial element: a `[data-autofocus]` under `'marked'`, else
+ * `root`. `'dialog'` focuses `root` without looking.
+ */
+export function focusInitial(
+  root: HTMLElement,
+  placement: FocusPlacement = 'marked',
+): void {
+  if (placement === 'dialog') {
+    root.focus()
+
+    return
+  }
   const autofocus = root.querySelector<HTMLElement>('[data-autofocus]')
-  ;(autofocus ?? focusableElements(root)[0] ?? root).focus()
+  ;(autofocus ?? root).focus()
 }
 
 /**
@@ -27,16 +45,22 @@ export function focusInitial(root: HTMLElement): void {
 export class FocusTrap {
   private opener: HTMLElement | null = null
 
-  /** Remember the currently-focused element and move focus into `root`. */
-  activate(root: HTMLElement): void {
+  /**
+   * Remember the currently-focused element and move focus into `root`
+   * according to `placement`.
+   */
+  activate(root: HTMLElement, placement: FocusPlacement = 'marked'): void {
     const active = root.ownerDocument.activeElement
     this.opener = active instanceof HTMLElement ? active : null
-    focusInitial(root)
+    focusInitial(root, placement)
   }
 
-  /** Move focus to `root`'s initial element — e.g. when swapping sub-dialogs. */
-  refocus(root: HTMLElement): void {
-    focusInitial(root)
+  /**
+   * Move focus to `root`'s initial element according to `placement` — e.g.
+   * when swapping sub-dialogs.
+   */
+  refocus(root: HTMLElement, placement: FocusPlacement = 'marked'): void {
+    focusInitial(root, placement)
   }
 
   /** Return focus to the element focused before {@link activate}. */

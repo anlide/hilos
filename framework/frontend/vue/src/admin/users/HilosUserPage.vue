@@ -175,6 +175,7 @@ watch(error, (reason) => {
           :minlength="NAME_MIN"
           :maxlength="NAME_MAX"
           data-id="hilos-user-name-input"
+          data-autofocus
         />
         <div class="form-text">
           Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.

@@ -48,11 +48,24 @@ import {
   createModalController,
   isClipboardAvailable,
   lockBodyScroll,
+  type FocusPlacement,
   type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
 
 import { hilosSignal } from './hilosSignal.js'
+
+/**
+ * The trap placement the prop maps onto: `'dialog'` when there is nothing to
+ * fill, `'marked'` for a mark in this file or in the body another component
+ * draws.
+ *
+ * @param initialFocus The modal's `initialFocus` input.
+ * @returns The placement handed to {@link FocusTrap.activate}.
+ */
+function trapPlacement(initialFocus: '' | 'dialog' | 'inner'): FocusPlacement {
+  return initialFocus === 'dialog' ? 'dialog' : 'marked'
+}
 
 /** The context a custom `#modalActions` template receives. */
 export interface ModalActionsContext {
@@ -203,6 +216,13 @@ export class HilosModal {
    * surface that carries no such heading.
    */
   readonly ariaLabelledby = input('')
+  /**
+   * Where focus lands when the dialog opens. Empty (the default) means a
+   * `[data-autofocus]` mark lives in this file; `'dialog'` lands on the
+   * dialog itself when there is nothing to fill; `'inner'` means the body
+   * is drawn by another component and the mark lives there.
+   */
+  readonly initialFocus = input<'' | 'dialog' | 'inner'>('')
   /** Close on the Escape key (through the confirm guard). */
   readonly closeOnEsc = input(true)
   /** Close on a backdrop click (through the confirm guard). */
@@ -265,7 +285,7 @@ export class HilosModal {
       // dialog: a reopened modal reporting "Copied" is reporting the last visit.
       this.copied.set(false)
       lockBodyScroll(this.doc, this.scrollLockOwner)
-      this.trap.activate(root)
+      this.trap.activate(root, trapPlacement(this.initialFocus()))
       onCleanup(() => {
         unlockBodyScroll(this.scrollLockOwner)
         this.trap.release()
@@ -280,7 +300,10 @@ export class HilosModal {
         this.confirmVisible() ? this.confirmDialog() : this.dialog()
       )?.nativeElement
       if (root) {
-        this.trap.refocus(root)
+        this.trap.refocus(
+          root,
+          this.confirmVisible() ? 'dialog' : trapPlacement(this.initialFocus()),
+        )
       }
     })
   }

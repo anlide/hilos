@@ -48,6 +48,7 @@ function onCloseRequest(): void {
     :title="trip ? oauthTripTitle(trip) : ''"
     :close-on-esc="cancelable"
     :close-on-backdrop="cancelable"
+    initial-focus="dialog"
     @update:model-value="onCloseRequest"
   >
     <div class="text-center py-2" data-id="auth-oauth-wait">

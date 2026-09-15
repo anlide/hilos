@@ -31,11 +31,24 @@ import {
   createModalController,
   isClipboardAvailable,
   lockBodyScroll,
+  type FocusPlacement,
   type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
 
 import { useSignal } from './useSignal.js'
+
+/**
+ * The trap placement the prop maps onto: `'dialog'` when there is nothing to
+ * fill, `'marked'` for a mark in this file or in the body another component
+ * draws.
+ *
+ * @param initialFocus The modal's `initialFocus` prop.
+ * @returns The placement handed to {@link FocusTrap.activate}.
+ */
+function trapPlacement(initialFocus: '' | 'dialog' | 'inner'): FocusPlacement {
+  return initialFocus === 'dialog' ? 'dialog' : 'marked'
+}
 
 const props = withDefaults(
   defineProps<{
@@ -60,6 +73,13 @@ const props = withDefaults(
      * surface that carries no such heading.
      */
     ariaLabelledby?: string
+    /**
+     * Where focus lands when the dialog opens. Empty (the default) means a
+     * `[data-autofocus]` mark lives in this file; `'dialog'` lands on the
+     * dialog itself when there is nothing to fill; `'inner'` means the body
+     * is drawn by another component and the mark lives there.
+     */
+    initialFocus?: '' | 'dialog' | 'inner'
     /** Close on the Escape key (through the confirm guard). */
     closeOnEsc?: boolean
     /** Close on a backdrop click (through the confirm guard). */
@@ -85,6 +105,7 @@ const props = withDefaults(
     title: '',
     ariaLabel: '',
     ariaLabelledby: '',
+    initialFocus: '',
     closeOnEsc: true,
     closeOnBackdrop: true,
     confirmOnClose: false,
@@ -140,7 +161,7 @@ watch(
       void nextTick(() => {
         const root = activeRoot()
         if (root) {
-          trap.activate(root)
+          trap.activate(root, trapPlacement(props.initialFocus))
         }
       })
     } else {
@@ -160,7 +181,10 @@ watch(confirmVisible, () => {
   void nextTick(() => {
     const root = activeRoot()
     if (root) {
-      trap.refocus(root)
+      trap.refocus(
+        root,
+        confirmVisible.value ? 'dialog' : trapPlacement(props.initialFocus),
+      )
     }
   })
 })
