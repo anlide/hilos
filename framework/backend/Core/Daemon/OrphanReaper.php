@@ -48,13 +48,24 @@ class OrphanReaper
      */
     public function findChildren(?int $excludePid = null): array
     {
+        return $this->scanChildren($excludePid) ?? [];
+    }
+
+    /**
+     * Scans /proc for the live children of this process.
+     *
+     * @param ?int $excludePid Process to leave out, normally the daemon just started
+     * @return ?array<int, string> Command line keyed by process id, or null when /proc could not be read
+     */
+    private function scanChildren(?int $excludePid = null): ?array
+    {
         $selfPid = posix_getpid();
         // warning-suppressed: /proc is absent off Linux, the scan logs a warning and reports no children
         $entries = @scandir('/proc');
         if ($entries === false) {
             Logger::warning('OrphanReaper: /proc is not readable, skipping the orphan scan');
 
-            return [];
+            return null;
         }
 
         $children = [];
@@ -91,7 +102,13 @@ class OrphanReaper
      */
     public function reap(?int $excludePid = null): int
     {
-        $children = $this->findChildren($excludePid);
+        $children = $this->scanChildren($excludePid);
+        if ($children === null) {
+            return 0;
+        }
+
+        Logger::info('OrphanReaper: orphan scan complete, found ' . count($children) . ' orphan(s)');
+
         if ($children === []) {
             return 0;
         }

@@ -64,6 +64,11 @@ an operator would have grepped for it until this leaf.
 
 Where each of these streams lands, and what lands beside them past the `Logger`,
 is the map HIL-872 drew (`hilos-ops/maps/HIL-872-log-streams.md`).
+A worker's last words after the master's death are in none of these files — the
+master is the writer of `worker-*.log`, so nothing survives it — and the question
+"did the workers exit by themselves?" is answered by the watchdog's orphan-scan
+line on the next start, in the container log (and the line only exists on a container
+start: outside docker nothing calls the sweep at all).
 Routing a line through the owner is forbidden: it would turn logging in the
 whole framework upside down, put an agent on the path of every message of every
 process, and buy nothing, because the owner measures files and does not care who

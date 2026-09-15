@@ -405,9 +405,9 @@ ticket for the entries that are genuinely foreign.
 
   Two samples, and what picks between them. `framework/tests/Unit/OrphanReaperTest.php`
   (HIL-450) is the sample of **structure**: real children through the
-  framework's `Hilos\Core\Process`, stopped in `tearDown()` (`:41-48`), a
+  framework's `Hilos\Core\Process`, stopped in `tearDown()` (`:51-64`), a
   readiness barrier instead of a blind sleep, and its own trap of the same kind
-  in the class docblock (`:21-28`). But `Process` opens three pipes by default
+  in the class docblock (`:22-29`). But `Process` opens three pipes by default
   (`framework/backend/Core/Process.php:100-102`, `:122`), so a test that measures
   **file metadata** cannot use it; that form is the bare pipeless `proc_open()`
   of `framework/tests/Unit/Log/LogLineReaderAppendedTest.php:244`

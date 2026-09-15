@@ -55,9 +55,11 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
   own — the next daemon can never bind: the node restarts every
   `DAEMON_MIN_RESTART_INTERVAL` seconds forever. So `startDaemon()` first calls
   `OrphanReaper::reap()`: SIGTERM to every live child of this process, polled at 100ms,
-  SIGKILL to whatever survives 5s. On a healthy restart it finds nothing and says nothing —
-  `WorkerServer::prepareShutdown()` already stopped the workers — so anything it *does*
-  find is by definition leftover. The invariant it buys is **"a daemon starts alone"**,
+  SIGKILL to whatever survives 5s. On a healthy restart it finds nothing and says so, one
+  line at info level naming the count, because an absent record is otherwise
+  indistinguishable from a sweep that never ran — `WorkerServer::prepareShutdown()` already
+  stopped the workers — so anything it *does* find is by definition leftover and still gets
+  its own warning per orphan. The invariant it buys is **"a daemon starts alone"**,
   which is why no bind-retry or error-text parsing is needed anywhere.
   - The reaper scans `/proc` for processes whose PPID is this process, rather than calling
     `kill(-1)`. Re-parenting is flat: orphaned workers *and* their own grandchildren

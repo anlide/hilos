@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Daemon\OrphanReaper;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Process;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,12 +39,27 @@ final class OrphanReaperTest extends TestCase
     /** @var list<Process> Processes spawned by the running test, stopped in teardown */
     private array $spawned = [];
 
+    /** Temporary main log file the assertions read the written lines back from */
+    private string $logFile = '';
+
+    protected function setUp(): void
+    {
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-orphan-reaper');
+        Logger::setLogFile($this->logFile);
+    }
+
     protected function tearDown(): void
     {
         foreach ($this->spawned as $process) {
             $process->halt();
         }
         $this->spawned = [];
+
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
+
         parent::tearDown();
     }
 
@@ -106,6 +122,20 @@ final class OrphanReaperTest extends TestCase
     public function testReapIsANoOpWithoutChildren(): void
     {
         self::assertSame(0, new OrphanReaper()->reap());
+        self::assertStringContainsString('OrphanReaper: orphan scan complete, found 0 orphan(s)', $this->logged());
+    }
+
+    /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
+    public function testReapLogsFoundOrphanCount(): void
+    {
+        $this->spawn();
+        $reaper = new OrphanReaper();
+
+        $reaper->reap();
+
+        self::assertStringContainsString('OrphanReaper: orphan scan complete, found 1 orphan(s)', $this->logged());
     }
 
     /**
@@ -141,5 +171,13 @@ final class OrphanReaperTest extends TestCase
             $pid,
             self::SPAWN_TIMEOUT_SECONDS,
         ));
+    }
+
+    /**
+     * @return string Everything the writer put in the journal
+     */
+    private function logged(): string
+    {
+        return (string)file_get_contents($this->logFile);
     }
 }
