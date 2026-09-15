@@ -521,17 +521,18 @@ retention period afterwards; the row repaints when the node's next index reaches
 the mirror, not when the ack does — which is why the ack carries a sentence, so
 the person knows their click landed.
 
-**The pruner deletes** (`LogArchivePruner::prune()`), and it asks one question
-of a batch: does its directory hold a readable takeout marker. It **never asks
-the retention rule**. The rule protects what has not been carried off; once a
-batch has, there is nothing left to protect, and a batch brought back under
-protection by an edited setting is still a batch that is already saved
-elsewhere. The marker is read from the disk in the pass itself, not taken from
-the walk's snapshot, because a confirmation can be withdrawn between the walk
-and the pass and a deletion cannot. The pass rides the rotation **attempt**
-(not its success — a node quiet enough to have nothing to move makes no batch,
-and a cleanup waiting for one would never run there) and the agent's start,
-because the daemon rotated on its way up.
+**The pruner deletes** (`LogArchivePruner::prune()`), and it asks two questions
+of a batch: does its directory hold a readable takeout marker, and has the undo
+window over it run out. The deadline the screen shows is the same addition, so
+the two cannot drift. It **never asks the retention rule**. The rule protects
+what has not been carried off; once a batch has, there is nothing left to
+protect, and a batch brought back under protection by an edited setting is still
+a batch that is already saved elsewhere. The marker is read from the disk in the
+pass itself, not taken from the walk's snapshot, because a confirmation can be
+withdrawn between the walk and the pass and a deletion cannot. The pass rides the
+rotation **attempt** (not its success — a node quiet enough to have nothing to
+move makes no batch, and a cleanup waiting for one would never run there) and the
+agent's start, because the daemon rotated on its way up.
 
 Within a batch the order is files, then the marker, then the directory. An
 interrupted pass so leaves a batch that is still confirmed, which the next pass
@@ -539,8 +540,9 @@ finishes; removing the marker first would turn the leftovers back into a batch
 nobody has carried off and offer it for carrying off a second time. A batch is
 emptied file by file and never swept as a subtree: the recursive removal next
 door in the backup subsystem is deliberately not the model, because a backup can
-be taken again and a log cannot. What the pass put there — the `*.log` files and
-the marker — it removes; anything else keeps the whole directory alive.
+be taken again and a log cannot. What the pass put there — the `*.log` files, the
+marker, and the marker's own interrupted temp file — it removes; any other stray
+file keeps the whole directory alive and earns its ERROR line.
 
 Every outcome of a pass is named in the journal under the owner's name: a batch
 removed (`INFO`, with the stamp of its confirmation), a path that would not go
@@ -621,18 +623,17 @@ anything. A catalog default is kept inside its own rule for the same reason —
 an administrator must never be shown a value they cannot save back.
 
 `LogSettingsResolver` reads the rotation and retention policies out of the
-settings, and it is asked on every throttled check, so an edit takes effect
-within seconds and never waits for a restart. The environment answers instead
-when the settings layer is not initialized in this process, the read throws, or
-the stored value does not pass its own rule — and then a line is owed to the
-journal, because rotation is not something to stop over. That line is written
-when the **outcome changes**, not on every check (see the rule below), and a
-recovery clears the memory silently so a fault that comes back is reported
-again. One reader is deliberately narrower: the interval a node waits between
-two index frames is the **written** setting and nothing beneath it, because the
-catalog default resolves out of each node's own environment, and walking the
-full ladder would let three nodes of one cluster report at three different
-rates with nothing on any screen to explain why.
+settings, as well as the index-push interval, and it is asked on every throttled
+check, so an edit takes effect within seconds and never waits for a restart. The
+environment answers instead when the settings layer is not initialized in this
+process, the read throws, or the stored value does not pass its own rule — and
+then a line is owed to the journal, because rotation is not something to stop
+over. That line is written when the **outcome changes**, not on every check (see
+the rule below), and a recovery clears the memory silently so a fault that comes
+back is reported again. The resolver is the single reader for every number of
+this feature, with the environment beneath the settings here as everywhere else.
+The cost is accepted out loud: with no row written, nodes configured only by
+their own environment may report at different rates.
 
 **The write level** is the one setting that reaches every process that logs.
 `Logger` holds the threshold as a static read on every line — a process logs

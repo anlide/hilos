@@ -20,8 +20,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
@@ -169,12 +167,6 @@ final class LogStoreAgent extends AbstractAgent
 
     /** @var float Seconds after which the index is reported even though nothing about it changed */
     private const float KEEPALIVE_INTERVAL_SECONDS = 60.0;
-
-    /** @var int Milliseconds between two frames when no administrator has written the setting */
-    private const int DEFAULT_PUSH_INTERVAL_MS = 5000;
-
-    /** @var int Smallest interval a written setting is obeyed at, in milliseconds */
-    private const int MIN_PUSH_INTERVAL_MS = 100;
 
     /** @var int Bytes in one mebibyte, the unit the raw-output complaint is worded in */
     private const int BYTES_PER_MEBIBYTE = 1024 * 1024;
@@ -348,7 +340,7 @@ final class LogStoreAgent extends AbstractAgent
         // A start is a rotation too — the daemon rotated the live logs on its way up — so it is a
         // moment to clean up after, and the walk above is what tells this pass which batches there
         // are to consider.
-        $this->pruneTakenBatches();
+        $this->pruneTakenBatches(time());
         // Reported at once rather than at the first due moment: a node that comes up after the
         // aggregator would otherwise be missing from the cluster picture for a whole interval, and
         // nothing about that absence would say it is only the schedule.
@@ -369,7 +361,6 @@ final class LogStoreAgent extends AbstractAgent
      * second time (HIL-480).
      *
      * @throws InvalidArgumentException When a frame to a following viewer or to the aggregator cannot be named
-     * @throws DatabaseException When the written push interval cannot be read
      */
     public function onTick(): void
     {
@@ -453,7 +444,7 @@ final class LogStoreAgent extends AbstractAgent
         $report = $this->rotateOnce($rotator);
         // Hung on the ATTEMPT and not on its outcome: a node quiet enough to have nothing to move
         // makes no batch, and a cleanup waiting for one would never run there at all.
-        $this->pruneTakenBatches();
+        $this->pruneTakenBatches((int)$now);
         if ($report?->batchDirName === null) {
             return;
         }
@@ -506,15 +497,21 @@ final class LogStoreAgent extends AbstractAgent
      * The pruner is handed every batch of the current index and decides for itself, re-reading each
      * marker off the disk: a confirmation may have been withdrawn since the walk, and this walk's
      * picture of the archive can be a minute old.
+     *
+     * @param int $now Current Unix timestamp the pass is judged at
      */
-    private function pruneTakenBatches(): void
+    private function pruneTakenBatches(int $now): void
     {
         $logDirectory = $this->reader->logDirectory();
         if ($logDirectory === null || !$this->index->available) {
             return;
         }
 
-        $report = (new LogArchivePruner($logDirectory))->prune(self::settledBatchTimestamps($this->index));
+        $report = (new LogArchivePruner($logDirectory))->prune(
+            self::settledBatchTimestamps($this->index),
+            $this->resolver->takeoutUndoWindowSeconds(),
+            $now,
+        );
 
         foreach ($report->removedBatchTimestamps as $batchTimestamp => $takenAt) {
             $batch = self::batchLabel(date(LogRotationConstants::TIMESTAMP_FORMAT, $batchTimestamp));
@@ -532,6 +529,18 @@ final class LogStoreAgent extends AbstractAgent
             $this->logAgentWarning(
                 "Log cleanup cannot read the takeout marker of batch {$batch}, so the batch counts as not taken",
             );
+        }
+
+        $this->drainSettingsComplaints();
+    }
+
+    /**
+     * Drains whatever complaints the settings resolver has accumulated into the journal.
+     */
+    private function drainSettingsComplaints(): void
+    {
+        while (($complaint = $this->resolver->takeComplaint()) !== null) {
+            $this->logAgentError($complaint);
         }
     }
 
@@ -560,10 +569,7 @@ final class LogStoreAgent extends AbstractAgent
     private function refreshPolicy(): void
     {
         $this->policy = $this->resolver->rotationPolicy();
-
-        while (($complaint = $this->resolver->takeComplaint()) !== null) {
-            $this->logAgentError($complaint);
-        }
+        $this->drainSettingsComplaints();
 
         // Compared by expression and not by "is there a rule": an expression that yields no rule is
         // refused once, and re-deciding it every check would report the same refusal every check.
@@ -1849,7 +1855,6 @@ final class LogStoreAgent extends AbstractAgent
      *
      * @param float $now Monotonic-enough wall clock of this tick
      * @throws InvalidArgumentException When the frame cannot be named
-     * @throws DatabaseException When the written push interval cannot be read
      */
     public function pushIndexIfDue(float $now): void
     {
@@ -1862,7 +1867,7 @@ final class LogStoreAgent extends AbstractAgent
         if (!$this->indexChangedSincePush) {
             return;
         }
-        if ($sinceLastFrame * TimeConstants::MS_PER_SECOND < $this->resolvePushIntervalMs()) {
+        if ($sinceLastFrame * TimeConstants::MS_PER_SECOND < $this->pushIntervalMs()) {
             return;
         }
 
@@ -1899,36 +1904,19 @@ final class LogStoreAgent extends AbstractAgent
     /**
      * How long this node waits between two frames, in milliseconds.
      *
-     * The WRITTEN setting and nothing beneath it. The catalog default under this key resolves out
-     * of the node's own environment, so walking the full ladder would let three nodes of one
-     * cluster report at three different rates with nothing on any screen to explain why; the
-     * literal below is the same on every node, which is the property that matters more than the
-     * number. A value under the floor is clamped rather than obeyed - the same floor the rule on
-     * the setting refuses a write below, applied again here because a row can be older than the
-     * rule or written past it.
-     *
      * Asked at the moment the next frame is planned, so an administrator's edit is obeyed within
-     * one round and not at the next restart of the node.
+     * one round and not at the next restart of the node. The resolver is the one reader of this
+     * setting, the resolver every other number of this feature comes through; its complaints go to
+     * the journal the way the policy's do.
      *
      * @return int Milliseconds between two frames
-     * @throws DatabaseException When the settings lookup fails
      */
-    private function resolvePushIntervalMs(): int
+    private function pushIntervalMs(): int
     {
-        if (!Hilos::$db instanceof HilosDbContext) {
-            return self::DEFAULT_PUSH_INTERVAL_MS;
-        }
+        $interval = $this->resolver->pushIntervalMs();
+        $this->drainSettingsComplaints();
 
-        /**
-         * @noinspection PhpPossiblePolymorphicInvocationInspection Framework-level magic settings
-         *     property on abstract HilosDbContext; runtime instance is always concrete
-         */
-        $written = Hilos::$db->settings[LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS]?->value;
-        if ($written === null || !is_numeric($written)) {
-            return self::DEFAULT_PUSH_INTERVAL_MS;
-        }
-
-        return max(self::MIN_PUSH_INTERVAL_MS, (int)$written);
+        return $interval;
     }
 
     /**

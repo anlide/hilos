@@ -31,6 +31,9 @@ final class LogArchivePrunerTest extends TestCase
     /** Stamp the fixture markers carry, which the report hands back for the journal line. */
     private const int TAKEN_AT = 1_800_000_500;
 
+    /** Instant for passes that do not wait out an undo window. */
+    private const int NOW = 1_800_001_000;
+
     /**
      * An instant whose batch name carries a five-digit year, so it cannot match the pattern
      * rotation writes. Far enough out that no timezone offset brings the year back to four digits.
@@ -62,7 +65,7 @@ final class LogArchivePrunerTest extends TestCase
     {
         $this->makeBatch(self::T0, [self::AGENT_LOG], takenAt: null);
 
-        $report = (new LogArchivePruner($this->dir))->prune([self::T0]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
 
         $this->assertSame([], $report->removedBatchTimestamps);
         $this->assertSame([], $report->failedPaths);
@@ -75,7 +78,7 @@ final class LogArchivePrunerTest extends TestCase
     {
         $this->makeBatch(self::T0, [self::AGENT_LOG, self::WORKER_LOG], self::TAKEN_AT);
 
-        $report = (new LogArchivePruner($this->dir))->prune([self::T0]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
 
         // The stamp travels with the batch because the journal line is about it, and the directory
         // that held it is gone by the time the caller writes that line.
@@ -84,13 +87,74 @@ final class LogArchivePrunerTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->batchPath(self::T0));
     }
 
+    public function testAConfirmedBatchInsideItsUndoWindowIsLeftWhole(): void
+    {
+        $this->makeBatch(self::T0, [self::AGENT_LOG, self::WORKER_LOG], self::TAKEN_AT);
+        $undoWindowSeconds = 3600;
+        $nowInside = self::TAKEN_AT + 1800;
+
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], $undoWindowSeconds, $nowInside);
+
+        $this->assertSame([], $report->removedBatchTimestamps);
+        $this->assertSame([], $report->failedPaths);
+        $this->assertSame([], $report->keptDirNames);
+        $this->assertSame([], $report->unreadableMarkerDirNames);
+        $this->assertSame([self::AGENT_LOG, self::WORKER_LOG], $this->fileNamesIn(self::T0));
+        $this->assertFileExists($this->markerPath(self::T0));
+    }
+
+    public function testAConfirmedBatchExactlyAtTheBoundaryOfTheUndoWindowGoes(): void
+    {
+        $this->makeBatch(self::T0, [self::AGENT_LOG, self::WORKER_LOG], self::TAKEN_AT);
+        $undoWindowSeconds = 3600;
+        $nowAtBoundary = self::TAKEN_AT + $undoWindowSeconds;
+
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], $undoWindowSeconds, $nowAtBoundary);
+
+        $this->assertSame([self::T0 => self::TAKEN_AT], $report->removedBatchTimestamps);
+        $this->assertSame([], $report->failedPaths);
+        $this->assertDirectoryDoesNotExist($this->batchPath(self::T0));
+    }
+
+    public function testAnInterruptedTempMarkerFileGoesWithTheMarkerAndTheDirectory(): void
+    {
+        $this->makeBatch(self::T0, [self::AGENT_LOG], self::TAKEN_AT);
+        $tempPath = $this->batchPath(self::T0) . DIRECTORY_SEPARATOR . LogBatchTakeoutMarker::TEMP_PREFIX . '4242.json';
+        file_put_contents($tempPath, '{"partial": true}');
+
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
+
+        $this->assertSame([self::T0 => self::TAKEN_AT], $report->removedBatchTimestamps);
+        $this->assertSame([], $report->failedPaths);
+        $this->assertSame([], $report->keptDirNames);
+        $this->assertDirectoryDoesNotExist($this->batchPath(self::T0));
+    }
+
+    public function testAnInterruptedTempMarkerFileBesideAForeignFileLeavesTheBatchWhole(): void
+    {
+        $this->makeBatch(self::T0, [self::AGENT_LOG], self::TAKEN_AT);
+        $tempPath = $this->batchPath(self::T0) . DIRECTORY_SEPARATOR . LogBatchTakeoutMarker::TEMP_PREFIX . '4242.json';
+        file_put_contents($tempPath, '{"partial": true}');
+        file_put_contents($this->batchPath(self::T0) . DIRECTORY_SEPARATOR . 'foreign.txt', 'not ours');
+
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
+
+        $this->assertSame([], $report->removedBatchTimestamps);
+        $this->assertSame([], $report->failedPaths);
+        $this->assertSame([$this->batchName(self::T0)], $report->keptDirNames);
+        $this->assertSame([], $this->fileNamesIn(self::T0));
+        $this->assertFileDoesNotExist($tempPath);
+        $this->assertFileExists($this->markerPath(self::T0));
+        $this->assertDirectoryExists($this->batchPath(self::T0));
+    }
+
     public function testOnlyTheBatchesTheCallerNamedAreConsidered(): void
     {
         $this->makeBatch(self::T0, [self::AGENT_LOG], self::TAKEN_AT);
         $other = self::T0 + 3600;
         $this->makeBatch($other, [self::AGENT_LOG], self::TAKEN_AT);
 
-        $report = (new LogArchivePruner($this->dir))->prune([$other]);
+        $report = (new LogArchivePruner($this->dir))->prune([$other], 0, self::NOW);
 
         $this->assertSame([$other => self::TAKEN_AT], $report->removedBatchTimestamps);
         $this->assertDirectoryExists($this->batchPath(self::T0));
@@ -101,7 +165,7 @@ final class LogArchivePrunerTest extends TestCase
         $this->makeBatch(self::T0, [self::AGENT_LOG], self::TAKEN_AT);
         file_put_contents($this->batchPath(self::T0) . DIRECTORY_SEPARATOR . 'notes.txt', 'mine');
 
-        $report = (new LogArchivePruner($this->dir))->prune([self::T0]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
 
         $this->assertSame([], $report->removedBatchTimestamps);
         $this->assertSame([], $report->failedPaths);
@@ -117,7 +181,7 @@ final class LogArchivePrunerTest extends TestCase
         $this->makeBatch(self::T0, [self::AGENT_LOG], takenAt: null);
         file_put_contents($this->markerPath(self::T0), 'this is not the json it should be');
 
-        $report = (new LogArchivePruner($this->dir))->prune([self::T0]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
 
         $this->assertSame([], $report->removedBatchTimestamps);
         $this->assertSame([$this->batchName(self::T0)], $report->unreadableMarkerDirNames);
@@ -128,7 +192,7 @@ final class LogArchivePrunerTest extends TestCase
     {
         $this->makeBatch(self::BEYOND_THE_NAME_PATTERN, [self::AGENT_LOG], self::TAKEN_AT);
 
-        $report = (new LogArchivePruner($this->dir))->prune([self::BEYOND_THE_NAME_PATTERN]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::BEYOND_THE_NAME_PATTERN], 0, self::NOW);
 
         $this->assertSame([], $report->removedBatchTimestamps);
         $this->assertSame([], $report->failedPaths);
@@ -137,7 +201,7 @@ final class LogArchivePrunerTest extends TestCase
 
     public function testABatchTheArchiveNoLongerHoldsIsPassedOverInSilence(): void
     {
-        $report = (new LogArchivePruner($this->dir))->prune([self::T0]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
 
         $this->assertSame([], $report->removedBatchTimestamps);
         $this->assertSame([], $report->failedPaths);
@@ -156,7 +220,7 @@ final class LogArchivePrunerTest extends TestCase
         // declines the link itself whoever is asking - a refusal root cannot override.
         $this->assertTrue(symlink($target, $this->batchPath(self::T0)));
 
-        $report = (new LogArchivePruner($this->dir))->prune([self::T0]);
+        $report = (new LogArchivePruner($this->dir))->prune([self::T0], 0, self::NOW);
 
         $this->assertSame([], $report->removedBatchTimestamps);
         $this->assertSame([$this->batchPath(self::T0)], $report->failedPaths);

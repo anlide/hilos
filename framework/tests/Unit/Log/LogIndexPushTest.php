@@ -8,22 +8,14 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Database\Context\DbContext;
-use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Entity\Item\Setting as EntitySetting;
-use Hilos\Database\Object\Collection\Settings as ObjectSettings;
-use Hilos\Database\Object\Item\Object_;
-use Hilos\Database\Object\Item\Setting as ObjectSetting;
-use Hilos\Database\Object\Objects;
-use Hilos\Database\View\Collection\DbCollection;
-use Hilos\Database\View\Item\DbItem;
-use Hilos\Database\View\Item\Setting as ViewSetting;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Log\AgentLogStream;
 use Hilos\Log\DTO\NodeLogIndexSignalData;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Log\NodeLogIndexDelta;
+use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
@@ -57,7 +49,7 @@ final class LogIndexPushTest extends TestCase
 
     private ?EnvAccessor $previousEnv = null;
 
-    private ?DbContext $previousDb = null;
+    private ?SettingsAccessor $previousSettings = null;
 
     /** @var float Instant the agent under test sent its start frame, the origin every offset is measured from */
     private float $startedAt = 0.0;
@@ -73,28 +65,33 @@ final class LogIndexPushTest extends TestCase
         Logger::setLogFile($this->logFile);
 
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
-        $this->previousDb = Hilos::$db;
+        $this->previousSettings = Hilos::$setting;
         Hilos::$env = new EnvAccessor();
         putenv(EnvConstants::DAEMON_LOG_FILE->name . '=' . $this->dir . '/daemon.log');
         Hilos::$sr = new SignalRouter();
         // No settings row by default: that is the ordinary installation, where every node of the
         // cluster runs at the one interval written into the framework rather than into an env.
-        LogIndexPushSettingsCollection::$writtenValue = null;
-        Hilos::$db = LogIndexPushDbContext::create();
+        LogSettingsResolverTestAccessor::$values = [];
+        Hilos::$setting = new LogSettingsResolverTestAccessor(LogSettingsCatalog::class);
     }
 
     protected function tearDown(): void
     {
         putenv(EnvConstants::DAEMON_LOG_FILE->name);
+        putenv(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS->name);
         if ($this->previousEnv !== null) {
             Hilos::$env = $this->previousEnv;
         }
-        Hilos::$db = $this->previousDb;
+        Hilos::$setting = $this->previousSettings;
+        LogSettingsResolverTestAccessor::$values = [];
         Hilos::$sr = null;
-        LogIndexPushSettingsCollection::$writtenValue = null;
         Logger::resetLogFile();
         if (is_file($this->logFile)) {
             unlink($this->logFile);
+        }
+        $agentErrorLog = dirname($this->logFile) . '/agent-' . LogStoreAgent::AGENT_TYPE . '.error.log';
+        if (is_file($agentErrorLog)) {
+            unlink($agentErrorLog);
         }
         $this->removeTree($this->dir);
 
@@ -264,7 +261,7 @@ final class LogIndexPushTest extends TestCase
 
     public function testTheWrittenSettingSetsTheInterval(): void
     {
-        LogIndexPushSettingsCollection::$writtenValue = '20000';
+        LogSettingsResolverTestAccessor::$values[LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS] = '20000';
         $agent = $this->startedAgent();
         $this->frame();
 
@@ -279,29 +276,57 @@ final class LogIndexPushTest extends TestCase
     }
 
     /**
-     * A row can be older than the rule that guards the setting, or written past it, so the floor
-     * is applied again where the value is obeyed: a broken row in the database is treated rather
-     * than carried out.
+     * A written value below the floor is refused by LogIndexPushIntervalRule, the fallback answers,
+     * the node follows the 5 s rhythm and the journal carries a complaint naming the setting key.
      */
     public function testAWrittenValueBelowTheFloorIsClampedToIt(): void
     {
-        LogIndexPushSettingsCollection::$writtenValue = '50';
+        LogSettingsResolverTestAccessor::$values[LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS] = '50';
         $agent = $this->startedAgent();
         $this->frame();
 
         $this->write('agent-a.log', 100);
         $agent->walkStore($this->stamp());
-        $agent->pushIndexIfDue($this->at(0.05));
-        $this->assertSame([], $this->queuedFrames(), 'The written 50 ms is not obeyed below the 100 ms floor');
+        $agent->pushIndexIfDue($this->at(self::INSIDE_THE_DEFAULT_INTERVAL_SECONDS));
+        $this->assertSame([], $this->queuedFrames(), 'The refused 50 ms falls back to 5 s, not sent early');
 
-        $agent->pushIndexIfDue($this->at(0.15));
+        $agent->pushIndexIfDue($this->at(self::PAST_THE_DEFAULT_INTERVAL_SECONDS));
 
         $this->assertTrue($this->frame()->available);
+        $journal = $this->agentErrorJournal($agent);
+        $this->assertNotNull($journal);
+        $this->assertStringContainsString(LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS, $journal);
     }
 
+    /**
+     * A non-numeric value is refused by the rule and falls back to the environment; the fallback
+     * interval is obeyed and the complaint goes to the journal.
+     */
     public function testANonNumericWrittenValueLeavesTheBuiltInIntervalInPlace(): void
     {
-        LogIndexPushSettingsCollection::$writtenValue = 'as often as you like';
+        LogSettingsResolverTestAccessor::$values[LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS] = 'as often as you like';
+        $agent = $this->startedAgent();
+        $this->frame();
+
+        $this->write('agent-a.log', 100);
+        $agent->walkStore($this->stamp());
+        $agent->pushIndexIfDue($this->at(self::INSIDE_THE_DEFAULT_INTERVAL_SECONDS));
+        $this->assertSame([], $this->queuedFrames());
+
+        $agent->pushIndexIfDue($this->at(self::PAST_THE_DEFAULT_INTERVAL_SECONDS));
+
+        $this->assertTrue($this->frame()->available);
+        $journal = $this->agentErrorJournal($agent);
+        $this->assertNotNull($journal);
+        $this->assertStringContainsString(LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS, $journal);
+    }
+
+    /**
+     * With no settings initialized in this process, the fallback interval is used.
+     */
+    public function testWithoutADatabaseTheBuiltInIntervalIsUsed(): void
+    {
+        Hilos::$setting = null;
         $agent = $this->startedAgent();
         $this->frame();
 
@@ -316,21 +341,22 @@ final class LogIndexPushTest extends TestCase
     }
 
     /**
-     * With no row written the interval is a literal in the framework and not the node's own
-     * environment, so three nodes of one cluster report at one rate out of the box.
+     * With no settings initialized in the process and the interval configured via environment,
+     * the node obeys the environment value.
      */
-    public function testWithoutADatabaseTheBuiltInIntervalIsUsed(): void
+    public function testWithoutSettingsTheEnvironmentIntervalIsObeyed(): void
     {
-        Hilos::$db = null;
+        Hilos::$setting = null;
+        putenv(EnvConstants::LOG_INDEX_PUSH_INTERVAL_MS->name . '=20000');
         $agent = $this->startedAgent();
         $this->frame();
 
         $this->write('agent-a.log', 100);
         $agent->walkStore($this->stamp());
-        $agent->pushIndexIfDue($this->at(self::INSIDE_THE_DEFAULT_INTERVAL_SECONDS));
-        $this->assertSame([], $this->queuedFrames());
-
         $agent->pushIndexIfDue($this->at(self::PAST_THE_DEFAULT_INTERVAL_SECONDS));
+        $this->assertSame([], $this->queuedFrames(), 'The environment 20 s outranks the fallback 5 s');
+
+        $agent->pushIndexIfDue($this->at(20.5));
 
         $this->assertTrue($this->frame()->available);
     }
@@ -439,70 +465,17 @@ final class LogIndexPushTest extends TestCase
         }
         rmdir($path);
     }
-}
-
-/**
- * Settings view answering one written row and no database behind it.
- *
- * The agent reads the WRITTEN value of the push interval, which is a lookup by key on this
- * collection; the real one asks the database for it, so the cases substitute this and set the row
- * they are about.
- */
-final class LogIndexPushSettingsCollection extends DbCollection
-{
-    /** @var ?string Value the one row holds, or null when no row has been written */
-    public static ?string $writtenValue = null;
-
-    public const string DB_ITEM_CLASS = ViewSetting::class;
 
     /**
-     * @param mixed $offset Setting key
-     * @return ?DbItem Row holding {@see self::$writtenValue}, or null when nothing was written
-     */
-    public function offsetGet(mixed $offset): ?DbItem
-    {
-        if (self::$writtenValue === null || !is_string($offset)) {
-            return null;
-        }
-
-        $entity = new EntitySetting();
-        $entity->id = 1;
-        $entity->key = $offset;
-        $entity->value = self::$writtenValue;
-
-        return new ViewSetting(ObjectSetting::fromEntity($entity));
-    }
-
-    /**
-     * @param Object_ $object Stored row
-     * @return DbItem View of that row
-     */
-    protected function createDbItem(Object_ $object): DbItem
-    {
-        return new ViewSetting($object);
-    }
-}
-
-/**
- * DB context mounting the settings collection alone, which is all the sender reads.
- */
-final class LogIndexPushDbContext extends HilosDbContext
-{
-    /**
-     * Mounts the settings view by key, so a read needs no database behind it.
+     * Reads the agent error stream file written under the master log directory.
      *
-     * @return self Mounted context
+     * @param LogStoreAgent $agent Agent under test
+     * @return ?string Contents of the agent error stream, or null if not written
      */
-    public static function create(): self
+    private function agentErrorJournal(LogStoreAgent $agent): ?string
     {
-        $context = new self();
-        $context->_objectCollections[self::settings] = ObjectSettings::initDB(Objects::LAZY_STRATEGY_KEY);
-        $context->setRepresent(self::settings, LogIndexPushSettingsCollection::class);
+        $file = AgentLogStream::pathFor(dirname($this->logFile), $agent->getId(), true);
 
-        return $context;
-    }
-
-    public function configure(): void
-    {
+        return is_file($file) ? (string)file_get_contents($file) : null;
     }
 }

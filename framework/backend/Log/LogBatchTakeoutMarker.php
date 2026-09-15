@@ -44,8 +44,11 @@ final class LogBatchTakeoutMarker
     /** Marker key: id of the user who confirmed, null when the confirmation carried no identity. */
     public const string takenBy = 'takenBy';
 
-    /** Basename prefix of the temp file the marker is published from, in the same directory. */
-    private const string TEMP_PREFIX = '.tmp-taken-';
+    /**
+     * Basename prefix of the temp file the marker is published from, in the same directory.
+     * Visible so the archive cleanup recognises an interrupted write() leftover as its own.
+     */
+    public const string TEMP_PREFIX = '.tmp-taken-';
 
     /**
      * Reads the confirmation stamp of one batch, if the batch carries one.

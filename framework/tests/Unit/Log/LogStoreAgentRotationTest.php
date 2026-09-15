@@ -70,6 +70,8 @@ final class LogStoreAgentRotationTest extends TestCase
         putenv(EnvConstants::DAEMON_ERROR_LOG_FILE->name . '=' . $this->dir . '/daemon-error.log');
         // Every axis off unless a test arms one, so nothing rotates behind the case under test.
         $this->putRotationEnvironment('0', '0', '');
+        // Every axis is off until a case arms it, and the undo window is an axis now.
+        putenv(EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS->name . '=0');
         Hilos::$sr = new SignalRouter();
     }
 
@@ -81,6 +83,7 @@ final class LogStoreAgentRotationTest extends TestCase
             EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS,
             EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES,
             EnvConstants::LOG_ROTATION_CRON,
+            EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS,
         ] as $key) {
             putenv($key->name);
         }
@@ -227,6 +230,24 @@ final class LogStoreAgentRotationTest extends TestCase
         $this->assertNotNull($delta);
         $this->assertSame([$taken], $delta->vanishedBatchTimestamps);
         $this->assertCount(1, $delta->appearedBatchTimestamps);
+    }
+
+    public function testAConfirmedBatchInsideTheUndoWindowSurvivesTheRotation(): void
+    {
+        $this->putRotationEnvironment('0', self::MAX_LIVE_SIZE_BYTES, '');
+        putenv(EnvConstants::LOG_TAKEOUT_UNDO_WINDOW_SECONDS->name . '=3600');
+        $agent = $this->startedAgent();
+        // Staged after the start so the start's own cleanup pass is not the one under test.
+        $taken = $this->archiveBatch($this->t0 - 120, confirmed: true);
+        $this->write(self::DAEMON_LOG, 2048);
+
+        ob_start();
+        $this->walkAndRotate($agent, $this->t0 + 10);
+        $said = (string)ob_get_clean();
+
+        $names = $this->archiveBatchNames();
+        $this->assertContains($this->batchDirName($taken), $names);
+        $this->assertStringNotContainsString('Log cleanup:', $said);
     }
 
     public function testAGrownRawStreamIsComplainedAboutOnce(): void

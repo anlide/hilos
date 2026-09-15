@@ -54,10 +54,6 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  * {@see HilosClusterNode} at the moment it hands the picture over. The aggregator keeps no silence
  * clock of its own: "which nodes exist" belongs to the master's register, and a second answer to it
  * here would be a second truth.
- *
- * It also answers how often a node may report ({@see pushIntervalMs()}), because that number is one
- * setting for the whole cluster and this is the one thing in the cluster. The sender obeys the
- * WRITTEN setting directly instead (HIL-755), so this door stands without a consumer for now.
  */
 final class LogAggregatorAgent extends AbstractAgent
 {
@@ -116,9 +112,6 @@ final class LogAggregatorAgent extends AbstractAgent
     /** @var ClusterLogIndex Slot per node, as each of them last reported */
     private ClusterLogIndex $index;
 
-    /** @var LogSettingsResolver Reader of the push interval, kept so an unchanged fault is reported once */
-    private LogSettingsResolver $resolver;
-
     /**
      * @var array<string, array{viewers: int, renewedAt: float, sentRevision: int}> Sender → what it claimed and how far it has been written
      */
@@ -146,15 +139,10 @@ final class LogAggregatorAgent extends AbstractAgent
      * nodes tell it. A restart or a move to another node costs nothing to repair either — every
      * node sends its index whole, so the next ordinary frame from each of them restores its slot,
      * and there is no "send everything again" protocol to build.
-     *
-     * The settings reader is built here and not per call, and it reads nothing yet: it is the
-     * memory of what it last complained about, which is what keeps a value that stays wrong from
-     * being reported again on every ask.
      */
     public function onStart(): void
     {
         $this->index = ClusterLogIndex::empty();
-        $this->resolver = new LogSettingsResolver();
     }
 
     /**
@@ -298,25 +286,6 @@ final class LogAggregatorAgent extends AbstractAgent
         return $views;
     }
 
-    /**
-     * How often one node may send its index, in milliseconds.
-     *
-     * Read at the moment it is asked for and never cached: an administrator's edit is then obeyed
-     * without restarting anything, the same way the rotation thresholds are. What the resolver had
-     * to complain about goes to the journal here, and only when the outcome changed.
-     *
-     * @return int Milliseconds between two frames from one node
-     */
-    public function pushIntervalMs(): int
-    {
-        $interval = $this->resolver->pushIntervalMs();
-
-        while (($complaint = $this->resolver->takeComplaint()) !== null) {
-            $this->logAgentError($complaint);
-        }
-
-        return $interval;
-    }
 
     /**
      * Pays the subscribers what the frames since the last round owe them.

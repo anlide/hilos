@@ -12,9 +12,9 @@ use Hilos\Utils\Helpers\FileSystemHelper;
 /**
  * Removes the rotation batches an operator has confirmed carrying off, and nothing else (HIL-382).
  *
- * It asks one question of a batch — does the directory hold a readable takeout marker
- * ({@see LogBatchTakeoutMarker}) — and never asks the retention rule
- * ({@see LogArchiveRetentionPolicy}). The rule protects what has NOT been carried off; once it has,
+ * It asks two questions of a batch — does the directory hold a readable takeout marker
+ * ({@see LogBatchTakeoutMarker}), and has the window over it run out — and never asks the retention
+ * rule ({@see LogArchiveRetentionPolicy}). The rule protects what has NOT been carried off; once it has,
  * there is nothing left to protect, and a batch brought back under protection by an edited setting
  * is still a batch that is already saved elsewhere.
  *
@@ -27,8 +27,9 @@ use Hilos\Utils\Helpers\FileSystemHelper;
  *
  * A batch directory is emptied file by file rather than swept as a subtree: the recursive removal
  * next door ({@see BackupCreator::removeDirectory()}) is deliberately NOT the model here, because a
- * backup can be taken again and a log cannot. What this pass put there — the `*.log` files and the
- * marker — it removes; anything else in the directory keeps the whole directory alive.
+ * backup can be taken again and a log cannot. What this pass put there — the `*.log` files, the
+ * marker, and the marker's interrupted temp file (this subsystem's own leftover and not somebody's
+ * file) — it removes; anything else in the directory keeps the whole directory alive.
  *
  * The order within a batch is files, then the marker, then the directory. An interrupted pass so
  * leaves a batch that is still confirmed, which the next pass finishes; removing the marker first
@@ -37,8 +38,6 @@ use Hilos\Utils\Helpers\FileSystemHelper;
  */
 final class LogArchivePruner
 {
-    /** Suffix of the files rotation moves into a batch; everything else there belongs to somebody. */
-
     /**
      * @param string $logDirectory Log root of this node, the directory holding the archive subtree
      */
@@ -47,12 +46,14 @@ final class LogArchivePruner
     }
 
     /**
-     * Removes every batch among the given ones that carries a readable takeout marker.
+     * Removes every batch among the given ones that carries a readable takeout marker and whose undo window has elapsed.
      *
      * @param list<int> $batchTimestamps Batch Unix timestamps to consider, ordinarily the whole archive of this node
+     * @param int $undoWindowSeconds The window in seconds a confirmed batch is protected for (0 = do not wait)
+     * @param int $now The Unix instant this pass is judged at
      * @return LogPruneReport What was removed, what was left alone, and what would not go
      */
-    public function prune(array $batchTimestamps): LogPruneReport
+    public function prune(array $batchTimestamps, int $undoWindowSeconds, int $now): LogPruneReport
     {
         $removed = [];
         $failedPaths = [];
@@ -84,6 +85,10 @@ final class LogArchivePruner
                 continue;
             }
 
+            if ($takenAt + $undoWindowSeconds > $now) {
+                continue;
+            }
+
             $entries = FileSystemHelper::scandirOrFalse($directory);
             if ($entries === false) {
                 // A batch that cannot be listed cannot be emptied honestly, and sweeping it blind is
@@ -93,22 +98,24 @@ final class LogArchivePruner
                 continue;
             }
 
-            $logFiles = [];
+            $ownFiles = [];
             $foreignFound = false;
             foreach ($entries as $name) {
                 if ($name === '.' || $name === '..' || $name === LogBatchTakeoutMarker::FILE_NAME) {
                     continue;
                 }
                 $path = $directory . DIRECTORY_SEPARATOR . $name;
-                if (is_file($path) && str_ends_with($name, LogStreamConstants::STREAM_SUFFIX)) {
-                    $logFiles[] = $path;
+                if (is_file($path)
+                    && (str_ends_with($name, LogStreamConstants::STREAM_SUFFIX)
+                        || str_starts_with($name, LogBatchTakeoutMarker::TEMP_PREFIX))) {
+                    $ownFiles[] = $path;
 
                     continue;
                 }
                 $foreignFound = true;
             }
 
-            $refused = self::removeFiles($logFiles);
+            $refused = self::removeFiles($ownFiles);
             foreach ($refused as $refusedPath) {
                 $failedPaths[] = $refusedPath;
             }
