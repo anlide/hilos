@@ -69,13 +69,15 @@ abstract class DbActions
     /**
      * Ensures write is allowed and collection is loaded if needed.
      *
-     * The operation is editing: an item action holds a record that already exists, and minting
-     * a new one goes through the collection's create guard instead.
+     * Defaults to editing because that is what an item action does: the row is already there,
+     * held by this very item, and the ones that instead drop it name the operation themselves.
+     * Minting a new row goes through the collection's create guard instead.
      *
      * The right is asked before the strategy is looked at, because the two answer different
      * questions: who may write this table, and how much of it has to be in memory first. The
      * switch below is left with the second one only.
      *
+     * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws ObjectCollectionNullException If object collection is null (manual)
      * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
      * @throws UnknownLazyStrategyException If lazy strategy is unknown
@@ -83,7 +85,7 @@ abstract class DbActions
      * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException If load fails
      */
-    protected function ensureCanWrite(): void
+    protected function ensureCanWrite(TruthSourceOperation $operation = TruthSourceOperation::Update): void
     {
         $objectCollection = $this->getObjectCollection()
             ?? throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)");
@@ -93,9 +95,10 @@ abstract class DbActions
             DbWriteGuard::guardItemWrite(
                 $collectionKey,
                 $this->object->getIdString(),
-                TruthSourceOperation::Update,
+                $operation,
             );
         } else {
+            // Collection write guard operates without operation axis; the named operation does not reach here.
             DbWriteGuard::guardCollectionWrite($collectionKey);
         }
 

@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Item;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
@@ -80,7 +81,7 @@ final class SettingActions extends DbActions
      */
     public function delete(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         if ($this->object->id === null) {
             throw new ItemNotFoundForDeleteException('Setting not found for delete (id is null)');

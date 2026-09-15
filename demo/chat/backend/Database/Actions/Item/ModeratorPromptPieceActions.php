@@ -9,6 +9,7 @@ use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
@@ -57,7 +58,7 @@ final class ModeratorPromptPieceActions extends DbActions
      */
     public function delete(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         if ($this->object->id === null) {
             throw new ItemNotFoundForDeleteException('Moderator prompt piece not found for delete (id is null)');

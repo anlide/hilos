@@ -8,6 +8,7 @@ use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
@@ -41,7 +42,7 @@ final class VerifierCircleMemberActions extends DbActions
      */
     public function delete(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         if ($this->object->id === null) {
             throw new ItemNotFoundForDeleteException('Verifier circle member not found for delete (id is null)');
