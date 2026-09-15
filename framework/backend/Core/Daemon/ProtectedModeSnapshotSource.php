@@ -21,8 +21,10 @@ use Hilos\Socket\Server\CommandServer;
  * freeze every agent but the initiator is stopped, so an agent-answered inspector would fall
  * silent in exactly the phase it exists to report on.
  *
- * Test-only: the sole caller is the `test:protected-mode:inspect` command, used by e2e and by
- * the multi-node harness to assert on the freeze deterministically.
+ * The caller is the production `protected-mode:inspect` command. Publishing it is safe on the
+ * command channel because the field list was designed for that unauthenticated reader: it
+ * carries counts rather than pass hashes or verifier addresses and omits the initiator key.
+ * The snapshot is this node's view; a local phase is not a cluster-wide quiescence verdict.
  */
 interface ProtectedModeSnapshotSource
 {

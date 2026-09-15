@@ -9,11 +9,11 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeCloseCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeOpenCommand;
 use Hilos\Core\CLI\Commands\ProtectedModePassCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestCloseCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
-use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestPassCommand;
@@ -60,7 +60,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
 
     public function testEachCommandAnswersItsRegisteredName(): void
     {
-        self::assertSame(CliCommands::PROTECTED_MODE_TEST_INSPECT, new ProtectedModeTestInspectCommand()->getName());
+        self::assertSame(CliCommands::PROTECTED_MODE_INSPECT, new ProtectedModeInspectCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_ENTER, new ProtectedModeTestEnterCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_LEAVE, new ProtectedModeTestLeaveCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_OPEN, new ProtectedModeTestOpenCommand()->getName());
@@ -78,7 +78,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
         $manager = new CliManager([]);
 
         foreach ([
-            CliCommands::PROTECTED_MODE_TEST_INSPECT,
+            CliCommands::PROTECTED_MODE_INSPECT,
             CliCommands::PROTECTED_MODE_TEST_ENTER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE,
             CliCommands::PROTECTED_MODE_TEST_OPEN,
@@ -95,7 +95,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
 
     public function testEveryCommandDeclaresItselfDatabaseFree(): void
     {
-        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestInspectCommand());
+        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeInspectCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestEnterCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestLeaveCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestOpenCommand());
@@ -108,7 +108,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeCloseCommand());
     }
 
-    public function testTheOperatorTrioIsNotTestOnly(): void
+    public function testTheOperatorCommandsAreNotTestOnly(): void
     {
         // The point of the whole leaf: a restore no longer opens the system by itself, so these
         // three are the only way back in - on production above all. Subclassing TestOnlyCommand
@@ -116,6 +116,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModePassCommand());
         self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModeOpenCommand());
         self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModeCloseCommand());
+        self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModeInspectCommand());
     }
 
     public function testHelpNamesTheArgumentsEachCommandTakes(): void
@@ -167,7 +168,6 @@ final class ProtectedModeTestCommandsTest extends TestCase
         Hilos::$env = new EnvAccessor();
 
         foreach ([
-            new ProtectedModeTestInspectCommand(),
             new ProtectedModeTestEnterCommand(),
             new ProtectedModeTestLeaveCommand(),
             new ProtectedModeTestOpenCommand(),

@@ -243,11 +243,12 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
-            if ($request->command === CliCommands::PROTECTED_MODE_TEST_INSPECT) {
-                // Test-only read of the master's own view of protected mode. Answered here and
-                // not parked, because parking routes to an agent and a freeze stops every agent
-                // but the initiator - the inspector would go silent in the one phase it exists
-                // to report on. A subsystem failure must reply an error, not throw in the loop.
+            if ($request->command === CliCommands::PROTECTED_MODE_INSPECT) {
+                // Production read of the master's own view and the answer a lost-reply re-ask
+                // consumes. Answered here and not parked, because parking routes to an agent and
+                // a freeze stops every agent but the initiator - the inspector would go silent
+                // in the one phase it exists to report on. A subsystem failure must reply an
+                // error, not throw in the loop.
                 try {
                     $reply = CommandReplyDTO::ok($request->correlationId, $this->server->protectedModeSnapshot());
                 } catch (HilosException $e) {

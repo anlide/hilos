@@ -1,6 +1,8 @@
 import net from 'node:net'
 import { randomBytes } from 'node:crypto'
 
+import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/protectedModeReAsk.mjs'
+
 // The daemon command channel — the same socket the CLI test:protected-mode:*
 // commands speak. The Playwright runner has no PHP, so the e2e drives the freeze
 // over the wire directly; this still exercises the real CommandServer parking,
@@ -8,9 +10,9 @@ import { randomBytes } from 'node:crypto'
 // asking its daemon), because nothing here forces any state.
 //
 // Narrower than the chat and polls peers on purpose: this demo has one
-// protected-mode case, and it needs the freeze on and the freeze off. The rest
-// of the command set (leave, mint, inspect) is added by the spec that first has
-// something to assert with it.
+// protected-mode case, and it needs the freeze on and the freeze off. Inspect is
+// present only because either drive may need one state re-ask after a lost reply;
+// leave and mint wait for the first spec that has something to assert with them.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
@@ -24,8 +26,14 @@ const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 // this and the PHP constant together, or the order stops holding.
 const REPLY_TIMEOUT_MS = 15_000
 
+// How long the re-ask waits, hand-kept copy of CommandChannelWindows::RE_ASK_WAIT_SECONDS.
+// Not a fourth nested window: the master answers this one on its accept path, so it waits
+// for a live process rather than for an agent. See that class for why it is 5 and not 15.
+const RE_ASK_TIMEOUT_MS = 5_000
+
 const ENTER_COMMAND = 'test:protected-mode:enter'
 const OPEN_COMMAND = 'test:protected-mode:open'
+const INSPECT_COMMAND = 'protected-mode:inspect'
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -35,6 +43,19 @@ const OPEN_COMMAND = 'test:protected-mode:open'
  * socket means the node never said it was open. Those two must not share a catch.
  */
 export class ProtectedModeCommandRefused extends Error {}
+
+/** This node's protected-mode state, as the master reports it. */
+export interface ProtectedModeSnapshot {
+  rtMounted: boolean
+  phase: string
+  operation: string | null
+  initiatorAgentType: string | null
+  stoppedAgents: string[]
+  agentStartGateClosed: boolean
+  passCount: number
+  circleSize: number
+  circleAdmitted: number
+}
 
 /**
  * Takes the installation into protected mode through the live initiator agent.
@@ -47,7 +68,12 @@ export class ProtectedModeCommandRefused extends Error {}
  * @returns The phase the agent observed.
  */
 export async function enterProtectedMode(operation: string): Promise<string> {
-  const reply = await sendCommand(ENTER_COMMAND, { operation, acceptKey: '' })
+  const reply = await sendProtectedModeDrive(
+    ENTER_COMMAND,
+    { operation, acceptKey: '' },
+    operation,
+    ['active', 'verifying', 'deactivating'],
+  )
 
   return String(reply.phase ?? '')
 }
@@ -63,7 +89,7 @@ export async function enterProtectedMode(operation: string): Promise<string> {
  */
 export async function openProtectedModeIfAny(): Promise<void> {
   try {
-    await sendCommand(OPEN_COMMAND, {})
+    await sendProtectedModeDrive(OPEN_COMMAND, {}, null, ['inactive'])
   } catch (error) {
     if (error instanceof ProtectedModeCommandRefused) {
       // Answered, and the answer was that there is nothing to lift - the state the teardown
@@ -78,15 +104,119 @@ export async function openProtectedModeIfAny(): Promise<void> {
 }
 
 /**
+ * Reads this node's protected-mode state from the master.
+ *
+ * Answered by the daemon itself rather than by an agent, so it keeps answering
+ * mid-freeze — when every agent but the initiator is stopped.
+ *
+ * @param timeoutMs How long to wait for the master reply.
+ * @returns This node's protected-mode snapshot.
+ */
+export async function inspectProtectedMode(
+  timeoutMs = REPLY_TIMEOUT_MS,
+): Promise<ProtectedModeSnapshot> {
+  return (await sendCommand(
+    INSPECT_COMMAND,
+    {},
+    timeoutMs,
+  )) as unknown as ProtectedModeSnapshot
+}
+
+/**
+ * Sends one protected-mode drive, then asks this node once when its reply was not an answer.
+ *
+ * @param command Drive command name.
+ * @param payload Drive payload.
+ * @param operation Operation the drive named, or null.
+ * @param takenPhases Phases that prove the drive happened.
+ * @returns The drive reply or the recovered state snapshot.
+ */
+async function sendProtectedModeDrive(
+  command: string,
+  payload: Record<string, unknown>,
+  operation: string | null,
+  takenPhases: string[],
+): Promise<Record<string, unknown>> {
+  try {
+    return await sendCommand(command, payload)
+  } catch (error) {
+    if (error instanceof ProtectedModeCommandRefused) throw error
+
+    const outcome = await reAskProtectedMode(
+      () => inspectProtectedMode(RE_ASK_TIMEOUT_MS),
+      { operation, takenPhases },
+    )
+    if (outcome.verdict === 'taken') {
+      return outcome.snapshot as unknown as Record<string, unknown>
+    }
+
+    throw protectedModeReAskError(
+      command,
+      outcome.verdict,
+      outcome.snapshot,
+      operation,
+    )
+  }
+}
+
+/**
+ * Names what the single re-ask learned instead of collapsing it into a failed drive.
+ *
+ * @param command Unanswered drive command.
+ * @param verdict Re-ask verdict.
+ * @param rawSnapshot Snapshot behind the verdict.
+ * @param operation Operation the drive named, or null.
+ * @returns Error carrying the state verdict.
+ */
+function protectedModeReAskError(
+  command: string,
+  verdict: 'underWay' | 'notTaken' | 'unknown',
+  rawSnapshot: object,
+  operation: string | null,
+): Error {
+  if (verdict === 'unknown') {
+    return new Error(
+      `${command} was not answered, and ${INSPECT_COMMAND} was not answered either; ` +
+        'whether the command was taken is unknown',
+    )
+  }
+
+  const snapshot = rawSnapshot as ProtectedModeSnapshot
+  if (verdict === 'underWay') {
+    return new Error(
+      `${command} was not answered; the node reads '${snapshot.phase}' - ` +
+        'the freeze is under way but has not taken hold',
+    )
+  }
+  if (!snapshot.rtMounted) {
+    return new Error(
+      `${command} was not answered; this node has no protected mode`,
+    )
+  }
+  if (operation !== null && snapshot.operation !== operation) {
+    return new Error(
+      `${command} was not answered; the node is frozen for '${snapshot.operation}', ` +
+        `not '${operation}'`,
+    )
+  }
+
+  return new Error(
+    `${command} was not answered; the node reads '${snapshot.phase}', so the command was not taken`,
+  )
+}
+
+/**
  * Sends one command over the daemon command channel and resolves its payload.
  *
  * @param command Command-channel wire name.
  * @param payload Request payload.
+ * @param timeoutMs How long to wait for the reply.
  * @returns The reply payload on success.
  */
 function sendCommand(
   command: string,
   payload: Record<string, unknown>,
+  timeoutMs = REPLY_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const request =
@@ -103,10 +233,10 @@ function sendCommand(
       socket.destroy()
       reject(
         new Error(
-          `No command-channel reply to ${command} within ${REPLY_TIMEOUT_MS}ms`,
+          `No command-channel reply to ${command} within ${timeoutMs}ms`,
         ),
       )
-    }, REPLY_TIMEOUT_MS)
+    }, timeoutMs)
 
     socket.on('connect', () => {
       socket.write(request)

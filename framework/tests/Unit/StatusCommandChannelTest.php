@@ -42,10 +42,14 @@ final class StatusCommandProbe extends StatusCommand
     /**
      * @param string $command Command-channel wire name
      * @param array<string, mixed> $payload Request payload
+     * @param ?float $waitSeconds Wait budget (ignored)
      * @return CommandChannelResult The armed outcome
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         $this->sent[] = ['command' => $command, 'payload' => $payload];
 
         return $this->outcome;

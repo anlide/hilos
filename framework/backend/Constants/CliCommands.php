@@ -195,18 +195,6 @@ final class CliCommands
     public const string LOG_TEST_APPEND = 'test:log:append';
 
     /**
-     * Print this node's protected-mode snapshot as JSON (test-only).
-     *
-     * Answered synchronously by the master, so unlike its two siblings below it is
-     * never routed to an agent: during a freeze every agent but the initiator is
-     * stopped, so an agent-answered inspector would go silent in exactly the phase
-     * it exists to report on.
-     *
-     * @var string Command: Print this node's protected-mode snapshot as JSON (test-only)
-     */
-    public const string PROTECTED_MODE_TEST_INSPECT = 'test:protected-mode:inspect';
-
-    /**
      * Enter protected mode through the live initiator agent (test-only).
      *
      * Doubles as the command-channel wire name routed to the agents that declare it
@@ -272,6 +260,19 @@ final class CliCommands
      * @var string Command: Close the system back from the verification window (test-only)
      */
     public const string PROTECTED_MODE_TEST_CLOSE = 'test:protected-mode:close';
+
+    /**
+     * Print this node's protected-mode snapshot as JSON.
+     *
+     * Answered synchronously by the master, so unlike the drive commands above it is
+     * never routed to an agent: during a freeze every agent but the initiator is
+     * stopped, so an agent-answered inspector would go silent in exactly the phase
+     * it exists to report on. The `test:` prefix was deliberately dropped because
+     * that prefix is the test-only declaration, while a re-ask must work in production.
+     *
+     * @var string Command: Print this node's protected-mode snapshot as JSON
+     */
+    public const string PROTECTED_MODE_INSPECT = 'protected-mode:inspect';
 
     /**
      * Mint one pass into the verification window and print it (operator).

@@ -64,12 +64,16 @@ abstract class AbstractCommandChannelTestCommand extends TestOnlyCommand
      *
      * @param string $command Command-channel wire name routed to the owning agent
      * @param array<string, mixed> $payload Request payload delivered to the agent
+     * @param ?float $waitSeconds Wait budget, or the standard caller window when null
      * @return CommandChannelResult Reply, or why none arrived
      * @throws CommandException When the command name does not carry the test-only prefix
      * @throws EnvException When daemon host/port env values are missing or invalid
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         if (!str_starts_with($command, CommandConstants::TEST_ONLY_PREFIX)) {
             throw new CommandException(
                 "Command {$command} is sent by a test-only CLI command but is not named "
@@ -77,6 +81,6 @@ abstract class AbstractCommandChannelTestCommand extends TestOnlyCommand
             );
         }
 
-        return $this->sendChannelCommand($command, $payload);
+        return $this->sendChannelCommand($command, $payload, $waitSeconds);
     }
 }

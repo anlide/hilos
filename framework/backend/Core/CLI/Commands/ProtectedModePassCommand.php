@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\ProtectedMode\ProtectedModeReAskVerdict;
 
 /**
  * ProtectedModePassCommand - mint one pass into the verification window and print it.
@@ -25,10 +27,14 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
  *
  * Database-free: this process only writes to a socket - and it must be, because the database it
  * would otherwise open is the one the operation being verified just rewrote.
+ *
+ * A lost mint reply is never recovered as success: minting moves no phase, and the clear pass
+ * existed only in that reply. Its orphaned hash admits nobody, and closing the verification
+ * window voids it with every other pass hash.
  */
 class ProtectedModePassCommand implements CommandInterface, DatabaseFreeCommand
 {
-    use CommandChannelClientTrait;
+    use ProtectedModeReAskTrait;
 
     /**
      * Returns command name for CLI routing.
@@ -113,7 +119,36 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, $this->getName());
+            try {
+                $outcome = $this->reAskProtectedMode($this->getName(), null, []);
+            } catch (EnvException $e) {
+                echo "Error: {$e->getMessage()}\n";
+
+                return ExitCode::CONFIG_ERROR;
+            }
+
+            $seconds = (int)CommandChannelWindows::CALLER_WAIT_SECONDS;
+            if ($outcome->verdict === ProtectedModeReAskVerdict::UNKNOWN) {
+                return $this->printToStandardError(
+                    "The daemon did not answer {$outcome->driveCommand} within {$seconds}s, and did not answer "
+                        . CliCommands::PROTECTED_MODE_INSPECT
+                        . ' either; whether a pass was minted is unknown',
+                );
+            }
+
+            $passCount = $outcome->snapshot[ProtectedModeCommandConstants::FIELD_PASS_COUNT] ?? null;
+            if (!is_int($passCount)) {
+                return $this->printToStandardError(
+                    "The daemon did not answer {$outcome->driveCommand} within {$seconds}s;"
+                        . ' the state reply carried no pass count, so whether a pass was minted is unknown',
+                );
+            }
+
+            return $this->printToStandardError(
+                "The daemon did not answer {$outcome->driveCommand} within {$seconds}s;"
+                    . " the node now holds {$passCount} passes, but a pass exists only in the reply that was lost"
+                    . ' - mint another with ' . CliCommands::PROTECTED_MODE_PASS,
+            );
         }
 
         $reply = $result->reply;

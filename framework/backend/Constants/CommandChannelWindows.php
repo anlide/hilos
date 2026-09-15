@@ -36,6 +36,17 @@ use Hilos\Socket\Client\CommandClient;
  * agent's window past the caller's is not a mistake one can make here; it can only be made by
  * raising the caller's, which is exactly the decision that should be deliberate.
  *
+ * **The re-ask window is outside that nest.** A drive command is parked for an agent, so
+ * the three windows above must expire inside one another. A re-ask is answered by the master
+ * on the accept path and is parked for nobody, leaving no inner window it must outlive. A live
+ * master answered all 128 measured round trips in milliseconds (0.07s median); a dead one never
+ * will, so five seconds is deliberately generous rather than tuned. It follows the same
+ * no-scaling rule as the nested windows.
+ *
+ * The separate budget also stays below Playwright's unscaled 30-second per-test ceiling after
+ * the drive has spent {@see self::CALLER_WAIT_SECONDS}: 15 + 5 fits, while reusing the caller
+ * window would consume the whole ceiling before the re-ask could report its outcome.
+ *
  * **These windows do NOT scale with the load of the run, and that is deliberate.** Playwright's
  * own ceilings do: framework/frontend/scripts/timeout-scale.mjs derives a factor of 1.0 to 4.0
  * from the number of lanes and the free memory, so a test on a loaded box is given more
@@ -87,4 +98,14 @@ final class CommandChannelWindows
      * expire inside. The only window of the three whose expiry carries a reason.
      */
     public const float AGENT_WAIT_SECONDS = self::CALLER_WAIT_SECONDS - self::REFUSAL_DELIVERY_MARGIN_SECONDS;
+
+    /**
+     * @var float How long a caller waits for the state re-asked after a drive went unanswered
+     *
+     * Not a fourth nested link: the master answers this read on its accept path, so it waits
+     * only for a live process and has no agent window inside it. Five seconds is generous
+     * against the measured millisecond response and keeps drive plus re-ask below Playwright's
+     * unscaled per-test ceiling. It does not scale with run load, as explained above.
+     */
+    public const float RE_ASK_WAIT_SECONDS = 5.0;
 }

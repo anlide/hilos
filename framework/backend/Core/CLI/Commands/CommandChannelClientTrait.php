@@ -46,11 +46,15 @@ trait CommandChannelClientTrait
      *
      * @param string $command Command-channel wire name routed to the owning agent
      * @param array<string, mixed> $payload Request payload delivered to the agent
+     * @param ?float $waitSeconds Wait budget, or the standard caller window when null
      * @return CommandChannelResult Reply, or why none arrived
      * @throws EnvException When daemon host/port env values are missing or invalid
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]->string();
         $port = Hilos::$env[EnvConstants::COMMAND_PORT]->int();
         $address = "{$host}:{$port}";
@@ -66,7 +70,7 @@ trait CommandChannelClientTrait
             $client->startRequest($request);
 
             $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
-            $budgetMs = CommandChannelWindows::CALLER_WAIT_SECONDS * TimeConstants::MS_PER_SECOND;
+            $budgetMs = ($waitSeconds ?? CommandChannelWindows::CALLER_WAIT_SECONDS) * TimeConstants::MS_PER_SECOND;
             while (!$client->hasResult()) {
                 if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > $budgetMs) {
                     return CommandChannelResult::timedOut($address);

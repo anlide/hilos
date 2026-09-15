@@ -65,11 +65,10 @@ past the agent. The precedent is the backup test commands, which ride
 
 ### The Test Tool That Obligation Produced
 
-Six test-only commands, and the split between them is the whole design:
+Five test-only commands, and the split between them is the whole design:
 
 | Command | Answered by | Why there |
 |---|---|---|
-| `test:protected-mode:inspect` | the master, synchronously | during a freeze every agent but the initiator is stopped, so an agent-answered inspector would go silent in exactly the phase worth inspecting |
 | `test:protected-mode:enter <operation> [--accept-key=<k>]` | the initiator agent | it calls `requestProtectedModeEnable()` — the one entry, unchanged |
 | `test:protected-mode:leave` | the initiator agent | the driven operation is over: it calls `requestProtectedModeVerify()` and lands in the verification window, where a real one lands too |
 | `test:protected-mode:open` | the initiator agent | the explicit lift, authorized by initiator identity exactly as in production |
@@ -133,6 +132,13 @@ is `ProtectedModeOperatorTrait`, mixed into `BackupAgent` — a restore is the
 destructive operation this framework has, so that agent is the initiator the row
 records.
 
+`protected-mode:inspect` is the production state question beside them, but it is
+answered synchronously by the master rather than routed to an agent. A drive command
+whose reply was lost asks it once, with its own short deadline, and reads the fact from
+this node's snapshot instead of retrying the drive. It keeps answering mid-freeze,
+when every agent but the initiator is stopped. Its phase is only this node's view: on a
+cluster it must not be read as proof that every node has quiesced.
+
 They deliberately do **not** share names with the `test:` family. A command
 routes to exactly one agent type per project (`TopologyValidator` refuses a
 second owner), a project may hold two initiators — the real one and the test
@@ -179,8 +185,8 @@ window the moment nobody held a code, and throw away his key on the way.
 
 **A count never leaves the master.** The wire carries a boolean: how many people
 the operator invited is his business and tells a visitor nothing he needs. The
-count stays where it already was, in the test-only snapshot
-(`test:protected-mode:inspect`), which also never carries a hash.
+count stays where it already was, in the production snapshot
+(`protected-mode:inspect`), which also never carries a hash.
 
 ## The Freeze Is Also The Window For Repairing What The Operation Broke
 

@@ -113,10 +113,14 @@ final class PingCommandStub extends PingCommand
     /**
      * @param string $command Command-channel wire name (ignored)
      * @param array<string, mixed> $payload Request payload (ignored)
+     * @param ?float $waitSeconds Wait budget (ignored)
      * @return CommandChannelResult Canned reply
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         return CommandChannelResult::replied($this->reply, self::ADDRESS);
     }
 }
@@ -147,10 +151,14 @@ final class RunScheduleCommandStub extends BackupTestRunScheduleCommand
     /**
      * @param string $command Command-channel wire name (ignored)
      * @param array<string, mixed> $payload Request payload (ignored)
+     * @param ?float $waitSeconds Wait budget (ignored)
      * @return CommandChannelResult Canned reply
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         return CommandChannelResult::replied($this->reply, self::ADDRESS);
     }
 }

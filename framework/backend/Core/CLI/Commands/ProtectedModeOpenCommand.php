@@ -6,10 +6,13 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\ProtectedMode\ProtectedModeReAskVerdict;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * ProtectedModeOpenCommand - open the system to everyone, ending the verification window.
@@ -32,7 +35,7 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
  */
 class ProtectedModeOpenCommand implements CommandInterface, DatabaseFreeCommand
 {
-    use CommandChannelClientTrait;
+    use ProtectedModeReAskTrait;
 
     /**
      * Returns command name for CLI routing.
@@ -113,7 +116,43 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, $this->getName());
+            try {
+                $outcome = $this->reAskProtectedMode(
+                    $this->getName(),
+                    null,
+                    [ProtectedModeRuntime::PHASE_INACTIVE],
+                );
+            } catch (EnvException $e) {
+                echo "Error: {$e->getMessage()}\n";
+
+                return ExitCode::CONFIG_ERROR;
+            }
+
+            $seconds = (int)CommandChannelWindows::CALLER_WAIT_SECONDS;
+            if ($outcome->verdict === ProtectedModeReAskVerdict::UNKNOWN) {
+                return $this->printToStandardError(
+                    "The daemon did not answer {$outcome->driveCommand} within {$seconds}s, and did not answer "
+                        . CliCommands::PROTECTED_MODE_INSPECT
+                        . ' either; whether the system opened is unknown',
+                );
+            }
+
+            $phase = $outcome->snapshot[ProtectedModeCommandConstants::FIELD_PHASE] ?? null;
+            $phaseText = is_string($phase) ? $phase : 'unknown';
+            if ($outcome->verdict !== ProtectedModeReAskVerdict::TAKEN) {
+                return $this->printToStandardError(
+                    "The daemon did not answer {$outcome->driveCommand} within {$seconds}s;"
+                        . " the node reads phase '{$phaseText}', so the system is NOT open",
+                );
+            }
+
+            $this->writeToStandardError(
+                "The daemon did not answer {$outcome->driveCommand} within {$seconds}s;"
+                    . ' asked the node for its state instead',
+            );
+            echo "Protected mode lifted, the system is open (phase: {$phaseText})\n";
+
+            return ExitCode::SUCCESS;
         }
 
         $reply = $result->reply;

@@ -48,10 +48,14 @@ final class BackupRestoreCommandProbe extends BackupRestoreCommand
     /**
      * @param string $command Command-channel wire name
      * @param array<string, mixed> $payload Request payload
+     * @param ?float $waitSeconds Wait budget (ignored)
      * @return CommandChannelResult Next canned reply, or an unreachable channel when none remain
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         $this->sent[] = ['command' => $command, 'payload' => $payload];
 
         $reply = array_shift($this->replies);

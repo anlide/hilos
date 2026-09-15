@@ -188,10 +188,14 @@ final class BackupTestAgeCommandSpy extends BackupTestAgeCommand
      *
      * @param string $command Command-channel wire name
      * @param array<string, mixed> $payload Request payload
+     * @param ?float $waitSeconds Wait budget (ignored)
      * @return CommandChannelResult Canned reply
      */
-    protected function sendCommand(string $command, array $payload): CommandChannelResult
-    {
+    protected function sendCommand(
+        string $command,
+        array $payload,
+        ?float $waitSeconds = null,
+    ): CommandChannelResult {
         $this->sentCommand = $command;
         $this->sentPayload = $payload;
 

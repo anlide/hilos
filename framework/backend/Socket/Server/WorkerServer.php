@@ -1591,11 +1591,11 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /**
      * Names the agents {@see stopAgentsForProtectedMode()} stopped for the freeze in flight.
      *
-     * Read-only: this is what the test-only inspector reports as this node's own view of the
+     * Read-only: this is what `protected-mode:inspect` reports as this node's own view of the
      * freeze ({@see ProtectedModeSnapshotSource}), next to the runtime row. The row alone
-     * would not answer the question a test actually asks - it says the mode is on, while this
-     * says the roster it took down here, which is the difference between a decision to freeze
-     * and a freeze that took hold.
+     * would not answer whether the freeze took hold here - it says the mode is on, while this
+     * says the roster it took down on this node. Neither claim is a cluster-wide quiescence
+     * verdict.
      *
      * Returns the ids rather than the parsed pairs so the reply speaks the same vocabulary as
      * the freeze log and the agent-start gate, and so the id spelling stays owned by the one

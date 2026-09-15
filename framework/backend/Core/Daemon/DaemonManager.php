@@ -1336,13 +1336,14 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Reports this node's own view of protected mode for the test-only inspector.
+     * Reports this node's own view of protected mode for `protected-mode:inspect`.
      *
      * Joins the two halves of the answer that only the master holds together: the runtime row
      * ({@see StateProtectedModeRuntime}, the freeze's own account of itself) and this node's
      * agent roster ({@see WorkerServer::getProtectedModeStoppedAgents()}, what the freeze
-     * actually did here). A test asserting that the mode took hold needs both - the row can say
-     * active on a node whose roster the freeze never reached.
+     * actually did here). A caller checking that the mode took hold needs both - the row can say
+     * active on a node whose roster the freeze never reached. This remains a local-node view,
+     * not a cluster-wide quiescence verdict.
      *
      * A project with no runtime context answers an explicit false flag rather than an error or
      * an empty reply, because "protected mode is not taken" and "this project has no protected

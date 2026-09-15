@@ -13,7 +13,7 @@ use Hilos\Notification\NotificationCommandConstants;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
- * ProtectedModeCommandConstants - the wire vocabulary of the protected-mode test commands.
+ * ProtectedModeCommandConstants - the wire vocabulary of the protected-mode commands.
  *
  * The CLI side builds the request payload and reads the reply, the agent side and the
  * master side write it, so every half names its keys from here and they cannot drift
@@ -21,7 +21,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  *
  * Two vocabularies live here because the three commands share one subsystem: the drive
  * pair ({@see CliCommands::PROTECTED_MODE_TEST_ENTER} / {@see CliCommands::PROTECTED_MODE_TEST_LEAVE})
- * speaks the request/reply fields, and {@see CliCommands::PROTECTED_MODE_TEST_INSPECT}
+ * speaks the request/reply fields, and {@see CliCommands::PROTECTED_MODE_INSPECT}
  * speaks the snapshot fields the master fills in {@see DaemonManager::protectedModeSnapshot()}.
  *
  * The snapshot names the {@see ProtectedModeRuntime} row's fields with the row's own
@@ -32,6 +32,10 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * nobody, so putting it in a reply would hand every reader of the port the one
  * credential the freeze is built to withhold. Nothing needs it - a test drives the
  * mode through the agent and asserts on the phase.
+ *
+ * The snapshot is this node's view, not an answer that every node in a cluster has
+ * quiesced. An initiating follower remains activating while the leader alone records
+ * that cluster-wide fact, so callers must not derive it from this local phase.
  */
 final class ProtectedModeCommandConstants
 {

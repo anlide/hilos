@@ -25,7 +25,7 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
  *
  * The reply is a verdict, not an acknowledgement: it returns once the freeze actually took
  * hold (the agent answers from its ready hook), so a test can act on the next line instead of
- * polling {@see ProtectedModeTestInspectCommand}. A refusal comes back as its reason - the
+ * polling {@see ProtectedModeInspectCommand}. A refusal comes back as its reason - the
  * agent pre-checks its own runtime row and answers, because the core drops a repeat enable
  * with a warning and replies to nobody, which would otherwise reach the caller as a mute
  * timeout.
