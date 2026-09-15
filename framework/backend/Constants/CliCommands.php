@@ -153,6 +153,9 @@ final class CliCommands
      */
     public const string COMMAND_TEST_ECHO = 'test:command:echo';
 
+    /** @var string Command: Bulk-seed N notification rows for one fixture user (test-only) */
+    public const string NOTIFICATION_TEST_SEED = 'test:notification:seed';
+
     /**
      * Emit one durable notification to a user through the live daemon (test-only).
      *

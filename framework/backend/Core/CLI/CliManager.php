@@ -51,6 +51,7 @@ use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationUpCommand;
 use Hilos\Core\CLI\Commands\NotificationTestEmitCommand;
+use Hilos\Core\CLI\Commands\NotificationTestSeedCommand;
 use Hilos\Core\CLI\Commands\SettingOverrideTestCreateCommand;
 use Hilos\Core\CLI\Commands\SettingOverrideTestDeleteCommand;
 use Hilos\Core\CLI\Commands\OrphanTestCreateCommand;
@@ -152,6 +153,7 @@ class CliManager
         $this->commands[CliCommands::SETTING_OVERRIDE_TEST_CREATE] = new SettingOverrideTestCreateCommand();
         $this->commands[CliCommands::SETTING_OVERRIDE_TEST_DELETE] = new SettingOverrideTestDeleteCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
+        $this->commands[CliCommands::NOTIFICATION_TEST_SEED] = new NotificationTestSeedCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
         $this->commands[CliCommands::COMMAND_TEST_ECHO] = new CommandTestEchoCommand();
         $this->commands[CliCommands::LOG_TEST_APPEND] = new LogTestAppendCommand();

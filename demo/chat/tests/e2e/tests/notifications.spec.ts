@@ -10,7 +10,7 @@ import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
 import { emitNotification } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
-import { signUp, signUpWithVerifiedEmail } from '../helpers/session'
+import { login, signUp, signUpWithVerifiedEmail } from '../helpers/session'
 
 // Notification-center e2e (HIL-558): the first browser coverage of the
 // notification subsystem. A notification is emitted through the live daemon over
@@ -69,6 +69,19 @@ async function openBell(page: Page): Promise<void> {
 function badge(page: Page): Locator {
   return page.getByTestId('hilos-notification-badge')
 }
+
+test('the seeded recipient sees the bounded menu and full unread badge', async ({
+  page,
+}) => {
+  await gotoPage(page, '/profile')
+  await login(page, 'seed-001@example.test')
+
+  await expect(badge(page)).toHaveText(/^22\b/)
+
+  await openBell(page)
+  const menu = page.getByTestId('hilos-notification-menu')
+  await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(20)
+})
 
 /**
  * Type a value the way a user does: clear, then key by key. A bare `fill(value)`
