@@ -455,11 +455,10 @@ final class Hilos extends HilosFacade
      * owners no longer collide. The rights of nobody changed when the list was written - what
      * writes today goes on writing, out loud instead of by eye.
      *
-     * Three of the rows are this demo's own tables: the person is held by the chat agent, the
-     * users library and the admin index agent at once, and the events they appear in and the log
-     * line of a rename by the first and the last of those. The other four are the framework's
-     * auth libraries and the code agent sharing the tables of signing in, and they stand the same
-     * way in every demo that switches those features on.
+     * One of the rows is this demo's own table: the person is held by the chat agent and the users
+     * library at once. The other four are the framework's auth libraries and the code agent sharing
+     * the tables of signing in, and they stand the same way in every demo that switches those
+     * features on.
      *
      * Parting them for real is somebody else's work, and it has an address: HIL-630 gives the
      * person an agent of their own, and the auth libraries are parted with it.
