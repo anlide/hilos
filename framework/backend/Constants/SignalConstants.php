@@ -57,4 +57,10 @@ final class SignalConstants
      *   which never crosses the wire (docs/agents/frontend/wire-protocol.md)
      */
     public const string ACTION_FAILED_REASON = 'The action could not be completed.';
+
+    /**
+     * @var string Reason sent in place of a refused page subscription's own message, which is
+     *   written for the journal and never crosses the wire (docs/agents/frontend/wire-protocol.md)
+     */
+    public const string SUBSCRIPTION_FAILED_REASON = 'The page could not be opened.';
 }

@@ -81,6 +81,10 @@ framework or demo code yet — that is expected. Do not delete them as "dead cod
 they exist so a project always has the right status class without re-inventing
 one, and `PageSignalRouter` maps each to a `subscription_page_error` signal.
 
+The message of these exceptions is written for the journal, not for the client:
+the frame carries the status and error code with a placeholder, so the message may
+name keys, ids and collections (`docs/agents/frontend/wire-protocol.md`).
+
 `PageInternalErrorException` is the one with a framework-side thrower of its own:
 `BrowserContext` raises it when a page's `BROWSER` declaration is malformed, which
 is a mistake in the topology rather than anything the subscriber did. See

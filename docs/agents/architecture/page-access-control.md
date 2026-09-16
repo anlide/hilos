@@ -165,7 +165,12 @@ method's body changes.
 ## Error codes
 
 A guard failure throws a `PageSubscriptionException` subclass, which is caught and
-sent to the client as a `subscription_page_error` signal:
+sent to the client as a `subscription_page_error` signal. The frame carries the
+exception's HTTP status and error code, but not its message: that text is written
+for the journal, and the router logs it in full on the refusal's info line, while
+`message` carries `SignalConstants::SUBSCRIPTION_FAILED_REASON` (or the
+internal-error sentence for a 500). The frontend picks what to show by the codes
+(`docs/agents/frontend/wire-protocol.md`):
 
 - 404 `not_found` — `PageResourceNotFoundException`: the resource is missing.
 - 403 `forbidden` — `PageForbiddenException`: authenticated but lacks rights.

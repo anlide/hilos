@@ -305,10 +305,10 @@ class PageSignalRouter
         } catch (PageInternalErrorException $e) {
             // Ahead of its own base class, because it is not the same event. Every other species
             // below is a verdict about the resource or the rights, reached on purpose and worth
-            // an info line and its own words to the subscriber. This one says the node is wrong
-            // about itself: error, because nobody comes to fix an info line, and scrubbed,
-            // because the text names the inside of the node and the subscriber can act on none
-            // of it. The frame it sends is the internal-error frame either way — the species
+            // an info line and a refusal placeholder to the subscriber. This one says the node is
+            // wrong about itself: error, because nobody comes to fix an info line, and the
+            // internal-error sentence, because the text names the inside of the node and the
+            // subscriber can act on none of it. The frame it sends is the internal-error frame either way — the species
             // already carries 500 and `internal_error`.
             Logger::error("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
@@ -331,7 +331,14 @@ class PageSignalRouter
             // subscription receives nothing WHILE the guard fails, yet resumes the
             // instant it passes.
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
+            $this->sendSubscriptionError(
+                $pageInstance,
+                $page,
+                $data->acceptKey,
+                $e->httpCode,
+                $e->errorCode,
+                ActionFailureReason::forSubscriber($e),
+            );
         } catch (Throwable $e) {
             Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
@@ -454,7 +461,14 @@ class PageSignalRouter
             );
         } catch (PageSubscriptionException $e) {
             Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
+            $this->sendSubscriptionError(
+                $pageInstance,
+                $page,
+                $data->acceptKey,
+                $e->httpCode,
+                $e->errorCode,
+                ActionFailureReason::forSubscriber($e),
+            );
         } catch (Throwable $e) {
             Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(

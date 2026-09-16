@@ -26,6 +26,11 @@ use Throwable;
  * already carries the table-action refusals through {@see TableActionException}, and is
  * already read that way on the agent-signal path. A second mechanism beside it would
  * have to be remembered by every future thrower; this one is remembered by the type.
+ *
+ * The door has a second edge besides actions: a refused page subscription, which the
+ * router turns into a subscription error frame. It is asked the same question and answers
+ * with its own placeholder, so the rule of whose text crosses the wire reads in this one
+ * file for both (HIL-956).
  */
 final class ActionFailureReason
 {
@@ -56,6 +61,28 @@ final class ActionFailureReason
     {
         if (!self::isPersonFacing($e)) {
             return SignalConstants::ACTION_FAILED_REASON;
+        }
+
+        return $e->getMessage();
+    }
+
+    /**
+     * Reduces a page subscription refusal to what may cross the wire.
+     *
+     * The policy is the one {@see self::forClient()} applies; only the placeholder differs,
+     * because a refused page is not a refused action. No subscription refusal is of the
+     * person-facing family: its message - a guard's canonical phrase, a missing key, a
+     * malformed route param - is written for the journal the router already filled, so the
+     * subscriber gets the placeholder, while the frame's HTTP and error codes still say what
+     * happened.
+     *
+     * @param Throwable $e Refusal raised while subscribing to a page or updating the subscription
+     * @return string Message safe to deliver to the subscriber
+     */
+    public static function forSubscriber(Throwable $e): string
+    {
+        if (!self::isPersonFacing($e)) {
+            return SignalConstants::SUBSCRIPTION_FAILED_REASON;
         }
 
         return $e->getMessage();

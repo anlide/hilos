@@ -204,18 +204,26 @@ names a table, a column set and an index to anyone holding a socket, and tells
 the user nothing they can act on. It is a leak whether or not the frontend
 renders it.
 
-The framework enforces this at one edge, and the rule reads as a single line:
+The framework enforces this at two edges, and the rule reads as a single line:
 **an exception's own message crosses the wire only when the exception is a
-`ValidationException`.** Everything else is replaced by
-`SignalConstants::ACTION_FAILED_REASON` and stays in the log, which
-`PageSignalRouter` writes in full — class, message, file, line, trace. A handler
+`ValidationException`.** Everything else is replaced by a placeholder and stays in
+the log, which `PageSignalRouter` writes in full. An action failure becomes
+`SignalConstants::ACTION_FAILED_REASON` in `action_error`, logged with class,
+message, file, line and trace; a refused page subscription becomes
+`SignalConstants::SUBSCRIPTION_FAILED_REASON` in `subscription_page_error`, whose
+`httpCode` and `errorCode` still say what happened and whose cause is on the
+router's info line. Both placeholders are picked by the same check. A handler
 that wants the person to read something specific raises an exception in that
 family, and `TableActionException` — the one most table and page handlers already
 throw — is in it.
 
 The check lives in `ActionFailureReason`, and every path that turns an exception
 into client text goes through it: the tracked failure ack, the untracked
-`ActionReply::sendException()`, and an agent answering its own action. A reason a
+`ActionReply::sendException()`, an agent answering its own action
+(`forClient()`), and the two catch blocks of a refused page subscription and
+subscription update (`forSubscriber()`). No `PageSubscriptionException` is in the
+`ValidationException` family, so a subscription refusal never carries its own
+words today. A reason a
 handler wrote *by hand* and passed to `sendActionFail()` does not pass the gate
 and does not need to: its author is already a person writing for a person. The
 gate stands on the conversion of an exception into a sentence, not on the field.

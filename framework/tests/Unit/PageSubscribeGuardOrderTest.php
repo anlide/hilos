@@ -216,11 +216,12 @@ final class PageSubscribeGuardOrderTest extends TestCase
     }
 
     /**
-     * The refusals keep their words, and that is the whole reason the internal error had to be
-     * split out rather than the branch scrubbed wholesale: "resource #9 not found" is about the
-     * resource, the subscriber can act on it, and the client renders it.
+     * A refusal stays a verdict about the subscriber, which is why the internal error had to be
+     * split out: an info line rather than an error, and its own codes on the wire. Its words do
+     * not travel since HIL-956 - they are written for the journal - so the frame carries the
+     * subscription placeholder, not the internal-error sentence.
      */
-    public function testARefusalStillTellsTheSubscriberWhatItRefused(): void
+    public function testARefusalIsAnInfoLineAndARefusalOnTheWire(): void
     {
         Hilos::$browser = new SubscribeGuardOrderTestBrowser(null);
         $factory = new SubscribeGuardOrderTestPageFactory(new SubscribeGuardOrderTestAgent());
@@ -236,7 +237,7 @@ final class PageSubscribeGuardOrderTest extends TestCase
             SubscribeGuardOrderTestPage::PAGE,
             401,
             'unauthorized',
-            'Authentication required',
+            SignalConstants::SUBSCRIPTION_FAILED_REASON,
         );
 
         $lines = $this->writtenLines();
