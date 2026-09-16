@@ -8,6 +8,8 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
@@ -70,6 +72,8 @@ final class Event extends DbItem
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend Prepare a legacy frontend-safe entity payload
      * @return array<string, mixed> Event payload
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function toArray(
         bool $withId = true,

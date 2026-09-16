@@ -344,6 +344,7 @@ final class SourceIndex
 
         $name = $this->namespace === '' ? $nameToken[1] : $this->namespace . '\\' . $nameToken[1];
         $isAbstract = $this->declaredAbstract($this->cursor - 2);
+        $doc = $this->classDoc($this->cursor - 2);
         $line = $nameToken[2];
         $this->cursor++;
         [$parent, $interfaces] = $this->readInheritance($keyword === T_INTERFACE);
@@ -351,7 +352,7 @@ final class SourceIndex
             return;
         }
 
-        $this->readBody($name, $parent, $interfaces, $isAbstract, $line);
+        $this->readBody($name, $parent, $interfaces, $isAbstract, $line, $doc);
     }
 
     /**
@@ -376,6 +377,35 @@ final class SourceIndex
         }
 
         return false;
+    }
+
+    /**
+     * Walks backwards over the same run of modifiers {@see self::declaredAbstract()}
+     * reads, rather than carrying the last docblock seen in readFile(): nothing but
+     * modifiers stands between a class docblock and its keyword, while a carried
+     * docblock would have to be dropped on the namespace, on every `use` and on every
+     * other top-level token, or the file's own docblock would end up on the class.
+     *
+     * The price is an attribute in front of the declaration: it ends the walk and the
+     * tags above it stay unread. No class in the framework backend or in a demo backend
+     * carries one there.
+     *
+     * @param int $cursor Index of the token directly before the declaration keyword
+     * @return ?string Docblock standing in front of the declaration, or null when there is none
+     */
+    private function classDoc(int $cursor): ?string
+    {
+        for (; $cursor >= 0; $cursor--) {
+            $type = $this->tokens[$cursor][0];
+            if ($type === T_DOC_COMMENT) {
+                return $this->tokens[$cursor][1];
+            }
+            if ($type !== T_ABSTRACT && $type !== T_FINAL && $type !== T_READONLY) {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -441,8 +471,9 @@ final class SourceIndex
      * @param array<int, string> $interfaces Fully qualified interfaces
      * @param bool $isAbstract True when the declaration carries the `abstract` modifier
      * @param int $line Line the declaration sits on
+     * @param ?string $classDoc Docblock standing in front of the declaration
      */
-    private function readBody(string $name, ?string $parent, array $interfaces, bool $isAbstract, int $line): void
+    private function readBody(string $name, ?string $parent, array $interfaces, bool $isAbstract, int $line, ?string $classDoc): void
     {
         $this->cursor++;
         $this->currentClass = $name;
@@ -450,6 +481,7 @@ final class SourceIndex
         $traits = [];
         $methods = [];
         $properties = [];
+        $docProperties = $this->propertyTags($classDoc);
         $constants = [];
         $constantClasses = [];
         $doc = null;
@@ -540,6 +572,7 @@ final class SourceIndex
             $traits,
             $methods,
             $properties,
+            $docProperties,
             $constants,
             $constantClasses,
             $isAbstract,
@@ -1312,6 +1345,33 @@ final class SourceIndex
             $declared = $this->typeFromDocText($written);
             if ($declared !== null) {
                 $types[$matches[1]] = $declared;
+            }
+        }
+
+        return $types;
+    }
+
+    /**
+     * `@property-write` is not read: nothing can be read through it, so a receiver
+     * type taken from it would be a guess.
+     *
+     * @param ?string $doc Class docblock to read
+     * @return array<string, string> Declared type by property name without its dollar, an `[]` suffix marking an array of it
+     */
+    private function propertyTags(?string $doc): array
+    {
+        $types = [];
+        foreach (['property-read', 'property'] as $tag) {
+            foreach ($this->docTags($doc, $tag) as $text) {
+                [$written, $length] = $this->readTypeExpression($text);
+                $matches = [];
+                if (preg_match('/^\s*\$(\w+)/', substr($text, $length), $matches) !== 1) {
+                    continue;
+                }
+                $declared = $this->typeFromDocText($written);
+                if ($declared !== null) {
+                    $types[$matches[1]] = $declared;
+                }
             }
         }
 

@@ -7,6 +7,8 @@ namespace Demo\Chat\Database\View\Item;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
@@ -66,6 +68,8 @@ final class EventAttachment extends DbItem
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend Prepare a legacy frontend-safe entity payload
      * @return array<string, mixed> Attachment payload
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function toArray(
         bool $withId = true,

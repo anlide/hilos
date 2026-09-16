@@ -31,7 +31,8 @@ use Hilos\Tests\CodeStyle\Violation;
  * The rule is deliberately narrower than its document — see {@see self::SCOPE} — and
  * never wider: a call whose target is not written down anywhere is left alone. A
  * constant that names a magic property's class is a type written down on the class
- * itself, so resolving it does not widen that boundary.
+ * itself, and so is a class-level `@property-read` or `@property` tag naming it, so
+ * resolving either does not widen that boundary.
  */
 final class ThrowsPropagationRule implements CrossFileRule
 {
@@ -45,9 +46,10 @@ final class ThrowsPropagationRule implements CrossFileRule
     public const string SCOPE = 'THROWS-PROPAGATION judges only calls whose target is known without inferring a'
         . ' type — $this->, self::, static::, parent::, new, a call by class name, a parameter, property or loop'
         . ' variable with a declared type, an index on any of those, which stands for the ArrayAccess method behind'
-        . ' the brackets, and a magic property whose class the class it is read on names in a constant. A member'
-        . ' reached through __get() and named nowhere, and a vendor class, are outside it by declaration, not for'
-        . ' want of debt:';
+        . ' the brackets, a magic property whose class the class it is read on names in a constant, and one whose'
+        . ' type that class writes down in a class-level @property-read or @property tag, the nearest such record'
+        . ' winning. A member reached through __get() and named nowhere, and a vendor class, are outside it by'
+        . ' declaration, not for want of debt:';
 
     private const string DOC = 'docs/agents/code-style/phpdoc.md';
 

@@ -24,6 +24,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Collection\AuthBlocks;
 use Hilos\Database\View\Item\AuthBlock;
 use Hilos\Hilos;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Item\AuthAttempt as ViewAuthAttempt;
@@ -121,6 +123,8 @@ final class AuthThrottleAgent extends AbstractAgent
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is neither of the two it answers
      * @throws InvalidArgumentException When the verdict signal cannot be named or queued
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {

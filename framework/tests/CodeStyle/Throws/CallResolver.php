@@ -144,6 +144,16 @@ final readonly class CallResolver
     }
 
     /**
+     * Asks each class of the chain its real declaration first and its class-level tag
+     * second, and only then climbs to the traits and the parent, so the record on the
+     * class itself outranks the one it inherits.
+     *
+     * A tag is taken only when the index holds the class it names. `DbCollection`
+     * writes `@property-read TObjectCollection $objectCollection`, a generic placeholder
+     * no root declares; answering with it would end the search before
+     * {@see self::magicPropertyType()} is ever asked, and every receiver whose class
+     * a constant names would go silent again.
+     *
      * @param string $class Fully qualified class the property is read on
      * @param string $step Property name, a leading `$` marking a static one
      * @param array<int, string> $visited Classes already looked in, guarding a malformed cycle
@@ -163,6 +173,10 @@ final readonly class CallResolver
         if (isset($record->propertyTypes[$step])) {
             return $record->propertyTypes[$step];
         }
+        $tagged = $record->docPropertyTypes[$step] ?? null;
+        if ($tagged !== null && $this->index->find($this->elementType($tagged)) !== null) {
+            return $tagged;
+        }
 
         $visited[] = $key;
         $sources = $record->parent === null ? $record->traits : [...$record->traits, $record->parent];
@@ -174,5 +188,14 @@ final readonly class CallResolver
         }
 
         return null;
+    }
+
+    /**
+     * @param string $type Declared type, an `[]` suffix marking an array of it
+     * @return string The class the type names, with the array marker taken off
+     */
+    private function elementType(string $type): string
+    {
+        return str_ends_with($type, self::ARRAY_SUFFIX) ? substr($type, 0, -strlen(self::ARRAY_SUFFIX)) : $type;
     }
 }

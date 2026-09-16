@@ -170,9 +170,12 @@ Checked automatically: `THROWS-PROPAGATION`, see
 [automated-checks.md](automated-checks.md). The check is narrower than this
 section by declaration — it judges the call forms whose target is written down,
 across every production root. It also judges `$this->objectCollection` in a View
-collection when that class declares `OBJECT_COLLECTION_CLASS`; the same name in an
-Actions class with no such constant is still outside it. A green run answers for
-those forms wherever they sit, and the audit above answers for everything else.
+collection when that class declares `OBJECT_COLLECTION_CLASS`, and any property
+whose type the class it is read on writes down in a class-level `@property-read` or
+`@property` tag — a tag on the class itself outranks the one it inherits, and a tag
+naming a class no scanned root declares leaves that receiver outside the check. A
+green run answers for those forms wherever they sit, and the audit above answers
+for everything else.
 The check judges tags a call requires, not tags left behind after a call is
 removed; after deleting a call, reread the caller's own `@throws`.
 

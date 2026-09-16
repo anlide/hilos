@@ -25,6 +25,7 @@ use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -215,6 +216,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     protected function processReadBuffer(): void
     {

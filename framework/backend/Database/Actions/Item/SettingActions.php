@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -44,6 +46,9 @@ final class SettingActions extends DbActions
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting write
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      */
     public function updateValue(mixed $value): void
     {
@@ -78,6 +83,7 @@ final class SettingActions extends DbActions
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function delete(): void
     {

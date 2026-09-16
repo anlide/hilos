@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\CloneException;
@@ -221,6 +223,8 @@ abstract class DbItem
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken). ID is always included when true.
      * @return array<string, mixed> Item data as associative array
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function toArray(
         bool $withId = true,

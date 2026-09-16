@@ -10,6 +10,11 @@ namespace Hilos\Tests\CodeStyle\Throws;
  * the declarations a rule judges the class itself by — its constants, the qualified
  * class names stored beside their raw value text, whether it is abstract, and where
  * it stands.
+ *
+ * The types a class-level `@property-read` or `@property` tag writes down are kept
+ * apart from the real declarations rather than merged into them: a declaration inside
+ * the class is stronger than a tag on the same class, and a tag naming a class the
+ * index does not hold must not look found — a merged map could say neither.
  */
 final readonly class ClassRecord
 {
@@ -21,6 +26,7 @@ final readonly class ClassRecord
      * @param array<int, string> $traits Fully qualified used traits
      * @param array<string, MethodRecord> $methods Methods keyed by lowercased name
      * @param array<string, string> $propertyTypes Declared type by property name, a leading `$` marking a static one
+     * @param array<string, string> $docPropertyTypes Declared type by property name, as a class-level @property-read or @property tag wrote it down
      * @param array<string, string> $constants Raw value text by constant name, as it stands after the `=`
      * @param array<string, string> $constantClasses Fully qualified class by constant name, for a constant whose value is `X::class`
      * @param bool $isAbstract True when the declaration carries the `abstract` modifier
@@ -34,6 +40,7 @@ final readonly class ClassRecord
         public array $traits,
         public array $methods,
         public array $propertyTypes,
+        public array $docPropertyTypes,
         public array $constants,
         public array $constantClasses,
         public bool $isAbstract,
