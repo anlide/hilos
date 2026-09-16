@@ -25,6 +25,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -493,10 +494,15 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * The reopen section is the personal half of this frame, and the reason the hook is given an
      * accept key at all: the answer differs between two subscribers of the same page, because the
      * right belongs to the browser session that started the restore and to no other. It is
-     * computed once here rather than pushed later because nothing can change it under a mounted
-     * page - lifting the mode reloads every tab, and re-entering the freeze replaces the page with
-     * the maintenance placeholder. A restore begun from a terminal or a schedule leaves the row
-     * with no initiator session at all, and then it is false for everybody, production included.
+     * computed here, and it DOES change under a mounted page: the operator's tabs stay subscribed
+     * through the whole freeze, so when the verification window opens they come off the stub onto
+     * the page they were answered while the phase was inactive. That answer is not pushed as a
+     * section of its own - the window re-decides every open page of the initiator's session
+     * ({@see PageAccessReassessment::forSession()}), which runs this hook again and sends the fresh
+     * answer as an ordinary page answer (HIL-911). The other two moves need nothing: lifting the
+     * mode reloads every tab, and re-entering the freeze replaces the page with the maintenance
+     * placeholder. A restore begun from a terminal or a schedule leaves the row with no initiator
+     * session at all, and then it is false for everybody, production included.
      *
      * @param string $acceptKey WebSocket accept key of the subscribing connection
      * @param PageRouteParams $params Route params from page subscription (unused; the page takes none)

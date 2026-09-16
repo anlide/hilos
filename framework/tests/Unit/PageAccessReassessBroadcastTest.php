@@ -19,9 +19,14 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\WebSocket\Exception\HandshakeFailedException;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
@@ -31,8 +36,9 @@ use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The master's half of the access re-decision (HIL-644, HIL-652): it fans the announcement out
- * and does nothing else with it.
+ * The master's half of the access re-decision (HIL-644, HIL-652, HIL-911): it fans the
+ * announcement out and does nothing else with it - except for the by-session criterion, which
+ * only the master can resolve into connections.
  *
  * The master is the only process that can address "every worker of this node", and it is also
  * the one process that cannot say who is behind a connection - so what is pinned here is a
@@ -50,17 +56,32 @@ final class PageAccessReassessBroadcastTest extends TestCase
     /** @var list<string> Accept keys of the session whose sign-out is announced */
     private const array ACCEPT_KEYS = ['ak-first', 'ak-second'];
 
+    /** Session cookie of the browser whose open pages are re-judged, in the minted token form */
+    private const string SESSION_TOKEN = '0123456789abcdef0123456789abcdef';
+
+    /** Session cookie of any other browser, same form and a different value */
+    private const string STRANGER_SESSION_TOKEN = 'fedcba9876543210fedcba9876543210';
+
     /** Temporary main log file the assertions read the written lines back from */
     private string $logFile = '';
+
+    private ?EnvAccessor $previousEnv = null;
 
     protected function setUp(): void
     {
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-page-access-broadcast');
         Logger::setLogFile($this->logFile);
+        // A connection gets its session hash from the cookie its handshake presents, and which
+        // cookie that is comes from the environment.
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        Hilos::$env = new EnvAccessor();
+        putenv('HILOS_SESSION_COOKIE_NAME=' . PageAccessReassessBroadcastTestWebSocketServer::SESSION_COOKIE_NAME);
     }
 
     protected function tearDown(): void
     {
+        putenv('HILOS_SESSION_COOKIE_NAME');
+        Hilos::$env = $this->previousEnv;
         Logger::resetLogFile();
 
         if (is_file($this->logFile)) {
@@ -184,6 +205,58 @@ final class PageAccessReassessBroadcastTest extends TestCase
     }
 
     /**
+     * The by-session announcement is the one the master does not merely pass on (HIL-911). A worker
+     * cannot tell which of its subscriptions belong to a browser, while the master holds exactly
+     * that - the sockets, each with the session it was accepted under. So the master answers the
+     * question and hands every worker the by-connection frame for the keys it found: both tabs of
+     * the browser, and not the stranger connected beside them.
+     */
+    public function testTheBySessionAnnouncementReachesEveryWorkerAsTheConnectionsOfThatSession(): void
+    {
+        $manager = new PageAccessReassessBroadcastTestManager();
+        $workerServer = $manager->addWorkerServer();
+        $workerServer->addWorker();
+        $workerServer->addWorker();
+        $webSocketServer = $manager->addWebSocketServer();
+        $firstTab = $webSocketServer->connect(self::SESSION_TOKEN);
+        $secondTab = $webSocketServer->connect(self::SESSION_TOKEN);
+        $webSocketServer->connect(self::STRANGER_SESSION_TOKEN);
+
+        $manager->reassessPagesOfSession((string)$firstTab->sessionTokenHash);
+        $manager->dispatch();
+
+        $perWorker = $workerServer->framesPerWorker();
+        $this->assertCount(2, $perWorker);
+        foreach ($perWorker as $frames) {
+            $this->assertCount(1, $frames);
+            $restored = WorkerDTO::factoryWorkerDTO($frames[0]);
+            $this->assertInstanceOf(WorkerPageAccessReassessConnectionsMessageDTO::class, $restored);
+            $this->assertSame([$firstTab->acceptKey, $secondTab->acceptKey], $restored->acceptKeys);
+        }
+        $this->assertSame('', $this->written());
+    }
+
+    /**
+     * A session with no connection on this node has no open page here, and an empty list would
+     * cost every worker a frame that re-judges nothing - the rule the by-connection announcement
+     * already keeps at its own door.
+     */
+    public function testASessionWithNoConnectionHereAnnouncesNothing(): void
+    {
+        $manager = new PageAccessReassessBroadcastTestManager();
+        $workerServer = $manager->addWorkerServer();
+        $workerServer->addWorker();
+        $webSocketServer = $manager->addWebSocketServer();
+        $webSocketServer->connect(self::STRANGER_SESSION_TOKEN);
+
+        $manager->reassessPagesOfSession(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN));
+        $manager->dispatch();
+
+        $this->assertSame([[]], $workerServer->framesPerWorker());
+        $this->assertSame('', $this->written());
+    }
+
+    /**
      * A frame the master cannot build is a frame it must not invent a user id for: nothing goes
      * out, and the line names the class that arrived instead.
      */
@@ -247,6 +320,19 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
         $this->registerServer($this->workerServer);
 
         return $this->workerServer;
+    }
+
+    /**
+     * Registers the stand-in WebSocket server whose connections a session is resolved against.
+     *
+     * @return PageAccessReassessBroadcastTestWebSocketServer The registered stand-in, for connecting browsers to it
+     */
+    public function addWebSocketServer(): PageAccessReassessBroadcastTestWebSocketServer
+    {
+        $server = new PageAccessReassessBroadcastTestWebSocketServer();
+        $this->registerServer($server);
+
+        return $server;
     }
 
     /**
@@ -416,6 +502,70 @@ final class PageAccessReassessBroadcastTestWorkerServer extends WorkerServer
 
     protected function onStart(): void
     {
+    }
+}
+
+/**
+ * A WebSocket server whose connections are handshaken probes rather than accepted sockets.
+ */
+final class PageAccessReassessBroadcastTestWebSocketServer extends WebSocketServer
+{
+    /** Name of the session cookie the probes present */
+    public const string SESSION_COOKIE_NAME = 'hilos_session_token';
+
+    public function __construct()
+    {
+        parent::__construct('127.0.0.1', 0);
+    }
+
+    /**
+     * Puts a handshaken connection on the server, carrying the cookie of one browser.
+     *
+     * Driven through the real handshake rather than assembled, because the session hash is derived
+     * there and nowhere else.
+     *
+     * @param string $sessionToken Session cookie the browser presents
+     * @return WebSocketClientTestProbe Connection with a completed handshake
+     * @throws HandshakeFailedException If the handshake is refused
+     */
+    public function connect(string $sessionToken): WebSocketClientTestProbe
+    {
+        $probe = WebSocketClientTestProbe::createSocketless();
+        $probe->feed(
+            "GET /ws HTTP/1.1\r\n"
+            . "Host: localhost:8092\r\n"
+            . "Upgrade: websocket\r\n"
+            . "Connection: Upgrade\r\n"
+            . 'Cookie: ' . self::SESSION_COOKIE_NAME . '=' . $sessionToken . "\r\n"
+            . 'Sec-WebSocket-Key: ' . base64_encode('0123456789abcdef') . "\r\n"
+            . "Sec-WebSocket-Version: 13\r\n"
+            . "\r\n",
+        );
+        $this->clients[] = $probe;
+
+        return $probe;
+    }
+
+    /**
+     * @return string Server name the failure card names
+     */
+    public function getServerName(): string
+    {
+        return 'page-access-reassess-broadcast-test';
+    }
+
+    protected function onStart(): void
+    {
+    }
+
+    /**
+     * @param resource $socket Client socket
+     * @return WebSocketClientInterface Never returned; this server accepts nothing
+     * @throws AgentDaemonCreationFailedException Always
+     */
+    protected function onCreateClient($socket): WebSocketClientInterface
+    {
+        throw new AgentDaemonCreationFailedException('the re-decision broadcast test accepts no connection');
     }
 }
 

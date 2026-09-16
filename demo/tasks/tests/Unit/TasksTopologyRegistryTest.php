@@ -22,6 +22,7 @@ use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
+use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
@@ -36,6 +37,8 @@ use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
 use Demo\Tasks\Tables\TasksTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -46,9 +49,11 @@ use Hilos\Log\LogSettingsCatalog;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -171,9 +176,8 @@ final class TasksTopologyRegistryTest extends TestCase
                 // that closes the action, and the session it rebinds is the library's (HIL-824).
                 HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
-                // A restore's logins and letters, offered by whoever holds them. Only the hand-over
-                // names land here: this demo registers no backup agent, so nothing writes the
-                // queues and no receipt has anybody to go to (HIL-846).
+                // A restore's logins and letters, offered by whoever holds them (HIL-846). The
+                // receipts go back to the backup agent, which this demo registers since HIL-911.
                 HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -193,6 +197,16 @@ final class TasksTopologyRegistryTest extends TestCase
                 // viewer and the rotations screen ask for, and the aggregator collects what
                 // each node reports and watches the index for the section agent.
                 HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
+                // The backup section's own frames: the page hands every operation to the
+                // monopoly agent, and the carry-over receipts of a restore come back to it
+                // (HIL-911 activates the feature here, so the React surface has one).
+                HilosSignalConstants::BACKUP_AGENT_CREATE => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_DELETE => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_SET_KEEP => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_RESTORE => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_REOPEN => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED => HilosAgentType::HILOS_BACKUP,
+                HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT => HilosAgentType::HILOS_BACKUP,
                 HilosSignalConstants::HILOS_OAUTH_PENDING => HilosAgentType::HILOS_OAUTH,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
@@ -228,6 +242,7 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::CODE_CHANNELS,
+            HilosFeature::BACKUP,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -309,6 +324,8 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame([
             TasksTableContext::settings => HilosSettingsTable::class,
             TasksTableContext::hilosUsers => HilosUsersTable::class,
+            TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
+            TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
             TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
             TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -322,6 +339,7 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 SettingsPage::PAGE,
+                BackupPage::PAGE,
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
@@ -335,6 +353,26 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             UserPage::PAGE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE],
+        );
+    }
+
+    public function testBackupAdminFeatureIsActivated(): void
+    {
+        // Backup is a configure-only framework feature with a monopoly agent behind it. It is
+        // activated here so the React surface has a backup page to prove the reopen block on
+        // (HIL-911): the page answered by the index agent, the agent pair, and both tables the
+        // page draws - the archives and the verifier circle.
+        $this->assertSame(BackupPage::class, Hilos::PAGES[BackupPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, BackupPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(BackupAgent::class, AgentRegistry::workerClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
+        ));
+        $this->assertSame(BackupAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
+        ));
+        $this->assertSame(
+            [TasksTableContext::hilosBackups => [], TasksTableContext::hilosVerifierCircle => []],
+            Hilos::PAGE_TABLES[BackupPage::PAGE],
         );
     }
 

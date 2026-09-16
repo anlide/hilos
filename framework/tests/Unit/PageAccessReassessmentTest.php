@@ -22,6 +22,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
+use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
@@ -48,7 +49,8 @@ use PHPUnit\Framework\TestCase;
  * sweep, the sweep that turns it into one re-decision per open page, and the receiving end that
  * re-runs the subscribe verdict for it.
  *
- * Both criteria are exercised here, and the by-connection one is not a copy of the by-user one
+ * All three criteria are exercised here (the by-session one only at its announcing end - the
+ * master resolves it, see PageAccessReassessBroadcastTest), and the by-connection one is not a copy of the by-user one
  * with different arguments: what it must prove is that it never asks who is behind a connection,
  * because the sign-out it follows has already erased the answer.
  *
@@ -175,6 +177,28 @@ final class PageAccessReassessmentTest extends TestCase
     {
         PageAccessReassessment::forConnections([]);
 
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * The by-session announcement names the session and nothing else, and it is raised by the
+     * daemon: its only caller is the verification window, and only the master can turn a session
+     * into connections (HIL-911). No worker sweep answers it - an open page of that session must not
+     * be answered here either.
+     */
+    public function testTheBySessionAnnouncementQueuesOneDaemonSignalNamingTheSession(): void
+    {
+        $this->subscribe('ak-private', ReassessTestPrivatePage::PAGE, []);
+
+        PageAccessReassessment::forSession('session-hash-7');
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertInstanceOf(SignalDTO::class, $signal);
+        $this->assertSame(SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION, $signal->signalType->getType());
+        $this->assertSame(SignalConstants::PAGE_ACCESS_REASSESS_SESSION, $signal->signalName->getName());
+        $this->assertSame(SignalSource::DAEMON, $signal->signalSource->getSource());
+        $this->assertInstanceOf(PageAccessReassessSessionSignalData::class, $signal->data);
+        $this->assertSame('session-hash-7', $signal->data->sessionTokenHash);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 

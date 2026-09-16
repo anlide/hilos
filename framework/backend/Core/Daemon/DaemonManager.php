@@ -78,6 +78,7 @@ use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
+use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\PageAccessReassessment;
@@ -1535,6 +1536,22 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Asks every open page of one browser session on this node to be answered again.
+     *
+     * Queues the by-session announcement and nothing more; the dispatch pass of the same loop
+     * resolves the session into accept keys and hands the workers the by-connection frame
+     * ({@see PageAccessReassessment::forSession()}). Queued rather than resolved here so that the
+     * phase write the executor made a moment ago reaches every worker first.
+     *
+     * @param string $sessionTokenHash Hash of the session token whose open pages are re-judged
+     * @throws InvalidArgumentException When the announcement cannot be named
+     */
+    public function reassessPagesOfSession(string $sessionTokenHash): void
+    {
+        PageAccessReassessment::forSession($sessionTokenHash);
+    }
+
+    /**
      * Register HTTP router
      *
      * @param HttpRouter $router HTTP router instance
@@ -2001,6 +2018,26 @@ abstract class DaemonManager extends BaseManager implements
                 } else {
                     Logger::error(
                         'dispatchSignals - by-connection re-decision carries invalid data: ' . get_class($signal->data),
+                    );
+                }
+            }
+
+            // The by-session criterion ends here, in the one process that can answer it (HIL-911):
+            // which sockets carry a session is known where they were accepted. The session becomes
+            // the accept keys of this node's connections, and the workers are handed the
+            // by-connection frame above - the question each of them already answers against its own
+            // subscription mirror. A session with no connection here announces nothing.
+            if ($signal->signalType->getType() === SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION) {
+                if ($signal->data instanceof PageAccessReassessSessionSignalData) {
+                    $acceptKeys = $webSocketServer === null
+                        ? []
+                        : $this->sessionAcceptKeys($webSocketServer, $signal->data->sessionTokenHash);
+                    if ($acceptKeys !== []) {
+                        $this->writeFrameToWorkers($workerServer, new WorkerPageAccessReassessConnectionsMessageDTO($acceptKeys));
+                    }
+                } else {
+                    Logger::error(
+                        'dispatchSignals - by-session re-decision carries invalid data: ' . get_class($signal->data),
                     );
                 }
             }
@@ -4441,6 +4478,36 @@ abstract class DaemonManager extends BaseManager implements
                 Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * Names the connections of one browser session held here, by their accept keys.
+     *
+     * The lookup twin of {@see sendToSessionClients()}: the same walk and the same filter, kept as
+     * a loop of its own because one is a delivery and the other a question, and routing the send
+     * through this list would make it build an array it has no use for. It serves the by-session
+     * re-decision, which has to hand the workers accept keys because a worker cannot tell which of
+     * its subscriptions belong to a session (HIL-911).
+     *
+     * @param WebSocketServer $server WebSocket server
+     * @param string $sessionTokenHash Hash of the session whose connections are named
+     * @return list<string> Accept keys of this node's connections carrying the session, empty when none does
+     */
+    private function sessionAcceptKeys(WebSocketServer $server, string $sessionTokenHash): array
+    {
+        $acceptKeys = [];
+        foreach ($server->getClients() as $client) {
+            if (!$client instanceof WebSocketClient || $client->sessionTokenHash === null) {
+                continue;
+            }
+            if (!hash_equals($sessionTokenHash, $client->sessionTokenHash)) {
+                continue;
+            }
+
+            $acceptKeys[] = $client->acceptKey;
+        }
+
+        return $acceptKeys;
     }
 
     /**

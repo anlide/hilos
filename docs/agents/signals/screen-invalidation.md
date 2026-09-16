@@ -87,7 +87,10 @@ A session losing its person is the same obligation with the other criterion:
 because the identity the first pair matches on is precisely what signing out
 removes. The one seam every way of losing it passes through is the
 `hilos_session_state` frame the sessions library ends it in, and the project
-handler of that frame is where both criteria are chosen between. Described in
+handler of that frame is where both criteria are chosen between. A third criterion,
+`forSession()`, serves a move of the node rather than of the person: the verification
+window of protected mode answers the operator's open pages again, because the backup page
+built its reopen block from the phase it was answered under (HIL-911). Described in
 [page-access-control.md](../architecture/page-access-control.md).
 
 **Converge of a registration.** A session parked on the code step of an

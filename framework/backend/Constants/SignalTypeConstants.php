@@ -69,6 +69,23 @@ final class SignalTypeConstants
      */
     public const string PAGE_ACCESS_REASSESS_CONNECTIONS = 'page_access_reassess_connections';
 
+    /**
+     * Access re-decision announcement by browser session (master-local, never reaches a worker).
+     *
+     * Names the hash of one session token, and it is the only criterion of the three a worker
+     * could not answer: which sockets carry a session is known where the sockets are, in the
+     * master. So the daemon both queues and consumes it, resolves the session into accept keys
+     * there, and hands the workers {@see self::PAGE_ACCESS_REASSESS_CONNECTIONS} instead - the
+     * question every worker already knows how to answer.
+     *
+     * Raised when a phase change devalues what a session's open pages were answered with rather
+     * than who the person is (HIL-911): the verification window opening under the tabs of the
+     * operator who ran the restore, whose backup page was answered while the phase was inactive.
+     *
+     * @var string
+     */
+    public const string PAGE_ACCESS_REASSESS_SESSION = 'page_access_reassess_session';
+
     /** @var string Page unsubscribe signal type */
     public const string PAGE_UNSUBSCRIBE = 'page_unsubscribe';
 

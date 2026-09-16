@@ -29,6 +29,7 @@ import { connection } from './bootstrap/connection'
 import { currentUserIsAdmin, currentUserName } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
+import HilosBackup from './views/Hilos/Backup/Backup'
 import HilosLogsKeys from './views/Hilos/Logs/Keys'
 import HilosLogsOverview from './views/Hilos/Logs/Overview'
 import HilosLogsRotations from './views/Hilos/Logs/Rotations'
@@ -62,6 +63,11 @@ const pages: Record<string, ComponentType> = {
   // user entity + presence sources on the backend.
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
+  // The framework backup page, activated configure-only: the framework owns the
+  // archive and verifier-circle tables, the create / delete / keep / reopen
+  // round-trips and the monopoly agent; the project binds its context
+  // (views/Hilos/Backup) and, on its backend, the catalog, the page and the table.
+  [HilosPages.BACKUP]: HilosBackup,
   // The framework logs section, activated whole: the framework owns the six
   // screens, their tables and every phrase on them; the project binds its
   // connection, scope stores and action lifecycle (views/Hilos/Logs) and, on its

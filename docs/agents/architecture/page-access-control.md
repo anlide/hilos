@@ -320,6 +320,28 @@ connection belongs to nobody" before it re-judges. The same handler picks the ot
 criterion when the frame names a user — a sign-in ADDS the identity, so
 `forUser($userId)` is the one that matches there.
 
+**A phase change of the node is the third trigger, and it names a SESSION** (HIL-911).
+Nothing about the person moves when protected mode opens its verification window, but
+what their open pages were answered with does: the operator's tabs stayed subscribed
+through the freeze, come off the stub onto the pages they already had, and the backup
+page built its reopen section while the phase was still inactive. Neither earlier
+criterion fits. The freeze row records the initiator by session hash, not by person,
+and the accept keys of those tabs are known to nobody who writes the phase.
+
+`PageAccessReassessment::forSession($sessionTokenHash)` queues one
+`page_access_reassess_session` announcement, and unlike its twins it is queued BY the
+master and consumed BY the master: which sockets carry a session is answered where the
+sockets were accepted. The dispatch pass walks its WebSocket clients exactly as
+`sendToSessionClients()` does, collects the accept keys whose hash matches, and hands
+every worker the existing `page_access_reassess_connections` frame — so the worker half
+is the by-connection sweep, unchanged, and nothing new reaches the wire. A session with no
+connection on the node announces nothing. The one caller is
+`DaemonProtectedModeExecutor::enterVerifying()`, through the
+`ProtectedModeClientNotifier::reassessPagesOfSession()` seam, and it calls AFTER the
+agents are resumed: a page is answered by the agent that serves it, and while the agents
+stand nobody would. Closing the window back and the final lift do not call it — behind
+the stub nothing of a page is visible, and the lift reloads the pages on the client.
+
 **The reach is node-local, and that is the whole operation's reach.** The other half of a
 rights change — the handshake re-send — is delivered by this node's WebSocket server, so a
 tab on another node never learns of the grant, never waits for an answer, and keeps the

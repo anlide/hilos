@@ -534,6 +534,18 @@ system that is running again. And when the freeze recognized no session — a CL
 restore, or a browser whose session the agent could not read — the frame is not
 sent at all, there being nothing to address it to.
 
+**Leaving the stub is not the whole way back, so the pages are answered again
+(HIL-911).** Those tabs come out onto the pages they already had, answered while the
+phase was still inactive — and the backup page built its reopen block from that phase,
+so the banner would tell the operator to reopen the system from a page offering nothing
+to press. `enterVerifying()` therefore ends by asking
+`ProtectedModeClientNotifier::reassessPagesOfSession()` to re-decide every open page of
+the initiator's session: the ordinary re-decision of an open page, by its session
+criterion ([page-access-control.md](page-access-control.md)), answered with a whole
+`page_response` the client ingests in place. It runs after the agents are resumed,
+because a page is answered by the agent serving it, and it is skipped exactly when the
+session frame is — no session, nothing to answer.
+
 **On the way out the frame goes to everybody, the initiator included.**
 `DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and
 the frame means reload: after a restore the initiator's data is as stale as

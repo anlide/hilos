@@ -3,6 +3,7 @@
 namespace Demo\Tasks\Database\Entity\Item;
 
 use Demo\Tasks\Database\Entity\Collection\UserRenames as EntityUserRenames;
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
@@ -58,6 +59,19 @@ final class UserRename extends Entity
 
     public const string _setVia = self::target_user_id;
     public const bool _setRoot = false;
+
+    // Both names are the person's, but two fake-name columns of one row would both read
+    // `User <pk>`: the new name is faked and the old one masked, so a rename stays a change.
+    public const array _pii = [
+        self::old_name => AnonymizationStrategy::MASK,
+        self::new_name => AnonymizationStrategy::FAKE_NAME,
+    ];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::target_user_id,
+        self::timestamp,
+    ];
 
     // Properties
     public ?int $id = null;

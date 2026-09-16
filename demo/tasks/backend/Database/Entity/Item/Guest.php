@@ -3,6 +3,7 @@
 namespace Demo\Tasks\Database\Entity\Item;
 
 use Demo\Tasks\Database\Entity\Collection\Guests as EntityGuests;
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
@@ -53,6 +54,11 @@ final class Guest extends Entity
 
     public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = false;
+
+    // Keyed by a session token, which is NOT NULL and UNIQUE, so nothing is left to rewrite
+    // the row into; nothing points at this table, and a restored copy purges the sessions
+    // these names belonged to anyway.
+    public const AnonymizationStrategy _pii = AnonymizationStrategy::PURGE;
 
     // Properties
     public ?int $id = null;

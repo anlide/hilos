@@ -12,6 +12,7 @@ use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Agents\TasksAgent;
 use Demo\Tasks\Auth\TasksCodeChannelRegistry;
+use Demo\Tasks\Backup\BackupCatalog;
 use Demo\Tasks\Browser\Table\UserDetailBrowserTable;
 use Demo\Tasks\Browser\TasksBrowserContext;
 use Demo\Tasks\Browser\TasksBrowserRef;
@@ -26,6 +27,7 @@ use Demo\Tasks\Database\Settings\TasksSettingsCatalog;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Environment\TasksEnvCatalog;
 use Demo\Tasks\Pages\Hilos\AboutPage;
+use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\LicensePage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsKeysPage;
@@ -48,6 +50,8 @@ use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -75,9 +79,11 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -105,6 +111,8 @@ final class Hilos extends HilosFacade
 
     protected const string CODE_CHANNEL_REGISTRY = TasksCodeChannelRegistry::class;
 
+    protected const ?string BACKUP_CATALOG = BackupCatalog::class;
+
     protected const array FEATURES = [
         HilosFeature::SETTINGS,
         HilosFeature::HILOS_USERS,
@@ -113,12 +121,14 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::CODE_CHANNELS,
+        HilosFeature::BACKUP,
     ];
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        BackupPage::PAGE => BackupPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
         LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -169,6 +179,10 @@ final class Hilos extends HilosFacade
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
+        BackupAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => BackupAgent::class,
+            AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
         ],
         OAuthAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => OAuthAgent::class,
@@ -253,6 +267,8 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         TasksTableContext::settings => HilosSettingsTable::class,
         TasksTableContext::hilosUsers => HilosUsersTable::class,
+        TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
+        TasksTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
         TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
@@ -265,6 +281,10 @@ final class Hilos extends HilosFacade
     public const array PAGE_TABLES = [
         SettingsPage::PAGE => [
             TasksTableContext::settings => [],
+        ],
+        BackupPage::PAGE => [
+            TasksTableContext::hilosBackups => [],
+            TasksTableContext::hilosVerifierCircle => [],
         ],
         LogsKeysPage::PAGE => [
             TasksTableContext::hilosLogKeys => [],

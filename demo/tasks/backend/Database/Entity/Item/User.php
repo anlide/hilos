@@ -3,6 +3,7 @@
 namespace Demo\Tasks\Database\Entity\Item;
 
 use Demo\Tasks\Database\Entity\Collection\Users as EntityUsers;
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
@@ -53,6 +54,17 @@ final class User extends Entity
 
     public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = true;
+
+    // A display name is derived from the primary key rather than masked, so a restored copy
+    // still tells its people apart.
+    public const array _pii = [self::name => AnonymizationStrategy::FAKE_NAME];
+
+    public const array _piiNotPersonal = [
+        self::id,
+        self::admin,
+        self::block,
+        self::last_activity,
+    ];
 
     // Properties
     public ?int $id = null;

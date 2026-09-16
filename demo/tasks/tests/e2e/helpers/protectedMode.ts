@@ -7,10 +7,11 @@ import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/pr
 // the agent-side driver, and the one entry the mode has (the initiator agent
 // asking its daemon), because nothing here forces any state.
 //
-// Narrower than the chat and polls peers on purpose: this demo has one
-// protected-mode case, and it needs the freeze on and the freeze off. Inspect is
-// present only because either drive may need one state re-ask after a lost reply;
-// leave and mint wait for the first spec that has something to assert with them.
+// Narrower than the chat and polls peers on purpose: this demo drives only what
+// its own specs assert with - the freeze on, the freeze off, and the end of the
+// operation that leaves the node in the verification window (HIL-911). Inspect is
+// present only because any drive may need one state re-ask after a lost reply;
+// mint waits for the first spec that has something to assert with it.
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'tasks-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
@@ -30,6 +31,7 @@ const REPLY_TIMEOUT_MS = 15_000
 const RE_ASK_TIMEOUT_MS = 5_000
 
 const ENTER_COMMAND = 'test:protected-mode:enter'
+const LEAVE_COMMAND = 'test:protected-mode:leave'
 const OPEN_COMMAND = 'test:protected-mode:open'
 const INSPECT_COMMAND = 'protected-mode:inspect'
 
@@ -70,15 +72,39 @@ const sendCommand = createCommandChannel({
  * polling for the state to arrive.
  *
  * @param operation Operation name the freeze protects, carried to the browser.
+ * @param sessionToken Session cookie of the browser the freeze is entered on
+ *   behalf of - the operator the verification window later lets back in.
+ *   Omitted means nothing with a browser asked.
  * @returns The phase the agent observed.
  */
-export async function enterProtectedMode(operation: string): Promise<string> {
+export async function enterProtectedMode(
+  operation: string,
+  sessionToken = '',
+): Promise<string> {
   const reply = await sendProtectedModeDrive(
     ENTER_COMMAND,
-    { operation, acceptKey: '' },
+    { operation, acceptKey: '', sessionToken },
     operation,
     ['active', 'verifying', 'deactivating'],
   )
+
+  return String(reply.phase ?? '')
+}
+
+/**
+ * Ends the driven operation, landing the node in the verification window.
+ *
+ * Deliberately not an unlock: a finished operation leaves the system closed to
+ * everyone but the browser that asked for it, and opening it is a separate step.
+ *
+ * Resolves once this node's runtime row reads verifying.
+ *
+ * @returns The phase the agent observed.
+ */
+export async function leaveProtectedMode(): Promise<string> {
+  const reply = await sendProtectedModeDrive(LEAVE_COMMAND, {}, null, [
+    'verifying',
+  ])
 
   return String(reply.phase ?? '')
 }

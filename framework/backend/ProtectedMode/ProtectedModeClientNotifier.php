@@ -62,4 +62,18 @@ interface ProtectedModeClientNotifier
         ProtectedModeStateSignalData $state,
         string $sessionTokenHash,
     ): void;
+
+    /**
+     * Asks every open page of one browser session on this node to be answered again.
+     *
+     * The frames above move the stub; this moves what stands behind it. A tab carried out of the
+     * stub lands on the page it already had, holding the answer it was given before the phase moved
+     * - and a page that builds something from the phase at subscribe (the backup page's reopen
+     * block) would show the old one until a reload. The answer travels as an ordinary page answer,
+     * decided again by the code that decides a subscribe (HIL-911).
+     *
+     * @param string $sessionTokenHash Hash of the session token whose open pages are re-judged
+     * @throws InvalidArgumentException When the announcement cannot be named
+     */
+    public function reassessPagesOfSession(string $sessionTokenHash): void;
 }

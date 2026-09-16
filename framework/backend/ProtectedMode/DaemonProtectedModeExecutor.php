@@ -199,6 +199,13 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 ),
                 $view->initiatorSessionTokenHash,
             );
+
+            // Leaving the stub is not enough: every tab comes out onto the page it already had,
+            // answered while the phase was still inactive, so the backup page would lack the reopen
+            // block the banner above tells the operator to use. Its pages are answered again.
+            // After the resume and not before it, because a page is answered by the agent that
+            // serves it, and while the agents stand nobody would (HIL-911).
+            Hilos::$cluster?->protectedModeClientNotifier()?->reassessPagesOfSession($view->initiatorSessionTokenHash);
         }
     }
 

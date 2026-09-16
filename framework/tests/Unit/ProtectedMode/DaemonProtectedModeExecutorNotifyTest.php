@@ -206,6 +206,37 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertNotNull($state->bannerMessage);
     }
 
+    public function testTheWindowAnswersTheOperatorsOpenPagesAgain(): void
+    {
+        // Out of the stub is not far enough: each tab lands on the page it had, answered while the
+        // phase was inactive, and the backup page built its reopen block from that phase. Nothing
+        // but a re-decision answers those pages again, and without it the banner tells the operator
+        // to reopen the system from a page that offers nothing to press (HIL-911).
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+
+        $this->executor->enterVerifying();
+
+        $this->assertSame(['session-hash-7'], $this->notifier->reassessedSessions);
+    }
+
+    public function testClosingBackAndLiftingAnswerNoPageAgain(): void
+    {
+        // Closing back puts the tabs behind the stub, where nothing of a page is visible, and the
+        // next window re-decides them anyway; the lift reloads the pages on the client. Neither is
+        // a second place that has to be kept in step with the window.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->executor->enterVerifying();
+        $this->notifier->reassessedSessions = [];
+
+        $this->executor->reenterActive();
+        $this->executor->enterDeactivating();
+        $this->executor->enterInactive();
+
+        $this->assertSame([], $this->notifier->reassessedSessions);
+    }
+
     public function testAnInitiatorWithNoBrowserBehindItIsAddressedByNeitherFrame(): void
     {
         // The freeze recognized one socket and no browser behind it - a CLI restore, or a browser
@@ -222,6 +253,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertSame('accept-7', $this->notifier->frames[0][1]);
         $this->assertNull($this->notifier->frames[0][2]);
         $this->assertSame([], $this->notifier->sessionFrames);
+        $this->assertSame([], $this->notifier->reassessedSessions);
     }
 
     public function testTheFirstMintTurnsTheSentenceIntoTheField(): void
@@ -364,6 +396,9 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
     /** @var list<array{0: ProtectedModeStateSignalData, 1: string}> Session frames, with the session addressed */
     public array $sessionFrames = [];
 
+    /** @var list<string> Sessions whose open pages were asked to be answered again, in order */
+    public array $reassessedSessions = [];
+
     public function notifyProtectedModeState(
         ProtectedModeStateSignalData $state,
         ?string $excludeAcceptKey,
@@ -377,5 +412,13 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
         string $sessionTokenHash,
     ): void {
         $this->sessionFrames[] = [$state, $sessionTokenHash];
+    }
+
+    /**
+     * @param string $sessionTokenHash Hash of the session whose open pages are to be re-judged
+     */
+    public function reassessPagesOfSession(string $sessionTokenHash): void
+    {
+        $this->reassessedSessions[] = $sessionTokenHash;
     }
 }

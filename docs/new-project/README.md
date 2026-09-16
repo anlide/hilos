@@ -180,8 +180,8 @@ dashboard, owned by the monopolistic `hilos_index` agent (a concrete
 `AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
 demo/tasks). The app agent plus the dashboard therefore needs
 `WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: tasks and polls use 26 on
-every stack, chat 38 for its larger agent roster. The floor each number is built
+it in compose regardless, so the pool is explicit: polls uses 26 on every stack,
+tasks 28 since it carries backup too, chat 38 for its larger agent roster. The floor each number is built
 on is one worker per monopolistic agent of that demo's `AGENTS` registry plus two
 spare, read off the registry — every entry whose daemon answers true to
 `requiresMonopolisticProcess()` — rather than estimated; the pinned number is that

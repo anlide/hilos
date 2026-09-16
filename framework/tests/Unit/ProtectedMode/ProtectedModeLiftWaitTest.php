@@ -280,4 +280,14 @@ final class LiftWaitClientNotifier implements ProtectedModeClientNotifier
     ): void {
         $this->frames[] = $state;
     }
+
+    /**
+     * Records nothing: a re-decision of open pages is not a frame about the mode, and these cases
+     * count only those.
+     *
+     * @param string $sessionTokenHash Hash of the session whose open pages were to be re-judged
+     */
+    public function reassessPagesOfSession(string $sessionTokenHash): void
+    {
+    }
 }

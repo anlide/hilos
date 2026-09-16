@@ -1103,9 +1103,13 @@ export function createHilosBackupsRestoreGate(
  *
  * The section is personal: the backend answers it against the session behind the
  * subscribing connection, so two tabs of two different admins on the same shuttered
- * node get two different answers to the same page. It is read once at subscribe and
- * needs no push — reopening the system reloads every page, and re-freezing replaces
- * this one with the maintenance surface, so nothing can change it under a mounted page.
+ * node get two different answers to the same page. It changes under a mounted page
+ * exactly once: the operator's tabs were answered while the system was still frozen,
+ * and when the verification window opens the backend answers each of them again with a
+ * whole page response carrying the fresh section, which lands in the same page scope
+ * this reads — so the block draws itself with no reload and no frame of its own. The
+ * other moves need nothing: reopening the system reloads every page, and re-freezing
+ * replaces this one with the maintenance surface.
  *
  * A page scope without the section — an older backend, or the moment before the
  * subscription lands — reads as no block, for the same reason the restore gate

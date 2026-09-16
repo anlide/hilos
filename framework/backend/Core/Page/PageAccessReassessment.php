@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
+use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -40,11 +41,15 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
  * out to every worker link, and each worker sweeps its own mirror
  * ({@see self::sweepThisWorker()}).
  *
- * There are two criteria and therefore two announcements, because there are two ways the
- * ground moves (HIL-652). A rights CHANGE names the person whose rights were written; a
- * DOWNGRADE - signing out, an expiry, a force-logout - names the CONNECTIONS instead
+ * There are three criteria and therefore three announcements, because there are three ways the
+ * ground moves. A rights CHANGE names the person whose rights were written; a DOWNGRADE -
+ * signing out, an expiry, a force-logout - names the CONNECTIONS instead
  * ({@see self::forConnections()}, {@see self::sweepThisWorkerConnections()}), because the
- * identity the person criterion matches on is precisely what a downgrade removes.
+ * identity the person criterion matches on is precisely what a downgrade removes (HIL-652).
+ * A PHASE change of the node names a browser SESSION ({@see self::forSession()}): nothing about
+ * the person moved, but what their open pages were answered with did - the verification window
+ * opening under the operator's tabs is the case (HIL-911). It has no sweep of its own: the master
+ * turns the session into accept keys, and the workers sweep those by the connection criterion.
  *
  * Nothing here judges anything. Who may see what is decided by the same code a subscribe
  * is decided by ({@see PageSignalRouter::dispatchPageAccessReassess}), in the worker that
@@ -195,5 +200,38 @@ final class PageAccessReassessment
                 ),
             );
         }
+    }
+
+    /**
+     * Announces that one browser session's open pages were answered against a phase that moved.
+     *
+     * The third criterion, and the one only the master can resolve: which sockets carry a session
+     * is known where the sockets are accepted, so this is queued by the daemon and consumed by the
+     * daemon, which hands every worker the by-connection announcement for the accept keys it found
+     * ({@see self::forConnections()} explains why that criterion is the one a worker can answer
+     * blind). Queued rather than resolved on the spot for the reason {@see self::forUser()} gives:
+     * the runtime write of the phase rides the same queue ahead of it, so every worker re-judges
+     * against the phase it has just been told about.
+     *
+     * The caller is the protected-mode executor opening the verification window (HIL-911). Its
+     * operator's tabs were answered while the phase was still inactive, and nothing else would
+     * answer them again: the backup page's reopen section is built only when a subscription is
+     * answered.
+     *
+     * @param string $sessionTokenHash Hash of the session token whose open pages are to be re-judged
+     * @throws InvalidArgumentException When the announcement cannot be named
+     */
+    public static function forSession(string $sessionTokenHash): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DAEMON),
+            signalType: new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION),
+            signalName: new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_SESSION),
+            signalData: new PageAccessReassessSessionSignalData($sessionTokenHash),
+        );
     }
 }
