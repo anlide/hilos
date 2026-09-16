@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { createSignal } from '@hilos/core'
 import type {
   HilosDashboardSection,
+  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core'
@@ -39,7 +40,18 @@ const SECTIONS: HilosDashboardSection[] = [
   },
 ]
 
-function router(sections: HilosDashboardSection[] | undefined): HilosRouter {
+/** The name the dashboard's own answer carries, straight from the page catalog. */
+const IDENTITY: HilosPageIdentity = {
+  label: 'Hilos',
+  lead: 'Administrative sections for the project.',
+  breadcrumb: [],
+  children: [],
+}
+
+function router(
+  sections: HilosDashboardSection[] | undefined,
+  identity: HilosPageIdentity | undefined,
+): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: '',
@@ -50,7 +62,7 @@ function router(sections: HilosDashboardSection[] | undefined): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal(identity),
     dashboardSections: createSignal(sections),
     resolvePath: (page) => (page === 'unrouted' ? undefined : `/hilos/${page}`),
     clearPageError: () => {},
@@ -66,9 +78,10 @@ function router(sections: HilosDashboardSection[] | undefined): HilosRouter {
 function renderPage(
   sections: HilosDashboardSection[] | undefined,
   children?: ReactNode,
+  identity?: HilosPageIdentity,
 ) {
   return render(
-    <HilosRouterContext.Provider value={router(sections)}>
+    <HilosRouterContext.Provider value={router(sections, identity)}>
       <HilosDashboardPage>{children}</HilosDashboardPage>
     </HilosRouterContext.Provider>,
   )
@@ -127,6 +140,29 @@ describe('HilosDashboardPage', () => {
       container.querySelector('[data-id="dashboard-skeleton"]'),
     ).not.toBeNull()
     expect(container.querySelectorAll('a')).toHaveLength(0)
+  })
+
+  it('renders the heading and the lead the page answered with', () => {
+    const { container } = renderPage(SECTIONS, undefined, IDENTITY)
+
+    expect(
+      container.querySelector('[data-id="dashboard-title"]')?.textContent,
+    ).toBe('Hilos')
+    expect(container.textContent).toContain(
+      'Administrative sections for the project.',
+    )
+    expect(
+      container.querySelector('[data-id="dashboard-title-skeleton"]'),
+    ).toBeNull()
+  })
+
+  it('draws the heading skeleton and no heading before the page answers', () => {
+    const { container } = renderPage(undefined)
+
+    expect(
+      container.querySelector('[data-id="dashboard-title-skeleton"]'),
+    ).not.toBeNull()
+    expect(container.querySelector('h1')).toBeNull()
   })
 
   it('renders project-supplied areas above the framework sections', () => {

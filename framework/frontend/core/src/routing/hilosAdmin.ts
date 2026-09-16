@@ -20,6 +20,7 @@ import {
   HILOS_PAGE_ROUTES,
   HILOS_ROUTE_DECLARATIONS,
   HilosPages,
+  type HilosPageKey,
 } from './hilosPages.js'
 
 /**
@@ -37,21 +38,25 @@ const frameworkRoutes = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
  * slash in front of it, so a page entered with none of its optional tail
  * resolves to the bare path.
  *
- * It knows the framework's pages and no others, and answers the dashboard for
- * anything else. Use it only where the key is a `HilosPages` value the caller
- * writes itself; anything that may name a project page — a breadcrumb link, a
- * navigation card — goes through `HilosRouter.resolvePath`, which reads the
- * application's merged map and says so plainly when there is no address.
+ * Its parameter admits framework page keys only, so passing a project key is a
+ * compile error rather than a silent dashboard. Use it only where the key is a
+ * `HilosPages` value the caller writes itself; anything that may name a project
+ * page — a breadcrumb link, a navigation card — goes through
+ * `HilosRouter.resolvePath`, which reads the application's merged map and says
+ * so plainly when there is no address.
  *
  * @param page The Hilos page key to resolve.
  * @param params The route params to substitute, defaulting to none.
  */
 export function resolveHilosPath(
-  page: string,
+  page: HilosPageKey,
   params: Record<string, string> = {},
 ): string {
   return (
     frameworkRoutes.path(page, params) ??
+    // Unreachable: the key type and the route table are both total. It stays
+    // because `PageRouter.path()` answers `string | undefined` by its own
+    // signature, and the totality cannot be proved through it.
     HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
   )
 }

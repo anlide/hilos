@@ -7,8 +7,10 @@
 // backend rather than wrapping this page, and the content seam is left for content
 // that is not a card at all (the Vue and React ports offer it too). The sections
 // are a computed, not a module constant: nothing is known about them at module
-// load, they arrive with the page. Until they do, the cards are placeholders — an
-// empty grid would jump the layout on every visit.
+// load, they arrive with the page — and so does the heading, read from the page
+// catalog over the same answer, which is why no literal is left. Until they do, the
+// heading and the cards are placeholders — an empty grid would jump the layout on
+// every visit.
 // Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
@@ -48,10 +50,19 @@ const SKELETON_CARDS: readonly number[] = [0, 1, 2, 3, 4, 5]
   template: `
     <section data-id="dashboard-view">
       <div class="d-flex flex-column gap-1 mb-4">
-        <h1 class="h4 mb-0">Hilos</h1>
-        <p class="mb-0 text-body-secondary">
-          Administrative sections with quick access to key project areas.
-        </p>
+        @if (identity(); as pageIdentity) {
+          <h1 class="h4 mb-0" data-id="dashboard-title">
+            {{ pageIdentity.label }}
+          </h1>
+          @if (pageIdentity.lead) {
+            <p class="mb-0 text-body-secondary">{{ pageIdentity.lead }}</p>
+          }
+        } @else {
+          <div class="placeholder-glow" data-id="dashboard-title-skeleton">
+            <span class="placeholder col-3 d-block mb-2 rounded"></span>
+            <span class="placeholder col-6 d-block rounded"></span>
+          </div>
+        }
       </div>
 
       <!-- Project-supplied admin areas above the framework sections; empty by
@@ -120,6 +131,8 @@ export class HilosDashboardPage {
   private readonly router = inject(HILOS_ROUTER)
 
   protected readonly skeletonCards = SKELETON_CARDS
+
+  protected readonly identity = hilosSignal(this.router.pageIdentity)
 
   protected readonly answered = hilosSignal(this.router.dashboardSections)
 

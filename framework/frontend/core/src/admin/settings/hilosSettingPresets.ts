@@ -21,6 +21,7 @@ import {
   type ActionHandle,
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { type HilosPageKey } from '../../routing/hilosPages.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { z } from 'zod'
 
@@ -186,7 +187,7 @@ export interface HilosSettingPresetsVocabulary {
   /** The label of that strip's button. */
   readonly generalSettingsLabel: string
   /** The page key that strip's button leads to. */
-  readonly generalSettingsPage: string
+  readonly generalSettingsPage: HilosPageKey
   /** The line shown when the applied preset is not one the recipe declares. */
   readonly unknownSelectionNote: string
   /** The title of the overwrite confirmation. */

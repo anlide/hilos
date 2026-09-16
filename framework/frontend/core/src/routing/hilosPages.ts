@@ -94,14 +94,22 @@ export const HilosPages = {
   LICENSE: 'hilos_license',
 } as const
 
+/** A framework page key: one of the values of {@link HilosPages}. */
+export type HilosPageKey = (typeof HilosPages)[keyof typeof HilosPages]
+
 /**
  * Hilos admin page key → route declaration, mirroring the framework rows of
  * the page catalog. `{name}` segments are route params captured at match time,
  * and `admin` states whether the page is an administrative surface — true for
  * the admin section, false for the profile and the public footer pages. A
- * project overlays this with its own declarations to mount the admin.
+ * project overlays this with its own declarations to mount the admin. The table
+ * is declared total over {@link HilosPageKey}, so a page key that forgets its
+ * route is a compile error.
  */
-export const HILOS_ROUTE_DECLARATIONS: Record<string, HilosRouteDeclaration> = {
+export const HILOS_ROUTE_DECLARATIONS: Record<
+  HilosPageKey,
+  HilosRouteDeclaration
+> = {
   [HilosPages.DASHBOARD]: { path: '/hilos', admin: true },
   [HilosPages.PROFILE]: { path: '/profile', admin: false },
   [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },

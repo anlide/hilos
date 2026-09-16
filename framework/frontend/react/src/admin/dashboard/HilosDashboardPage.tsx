@@ -7,8 +7,10 @@
 // backend rather than wrapping this page, and the children seam is left for
 // content that is not a card at all (the Vue and Angular ports offer it too). The sections are read per render, not
 // captured at module load: nothing is known about them until the page answers, and
-// until it does the cards are placeholders — an empty grid would jump the layout on
-// every visit. Bootstrap classes only (styling-rules.md).
+// neither is the heading, read from the page catalog over the same answer, which is
+// why no literal is left. Until it does the heading and the cards are placeholders —
+// an empty grid would jump the layout on every visit. Bootstrap classes only
+// (styling-rules.md).
 import { useContext } from 'react'
 import type { ReactNode } from 'react'
 
@@ -38,6 +40,7 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
     )
   }
 
+  const identity = useSignal(router.pageIdentity)
   const answered = useSignal(router.dashboardSections)
   const sections = (answered ?? []).map((section) => ({
     title: section.title,
@@ -54,10 +57,21 @@ export function HilosDashboardPage({ children }: HilosDashboardPageProps) {
   return (
     <section data-id="dashboard-view">
       <div className="d-flex flex-column gap-1 mb-4">
-        <h1 className="h4 mb-0">Hilos</h1>
-        <p className="mb-0 text-body-secondary">
-          Administrative sections with quick access to key project areas.
-        </p>
+        {identity === undefined ? (
+          <div className="placeholder-glow" data-id="dashboard-title-skeleton">
+            <span className="placeholder col-3 d-block mb-2 rounded" />
+            <span className="placeholder col-6 d-block rounded" />
+          </div>
+        ) : (
+          <>
+            <h1 className="h4 mb-0" data-id="dashboard-title">
+              {identity.label}
+            </h1>
+            {identity.lead ? (
+              <p className="mb-0 text-body-secondary">{identity.lead}</p>
+            ) : null}
+          </>
+        )}
       </div>
 
       {/* Project-supplied admin areas above the framework sections; empty by

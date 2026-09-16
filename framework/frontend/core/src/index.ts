@@ -488,6 +488,7 @@ export {
   HILOS_PAGE_ROUTES,
   HILOS_FOOTER_LINKS,
   type HilosFooterLink,
+  type HilosPageKey,
 } from './routing/hilosPages.js'
 export {
   HILOS_SUPPORT_TIERS,
