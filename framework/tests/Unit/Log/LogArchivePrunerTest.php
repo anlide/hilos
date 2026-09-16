@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class LogArchivePrunerTest extends TestCase
 {
-    /** Any instant to date the fixture batches from; the pruner never compares one against a clock. */
+    /** Any instant to date the fixture batches from; the undo window is measured from a marker's stamp, never from this. */
     private const int T0 = 1_800_000_000;
 
     /** Stamp the fixture markers carry, which the report hands back for the journal line. */

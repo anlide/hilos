@@ -16,7 +16,7 @@ use Throwable;
  *
  * The reader behind {@see LogStoreAgent}: it is asked for a policy on every throttled check, so an
  * administrator's edit takes effect within seconds instead of at the next restart of the node.
- * {@see LogAggregatorAgent} asks it the same way for the push interval (HIL-754).
+ * {@see LogStoreAgent} asks it the same way for the index-push interval (HIL-942).
  *
  * Two ways down to the environment, and they are not the same thing. A project that never folded
  * {@see LogSettingsCatalog} into its catalog has no such keys, so the settings are not consulted at
@@ -100,12 +100,12 @@ final class LogSettingsResolver
     /**
      * Reads how often a node may send its log index to the cluster aggregator.
      *
-     * One setting for the whole cluster rather than a value each node reads from its own
-     * environment: the database is shared and the environment is not, so three nodes reading their
-     * own env would run at three different rates with nothing on screen to explain the difference.
+     * A written row speaks for every node of the cluster, because the database is shared; with no
+     * row, each node answers from its own environment beneath the setting, the price the log design
+     * names under "Settings Above The Environment".
      *
      * Asked for at the moment the interval is needed, like the policies above, so an edit is obeyed
-     * without restarting anything. The value is read here and handed out; who obeys it is HIL-755.
+     * without restarting anything. The node's log store agent is the one that asks (HIL-942).
      *
      * @return int Milliseconds between two frames, never below the floor its rule declares
      */

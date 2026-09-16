@@ -69,8 +69,8 @@ final class LogIndexPushTest extends TestCase
         Hilos::$env = new EnvAccessor();
         putenv(EnvConstants::DAEMON_LOG_FILE->name . '=' . $this->dir . '/daemon.log');
         Hilos::$sr = new SignalRouter();
-        // No settings row by default: that is the ordinary installation, where every node of the
-        // cluster runs at the one interval written into the framework rather than into an env.
+        // No settings row by default: that is the ordinary installation, where the interval comes from
+        // the environment beneath the settings, and this environment names none.
         LogSettingsResolverTestAccessor::$values = [];
         Hilos::$setting = new LogSettingsResolverTestAccessor(LogSettingsCatalog::class);
     }
@@ -279,7 +279,7 @@ final class LogIndexPushTest extends TestCase
      * A written value below the floor is refused by LogIndexPushIntervalRule, the fallback answers,
      * the node follows the 5 s rhythm and the journal carries a complaint naming the setting key.
      */
-    public function testAWrittenValueBelowTheFloorIsClampedToIt(): void
+    public function testAWrittenValueBelowTheFloorIsRefused(): void
     {
         LogSettingsResolverTestAccessor::$values[LogSettingsCatalog::INDEX_PUSH_INTERVAL_MS] = '50';
         $agent = $this->startedAgent();
@@ -380,8 +380,8 @@ final class LogIndexPushTest extends TestCase
      *
      * Measured from the instant the start was taken and NOT from a fresh reading: the agent stamps
      * its last frame with the real clock, so a reading taken at the assertion would carry whatever
-     * the case did in between into the elapsed time. The floor case allows fifty milliseconds, and
-     * a directory walk on a loaded box is well able to eat that.
+     * the case did in between into the elapsed time. The cases stand half a second either side of
+     * the interval they probe, and a directory walk on a loaded box is well able to eat a share of that.
      *
      * @param float $seconds Seconds after the start frame
      * @return float Wall clock that many seconds past it

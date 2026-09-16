@@ -14,7 +14,6 @@ use Hilos\Log\LogIndexPushIntervalRule;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogSettingsResolver;
 use PHPUnit\Framework\TestCase;
-use Throwable;
 
 /**
  * Unit tests for the settings-over-environment reader of the log policies (HIL-760).
