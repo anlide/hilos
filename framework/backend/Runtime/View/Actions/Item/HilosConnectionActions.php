@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -34,7 +33,6 @@ abstract class HilosConnectionActions extends RtActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When this connection is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws HilosException Whatever the project's own close-time cleanup raises
      */
     public function unregister(): void

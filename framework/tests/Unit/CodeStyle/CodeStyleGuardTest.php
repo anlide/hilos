@@ -32,6 +32,7 @@ use Hilos\Tests\CodeStyle\ScannedRoots;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use Hilos\Tests\CodeStyle\Throws\CrossFileRule;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
+use Hilos\Tests\CodeStyle\Throws\ThrowsOrphanRule;
 use Hilos\Tests\CodeStyle\Throws\ThrowsPropagationRule;
 use PHPUnit\Framework\TestCase;
 
@@ -120,7 +121,7 @@ final class CodeStyleGuardTest extends TestCase
             $baseline->reconcile($reported),
             'Code-style rules are checked by machine. Fix the lines below, or — if the debt is old and'
                 . ' owned by a leaf — record it in ' . Baseline::PATH . ' (regenerate with'
-                . ' CODESTYLE_BASELINE_UPDATE=1). ' . ThrowsPropagationRule::SCOPE,
+                . ' CODESTYLE_BASELINE_UPDATE=1). ' . ThrowsPropagationRule::SCOPE . ' ' . ThrowsOrphanRule::SCOPE,
         );
     }
 
@@ -192,7 +193,7 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function crossFileRules(): array
     {
-        return [ThrowsPropagationRule::forWholeIndex(), PageReachRule::forPageHierarchy()];
+        return [ThrowsPropagationRule::forWholeIndex(), ThrowsOrphanRule::forWholeIndex(), PageReachRule::forPageHierarchy()];
     }
 
     /**

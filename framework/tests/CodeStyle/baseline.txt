@@ -27,11 +27,11 @@ THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/Connections.php 2 
 THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/GuardianAgentStatuses.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/UserStates.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/AttachmentDraftsActions.php 5 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/BotAgentStatusesActions.php 6 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/GuardianAgentStatusesActions.php 5 # HIL-449
+THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/BotAgentStatusesActions.php 4 # HIL-449
+THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/GuardianAgentStatusesActions.php 3 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/UserStatesActions.php 5 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Item/AttachmentDraftActions.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Item/ConnectionActions.php 2 # HIL-449
+THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Item/ConnectionActions.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/AttachmentDrafts.php 3 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/BotAgentStatuses.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/Connections.php 2 # HIL-449

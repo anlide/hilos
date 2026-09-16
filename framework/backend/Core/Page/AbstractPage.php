@@ -40,7 +40,6 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
-use LogicException;
 use Random\RandomException;
 use Throwable;
 
@@ -475,7 +474,6 @@ abstract class AbstractPage implements ActionHostInterface
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      * @throws AgentUnknownActionException When the page does not support the action
      * @throws HilosException Whatever the concrete page's action handler raises
-     * @throws LogicException When a concrete page finds its own collection unavailable
      * @throws RandomException When a concrete page's handler cannot draw from the CSPRNG
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -495,7 +493,6 @@ abstract class AbstractPage implements ActionHostInterface
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      * @throws AgentUnknownActionException When the page does not support the action
      * @throws HilosException Whatever the concrete page's action handler raises
-     * @throws LogicException When a concrete page finds its own collection unavailable
      * @throws RandomException When a concrete page's handler cannot draw from the CSPRNG
      */
     public function runAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO

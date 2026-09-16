@@ -166,8 +166,8 @@ documenting non-obvious error contracts.
 - Keep `@throws` and `{@see ...}` imports consistent: import the class with
   `use` and reference the short class name in the docblock.
 
-Checked automatically: `THROWS-PROPAGATION`, see
-[automated-checks.md](automated-checks.md). The check is narrower than this
+Checked automatically: `THROWS-PROPAGATION` and `THROWS-ORPHAN`, see
+[automated-checks.md](automated-checks.md). `THROWS-PROPAGATION` is narrower than this
 section by declaration — it judges the call forms whose target is written down,
 across every production root. It also judges `$this->objectCollection` in a View
 collection when that class declares `OBJECT_COLLECTION_CLASS`, and any property
@@ -176,8 +176,13 @@ whose type the class it is read on writes down in a class-level `@property-read`
 naming a class no scanned root declares leaves that receiver outside the check. A
 green run answers for those forms wherever they sit, and the audit above answers
 for everything else.
-The check judges tags a call requires, not tags left behind after a call is
-removed; after deleting a call, reread the caller's own `@throws`.
+`THROWS-PROPAGATION` judges tags a call requires; `THROWS-ORPHAN` judges the other
+half, a tag left behind after a call is removed, but only in a body read whole. It
+stops at a call that does not resolve — a function, a closure, a call on what an
+expression returned, a callee, member or class held in a variable, a `throw` of
+anything but `new` and a read through `__get()` all count as such — at a body with
+no call, `new` or `throw` in it, at a tag the base declares and at a tag an override
+needs. Past those stops, after deleting a call, reread the caller's own `@throws`.
 
 Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee

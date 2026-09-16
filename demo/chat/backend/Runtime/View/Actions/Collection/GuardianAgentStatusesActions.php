@@ -11,6 +11,7 @@ use Demo\Chat\Runtime\View\Item\GuardianAgentStatus as ViewGuardianAgentStatus;
 use Hilos\Core\Agent\Hilos\GuardianRunStatus;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
@@ -30,6 +31,7 @@ final class GuardianAgentStatusesActions extends RtActions
      *
      * @param array<string, string> $statuses Status map keyed by guardian agent id
      * @throws RtActionsCallbackNotSetException When an item factory or forget-cached-item callback is not configured
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -52,6 +54,7 @@ final class GuardianAgentStatusesActions extends RtActions
      * @param GuardianRunStatus $status Initial guardian run status
      * @return ViewGuardianAgentStatus Created status row
      * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -79,6 +82,11 @@ final class GuardianAgentStatusesActions extends RtActions
 
     /**
      * Narrows parent return type to this collection's RtItem.
+     *
+     * @param RtState $state State the item is built over
+     * @return ViewGuardianAgentStatus Read wrapper around the state
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     protected function createRtItemFromState(RtState $state): ViewGuardianAgentStatus
     {

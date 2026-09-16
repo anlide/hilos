@@ -23,7 +23,7 @@ final readonly class MethodRecord
      * @param bool $hasBody False for an abstract or interface method, whose tags are the whole contract
      * @param int $line Line the declaration sits on
      * @param array<int, string> $throws Fully qualified exception classes named by `@throws`
-     * @param array<int, CallSite> $callSites Calls and throws found in the body, in source order
+     * @param array<int, CallSite> $callSites Calls, throws and opaque entries found in the body, in source order
      * @param array<string, string> $variableTypes Declared type by variable name, an `[]` suffix marking an array of it
      * @param array<string, array{base: string, path: array<int, string>}> $arrayBindings Iterated receiver by loop variable
      */

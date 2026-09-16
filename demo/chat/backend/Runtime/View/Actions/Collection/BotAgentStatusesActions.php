@@ -11,6 +11,7 @@ use Demo\Chat\Runtime\View\Item\BotAgentStatus as ViewBotAgentStatus;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
@@ -31,6 +32,7 @@ final class BotAgentStatusesActions extends RtActions
      * @param int $botId Bot database id
      * @return ViewBotAgentStatus Read wrapper around the ensured state
      * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -57,6 +59,7 @@ final class BotAgentStatusesActions extends RtActions
      * @param string $status Initial lifecycle marker
      * @return ViewBotAgentStatus Created status row
      * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -84,6 +87,11 @@ final class BotAgentStatusesActions extends RtActions
 
     /**
      * Narrows parent return type to this collection's RtItem.
+     *
+     * @param RtState $state State the item is built over
+     * @return ViewBotAgentStatus Read wrapper around the state
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     protected function createRtItemFromState(RtState $state): ViewBotAgentStatus
     {

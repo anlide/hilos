@@ -51,7 +51,6 @@ final class HilosCodeSendAttemptsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws HilosException Whatever the row's read of the written fields raises
      */
     public function start(string $sessionTokenHash, string $ticket, string $channel): void

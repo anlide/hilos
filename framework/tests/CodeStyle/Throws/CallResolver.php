@@ -25,10 +25,19 @@ final readonly class CallResolver
     private const array MAGIC_PROPERTY_CONSTANTS = ['objectCollection' => 'OBJECT_COLLECTION_CLASS'];
 
     /**
+     * Built-in roots whose constructors raise nothing, so a class in the index that
+     * inherits its constructor from one of them has been read to the end.
+     */
+    private const array SILENT_BUILTIN_ROOTS = ['Exception', 'Error'];
+
+    private ExceptionHierarchy $hierarchy;
+
+    /**
      * @param SourceIndex $index Indexed tree the target is looked up in
      */
     public function __construct(private SourceIndex $index)
     {
+        $this->hierarchy = new ExceptionHierarchy($index);
     }
 
     /**
@@ -39,7 +48,7 @@ final readonly class CallResolver
      */
     public function resolve(ClassRecord $class, MethodRecord $method, CallSite $site): ?MethodRecord
     {
-        if ($site->kind === CallSite::KIND_THROW) {
+        if ($site->kind === CallSite::KIND_THROW || $site->kind === CallSite::KIND_OPAQUE) {
             return null;
         }
         if ($site->kind === CallSite::KIND_NEW) {
@@ -52,6 +61,79 @@ final readonly class CallResolver
         }
 
         return $this->index->resolveMethod($receiver, $site->target);
+    }
+
+    /**
+     * Tells the two meanings of a null {@see self::resolve()} apart. "The receiver is
+     * written down nowhere" leaves the call unread, and a claim about what the body
+     * cannot throw is no longer honest; "the class is known and declares no
+     * constructor" reads the call to the end — there is simply nothing in it to raise.
+     *
+     * A constructor inherited from a class outside the index is not known to raise
+     * nothing, unless that class is a built-in exception or error. An opaque entry is
+     * never read to its target: that is what the index recorded it for.
+     *
+     * A call reached through a magic property is not read to the end either, even when
+     * a constant or a class-level tag names the property's class: the read runs
+     * `__get()`, and the walk trusts the type the tag writes down, not the body behind it.
+     *
+     * @param ClassRecord $class Class the call is written in
+     * @param MethodRecord $method Method the call is written in
+     * @param CallSite $site Call to resolve
+     * @return bool True when the call was read to its target, a `throw` and a constructor-less class included
+     */
+    public function resolves(ClassRecord $class, MethodRecord $method, CallSite $site): bool
+    {
+        if ($site->kind === CallSite::KIND_THROW) {
+            return true;
+        }
+        if ($site->kind === CallSite::KIND_OPAQUE) {
+            return false;
+        }
+        if ($site->kind !== CallSite::KIND_NEW) {
+            return $this->resolve($class, $method, $site) !== null && !$this->readsAMagicProperty($class, $method, $site);
+        }
+        if ($this->resolve($class, $method, $site) !== null) {
+            return true;
+        }
+
+        $seen = [];
+        $current = $this->index->find($site->target);
+        while ($current !== null && !isset($seen[strtolower($current->name)])) {
+            if ($current->parent === null) {
+                return true;
+            }
+            $seen[strtolower($current->name)] = true;
+            $parent = $current->parent;
+            $current = $this->index->find($parent);
+            if ($current === null) {
+                return $this->isSilentBuiltin($parent);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param ClassRecord $class Class the call is written in
+     * @param MethodRecord $method Method the call is written in
+     * @param CallSite $site Call whose receiver chain is walked
+     * @return bool True when a step of the chain is a property no class along the way declares
+     */
+    private function readsAMagicProperty(ClassRecord $class, MethodRecord $method, CallSite $site): bool
+    {
+        $current = $this->baseType($class, $method, $site->base, []);
+        foreach ($site->path as $step) {
+            if ($current === null || str_ends_with($current, self::ARRAY_SUFFIX)) {
+                return false;
+            }
+            if (!$this->declaresProperty($current, $step, [])) {
+                return true;
+            }
+            $current = $this->lookupProperty($current, $step, []);
+        }
+
+        return false;
     }
 
     /**
@@ -191,11 +273,57 @@ final readonly class CallResolver
     }
 
     /**
+     * Asks only for a real declaration, a promoted parameter included, and never for a
+     * class-level tag: a tag describes what `__get()` hands back.
+     *
+     * @param string $class Fully qualified class the property is read on
+     * @param string $step Property name, a leading `$` marking a static one
+     * @param array<int, string> $visited Classes already looked in, guarding a malformed cycle
+     * @return bool True when the class, one of its traits or an ancestor declares the property
+     */
+    private function declaresProperty(string $class, string $step, array $visited): bool
+    {
+        $key = strtolower($class);
+        $record = $this->index->find($class);
+        if ($record === null || in_array($key, $visited, true)) {
+            return false;
+        }
+        if (isset($record->propertyTypes[$step])) {
+            return true;
+        }
+
+        $visited[] = $key;
+        $sources = $record->parent === null ? $record->traits : [...$record->traits, $record->parent];
+        foreach ($sources as $source) {
+            if ($this->declaresProperty($source, $step, $visited)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param string $type Declared type, an `[]` suffix marking an array of it
      * @return string The class the type names, with the array marker taken off
      */
     private function elementType(string $type): string
     {
         return str_ends_with($type, self::ARRAY_SUFFIX) ? substr($type, 0, -strlen(self::ARRAY_SUFFIX)) : $type;
+    }
+
+    /**
+     * @param string $class Fully qualified class the index does not hold
+     * @return bool True when it is a built-in exception or error, whose constructor raises nothing
+     */
+    private function isSilentBuiltin(string $class): bool
+    {
+        foreach (self::SILENT_BUILTIN_ROOTS as $root) {
+            if ($this->hierarchy->covers($root, $class)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

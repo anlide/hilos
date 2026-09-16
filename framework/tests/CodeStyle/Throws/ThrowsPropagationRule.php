@@ -53,17 +53,9 @@ final class ThrowsPropagationRule implements CrossFileRule
 
     private const string DOC = 'docs/agents/code-style/phpdoc.md';
 
-    /** Prefix the report puts on a link the rule walked through instead of trusting. */
-    private const string PRIVATE_MARK = 'private ';
-
     private SourceIndex $index;
 
-    private CallResolver $resolver;
-
-    private ExceptionHierarchy $hierarchy;
-
-    /** @var array<string, array<string, array<int, string>>> Exceptions reachable through a private link, by method key */
-    private array $throughPrivateMemo = [];
+    private BodyExceptions $body;
 
     private function __construct()
     {
@@ -106,9 +98,7 @@ final class ThrowsPropagationRule implements CrossFileRule
     public function check(SourceIndex $index): iterable
     {
         $this->index = $index;
-        $this->resolver = new CallResolver($index);
-        $this->hierarchy = new ExceptionHierarchy($index);
-        $this->throughPrivateMemo = [];
+        $this->body = new BodyExceptions($index);
 
         $violations = [];
         foreach ($index->classes() as $class) {
@@ -166,8 +156,8 @@ final class ThrowsPropagationRule implements CrossFileRule
 
         $violations = [];
         foreach ($method->callSites as $site) {
-            foreach ($this->reachingExceptions($class, $method, $site) as $exception => $source) {
-                if ($this->isCovered($method->throws, $exception)) {
+            foreach ($this->body->reaching($class, $method, $site) as $exception => $source) {
+                if ($this->body->covers($method->throws, $exception)) {
                     continue;
                 }
                 $violations[] = new Violation(
@@ -203,7 +193,7 @@ final class ThrowsPropagationRule implements CrossFileRule
         $declaring = $this->index->find($method->class);
         $violations = [];
         foreach (array_unique($method->throws) as $exception) {
-            if ($this->isCovered($contract->throws, $exception)) {
+            if ($this->body->covers($contract->throws, $exception)) {
                 continue;
             }
             $violations[] = new Violation(
@@ -241,131 +231,6 @@ final class ThrowsPropagationRule implements CrossFileRule
 
     /**
      * @param ClassRecord $class Class the call is written in
-     * @param MethodRecord $method Method the call is written in
-     * @param CallSite $site Call being judged
-     * @return array<string, array{origin: ?string, chain: array<int, string>}> Where each surviving exception comes from
-     */
-    private function reachingExceptions(ClassRecord $class, MethodRecord $method, CallSite $site): array
-    {
-        if ($site->kind === CallSite::KIND_THROW) {
-            $reaching = [$site->target => ['origin' => null, 'chain' => []]];
-        } else {
-            $target = $this->resolver->resolve($class, $method, $site);
-            $reaching = $target === null ? [] : $this->contractOf($target);
-        }
-
-        foreach (array_keys($reaching) as $exception) {
-            if ($this->isCovered($site->caught, (string)$exception)) {
-                unset($reaching[$exception]);
-            }
-        }
-
-        return $reaching;
-    }
-
-    /**
-     * A contract is what a method declares — unless it is private, in which case there
-     * is no contract and the rule reads the body instead.
-     *
-     * @param MethodRecord $target Declaration the call reaches
-     * @return array<string, array{origin: ?string, chain: array<int, string>}> Where each exception comes from
-     */
-    private function contractOf(MethodRecord $target): array
-    {
-        if (!$target->isPrivateLink()) {
-            $origin = $this->label($target->class, $target->name);
-            $contract = [];
-            foreach (array_unique($target->throws) as $exception) {
-                $contract[$exception] = ['origin' => $origin, 'chain' => []];
-            }
-
-            return $contract;
-        }
-
-        $reached = [];
-        foreach ($this->throughPrivateLink($target, []) as $exception => $chain) {
-            $reached[$exception] = [
-                'origin' => null,
-                'chain' => [self::PRIVATE_MARK . $this->label($target->class, $target->name), ...$chain],
-            ];
-        }
-
-        return $reached;
-    }
-
-    /**
-     * Walks the body of a private helper, and of every private helper it calls, for the
-     * exceptions that leave it. Its own `@throws` is not read: phpdoc.md asks for none
-     * on a private helper, so reading one would let a chain be cut by a tag the document
-     * discourages.
-     *
-     * @param MethodRecord $target Private method to walk through
-     * @param array<int, string> $seen Method keys already on the stack, guarding a cycle
-     * @return array<string, array<int, string>> Chain of further private links, by exception
-     */
-    private function throughPrivateLink(MethodRecord $target, array $seen): array
-    {
-        $key = strtolower($target->class . '::' . $target->name);
-        if (in_array($key, $seen, true)) {
-            return [];
-        }
-        if ($seen === [] && isset($this->throughPrivateMemo[$key])) {
-            return $this->throughPrivateMemo[$key];
-        }
-
-        $class = $this->index->find($target->class);
-        if ($class === null) {
-            return [];
-        }
-
-        $reached = [];
-        foreach ($target->callSites as $site) {
-            foreach ($this->throughOneSite($class, $target, $site, [...$seen, $key]) as $exception => $chain) {
-                if (!$this->isCovered($site->caught, (string)$exception)) {
-                    $reached[$exception] = $chain;
-                }
-            }
-        }
-
-        if ($seen === []) {
-            $this->throughPrivateMemo[$key] = $reached;
-        }
-
-        return $reached;
-    }
-
-    /**
-     * @param ClassRecord $class Class the private helper lives in
-     * @param MethodRecord $method The private helper itself
-     * @param CallSite $site One call inside it
-     * @param array<int, string> $seen Method keys already on the stack
-     * @return array<string, array<int, string>> Chain of further private links, by exception
-     */
-    private function throughOneSite(ClassRecord $class, MethodRecord $method, CallSite $site, array $seen): array
-    {
-        if ($site->kind === CallSite::KIND_THROW) {
-            return [$site->target => []];
-        }
-
-        $target = $this->resolver->resolve($class, $method, $site);
-        if ($target === null) {
-            return [];
-        }
-        if (!$target->isPrivateLink()) {
-            return array_fill_keys(array_unique($target->throws), []);
-        }
-
-        $reached = [];
-        $label = self::PRIVATE_MARK . $this->label($target->class, $target->name);
-        foreach ($this->throughPrivateLink($target, $seen) as $exception => $chain) {
-            $reached[$exception] = [$label, ...$chain];
-        }
-
-        return $reached;
-    }
-
-    /**
-     * @param ClassRecord $class Class the call is written in
      * @param MethodRecord $method Method that owes the exception
      * @param string $exception Fully qualified exception class
      * @param array{origin: ?string, chain: array<int, string>} $source Where the exception comes from
@@ -385,22 +250,6 @@ final class ThrowsPropagationRule implements CrossFileRule
         }
 
         return sprintf('%s does not propagate %s documented on %s', $caller, $short, $source['origin']);
-    }
-
-    /**
-     * @param array<int, string> $declared Exception classes named by a `@throws` or caught by a `catch`
-     * @param string $exception Fully qualified exception class that reaches the caller
-     * @return bool True when one of the declared classes is a truthful answer for it
-     */
-    private function isCovered(array $declared, string $exception): bool
-    {
-        foreach ($declared as $candidate) {
-            if ($this->hierarchy->covers($candidate, $exception)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

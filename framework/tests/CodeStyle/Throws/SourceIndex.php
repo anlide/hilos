@@ -772,6 +772,11 @@ final class SourceIndex
      * of a closure, an arrow function and an anonymous class out: an exception raised
      * there reaches whoever calls the callback, not the method that wrote it.
      *
+     * The callback itself is still recorded, as an opaque entry, and so is every other
+     * place the walk sees an exception could come through without being able to follow
+     * it — the method may call the callback it built, and a body read only in part is
+     * not a body anyone may claim cannot throw.
+     *
      * @param string $class Fully qualified name of the declaring class
      * @return array{0: array<int, CallSite>, 1: array<string, array{base: string, path: array<int, string>}>}
      */
@@ -789,10 +794,12 @@ final class SourceIndex
             $token = $this->tokens[$cursor];
             $type = $token[0];
             if ($type === T_FUNCTION || $type === T_FN) {
+                $sites[] = $this->opaqueSite($cursor)->withCaught($this->caughtAt($catches, $cursor));
                 $cursor = $type === T_FUNCTION ? $this->skipClosure($cursor) : $this->skipArrowFunction($cursor);
                 continue;
             }
             if ($type === T_NEW && ($this->tokens[$cursor + 1][0] ?? null) === T_CLASS) {
+                $sites[] = $this->opaqueSite($cursor)->withCaught($this->caughtAt($catches, $cursor));
                 $cursor = $this->skipAnonymousClass($cursor + 1);
                 continue;
             }
@@ -815,14 +822,18 @@ final class SourceIndex
                         $raised,
                         $this->caughtAt($catches, $cursor),
                     );
+                } elseif (($this->tokens[$cursor + 1][0] ?? null) !== T_NEW) {
+                    // A `throw new` of a class not written as a name is left to the `new` below.
+                    $sites[] = $this->opaqueSite($cursor)->withCaught($this->caughtAt($catches, $cursor));
                 }
                 $cursor++;
                 continue;
             }
             if ($type === T_NEW) {
                 $constructed = $this->raisedException($cursor - 1, $class);
-                if ($constructed !== null) {
-                    $sites[] = new CallSite(
+                $sites[] = $constructed === null
+                    ? $this->opaqueSite($cursor)->withCaught($this->caughtAt($catches, $cursor))
+                    : new CallSite(
                         CallSite::KIND_NEW,
                         $token[2],
                         '',
@@ -830,8 +841,12 @@ final class SourceIndex
                         $constructed,
                         $this->caughtAt($catches, $cursor),
                     );
-                }
                 $cursor += 2;
+                continue;
+            }
+            if ($this->usesAResult($cursor)) {
+                $sites[] = $this->opaqueSite($cursor + 1)->withCaught($this->caughtAt($catches, $cursor));
+                $cursor++;
                 continue;
             }
 
@@ -899,7 +914,12 @@ final class SourceIndex
     /**
      * Reads one receiver chain — `$this->registry->find()`, `self::$pool->run()`,
      * `Registry::find()` — and stops at the first call, whose result type is unknown
-     * and takes the rest of the chain out of scope.
+     * and takes the rest of the chain out of scope. The rest is not lost: the body walk
+     * records a result used as a receiver as an opaque entry of its own.
+     *
+     * A chain that cannot be followed at all comes back as an opaque entry too: a
+     * function, a callee held in a variable, a member named by one, a first-class
+     * callable — which is a closure, and whatever it throws is thrown where it is called.
      *
      * A square bracket ends the chain the same way a parenthesis does, because behind
      * it stands a method too: `Hilos::$env[KEY]` is `EnvAccessor::offsetGet()` written
@@ -924,6 +944,8 @@ final class SourceIndex
         } elseif ($this->isName($token) && ($this->tokens[$cursor + 1][0] ?? null) === T_DOUBLE_COLON) {
             $written = strtolower($token[1]);
             $base = $written === 'self' || $written === 'parent' ? $written : $this->resolveName($token[1]);
+        } elseif ($this->isName($token) && ($this->tokens[$cursor + 1][0] ?? null) === '(') {
+            return [$this->opaqueSite($cursor), null, $cursor + 1];
         } else {
             return [null, null, $cursor + 1];
         }
@@ -946,6 +968,11 @@ final class SourceIndex
                 // parenthesis: the key may hold a chain of its own.
                 return [$site, null, $cursor];
             }
+            if ($operator === '(') {
+                // Only a variable stands before a parenthesis here — `$f()`, `Registry::$name()` —
+                // since a member name followed by one is read as a call below.
+                return [$this->opaqueSite($cursor - 1), null, $cursor];
+            }
             if (!$isArrow && $operator !== T_DOUBLE_COLON) {
                 break;
             }
@@ -954,7 +981,7 @@ final class SourceIndex
             }
             if ($this->isMemberName($member) && ($this->tokens[$cursor + 2][0] ?? null) === '(') {
                 if ($this->isFirstClassCallable($cursor + 2)) {
-                    return [null, null, $cursor + 4];
+                    return [$this->opaqueSite($cursor + 1), null, $cursor + 4];
                 }
                 $site = new CallSite(CallSite::KIND_CALL, $member[2], $base, $path, $member[1], []);
 
@@ -971,6 +998,11 @@ final class SourceIndex
                 $line = $member[2];
                 $cursor += 2;
                 continue;
+            }
+            if ($isArrow) {
+                // `->{$key}` and `->$name`: the member is not written down, and `__get()` or
+                // `__call()` may stand behind it.
+                return [$this->opaqueSite($cursor + 1), null, $cursor + 2];
             }
 
             return [null, null, $cursor + 2];
@@ -1045,6 +1077,39 @@ final class SourceIndex
         }
 
         return null;
+    }
+
+    /**
+     * `$this->make()->run()`, `(new Registry())->find()`, `$handlers[$key]()`: the
+     * value an expression produced is called, indexed or read through, and its type
+     * is written down nowhere.
+     *
+     * @param int $cursor Index of the token that may close the expression
+     * @return bool True when a closing parenthesis or bracket is followed by a use of what it closed
+     */
+    private function usesAResult(int $cursor): bool
+    {
+        $type = $this->tokens[$cursor][0];
+        if ($type !== ')' && $type !== self::INDEX_CLOSE) {
+            return false;
+        }
+
+        return in_array(
+            $this->tokens[$cursor + 1][0] ?? null,
+            [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON, '(', self::INDEX_OPEN],
+            true,
+        );
+    }
+
+    /**
+     * @param int $cursor Index of the token the entry is written at
+     * @return CallSite Entry no resolver follows, its target the token as written
+     */
+    private function opaqueSite(int $cursor): CallSite
+    {
+        $token = $this->tokens[$cursor];
+
+        return new CallSite(CallSite::KIND_OPAQUE, $token[2], '', [], $token[1], []);
     }
 
     /**
