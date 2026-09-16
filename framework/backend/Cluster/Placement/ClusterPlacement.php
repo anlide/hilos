@@ -774,6 +774,8 @@ final class ClusterPlacement implements WorkerPlacement
 
         if ($nodeId === $this->placingLeaderId && $this->hosted !== [] && $this->selfFenceDeadline === null) {
             $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+            Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, " . count($this->hosted)
+                . ' placed agent(s) stop in ' . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless it returns');
         }
     }
 
@@ -791,6 +793,9 @@ final class ClusterPlacement implements WorkerPlacement
     public function noteNodeOnline(string $nodeId, float $now): void
     {
         if ($nodeId === $this->placingLeaderId) {
+            if ($this->selfFenceDeadline !== null) {
+                Logger::info("Self-fence disarmed: placing leader '{$nodeId}' is back before the grace elapsed");
+            }
             $this->selfFenceDeadline = null;
         }
 

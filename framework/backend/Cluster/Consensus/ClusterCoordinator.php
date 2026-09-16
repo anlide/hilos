@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Constants\TimeConstants;
 use Hilos\HilosException;
+use Hilos\Utils\Logger;
 
 /**
  * Self-written raft-like consensus for the master set: leader election and
@@ -70,6 +71,9 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
 
     /** @var bool Whether the election timer should be refreshed on the next tick */
     private bool $deferElectionReset = true;
+
+    /** @var ?string Why the next election starts, set by whoever forced the timer; null means the timer simply ran out */
+    private ?string $pendingElectionReason = null;
 
     /**
      * @param ClusterConsensusConfig $config Consensus configuration for the local node
@@ -140,10 +144,12 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         if ($this->deferElectionReset) {
             $this->electionDeadline = $now + $this->randomElectionTimeout();
             $this->deferElectionReset = false;
+            $this->pendingElectionReason = null;
         }
 
-        $hasQuorum = $this->computeQuorum();
-        $this->applyQuorumTransition($hasQuorum);
+        $onlineCount = count(array_intersect($this->mesh->onlineMasterIds(), $this->config->masterSet));
+        $hasQuorum = $onlineCount >= $this->config->quorumSize;
+        $this->applyQuorumTransition($hasQuorum, $onlineCount);
 
         match ($this->role) {
             ConsensusRole::Follower => $this->tickFollower($now, $hasQuorum),
@@ -165,7 +171,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     public function onRequestVote(PeerRequestVoteDTO $frame): void
     {
         if ($frame->term > $this->currentTerm) {
-            $this->stepDownToFollower($frame->term);
+            $this->stepDownToFollower($frame->term, $frame->candidateId);
         }
 
         $granted = false;
@@ -174,6 +180,13 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             $this->votedFor = $frame->candidateId;
             $granted = true;
             $this->deferElectionReset = true;
+            Logger::info("Consensus: granted the vote to node '{$frame->candidateId}' in term {$this->currentTerm}");
+        } elseif ($frame->term < $this->currentTerm) {
+            Logger::info("Consensus: refused the vote to node '{$frame->candidateId}' in term {$frame->term}:"
+                . " stale, this node is in term {$this->currentTerm}");
+        } else {
+            Logger::info("Consensus: refused the vote to node '{$frame->candidateId}' in term {$frame->term}:"
+                . " already voted for '{$this->votedFor}' this term");
         }
 
         $this->mesh->sendToMaster(
@@ -194,7 +207,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     public function onVoteReply(PeerVoteReplyDTO $frame): void
     {
         if ($frame->term > $this->currentTerm) {
-            $this->stepDownToFollower($frame->term);
+            $this->stepDownToFollower($frame->term, $frame->voterId);
             return;
         }
 
@@ -232,9 +245,11 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         if ($frame->term > $this->currentTerm) {
-            $this->stepDownToFollower($frame->term);
+            $this->stepDownToFollower($frame->term, $frame->leaderId);
         } elseif ($this->role !== ConsensusRole::Follower) {
             if ($this->role === ConsensusRole::Leader) {
+                Logger::info("Consensus: lost leadership held in term {$this->currentTerm}:"
+                    . " another leader '{$frame->leaderId}' heartbeats in the same term");
                 $this->observer->onLostLeadership($this->currentTerm);
             }
             $this->role = ConsensusRole::Follower;
@@ -257,8 +272,10 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     public function noteNodeOffline(string $nodeId): void
     {
         if ($this->role === ConsensusRole::Follower && $nodeId === $this->currentLeaderId) {
+            Logger::info("Consensus: leader '{$nodeId}' went offline; election timer expired at once");
             $this->currentLeaderId = null;
             $this->electionDeadline = 0.0;
+            $this->pendingElectionReason = "leader '{$nodeId}' went offline";
         }
     }
 
@@ -279,35 +296,29 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
             return;
         }
 
+        Logger::info('Consensus: named successor by the leaving leader; campaigning at once');
         $this->currentLeaderId = null;
         $this->electionDeadline = 0.0;
         $this->deferElectionReset = false;
-    }
-
-    /**
-     * Recomputes whether the online master set still forms a quorum.
-     *
-     * @return bool True when online master-set members meet the quorum size
-     */
-    private function computeQuorum(): bool
-    {
-        $onlineInSet = array_intersect($this->mesh->onlineMasterIds(), $this->config->masterSet);
-
-        return count($onlineInSet) >= $this->config->quorumSize;
+        $this->pendingElectionReason = 'named successor by the leaving leader';
     }
 
     /**
      * Fires the quorum transition when the quorum state flipped since the last tick.
      *
      * @param bool $hasQuorum Freshly computed quorum state
+     * @param int $onlineCount Master-set members online this tick, the count the quorum state was computed from
      */
-    private function applyQuorumTransition(bool $hasQuorum): void
+    private function applyQuorumTransition(bool $hasQuorum, int $onlineCount): void
     {
         if ($hasQuorum === $this->lastQuorum) {
             return;
         }
 
         $this->lastQuorum = $hasQuorum;
+        $edge = $hasQuorum ? 'gained' : 'lost';
+        Logger::info("Consensus: quorum {$edge}: {$onlineCount} of the " . count($this->config->masterSet)
+            . "-node master set online (quorum {$this->config->quorumSize})");
         if ($hasQuorum) {
             $this->observer->onQuorumGained();
         } else {
@@ -334,7 +345,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         if ($now >= $this->electionDeadline) {
-            $this->startElection($now);
+            $this->startElection($now, 'election timeout expired');
         }
     }
 
@@ -347,6 +358,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     private function tickCandidate(float $now, bool $hasQuorum): void
     {
         if (!$hasQuorum) {
+            Logger::info("Consensus: abandoning candidacy in term {$this->currentTerm}: quorum lost");
             $this->role = ConsensusRole::Follower;
             $this->votedFor = null;
             $this->votesReceived = [];
@@ -355,7 +367,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         if ($now >= $this->electionDeadline) {
-            $this->startElection($now);
+            $this->startElection($now, "no majority in term {$this->currentTerm}, retrying");
         }
     }
 
@@ -368,6 +380,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     private function tickLeader(float $now, bool $hasQuorum): void
     {
         if (!$hasQuorum) {
+            Logger::info("Consensus: lost leadership held in term {$this->currentTerm}: quorum lost");
             $this->observer->onLostLeadership($this->currentTerm);
             $this->role = ConsensusRole::Follower;
             $this->currentLeaderId = null;
@@ -385,13 +398,19 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * Opens a new election term: vote for self and solicit the master set.
      *
      * A single-master set (quorum of one) elects the node immediately from its own
-     * vote; otherwise it awaits replies.
+     * vote; otherwise it awaits replies. A reason left by a path that forced the
+     * timer wins over the caller's own, and is spent here.
      *
      * @param float $now Current microtime
+     * @param string $reason Why this election starts when no forcing path left a reason of its own
      */
-    private function startElection(float $now): void
+    private function startElection(float $now, string $reason): void
     {
+        $previousTerm = $this->currentTerm;
         $this->currentTerm++;
+        Logger::info("Consensus: becoming candidate in term {$this->currentTerm} (was {$previousTerm}): "
+            . ($this->pendingElectionReason ?? $reason));
+        $this->pendingElectionReason = null;
         $this->role = ConsensusRole::Candidate;
         $this->votedFor = $this->config->selfNodeId;
         $this->votesReceived = [$this->config->selfNodeId];
@@ -413,6 +432,8 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         $this->role = ConsensusRole::Leader;
         $this->currentLeaderId = $this->config->selfNodeId;
         $this->heartbeatDueAt = 0.0;
+        Logger::info("Consensus: won term {$this->currentTerm} with " . count($this->votesReceived) . ' votes of the '
+            . count($this->config->masterSet) . "-node master set (quorum {$this->config->quorumSize}), now leader");
         $this->observer->onBecameLeader($this->currentTerm);
     }
 
@@ -424,10 +445,17 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * is advanced. Clears the vote so the newer term can be granted afresh.
      *
      * @param int $newTerm Newer term observed on the wire
+     * @param string $fromNodeId Node id of the frame that carried the newer term
      */
-    private function stepDownToFollower(int $newTerm): void
+    private function stepDownToFollower(int $newTerm, string $fromNodeId): void
     {
+        $adopted = "Consensus: term {$newTerm} adopted from node '{$fromNodeId}' (was {$this->currentTerm})";
+        if ($this->role !== ConsensusRole::Follower) {
+            $adopted .= ", role follower (was {$this->role->value})";
+        }
+        Logger::info($adopted);
         if ($this->role === ConsensusRole::Leader) {
+            Logger::info("Consensus: lost leadership held in term {$this->currentTerm}: term {$newTerm} seen from node '{$fromNodeId}'");
             $this->observer->onLostLeadership($this->currentTerm);
         }
 

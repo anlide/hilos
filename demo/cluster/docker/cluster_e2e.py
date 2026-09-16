@@ -220,6 +220,33 @@ def db_read(node, key):
     return None
 
 
+def node_log_path(node):
+    """Where a node's daemon log lands on the host: data/logs/<node> is bind-mounted out of the
+    container's /var/log/hilos (docker-compose.cluster.yml, one volume per node), and the daemon
+    writes daemon.log there because DAEMON_LOG_FILE in .env.example says so."""
+    return HERE.parent / "data" / "logs" / node / "daemon.log"
+
+
+def node_log(node, offset=0):
+    """The daemon log a node wrote from a byte offset on: its text, or '' when there is no
+    file. Read from the host - the files inside the mount are root-owned but world-readable,
+    so no sudo and no docker exec are needed."""
+    try:
+        with open(node_log_path(node), "rb") as f:
+            f.seek(offset)
+            return f.read().decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        return ""
+
+
+def node_log_size(node):
+    """Byte length of a node's daemon log, or 0 when there is no file yet."""
+    try:
+        return node_log_path(node).stat().st_size
+    except FileNotFoundError:
+        return 0
+
+
 def container_id(node):
     """Docker id of a node's container, or '' when there is none."""
     return ctl_out("container-id", node)
@@ -593,6 +620,8 @@ def scenario_4_slave_kill_failover():
 def scenario_5_leader_kill_reelection():
     views = wait_converge(ALL_NODES)
     old_leader = leaders(views)[0]
+    surviving_masters = [n for n in MASTERS if n != old_leader]
+    offsets = {n: node_log_size(n) for n in surviving_masters}
     print(f"    killing leader {old_leader}; expecting a new leader among the survivors")
     ctl("kill", old_leader)
     survivors = [n for n in ALL_NODES if n != old_leader]
@@ -603,10 +632,36 @@ def scenario_5_leader_kill_reelection():
         views = wait_until(new_leader_elected, ELECTION_TIMEOUT,
                            "a new leader with quorum", nodes=survivors)
         new_leader = [n for n in MASTERS if n != old_leader and is_leader(views.get(n))][0]
-        return f"re-elected {new_leader} after {old_leader} died"
+        assert_reelection_logged(new_leader, views[new_leader]["term"], surviving_masters, offsets)
+        return (f"re-elected {new_leader} after {old_leader} died; "
+                f"its log carries the candidacy, the term and the winning vote")
     finally:
         ctl("start", old_leader)
         wait_converge(ALL_NODES)
+
+
+def assert_reelection_logged(new_leader, term, surviving_masters, offsets):
+    """The survivors' own daemon logs tell the re-election, with no inspect call (HIL-442).
+
+    The lines are on disk by the time the harness sees the new leader: the daemon appends each
+    one at the transition itself with no buffer, and the harness only learns of the leader by
+    polling afterwards. The voter is every other surviving master - with one master dead, the
+    winner's majority cannot be reached without it."""
+    tail = node_log(new_leader, offsets[new_leader])
+    where = node_log_path(new_leader)
+    assert tail, f"{new_leader}'s daemon log gained nothing since the kill (read {where})"
+    assert "Consensus: becoming candidate in term " in tail, \
+        f"{new_leader}'s log has no candidacy line since the kill (read {where})"
+    won = [line for line in tail.splitlines() if "Consensus: won term " in line]
+    assert won, f"{new_leader}'s log has no won-term line since the kill (read {where})"
+    assert f"Consensus: won term {term} with " in won[-1], \
+        f"{new_leader} leads term {term}, but its last won-term line reads: {won[-1]}"
+    for voter in surviving_masters:
+        if voter == new_leader:
+            continue
+        voter_tail = node_log(voter, offsets[voter])
+        assert f"Consensus: granted the vote to node '{new_leader}'" in voter_tail, \
+            f"{voter}'s log has no vote granted to {new_leader} since the kill (read {node_log_path(voter)})"
 
 
 def scenario_6_hot_join():

@@ -24,6 +24,7 @@ use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Hilos;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use Throwable;
@@ -56,6 +57,7 @@ final class ClusterPlacementTest extends TestCase
     protected function tearDown(): void
     {
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
+        Logger::resetLogFile();
 
         parent::tearDown();
     }
@@ -393,6 +395,41 @@ final class ClusterPlacementTest extends TestCase
         $placement->tick(1000.9);
 
         $this->assertSame([], $executor->revoked, 'A leader back before the grace leaves the slave running');
+    }
+
+    public function testArmingTheSelfFenceIsLoggedWithTheGraceAndTheAgentCount(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5), null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->noteNodeOffline('leader', 1000.1);
+
+        $this->assertSame(
+            ["Self-fence armed: placing leader 'leader' went offline, 1 placed agent(s) stop in 0.5s unless it returns"],
+            $this->selfFenceLines($logFile),
+            'The fence is armed once, however often the loss is reported',
+        );
+    }
+
+    public function testDisarmingTheSelfFenceIsLoggedOnlyWhenItWasArmed(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5), null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOnline('leader', 999.0);
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->noteNodeOnline('leader', 1000.2);
+        $placement->noteNodeOnline('leader', 1000.3);
+
+        $this->assertSame([
+            "Self-fence armed: placing leader 'leader' went offline, 1 placed agent(s) stop in 0.5s unless it returns",
+            "Self-fence disarmed: placing leader 'leader' is back before the grace elapsed",
+        ], $this->selfFenceLines($logFile), 'A return with no fence armed announces no disarming');
     }
 
     public function testLeaderReconcilesARejoinReportByStoppingAMovedAgent(): void
@@ -885,6 +922,42 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame('node-c', $record?->nodeId, 'A stop from the node it left must not erase a record naming another');
         $this->assertSame(PlacementState::Placing, $record?->state);
         $this->assertSame([], $mesh->sent, 'onStopAgent() answers stopped unconditionally, so a stop back at one loops the pair');
+    }
+
+    /**
+     * Points the main log at a fresh temporary file; tearDown points it back.
+     *
+     * @return string Path of the temporary log file
+     */
+    private function captureLog(): string
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-self-fence-log');
+        Logger::setLogFile($logFile);
+
+        return $logFile;
+    }
+
+    /**
+     * Reads the self-fence lines back from a captured log, without their timestamps, and removes the file.
+     *
+     * @param string $logFile Path returned by {@see captureLog()}
+     * @return list<string> Messages of the self-fence lines, in the order they were written
+     */
+    private function selfFenceLines(string $logFile): array
+    {
+        $lines = file($logFile, FILE_IGNORE_NEW_LINES);
+        unlink($logFile);
+        $this->assertIsArray($lines, 'The captured log is readable');
+
+        $messages = [];
+        foreach ($lines as $line) {
+            $message = (string)preg_replace('/^\[[^\]]+\] /', '', $line);
+            if (str_starts_with($message, 'Self-fence')) {
+                $messages[] = $message;
+            }
+        }
+
+        return $messages;
     }
 }
 
