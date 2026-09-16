@@ -156,12 +156,13 @@ remembered:
   catalog — and forgetting it used to be invisible, the keys simply never
   reaching the settings screen.
 - `Hilos::validateDeferredFeatureRequirements($migrationsPath,
-  $cliManagerClass, $rtContextClass)` covers what startup deliberately cannot
-  see: the SQL tables the feature reads (migrations are applied as a separate
-  step, so booting must not depend on them), the CLI commands it is driven by,
-  and the presence source behind the users list. Each project calls it from its
-  own topology unit test, passing the three layout facts the facade does not
-  own.
+  $cliManagerClass, $rtContextClass, $dbContextClass)` covers what startup
+  deliberately cannot see: the SQL tables the feature reads (migrations are
+  applied as a separate step, so booting must not depend on them), the CLI
+  commands it is driven by, the presence source behind the users list, and the
+  block source behind account blocks — a database collection that must also be
+  among the project's process-wide reads. Each project calls it from its own
+  topology unit test, passing the four layout facts the facade does not own.
 
 Runtime state that belongs to a feature is mounted by the framework from the
 declaration; a project must not mount it in `configure()`. See
