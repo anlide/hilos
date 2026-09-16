@@ -31,8 +31,9 @@ use Hilos\Tests\CodeStyle\Violation;
  * - **An override needs it.** A base whose tag covers the tag of an override keeps
  *   it, or the second direction would report the override as wider than its base.
  *
- * A constructor gets the first two grounds and not the last two: PHP does not
- * inherit its contract in either direction.
+ * A constructor and a private method get the first two grounds and not the last
+ * two: PHP does not inherit a constructor's contract in either direction, and
+ * nothing overrides a private method.
  */
 final class ThrowsOrphanRule implements CrossFileRule
 {
@@ -289,9 +290,9 @@ final class ThrowsOrphanRule implements CrossFileRule
     }
 
     /**
-     * The index does not say which records are traits, but every trait that matters
-     * here is named by the class using it; a trait nobody uses has no class to resolve
-     * its body against.
+     * The index does not say which records are traits, so a trait is known here only
+     * by a class using it; a trait nobody uses is not recognized as one and is judged
+     * as a record of its own, against its own body.
      *
      * @return array<string, true> Lowercased names of every trait some class uses
      */
