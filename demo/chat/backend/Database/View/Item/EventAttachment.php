@@ -68,8 +68,8 @@ final class EventAttachment extends DbItem
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend Prepare a legacy frontend-safe entity payload
      * @return array<string, mixed> Attachment payload
-     * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When the base array form raises it for a related collection whose class constants are not configured
+     * @throws InvalidArgumentException When the base array form raises it for a related collection whose object type does not match it
      */
     public function toArray(
         bool $withId = true,

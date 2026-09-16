@@ -185,9 +185,12 @@ Five things are outside it on purpose:
 
 1. **A member reached through `__get`.** `Hilos::$db->users` names no declared
    property: the step travels through `__get` and a `@property-read` bridge, and
-   no text resolves what the result is. A class-level tag is such a text only on
-   the class the step is read on, and `Hilos::$db` is declared as the base
-   `DbContext`, while the collection tags stand on the project's own context. This
+   no text resolves what the result is. A class-level tag is such a text on the
+   class the step is read on and on its ancestors, never on a subclass, and it
+   names an instance property. `Hilos::$db` is a declared static property of the
+   base type `DbContext` — the `@property-read ChatDbContext $db` a project facade
+   writes for its IDE is not read for a static step — while the collection tags
+   stand on the project's own context. This
    is the uncomfortable one — `DbContext::__get` is exactly what throws
    `CollectionNotFoundException`, so the most interesting path is the one behind
    the magic — but nothing checks those paths today, so the rule does not make

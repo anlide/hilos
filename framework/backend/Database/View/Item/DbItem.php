@@ -223,8 +223,8 @@ abstract class DbItem
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken). ID is always included when true.
      * @return array<string, mixed> Item data as associative array
-     * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When an override reads a related collection whose class constants are not configured
+     * @throws InvalidArgumentException When an override reads a related collection whose object type does not match it
      */
     public function toArray(
         bool $withId = true,
