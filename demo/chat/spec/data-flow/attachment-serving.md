@@ -6,7 +6,8 @@ other files as a download. Upload itself is in
 
 ## The four decisions
 
-1. **Authorize by cookie**, the same `hilos_session_token` the WebSocket uses.
+1. **Authorize by cookie**, the same session cookie the WebSocket uses, looked up
+   by the name `SessionCookieName::resolve()` gives it.
    The URL carries only the attachment `id` (`/chat/attachment?id=123`); the
    browser attaches the cookie to `<img src>` / `<a download>` automatically.
 2. **Serve strictly same-origin.** `/chat/attachment` is reverse-proxied in every

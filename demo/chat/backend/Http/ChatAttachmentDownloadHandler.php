@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Demo\Chat\Http;
 
 use Demo\Chat\Constants\ChatEnvConstants;
-use Demo\Chat\Constants\CookieNames;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Hilos;
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 
@@ -36,6 +37,7 @@ final class ChatAttachmentDownloadHandler
      *
      * @param array{request: array<string, mixed>, params: array<int|string, string>} $args Router handler args
      * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
+     * @throws EnvException When an environment value the request needs cannot be read
      */
     public static function handle(array $args): array
     {
@@ -121,8 +123,12 @@ final class ChatAttachmentDownloadHandler
     /**
      * Reads the session token from the request's Cookie header.
      *
+     * The cookie is looked up by the name the installation gives it, the one the WebSocket
+     * handshake reads too: a name written here would outlive a rename and answer every browser 401.
+     *
      * @param array<string, mixed> $request Request data
      * @return string Session token, or empty string when no session cookie is present
+     * @throws EnvException When the session cookie name cannot be read from the environment
      */
     private static function sessionTokenFromRequest(array $request): string
     {
@@ -132,7 +138,7 @@ final class ChatAttachmentDownloadHandler
         }
 
         // external-boundary: a browser is free to send no session cookie; the caller answers 401 for it
-        return HttpHeaderHelper::parseCookies($headers)[CookieNames::SESSION_TOKEN] ?? '';
+        return HttpHeaderHelper::parseCookies($headers)[SessionCookieName::resolve()] ?? '';
     }
 
     /**

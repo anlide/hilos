@@ -196,8 +196,10 @@ and [../signals/routing.md](../signals/routing.md) for how `COMMAND_REQUEST` /
 The grant needs a user row that exists, and a fresh installation has none: the
 admin pages are shut, so there is nothing to register through and no id to name.
 `admin:create <sessionToken>` addresses a **session** instead — the value of the
-`hilos_session_token` cookie, read in DevTools — and makes it an administrator,
-minting the user row when the session carries none. Its two halves are
+session cookie, read in DevTools — and makes it an administrator, minting the user
+row when the session carries none. The cookie's name is the installation's own
+(`SessionCookieName::resolve()`: `hilos_session_token_` and a hash of the database
+name, unless `HILOS_SESSION_COOKIE_NAME` sets it), and the command's help prints it. Its two halves are
 `AdminCreateCommand` on the CLI and
 `AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
 `ensureAdminUser()` as the project seam that writes the row.
