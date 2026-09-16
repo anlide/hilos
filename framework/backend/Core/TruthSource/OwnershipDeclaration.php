@@ -299,9 +299,11 @@ final class OwnershipDeclaration
      *
      * Sufficient and not complete, and the rule says so rather than promise otherwise: a co-owner
      * that may add rows as well holds no copy of the rows the other owner wrote either, and is not
-     * caught here. The tree has one - the cluster demo's claimer holds the worker statuses whole
-     * while every worker holds its own row of them - and it reads none of the others' rows in its
-     * start hook, so no second form of borrowing exists for it until one does.
+     * caught here. The tree has several - the cluster demo's claimer holds the worker statuses
+     * whole while every worker holds its own row of them, and the chat demo holds five
+     * collections whole under two or three owners at once (its Hilos::SHARED_DB_OWNERS) - and
+     * none of them reads another owner's rows in its start hook, so no second form of borrowing
+     * exists for them until one does.
      *
      * @param TruthSourceOperations $operations Folded operations of one whole-collection claim
      * @return bool True when the claim may not add, and so waits for the state it edits
