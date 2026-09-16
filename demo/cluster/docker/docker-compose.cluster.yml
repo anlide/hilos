@@ -150,6 +150,13 @@ services:
       <<: *node-env
       CLUSTER_NODE_ID: m1
       CLUSTER_NODE_ROLE: master
+      # Empty on purpose, and the emptiness is this stand's choice, not a framework rule: the
+      # framework gates placement on what a node DECLARES, never on its role (HIL-445). With no
+      # tag advertised the three masters host no member of the fleet - the fleet demands the
+      # project tag `worker` - while still hosting the per-node db_probe replica, which a node
+      # replica starts anywhere. The split is what scenarios 3 and 14 are written against.
+      # The decision and what follows from it: docs/agents/architecture/daemon-lifecycle.md,
+      # "Who may carry placed work (HIL-445)".
       CLUSTER_NODE_CAPABILITIES: ""
       CLUSTER_PEER_ADVERTISE: "10.185.0.11:8095"
       CLUSTER_SEEDS: "10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
@@ -171,6 +178,7 @@ services:
       <<: *node-env
       CLUSTER_NODE_ID: m2
       CLUSTER_NODE_ROLE: master
+      # Empty for the same reason m1's is; see the comment there.
       CLUSTER_NODE_CAPABILITIES: ""
       CLUSTER_PEER_ADVERTISE: "10.185.0.12:8095"
       CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
@@ -192,6 +200,7 @@ services:
       <<: *node-env
       CLUSTER_NODE_ID: m3
       CLUSTER_NODE_ROLE: master
+      # Empty for the same reason m1's is; see the comment there.
       CLUSTER_NODE_CAPABILITIES: ""
       CLUSTER_PEER_ADVERTISE: "10.185.0.13:8095"
       CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.14:8095,10.185.0.15:8095"

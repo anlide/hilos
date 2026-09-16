@@ -430,6 +430,51 @@ Coordination state is **not** persisted (MySQL is kept out of coordination). A n
 leader rebuilds membership/placement by re-querying the mesh; singleton agents are
 launched fresh (the previous leader's were killed — see HIL-341 below).
 
+## Who may carry placed work (HIL-445)
+
+Recorded because on 26.07.2026 a master's work was expected to be picked up by a
+neighbor when that master went down, and no log could say there had never been any:
+"this master carries nothing" was an empty configuration string, not a decision. Five
+statements; the mechanism they govern is built by HIL-447 and HIL-448.
+
+1. **Role is not a placement gate, and is not going to become one.** Candidacy is
+   decided by what a node *declares*, never by whether it is a master or a slave.
+   Selection already works this way: `ClusterPlacement::pickBestNode()` builds the
+   candidate set from every online node, and `BestFitPlacementPolicy::isEligible()` —
+   required tags plus capacity minimums — is the whole hard gate. The word "master"
+   appears nowhere in it.
+2. **A master may carry placed work, and carries node replicas today.** A `NODE`-scope
+   replica starts on any node (the placement gate in `WorkerServer::startAgent()` lets
+   it through), and `demo/cluster` runs its `db_probe` replica on two masters in a green
+   scenario (`scenario_11_cross_node_db_fact` writes on m1 and reads on m2). What a
+   master cannot accept today is only the demo's fleet, and only because the fleet
+   demands the project tag `worker` (`WorkerAgentDaemon::requiredCapabilities()`) that
+   the masters do not advertise (`CLUSTER_NODE_CAPABILITIES: ""` in
+   `docker-compose.cluster.yml`).
+3. **The leader carries work by construction, and is a legal placement target — last
+   among equals.** A `CLUSTER`+`LEADER` singleton runs where leadership sits (see *The
+   placement gate* above). For policy placement, among otherwise equal candidates the
+   node-selection policy picks the leader last, and only when no other eligible
+   candidate exists does the work go to it rather than staying unplaced: a three-master
+   cluster with no slaves must still place its work. It is a ranking rule in the
+   tiebreak chain of `BestFitPlacementPolicy::selectNode()`, not a gate
+   (not in the code yet — HIL-448).
+4. **Acceptance of placed work must be declared.** A node that declares no capacity is
+   not a candidate; the declaration is the capacity model
+   (not in the code yet — HIL-448), and the refusal that names its absence is the
+   machine-readable one (not in the code yet — HIL-447). This inverts today's default,
+   where an agent that declares no required tags runs anywhere
+   (`AbstractAgentDaemon::requiredCapabilities()` returns `[]`) and "this master carries
+   nothing" is produced by an empty configuration string rather than by a decision.
+   Until then the tag mechanism stands unchanged and this statement is the intent.
+5. **There is no master-specific ceiling, and none will be added.** How much work a node
+   accepts is one model for every node: consumable capacity and an agent's declared cost
+   (not in the code yet — HIL-448), the cap and the honest refusal
+   (not in the code yet — HIL-447). A busy master is a scheduling question, not a role
+   question — agent work runs in a worker *process*, not on the master loop
+   ([agent-lifecycle.md](agent-lifecycle.md)), so the risk is host CPU/IO contention,
+   not a blocked event loop.
+
 ## Quorum-loss reaction and graceful-leave (HIL-341)
 
 HIL-339 *detects* quorum loss and flips the flags (`hasQuorum()` → false, `amLeader()`
