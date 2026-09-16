@@ -8,7 +8,10 @@ use Hilos\Core\CLI\CliApplication;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\View\Collection\HilosUserBlockSource;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
@@ -24,9 +27,10 @@ use Hilos\Runtime\View\Context\RtContext;
  * than the constants check and not on every process's path at all.
  *
  * So they are checked by each project's own unit test instead - the place where the whole
- * project layout is knowable at once and nothing is running. The three inputs the validator
+ * project layout is knowable at once and nothing is running. The four inputs the validator
  * takes are exactly the facts the facade does not own: where its migrations live, which CLI
- * manager its entry point passes to {@see CliApplication}, and which runtime context it builds.
+ * manager its entry point passes to {@see CliApplication}, and which runtime and database
+ * contexts it builds.
  *
  * Missing here is as bad as missing at startup, only quieter: a project that declared
  * NOTIFICATIONS without migrating the preference table fails on the first send rather than at
@@ -57,16 +61,20 @@ final class DeferredFeatureRequirementsValidator
      * @param string $migrationsPath Directory holding the project's schema migrations
      * @param class-string<CliManager> $cliManagerClass CLI manager the project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context the project builds, or null when it builds none
-     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence
-     *     source, or when a project that serves pages keeps its connections off the framework base
+     * @param ?class-string<DbContext> $dbContextClass Database context the project builds, or null when it builds none
+     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command, a presence
+     *     source or a process-wide block source, or when a project that serves pages keeps its connections off the
+     *     framework base
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
+     * @throws HilosException When building the database context fails to register the project's collections
      */
     public function validate(
         string $hilosClass,
         string $migrationsPath,
         string $cliManagerClass,
         ?string $rtContextClass,
+        ?string $dbContextClass,
     ): void {
         $errors = [];
         $createdTables = null;
@@ -77,6 +85,9 @@ final class DeferredFeatureRequirementsValidator
         );
         $context = $this->needsRuntimeContext($hilosClass, $definitions)
             ? $this->buildRuntimeContext($rtContextClass, $definitions)
+            : null;
+        $dbContext = $this->needsDatabaseContext($definitions)
+            ? $this->buildDatabaseContext($dbContextClass)
             : null;
 
         foreach ($definitions as $definition) {
@@ -101,6 +112,13 @@ final class DeferredFeatureRequirementsValidator
                 $errors[] = "{$name} is declared but no runtime collection of "
                     . ($rtContextClass ?? 'a project without a runtime context')
                     . ' implements ' . HilosPresenceSource::class;
+            }
+
+            if ($requirements->requiresUserBlockSource) {
+                $blockSourceError = $this->userBlockSourceError($name, $dbContextClass, $dbContext);
+                if ($blockSourceError !== null) {
+                    $errors[] = $blockSourceError;
+                }
             }
         }
 
@@ -136,6 +154,61 @@ final class DeferredFeatureRequirementsValidator
             $definitions,
             static fn(FeatureDefinition $definition): bool => $definition->requirements()->requiresPresenceSource,
         ) !== [];
+    }
+
+    /**
+     * Tells whether a declared feature needs the project's database context built.
+     *
+     * Building it runs the project's whole `configure()`, which constructs every collection and
+     * reads nothing from the database; it is still done once and only when a feature asks.
+     *
+     * @param list<FeatureDefinition> $definitions Definitions of the declared features
+     * @return bool True when a check below reads the built database context
+     */
+    private function needsDatabaseContext(array $definitions): bool
+    {
+        return array_filter(
+            $definitions,
+            static fn(FeatureDefinition $definition): bool => $definition->requirements()->requiresUserBlockSource,
+        ) !== [];
+    }
+
+    /**
+     * Names what is missing for a feature that requires a process-wide block source, if anything.
+     *
+     * Two questions, because there are two failures and only one of them is "no source". A
+     * project can implement the interface and forget to read the collection process-wide, and
+     * that one would never fail on its own: the block read in a worker that runs no page and no
+     * agent of its own is refused there, or read past the guard answers a stale false. The second
+     * question is not asked when the first failed - naming a process-wide read for a collection
+     * that does not exist is noise.
+     *
+     * The key is found by {@see DbContext::userBlockSourceKey()} and not by reading the source:
+     * nothing here registered a reader interest, and a guarded read would refuse every project.
+     *
+     * @param string $name Feature name as the error messages spell it
+     * @param ?class-string<DbContext> $dbContextClass Database context the project builds, or null when it builds none
+     * @param ?DbContext $dbContext Built database context, or null when the project builds none
+     * @return ?string Error message, or null when the block source is mounted and read process-wide
+     */
+    private function userBlockSourceError(string $name, ?string $dbContextClass, ?DbContext $dbContext): ?string
+    {
+        $key = $dbContext?->userBlockSourceKey();
+        if ($dbContext === null || $key === null) {
+            return "{$name} is declared but no database collection of "
+                . ($dbContextClass ?? 'a project without a database context')
+                . ' implements ' . HilosUserBlockSource::class;
+        }
+
+        if (in_array($key, $dbContext->processWideReadKeys(), true)) {
+            return null;
+        }
+
+        $sourceClass = get_class($dbContext->getDbItemCollection($key));
+
+        return "{$name} is declared and {$sourceClass} implements " . HilosUserBlockSource::class
+            . ", but {$dbContextClass} does not name '{$key}' in processWideReadCollections(),"
+            . ' so the block fact would read stale in every worker that runs no page and no agent';
     }
 
     /**
@@ -229,6 +302,30 @@ final class DeferredFeatureRequirementsValidator
 
         $context = new $rtContextClass();
         $context->mountFeatureRuntime($definitions);
+        $context->configure();
+
+        return $context;
+    }
+
+    /**
+     * Builds the project's database context the way the facade does, without a database.
+     *
+     * Built here rather than read off {@see Hilos::$db} for the same reason the runtime context
+     * is: no facade has been initialized in the unit test this runs in. Configuring it only
+     * constructs the collections - lazy ones load nothing, and eager ones load on first read -
+     * so no connection is needed.
+     *
+     * @param ?class-string<DbContext> $dbContextClass Database context the project builds, or null when it builds none
+     * @return ?DbContext Configured database context, or null when the project builds none
+     * @throws HilosException When the project's configure() fails to register its collections
+     */
+    private function buildDatabaseContext(?string $dbContextClass): ?DbContext
+    {
+        if ($dbContextClass === null) {
+            return null;
+        }
+
+        $context = new $dbContextClass();
         $context->configure();
 
         return $context;

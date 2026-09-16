@@ -32,8 +32,8 @@ use Hilos\Core\Table\Definition\TableDefinition;
  *   validator reads it before any layer is built and refuses to boot on a gap.
  *   `$requiredCatalogFragments` belongs here too: the catalog is reached through the
  *   SETTINGS_CATALOG constant, and both it and the fragment declare their keys statically;
- * - the second group (`$requiredDbTables`, `$requiredCliCommands`, `$requiresPresenceSource`)
- *   is not, so a per-demo unit test reads it instead. Migrations in particular must stay out
+ * - the second group (`$requiredDbTables`, `$requiredCliCommands`, `$requiresPresenceSource`,
+ *   `$requiresUserBlockSource`) is not, so a per-demo unit test reads it instead. Migrations in particular must stay out
  *   of the startup check: they are applied as a separate step, and gating boot on them would
  *   fail every process that starts before the migration run.
  */
@@ -59,6 +59,8 @@ final readonly class FeatureRequirements
      *     demo test)
      * @param list<string> $requiredCliCommands CLI command names the feature is driven by (checked by the demo test)
      * @param bool $requiresPresenceSource Whether a runtime collection must report user presence (checked by the demo test)
+     * @param bool $requiresUserBlockSource Whether a database collection read process-wide must report account blocks
+     *     (checked by the demo test)
      */
     public function __construct(
         public array $requiredPages = [],
@@ -73,6 +75,7 @@ final readonly class FeatureRequirements
         public array $requiredDbTables = [],
         public array $requiredCliCommands = [],
         public bool $requiresPresenceSource = false,
+        public bool $requiresUserBlockSource = false,
     ) {
     }
 }

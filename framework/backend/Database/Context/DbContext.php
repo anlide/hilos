@@ -22,6 +22,7 @@ use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Exception\View\UnknownLazyStrategyException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Database\View\Collection\HilosUserBlockSource;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
@@ -187,6 +188,55 @@ abstract class DbContext
     public function getDbItemCollection(string $name): ?DbCollection
     {
         return $this->_dbItemCollections[$name] ?? null;
+    }
+
+    /**
+     * Names the key the collection reporting account blocks is mounted under, when there is one.
+     *
+     * The nameless question, answered without reading anything: it looks at what is mounted and
+     * never passes the read guard. That is what the activation check needs - it asks whether a
+     * project has a block source at all, in a process where no reader interest is registered, and
+     * a guarded scan would refuse every project there. A caller that wants the answers goes
+     * through {@see self::userBlockSource()} instead.
+     *
+     * @return ?string Key of the first mounted collection reporting account blocks, or null when none does
+     */
+    final public function userBlockSourceKey(): ?string
+    {
+        foreach ($this->_dbItemCollections as $key => $collection) {
+            if ($collection instanceof HilosUserBlockSource) {
+                return $key;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the mounted collection that reports account blocks, when there is one.
+     *
+     * Unlike the runtime presence twin {@see RtContext::presenceSource()}, the collection is
+     * handed out through {@see self::__get()} and not straight out of the scan: a block read in a
+     * process that does not read the collection must be refused, not answered with a false that
+     * stops being true at the next write. The refusal travels out untouched.
+     *
+     * @return ?HilosUserBlockSource Collection reporting account blocks, or null when none is mounted
+     * @throws CollectionNotFoundException When the collection disappears between the scan and the read
+     * @throws DbCollectionNotReadableException When nothing here reads the collection, or its readiness is on its way
+     * @throws UnknownLazyStrategyException When lazy strategy is unknown
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException On connection or schema error
+     */
+    final public function userBlockSource(): ?HilosUserBlockSource
+    {
+        $key = $this->userBlockSourceKey();
+        if ($key === null) {
+            return null;
+        }
+
+        $source = $this->{$key};
+
+        return $source instanceof HilosUserBlockSource ? $source : null;
     }
 
     /**
@@ -370,6 +420,22 @@ abstract class DbContext
                 SourceConsumer::feature($collectionKey),
             );
         }
+    }
+
+    /**
+     * Names the collections this context reads from any process at all, as the activation check sees them.
+     *
+     * A passthrough to {@see self::processWideReadCollections()}, which stays protected because
+     * a project extends it rather than calls it. The deferred activation check needs to ask the
+     * question from outside: a feature whose seam reads a project collection in any process owes
+     * that collection a place in this list, and nothing running can tell the omission apart from
+     * a stale row.
+     *
+     * @return list<string> Collection keys read process-wide
+     */
+    final public function processWideReadKeys(): array
+    {
+        return $this->processWideReadCollections();
     }
 
     /**

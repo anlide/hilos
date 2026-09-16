@@ -18,6 +18,7 @@ use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
 use Demo\Tasks\Database\Settings\TasksSettingsCatalog;
+use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
@@ -440,6 +441,7 @@ final class TasksTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,
             TasksRtContext::class,
+            TasksDbContext::class,
         );
 
         $this->addToAssertionCount(1);

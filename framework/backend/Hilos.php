@@ -1064,28 +1064,33 @@ abstract class Hilos implements TruthSourceOwner
      * check or not at all. Each project's own unit test calls this instead - one place where the
      * whole layout is knowable and nothing is running.
      *
-     * The three arguments are exactly what the facade does not own: its migration directory, the
-     * CLI manager its entry point passes to {@see CliApplication}, and the runtime context class
-     * behind {@see createRuntime()}.
+     * The four arguments are exactly what the facade does not own: its migration directory, the
+     * CLI manager its entry point passes to {@see CliApplication}, the runtime context class
+     * behind {@see createRuntime()}, and the database context class behind {@see createDb()}.
      *
      * @param string $migrationsPath Directory holding this project's schema migrations
      * @param class-string<CliManager> $cliManagerClass CLI manager this project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
-     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence
-     *     source, or when a project that serves pages keeps its connections off the framework base
+     * @param ?class-string<DbContext> $dbContextClass Database context this project builds, or null when it builds none
+     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command, a presence
+     *     source or a process-wide block source, or when a project that serves pages keeps its connections off the
+     *     framework base
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
+     * @throws HilosException When building the database context fails to register the project's collections
      */
     public static function validateDeferredFeatureRequirements(
         string $migrationsPath,
         string $cliManagerClass,
         ?string $rtContextClass,
+        ?string $dbContextClass,
     ): void {
         static::createDeferredFeatureRequirementsValidator()->validate(
             static::class,
             $migrationsPath,
             $cliManagerClass,
             $rtContextClass,
+            $dbContextClass,
         );
     }
 

@@ -13,6 +13,7 @@ use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
+use Demo\Cluster\Database\ClusterDbContext;
 use Demo\Cluster\Hilos;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Constants\CliCommands;
@@ -186,6 +187,7 @@ final class ClusterTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,
             ClusterRtContext::class,
+            ClusterDbContext::class,
         );
 
         $this->addToAssertionCount(1);

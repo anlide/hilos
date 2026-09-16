@@ -116,12 +116,22 @@ requires, in dependency order (the table merges sources that must exist first):
 1. **Declaration.** `HilosFeature::HILOS_USERS` in the project facade's
    `FEATURES` ([../app-topology.md](../app-topology.md#feature-declaration)).
    Both pages, their table bindings and the users table become required at
-   startup; the presence source in step 3 is checked by the project's topology
-   test, since a runtime collection is not visible in the constants.
+   startup; the block source in step 2 and the presence source in step 3 are
+   checked by the project's topology test, since neither a database nor a runtime
+   collection is visible in the constants.
 2. **DB user entity.** Generate the project's panel-operator entity triad and
    migration. `id`, `admin`, `block` are the framework-fixed base fields the
    project persists; add project fields beside them. Register the collection on
    the project `DbContext`. *(Contract Gate: entity fields.)*
+   The users view collection is also the **block source**: it
+   `implements Hilos\Database\View\Collection\HilosUserBlockSource`, answering
+   `blockedAmong(list<int>): array<int, bool>` by reading each requested row by key
+   (a missing row answers `false`; never load the whole table). The framework
+   reads the block fact through `Hilos\Users\AccountBlockReader`, in whatever
+   process asks, so the collection key must be named in the project
+   `DbContext::processWideReadCollections()` — the topology test refuses a source
+   left out of that list, because in a worker running no page and no agent of its
+   own the read would be refused rather than answered.
 3. **RT presence source.** Generate an RT connections collection that
    `implements Hilos\Runtime\View\Collection\HilosPresenceSource`, returning a
    `HilosUserPresenceSummary` from `summaryForUser(?int)`. Register it on the

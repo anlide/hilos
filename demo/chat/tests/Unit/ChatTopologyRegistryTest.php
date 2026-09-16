@@ -14,6 +14,7 @@ use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\CLI\ChatCliManager;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
@@ -969,12 +970,13 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         // The other half of the activation check, the half no starting process can make: the SQL
         // tables a declared feature reads live in migrations applied as a separate step, and the
-        // presence source behind the users list is a runtime collection - neither is a constant.
+        // presence source behind the users list is a runtime collection, and its block source a database one - none is a constant.
         // The backup children left this list with HIL-729: the framework registers them itself.
         Hilos::validateDeferredFeatureRequirements(
             __DIR__ . '/../../backend/Database/Migration/Schema',
             ChatCliManager::class,
             ChatRtContext::class,
+            ChatDbContext::class,
         );
 
         $this->addToAssertionCount(1);

@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Database\View\Collection\HilosUserBlockSource;
 
 /**
  * Users - Db collection of User items with additional filtering methods.
@@ -22,7 +23,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method User|null offsetGet(mixed $offset)
  * @property-read UsersActions $actions Actions for write operations
  */
-final class Users extends DbCollection
+final class Users extends DbCollection implements HilosUserBlockSource
 {
     public const string DB_ITEM_CLASS = User::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
@@ -54,5 +55,28 @@ final class Users extends DbCollection
         }
 
         return $users;
+    }
+
+    /**
+     * Reports the block flag of each requested user, reading each row by key.
+     *
+     * The collection is lazy by key ({@see ChatDbContext::configure()}), and a guard asking
+     * about one person must not pull the whole table in to answer, so no row beyond the
+     * requested ones is loaded.
+     *
+     * @param list<int> $userIds User ids to report on
+     * @return array<int, bool> Block flag per requested id; every requested id present, a row that is gone answers false
+     * @throws DatabaseException When lazy-loading a user row fails
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object type does not match the collection
+     */
+    public function blockedAmong(array $userIds): array
+    {
+        $blocked = [];
+        foreach ($userIds as $userId) {
+            $blocked[$userId] = $this[$userId]?->block ?? false;
+        }
+
+        return $blocked;
     }
 }

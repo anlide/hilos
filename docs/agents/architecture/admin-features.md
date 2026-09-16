@@ -183,6 +183,12 @@ Follow the framework extension contract in
   online/presence summary; the framework owns the merge, the project binds its
   own RT connections collection as the presence source rather than the framework
   hard-coding a project RT key.
+- Abstract the block source the same way, one layer down. The account `block`
+  column stays the project's; the project's DB users collection implements
+  `HilosUserBlockSource`, and framework code asks through `AccountBlockReader`
+  (bulk and single read off the one project method). The collection must be a
+  process-wide read, because the question is asked wherever a guard runs; a
+  missing source is refused, never answered `false`.
 
 ## hilos-users base
 

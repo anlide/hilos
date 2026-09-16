@@ -17,6 +17,7 @@ use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
+use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Hilos;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
@@ -440,6 +441,7 @@ final class PollsTopologyRegistryTest extends TestCase
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,
             PollsRtContext::class,
+            PollsDbContext::class,
         );
 
         $this->addToAssertionCount(1);

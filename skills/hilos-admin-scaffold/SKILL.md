@@ -41,9 +41,11 @@ the recipe before generating code.
    `SettingsLibraryAgentDaemon` in `AGENTS` with `PLACEMENT => POLICY` (the single
    writer of the settings collection; one entry, shared with the `LOGS` and
    `NOTIFICATION_DELIVERY` features), mount the SDK view.
-4. Bound: generate in dependency order — DB entity → RT presence source
-   (implements `HilosPresenceSource`) → table subclass (the abstract hooks) →
-   thin page → topology + SDK view mount.
+4. Bound: generate in dependency order — DB entity with its users collection as
+   the block source (implements `HilosUserBlockSource`, named in
+   `processWideReadCollections()`) → RT presence source (implements
+   `HilosPresenceSource`) → table subclass (the abstract hooks) → thin page →
+   topology + SDK view mount.
 5. The admin surface is closed by default: every framework admin page inherits
    the `ADMIN` access level from `AbstractHilosPage`. Wire the project identity
    seams — `resolveConnectionIdentity()` and `isAdmin()` on the project
@@ -63,6 +65,9 @@ the recipe before generating code.
   merge/mutation or the page `onAction` lifecycle.
 - Back presence with a project RT collection implementing `HilosPresenceSource`,
   not framework analytics (process-local, not user-keyed).
+- Back the account block fact with the project's DB users collection implementing
+  `HilosUserBlockSource`, read process-wide; the block source and the presence
+  source are required together by `HILOS_USERS`.
 - Scaffold framework-owned features only; a project's own divergent table is
   Mode-2 authoring — do not generate it with this recipe.
 - Stop and ask before generating hilos-user DB fields or the RT presence item shape.
