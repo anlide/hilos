@@ -9,6 +9,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Logs\LogsSettingsPage;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -17,7 +18,6 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Preset\SettingPresetResolver;
 use Hilos\HilosException;
@@ -215,7 +215,7 @@ final class SettingPresetApplyTest extends IntegrationTestCase
     private function answeredError(): ?string
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SettingWriteDoneSignalData) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
                 return $signal->data->data->error;
             }
         }

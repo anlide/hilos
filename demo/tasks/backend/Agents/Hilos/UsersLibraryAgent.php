@@ -15,7 +15,8 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -29,7 +30,6 @@ use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
-use Hilos\Users\DTO\AdminRenameDoneSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\WiringRefusal;
 
@@ -118,12 +118,8 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         $this->sendToAgent(
-            HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
-            new AdminRenameDoneSignalData(
-                $data->data->acceptKey,
-                $data->data->requestId,
-                $this->renameForAdmin($data->data),
-            ),
+            $data->data->replySignal,
+            HandoverAnswerSignalData::to($data->data, $this->renameForAdmin($data->data)),
         );
     }
 
@@ -131,14 +127,14 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Writes the rename, its audit row and its notice, or says why none of them happened.
      *
      * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word
-     * @return ?string Why the account was not renamed, or null when it was
+     * @return ?ActionRefusal Why the account was not renamed, or null when it was
      */
-    private function renameForAdmin(AdminRenameSignalData $rename): ?string
+    private function renameForAdmin(AdminRenameSignalData $rename): ?ActionRefusal
     {
         try {
             $user = Hilos::$db->users[$rename->userId];
             if ($user === null) {
-                return "User #{$rename->userId} not found";
+                return ActionRefusal::said("User #{$rename->userId} not found");
             }
 
             $oldName = $user->name;
@@ -146,25 +142,25 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
             Hilos::$db->userRenames->actions->add($rename->userId, $oldName, $user->name);
             $this->notifyRenamedUser($rename->userId, $oldName, $user->name, $rename->adminUserId);
         } catch (ValidationException $e) {
-            return 'Failed to update user: ' . $e->getMessage();
+            return ActionRefusal::said('Failed to update user: ' . $e->getMessage());
         } catch (DatabaseException $e) {
-            // The same sentence the dispatcher would have put on the wire had this been thrown
-            // on the page: a storage failure is told to nobody but the log.
+            // The same refusal the dispatcher would have put on the wire had this been thrown on
+            // the page: the placeholder for the person, the failure beside it for an admin.
             $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
 
-            return SignalConstants::ACTION_FAILED_REASON;
+            return ActionRefusal::fromThrowable($e);
         } catch (WiringRefusal $refusal) {
             // Answered like the storage failure above rather than raised (HIL-575): the ask
             // arrived as a frame with a modal waiting on it, so a throw would hang the admin.
-            // What the branch below would have sent instead is the refusal's own words - the
-            // name of a collection nobody here reads, which is not an answer about this rename.
+            // Its own words - the name of a collection nobody here reads - are not an answer
+            // about this rename, so they ride only as the detail an admin may quote.
             $this->logAgentError("Admin rename refused for userId={$rename->userId}: {$refusal->getMessage()}");
 
-            return SignalConstants::ACTION_FAILED_REASON;
+            return ActionRefusal::fromThrowable($refusal);
         } catch (HilosException $e) {
             $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
 
-            return 'Failed to update user: ' . $e->getMessage();
+            return ActionRefusal::fromThrowable($e);
         }
 
         return null;

@@ -30,6 +30,7 @@ use Hilos\Runtime\DTO\RtStalenessSignalData;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
@@ -1682,7 +1683,20 @@ abstract class WorkerManager extends BaseManager
                     $parsedAgentSignalData = $signalData;
                     try {
                         $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
-                        $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
+                        $ask = $parsedAgentSignalData->data;
+                        if ($ask instanceof HandoverAskInterface) {
+                            // The receipt of an ask is where the write it asks for gets its author:
+                            // the handler runs where no connection is served, and the asker travels
+                            // in the frame (HIL-1001). Only the agent's handler - the page dispatch
+                            // below answers a client and writes on nobody's behalf.
+                            ExecutionContext::withOrigin(
+                                $ask->acceptKey,
+                                $ask->requestId,
+                                static fn () => $agent->onSignalAgent($parsedAgentSignalData, $sender, $name),
+                            );
+                        } else {
+                            $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
+                        }
                     } catch (InvalidAgentSignalPayloadException $e) {
                         Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
                     } catch (AgentException $e) {

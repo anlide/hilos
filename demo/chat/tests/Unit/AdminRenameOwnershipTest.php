@@ -23,9 +23,10 @@ use PHPUnit\Framework\TestCase;
  * signed in. The submit stayed and only the write went, which makes each rename a pair - a name
  * on a page and a frame to the library - and the pair is what these tests hold together.
  *
- * There are two of them because the two admin surfaces are served by different agents, and a
- * page-owned answer is routed to the agent serving THAT page. One shared answer name would send
- * both acks to one page, and the other surface's modal would wait forever.
+ * Both surfaces ask under the framework's one name, and since HIL-1001 each names in the ask the
+ * answer it is waiting on. The ANSWER names are two because the two admin surfaces are served by
+ * different agents, and a page-owned answer is routed to the agent serving THAT page. One shared
+ * answer name would send both acks to one page, and the other surface's modal would wait forever.
  */
 final class AdminRenameOwnershipTest extends TestCase
 {
@@ -38,13 +39,21 @@ final class AdminRenameOwnershipTest extends TestCase
         self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_UPDATE, UsersLibraryAgent::AGENT_ACTIONS);
     }
 
-    public function testBothWriteFramesAreAddressedToTheUsersLibrary(): void
+    public function testTheOneWriteFrameIsAddressedToTheUsersLibrary(): void
     {
-        $routes = Hilos::getAgentSignalRoutes();
+        self::assertSame(
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_ADMIN_RENAME] ?? null,
+        );
+    }
 
-        foreach ([ChatSignalConstants::USER_ADMIN_RENAME, HilosSignalConstants::HILOS_USER_ADMIN_RENAME] as $frame) {
-            self::assertSame(HilosAgentType::HILOS_USERS_LIBRARY, $routes[$frame] ?? null, $frame);
-        }
+    /**
+     * The reply name travels in the ask, so a second ask name would only be a map the library
+     * has to keep in step with the pages - the one this leaf removed.
+     */
+    public function testChatKeepsNoAskNameOfItsOwn(): void
+    {
+        self::assertFalse(defined(ChatSignalConstants::class . '::USER_ADMIN_RENAME'));
     }
 
     public function testEachAnswerComesBackToTheSurfaceThatAsked(): void

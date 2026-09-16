@@ -98,17 +98,13 @@ final class ChatSignalConstants
     public const string USER_UPDATE = 'user_update';
 
     /**
-     * @var string Admin users page → users library: rename this person (HIL-771)
+     * @var string Users library → admin users page: the rename is done, or refused (HIL-771)
      *
-     * The write half of {@see self::USER_UPDATE}. A second name beside the framework's
-     * {@see HilosSignalConstants::HILOS_USER_ADMIN_RENAME} rather than a shared one, because a
-     * frame answered by a page is routed to the agent serving THAT page - and the two admin
-     * surfaces that rename a person are served by different agents. One name would mean one
-     * destination, and one of the two acks would go missing.
+     * The ask is the framework's {@see HilosSignalConstants::HILOS_USER_ADMIN_RENAME}, carrying
+     * this name as the one to answer under (HIL-1001). It is the ANSWER name that keeps the two
+     * chat surfaces apart: a frame answered by a page is routed to the agent serving THAT page,
+     * and the admin users table and the Hilos user-detail page are served by different agents.
      */
-    public const string USER_ADMIN_RENAME = 'user_admin_rename';
-
-    /** @var string Users library → admin users page: the rename is done, or refused (HIL-771) */
     public const string USER_ADMIN_RENAME_DONE = 'user_admin_rename_done';
 
     /** @var string Client → server (Hilos user page-action): admin merges the loser account into this survivor (HIL-378) */

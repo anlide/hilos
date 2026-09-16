@@ -15,7 +15,9 @@ use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
@@ -24,6 +26,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageSignalRouter;
@@ -34,7 +37,6 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Users\DTO\AdminRenameDoneSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Throwable;
 
@@ -45,6 +47,8 @@ use Throwable;
  */
 final class AdminUsersPage extends AbstractPage
 {
+    use HandoverGatekeeperTrait;
+
     /** @var list<string> The people its actions act on, and the events they are counted over */
     public const array READS_DB = [ChatDbContext::users, ChatDbContext::events];
 
@@ -79,7 +83,7 @@ final class AdminUsersPage extends AbstractPage
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            ChatSignalConstants::USER_ADMIN_RENAME_DONE => AdminRenameDoneSignalData::class,
+            ChatSignalConstants::USER_ADMIN_RENAME_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -157,11 +161,34 @@ final class AdminUsersPage extends AbstractPage
             throw new AgentUnknownSignalException($name);
         }
 
-        if (!$data->data instanceof AdminRenameDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . AdminRenameDoneSignalData::class);
+        if (!$data->data instanceof HandoverAnswerSignalData) {
+            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
         }
 
-        $this->answerRename($data->data);
+        $this->answerHandover($data->data);
+    }
+
+    /**
+     * Sends an untracked rename's refusal on the table-action error frame this page's exception
+     * hook sends, which is what the admin users table listens for; an untracked success says
+     * nothing.
+     *
+     * @param string $acceptKey Accept key of the admin who asked
+     * @param string $action Browser action name the refusal belongs to
+     * @param ?string $error Why the rename was refused, or null when it went through
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    protected function answerUntracked(string $acceptKey, string $action, ?string $error): void
+    {
+        if ($error === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            ChatSignalConstants::TABLE_ACTION_ERROR,
+            $acceptKey,
+            new TableActionErrorSignalData(ChatTableContext::adminUsers, $action, $error),
+        );
     }
 
     /**
@@ -176,6 +203,11 @@ final class AdminUsersPage extends AbstractPage
      * it is the one that can read the session behind it - the library would be asking about a
      * connection somebody else holds.
      *
+     * The ask travels under the framework's name, and the answer under this page's own: the
+     * Hilos user-detail page forwards the same rename from an agent of another type, and each
+     * page is answered by the agent serving it. The sentence travels too, spoken only on a
+     * tracked success - the renamed row returns over the live table either way.
+     *
      * @param string $acceptKey Requesting WebSocket accept key
      * @param AdminUserUpdateActionDTO $dto Update action payload
      * @throws TableActionException When the user id is invalid
@@ -187,64 +219,18 @@ final class AdminUsersPage extends AbstractPage
             throw new TableActionException('Invalid user ID');
         }
 
-        $requestId = $this->currentActionRequestId();
-        $this->agent->sendToAgent(
-            ChatSignalConstants::USER_ADMIN_RENAME,
+        $this->forward(
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
             new AdminRenameSignalData(
                 userId: $dto->id,
                 name: $dto->name,
+                replySignal: ChatSignalConstants::USER_ADMIN_RENAME_DONE,
                 acceptKey: $acceptKey,
-                requestId: $requestId,
+                requestId: $this->currentActionRequestId(),
+                action: ChatSignalConstants::USER_UPDATE,
+                successMessage: 'User renamed.',
                 adminUserId: Hilos::$rt->selfConnection?->userId,
             ),
-        );
-
-        if ($requestId !== null) {
-            $this->deferActionReply();
-        }
-    }
-
-    /**
-     * Turns the library's outcome into the ack the admin's submit is waiting on.
-     *
-     * A tracked submit is correlated by its request id and answered on it; an untracked one has
-     * nothing to correlate, so its refusal rides the same table-action error frame this page's
-     * exception hook sends. Only the tracked one gets the success sentence: the untracked path
-     * has no ack to carry it, and the renamed row returns over the live table either way.
-     *
-     * @param AdminRenameDoneSignalData $done Whom to answer, and why the rename was refused
-     * @throws InvalidArgumentException When the ack cannot be named
-     */
-    private function answerRename(AdminRenameDoneSignalData $done): void
-    {
-        if ($done->requestId !== null) {
-            if ($done->error === null) {
-                // Set right before the send: the slot is consumed by sendSuccess() on the spot,
-                // because a deferred reply leaves after the action dispatch has already ended.
-                $this->setActionSuccessMessage('User renamed.');
-                $this->sendActionSuccess($done->acceptKey, ChatSignalConstants::USER_UPDATE, $done->requestId);
-
-                return;
-            }
-
-            $this->sendActionFail(
-                $done->acceptKey,
-                ChatSignalConstants::USER_UPDATE,
-                $done->requestId,
-                $done->error,
-            );
-
-            return;
-        }
-
-        if ($done->error === null) {
-            return;
-        }
-
-        $this->sendToUser(
-            ChatSignalConstants::TABLE_ACTION_ERROR,
-            $done->acceptKey,
-            new TableActionErrorSignalData(ChatTableContext::adminUsers, ChatSignalConstants::USER_UPDATE, $done->error),
         );
     }
 }

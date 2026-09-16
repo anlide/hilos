@@ -6,8 +6,8 @@ namespace Hilos\Pages\Communications;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -15,18 +15,16 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -68,6 +66,8 @@ use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
  */
 abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -87,7 +87,7 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => SettingWriteDoneSignalData::class,
+            HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -251,22 +251,6 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
     }
 
     /**
-     * Hands one ask to the owner of the settings collection and stops owing the caller an answer.
-     *
-     * @param string $name Agent-signal name the ask travels under
-     * @param SignalDataInterface $ask The ask, carrying whom to answer and what to write
-     * @throws InvalidArgumentException When the frame cannot be named or queued
-     */
-    private function forward(string $name, SignalDataInterface $ask): void
-    {
-        $this->agent->sendToAgent($name, $ask);
-
-        if ($this->currentActionRequestId() !== null) {
-            $this->deferActionReply();
-        }
-    }
-
-    /**
      * Answers the administrator whose config write the library has finished (HIL-946).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
@@ -282,50 +266,11 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             throw new AgentUnknownSignalException($name);
         }
 
-        if (!$data->data instanceof SettingWriteDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . SettingWriteDoneSignalData::class);
+        if (!$data->data instanceof HandoverAnswerSignalData) {
+            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
         }
 
-        $this->answerWrite($data->data);
-    }
-
-    /**
-     * Turns the library's outcome into the ack the administrator's submit is waiting on.
-     *
-     * Three shapes, as everywhere this form is used: a tracked submit is correlated by its
-     * request id and answered on it, and an untracked one has nothing to correlate, so its
-     * refusal rides the uncorrelated action-error frame. The sentence is set immediately before
-     * the success, because that is the slot the success reads.
-     *
-     * @param SettingWriteDoneSignalData $done Whom to answer, on which action, and why it was refused
-     * @throws InvalidArgumentException When the ack cannot be named
-     */
-    private function answerWrite(SettingWriteDoneSignalData $done): void
-    {
-        if ($done->requestId !== null) {
-            if ($done->error === null) {
-                if ($done->successMessage !== null) {
-                    $this->setActionSuccessMessage($done->successMessage);
-                }
-                $this->sendActionSuccess($done->acceptKey, $done->action, $done->requestId);
-
-                return;
-            }
-
-            $this->sendActionFail($done->acceptKey, $done->action, $done->requestId, $done->error);
-
-            return;
-        }
-
-        if ($done->error === null) {
-            return;
-        }
-
-        $this->sendToUser(
-            SignalConstants::ACTION_ERROR,
-            $done->acceptKey,
-            new PageActionErrorSignalData($done->action, $done->error),
-        );
+        $this->answerHandover($data->data);
     }
 
     /**

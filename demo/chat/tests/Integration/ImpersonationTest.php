@@ -12,11 +12,11 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
@@ -405,16 +405,16 @@ final class ImpersonationTest extends IntegrationTestCase
      * framework/tests/Unit/Auth/Session/ImpersonationTwoStepTest.php: the answer frame is
      * declared on the page, so it arrives where the deferred submit is waiting.
      *
-     * @return ?ImpersonateDoneSignalData Last done frame, or null when none was sent
+     * @return ?HandoverAnswerSignalData Last done frame, or null when none was sent
      */
-    private function lastImpersonateDone(): ?ImpersonateDoneSignalData
+    private function lastImpersonateDone(): ?HandoverAnswerSignalData
     {
         $found = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $data = $signal->data;
             if ($signal->signalName->getName() === HilosSignalConstants::HILOS_IMPERSONATE_DONE
                 && $data instanceof AgentSignalData
-                && $data->data instanceof ImpersonateDoneSignalData) {
+                && $data->data instanceof HandoverAnswerSignalData) {
                 $found = $data->data;
             }
         }

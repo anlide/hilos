@@ -6,7 +6,7 @@ namespace Hilos\Tests\Unit\Notification;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
@@ -54,7 +54,7 @@ final class DeliveryRetryTwoStepTest extends TestCase
     public function testThePageIsAddressedByTheAnswerFrame(): void
     {
         self::assertSame(
-            DeliveryRetryDoneSignalData::class,
+            HandoverAnswerSignalData::class,
             AbstractHilosCommunicationsDeliveriesPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE] ?? null,
         );

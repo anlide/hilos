@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -16,7 +18,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Preset\SettingPresetGroup;
@@ -246,23 +247,34 @@ final class SettingsLibraryAgentTest extends TestCase
     }
 
     /**
-     * The write carries the asker with it (HIL-946, caught by the e2e of the orphan delete).
+     * The write carries the asker with it (HIL-946, caught by the e2e of the orphan delete), and
+     * since HIL-1001 it is the receipt of the ask that stamps it, not this library.
      *
      * A viewport tells the author of a change from a bystander by the accept key the change was
      * announced with: the author's removal collapses to a placeholder at once, everybody else's
-     * waits behind the pending Apply. While the screen wrote for itself that key was ambient,
-     * because the write happened in the worker serving that very connection. Here it is not, so
-     * the library stamps it - and the proof is that the ambient origin INSIDE the write is the
-     * one the ask named, not null.
+     * waits behind the pending Apply. The worker's agent-signal dispatch runs the handler under
+     * the origin of any frame implementing the ask interface, so what is locked here is the other
+     * half: all four asks are such frames.
+     */
+    public function testEveryAskIsOneTheReceiptStampsWithItsAsker(): void
+    {
+        foreach (SettingsLibraryAgent::AGENT_SIGNALS as $name => $class) {
+            $this->assertTrue(is_subclass_of($class, HandoverAskInterface::class), $name);
+        }
+    }
+
+    /**
+     * The library itself stamps nothing: handed an ask outside a receipt, its write runs as
+     * nobody's. A second, hand-written stamp here is what the seam exists to retire.
      *
      * Read through the provider, because that is the one seam of a write this fixture can reach:
-     * the group is resolved inside the stamped call, and an empty group then refuses the preset
-     * before any row is touched.
+     * the group is resolved inside the write, and an empty group then refuses the preset before
+     * any row is touched.
      */
-    public function testTheWriteRunsUnderTheOriginOfTheConnectionThatAskedForIt(): void
+    public function testTheLibraryLeavesTheStampToTheReceipt(): void
     {
-        OriginRecordingPresetProvider::$acceptKey = null;
-        OriginRecordingPresetProvider::$requestId = null;
+        OriginRecordingPresetProvider::$acceptKey = 'not-read';
+        OriginRecordingPresetProvider::$requestId = 'not-read';
 
         $this->ask(HilosSignalConstants::HILOS_SETTING_PRESET_APPLY, new SettingPresetApplySignalData(
             replySignal: self::REPLY_SIGNAL,
@@ -274,9 +286,8 @@ final class SettingsLibraryAgentTest extends TestCase
             preset: 'quiet',
         ));
 
-        $this->assertSame(self::ACCEPT_KEY, OriginRecordingPresetProvider::$acceptKey);
-        $this->assertSame(self::REQUEST_ID, OriginRecordingPresetProvider::$requestId);
-        $this->assertNull(ExecutionContext::currentAcceptKey(), 'The stamp is scoped to the write');
+        $this->assertNull(OriginRecordingPresetProvider::$acceptKey);
+        $this->assertNull(OriginRecordingPresetProvider::$requestId);
     }
 
     /**
@@ -309,13 +320,13 @@ final class SettingsLibraryAgentTest extends TestCase
     /**
      * Reads back the answer the library sent.
      *
-     * @return SettingWriteDoneSignalData Outcome as the waiting screen reads it
+     * @return HandoverAnswerSignalData Outcome as the waiting screen reads it
      */
-    private function answer(): SettingWriteDoneSignalData
+    private function answer(): HandoverAnswerSignalData
     {
         $data = $this->queued()->data;
         $this->assertInstanceOf(AgentSignalData::class, $data);
-        $this->assertInstanceOf(SettingWriteDoneSignalData::class, $data->data);
+        $this->assertInstanceOf(HandoverAnswerSignalData::class, $data->data);
 
         return $data->data;
     }

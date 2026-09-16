@@ -401,14 +401,38 @@ the same idempotent write are one ask with two callers.
 
 **Worked example** —
 `framework/backend/Pages/Communications/AbstractHilosCommunicationsDeliveriesPage.php`.
-`handleRetry()` (`:147`) sends `HilosSignalConstants::HILOS_DELIVERY_RETRY`
-with `DeliveryRetrySignalData(deliveryId, acceptKey, requestId)` and calls
-`deferActionReply()` only when `currentActionRequestId()` is not null — an
-untracked submit owes no ack. `answerRetry()` (`:172`) answers in three
-branches: `sendActionSuccess()`, `sendActionFail($done->error)`, and for an
-untracked submit `sendToUser(SignalConstants::ACTION_ERROR, acceptKey, new
+`handleRetry()` sends `HilosSignalConstants::HILOS_DELIVERY_RETRY` with a
+`DeliveryRetrySignalData` carrying the delivery id beside the handover fields
+(reply name, accept key, request id, action, success sentence) through
+`HandoverGatekeeperTrait::forward()`, which calls `deferActionReply()` only when
+`currentActionRequestId()` is not null — an untracked submit owes no ack. The
+library answers with `HandoverAnswerSignalData::to($ask, $refusal)`, and
+`HandoverGatekeeperTrait::answerHandover()` turns it into the ack in three
+branches: `sendActionSuccess()`, `sendActionFail($done->error)` with the
+failure's class and text beside it on an ADMIN page, and for an untracked submit
+the overridable `answerUntracked()`, whose default is
+`sendToUser(SignalConstants::ACTION_ERROR, acceptKey, new
 PageActionErrorSignalData(...))`. The reason is a string,
-`DeliveryRetryDoneSignalData::$error`, which is what statement 3 asks for.
+`HandoverAnswerSignalData::$error`, which is what statement 3 asks for; the
+writer builds it with `Hilos\Core\Action\ActionRefusal` — `said()` for a
+sentence of its own, `fromThrowable()` for a failure, which passes the same door
+a page action's failure does.
+
+*On who the write belongs to* (HIL-1001). **Whoever asked travels with the ask,
+and the receipt of the ask stamps the write with them.** A write the gatekeeper
+performed itself carried the person who pressed the button as its origin for
+free, because the page runs in the worker serving that connection; the writer
+runs where no connection is served, and without the origin the person's own
+change reaches their table as a stranger's — no own-row highlight, and a removal
+held behind Apply instead of collapsing at once. So an ask implements
+`Hilos\Core\Action\HandoverAskInterface`, which obliges it to carry the accept
+key and the request id beside the reply name, and the worker's agent-signal
+dispatch (`WorkerManager::handleAgentMessage()`) runs the writer's handler inside
+`ExecutionContext::withOrigin()` for every frame implementing it. **A library
+never calls `ExecutionContext::withOrigin()` itself**: the stamp belongs to the
+receipt, so the next library gets it by declaring its ask, not by remembering a
+call. The interface is also what opts a frame in — an agent signal that does not
+implement it is dispatched exactly as it was.
 
 ### When A Name May Live On The Library (HIL-824)
 

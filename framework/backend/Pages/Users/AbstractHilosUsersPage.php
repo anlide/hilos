@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace Hilos\Pages\Users;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -47,6 +46,8 @@ use Hilos\Core\Router\SignalSource;
  */
 abstract class AbstractHilosUsersPage extends AbstractHilosPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_USERS;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -65,7 +66,7 @@ abstract class AbstractHilosUsersPage extends AbstractHilosPage
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            HilosSignalConstants::HILOS_IMPERSONATE_DONE => ImpersonateDoneSignalData::class,
+            HilosSignalConstants::HILOS_IMPERSONATE_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -114,11 +115,11 @@ abstract class AbstractHilosUsersPage extends AbstractHilosPage
             throw new AgentUnknownSignalException($name);
         }
 
-        if (!$data->data instanceof ImpersonateDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . ImpersonateDoneSignalData::class);
+        if (!$data->data instanceof HandoverAnswerSignalData) {
+            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
         }
 
-        $this->answerImpersonate($data->data);
+        $this->answerHandover($data->data);
     }
 
     /**
@@ -134,69 +135,24 @@ abstract class AbstractHilosUsersPage extends AbstractHilosPage
      * read in this worker and acted on in another, and it is free to change in between. The
      * library runs the whole guard order where it writes, and says so on the way back.
      *
+     * No sentence is spoken on success: the takeover arrives as the rebound session on the
+     * handshake the library publishes, which is what the person sees change.
+     *
      * @param string $acceptKey WebSocket accept key of the requesting admin
      * @param ImpersonateStartActionDTO $dto Impersonation-start action payload
      * @throws InvalidArgumentException When the request frame cannot be named or queued
      */
     private function handleImpersonateStart(string $acceptKey, ImpersonateStartActionDTO $dto): void
     {
-        $requestId = $this->currentActionRequestId();
-        $this->agent->sendToAgent(
+        $this->forward(
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST,
-            new ImpersonateRequestSignalData($dto->targetUserId, $acceptKey, $requestId),
-        );
-
-        if ($requestId !== null) {
-            $this->deferActionReply();
-        }
-    }
-
-    /**
-     * Turns the library's outcome into the ack the admin's submit is waiting on.
-     *
-     * Two shapes for the same reason the dispatcher has two: a tracked submit is correlated by
-     * its request id and is answered on it, and an untracked one has nothing to correlate, so
-     * its refusal rides the same uncorrelated action-error frame the page's exception hook
-     * used to send. A tracked success needs no sentence of its own - the takeover arrives as
-     * the rebound session on the handshake the library publishes, which is what the person
-     * sees change.
-     *
-     * @param ImpersonateDoneSignalData $done Whom to answer, and why the takeover was refused
-     * @throws InvalidArgumentException When the ack cannot be named
-     */
-    private function answerImpersonate(ImpersonateDoneSignalData $done): void
-    {
-        if ($done->requestId !== null) {
-            if ($done->error === null) {
-                $this->sendActionSuccess(
-                    $done->acceptKey,
-                    HilosSignalConstants::HILOS_IMPERSONATE_START,
-                    $done->requestId,
-                );
-
-                return;
-            }
-
-            $this->sendActionFail(
-                $done->acceptKey,
-                HilosSignalConstants::HILOS_IMPERSONATE_START,
-                $done->requestId,
-                $done->error,
-            );
-
-            return;
-        }
-
-        if ($done->error === null) {
-            return;
-        }
-
-        $this->sendToUser(
-            SignalConstants::ACTION_ERROR,
-            $done->acceptKey,
-            new PageActionErrorSignalData(
-                HilosSignalConstants::HILOS_IMPERSONATE_START,
-                $done->error,
+            new ImpersonateRequestSignalData(
+                targetUserId: $dto->targetUserId,
+                replySignal: HilosSignalConstants::HILOS_IMPERSONATE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::HILOS_IMPERSONATE_START,
+                successMessage: null,
             ),
         );
     }

@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
@@ -460,7 +460,14 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     {
         $agent->onSignalAgent(
             new AgentSignalData(
-                data: new ImpersonateRequestSignalData(self::TARGET_USER_ID, self::ACCEPT_KEY),
+                data: new ImpersonateRequestSignalData(
+                    targetUserId: self::TARGET_USER_ID,
+                    replySignal: HilosSignalConstants::HILOS_IMPERSONATE_DONE,
+                    acceptKey: self::ACCEPT_KEY,
+                    requestId: null,
+                    action: HilosSignalConstants::HILOS_IMPERSONATE_START,
+                    successMessage: null,
+                ),
             ),
             '',
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST,
@@ -470,16 +477,16 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     /**
      * Drains the queue and returns the last takeover answer the library addressed to a page.
      *
-     * @return ?ImpersonateDoneSignalData Last answer frame, or null when none was sent
+     * @return ?HandoverAnswerSignalData Last answer frame, or null when none was sent
      */
-    private function lastDoneFrame(): ?ImpersonateDoneSignalData
+    private function lastDoneFrame(): ?HandoverAnswerSignalData
     {
         $found = null;
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $data = $signal->data;
             if ($signal->signalName->getName() === HilosSignalConstants::HILOS_IMPERSONATE_DONE
                 && $data instanceof AgentSignalData
-                && $data->data instanceof ImpersonateDoneSignalData) {
+                && $data->data instanceof HandoverAnswerSignalData) {
                 $found = $data->data;
             }
         }

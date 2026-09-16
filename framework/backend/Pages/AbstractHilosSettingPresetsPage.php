@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Pages;
 
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
@@ -25,7 +25,6 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
 use Hilos\Database\Settings\Preset\SettingPresetGroup;
@@ -66,6 +65,8 @@ use Hilos\Pages\Logs\AbstractHilosLogsPage;
  */
 abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
 {
+    use HandoverGatekeeperTrait;
+
     public const array ACTIONS = [
         HilosSignalConstants::SETTING_PRESET_APPLY => SettingPresetApplyActionDTO::class,
     ];
@@ -307,7 +308,7 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
     {
         $selectedBefore = new SettingPresetResolver(static::presetGroup())->selectedName();
 
-        $this->agent->sendToAgent(
+        $this->forward(
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY,
             new SettingPresetApplySignalData(
                 replySignal: static::replySignalName(),
@@ -321,10 +322,6 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
                 preset: $dto->preset,
             ),
         );
-
-        if ($this->currentActionRequestId() !== null) {
-            $this->deferActionReply();
-        }
     }
 
     /**
@@ -344,45 +341,11 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
             throw new AgentUnknownSignalException($name);
         }
 
-        if (!$data->data instanceof SettingWriteDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . SettingWriteDoneSignalData::class);
+        if (!$data->data instanceof HandoverAnswerSignalData) {
+            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
         }
 
-        $this->answerApply($data->data);
-    }
-
-    /**
-     * Turns the library's outcome into the ack the administrator's submit is waiting on.
-     *
-     * @param SettingWriteDoneSignalData $done Whom to answer, on which action, and why it was refused
-     * @throws InvalidArgumentException When the ack cannot be named
-     */
-    private function answerApply(SettingWriteDoneSignalData $done): void
-    {
-        if ($done->requestId !== null) {
-            if ($done->error === null) {
-                if ($done->successMessage !== null) {
-                    $this->setActionSuccessMessage($done->successMessage);
-                }
-                $this->sendActionSuccess($done->acceptKey, $done->action, $done->requestId);
-
-                return;
-            }
-
-            $this->sendActionFail($done->acceptKey, $done->action, $done->requestId, $done->error);
-
-            return;
-        }
-
-        if ($done->error === null) {
-            return;
-        }
-
-        $this->sendToUser(
-            SignalConstants::ACTION_ERROR,
-            $done->acceptKey,
-            new PageActionErrorSignalData($done->action, $done->error),
-        );
+        $this->answerHandover($data->data);
     }
 
     /**

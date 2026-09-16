@@ -34,6 +34,8 @@ use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -59,7 +61,6 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
-use Hilos\Users\DTO\AdminRenameDoneSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\WiringRefusal;
 use Random\RandomException;
@@ -175,27 +176,17 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * end to end (HIL-771) - splitting it left the ask on an agent and the answer on a page, and
      * the page could not write the row the answer decides.
      *
-     * The two renames below arrive from the opposite direction, and they are frames rather than
-     * actions for the opposite reason: an administrator renaming somebody else is closed by a
-     * page's ADMIN level, which an agent action has no equivalent of, so those submits STAYED on
-     * their pages and only the write came here.
+     * The admin rename below arrives from the opposite direction, and it is a frame rather than
+     * an action for the opposite reason: an administrator renaming somebody else is closed by a
+     * page's ADMIN level, which an agent action has no equivalent of, so the submits STAYED on
+     * their pages and only the write came here. Two pages forward it - the admin users table and
+     * the Hilos user-detail page, each served by a different agent - under one name, and each
+     * names in the ask the answer addressed to its own page (HIL-1001), so this library holds no
+     * map of which page asked.
      */
-    /**
-     * Which frame answers which admin rename, by the name that asked (HIL-771).
-     *
-     * Two entrances, one body: the admin users table and the Hilos user-detail page both rename
-     * a person, and each is served by a different agent - so each needs an answer addressed to
-     * its own page, and a shared name would send both to one of them.
-     */
-    private const array ADMIN_RENAME_ANSWERS = [
-        ChatSignalConstants::USER_ADMIN_RENAME => ChatSignalConstants::USER_ADMIN_RENAME_DONE,
-        HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
-    ];
-
     public const array AGENT_SIGNALS = [
         ...parent::AGENT_SIGNALS,
         ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
-        ChatSignalConstants::USER_ADMIN_RENAME => AdminRenameSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
     ];
 
@@ -297,12 +288,11 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        $doneSignal = self::ADMIN_RENAME_ANSWERS[$name] ?? null;
-        if ($doneSignal !== null) {
+        if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME) {
             if (!$data->data instanceof AdminRenameSignalData) {
                 throw new LogicException($name . ' payload must be ' . AdminRenameSignalData::class);
             }
-            $this->applyAdminRename($data->data, $doneSignal);
+            $this->applyAdminRename($data->data);
 
             return;
         }
@@ -336,30 +326,26 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * missing person and a name the row refuses are answers, not exceptions: the ask arrived as
      * a frame, and a throw here would leave the modal waiting forever.
      *
-     * @param AdminRenameSignalData $rename Whom to rename, to what, and who is waiting
-     * @param string $doneSignal Frame name the asking page listens on
+     * @param AdminRenameSignalData $rename Whom to rename, to what, who is waiting and under which name
      * @throws InvalidArgumentException When the answer cannot be named or queued
      */
-    protected function applyAdminRename(AdminRenameSignalData $rename, string $doneSignal): void
+    protected function applyAdminRename(AdminRenameSignalData $rename): void
     {
-        $this->sendToAgent(
-            $doneSignal,
-            new AdminRenameDoneSignalData($rename->acceptKey, $rename->requestId, $this->renameForAdmin($rename)),
-        );
+        $this->sendToAgent($rename->replySignal, HandoverAnswerSignalData::to($rename, $this->renameForAdmin($rename)));
     }
 
     /**
      * Writes the rename and its log line, or says why neither happened.
      *
      * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word
-     * @return ?string Why the account was not renamed, or null when it was
+     * @return ?ActionRefusal Why the account was not renamed, or null when it was
      */
-    private function renameForAdmin(AdminRenameSignalData $rename): ?string
+    private function renameForAdmin(AdminRenameSignalData $rename): ?ActionRefusal
     {
         try {
             $user = Hilos::$db->users[$rename->userId];
             if ($user === null) {
-                return "User #{$rename->userId} not found";
+                return ActionRefusal::said("User #{$rename->userId} not found");
             }
 
             $oldName = $user->name;
@@ -371,25 +357,25 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
                 adminUserId: $rename->adminUserId,
             );
         } catch (ValidationException $e) {
-            return 'Failed to update user: ' . $e->getMessage();
+            return ActionRefusal::said('Failed to update user: ' . $e->getMessage());
         } catch (DatabaseException $e) {
-            // The same sentence the dispatcher would have put on the wire had this been thrown
-            // on the page: a storage failure is told to nobody but the log.
+            // The same refusal the dispatcher would have put on the wire had this been thrown on
+            // the page: the placeholder for the person, the failure beside it for an admin.
             $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
 
-            return SignalConstants::ACTION_FAILED_REASON;
+            return ActionRefusal::fromThrowable($e);
         } catch (WiringRefusal $refusal) {
             // Answered like the storage failure above rather than raised (HIL-575): the ask
             // arrived as a frame with a modal waiting on it, so a throw would hang the admin.
-            // What the branch below would have sent instead is the refusal's own words - the
-            // name of a collection nobody here reads, which is not an answer about this rename.
+            // Its own words - the name of a collection nobody here reads - are not an answer
+            // about this rename, so they ride only as the detail an admin may quote.
             $this->logAgentError("Admin rename refused for userId={$rename->userId}: {$refusal->getMessage()}");
 
-            return SignalConstants::ACTION_FAILED_REASON;
+            return ActionRefusal::fromThrowable($refusal);
         } catch (HilosException $e) {
             $this->logAgentError("Admin rename failed for userId={$rename->userId}: {$e->getMessage()}");
 
-            return 'Failed to update user: ' . $e->getMessage();
+            return ActionRefusal::fromThrowable($e);
         }
 
         return null;

@@ -18,7 +18,6 @@ use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
-use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
@@ -29,13 +28,13 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
 use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -54,7 +53,6 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
-use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
@@ -69,7 +67,6 @@ use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\Users\DTO\AccountMergeResultSignalData;
-use Hilos\Users\DTO\AdminRenameDoneSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 
@@ -299,7 +296,7 @@ final class HilosSignalConstants
      *
      * The way back for {@see self::HILOS_USER_ADMIN_RENAME} and only for it: the page turns it
      * into the {@see self::HILOS_USER_UPDATE_SUCCESS} or {@see self::HILOS_USER_UPDATE_FAIL}
-     * ack its own surface has always listened for. Carried by {@see AdminRenameDoneSignalData}.
+     * ack its own surface has always listened for. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_USER_ADMIN_RENAME_DONE = 'hilos_user_admin_rename_done';
 
@@ -679,7 +676,7 @@ final class HilosSignalConstants
      * answers the admin - the takeover, or the sentence saying why the session was not
      * rebound. The refusal has to travel as text: after the move the guards run outside a
      * page, and the dispatcher's exception hook does not reach there. Carried by
-     * {@see ImpersonateDoneSignalData}.
+     * {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_IMPERSONATE_DONE = 'hilos_impersonate_done';
 
@@ -1084,7 +1081,7 @@ final class HilosSignalConstants
      * The way back for {@see self::HILOS_DELIVERY_RETRY} and only for it. The page deferred
      * its own ack when it handed the work over, so this frame is what finally answers the
      * admin - success, or the sentence saying why the row could not be re-queued. Carried by
-     * {@see DeliveryRetryDoneSignalData}.
+     * {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_DELIVERY_RETRY_DONE = 'hilos_delivery_retry_done';
 
@@ -1141,7 +1138,7 @@ final class HilosSignalConstants
      * One of three ways back, and there are three rather than one because the map of page-owned
      * signals holds one entry per name: two screens under one name would overwrite each other
      * without a word, and the topology validator catches that between agents but not between
-     * two pages. Carried by {@see SettingWriteDoneSignalData}, as all three are.
+     * two pages. Carried by {@see HandoverAnswerSignalData}, as all three are.
      */
     public const string HILOS_SETTING_WRITE_DONE = 'hilos_setting_write_done';
 
@@ -1151,7 +1148,7 @@ final class HilosSignalConstants
      *
      * The channel screen's own way back. It writes settings through the same four asks, and it
      * needs a name of its own for the same reason the general screen does. Carried by
-     * {@see SettingWriteDoneSignalData}.
+     * {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_CHANNEL_SETTING_WRITE_DONE = 'hilos_channel_setting_write_done';
 
@@ -1161,7 +1158,7 @@ final class HilosSignalConstants
      * The way back for the one presets section that exists today. The name belongs to the
      * section and not to the base class of presets pages: the base declares the contract that a
      * section must name one, and reads it off the subclass. Carried by
-     * {@see SettingWriteDoneSignalData}.
+     * {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE = 'hilos_logs_settings_preset_apply_done';
 

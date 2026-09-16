@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
@@ -346,6 +347,26 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
 
         $this->assertFalse($this->nextDelta()->own);
+    }
+
+    public function testDeltaOwnForAWriterAnsweringTheReceiversAsk(): void
+    {
+        // The flip named above, as the receipt of an ask performs it (HIL-1001): the writer runs
+        // where no connection is served, and the asker travels in the frame. The change is built
+        // the way a row write builds it - off the execution context in force.
+        $context = $this->boot([new ViewportDeltaUnitRow('alpha', 'Alpha')], ['alpha'], 1);
+        ExecutionContext::withOrigin('ak-1', 'req-1', static function () use ($context): void {
+            $context->record(SourceChange::dbUpdated(
+                ViewportDeltaUnitTable::SOURCE_KEY,
+                'alpha',
+                ['label' => 'Alpha'],
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+            ));
+        });
+        $context->flushToSignalRouter();
+
+        $this->assertTrue($this->nextDelta()->own);
     }
 
     public function testMergedSameRowRaceUsesLaterWriterOrigin(): void

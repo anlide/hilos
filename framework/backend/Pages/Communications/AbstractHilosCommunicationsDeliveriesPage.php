@@ -6,22 +6,21 @@ namespace Hilos\Pages\Communications;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
@@ -52,6 +51,8 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
  */
 abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -70,7 +71,7 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => DeliveryRetryDoneSignalData::class,
+            HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -123,11 +124,11 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
             throw new AgentUnknownSignalException($name);
         }
 
-        if (!$data->data instanceof DeliveryRetryDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . DeliveryRetryDoneSignalData::class);
+        if (!$data->data instanceof HandoverAnswerSignalData) {
+            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
         }
 
-        $this->answerRetry($data->data);
+        $this->answerHandover($data->data);
     }
 
     /**
@@ -144,68 +145,24 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
      * read in this worker and acted on in another, and the row is free to change in between.
      * The library judges it where it writes it, and says so on the way back.
      *
+     * No sentence is spoken on success: the re-queued row returns over the journal's next window,
+     * exactly as before the move.
+     *
      * @param string $acceptKey WebSocket accept key of the requesting admin
      * @param HilosDeliveryRetryActionDTO $dto Retry action payload
      * @throws InvalidArgumentException When the retry frame cannot be named or queued
      */
     private function handleRetry(string $acceptKey, HilosDeliveryRetryActionDTO $dto): void
     {
-        $requestId = $this->currentActionRequestId();
-        $this->agent->sendToAgent(
+        $this->forward(
             HilosSignalConstants::HILOS_DELIVERY_RETRY,
-            new DeliveryRetrySignalData($dto->deliveryId, $acceptKey, $requestId),
-        );
-
-        if ($requestId !== null) {
-            $this->deferActionReply();
-        }
-    }
-
-    /**
-     * Turns the library's outcome into the ack the admin's submit is waiting on.
-     *
-     * Two shapes for the same reason the dispatcher has two: a tracked submit is correlated by
-     * its request id and is answered on it, and an untracked one has nothing to correlate, so
-     * its refusal rides the same uncorrelated action-error frame the page's exception hook used
-     * to send. A tracked success needs no sentence - the re-queued row returns over the
-     * journal's next window, exactly as before the move.
-     *
-     * @param DeliveryRetryDoneSignalData $done Whom to answer, and why the retry was refused
-     * @throws InvalidArgumentException When the ack cannot be named
-     */
-    private function answerRetry(DeliveryRetryDoneSignalData $done): void
-    {
-        if ($done->requestId !== null) {
-            if ($done->error === null) {
-                $this->sendActionSuccess(
-                    $done->acceptKey,
-                    HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
-                    $done->requestId,
-                );
-
-                return;
-            }
-
-            $this->sendActionFail(
-                $done->acceptKey,
-                HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
-                $done->requestId,
-                $done->error,
-            );
-
-            return;
-        }
-
-        if ($done->error === null) {
-            return;
-        }
-
-        $this->sendToUser(
-            SignalConstants::ACTION_ERROR,
-            $done->acceptKey,
-            new PageActionErrorSignalData(
-                HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
-                $done->error,
+            new DeliveryRetrySignalData(
+                deliveryId: $dto->deliveryId,
+                replySignal: HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
+                successMessage: null,
             ),
         );
     }

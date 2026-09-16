@@ -6,12 +6,13 @@ namespace Hilos\Database\Settings\Library;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Action\ActionFailureReason;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -20,7 +21,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Exception\SettingPresetUnknownException;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
@@ -63,8 +63,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * bystander: the author's removal collapses to a placeholder at once, everybody else's waits
  * behind the pending Apply. That name used to come for free, because the screen wrote in the
  * worker serving its own administrator. It does not any more, so every ask carries the accept
- * key and the request id and this library stamps them on the write it performs
- * ({@see stamped()}).
+ * key and the request id, and the receipt of the ask stamps them on the write this library
+ * performs ({@see HandoverAskInterface}) - nothing here calls for the stamp.
  *
  * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
  * fixed pair of names would make it know each screen by name - the next screen that writes a
@@ -177,12 +177,12 @@ final class SettingsLibraryAgent extends AbstractAgent
      * writes; its idempotence is what lets two administrators press the same button.
      *
      * @param SettingWriteSignalData $ask Key and value the administrator asked for
-     * @return ?string Why the value was refused, or null when it was written
+     * @return ?ActionRefusal Why the value was refused, or null when it was written
      */
-    private function storeValue(SettingWriteSignalData $ask): ?string
+    private function storeValue(SettingWriteSignalData $ask): ?ActionRefusal
     {
         try {
-            $this->stamped($ask, fn () => $this->settingsTable()->actions->add($ask->key, $ask->value));
+            $this->settingsTable()->actions->add($ask->key, $ask->value);
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting write failed for '{$ask->key}'");
         }
@@ -194,12 +194,12 @@ final class SettingsLibraryAgent extends AbstractAgent
      * Returns a cataloged key to its catalog default, or says why it could not be returned.
      *
      * @param SettingResetSignalData $ask Key the administrator asked to undo
-     * @return ?string Why the reset was refused, or null when it went through
+     * @return ?ActionRefusal Why the reset was refused, or null when it went through
      */
-    private function resetToDefault(SettingResetSignalData $ask): ?string
+    private function resetToDefault(SettingResetSignalData $ask): ?ActionRefusal
     {
         try {
-            $this->stamped($ask, fn () => $this->settingsTable()->actions->reset($ask->key));
+            $this->settingsTable()->actions->reset($ask->key);
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting reset failed for '{$ask->key}'");
         }
@@ -211,12 +211,12 @@ final class SettingsLibraryAgent extends AbstractAgent
      * Removes an orphan row, or says why it is not one to remove.
      *
      * @param SettingDeleteSignalData $ask Key the administrator asked to drop
-     * @return ?string Why the row was kept, or null when it was dropped
+     * @return ?ActionRefusal Why the row was kept, or null when it was dropped
      */
-    private function dropOrphan(SettingDeleteSignalData $ask): ?string
+    private function dropOrphan(SettingDeleteSignalData $ask): ?ActionRefusal
     {
         try {
-            $this->stamped($ask, fn () => $this->settingsTable()[$ask->key]->actions->delete());
+            $this->settingsTable()[$ask->key]->actions->delete();
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting delete failed for '{$ask->key}'");
         }
@@ -234,25 +234,22 @@ final class SettingsLibraryAgent extends AbstractAgent
      * trusted into a fatal.
      *
      * @param SettingPresetApplySignalData $ask Group provider and preset the administrator picked
-     * @return ?string Why the preset was refused, or null when it was applied
+     * @return ?ActionRefusal Why the preset was refused, or null when it was applied
      */
-    private function applyPreset(SettingPresetApplySignalData $ask): ?string
+    private function applyPreset(SettingPresetApplySignalData $ask): ?ActionRefusal
     {
         if (!is_subclass_of($ask->groupProvider, SettingPresetGroupProviderInterface::class)) {
-            return 'Setting preset group provider is not one: ' . $ask->groupProvider;
+            return ActionRefusal::said('Setting preset group provider is not one: ' . $ask->groupProvider);
         }
 
         try {
-            $this->stamped(
-                $ask,
-                fn () => new SettingPresetResolver($ask->groupProvider::presetGroup())->apply($ask->preset),
-            );
+            new SettingPresetResolver($ask->groupProvider::presetGroup())->apply($ask->preset);
         } catch (SettingPresetUnknownException $e) {
             // The one refusal whose family does not carry it: the page used to re-raise this as a
             // table action for exactly that reason, and the sentence is what the administrator
             // reads. The value-refused one needs no such help - it is a validation refusal
             // already, and the gate below lets it through on its own.
-            return $e->getMessage();
+            return ActionRefusal::said($e->getMessage());
         } catch (HilosException $e) {
             return $this->refusal($e, "Setting preset apply failed for '{$ask->preset}'");
         }
@@ -261,55 +258,27 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs one write with the asking connection stamped on it as its origin.
+     * Reduces a failed write to the refusal its asker may be told.
      *
-     * Without the stamp the administrator who pressed the button is told about their own
-     * change the way a stranger's change is told. A viewport applies a removal at once - the
-     * row collapsing to a placeholder in its slot - only for the connection the change names
-     * as its author, and gates every other one behind the pending Apply; the browser context
-     * decides that by reading the origin of the change against the accept key of each window.
-     * While the screens wrote for themselves the stamp came for free, off
-     * {@see ExecutionContext::currentAcceptKey()} in the worker serving that very connection.
-     * Here the write happens where no connection is served, so the origin has to be carried -
-     * and the ask carries it already, beside the name to answer under. The same seam the
-     * backup agent stamps its initiator with.
-     *
-     * It crosses the process boundary by itself: the DB sync payloads carry the origin and the
-     * request id beside the row, and the worker holding the window rebuilds the change with
-     * both.
-     *
-     * @param SettingWriteSignalData|SettingResetSignalData|SettingDeleteSignalData|SettingPresetApplySignalData $ask
-     *     The ask, naming the connection and the submit the write answers
-     * @param callable():void $write The write to perform under that origin
-     * @throws HilosException Whatever the write itself raises
-     */
-    private function stamped(
-        SettingWriteSignalData|SettingResetSignalData|SettingDeleteSignalData|SettingPresetApplySignalData $ask,
-        callable $write,
-    ): void {
-        ExecutionContext::withOrigin($ask->acceptKey, $ask->requestId, $write);
-    }
-
-    /**
-     * Reduces a failed write to the sentence its asker may read.
-     *
-     * The same door a page action passes through today ({@see ActionFailureReason}), because the
-     * move must not widen what an administrator is told: a refusal written for a person travels
-     * whole, and a driver fault carrying SQL text becomes the placeholder and stays in the log.
-     * Refusals are not re-thrown at all - the ask arrived as a frame, and a throw here would
-     * answer the waiting submit with silence until the client's own timeout.
+     * The same door a page action passes through ({@see ActionRefusal::fromThrowable()}), because
+     * the move must not widen what a person is told: a refusal written for a person travels whole,
+     * and a driver fault carrying SQL text becomes the placeholder, with its class and text beside
+     * it for the gatekeeper to hand an administrator. Refusals are not re-thrown at all - the ask
+     * arrived as a frame, and a throw here would answer the waiting submit with silence until the
+     * client's own timeout.
      *
      * @param HilosException $e Failure raised by the write this library performed
      * @param string $context What was being written, for the log line an internal fault leaves
-     * @return string Sentence to put in the answer
+     * @return ActionRefusal Refusal to put in the answer
      */
-    private function refusal(HilosException $e, string $context): string
+    private function refusal(HilosException $e, string $context): ActionRefusal
     {
-        if (!ActionFailureReason::isPersonFacing($e)) {
+        $refusal = ActionRefusal::fromThrowable($e);
+        if ($refusal->isInternal()) {
             $this->logAgentError("{$context}: {$e->getMessage()}");
         }
 
-        return ActionFailureReason::forClient($e);
+        return $refusal;
     }
 
     /**
@@ -319,25 +288,13 @@ final class SettingsLibraryAgent extends AbstractAgent
      * gatekeepers: the answer goes where it was told to go, and this class holds no map of
      * screens to keep in step with them.
      *
-     * @param SettingWriteSignalData|SettingResetSignalData|SettingDeleteSignalData|SettingPresetApplySignalData $ask
-     *     The ask, carrying whom to answer and under which name
-     * @param ?string $error Why the write was refused, or null when it went through
+     * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
+     * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
      * @throws InvalidArgumentException When the answer cannot be named or queued
      */
-    private function answer(
-        SettingWriteSignalData|SettingResetSignalData|SettingDeleteSignalData|SettingPresetApplySignalData $ask,
-        ?string $error,
-    ): void {
-        $this->sendToAgent(
-            $ask->replySignal,
-            new SettingWriteDoneSignalData(
-                $ask->acceptKey,
-                $ask->requestId,
-                $ask->action,
-                $ask->successMessage,
-                $error,
-            ),
-        );
+    private function answer(HandoverAskInterface $ask, ?ActionRefusal $refusal): void
+    {
+        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
     }
 
     /**

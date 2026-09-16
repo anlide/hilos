@@ -6,8 +6,8 @@ namespace Hilos\Database\Settings\Library\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
 use Hilos\Database\Settings\Preset\SettingPresetResolver;
 use Hilos\Pages\AbstractHilosSettingPresetsPage;
@@ -30,7 +30,7 @@ use Hilos\Pages\AbstractHilosSettingPresetsPage;
  * The reply name is a section's own ({@see AbstractHilosSettingPresetsPage} makes each one
  * declare it), so it rides in the frame like every other ask of this library.
  */
-final class SettingPresetApplySignalData extends BaseDTO implements SignalDataInterface
+final class SettingPresetApplySignalData extends BaseDTO implements HandoverAskInterface
 {
     /**
      * @param string $replySignal Agent-signal name the library reports back under

@@ -6,8 +6,8 @@ namespace Hilos\Database\Settings\Library\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 
 /**
@@ -28,7 +28,7 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
  * writer has three gatekeepers. A fixed pair of names would make the library know each screen by
  * name, and the next screen that writes a setting would edit its body to be let in.
  */
-final class SettingWriteSignalData extends BaseDTO implements SignalDataInterface
+final class SettingWriteSignalData extends BaseDTO implements HandoverAskInterface
 {
     /**
      * @param string $replySignal Agent-signal name the library reports back under

@@ -6,8 +6,8 @@ namespace Hilos\Database\Settings\Library\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * The settings screen → the settings library: drop this orphan row (HIL-946).
@@ -23,7 +23,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * The success carries no sentence and never will: the row leaves the table in front of the
  * administrator, and a phrase saying so would repeat what the screen already showed.
  */
-final class SettingDeleteSignalData extends BaseDTO implements SignalDataInterface
+final class SettingDeleteSignalData extends BaseDTO implements HandoverAskInterface
 {
     /**
      * @param string $replySignal Agent-signal name the library reports back under

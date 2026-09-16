@@ -53,36 +53,43 @@ The name stays on the page, which checks the right and forwards the write; the
 owner writes and reports back; the page answers the client after that. The
 skeleton is below — the full text is
 `framework/backend/Pages/Communications/AbstractHilosCommunicationsDeliveriesPage.php`,
-`handleRetry()` at `:147` and `answerRetry()` at `:172`, and it is the copy
-that stays alive while one pasted here would rot:
+`handleRetry()`, and the two halves it leans on live once, in
+`framework/backend/Core/Page/HandoverGatekeeperTrait.php`; those are the copies
+that stay alive while one pasted here would rot:
 
 ```php
 // Right: the gatekeeper. ADMIN stays on this page; the write leaves as a
-// signal, and the ack is deferred until the owner has spoken.
+// signal carrying whoever asked, and the ack is deferred until the owner has
+// spoken (forward() defers only a tracked submit).
+use HandoverGatekeeperTrait;
+
 private function handleRetry(string $acceptKey, HilosDeliveryRetryActionDTO $dto): void
 {
-    $requestId = $this->currentActionRequestId();
-    $this->agent->sendToAgent(
+    $this->forward(
         HilosSignalConstants::HILOS_DELIVERY_RETRY,
-        new DeliveryRetrySignalData($dto->deliveryId, $acceptKey, $requestId),
+        new DeliveryRetrySignalData(
+            deliveryId: $dto->deliveryId,
+            replySignal: HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
+            successMessage: null,
+        ),
     );
-    if ($requestId !== null) {
-        $this->deferActionReply();
-    }
 }
 
-// Right: the answer, on the owner's done signal — one branch per way the
-// client asked, and the refusal carries the owner's reason as text.
-private function answerRetry(DeliveryRetryDoneSignalData $done): void
+// Right: the answer, on the owner's done signal. answerHandover() branches on
+// the way the client asked, and the refusal carries the owner's reason as text.
+public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
 {
-    // tracked, accepted:  sendActionSuccess($done->acceptKey, ACTION, $done->requestId)
-    // tracked, refused:   sendActionFail($done->acceptKey, ACTION, $done->requestId, $done->error)
-    // untracked, refused: sendToUser(SignalConstants::ACTION_ERROR, $done->acceptKey,
-    //                         new PageActionErrorSignalData(ACTION, $done->error))
+    // tracked, accepted:  sendActionSuccess($done->acceptKey, $done->action, $done->requestId)
+    // tracked, refused:   sendActionFail(..., $done->error, errorType/errorDetail for an ADMIN page)
+    // untracked:          answerUntracked($done->acceptKey, $done->action, $done->error)
+    $this->answerHandover($data->data);
 }
 ```
 
-`DeliveryRetryDoneSignalData::$error` is a string: without it the gatekeeper
+`HandoverAnswerSignalData::$error` is a string: without it the gatekeeper
 would have nothing to tell the person.
 
 ## How to spot it

@@ -30,7 +30,6 @@ use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
-use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
@@ -57,6 +56,8 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -2999,11 +3000,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * while the action stood on this library: the payload names whom to become and never who
      * wants it.
      *
-     * A refusal comes back as text on the answering frame rather than as a throw. Outside a
-     * page there is no dispatcher hook to turn a throw into an ack, so a throw here would leave
-     * the admin's deferred submit waiting for its own timeout with nothing to show. Everything
-     * is caught for that reason, the project's unwired seam among it - the one failure that is
-     * not a guard refusing and would otherwise be the silent case.
+     * A refusal comes back on the answering frame rather than as a throw. Outside a page there
+     * is no dispatcher hook to turn a throw into an ack, so a throw here would leave the admin's
+     * deferred submit waiting for its own timeout with nothing to show. Everything is caught for
+     * that reason, the project's unwired seam among it - the one failure that is not a guard
+     * refusing and would otherwise be the silent case. A guard's sentence travels whole; any
+     * other failure travels as the placeholder with its class and text beside it, through the
+     * same door a page action's failure passes, and is logged here.
      *
      * A success says nothing beyond the frame: what the person sees is the rebound session's
      * own state, published from where it was written.
@@ -3015,7 +3018,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($request->acceptKey)?->sessionToken;
         if ($sessionToken === null || $sessionToken === '') {
-            $this->answerImpersonate($request, self::SESSION_NOT_ON_CONNECTION_MESSAGE);
+            $this->answerImpersonate($request, ActionRefusal::said(self::SESSION_NOT_ON_CONNECTION_MESSAGE));
 
             return;
         }
@@ -3023,7 +3026,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         try {
             $this->startImpersonation($sessionToken, $request->targetUserId, $request->acceptKey, null);
         } catch (Throwable $e) {
-            $this->answerImpersonate($request, $e->getMessage());
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Impersonation of user #{$request->targetUserId} failed: {$e->getMessage()}");
+            }
+            $this->answerImpersonate($request, $refusal);
 
             return;
         }
@@ -3032,18 +3039,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Sends one takeover outcome back over the seam it arrived on.
+     * Sends one takeover outcome back over the seam it arrived on, under the name the request named.
      *
      * @param ImpersonateRequestSignalData $request The request being answered, for whom to answer
-     * @param ?string $error Why the takeover was refused, or null when it happened
+     * @param ?ActionRefusal $refusal Why the takeover was refused, or null when it happened
      * @throws InvalidArgumentException When the frame cannot be named
      */
-    private function answerImpersonate(ImpersonateRequestSignalData $request, ?string $error): void
+    private function answerImpersonate(ImpersonateRequestSignalData $request, ?ActionRefusal $refusal): void
     {
-        $this->sendToAgent(
-            HilosSignalConstants::HILOS_IMPERSONATE_DONE,
-            new ImpersonateDoneSignalData($request->acceptKey, $request->requestId, $error),
-        );
+        $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
     }
 
     /**

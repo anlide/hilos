@@ -12,8 +12,9 @@ use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -51,7 +52,6 @@ use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\DeliveryLogPruner;
 use Hilos\Notification\DTO\DeferredNotificationHandoverSignalData;
-use Hilos\Notification\DTO\DeliveryRetryDoneSignalData;
 use Hilos\Notification\DTO\DeliveryRetrySignalData;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
 use Hilos\Notification\DTO\NotificationCreatedSignalData;
@@ -344,53 +344,41 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      */
     private function retryDelivery(DeliveryRetrySignalData $retry): void
     {
-        $this->answerRetry($retry, $this->requeue($retry->deliveryId));
+        $this->sendToAgent(
+            $retry->replySignal,
+            HandoverAnswerSignalData::to($retry, $this->requeue($retry->deliveryId)),
+        );
     }
 
     /**
      * Resets and re-dispatches one journal row, or says why it cannot be.
      *
      * @param int $deliveryId Delivery journal row the admin picked
-     * @return ?string Why the row was not re-queued, or null when it was
+     * @return ?ActionRefusal Why the row was not re-queued, or null when it was
      */
-    private function requeue(int $deliveryId): ?string
+    private function requeue(int $deliveryId): ?ActionRefusal
     {
         try {
             $delivery = $this->deliveries()->findById($deliveryId);
             if ($delivery === null) {
-                return "Unknown delivery: {$deliveryId}";
+                return ActionRefusal::said("Unknown delivery: {$deliveryId}");
             }
 
             if ($delivery->status !== DeliveryStatus::FAILED) {
-                return 'Only failed deliveries can be retried';
+                return ActionRefusal::said('Only failed deliveries can be retried');
             }
 
             $this->dispatcher->requeue($delivery);
         } catch (DatabaseException $e) {
-            // The same sentence the dispatcher would have put on the wire had this been thrown
-            // on the page: a storage failure is told to nobody but the log. Caught rather than
-            // let out, because an ask that arrived as a frame is answered or it hangs.
+            // The same refusal the dispatcher would have put on the wire had this been thrown on
+            // the page: the placeholder for the person, the failure beside it for an admin. Caught
+            // rather than let out, because an ask that arrived as a frame is answered or it hangs.
             $this->logAgentError("Delivery retry failed for #{$deliveryId}: {$e->getMessage()}");
 
-            return SignalConstants::ACTION_FAILED_REASON;
+            return ActionRefusal::fromThrowable($e);
         }
 
         return null;
-    }
-
-    /**
-     * Hands the outcome back to the page that forwarded the retry.
-     *
-     * @param DeliveryRetrySignalData $retry The ask, carrying whom to answer
-     * @param ?string $error Why the retry was refused, or null when it went through
-     * @throws InvalidArgumentException When the answer cannot be named or queued
-     */
-    private function answerRetry(DeliveryRetrySignalData $retry, ?string $error): void
-    {
-        $this->sendToAgent(
-            HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE,
-            new DeliveryRetryDoneSignalData($retry->acceptKey, $retry->requestId, $error),
-        );
     }
 
     /**

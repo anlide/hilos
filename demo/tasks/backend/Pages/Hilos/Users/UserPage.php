@@ -16,6 +16,7 @@ use Demo\Tasks\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -26,6 +27,7 @@ use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -33,7 +35,6 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
-use Hilos\Users\DTO\AdminRenameDoneSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Throwable;
 
@@ -47,6 +48,8 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
+    use HandoverGatekeeperTrait;
+
     /** @var list<string> The person this page is about */
     public const array READS_DB = [TasksDbContext::users];
 
@@ -64,7 +67,7 @@ final class UserPage extends AbstractHilosUserPage
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AdminRenameDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -154,11 +157,39 @@ final class UserPage extends AbstractHilosUserPage
             throw new AgentUnknownSignalException($name);
         }
 
-        if (!$data->data instanceof AdminRenameDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . AdminRenameDoneSignalData::class);
+        if (!$data->data instanceof HandoverAnswerSignalData) {
+            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
         }
 
-        $this->answerRename($data->data);
+        $this->answerHandover($data->data);
+    }
+
+    /**
+     * Sends an untracked rename's outcome as the two named acks this surface has always listened
+     * for, the refusal and the success both - a tracked one is answered on its request id instead.
+     *
+     * @param string $acceptKey Accept key of the admin who asked
+     * @param string $action Browser action name the outcome belongs to (unused: the ack names are the action's own)
+     * @param ?string $error Why the rename was refused, or null when it went through
+     * @throws InvalidArgumentException When the ack cannot be named
+     */
+    protected function answerUntracked(string $acceptKey, string $action, ?string $error): void
+    {
+        if ($error !== null) {
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
+                $acceptKey,
+                new ActionFailSignalData($error),
+            );
+
+            return;
+        }
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
+            $acceptKey,
+            new ActionSuccessSignalData(),
+        );
     }
 
     /**
@@ -179,71 +210,18 @@ final class UserPage extends AbstractHilosUserPage
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
-        $requestId = $this->currentActionRequestId();
-        $this->agent->sendToAgent(
+        $this->forward(
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
             new AdminRenameSignalData(
                 userId: $dto->id,
                 name: $dto->name,
+                replySignal: HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
                 acceptKey: $acceptKey,
-                requestId: $requestId,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::HILOS_USER_UPDATE,
+                successMessage: null,
                 adminUserId: Hilos::$browser?->resolveActionUserId($acceptKey),
             ),
-        );
-
-        if ($requestId !== null) {
-            $this->deferActionReply();
-        }
-    }
-
-    /**
-     * Turns the library's outcome into the ack this page has always sent.
-     *
-     * The submit is untracked - the admin surface listens for the two named acks rather than
-     * for a correlated reply - so both shapes are kept: the tracked branch answers a request id
-     * if one ever arrives, and the plain one sends the very frames the handler and its
-     * exception hook sent before the move.
-     *
-     * @param AdminRenameDoneSignalData $done Whom to answer, and why the rename was refused
-     * @throws InvalidArgumentException When the ack cannot be named
-     */
-    private function answerRename(AdminRenameDoneSignalData $done): void
-    {
-        if ($done->requestId !== null) {
-            if ($done->error === null) {
-                $this->sendActionSuccess(
-                    $done->acceptKey,
-                    HilosSignalConstants::HILOS_USER_UPDATE,
-                    $done->requestId,
-                );
-
-                return;
-            }
-
-            $this->sendActionFail(
-                $done->acceptKey,
-                HilosSignalConstants::HILOS_USER_UPDATE,
-                $done->requestId,
-                $done->error,
-            );
-
-            return;
-        }
-
-        if ($done->error !== null) {
-            $this->sendToUser(
-                HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
-                $done->acceptKey,
-                new ActionFailSignalData($done->error),
-            );
-
-            return;
-        }
-
-        $this->sendToUser(
-            HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
-            $done->acceptKey,
-            new ActionSuccessSignalData(),
         );
     }
 }

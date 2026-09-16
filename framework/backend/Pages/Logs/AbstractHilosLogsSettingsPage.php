@@ -7,9 +7,9 @@ namespace Hilos\Pages\Logs;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\PageReach;
-use Hilos\Database\Settings\Library\DTO\SettingWriteDoneSignalData;
 use Hilos\Log\LogSettingsPresets;
 use Hilos\Pages\AbstractHilosSettingPresetsPage;
 
@@ -44,7 +44,7 @@ abstract class AbstractHilosLogsSettingsPage extends AbstractHilosSettingPresets
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => SettingWriteDoneSignalData::class,
+            HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 }

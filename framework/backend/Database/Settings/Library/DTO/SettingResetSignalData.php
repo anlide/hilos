@@ -6,8 +6,8 @@ namespace Hilos\Database\Settings\Library\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * A settings gatekeeper → the settings library: put this key back to its catalog default (HIL-946).
@@ -24,7 +24,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * The return address travels in the frame for the reason it does on every ask of this library:
  * one writer, three gatekeepers, and no name pinned to a screen.
  */
-final class SettingResetSignalData extends BaseDTO implements SignalDataInterface
+final class SettingResetSignalData extends BaseDTO implements HandoverAskInterface
 {
     /**
      * @param string $replySignal Agent-signal name the library reports back under

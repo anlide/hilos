@@ -115,6 +115,8 @@ interface ActionHostInterface
      * @param string $reason Human-readable message the client may see
      * @param ?string $errorCode Machine-readable error code, or null when unclassified
      * @param ?int $retryAfter Seconds to wait before retrying, or null when not rate-limited
+     * @param ?string $errorType Class name of the failure the reason stands for, or null for anyone but an admin
+     * @param ?string $errorDetail Original message of that failure, or null for anyone but an admin
      * @throws InvalidArgumentException When the reply frame cannot be named
      */
     public function sendActionFail(
@@ -124,6 +126,8 @@ interface ActionHostInterface
         string $reason,
         ?string $errorCode = null,
         ?int $retryAfter = null,
+        ?string $errorType = null,
+        ?string $errorDetail = null,
     ): void;
 
     /**

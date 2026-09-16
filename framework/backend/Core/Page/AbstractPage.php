@@ -635,6 +635,8 @@ abstract class AbstractPage implements ActionHostInterface
      * @param string $reason Human-readable error message exposed to the client
      * @param ?string $errorCode Machine-readable error code (e.g. 'unauthorized'), or null when unclassified
      * @param ?int $retryAfter Seconds the caller should wait before retrying (rate_limited failures), or null
+     * @param ?string $errorType Class name of the failure the reason stands for, or null for anyone but an admin
+     * @param ?string $errorDetail Original message of that failure, or null for anyone but an admin
      * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function sendActionFail(
@@ -644,8 +646,10 @@ abstract class AbstractPage implements ActionHostInterface
         string $reason,
         ?string $errorCode = null,
         ?int $retryAfter = null,
+        ?string $errorType = null,
+        ?string $errorDetail = null,
     ): void {
-        $this->actionReply()->sendFail($acceptKey, $action, $requestId, $reason, $errorCode, $retryAfter);
+        $this->actionReply()->sendFail($acceptKey, $action, $requestId, $reason, $errorCode, $retryAfter, $errorType, $errorDetail);
     }
 
     /**

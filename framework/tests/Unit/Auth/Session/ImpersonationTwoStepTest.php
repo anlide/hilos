@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\Session;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\Session\DTO\ImpersonateDoneSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
 use Hilos\Tests\Unit\Notification\DeliveryRetryTwoStepTest;
@@ -74,7 +74,7 @@ final class ImpersonationTwoStepTest extends TestCase
     public function testThePageIsAddressedByTheAnswerFrame(): void
     {
         self::assertSame(
-            ImpersonateDoneSignalData::class,
+            HandoverAnswerSignalData::class,
             AbstractHilosUsersPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL]
                 [HilosSignalConstants::HILOS_IMPERSONATE_DONE] ?? null,
         );
