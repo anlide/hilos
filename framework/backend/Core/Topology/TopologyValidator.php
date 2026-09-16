@@ -192,7 +192,7 @@ final class TopologyValidator
      *
      * @param class-string<Hilos> $hilosClass Project facade class
      * @throws InvalidTopologyException When a declaration names a collection no layer mounts
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public function validateReferences(string $hilosClass): void
     {

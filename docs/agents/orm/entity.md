@@ -66,7 +66,7 @@ where it is read rather than turning into a finding about the database.
 An index definition may also name its **type** via `_indexes[<name>][Entity::INDEX_TYPE]`,
 written using `Hilos\Database\SqlIndexType` constants (`BTREE`, `FULLTEXT`, `HASH`, `RTREE`).
 The key sits on the index itself, not on a column. Omitting `INDEX_TYPE` defaults to
-`SqlIndexType::BTREE`, matching all existing declarations in the tree. An index written as
+`SqlIndexType::BTREE`, which is what a declaration written before the key existed meant. An index written as
 `SPATIAL` in DDL is declared here as `RTREE` because that is the name `information_schema.STATISTICS.INDEX_TYPE`
 reports. Unknown index type values are refused by `Entity::indexType()`.
 
@@ -76,11 +76,15 @@ columns and uniqueness: `Hilos\Database\Schema\EntitySchemaIndexAudit` reads
 is ascending) and `INDEX_TYPE`, reporting any divergence on the `INDEX` axis. Non-BTREE
 types are spelled in uppercase in the report — e.g. `FULLTEXT(message)` or `unique HASH(a)` —
 while plain BTREE indexes remain unadorned, and only descending columns are spelled with
-`DESC` (`(channel,created_at DESC)`).
+`DESC` (`(channel,created_at DESC)`), so an all-ascending BTREE index reads exactly as it
+always did. Holding the direction is what closes the hole a `DESC` written straight into a
+migration used to fall through: the audit compared columns only, so the direction vanished
+the next time the index was rebuilt from the declaration and nothing said so.
 
 An index whose type cannot answer an equality lookup by value (such as `FULLTEXT` or `RTREE`)
-does not count as the leftmost column of an index for browser table joins
-(see [docs/agents/app-topology.md](../app-topology.md)).
+does not count as the leftmost column of an index for browser table joins: a join column
+led only by such an index is refused at startup by
+`TopologyValidator::validateBrowserJoinColumns()`.
 
 The audit also reads the **typed property** behind each mapped column, because that is
 the shape hydration writes into, and its nullability is a claim about the column:

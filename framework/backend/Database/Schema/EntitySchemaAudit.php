@@ -122,7 +122,7 @@ final class EntitySchemaAudit
      * @param ?int $index Connection index (default: current)
      * @return list<EntitySchemaMismatch> Every divergence found, across all classes
      * @throws DatabaseException When an introspection query fails
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public static function audit(array $entityClasses, ?int $index = null): array
     {
@@ -296,7 +296,7 @@ final class EntitySchemaAudit
      * @param class-string<Entity> $entityClass Entity to audit
      * @return list<EntitySchemaMismatch> Divergences for this entity
      * @throws DatabaseException When an introspection query fails
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     private static function auditEntity(string $entityClass): array
     {

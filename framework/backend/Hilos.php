@@ -992,7 +992,7 @@ abstract class Hilos implements TruthSourceOwner
      * {@see RtContext::assertFeatureRuntimeIntact()} already form around mounting.
      *
      * @throws InvalidTopologyException When a declaration names a collection no layer mounts
-     * @throws InvalidArgumentException When an index declaration names a direction it cannot name
+     * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public static function validateTopologyReferences(): void
     {
