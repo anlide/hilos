@@ -728,10 +728,12 @@ abstract class WorkerManager extends BaseManager
 
         // Before the instance exists, because an agent is handed its data rather than asked to
         // run without it: what the class says it reads is taken up here, and waited for, so
-        // onStart() opens on a collection and not on the emptiness before one.
+        // onStart() opens on a collection and not on the emptiness before one. A claim that may
+        // not add is waited for beside the reads: its holder never wrote those rows, so their
+        // copy is on its way here exactly as a read's is.
         $reads = [
-            SourceChange::KIND_RT => $this->agentReadsRt($agentType),
-            SourceChange::KIND_DB => $this->agentReadsDb($agentType),
+            SourceChange::KIND_RT => [...$this->agentReadsRt($agentType), ...$this->agentBorrowsRt($agentType)],
+            SourceChange::KIND_DB => [...$this->agentReadsDb($agentType), ...$this->agentBorrowsDb($agentType)],
         ];
         $this->raiseSourceInterest(SourceConsumer::agent($agentId), $reads);
         $this->awaitSourceInterest($reads);
@@ -2397,6 +2399,36 @@ abstract class WorkerManager extends BaseManager
         $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
 
         return $workerClass === null ? [] : $workerClass::READS_DB;
+    }
+
+    /**
+     * Reads what one agent type claims of the runtime without the right to add, off the class (HIL-989).
+     *
+     * Waited for like a read, because it is one: the holder edits rows somebody else wrote, and
+     * holds no copy of them until a snapshot lands. An unregistered type borrows nothing, for the
+     * reason it reads nothing.
+     *
+     * @param string $agentType Agent type about to start here
+     * @return list<string> RT collections its class borrows, or none when the type is unknown
+     */
+    private function agentBorrowsRt(string $agentType): array
+    {
+        $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
+
+        return $workerClass === null ? [] : OwnershipDeclaration::borrowedRtCollectionsOf($workerClass);
+    }
+
+    /**
+     * Reads what one agent type claims of the database without the right to add, off the class (HIL-989).
+     *
+     * @param string $agentType Agent type about to start here
+     * @return list<string> DB collections its class borrows, or none when the type is unknown
+     */
+    private function agentBorrowsDb(string $agentType): array
+    {
+        $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
+
+        return $workerClass === null ? [] : OwnershipDeclaration::borrowedDbCollectionsOf($workerClass);
     }
 
     /**

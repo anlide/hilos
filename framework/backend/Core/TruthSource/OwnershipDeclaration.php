@@ -70,15 +70,34 @@ final class OwnershipDeclaration
     }
 
     /**
+     * The database collections a class claims whole without the right to add, its parents' claims folded in.
+     *
+     * What a start waits for beside {@see AbstractAgent::READS_DB}, and read off the class for the
+     * same reason: the wait comes before the instance exists. Only the keys, because the start
+     * needs to know what to wait for and not what the claim may do.
+     *
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * @return list<string> Keys of the collections its borrowed claims name
+     */
+    public static function borrowedDbCollectionsOf(string $agentClass): array
+    {
+        return array_keys(array_filter(self::dbCollectionsOf($agentClass), self::isBorrowedClaim(...)));
+    }
+
+    /**
      * Registers every database collection the class declares, under one owner.
      *
      * The width is the whole collection: a claim whose keys only the live instance knows is
      * declared in the other map of this half and laid down by {@see self::claimDbRows()}, which
      * asks the instance for them.
      *
-     * Each claim is its own reader interest, and a ready one - a property of the claim itself and
-     * not an inheritance from the seam it replaced: the copy this process caches lives only under
-     * an interest, and the owner reads its own rows the moment it starts writing them.
+     * Each claim is its own reader interest, and whether it is a ready one depends on the claim.
+     * A claim that may add is ready at once: the owner reads its own rows the moment it starts
+     * writing them, and the copy this process caches lives only under an interest. A borrowed
+     * claim is not ({@see self::isBorrowedClaim()}): its holder writes rows somebody else brought
+     * into being, so its readiness arrives the way a reader's does - {@see WorkerManager} waits
+     * for it before the instance is built, exactly as for what the class reads - and marking it
+     * here would skip the drop of the cache that arrival makes.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -91,7 +110,9 @@ final class OwnershipDeclaration
             TruthSourceRegistry::register($collection, TruthSourceKeys::all(), $ownerId, $operations);
 
             SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($ownerId));
-            SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+            if (!self::isBorrowedClaim($operations)) {
+                SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+            }
         }
     }
 
@@ -130,9 +151,10 @@ final class OwnershipDeclaration
      * and a collection registered with no rows held would go unnoticed until the first foreign
      * write.
      *
-     * Each claim is its own reader interest, and a ready one, exactly as the whole-collection half
-     * makes it ({@see self::claimDb()}): an owner reads its own rows the moment it starts writing
-     * them, and the narrower width changes nothing about that.
+     * Each claim is its own reader interest, and a ready one whatever operations it carries: the
+     * rows it names are this owner's own, so it reads them the moment it starts writing them. The
+     * borrowed claim that the whole-collection half waits for ({@see self::claimDb()}) has no
+     * narrow counterpart - a claim over named rows is not a claim over rows somebody else wrote.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -172,15 +194,31 @@ final class OwnershipDeclaration
     }
 
     /**
+     * The runtime collections a class claims whole without the right to add, its parents' claims folded in.
+     *
+     * The runtime twin of {@see self::borrowedDbCollectionsOf()}: what a start waits for beside
+     * {@see AbstractAgent::READS_RT}.
+     *
+     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * @return list<string> Keys of the collections its borrowed claims name
+     */
+    public static function borrowedRtCollectionsOf(string $agentClass): array
+    {
+        return array_keys(array_filter(self::rtCollectionsOf($agentClass), self::isBorrowedClaim(...)));
+    }
+
+    /**
      * Registers every runtime collection the class declares, under one owner.
      *
      * The width is the whole collection, for the reason the database half gives: a claim whose
      * keys only the live instance knows belongs in the other map of this half and is laid down by
      * {@see self::claimRtRows()}.
      *
-     * Each claim is its own reader interest, and a ready one, by the same property the database
-     * half names: a writer holds the copy of what it writes, so there is no state on its way here
-     * for it to wait for.
+     * Each claim is its own reader interest, and ready at once only when it may add: a writer
+     * holds the copy of what it writes, so there is no state on its way here for it to wait for.
+     * A borrowed claim holds no such copy ({@see self::isBorrowedClaim()}) - the rows it edits
+     * were written by somebody else and reach this process in a snapshot, which is what marks it
+     * ready, and {@see WorkerManager} waits for that snapshot before the instance is built.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -193,7 +231,9 @@ final class OwnershipDeclaration
             RtTruthSourceRegistry::register($collection, TruthSourceKeys::all(), $ownerId, $operations);
 
             SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($ownerId));
-            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            if (!self::isBorrowedClaim($operations)) {
+                SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            }
         }
     }
 
@@ -219,9 +259,9 @@ final class OwnershipDeclaration
      * the live instance ({@see AbstractAgent::ownedRtRowKeys()}), and the same two refusals stand
      * in front of the registry for the same reasons.
      *
-     * Each claim is its own reader interest, and a ready one, exactly as {@see self::claimRt()}
-     * makes it: a writer holds the copy of what it writes, so there is no state on its way here
-     * for it to wait for.
+     * Each claim is its own reader interest, and a ready one whatever operations it carries, for
+     * the reason the database half gives: the rows it names are this owner's own, and a writer
+     * holds the copy of what it writes.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -247,6 +287,28 @@ final class OwnershipDeclaration
             SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($agent->getId()));
             SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
         }
+    }
+
+    /**
+     * Whether a whole-collection claim is borrowed: its holder may not add a row.
+     *
+     * A holder that brings no row into being only ever writes rows somebody else wrote, so it
+     * holds no copy of them - the copy has to arrive, and the claim waits for it the way a read
+     * does. Asked of the FOLDED operations, so a subclass that adds the right its parent's record
+     * lacked owns the collection rather than borrowing it.
+     *
+     * Sufficient and not complete, and the rule says so rather than promise otherwise: a co-owner
+     * that may add rows as well holds no copy of the rows the other owner wrote either, and is not
+     * caught here. The tree has one - the cluster demo's claimer holds the worker statuses whole
+     * while every worker holds its own row of them - and it reads none of the others' rows in its
+     * start hook, so no second form of borrowing exists for it until one does.
+     *
+     * @param TruthSourceOperations $operations Folded operations of one whole-collection claim
+     * @return bool True when the claim may not add, and so waits for the state it edits
+     */
+    private static function isBorrowedClaim(TruthSourceOperations $operations): bool
+    {
+        return !$operations->allows(TruthSourceOperation::Add);
     }
 
     /**

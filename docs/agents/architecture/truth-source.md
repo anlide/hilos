@@ -34,46 +34,63 @@ Ownership Are One Fact*; what it replaces is in *The Form That Is Gone*.
 
 ## Interest And Ownership Are One Fact
 
-A claim raises the reader interest of its owner and marks that interest ready in
-the same movement (`SourceInterestRegistry::register()` followed by
-`SourceInterestRegistry::markReady()`, both inside the claim on
-`AbstractAgent`). Ready at once, because nothing is on its way: a writer holds
-the copy of what it writes, and on the database side the copy this process
-caches lives only under an interest — a cache with anything in it means a holder
-is registered and the frames are already coming, an empty one means the next
-read goes to the database.
+A claim raises the reader interest of its owner
+(`SourceInterestRegistry::register()`, inside `OwnershipDeclaration::claimDb()`
+and `OwnershipDeclaration::claimRt()`), and a claim that may add marks that
+interest ready in the same movement (`SourceInterestRegistry::markReady()`).
+Ready at once, because nothing is on its way: a writer that brings rows into
+being holds the copy of what it writes, and on the database side the copy this
+process caches lives only under an interest — a cache with anything in it means
+a holder is registered and the frames are already coming, an empty one means
+the next read goes to the database.
 
-It is raised at the claim and not at the report that follows it. An agent
-writing its first row inside `onStart()` reads the collection before that report
-is built — the report goes out once the hook has returned
+A claim that may not add is a **borrowed claim**, and it is not ready at once.
+Its holder only edits rows somebody else brought into being, so it holds no copy
+of them: its readiness arrives the way a reader's does — a snapshot for a runtime
+collection, the master's acknowledgement for a database one, which drops the
+cache read before it — and the worker waits for it at the start, beside
+`READS_RT` and `READS_DB` and before the instance is built
+(`OwnershipDeclaration::borrowedRtCollectionsOf()`,
+`OwnershipDeclaration::borrowedDbCollectionsOf()`). The delivery channels are
+the standing case: each edits the journal row of the attempt it runs
+(`AbstractDeliveryChannelAgent`), while the notifications library adds and
+prunes those rows. The operations are read folded — `BY_KIND` expanded and the
+parents' records merged — so an heir that gives a borrowed record the right to
+add owns the collection. A claim narrowed to named rows (`OWNS_DB_ROWS`,
+`OWNS_RT_ROWS`) is never borrowed: the rows it names are its own.
+
+The interest of a claim that may add is raised at the claim and not at the
+report that follows it. An agent writing its first row inside `onStart()` reads
+the collection before that report is built — the report goes out once the hook has returned
 (`WorkerManager::handleAgentStart()`) — so an interest raised on the report
 would refuse the owner its own first read.
 
 `READS_DB` and `READS_RT` exist for somebody else's collection. A collection the
-agent claims does not belong in them: the claim holds the copy already, and two
-lists for one fact would have to be kept in step. What belongs there is what the
-agent reads out of a collection another agent owns.
+agent claims does not belong in them: the claim is the reader interest already,
+and two lists for one fact would have to be kept in step. What belongs there is
+what the agent reads out of a collection another agent owns.
 
-That holds for a narrow claim too, and this is the case that looks like an
+That holds for a borrowed claim too, and this is the case that looks like an
 exception. A holder of one operation over a collection somebody else owns reads
 like a reader — it may update a row it never creates — and still an entry beside
-its claim buys it nothing. The interest a claim raises leaves the worker anyway:
-the report built once `onStart()` has returned carries every source interest to
-the master unconditionally (`WorkerManager::notifyRtSourcesRegistered()`), and
-that report is the one moment an interest taken by a claim over a database
-collection travels at all. On the database side there are no rows on their way to
-wait for — the answer to an interest is a bare acknowledgement
-(`WorkerClient::handleWorkerSourceInterestMessage()`) and the worker reads the
-rows out of the database itself. On the runtime side the only borrowed narrow
-claim in the tree is over a `connections` collection, which a process holds from
-the moment it mounts its runtime context
-(`RtContext::declareProcessWideReads()`), and that hold is waited on before the
-first agent is built (`WorkerManager::handleWorkerRegistered()`).
+its claim buys it nothing: the start already waits for the claim as it waits for
+a read, under the same consumer and within the same deadline, and refuses the
+same way when the state does not come. What makes that so is the start itself,
+and not a coincidence of the tree: a borrowed claim over a collection the process
+happens to hold from mounting (`RtContext::declareProcessWideReads()`,
+`DbContext::processWideReadCollections()`) passes at once, because that hold is
+waited on before the first agent is built
+(`WorkerManager::handleWorkerRegistered()`), and one over a collection nothing
+else here reads waits its round trip.
 
-The boundary is worth naming while it is empty: a narrow claim over somebody
-else's runtime collection that the process does NOT hold from mounting would
-have no wait at all — not from the claim, which is ready at once, and not from a
-process-wide list that does not name it. Nothing in the tree holds one today.
+The rule is sufficient and not complete, and says so rather than promise
+otherwise. A co-owner that may add rows as well holds no copy of the rows the
+other owner wrote either, and the absence of `Add` does not catch it. The tree
+has one — the cluster demo's `ClaimerAgent` holds `workerStatuses` whole while
+every `WorkerAgent` holds its own row — and it reads none of the others' rows in
+its start hook. No second form of borrowing exists for it until such a holder
+does; a third constant beside `OWNS_RT` was weighed and turned down, because the
+operations already say what borrowing is.
 
 The declaration of ownership is a map, `OWNS_DB`, from a database collection key
 to the operations the owner may perform on its rows, written on the class beside
@@ -142,10 +159,12 @@ The worker reads the declaration off the class, before the instance exists.
 agent type to its worker class through the topology (`Hilos::AGENTS`) and take
 `READS_RT` and `READS_DB` from there; the worker raises the interest, waits for
 the master's word that the state has landed, and only then creates the agent.
-So `onStart()` opens on a collection and not on the emptiness before one. When
-the state does not arrive, nothing has been created yet and nothing has to be
-unwound but the interest: the worker releases it and refuses the start
-(`AgentCreationFailedException`).
+So `onStart()` opens on a collection and not on the emptiness before one. The
+borrowed claims of the class are taken in the same breath
+(`WorkerManager::agentBorrowsRt()`, `WorkerManager::agentBorrowsDb()`) and
+waited for in the same wait. When the state does not arrive, nothing has been
+created yet and nothing has to be unwound but the interest: the worker releases
+it and refuses the start (`AgentCreationFailedException`).
 
 An unknown type reads nothing rather than raising. What a start does with a
 type the topology does not know is decided by the factory a moment later, and
@@ -374,6 +393,12 @@ command, a bootstrap — and promising it would make a rule that lies about its
 own completeness, which is worse than no rule. A collection without an owner is
 caught where it is caught today: at the write, by the registry's guard, with
 "no truth source registered".
+
+One refusal belongs beside these although the validator does not make it: the
+start of a single agent whose borrowed claim does not get its state within the
+window a read gets (`WorkerManager::SOURCE_INTEREST_DEADLINE_SECONDS`) is refused
+exactly as an undelivered read refuses it — see *Interest And Ownership Are One
+Fact*.
 
 ## The Form That Is Gone
 

@@ -39,8 +39,9 @@ final class DeclaredRtOwnershipTest extends TestCase
 
     /**
      * The declaration reaches the runtime registry with the operations it named, and the owner may
-     * read what it owns at once - a writer holds the copy of what it writes, so the interest is
-     * ready the moment the claim is laid down.
+     * read what it owns at once - a writer that may add holds the copy of what it writes, so the
+     * interest is ready the moment the claim is laid down. A claim that may not add waits instead,
+     * which is {@see BorrowedClaimReadinessTest}'s case.
      */
     public function testADeclaredCollectionIsClaimedWithItsOperationsAndReadableAtOnce(): void
     {
@@ -56,7 +57,7 @@ final class DeclaredRtOwnershipTest extends TestCase
         $this->assertFalse(RtTruthSourceRegistry::allowsOperation(
             DeclaredRtOwnershipTestAgent::COLLECTION,
             DeclaredRtOwnershipTestAgent::AGENT_TYPE,
-            TruthSourceOperation::Add,
+            TruthSourceOperation::Remove,
         ));
         $this->assertTrue(SourceInterestRegistry::isReady(
             SourceChange::KIND_RT,
@@ -151,7 +152,7 @@ final class DeclaredRtOwnershipTestAgent extends AbstractAgent
     public const string AGENT_TYPE = 'unit_declared_rt_ownership';
     public const string COLLECTION = 'unit_declared_rt_ownership_rt';
 
-    public const array OWNS_RT = [self::COLLECTION => [TruthSourceOperation::Update]];
+    public const array OWNS_RT = [self::COLLECTION => [TruthSourceOperation::Add, TruthSourceOperation::Update]];
 
     /**
      * Claims nothing here: the declaration above is the claim.

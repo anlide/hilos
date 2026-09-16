@@ -36,8 +36,9 @@ final class DeclaredDbOwnershipTest extends TestCase
 
     /**
      * The declaration reaches the registry with the operations it named, and the owner may read
-     * what it owns at once - the claim is its own reader interest, ready, exactly as the helper
-     * it replaces made it.
+     * what it owns at once - the claim is its own reader interest, and one that may add is ready,
+     * exactly as the helper it replaces made it. A claim that may not add waits instead, which is
+     * {@see BorrowedClaimReadinessTest}'s case.
      */
     public function testADeclaredCollectionIsClaimedWithItsOperationsAndReadableAtOnce(): void
     {
@@ -56,7 +57,7 @@ final class DeclaredDbOwnershipTest extends TestCase
             DeclaredDbOwnershipTestAgent::COLLECTION,
         ));
         $this->assertSame(
-            [TruthSourceOperation::Update],
+            [TruthSourceOperation::Add, TruthSourceOperation::Update],
             OwnershipDeclaration::dbCollectionsOf(DeclaredDbOwnershipTestAgent::class)
                 [DeclaredDbOwnershipTestAgent::COLLECTION]->asList(),
         );
@@ -128,7 +129,7 @@ final class DeclaredDbOwnershipTestAgent extends AbstractAgent
     public const string AGENT_TYPE = 'unit_declared_db_ownership';
     public const string COLLECTION = 'unit_declared_db_ownership_db';
 
-    public const array OWNS_DB = [self::COLLECTION => [TruthSourceOperation::Update]];
+    public const array OWNS_DB = [self::COLLECTION => [TruthSourceOperation::Add, TruthSourceOperation::Update]];
 
     /**
      * Claims nothing here: the declaration above is the claim.

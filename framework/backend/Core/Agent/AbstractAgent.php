@@ -102,9 +102,10 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     about the class, and what separates them is the right they carry, not how they are
      *     written down.
      *
-     *     A collection this agent claims does not belong here: a claim holds the copy already, and
-     *     two lists for one fact would have to be kept in step. What belongs here is what the agent
-     *     reads out of somebody else's collection.
+     *     A collection this agent claims does not belong here: a claim is its own reader interest -
+     *     one that may not add is waited for beside this list at the start - and two lists for one
+     *     fact would have to be kept in step. What belongs here is what the agent reads out of
+     *     somebody else's collection.
      */
     public const array READS_RT = [];
 
