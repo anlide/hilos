@@ -8,7 +8,9 @@
 // `<ng-template #row let-row let-rowKey="rowKey">`; the placeholder, header,
 // paging, and the pending bar stay framework-owned. The controller arrives via
 // input, carrying core signals, so the view mirrors them into Angular signals.
-// (Distinct from HilosTable, the client-side view.) Bootstrap classes only.
+// (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
+// frame draws the bar and the footer from that declaration instead
+// (HilosTableBar, HilosTableFooter). Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -30,6 +32,13 @@ import type {
   TableViewportRow,
 } from '@hilos/core'
 
+import { HilosTableBar } from './HilosTableBar.js'
+import { HilosTableFooter } from './HilosTableFooter.js'
+
+// Distinct ids so two declared tables on one page never name themselves by the
+// same title.
+let viewportTableSeq = 0
+
 /** The context a HilosViewportTable `#row` template receives. */
 export interface ViewportTableRowContext<R> {
   /** The resolved row view-model (the template's implicit `let-row`). */
@@ -42,10 +51,17 @@ export interface ViewportTableRowContext<R> {
 @Component({
   selector: 'hilos-viewport-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet],
+  imports: [HilosTableBar, HilosTableFooter, NgTemplateOutlet],
   template: `
     <div [attr.data-id]="dataId()">
-      @if (searchable() || pendingCount() > 0) {
+      @if (declaration()) {
+        <hilos-table-bar [controller]="controller()" [titleId]="titleId" />
+      }
+
+      <!-- SCAFFOLD: the bar a table draws from props, kept while the five
+      framework pages still pass them. It goes with the props themselves when
+      those pages move onto the declaration (HIL-819). -->
+      @if (!declaration() && (searchable() || pendingCount() > 0)) {
         <div
           class="d-flex justify-content-between align-items-center gap-2 mb-3"
         >
@@ -82,8 +98,13 @@ export interface ViewportTableRowContext<R> {
       }
 
       <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle mb-0">
-          @if (label(); as label) {
+        <table
+          class="table table-striped table-hover align-middle mb-0"
+          [attr.aria-labelledby]="declaration() ? titleId : null"
+        >
+          <!-- A declared table already shows its name as a heading, and a hidden
+          caption repeating it would name the table twice. -->
+          @if (!declaration() && label(); as label) {
             <caption class="visually-hidden">
               {{
                 label
@@ -173,7 +194,13 @@ export interface ViewportTableRowContext<R> {
         </table>
       </div>
 
-      @if (paginated()) {
+      @if (declaration()) {
+        <hilos-table-footer [controller]="controller()" />
+      }
+
+      <!-- SCAFFOLD: the footer a table draws from its own comparisons, kept for
+      the same reason and going the same way as the bar above (HIL-819). -->
+      @if (!declaration() && paginated()) {
         <div class="d-flex justify-content-between align-items-center mt-3">
           <span class="text-muted small" data-id="hilos-table-count">
             {{ countLabel() }}
@@ -241,6 +268,14 @@ export class HilosViewportTable<R> {
   protected readonly row =
     contentChild.required<TemplateRef<ViewportTableRowContext<R>>>('row')
   protected readonly empty = contentChild<TemplateRef<unknown>>('empty')
+
+  // The declaration does not change over the life of a table, so it is read off
+  // the controller rather than mirrored as a signal (tableFrame.ts,
+  // HilosTableFrameState).
+  protected readonly declaration = computed(
+    () => this.controller().frame.declaration,
+  )
+  protected readonly titleId = `hilos-table-title-${viewportTableSeq++}`
 
   protected readonly rows = signal<readonly TableViewportRow<R>[]>([])
   protected readonly search = signal('')

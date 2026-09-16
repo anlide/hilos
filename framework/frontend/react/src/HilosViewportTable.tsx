@@ -6,7 +6,10 @@
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the `row` render prop; the
 // placeholder, header, paging, and the pending bar stay framework-owned.
-// (Distinct from HilosTable, the client-side view.) Bootstrap classes only.
+// (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
+// frame draws the bar and the footer from that declaration instead
+// (HilosTableBar, HilosTableFooter). Bootstrap classes only.
+import { useId } from 'react'
 import type { ReactNode } from 'react'
 import type {
   HilosTableColumn,
@@ -14,6 +17,8 @@ import type {
   TableViewportController,
 } from '@hilos/core'
 
+import { HilosTableBar } from './HilosTableBar.js'
+import { HilosTableFooter } from './HilosTableFooter.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosViewportTable}. */
@@ -83,6 +88,10 @@ export function HilosViewportTable<R>({
   const hasNextPage = useSignal(controller.hasNextPage)
   const pendingCount = useSignal(controller.pendingCount)
   const loaded = useSignal(controller.loaded)
+  // The declaration does not change over the life of a table, so it is read once
+  // rather than wrapped in a signal (tableFrame.ts, HilosTableFrameState).
+  const declaration = controller.frame.declaration
+  const titleId = useId()
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
   const paginated = pageCount === null || pageCount > 1
@@ -125,7 +134,14 @@ export function HilosViewportTable<R>({
 
   return (
     <div data-id={dataId}>
-      {searchable || pendingCount > 0 ? (
+      {declaration ? (
+        <HilosTableBar controller={controller} titleId={titleId} />
+      ) : null}
+
+      {/* SCAFFOLD: the bar a table draws from props, kept while the five
+          framework pages still pass them. It goes with the props themselves when
+          those pages move onto the declaration (HIL-819). */}
+      {!declaration && (searchable || pendingCount > 0) ? (
         <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
           {searchable ? (
             <input
@@ -160,8 +176,13 @@ export function HilosViewportTable<R>({
       ) : null}
 
       <div className="table-responsive">
-        <table className="table table-striped table-hover align-middle mb-0">
-          {label ? (
+        <table
+          className="table table-striped table-hover align-middle mb-0"
+          aria-labelledby={declaration ? titleId : undefined}
+        >
+          {/* A declared table already shows its name as a heading, and a hidden
+              caption repeating it would name the table twice. */}
+          {!declaration && label ? (
             <caption className="visually-hidden">{label}</caption>
           ) : null}
           <thead>
@@ -245,7 +266,11 @@ export function HilosViewportTable<R>({
         </table>
       </div>
 
-      {paginated ? (
+      {declaration ? <HilosTableFooter controller={controller} /> : null}
+
+      {/* SCAFFOLD: the footer a table draws from its own comparisons, kept for
+          the same reason and going the same way as the bar above (HIL-819). */}
+      {!declaration && paginated ? (
         <div className="d-flex justify-content-between align-items-center mt-3">
           <span className="text-muted small" data-id="hilos-table-count">
             {countLabel}

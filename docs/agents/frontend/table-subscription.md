@@ -129,12 +129,15 @@ accumulated before the break is gone — the window that arrives outranks it.
 
 ## What the page declares
 
-> **The declaration below is drawn by Vue and by nobody else yet (not in the
-> code yet — HIL-810, HIL-819).** The Vue view renders the bar and the footer
-> from it; React and Angular are HIL-810, and the framework's own pages declare
-> no frame yet — they move onto it in HIL-819. So a view still takes its columns,
-> its label, and its empty text as props, and a table that declares nothing keeps
-> drawing the bar and the footer it drew before.
+> **The declaration below is drawn by all three views, and no framework page
+> declares one yet (not in the code yet — HIL-819).** Vue, React, and Angular
+> render the bar and the footer from it; what was built on top of them since —
+> the order menu and page numbers, the strip of new rows with Apply, marks,
+> cards, row detail, the worded empty states, the strips of work and of a quiet
+> source — is drawn by Vue alone until its own parity leaf (HIL-811 to HIL-818).
+> The framework's own pages move onto the declaration in HIL-819. So a view still
+> takes its columns, its label, and its empty text as props, and a table that
+> declares nothing keeps drawing the bar and the footer it drew before.
 
 **The page declares; the view draws.** The framework owns the whole bar above the
 table and the whole footer below it, and a page that wants a title, a filter, or
@@ -835,7 +838,13 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-search`, `hilos-table-filters`,
   `hilos-table-filter-<filterKey>`, `hilos-table-facet-<filterKey>-<value>` — the
   number beside one option of a dropdown filter, keyed by `String(value)`,
-  `hilos-table-facet-<filterKey>-any` — the number beside "Any", `hilos-table-order`,
+  `hilos-table-facet-<filterKey>-any` — the number beside "Any",
+  `hilos-table-filters-open` — the button that opens the filters modal below md,
+  `hilos-table-filters-done` — the button that closes it. **The copy of a filter
+  control inside that modal carries `-modal` at the end of the control's name**,
+  because both copies stand in the document at once: `hilos-table-filter-<filterKey>-modal`,
+  its `-modal-from`, `-modal-to`, `-modal-clear`, and
+  `hilos-table-facet-<filterKey>-<value>-modal`. `hilos-table-order`,
   `hilos-table-order-<orderKey>`, `hilos-table-sort-<key>`. The "Order" menu's
   first item is the way back to the order the table opened in, and it answers to
   the one key no table declares: `hilos-table-order-opening`;
@@ -952,9 +961,9 @@ an address does not:
 | the report a bulk action ends with | `framework/frontend/core/src/table/tableBulk.ts` |
 | routing the frames into it | `framework/frontend/core/src/subscription/bindTableViewport.ts` |
 | the thin view | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
-| the bar the frame is drawn as | `framework/frontend/vue/src/HilosTableBar.vue` |
-| one control of one declared filter | `framework/frontend/vue/src/HilosTableFilterControl.vue` |
-| the footer under the table | `framework/frontend/vue/src/HilosTableFooter.vue` |
+| the bar the frame is drawn as | `framework/frontend/{vue,react,angular}/src/HilosTableBar.*` |
+| one control of one declared filter | `framework/frontend/{vue,react,angular}/src/HilosTableFilterControl.*` |
+| the footer under the table | `framework/frontend/{vue,react,angular}/src/HilosTableFooter.*` |
 | the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/vue/src/HilosTableEmptyState.vue` |
 | the bar a running job is drawn as | `framework/frontend/vue/src/HilosTableProgress.vue` |
 | the selection panel and the bulk bar | `framework/frontend/vue/src/HilosTableSelection.vue` |

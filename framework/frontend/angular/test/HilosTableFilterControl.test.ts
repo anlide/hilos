@@ -1,4 +1,9 @@
-import { mount } from '@vue/test-utils'
+// The Angular port of vue/src/HilosTableFilterControl.test.ts, under the same case
+// names the Vue reference and the React port run. Every case mounts a host rather
+// than the component itself: the inputs are signal inputs, and a host binding
+// them is how the control is used.
+import { Component } from '@angular/core'
+import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
 import { TableViewportController } from '@hilos/core'
 import type {
@@ -7,9 +12,27 @@ import type {
   TableViewportDescriptor,
 } from '@hilos/core'
 
-import HilosTableFilterControl from './HilosTableFilterControl.vue'
+import { HilosTableFilterControl } from '../src/HilosTableFilterControl.js'
 
 const COLUMNS = [{ key: 'name', label: 'Name' }]
+
+/** A host binding the three inputs a case hands over. */
+@Component({
+  selector: 'test-table-filter-control-host',
+  imports: [HilosTableFilterControl],
+  template: `
+    <hilos-table-filter-control
+      [view]="view"
+      [controller]="controller"
+      [placement]="placement"
+    />
+  `,
+})
+class FilterControlHost {
+  view!: HilosTableFilterView
+  controller!: TableViewportController<unknown>
+  placement: 'bar' | 'modal' = 'bar'
+}
 
 // The control renders one filter view and writes into the controller, so the
 // tests build a real controller over the same declaration and read back the
@@ -41,10 +64,37 @@ function mountControl(
   controller: TableViewportController<unknown>,
   view: HilosTableFilterView,
   placement: 'bar' | 'modal' = 'bar',
-) {
-  return mount(HilosTableFilterControl, {
-    props: { view, controller, placement },
-  })
+): ComponentFixture<FilterControlHost> {
+  const fixture = TestBed.createComponent(FilterControlHost)
+  fixture.componentInstance.controller = controller
+  fixture.componentInstance.view = view
+  fixture.componentInstance.placement = placement
+  fixture.detectChanges()
+
+  return fixture
+}
+
+function byId(
+  fixture: ComponentFixture<unknown>,
+  id: string,
+): HTMLElement | null {
+  return (fixture.nativeElement as HTMLElement).querySelector(
+    `[data-id="${id}"]`,
+  )
+}
+
+function texts(fixture: ComponentFixture<unknown>, prefix: string): string[] {
+  return Array.from(
+    (fixture.nativeElement as HTMLElement).querySelectorAll(
+      `[data-id^="${prefix}"]`,
+    ),
+  ).map((element) => element.textContent?.trim() ?? '')
+}
+
+function setInput(element: HTMLElement | null, value: string): void {
+  const field = element as HTMLInputElement
+  field.value = value
+  field.dispatchEvent(new Event('input'))
 }
 
 const KIND_FILTER: HilosTableFilter = {
@@ -82,10 +132,9 @@ const FAILED_FILTER: HilosTableFilter = {
 describe('HilosTableFilterControl, select', () => {
   it('offers the declared options under a "no choice" one', () => {
     const { controller, view } = makeController(KIND_FILTER)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    const options = wrapper.findAll('[data-id^="hilos-dropdown-option-"]')
-    expect(options.map((option) => option.text())).toEqual([
+    expect(texts(fixture, 'hilos-dropdown-option-')).toEqual([
       'Any',
       'Full',
       'Partial',
@@ -94,48 +143,49 @@ describe('HilosTableFilterControl, select', () => {
 
   it('names the "no choice" option as the filter declared it', () => {
     const { controller, view } = makeController(KIND_FILTER_NAMED_ANY)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    expect(wrapper.find('[data-id="hilos-dropdown-option--1"]').text()).toBe(
+    expect(byId(fixture, 'hilos-dropdown-option--1')?.textContent?.trim()).toBe(
       'All kinds',
     )
   })
 
-  it('sends the DECLARED value of the option picked, keeping its type', async () => {
+  it('sends the DECLARED value of the option picked, keeping its type', () => {
     const { controller, sent, view } = makeController(KIND_FILTER)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    await wrapper.find('[data-id="hilos-dropdown-option-1"]').trigger('click')
+    byId(fixture, 'hilos-dropdown-option-1')?.click()
 
     expect(sent).toHaveLength(1)
     expect(sent.at(-1)?.filter).toEqual({ kind: 2 })
   })
 
-  it('drops the key when the "no choice" option is picked', async () => {
+  it('drops the key when the "no choice" option is picked', () => {
     const { controller, sent, view } = makeController(KIND_FILTER)
-    const wrapper = mountControl(controller, view())
-    await wrapper.find('[data-id="hilos-dropdown-option-0"]').trigger('click')
+    const fixture = mountControl(controller, view())
+    byId(fixture, 'hilos-dropdown-option-0')?.click()
+    fixture.destroy()
 
     const next = mountControl(controller, view())
-    await next.find('[data-id="hilos-dropdown-option--1"]').trigger('click')
+    byId(next, 'hilos-dropdown-option--1')?.click()
 
     expect(sent.at(-1)?.filter).not.toHaveProperty('kind')
   })
 
   it('reads the picked option back as "<label>: <option>"', () => {
     const { controller, view } = makeController(KIND_FILTER, { kind: 'full' })
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
+    expect(byId(fixture, 'hilos-dropdown-toggle')?.textContent?.trim()).toBe(
       'Kind: Full',
     )
   })
 
   it('reads as the "no choice" option while the filter holds no value', () => {
     const { controller, view } = makeController(KIND_FILTER)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    expect(wrapper.find('[data-id="hilos-dropdown-toggle"]').text()).toBe(
+    expect(byId(fixture, 'hilos-dropdown-toggle')?.textContent?.trim()).toBe(
       'Kind: Any',
     )
   })
@@ -154,41 +204,40 @@ describe('HilosTableFilterControl, counts', () => {
 
   it('draws the list as it always was while no counts have arrived', () => {
     const { controller, view } = makeController(KIND_FILTER)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    expect(wrapper.findAll('[data-id^="hilos-table-facet-"]')).toHaveLength(0)
-    expect(
-      wrapper
-        .findAll('[data-id^="hilos-dropdown-option-"]')
-        .map((option) => option.text()),
-    ).toEqual(['Any', 'Full', 'Partial'])
+    expect(texts(fixture, 'hilos-table-facet-')).toHaveLength(0)
+    expect(texts(fixture, 'hilos-dropdown-option-')).toEqual([
+      'Any',
+      'Full',
+      'Partial',
+    ])
   })
 
   it('writes each option its number, the ceiling as "500+" and an empty one as 0', () => {
     const { controller, view } = makeController(KIND_FILTER)
     controller.ingestFacetCounts(COUNTS)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    expect(wrapper.find('[data-id="hilos-table-facet-kind-any"]').text()).toBe(
+    expect(byId(fixture, 'hilos-table-facet-kind-any')?.textContent).toBe(
       '500+',
     )
-    expect(wrapper.find('[data-id="hilos-table-facet-kind-full"]').text()).toBe(
+    expect(byId(fixture, 'hilos-table-facet-kind-full')?.textContent).toBe(
       '412',
     )
-    expect(wrapper.find('[data-id="hilos-table-facet-kind-2"]').text()).toBe(
-      '0',
-    )
+    expect(byId(fixture, 'hilos-table-facet-kind-2')?.textContent).toBe('0')
     expect(
-      wrapper.find('[data-id="hilos-dropdown-option-0"] .text-truncate').text(),
+      byId(fixture, 'hilos-dropdown-option-0')?.querySelector('.text-truncate')
+        ?.textContent,
     ).toBe('Full')
   })
 
-  it('still sends the declared value of the option picked', async () => {
+  it('still sends the declared value of the option picked', () => {
     const { controller, sent, view } = makeController(KIND_FILTER)
     controller.ingestFacetCounts(COUNTS)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    await wrapper.find('[data-id="hilos-dropdown-option-1"]').trigger('click')
+    byId(fixture, 'hilos-dropdown-option-1')?.click()
 
     expect(sent.at(-1)?.filter).toEqual({ kind: 2 })
   })
@@ -196,27 +245,29 @@ describe('HilosTableFilterControl, counts', () => {
   it('mutes the number of every option but the one picked', () => {
     const { controller, view } = makeController(KIND_FILTER, { kind: 'full' })
     controller.ingestFacetCounts(COUNTS)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
     expect(
-      wrapper.find('[data-id="hilos-table-facet-kind-full"]').classes(),
-    ).not.toContain('text-body-secondary')
+      byId(fixture, 'hilos-table-facet-kind-full')?.classList.contains(
+        'text-body-secondary',
+      ),
+    ).toBe(false)
     expect(
-      wrapper.find('[data-id="hilos-table-facet-kind-any"]').classes(),
-    ).toContain('text-body-secondary')
+      byId(fixture, 'hilos-table-facet-kind-any')?.classList.contains(
+        'text-body-secondary',
+      ),
+    ).toBe(true)
   })
 })
 
 describe('HilosTableFilterControl, date range', () => {
-  it('sends BOTH bounds in one window change when only one is touched', async () => {
+  it('sends BOTH bounds in one window change when only one is touched', () => {
     const { controller, sent, view } = makeController(PERIOD_FILTER, {
       to: '2026-08-31',
     })
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    await wrapper
-      .find('[data-id="hilos-table-filter-from-from"]')
-      .setValue('2026-08-01')
+    setInput(byId(fixture, 'hilos-table-filter-from-from'), '2026-08-01')
 
     expect(sent).toHaveLength(1)
     expect(sent.at(-1)?.filter).toEqual({
@@ -225,65 +276,62 @@ describe('HilosTableFilterControl, date range', () => {
     })
   })
 
-  it('clears both bounds with one window change', async () => {
+  it('clears both bounds with one window change', () => {
     const { controller, sent, view } = makeController(PERIOD_FILTER, {
       from: '2026-08-01',
       to: '2026-08-31',
     })
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    await wrapper
-      .find('[data-id="hilos-table-filter-from-clear"]')
-      .trigger('click')
+    byId(fixture, 'hilos-table-filter-from-clear')?.click()
 
     expect(sent).toHaveLength(1)
     expect(sent.at(-1)?.filter).toEqual({})
   })
 
   it('says which of the four shapes the range is in', () => {
-    const both = makeController(PERIOD_FILTER, {
-      from: '2026-08-01',
-      to: '2026-08-31',
-    })
-    const fromOnly = makeController(PERIOD_FILTER, { from: '2026-08-01' })
-    const toOnly = makeController(PERIOD_FILTER, { to: '2026-08-31' })
-    const neither = makeController(PERIOD_FILTER)
+    const read = (
+      made: ReturnType<typeof makeController>,
+    ): string | undefined =>
+      byId(
+        mountControl(made.controller, made.view()),
+        'hilos-table-filter-from',
+      )?.textContent?.trim()
 
-    const read = (made: ReturnType<typeof makeController>): string =>
-      mountControl(made.controller, made.view())
-        .find('[data-id="hilos-table-filter-from"]')
-        .text()
-
-    expect(read(both)).toBe('Period: 2026-08-01 – 2026-08-31')
-    expect(read(fromOnly)).toBe('Period: from 2026-08-01')
-    expect(read(toOnly)).toBe('Period: until 2026-08-31')
-    expect(read(neither)).toBe('Period')
+    expect(
+      read(
+        makeController(PERIOD_FILTER, { from: '2026-08-01', to: '2026-08-31' }),
+      ),
+    ).toBe('Period: 2026-08-01 – 2026-08-31')
+    expect(read(makeController(PERIOD_FILTER, { from: '2026-08-01' }))).toBe(
+      'Period: from 2026-08-01',
+    )
+    expect(read(makeController(PERIOD_FILTER, { to: '2026-08-31' }))).toBe(
+      'Period: until 2026-08-31',
+    )
+    expect(read(makeController(PERIOD_FILTER))).toBe('Period')
   })
 })
 
 describe('HilosTableFilterControl, toggle', () => {
-  it('writes the declared value when switched on', async () => {
+  it('writes the declared value when switched on', () => {
     const { controller, sent, view } = makeController(FAILED_FILTER)
-    const wrapper = mountControl(controller, view())
+    const fixture = mountControl(controller, view())
 
-    await wrapper.find('[data-id="hilos-table-filter-state"]').setValue(true)
+    byId(fixture, 'hilos-table-filter-state')?.click()
 
     expect(sent.at(-1)?.filter).toEqual({ state: 'failed' })
   })
 
-  it('drops the key when switched off', async () => {
+  it('drops the key when switched off', () => {
     const { controller, sent, view } = makeController(FAILED_FILTER, {
       state: 'failed',
     })
-    const wrapper = mountControl(controller, view())
-    expect(
-      (
-        wrapper.find('[data-id="hilos-table-filter-state"]')
-          .element as HTMLInputElement
-      ).checked,
-    ).toBe(true)
+    const fixture = mountControl(controller, view())
+    const toggle = byId(fixture, 'hilos-table-filter-state') as HTMLInputElement
+    expect(toggle.checked).toBe(true)
 
-    await wrapper.find('[data-id="hilos-table-filter-state"]').setValue(false)
+    toggle.click()
 
     expect(sent.at(-1)?.filter).not.toHaveProperty('state')
   })
@@ -305,16 +353,10 @@ describe('HilosTableFilterControl, placement', () => {
       'hilos-table-filter-from-modal-to',
       'hilos-table-filter-from-modal-clear',
     ]) {
-      expect(range.find(`[data-id="${name}"]`).exists()).toBe(true)
+      expect(byId(range, name)).not.toBeNull()
     }
-    expect(range.find('[data-id="hilos-table-filter-from"]').exists()).toBe(
-      false,
-    )
-    expect(
-      select.find('[data-id="hilos-table-filter-kind-modal"]').exists(),
-    ).toBe(true)
-    expect(
-      select.find('[data-id="hilos-table-facet-kind-any-modal"]').exists(),
-    ).toBe(true)
+    expect(byId(range, 'hilos-table-filter-from')).toBeNull()
+    expect(byId(select, 'hilos-table-filter-kind-modal')).not.toBeNull()
+    expect(byId(select, 'hilos-table-facet-kind-any-modal')).not.toBeNull()
   })
 })

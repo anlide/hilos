@@ -291,20 +291,28 @@ describe('HilosTableBar', () => {
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
 
     await wrapper.find('[data-id="hilos-table-filters-open"]').trigger('click')
-    const modal = document.querySelector('[data-id="modal"]')
-    expect(modal).not.toBeNull()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(
-      modal?.querySelector('[data-id="hilos-table-filter-state"]'),
-    ).not.toBeNull()
+      document.querySelectorAll('[data-id="hilos-table-filter-state-modal"]'),
+    ).toHaveLength(1)
 
-    const done = modal?.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-table-filters-done"]',
-    )
-    done?.click()
+    document
+      .querySelector<HTMLButtonElement>('[data-id="hilos-table-filters-done"]')
+      ?.click()
     await wrapper.vm.$nextTick()
 
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
     wrapper.unmount()
+  })
+
+  it('keeps the button that opens the filters free of their number', async () => {
+    const { controller } = makeController(FILTERED, { state: 'failed' })
+    const wrapper = mountBar(controller)
+    await wrapper.find('[data-id="hilos-table-filter-unread"]').setValue(true)
+
+    const open = wrapper.find('[data-id="hilos-table-filters-open"]')
+    expect(open.text()).toBe('Filters')
+    expect(open.find('.badge').exists()).toBe(false)
   })
 
   it('offers no way into the filters when the table declares none, and mounts no modal either', () => {

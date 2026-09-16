@@ -212,6 +212,7 @@ function onSearchInput(event: Event): void {
           :key="filterKey(view)"
           :view="view"
           :controller="controller"
+          placement="bar"
         />
       </div>
 
@@ -276,6 +277,9 @@ function onSearchInput(event: Event): void {
         </HilosDropdown>
       </div>
 
+      <!-- The button says only its word: the number of filters holding a value is
+      said once, on the badge above, which stays on a narrow screen because the
+      reset lives nowhere else. -->
       <button
         v-if="filters.length > 0"
         type="button"
@@ -284,9 +288,6 @@ function onSearchInput(event: Event): void {
         @click="filtersOpen = true"
       >
         Filters
-        <span v-if="activeFilterCount > 0" class="badge text-bg-secondary ms-1">
-          {{ activeFilterCount }}
-        </span>
       </button>
 
       <button
@@ -328,6 +329,7 @@ function onSearchInput(event: Event): void {
           :key="filterKey(view)"
           :view="view"
           :controller="controller"
+          placement="modal"
         />
       </div>
       <template #actions="{ requestClose }">

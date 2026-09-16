@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { TableViewportController } from '@hilos/core'
-import type { HilosTableColumn, TableViewportDescriptor } from '@hilos/core'
+import type {
+  HilosTableColumn,
+  HilosTableFrame,
+  TableViewportDescriptor,
+} from '@hilos/core'
 
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 
@@ -13,7 +17,7 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
 
-function makeController(): {
+function makeController(frame?: HilosTableFrame): {
   controller: TableViewportController<Row>
   sent: TableViewportDescriptor[]
 } {
@@ -21,6 +25,7 @@ function makeController(): {
   const controller = new TableViewportController<Row>({
     resolve: (raw) => ({ name: String(raw.slots.name) }),
     sendViewport: (descriptor) => sent.push(descriptor),
+    frame,
   })
 
   return { controller, sent }
@@ -189,5 +194,80 @@ describe('HilosViewportTable', () => {
     expect(container.querySelector('th')?.getAttribute('aria-sort')).toBe(
       'none',
     )
+  })
+})
+
+describe('HilosViewportTable with a declared frame', () => {
+  afterEach(cleanup)
+
+  const FRAME: HilosTableFrame = {
+    title: 'Backups',
+    search: {},
+    columns: COLUMNS,
+  }
+
+  function renderDeclared(controller: TableViewportController<Row>) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        columns={COLUMNS}
+        label="Users"
+        searchable
+        row={(r) => <td className="cell">{r.name}</td>}
+      />,
+    )
+  }
+
+  it('draws the declared bar and names the table by its visible title', () => {
+    const { controller } = makeController(FRAME)
+    const { container } = renderDeclared(controller)
+
+    const title = container.querySelector('[data-id="hilos-table-title"]')
+    expect(title?.textContent).toBe('Backups')
+    expect(
+      container.querySelector('table')?.getAttribute('aria-labelledby'),
+    ).toBe(title?.id)
+    expect(container.querySelector('caption')).toBeNull()
+  })
+
+  it('draws the declared footer instead of the one built from props', () => {
+    const { controller } = makeController(FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      128,
+      true,
+      null,
+      null,
+      20,
+    )
+    const { container } = renderDeclared(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-count"]')?.textContent,
+    ).toBe('1 – 1 of 128')
+    expect(container.querySelector('[data-id="hilos-table-page"]')).toBeNull()
+  })
+
+  it('leaves the props-driven bar out, Apply button and all', () => {
+    const { controller } = makeController(FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    const { container } = renderDeclared(controller)
+
+    expect(container.querySelector('[data-id="hilos-table-apply"]')).toBeNull()
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-search"]'),
+    ).toHaveLength(1)
   })
 })

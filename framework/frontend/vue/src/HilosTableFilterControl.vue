@@ -23,15 +23,32 @@ const props = defineProps<{
   view: HilosTableFilterView
   /** The headless server-windowed controller every change is written into. */
   controller: TableViewportController<R>
+  /**
+   * Where this copy of the control is drawn. The bar and the filters modal both
+   * hold one at the same time, so the copy in the modal answers to its own names;
+   * there is no default, because one would quietly give the two copies the same
+   * name again.
+   */
+  placement: 'bar' | 'modal'
 }>()
+
+// Every handle of the modal's copy carries this at the end of the control's own
+// name, so each name in the document stays one element.
+const placementSuffix = computed(() =>
+  props.placement === 'modal' ? '-modal' : '',
+)
 
 // A date range is one control over two keys, and the lower one names it: every
 // handle of this filter has to be found by one word from outside.
-const dataId = computed(() => {
+const filterKey = computed(() => {
   const filter = props.view.filter
 
-  return `hilos-table-filter-${filter.kind === 'date_range' ? filter.fromKey : filter.key}`
+  return filter.kind === 'date_range' ? filter.fromKey : filter.key
 })
+
+const dataId = computed(
+  () => `hilos-table-filter-${filterKey.value}${placementSuffix.value}`,
+)
 
 // --- select ---------------------------------------------------------------
 
@@ -114,13 +131,11 @@ function facetText(index: number): string | null {
 }
 
 function facetDataId(index: number): string {
-  const filter = props.view.filter
   const option = declaredOptions.value[index]
-  const key = filter.kind === 'select' ? filter.key : dataId.value
   const value =
     index === NO_CHOICE || option === undefined ? 'any' : String(option.value)
 
-  return `hilos-table-facet-${key}-${value}`
+  return `hilos-table-facet-${filterKey.value}-${value}${placementSuffix.value}`
 }
 
 // --- date range -----------------------------------------------------------
