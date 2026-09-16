@@ -9,7 +9,11 @@ Use American English spelling everywhere.
 
 Checked automatically: `SPELLING` — the six pairs of the table below, each
 together with its own word forms, on both sides of the PHP↔TypeScript boundary
-(see [automated-checks.md](automated-checks.md)).
+(see [automated-checks.md](automated-checks.md)). A form counts only when it
+keeps the whole British word and adds letters after it: `serialises` is caught,
+but `serialising`, `organising` and `licencing` drop a letter of the word and
+pass unseen, and so does anything outside `.php`, `.ts`, `.tsx`, `.vue` and
+`.html` — markdown, stylesheets, scripts. A green run does not clear those.
 
 ```
 license   not  licence       color     not  colour

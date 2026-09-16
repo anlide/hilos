@@ -2981,7 +2981,7 @@ abstract class DaemonManager extends BaseManager implements
         // write and on a removal - the two rare events - while an ordinary update leaves it
         // alone, so this is still not a snapshot per delta. The walk is over the claims, not the
         // rows, and asks the collection rather than building one: the master pays for a handful
-        // of isset() per pass, not for serialising every row it holds.
+        // of isset() per pass, not for serializing every row it holds.
         $held = [];
         foreach ($scoped as $collectionKey => $scopeKeys) {
             $held[$collectionKey] = RtSnapshot::heldKeys($collectionKey, $scopeKeys);

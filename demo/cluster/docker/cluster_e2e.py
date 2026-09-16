@@ -331,7 +331,7 @@ def rt_rows(views, node, key=WORKER_STATUSES):
     """The rows one node holds of an RT collection, keyed by row id.
 
     The reply carries them either way round, and that is not a choice anyone made: a PHP array
-    whose keys are exactly 0..n-1 IN ORDER serialises as a JSON array rather than an object,
+    whose keys are exactly 0..n-1 IN ORDER serializes as a JSON array rather than an object,
     and these row ids are fleet indices - so the same collection comes back as a map or as a
     list depending on the order the node happened to receive its members in. The list form
     carries each id in its own index, so it is turned back into the map every caller reads.

@@ -48,11 +48,14 @@ const READ_EXTENSIONS = ['.ts', '.tsx', '.vue', '.html']
 
 /**
  * Never walked: a dependency tree is not this repository's code, and a build
- * artifact is a copy of code that was already judged at its source. Two names
- * more than the other checkers skip, because this one is the first to read
- * `.html` under an e2e root: Playwright writes its report and its results there
- * on every machine that has run the suite, and a generated report is not
- * authored text.
+ * artifact is a copy of code that was already judged at its source. Three names
+ * more than the other checkers skip, because this one reads words rather than
+ * code shapes. Playwright writes its report and its results under an e2e root on
+ * every machine that has run the suite, and this is the first checker to read
+ * `.html` there. A demo's `src/generated` holds the license inventory its build
+ * writes on every start, whole third-party license texts included, which the
+ * rule leaves alone by its first exception; the file is git-ignored, but this
+ * walk reads the disk, not the index.
  */
 const SKIPPED_DIRECTORIES = [
   'node_modules',
@@ -62,6 +65,7 @@ const SKIPPED_DIRECTORIES = [
   '.angular',
   'playwright-report',
   'test-results',
+  'generated',
 ]
 
 /**
