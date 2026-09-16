@@ -28,6 +28,7 @@ import {
   subscribeSignal,
 } from '@hilos/core'
 import type {
+  ChannelValueSource,
   HilosChannelFieldRow,
   HilosCommunicationsContext,
 } from '@hilos/core'
@@ -35,7 +36,6 @@ import type {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
-import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
 import { hilosSignal } from '../../hilosSignal.js'
@@ -54,7 +54,7 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
 }
 
 /** The source badge label: where the effective value comes from. */
-const SOURCE_LABEL: Record<string, string> = {
+const SOURCE_LABEL: Record<ChannelValueSource, string> = {
   settings: 'Override',
   env: 'From env',
   default: 'Default',
@@ -64,13 +64,7 @@ const SOURCE_LABEL: Record<string, string> = {
 @Component({
   selector: 'hilos-communications-channel-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    HilosAdminPage,
-    HilosViewportTable,
-    HilosModal,
-    HilosActionError,
-    LoadingButton,
-  ],
+  imports: [HilosAdminPage, HilosModal, HilosActionError, LoadingButton],
   template: `
     <hilos-admin-page [page]="page">
       <div class="d-flex justify-content-between align-items-center mb-3">
@@ -122,7 +116,7 @@ const SOURCE_LABEL: Record<string, string> = {
                   <span
                     class="badge text-bg-secondary-subtle text-secondary-emphasis"
                   >
-                    {{ SOURCE_LABEL[row.valueSource] ?? row.valueSource }}
+                    {{ SOURCE_LABEL[row.valueSource] }}
                   </span>
                 </td>
                 <td class="text-end">

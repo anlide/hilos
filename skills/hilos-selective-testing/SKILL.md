@@ -53,5 +53,6 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 
 - Do not run the full e2e / two-window suites on every change — match scope to the
   change.
-- An Angular template change must run the ng-packagr AOT build, not just tsc.
+- An Angular template change is judged by `test:framework:frontend`: the Angular
+  package check compiles templates with the build's own tsconfig.
 - Never run `git commit` or `git push`.

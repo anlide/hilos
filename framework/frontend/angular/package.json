@@ -12,10 +12,12 @@
     "src/hilos-styles.scss"
   ],
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "npm run check:types && npm run check:templates",
+    "check:types": "tsc --noEmit -p tsconfig.json",
+    "check:templates": "ngc --noEmit -p tsconfig.build.json",
     "test": "vitest run",
     "prebuild": "node ../scripts/prebuild-sdk.mjs core",
-    "build": "ng-packagr -p ng-package.json"
+    "build": "ng-packagr -p ng-package.json -c tsconfig.build.json"
   },
   "dependencies": {
     "@hilos/core": "*",

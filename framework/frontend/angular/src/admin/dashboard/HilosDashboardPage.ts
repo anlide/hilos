@@ -16,7 +16,6 @@ import {
   computed,
   inject,
 } from '@angular/core'
-import type { HilosDashboardSection, HilosPageChild } from '@hilos/core'
 
 import { HilosLink } from '../../HilosLink.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
@@ -126,33 +125,16 @@ export class HilosDashboardPage {
 
   /** Section cards grouped for display, resolved against the app's route map. */
   protected readonly sections = computed<DashboardSection[]>(() =>
-    (this.answered() ?? []).map((section: HilosDashboardSection) => ({
+    (this.answered() ?? []).map((section) => ({
       title: section.title,
       description: section.description,
-      items: this.addressed(section.items),
+      // A card with no address is left out: a card IS its target, and the shell
+      // must not offer one that goes nowhere.
+      items: section.items.flatMap((item) => {
+        const to = this.router.resolvePath(item.page)
+
+        return to === undefined ? [] : [{ ...item, to }]
+      }),
     })),
   )
-
-  /**
-   * Drops every card the route map has no address for: a card IS its target, and
-   * the shell must not offer one that goes nowhere.
-   *
-   * Written as a loop rather than as a `flatMap`, and typed rather than inferred,
-   * because ng-packagr compiles this package against its own tsconfig — an older
-   * lib without `Array.prototype.flatMap`, and no `strict` to infer the callback
-   * parameter from. The workspace `check` step sees neither and passes either way.
-   *
-   * @param items The cards one group answered with.
-   */
-  private addressed(items: HilosPageChild[]): DashboardCard[] {
-    const cards: DashboardCard[] = []
-    for (const item of items) {
-      const to = this.router.resolvePath(item.page)
-      if (to !== undefined) {
-        cards.push({ ...item, to })
-      }
-    }
-
-    return cards
-  }
 }

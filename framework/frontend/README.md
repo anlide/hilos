@@ -42,7 +42,7 @@ installing something else. `typescript` carries a tilde for the same reason —
 | Command | What it does |
 |---|---|
 | `npm install` | install the workspace toolchain into the host `node_modules` |
-| `npm run check` | type-check every package (`tsc` / `vue-tsc`, no emit) |
+| `npm run check` | type-check every package (`tsc` / `vue-tsc`, plus `ngc` over the Angular templates; no emit) |
 | `npm run test` | run the unit tests (vitest, against source) |
 | `npm run build` | build every package from `src/` into `dist/` |
 | `npm run build:vue` | build `@hilos/core` + `@hilos/vue` only |
