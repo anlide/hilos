@@ -301,8 +301,10 @@ What a resident does NOT bring:
 Decided by the owner on 13.09.2026: after the emulator, an in-process test stub
 is not a legitimate instrument with a ceiling ("fine for units, just not for
 transport") but a **sunset**. The owner's words, whole: "Dying out. Without
-haste, little by little, everything has to be rewritten onto the emulator" —
-everything moves, direction by direction, and the pace is part of the decision.
+haste, little by little, everything has to be rewritten onto the emulator. How
+to shape that, I do not know." Everything moves, direction by direction, and the
+pace is part of the decision; the shape was left to the interview, and what
+follows is its answer.
 
 Three things follow, and they are the whole of the rule:
 
