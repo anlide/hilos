@@ -248,10 +248,9 @@ final class AuthThrottleIntegrationTest extends FrameworkIntegrationTestCase
     /**
      * Starts an agent over the mounted counters and the live table, claims first.
      *
-     * The order is the node's: {@see WorkerManager} lays an agent's declared claims before it
-     * calls {@see AuthThrottleAgent::onStart()}, because the hook writes its first row. A case
-     * that calls the hook itself has to lay them itself, or every write here is refused for
-     * want of a truth source.
+     * The order is the node's, and so is the call: {@see WorkerManager} lays the claims with
+     * {@see OwnershipDeclaration::claimAll()} before it calls {@see AuthThrottleAgent::onStart()},
+     * and the resolver says why they come first.
      *
      * @return AuthThrottleAgent Started agent
      */

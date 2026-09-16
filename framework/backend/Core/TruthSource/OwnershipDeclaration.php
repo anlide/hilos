@@ -46,6 +46,10 @@ final class OwnershipDeclaration
      * claims are read off the CLASS (which lets the declaration be answered where no instance exists),
      * and the by-row claims off the INSTANCE, which is the only thing that knows which rows it holds.
      *
+     * A refusal leaves as it came, and the claims laid before it stay: taking them back belongs to
+     * the caller, which also holds the reader interest raised before any claim - {@see WorkerManager}
+     * gives both back in one catch.
+     *
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
      * @throws ClaimWidthConflictException When one collection is named by both widths of a half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection

@@ -754,9 +754,12 @@ abstract class WorkerManager extends BaseManager
         // agent this worker holds, and one the tracker has never heard of is never idle.
         $this->agentIdleTracker->noteStarted($agentId, microtime(true));
         // Before the start hook and not inside it: an agent writes its first row within onStart(),
-        // so the claim has to stand by then. The hook stands outside the try block because its
-        // failure means it opened nothing and has nothing to close, so the catch block below
-        // rolls back the claims without needing to call onStop().
+        // so the claim has to stand by then. The hook stays outside the try because the catch
+        // below takes back the start of an agent that never ran, which is why it may skip
+        // onStop(); a hook that throws has run, so it is not undone here, and the agent stays one
+        // this worker holds, as the idle-tracker note above says. The runtime half of the claim
+        // reaches the node not from this line but from notifyRtSourcesRegistered() below, once
+        // the hook has returned.
         try {
             OwnershipDeclaration::claimAll($agent);
         } catch (Throwable $refusal) {

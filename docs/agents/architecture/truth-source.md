@@ -178,6 +178,15 @@ after the question was asked, so a claim made there can be taken up only by
 the agent that made it and never by the worker that is deciding whether to
 build it.
 
+The claims themselves are laid by one call, `OwnershipDeclaration::claimAll()`,
+between the instance being built and its `onStart()`: both halves and both
+widths, whole collections off the class and rows off the instance.
+`WorkerManager::handleAgentStart()` makes that call, and so does a harness that
+starts an agent outside a worker — a test case's `startAgent()` — so the beat a
+case runs under is the node's and cannot be copied in part. The call takes
+nothing back when a claim is refused; the worker's catch around it gives back the
+claims and the reader interest raised before them together.
+
 The grant ends with the agent. After `onStop()` returns or throws,
 `WorkerManager` unregisters the agent from both registries; a hook does not
 unregister its own claims.
@@ -453,7 +462,8 @@ half never moved, and a declared claim is taken back the same way.
 the chain, over each half (`DeclaredDbOwnershipTest`,
 `DeclaredRtOwnershipTest`), over a claimant that is not an agent
 (`DeclaredCommandOwnershipTest`) and over the narrow width with its two
-refusals (`DeclaredRowOwnershipTest`), the operation axis and the guards on it
+refusals (`DeclaredRowOwnershipTest`), the one call that lays all four maps
+(`DeclaredClaimAllTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`), the grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
