@@ -21,6 +21,9 @@
         </testsuite>
     </testsuites>
     <php>
+        <!-- The unit and integration suites share one process, and its memory grows with every case:
+             126.5 MB of the 128 MB default at 5247 cases, and over it two cases later. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="test"/>
     </php>
 </phpunit>
