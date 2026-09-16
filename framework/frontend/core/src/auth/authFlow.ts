@@ -508,7 +508,7 @@ export interface AuthFlow {
    * knows nothing about, so the surface that holds the socket reads it and hands
    * it in. What the machine adds is the LIFETIME - the line belongs to the code
    * the person is waiting for, so a new submit, a step back to the field and a
-   * cancelled ceremony all end it here, in one place, rather than in each of the
+   * canceled ceremony all end it here, in one place, rather than in each of the
    * three views.
    *
    * @param progress The reported step, or `null` when there is nothing to say.
@@ -1430,7 +1430,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * screen it belongs to land in one paint. The two moments stay success-only:
    * a refusal sent no code, so arming a countdown off it would time a letter
    * nobody received — while countdowns ALREADY running are left alone, the
-   * refusal having cancelled nothing.
+   * refusal having canceled nothing.
    */
   function applyOutcome(outcome: AuthFlowSubmitOutcome): void {
     if (!outcome.ok) {
@@ -1527,7 +1527,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * sent via Telegram" was a promise the transport had not made. With the line
    * the screen promises nothing - it says queued, then sending - so it opens the
    * moment the send is ordered, exactly as the email path always has. One line,
-   * one screen, one behaviour for every channel.
+   * one screen, one behavior for every channel.
    *
    * What is paid for it: a person can see the code field and be taken back a
    * second later, which is what this rollback is. A channel that cannot be

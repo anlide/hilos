@@ -511,7 +511,7 @@ describe('HilosLayout under protected mode', () => {
 
     const indicator = container.querySelector('[data-id="conn-state"]')
     expect(indicator?.querySelector('i')?.className).toContain('bi-snow')
-    // The link is up, so the colour is the one a healthy socket has: what the
+    // The link is up, so the color is the one a healthy socket has: what the
     // mark says is that part of what is shown may be old, not that anything broke.
     expect(indicator?.className).toContain('text-success')
     expect(indicator?.getAttribute('title')).toContain('may be out of date')
@@ -550,7 +550,7 @@ describe('HilosLayout under protected mode', () => {
     expect(indicator?.getAttribute('title')).toBe('connecting')
   })
 
-  it('marks a repair that has dragged without changing its colour', () => {
+  it('marks a repair that has dragged without changing its color', () => {
     const { connection, pushConnection } = fakeConnection(
       PROTECTED_MODE_INACTIVE,
     )

@@ -237,7 +237,7 @@ final class LogsViewPageReadLinesTest extends TestCase
 }
 
 /**
- * Concrete viewer page: the abstract one carries the whole behaviour, a project adds nothing.
+ * Concrete viewer page: the abstract one carries the whole behavior, a project adds nothing.
  */
 final class LogsViewTestPage extends AbstractHilosLogsViewPage
 {

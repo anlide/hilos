@@ -992,7 +992,7 @@ class SignalRouter
      * the lookup answered null for both, so a node with no placement picture delivered the
      * signal into its own workers — which run no such agent, and say nothing about it.
      * Off-cluster, or on a node with no registered lookup, there is no lookup and the list is
-     * returned untouched, so single-node behaviour is unchanged.
+     * returned untouched, so single-node behavior is unchanged.
      *
      * Only {@see AgentDestination} is eligible: a browser is placed by its own post-pass
      * ({@see applyClientLocation()}) and a command reply is bound to the connection this node is
@@ -1043,7 +1043,7 @@ class SignalRouter
      * forwards over the peer channel; a connection attached here (or any key the lookup reports
      * null for) stays a {@see WebSocketDestination} and is written to locally. Off-cluster, or
      * on a node with no registered lookup, the list is returned untouched, so single-node
-     * behaviour is unchanged.
+     * behavior is unchanged.
      *
      * Only {@see WebSocketDestination} is eligible. {@see AllClientsDestination} and
      * {@see SessionClientsDestination} are deliberately left alone: neither is an address but an

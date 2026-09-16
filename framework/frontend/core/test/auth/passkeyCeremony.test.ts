@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Covers the copy a cancelled passkey ceremony shows (HIL-725). The browser
+// Covers the copy a canceled passkey ceremony shows (HIL-725). The browser
 // reports a dialog the person closed and a dialog that had nothing to offer as the
 // same DOMException, so the message can only be told apart by WHICH ceremony was
 // running — and the defect this file exists against was that the driver knew and
@@ -180,7 +180,7 @@ afterEach(() => {
 })
 
 describe('the copy a refused passkey ceremony shows', () => {
-  it('tells a cancelled sign-in how else to sign in', async () => {
+  it('tells a canceled sign-in how else to sign in', async () => {
     const context = passkeyWorld(new DOMException('', 'NotAllowedError'))
 
     const outcome = await runPasskeyDiscoverableLogin(context)
@@ -188,7 +188,7 @@ describe('the copy a refused passkey ceremony shows', () => {
     expect(outcome).toEqual({
       ok: false,
       message:
-        'The passkey request was cancelled, or this device had no matching way to sign in — try a security key or your phone.',
+        'The passkey request was canceled, or this device had no matching way to sign in — try a security key or your phone.',
     })
   })
 
@@ -200,11 +200,11 @@ describe('the copy a refused passkey ceremony shows', () => {
     expect(outcome).toEqual({
       ok: false,
       message:
-        'The passkey request was cancelled, or this device had no matching way to sign in — try a security key or your phone.',
+        'The passkey request was canceled, or this device had no matching way to sign in — try a security key or your phone.',
     })
   })
 
-  it('tells a cancelled registration how else to ADD a key, not how to sign in', async () => {
+  it('tells a canceled registration how else to ADD a key, not how to sign in', async () => {
     // The whole point of the leaf: this person is already signed in, standing on
     // the profile's "Add a passkey" button, and used to be advised to sign in.
     const context = passkeyWorld(new DOMException('', 'NotAllowedError'))
@@ -214,7 +214,7 @@ describe('the copy a refused passkey ceremony shows', () => {
     expect(outcome).toEqual({
       ok: false,
       message:
-        'The passkey request was cancelled, or this device had no way to add one — try a security key or your phone.',
+        'The passkey request was canceled, or this device had no way to add one — try a security key or your phone.',
     })
   })
 
@@ -226,7 +226,7 @@ describe('the copy a refused passkey ceremony shows', () => {
     expect(outcome).toEqual({
       ok: false,
       message:
-        'The passkey request was cancelled, or this device had no way to add one — try a security key or your phone.',
+        'The passkey request was canceled, or this device had no way to add one — try a security key or your phone.',
     })
   })
 

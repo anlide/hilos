@@ -19,7 +19,7 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the protected mode contract data layer (HIL-267 slice 1).
  *
  * Pins the runtime row shape and the enable/ready/disable signal payloads that the leader
- * orchestration and the master welcome path (later slices) build on. The freeze behaviour
+ * orchestration and the master welcome path (later slices) build on. The freeze behavior
  * itself is cluster-wide and exercised at e2e in demo/cluster; here we lock the serialized
  * shape so the writer seam and the wire never drift from the approved contract-gate.
  */

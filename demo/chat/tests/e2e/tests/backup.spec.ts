@@ -399,7 +399,7 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
   // is the environment half of HIL-276 asserted by being on the non-prod side of it.
   // What is NOT asserted is a restore actually running: it would overwrite the
   // stand's database and freeze the node for every other spec. The confirmation is
-  // driven right up to the enabled button and then cancelled.
+  // driven right up to the enabled button and then canceled.
   await openBackups(page)
 
   // A row to aim at. The live arrival of a created row is parked (HIL-432 above), so

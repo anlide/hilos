@@ -23,6 +23,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
+use Hilos\Tests\CodeStyle\Rule\SpellingRule;
 use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -227,6 +228,7 @@ final class CodeStyleGuardTest extends TestCase
             new PayloadSentinelRule(),
             new WireKeyCaseRule(),
             new LineLengthRule(),
+            new SpellingRule(),
         ];
     }
 

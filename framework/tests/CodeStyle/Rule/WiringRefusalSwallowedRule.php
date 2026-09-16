@@ -23,7 +23,7 @@ use Hilos\Tests\CodeStyle\Violation;
  * in the way, and it names three ways out, all of them cheap:
  *
  * - narrow the catch to the species actually expected there;
- * - put `catch (WiringRefusal) { throw $e; }` above the broad one, keeping its behaviour;
+ * - put `catch (WiringRefusal) { throw $e; }` above the broad one, keeping its behavior;
  * - write `// read-refusal-swallowed: <reason>` on the line directly above the catch.
  *
  * Broad means `Throwable`, `Exception` and `HilosException` — the three that stand above both

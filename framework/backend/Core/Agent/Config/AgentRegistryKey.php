@@ -55,7 +55,7 @@ final class AgentRegistryKey
      * {@see AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC} is the framework's own number to point at.
      *
      * Declaring the window is what declares the kind of life, and there is no second on-demand
-     * flag beside it: an entry without this key keeps today's behaviour, where an agent nobody has
+     * flag beside it: an entry without this key keeps today's behavior, where an agent nobody has
      * spoken to for hours lives on. Only an instance agent may carry it ({@see self::INDEXED}),
      * because a node replica or a set-wide library comes up from the bootstrap and nothing would
      * address it back into existence; topology validation refuses the other entries.

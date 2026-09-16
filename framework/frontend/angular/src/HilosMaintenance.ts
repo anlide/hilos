@@ -233,8 +233,8 @@ export class HilosMaintenance {
   })
 
   /**
-   * The alert variant the restore panel wears: the colour follows the outcome, and
-   * the sentence inside says the same thing in words — the colour is never the only
+   * The alert variant the restore panel wears: the color follows the outcome, and
+   * the sentence inside says the same thing in words — the color is never the only
    * carrier (WCAG 1.4.1).
    */
   protected readonly restoreVariant = computed(() => {

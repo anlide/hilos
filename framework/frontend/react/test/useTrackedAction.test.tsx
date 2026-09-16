@@ -105,7 +105,7 @@ describe('useTrackedAction', () => {
   it('resolves false and surfaces the backend phrase on failure', async () => {
     // The refusal the backend sent is what the person reads. Until HIL-779 this
     // case asserted the opposite - the driver replaced it with its own sentence,
-    // and this test held that behaviour in place.
+    // and this test held that behavior in place.
     let result: boolean | undefined
     render(
       <Probe

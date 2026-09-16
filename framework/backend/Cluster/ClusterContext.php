@@ -38,7 +38,7 @@ use Hilos\ProtectedMode\StandaloneProtectedMode;
  * This is the single seam through which the rest of the framework asks "are we
  * clustered, and who am I". It is always present on the facade; when cluster
  * mode is off it simply reports disabled and holds no identity, so a single-node
- * daemon carries this context at zero behavioural cost. Later cluster slices
+ * daemon carries this context at zero behavioral cost. Later cluster slices
  * (the live node registry, the peer channel, the coordinator) hang off this same
  * context rather than adding further facade globals.
  *
@@ -631,7 +631,7 @@ final class ClusterContext
     /**
      * Returns the registered lift announcer, or null when none is set.
      *
-     * Null is the pre-HIL-771 behaviour and stays legal: an executor that finds no announcer sends
+     * Null is the pre-HIL-771 behavior and stays legal: an executor that finds no announcer sends
      * the lift frame the moment the freeze lifts, which is what every node did before the wait
      * existed and what a node with nothing to wait for still does.
      *

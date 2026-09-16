@@ -28,7 +28,7 @@ use PHPUnit\Framework\TestCase;
  * under a name no suffix rule would have recognized, and until it was declared it was
  * scanned by nobody at all.
  *
- * The declaration is what this test pins; the behaviour behind it is pinned by the
+ * The declaration is what this test pins; the behavior behind it is pinned by the
  * baseline, where `scripts/` now owes MAGIC-REPEAT records that only a production
  * rule set can produce. Together they leave a return to naming no quiet exit: one
  * fails on the kind, the other on debt that has stopped being reported.

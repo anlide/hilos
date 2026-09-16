@@ -920,7 +920,7 @@ function prepareLogDir(string $logDir, array $plan): array
  * The same rule the logs keep: only the planned ids are removed, so re-running one
  * step leaves the rest of the previous run's evidence readable beside it. Failing
  * here is a fatal configuration error rather than a line inside a snapshot, because
- * it happens before any step has run and so cannot colour anybody's verdict.
+ * it happens before any step has run and so cannot color anybody's verdict.
  *
  * @param string $artifactDir Directory the per-step snapshots go under.
  * @param array<int, string> $plan Step ids to run.

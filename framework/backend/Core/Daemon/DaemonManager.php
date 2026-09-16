@@ -3217,7 +3217,7 @@ abstract class DaemonManager extends BaseManager implements
      * more claim on the rest of it than any other node does.
      *
      * The reading of the rows is asked last on purpose — it is the only one of the four that
-     * serialises a collection, and it runs in the master.
+     * serializes a collection, and it runs in the master.
      *
      * @return list<string> Collections this node would take a copy of, each named once
      */
@@ -5797,7 +5797,7 @@ abstract class DaemonManager extends BaseManager implements
      * the announcement needs the session ORM the master must not touch, and the burn has to
      * happen in the same breath as the Set-Cookie, or a ticket would buy a second handshake.
      * Both registrations are process-local, so this one covers the master alone and does not
-     * hand any worker a licence to write.
+     * hand any worker a license to write.
      *
      * The early return means this process carries no runtime state at all - the framework
      * mounts the collection for every project that has an RT context - and a project whose
@@ -6066,7 +6066,7 @@ abstract class DaemonManager extends BaseManager implements
      * Answers a failure the master contained, for the project to react to.
      *
      * Empty by default: a node that swallows a bad connection and keeps serving is the
-     * framework's behaviour, and this is where a project adds its own on top of it. The
+     * framework's behavior, and this is where a project adds its own on top of it. The
      * units that reach here are the master's ({@see MasterFailureUnit}) - a connection,
      * an accept, an iteration of the loop, and the hook itself.
      *

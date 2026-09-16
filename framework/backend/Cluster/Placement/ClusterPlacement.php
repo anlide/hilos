@@ -782,7 +782,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Node side — if the returning node is the placing leader, the isolation is over, so the
      * self-fence is disarmed. Leader side — a flapped node back before its grace keeps its
-     * agents, so its pending failover is cancelled; and since a capable node may now be
+     * agents, so its pending failover is canceled; and since a capable node may now be
      * available, every agent failover had to leave {@see PlacementState::Unplaced} is retried.
      *
      * @param string $nodeId Node id the transport just marked online

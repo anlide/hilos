@@ -11,7 +11,7 @@ namespace Hilos\Cluster;
  * leader, no known leader id, no quorum. It keeps cluster masters dormant
  * (lifecycle phase MasterNoQuorum, no coordination work) until the consensus
  * coordinator replaces it in HIL-339, so enabling cluster mode carries no
- * behavioural change on its own.
+ * behavioral change on its own.
  */
 final class PendingLeadership implements Leadership
 {

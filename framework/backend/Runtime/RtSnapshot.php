@@ -31,7 +31,7 @@ final class RtSnapshot
      *
      * The presence half of {@see self::rows()}, and separate from it because the caller that
      * needs presence runs in the master on every pass: reading rows to learn what exists would
-     * serialise the whole collection to answer a question about a handful of keys. Asked here
+     * serialize the whole collection to answer a question about a handful of keys. Asked here
      * rather than of the collection for the reason the whole class exists — reaching backing RT
      * state is allowed under `Runtime/` and nowhere else (RT-STATE-REACH).
      *

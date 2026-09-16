@@ -1,4 +1,4 @@
-<!-- HilosLicensePage — the tier-2 public /license page: the project's own licence
+<!-- HilosLicensePage — the tier-2 public /license page: the project's own license
 prose (the default slot) and, under it, the inventory of everything the build
 actually stands on. The list is not typed by hand and not fetched: it is the
 build-time snapshot generated from the project's own two lockfiles

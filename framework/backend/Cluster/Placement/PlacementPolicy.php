@@ -38,7 +38,7 @@ interface PlacementPolicy
      * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
      * @param array<string, NodeCapacities> $candidates Candidate nodes' capacities keyed by node id
      * @param array<string, int> $hosted Agents each candidate already hosts, keyed by node id;
-     *     absent means none, so a policy that ignores occupancy keeps its old behaviour
+     *     absent means none, so a policy that ignores occupancy keeps its old behavior
      * @return ?string Chosen node id, or null when no candidate satisfies the hard gate
      */
     public function selectNode(

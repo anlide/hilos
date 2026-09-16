@@ -156,7 +156,7 @@ final class PageAccessReassessBroadcastTest extends TestCase
      * The order the sign-out depends on, and the reason the master queues this frame instead of
      * acting on it too. In a live sign-out the frame queued ahead is the runtime write that
      * un-points the connections; the sync below stands in for it, because what is pinned here is
-     * the master's own behaviour and not which write came first. An announcement acted on at
+     * the master's own behavior and not which write came first. An announcement acted on at
      * receipt would overtake whatever preceded it, and the sweep would then re-judge a connection
      * that still answers to the person who just signed out - and answer "allow".
      */

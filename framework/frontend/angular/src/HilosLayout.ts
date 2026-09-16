@@ -62,10 +62,10 @@ import { hilosSignal } from './hilosSignal.js'
 
 // Each transport state maps to a Bootstrap Icon and a Bootstrap text color:
 // green while the socket is live and green on a first connect too — the person
-// has only just opened the page and nothing has broken yet, so a warning colour
+// has only just opened the page and nothing has broken yet, so a warning color
 // there would invent a problem (HIL-831) — amber once a live link has dropped
 // and is being repaired, red when it is down. `connecting` and `reconnecting`
-// share the in-progress icon, and what distinguishes them is the colour and the
+// share the in-progress icon, and what distinguishes them is the color and the
 // visually-hidden label.
 type ConnVisual = { icon: string; color: string }
 const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {

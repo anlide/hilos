@@ -90,7 +90,7 @@ final class TasksBrowserContext extends BrowserContext
      * (HIL-599). A demo that mounts no registry at all is the opposite case and answers a
      * settled nobody: where the answer can never arrive there is nothing to wait for.
      *
-     * Fail-closed stops there, and that is a change of behaviour (HIL-575). It belongs where
+     * Fail-closed stops there, and that is a change of behavior (HIL-575). It belongs where
      * the question is who this connection is; it does not belong to a read that was refused,
      * which says nothing about the connection and everything about the wiring. Answered
      * "anonymous", a refusal signed everybody out of a node that was merely wired wrong.

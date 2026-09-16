@@ -17,7 +17,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  *
  * Owned by {@see AbstractSessionsLibraryAgent} through AGENT_ACTIONS rather than by a page:
  * the control stands on /privacy, which is one of the public pages the framework owns the
- * behaviour of, and what it ends is the session - which is the library's.
+ * behavior of, and what it ends is the session - which is the library's.
  */
 final class BrowserEraseActionDTO extends ActionPayloadDTO
 {

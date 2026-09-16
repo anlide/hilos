@@ -67,13 +67,13 @@ const PASSKEY_FAILED_MESSAGE =
 // What it must NOT also cover is both ceremonies: the advice ends by naming what
 // the person was doing, and on the profile's "Add a passkey" button the sign-in
 // wording told someone already signed in how to sign in (HIL-725).
-/** Shown when the login ceremony was cancelled or had nothing to offer. */
-const PASSKEY_CANCELLED_LOGIN_MESSAGE =
-  'The passkey request was cancelled, or this device had no matching way to sign in — try a security key or your phone.'
+/** Shown when the login ceremony was canceled or had nothing to offer. */
+const PASSKEY_CANCELED_LOGIN_MESSAGE =
+  'The passkey request was canceled, or this device had no matching way to sign in — try a security key or your phone.'
 
-/** Shown when the register ceremony was cancelled or had nothing to offer. */
-const PASSKEY_CANCELLED_REGISTER_MESSAGE =
-  'The passkey request was cancelled, or this device had no way to add one — try a security key or your phone.'
+/** Shown when the register ceremony was canceled or had nothing to offer. */
+const PASSKEY_CANCELED_REGISTER_MESSAGE =
+  'The passkey request was canceled, or this device had no way to add one — try a security key or your phone.'
 
 /**
  * Dispatch an options action and resolve the options signal it triggers.
@@ -158,7 +158,7 @@ function requestOptions(
  * browser show the OS discoverable-passkey picker, and confirm — handing back the
  * assertion's user handle so the server resolves the account (the login named
  * none). Resolves `ok` on the confirm ack; the session upgrade (HIL-161) then
- * closes the surface through the auth gate, so no next mode. A cancelled picker
+ * closes the surface through the auth gate, so no next mode. A canceled picker
  * makes no server call (getPasskey rejects before confirm).
  *
  * Cancelling (HIL-418) reaches every stage: the options wait, the OS picker, and
@@ -265,7 +265,7 @@ async function runPasskeyRegister(
  * outcomes, and a generic fallback otherwise.
  *
  * @param error The caught failure from the ceremony.
- * @param ceremony The ceremony the failure belongs to, which is what the cancelled-branch copy names.
+ * @param ceremony The ceremony the failure belongs to, which is what the canceled-branch copy names.
  */
 function describePasskeyError(
   error: unknown,
@@ -277,8 +277,8 @@ function describePasskeyError(
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
       return ceremony === PASSKEY_CEREMONY_REGISTER
-        ? PASSKEY_CANCELLED_REGISTER_MESSAGE
-        : PASSKEY_CANCELLED_LOGIN_MESSAGE
+        ? PASSKEY_CANCELED_REGISTER_MESSAGE
+        : PASSKEY_CANCELED_LOGIN_MESSAGE
     }
     if (error.name === 'InvalidStateError') {
       return 'This device already has a passkey for this account.'

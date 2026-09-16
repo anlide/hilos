@@ -47,8 +47,8 @@ import type {
 import { useSignal } from './useSignal.js'
 
 /**
- * The alert variant the restore panel wears: the colour follows the outcome, and
- * the sentence inside says the same thing in words — the colour is never the only
+ * The alert variant the restore panel wears: the color follows the outcome, and
+ * the sentence inside says the same thing in words — the color is never the only
  * carrier (WCAG 1.4.1).
  *
  * @param outcome The terminal outcome of the run, or null while it is still going.

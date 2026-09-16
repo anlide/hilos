@@ -170,7 +170,7 @@ trait CommandChannelClientTrait
      *
      * Protected for the reason {@see sendCommand()} is: a command double stands in for the one
      * side of itself that reaches outside the process, and stderr is the other. Nothing here
-     * chooses a stream - there is one behaviour and one implementation of it.
+     * chooses a stream - there is one behavior and one implementation of it.
      *
      * @param string $text Sentence to write, without its line break
      * @return int Exit code to return from the command

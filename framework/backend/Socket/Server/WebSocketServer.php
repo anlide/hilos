@@ -48,7 +48,7 @@ abstract class WebSocketServer extends AbstractServer
      *
      * Held by the server rather than passed to {@see onCreateClient()} because that method
      * is the project's: a project builds its own client subclass, and none of them should
-     * have to carry a daemon seam through their constructor to get framework behaviour.
+     * have to carry a daemon seam through their constructor to get framework behavior.
      *
      * @param ConnectionDropper $connectionDropper Master seam that force-closes a connection
      */

@@ -7,6 +7,10 @@ keys, routes, visible UI copy, comments, and PHPDoc/TSDoc.
 
 Use American English spelling everywhere.
 
+Checked automatically: `SPELLING` — the six pairs of the table below, each
+together with its own word forms, on both sides of the PHP↔TypeScript boundary
+(see [automated-checks.md](automated-checks.md)).
+
 ```
 license   not  licence       color     not  colour
 behavior  not  behaviour      serialize not  serialise
@@ -36,3 +40,11 @@ change:
   or library symbol spelled `colour`, a cited document title).
 - The root `LICENSE` file name and SPDX/package `license` metadata fields —
   these are fixed by the tools that read them.
+- `neighbour`, our own settled internal form. The pair `neighbor/neighbour` is
+  not in the table above, so `SPELLING` is silent on the word by construction,
+  and that silence is not an oversight to fix: the tree writes `neighbour` in
+  over a hundred files of `framework/backend` and `framework/tests` against a
+  handful with `neighbor`, one of them the name of the guard's own class,
+  `framework/tests/CodeStyle/NeighbourDeclarations.php`. This is a named, closed
+  exception for one word, not a category — "text the owner has approved" was
+  rejected as one, because approved text is most of what this rule governs.

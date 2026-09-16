@@ -89,7 +89,7 @@ final class BackupArchiveEncryptor
      * Whether a recipients file is configured at all, however usable it turns out to be.
      *
      * The half of the pair that tells "this installation ships in the clear" from "this
-     * installation was told to encrypt and cannot": the first is today's behaviour and ships, the
+     * installation was told to encrypt and cannot": the first is today's behavior and ships, the
      * second ships nothing.
      *
      * @return bool True when the environment names a recipients file

@@ -1,4 +1,4 @@
-// HilosLicensePage — the tier-2 public /license page: the project's own licence
+// HilosLicensePage — the tier-2 public /license page: the project's own license
 // prose (the children) and, under it, the inventory of everything the build
 // actually stands on. The list is not typed by hand and not fetched: it is the
 // build-time snapshot generated from the project's own two lockfiles
@@ -43,13 +43,13 @@ const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 export interface HilosLicensePageProps {
   /** The build-time snapshot of everything this build stands on. */
   inventory: HilosLicenseInventory
-  /** The project's own licence prose, above the inventory. */
+  /** The project's own license prose, above the inventory. */
   children?: ReactNode
 }
 
 /**
  * The /license page: the project's prose, and under it the build's inventory
- * with a search, two filters, a package's own licence text, and both exports.
+ * with a search, two filters, a package's own license text, and both exports.
  *
  * @param props The build-time snapshot and the project's prose.
  */

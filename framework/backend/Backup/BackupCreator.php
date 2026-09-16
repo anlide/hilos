@@ -254,7 +254,7 @@ final class BackupCreator
      * The supervisor kills the child by wall clock ({@see EnvConstants::BACKUP_TIMEOUT}) and then
      * sweeps its temp files, so overrunning does not cost a digest - it costs the whole backup.
      * The estimate is deliberately pessimistic and the answer is yes whenever the budget cannot be
-     * read at all, which keeps the previous behaviour on an installation that does not declare it.
+     * read at all, which keeps the previous behavior on an installation that does not declare it.
      *
      * @param int $sizeBytes Size of the archive to hash
      * @param float $startedAt Microtime the run started

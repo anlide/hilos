@@ -14,7 +14,7 @@ use Hilos\Database\Object\Item\Object_;
  * NotificationPreference object - wraps a NotificationPreference entity.
  *
  * One per-user channel opt-out row (HIL-485). A live object exists only for a
- * muted (user, channel) pair; enabling a channel deletes it. Carries no behaviour
+ * muted (user, channel) pair; enabling a channel deletes it. Carries no behavior
  * beyond field access — the upsert/delete orchestration lives on
  * {@see NotificationPreferences}.
  *

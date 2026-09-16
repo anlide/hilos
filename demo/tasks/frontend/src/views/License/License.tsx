@@ -1,5 +1,5 @@
 // The public License page (HilosPages.LICENSE). A framework-declared static
-// page; this project supplies the content — the licence prose below, and the
+// page; this project supplies the content — the license prose below, and the
 // build-time inventory the framework page draws under it. See views/About/About.tsx.
 import { HilosLicensePage } from '@hilos/react'
 

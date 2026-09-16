@@ -20,6 +20,7 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
+use Hilos\Tests\CodeStyle\Rule\SpellingRule;
 use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -294,6 +295,38 @@ final class RuleFixtureTest extends TestCase
                 'MALFORMED-INPUT-MARKER Bad/Socket/WebSocket/WebSocketException.php:19 — WebSocketException '
                     . 'is a base its children inherit the marker through, and its own declaration no longer '
                     . 'implements MalformedInput (see docs/agents/code-style/exceptions.md)',
+                'SPELLING Bad/SpellingSamples.php:19 — write "color", not "colour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:20 — write "COLOR", not "COLOUR"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:23 — write "CANCELED", not "CANCELLED"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:23 — write "canceled", not "cancelled"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:26 — write "behavior", not "behaviour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:27 — write "license", not "licence"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:27 — write "organized", not "organised"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:29 — write "serialize", not "serialise"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:29 — write "Behavior", not "Behaviour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:29 — write "behavior", not "behaviour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:31 — write "behavioral", not "behavioural"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:32 — write "Color", not "Colour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:32 — write "behavior", not "behaviour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:32 — write "serializes", not "serialises"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:32 — write "COLOR", not "COLOUR"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:34 — write "Color", not "Colour"'
+                    . ' (see docs/agents/code-style/spelling.md)',
                 'EMPTY-STRING-SENTINEL Bad/Tables/EmptySentinel.php:20 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -551,6 +584,7 @@ final class RuleFixtureTest extends TestCase
             new PayloadSentinelRule(),
             new WireKeyCaseRule(),
             new LineLengthRule(),
+            new SpellingRule(),
         ];
     }
 }

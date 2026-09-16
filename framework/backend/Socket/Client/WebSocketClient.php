@@ -691,7 +691,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Whether cookies this master sets carry the Secure attribute, read from APP_ENV.
      *
-     * One behaviour instead of a switch (HIL-582). It used to be its own env key
+     * One behavior instead of a switch (HIL-582). It used to be its own env key
      * defaulting to false, which meant every installation that never heard of the key
      * shipped its session cookie over plain http - including production ones. The
      * environment already says whether the deployment is production-like, and the

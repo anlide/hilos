@@ -110,7 +110,7 @@ final class BackupShipPlannerTest extends TestCase
     public function testEncryptionPutsItsOwnStepBeforeTheArchiveGoesAcross(): void
     {
         // With no recipients the pass starts where it always did, so an installation that ships
-        // in the clear sees byte-for-byte the behaviour it had before encryption existed.
+        // in the clear sees byte-for-byte the behavior it had before encryption existed.
         $rows = [$this->row('owed')];
 
         $this->assertSame(

@@ -1449,7 +1449,7 @@ class PageSignalRouter
      * where work was running a moment ago.
      *
      * The outcome also goes to the log, every time and not only when something went wrong. A
-     * run is not cancelled by the tab that started it closing, and the frames of a run whose
+     * run is not canceled by the tab that started it closing, and the frames of a run whose
      * initiator has gone reach nobody - the log line is then the only record that forty rows
      * were deleted and which of them were not.
      *

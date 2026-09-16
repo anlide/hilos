@@ -1515,7 +1515,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * A caller with no initiating connection passes null and gets no rotation - there is
      * no channel to deliver the ticket on, and nothing to rotate away from, since a token
-     * nobody was handed was never planted. That path keeps the old behaviour whole: it
+     * nobody was handed was never planted. That path keeps the old behavior whole: it
      * authenticates EVERY live connection of the session, because without a rotation they
      * all still belong to it, and the impersonation CLI acting on somebody else's session
      * must reach the tabs that session actually has. The parameter is required so that

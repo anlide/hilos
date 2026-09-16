@@ -13,7 +13,7 @@ use Hilos\Database\Object\Item\Object_;
 /**
  * PushSubscription object - wraps a PushSubscription entity.
  *
- * One device's browser push subscription (HIL-199). Carries no behaviour beyond
+ * One device's browser push subscription (HIL-199). Carries no behavior beyond
  * field access — the upsert/delete orchestration lives on
  * {@see PushSubscriptions}. A push delivery reads
  * {@see endpoint} plus the {@see p256dh} / {@see auth} keys to send to the endpoint.

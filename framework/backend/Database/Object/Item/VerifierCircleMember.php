@@ -13,7 +13,7 @@ use Hilos\Database\Object\Item\Object_;
 /**
  * VerifierCircleMember object - wraps a VerifierCircleMember entity.
  *
- * One named verifier of the system after a restore (HIL-643). Carries no behaviour
+ * One named verifier of the system after a restore (HIL-643). Carries no behavior
  * beyond field access: the lookups live on {@see VerifierCircleMembers}, and resolving
  * the pair to a person is the caller's step, never a field of this row.
  *

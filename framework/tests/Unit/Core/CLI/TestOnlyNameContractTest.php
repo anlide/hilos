@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
  * without the prefix and nothing said so.
  *
  * With one declaration there is no pairing left to sew, and what remains is the two directions
- * the name and the behaviour can disagree in. Both are checked here:
+ * the name and the behavior can disagree in. Both are checked here:
  * a name with the prefix whose class does not refuse on a production-like environment is a
  * promise nothing keeps, and a class that does refuse under a name without the prefix is
  * refused by a gate no reader of that name would expect.
