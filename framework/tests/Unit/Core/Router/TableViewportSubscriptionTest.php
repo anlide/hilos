@@ -6,11 +6,14 @@ namespace Hilos\Tests\Unit\Core\Router;
 
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\TableViewportSubscription;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for what a viewport descriptor still knows once its count has stopped at a ceiling.
+ * Unit tests for what a viewport descriptor knows about the edges of its set, and what it still knows once its count has
+ * stopped at a ceiling.
  */
 final class TableViewportSubscriptionTest extends TestCase
 {
@@ -46,6 +49,58 @@ final class TableViewportSubscriptionTest extends TestCase
         $viewport->recordWindow(self::windowOf(['a', 'b']), TableConstants::COUNT_CEILING, false, null, null);
 
         $this->assertTrue($viewport->reachesEnd());
+    }
+
+    public function testAWindowWithNoLimitReachesTheStart(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries');
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 2, true, null, null);
+
+        $this->assertTrue($viewport->reachesStart());
+    }
+
+    public function testOnlyTheFirstNumberedPageReachesTheStart(): void
+    {
+        // Page zero is the start however far the count got, so a count stopped at its ceiling changes nothing here.
+        $first = new TableViewportSubscription(tableKey: 'deliveries', limit: self::PAGE_SIZE, pageIndex: 0);
+        $first->recordWindow(self::windowOf(['a', 'b']), TableConstants::COUNT_CEILING, false, null, null);
+        $second = new TableViewportSubscription(tableKey: 'deliveries', limit: self::PAGE_SIZE, pageIndex: 1);
+        $second->recordWindow(self::windowOf(['a', 'b']), 42, true, null, null);
+
+        $this->assertTrue($first->reachesStart());
+        $this->assertFalse($second->reachesStart());
+    }
+
+    public function testAWindowPagedBackReachesTheStartOnlyWhenItRanShort(): void
+    {
+        $short = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: self::PAGE_SIZE,
+            anchor: new TableAnchorDTO(['id' => 7]),
+            anchorDirection: TableAnchorDirection::Before,
+        );
+        $short->recordWindow(self::windowOf(['a', 'b']), 42, true, null, null);
+        $full = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 2,
+            anchor: new TableAnchorDTO(['id' => 7]),
+            anchorDirection: TableAnchorDirection::Before,
+        );
+        $full->recordWindow(self::windowOf(['a', 'b']), 42, true, null, null);
+
+        $this->assertTrue($short->reachesStart());
+        $this->assertFalse($full->reachesStart());
+    }
+
+    public function testAWindowAskedForwardReachesTheStartOnlyFromTheEdgeOfTheSet(): void
+    {
+        $fromEdge = new TableViewportSubscription(tableKey: 'deliveries', limit: 2);
+        $fromEdge->recordWindow(self::windowOf(['a', 'b']), 42, true, null, null);
+        $fromAnchor = new TableViewportSubscription(tableKey: 'deliveries', limit: self::PAGE_SIZE, anchor: new TableAnchorDTO(['id' => 7]));
+        $fromAnchor->recordWindow(self::windowOf(['a', 'b']), 42, true, null, null);
+
+        $this->assertTrue($fromEdge->reachesStart());
+        $this->assertFalse($fromAnchor->reachesStart());
     }
 
     public function testRecordingANewTotalCarriesTheWordOnItAlong(): void

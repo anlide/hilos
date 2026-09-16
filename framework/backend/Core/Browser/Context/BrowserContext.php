@@ -93,6 +93,7 @@ use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Utils\Logger;
 use Throwable;
 use ArrayAccess;
+use Closure;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
@@ -2248,9 +2249,23 @@ abstract class BrowserContext
             return;
         }
 
-        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey);
+        // The count and the classifier ask the table the same question about the same row. It is
+        // asked once, and only when one of them needs it; the flag is load-bearing, because a
+        // refusal answers null and without it the second reader would put the failed question again.
+        $asked = false;
+        $inSet = null;
+        $membership = function () use (&$asked, &$inSet, $table, $viewport, $mutation, $page, $acceptKey): ?bool {
+            if (!$asked) {
+                $asked = true;
+                $inSet = $this->viewportRowInSet($table, $viewport, $mutation, $this->viewportQuery($viewport), $page, $acceptKey);
+            }
 
-        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own);
+            return $inSet;
+        };
+
+        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
+
+        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $membership);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
@@ -2659,20 +2674,31 @@ abstract class BrowserContext
      *
      * The question is not the one {@see self::viewportPlacement()} answers about an arriving
      * row: that one decides whether a row nobody sees may appear on its own, this one decides
-     * whether a row somebody is looking at stays where it is. Both read the same two boundaries
-     * of the delivered window, and both hand back a place rather than a verdict, so the caller
-     * is the only one that turns a place into a frame.
+     * whether a row somebody is looking at stays where it is. Both hand back a place rather than
+     * a verdict, so the caller is the only one that turns a place into a frame.
      *
-     * The boundaries are the places the delivered rows stand at ({@see
-     * TableViewportSubscription::rowAnchors()}), which is what the window is, and not the
-     * anchors of the snapshot: a window collects rows after it was served — an appended tail
-     * row, a row re-sent by an earlier delta — and the snapshot's boundaries stop describing it.
+     * The boundaries are the places of the row's NEIGHBOURS — the first and the last delivered
+     * row other than the edited one ({@see TableViewportSubscription::rowAnchors()}) — and never
+     * the row's own former place, the rule {@see self::viewportRowIndex()} keeps for the slot.
+     * Judged against itself, an edge row loses every comparison: its own old place is the
+     * boundary, and any step outward reads as leaving a window that has nothing beyond it. The
+     * delivered places are what the window is, and not the anchors of the snapshot: a window
+     * collects rows after it was served — an appended tail row, a row re-sent by an earlier
+     * delta — and the snapshot's boundaries stop describing it.
+     *
+     * A row past a boundary only claims to leave the window, and the claim is settled by the
+     * SET: a window holding the start of the set ({@see TableViewportSubscription::reachesStart()})
+     * has nowhere above it for the row to go, so the row stays inside and takes the top slot, and
+     * the same holds below for a window holding the end. A window standing in the middle of the
+     * set does not know what lies past its edges and answers the removal, so it never goes on
+     * showing a row this page no longer has (owner's decision, HIL-987).
      *
      * "Cannot say" is answered wherever a place would be a guess: a window with no order, a
      * window whose rows were recorded without their places, a boundary the table could not name,
-     * and a comparison the table refused. The caller sends the row as moved without a position
-     * then, which is honest in both directions — the row is not claimed to have stayed, and it
-     * is not put at an index computed from nothing.
+     * a comparison the table refused, and a window of one row that does not hold both ends of the
+     * set. The caller sends the row as moved without a position then, which is honest in both
+     * directions — the row is not claimed to have stayed, and it is not put at an index computed
+     * from nothing.
      *
      * @param ViewportTable $table Table the window is on
      * @param TableViewportSubscription $viewport Connection's window
@@ -2696,6 +2722,11 @@ abstract class BrowserContext
             return null;
         }
 
+        unset($anchors[(string) $mutation->rowKey]);
+        if ($anchors === []) {
+            return $viewport->reachesStart() && $viewport->reachesEnd() ? TableRowPlacement::Inside : null;
+        }
+
         $firstAnchor = reset($anchors);
         $lastAnchor = end($anchors);
         if ($firstAnchor === null || $lastAnchor === null) {
@@ -2707,15 +2738,18 @@ abstract class BrowserContext
             return null;
         }
         if ($againstFirst < 0) {
-            return TableRowPlacement::Above;
+            return $viewport->reachesStart() ? TableRowPlacement::Inside : TableRowPlacement::Above;
         }
 
         $againstLast = $table->placeRowAgainst($row, $lastAnchor, $query);
         if ($againstLast === null) {
             return null;
         }
+        if ($againstLast > 0) {
+            return $viewport->reachesEnd() ? TableRowPlacement::Inside : TableRowPlacement::Below;
+        }
 
-        return $againstLast > 0 ? TableRowPlacement::Below : TableRowPlacement::Inside;
+        return TableRowPlacement::Inside;
     }
 
     /**
@@ -2812,6 +2846,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
      */
     private function emitViewportCount(
         ViewportTable $table,
@@ -2820,12 +2855,13 @@ abstract class BrowserContext
         string $acceptKey,
         string $page,
         string $browserKey,
+        Closure $membership,
     ): void {
         if (!$viewport->totalExact()) {
             return;
         }
 
-        $total = $this->viewportTotalAfterMutation($table, $viewport, $mutation, $page, $acceptKey);
+        $total = $this->viewportTotalAfterMutation($table, $viewport, $mutation, $page, $acceptKey, $membership);
         if ($total === null) {
             return;
         }
@@ -2891,13 +2927,15 @@ abstract class BrowserContext
      *
      * A table that does not answer keeps the whole-set re-query it always had, which is the
      * point of letting it not answer: a project table that never heard of this contract must not
-     * quietly stop counting.
+     * quietly stop counting. A table that refused the question is read the same way, since the
+     * answer is shared with the classifier and "cannot say" is the only reading a refusal has.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
      * @param string $acceptKey Target accept key
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
      * @return ?array{totalCount: int, totalExact: bool} New total with the word on it, or null when it does not change
      */
     private function viewportTotalAfterMutation(
@@ -2906,6 +2944,7 @@ abstract class BrowserContext
         TableRowMutationDTO $mutation,
         string $page,
         string $acceptKey,
+        Closure $membership,
     ): ?array {
         $query = $this->viewportQuery($viewport);
         if ($query->search === null && $viewport->filter === []) {
@@ -2917,22 +2956,7 @@ abstract class BrowserContext
             };
         }
 
-        try {
-            $contains = $table->containsRow($mutation->rowKey, $table->scopeSearch($query));
-        } catch (Throwable $e) {
-            // The count stands still on a refused question, exactly as it does on a row nobody
-            // can place - and without this line the two would look the same from outside, which
-            // is the same silence the re-query path below was given a log line for.
-            Logger::error(
-                "Viewport count kept a stale total after its row question failed: table={$viewport->tableKey}, "
-                    . "page={$page}, acceptKey={$acceptKey}, rowKey={$mutation->rowKey}, "
-                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
-                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
-            );
-
-            return null;
-        }
-
+        $contains = $membership();
         if ($contains === null) {
             return $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey);
         }
@@ -2946,6 +2970,44 @@ abstract class BrowserContext
             TableMutationType::Update => $inWindow && !$contains ? $oneFewer : null,
             default => $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey),
         };
+    }
+
+    /**
+     * Asks the table whether a changed row is in the window's set now.
+     *
+     * The one place the question is put: the count and the classifier both read its answer
+     * through the once-only closure of {@see self::emitViewportDelta()}. A refusal is read as
+     * "cannot say", which is what a table that does not answer says too, and the log line is what
+     * tells the two apart from outside.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param TableQueryDTO $query Query this window was served by
+     * @param string $page Subscribed page key
+     * @param string $acceptKey Target accept key
+     * @return ?bool Whether the row is in the set, or null when the table cannot say or refused
+     */
+    private function viewportRowInSet(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        TableQueryDTO $query,
+        string $page,
+        string $acceptKey,
+    ): ?bool {
+        try {
+            return $table->containsRow($mutation->rowKey, $table->scopeSearch($query));
+        } catch (Throwable $e) {
+            Logger::error(
+                "Viewport asked whether a row is still in its set and was refused: table={$viewport->tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, rowKey={$mutation->rowKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
+                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
+            );
+
+            return null;
+        }
     }
 
     /**
@@ -2995,10 +3057,12 @@ abstract class BrowserContext
      * An update whose row comes out identical to the one this connection was already
      * given sends nothing at all: what reaches the screen is the rendered row, not the
      * record behind it, so a change to a field the row does not carry would otherwise
-     * raise a gate badge whose "apply" leaves the screen exactly as it was. The count
-     * is settled before this, and deliberately not folded into the same early exit: a
-     * row can leave a filtered set over a field the delivered row never carried, and
-     * then the payload is the same while the total is not.
+     * raise a gate badge whose "apply" leaves the screen exactly as it was. Membership of a
+     * narrowed set is asked BEFORE that exit, because it is not a question about values: a
+     * row can leave a filtered set over a field the delivered row never carried, and then the
+     * payload is the same while the count, settled just before, has already taken it off.
+     * Past the exit the question is asked once more for a set that looks unnarrowed, which a
+     * table's own standing narrowing makes necessary; the answer itself is computed only once.
      *
      * An update that does change the rendered row is then classified by what it does to the
      * WINDOW, because that is what the gate holds — position and membership, not the fields of
@@ -3015,6 +3079,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @param bool $own Whether this receiver authored the change (applies at once, never gated)
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
      * @return ?TableViewportDeltaDTO Pending row delta, or null when no row in the window changed
      * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
      */
@@ -3025,6 +3090,7 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
         bool $own,
+        Closure $membership,
     ): ?TableViewportDeltaDTO {
         $rowKey = (string) $mutation->rowKey;
         if (!$viewport->hasRow($rowKey)) {
@@ -3047,29 +3113,32 @@ abstract class BrowserContext
             return null;
         }
 
+        $query = $this->viewportQuery($viewport);
+        $narrowed = $query->search !== null || $viewport->filter !== [];
+        if ($narrowed && $membership() === false) {
+            // Asked before the digest: a row can leave a narrowed set over a field the rendered
+            // row does not carry, and then the payload is the same while the count has already
+            // taken the row off. Silenced here, the screen would keep a row the counter no longer has.
+            $viewport->forgetRow($rowKey);
+
+            return TableViewportDeltaDTO::rowRemoved(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                TableViewportDeltaDTO::REASON_LEFT_SET,
+                $own,
+            );
+        }
+
         $wireRow = $this->browserRowToWire($table->browserRow($mutation->row));
         if ($viewport->matchesRow($rowKey, $wireRow)) {
             return null;
         }
 
-        $query = $this->viewportQuery($viewport);
-        try {
-            $contains = $table->containsRow($mutation->rowKey, $table->scopeSearch($query));
-        } catch (Throwable $e) {
-            // A refused question is read as "cannot say" and the classification goes on, the
-            // same way the count reads it. Without this line the refusal looks exactly like an
-            // answered "the row is still in the set", and the row keeps a slot nothing checked.
-            Logger::error(
-                "Viewport delta kept a row after its set question failed: table={$viewport->tableKey}, "
-                    . "page={$page}, rowKey={$mutation->rowKey}, "
-                    . 'exception=' . $e::class . ", message={$e->getMessage()}, "
-                    . 'at=' . basename($e->getFile()) . ':' . $e->getLine(),
-            );
-
-            $contains = null;
-        }
-
-        if ($contains === false) {
+        if (!$narrowed && $membership() === false) {
+            // Still asked of a set that looks unnarrowed from outside: a table can carry a
+            // standing narrowing in its own SQL, and without the question its fallen-out rows
+            // would stay in the window for good.
             $viewport->forgetRow($rowKey);
 
             return TableViewportDeltaDTO::rowRemoved(

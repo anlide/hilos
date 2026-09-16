@@ -171,7 +171,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame(2, $delta->position);
     }
 
-    public function testAnEditThatTakesTheRowAboveTheWindowRemovesIt(): void
+    public function testAnEditPastTheTopOfAWindowHoldingTheStartMovesItToTheEdgeOfTheWindow(): void
     {
         $context = $this->bootOrdered(
             [self::row('alpha', 'Alpha'), self::row('mike', 'Aaron'), self::row('zulu', 'Zulu')],
@@ -181,15 +181,15 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Aaron']));
         $context->flushToSignalRouter();
 
+        // The row passed the top boundary, but this window holds the start of the set: there is
+        // nowhere above it to go, so it stays and takes the first slot.
         $delta = $this->nextDelta();
-        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
-        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
-
-        // The row left the window and not the set, so nothing about the count changed.
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertSame(0, $delta->position);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
-    public function testAnEditThatTakesTheRowBelowTheWindowRemovesIt(): void
+    public function testAnEditPastTheBottomOfAWindowHoldingTheEndMovesItToTheEdgeOfTheWindow(): void
     {
         $context = $this->bootOrdered(
             [self::row('alpha', 'Alpha'), self::row('mike', 'Zzz'), self::row('zulu', 'Zulu')],
@@ -200,8 +200,121 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->flushToSignalRouter();
 
         $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertSame(2, $delta->position);
+    }
+
+    public function testRenamingTheTopRowOfTheFirstPageFurtherUpAppliesAsAValue(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('bob', 'Aaron'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            pageIndex: 0,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        // Bob became Aaron and is still first: judged against its own old place it would have
+        // left the window and turned into a placeholder on Apply.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+        $this->assertNull($delta->position);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTheBottomRowOfAWindowHoldingTheEndMovedFurtherDownAppliesAsAValue(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zzz')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['label' => 'Zzz']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+    }
+
+    public function testTheTopRowOfAPageInTheMiddleOfTheSetMovedUpStillLeavesTheWindow(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('bob', 'Aaron'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            pageIndex: 1,
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        // The window does not know what lies above it, so it does not go on showing a row this
+        // page may no longer have (owner's decision, HIL-987).
+        $delta = $this->nextDelta();
         $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
         $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+    }
+
+    public function testAWindowOfOneRowHoldingBothEndsAppliesTheEditAsAValue(): void
+    {
+        $context = $this->bootOrdered([self::row('alpha', 'Zulu')], [self::row('alpha', 'Alpha')]);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+    }
+
+    public function testAWindowOfOneRowInTheMiddleOfTheSetMovesTheRowWithoutAPosition(): void
+    {
+        $context = $this->bootOrdered([self::row('alpha', 'Zulu')], [self::row('alpha', 'Alpha')], pageIndex: 1);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        // No neighbour to judge by and no edge of the set in hand: the window cannot say.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertNull($delta->position);
+    }
+
+    public function testARowThatLeftANarrowedSetOverAnUnrenderedFieldLeavesWithTheCount(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+            inSet: false,
+            filter: ['admin' => false],
+        );
+
+        // The rendered row is the same row: only the field the set is narrowed by moved.
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['admin' => true]));
+        $context->flushToSignalRouter();
+
+        // The count goes first and takes the row off; the delta follows it, so the window and
+        // the counter agree instead of the screen holding a row the counter no longer has.
+        $this->assertSame(2, $this->nextCount()->totalCount);
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+    }
+
+    public function testTheMembershipQuestionIsAskedOncePerChange(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Tango'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+            inSet: true,
+            filter: ['admin' => false],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Tango']));
+        $context->flushToSignalRouter();
+
+        // Both the count and the classifier need the answer, and the table is asked once.
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame(1, $table->setQuestions);
     }
 
     public function testAWindowWithNoOrderAppliesEveryEditAsAValue(): void
@@ -1089,6 +1202,8 @@ final class BrowserContextViewportDeltaTest extends TestCase
      * @param list<ViewportDeltaUnitRow> $windowRows Rows the connection was delivered, in display order
      * @param ?bool $inSet What the table answers about a row's membership, or null when it cannot say
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
+     * @param array<string, mixed> $filter Open filter map narrowing the window's set, search included
+     * @param ?int $pageIndex Numbered page the window jumped to, or null when it was asked from the start of the set
      * @return ViewportDeltaUnitContext Booted browser context
      */
     private function bootOrdered(
@@ -1096,11 +1211,15 @@ final class BrowserContextViewportDeltaTest extends TestCase
         array $windowRows,
         ?bool $inSet = null,
         bool $setQuestionFails = false,
+        array $filter = [],
+        ?int $pageIndex = null,
     ): ViewportDeltaUnitContext {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: $filter,
             sort: self::byLabel(TableConstants::ORDER_ASC),
             limit: 10,
+            pageIndex: $pageIndex,
         );
         $viewport->recordWindow(
             self::deliveredWindow($windowRows),
@@ -1342,6 +1461,9 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
     public const string PROGRESS_SOURCE_KEY = 'viewportDeltaProgressSource';
     public const string PROGRESS_KEY = 'viewportDeltaRun';
 
+    /** How many times the membership question has been put to this table. */
+    public int $setQuestions = 0;
+
     /**
      * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns
      * @param ?bool $inSet What this table answers about a row's membership, or null when it cannot say
@@ -1393,6 +1515,7 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
+        $this->setQuestions++;
         if ($this->setQuestionFails) {
             throw new HilosException('the fixture refuses the set question');
         }

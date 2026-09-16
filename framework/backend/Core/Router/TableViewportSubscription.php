@@ -242,6 +242,40 @@ final class TableViewportSubscription
     }
 
     /**
+     * Whether the delivered window runs from the start of the filtered set.
+     *
+     * The twin of {@see reachesEnd()}, read off the same three ways a window is addressed. A
+     * window with no limit holds the set, and a window that jumped to a numbered page holds the
+     * start on page zero. A window addressed by anchor holds the start when it was asked forward
+     * from the edge of the set, or when it paged back and got fewer rows than it asked for:
+     * nothing was left above it.
+     *
+     * The answer is read rather than stored for the reason the end is: the delivered set moves
+     * after the window is served.
+     *
+     * Unlike the end, the numbered-page reading does not need the total, so an inexact count
+     * takes nothing away here: page zero is the start of the set however far the count got.
+     *
+     * @return bool Whether the first row of the set is in the delivered window
+     */
+    public function reachesStart(): bool
+    {
+        if ($this->limit === TableConstants::NO_LIMIT) {
+            return true;
+        }
+
+        if ($this->pageIndex !== null) {
+            return $this->pageIndex === 0;
+        }
+
+        if ($this->anchorDirection === TableAnchorDirection::After) {
+            return $this->anchor === null;
+        }
+
+        return count($this->rowDigests) < $this->limit;
+    }
+
+    /**
      * Whether the delivered window runs to the end of the filtered set.
      *
      * A window addressed by anchor has no position to report, so the end is read off the one
