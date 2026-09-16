@@ -31,7 +31,7 @@ use ReflectionProperty;
  * The freeze stops this node's agents, and before the gate any inbound signal started them
  * straight back up mid-restore. The gate refuses every start but the initiator's for as long
  * as the row is not inactive, and refuses quietly: a signal to a frozen agent is dropped
- * rather than turned into an exception dispatchSignals() does not catch.
+ * rather than turned into an exception the daemon would record as a refused start (HIL-999).
  */
 final class WorkerServerProtectedModeGateTest extends TestCase
 {
@@ -175,8 +175,8 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
 
         // Without the check in sendSignalToAgent() the gate would surface as
-        // AgentNotFoundException, which dispatchSignals() does not catch - killing the daemon
-        // in the middle of the restore the freeze exists to protect.
+        // AgentNotFoundException, which the daemon records as a refused start - a card to the
+        // project and an error page to the asker, for what is protected mode's own answer.
         $server->sendSignalToAgent(self::OTHER_TYPE, null, new DaemonAgentMessageDTO(self::OTHER_TYPE, $this->noopSignal()));
 
         $this->assertFalse($manager->hasAgent(self::OTHER_TYPE));
@@ -186,7 +186,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
     {
         $manager = new FreezeGateTestAgentManagerDaemon();
         $server = $this->buildServer(FreezeGateTestLiftRecordingWorkerServer::class, $manager);
-        $this->startAndLeaveUnlinked($server, self::OTHER_TYPE, null);
+        $manager->registerUnlinked(self::OTHER_TYPE, null);
 
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
         $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
@@ -197,7 +197,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
         $server->resumeAgentsForProtectedMode();
 
-        $this->assertTrue($manager->hasAgent(self::OTHER_TYPE), 'The remembered agent must come back on lift.');
+        $this->assertTrue($manager->wasAskedFor(self::OTHER_TYPE), 'The remembered agent must come back on lift.');
         $this->assertSame(1, $server->liftHookCalls, 'The lift hook must fire once, after the roster is replayed.');
     }
 
@@ -205,8 +205,8 @@ final class WorkerServerProtectedModeGateTest extends TestCase
     {
         $manager = new FreezeGateTestAgentManagerDaemon();
         $server = $this->buildServer(FreezeGateTestLiftRecordingWorkerServer::class, $manager);
-        $this->startAndLeaveUnlinked($server, self::OTHER_TYPE, null);
-        $this->startAndLeaveUnlinked($server, self::INITIATOR_TYPE, '3');
+        $manager->registerUnlinked(self::OTHER_TYPE, null);
+        $manager->registerUnlinked(self::INITIATOR_TYPE, '3');
 
         // A non-null initiator index used to hit a TypeError under strict_types: the port
         // declared ?string where buildAgentId() takes string.
@@ -217,9 +217,9 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
         $server->resumeAgentsForProtectedMode();
 
-        $this->assertTrue($manager->hasAgent(self::OTHER_TYPE), 'Every agent but the initiator is stopped and replayed.');
+        $this->assertTrue($manager->wasAskedFor(self::OTHER_TYPE), 'Every agent but the initiator is stopped and replayed.');
         $this->assertFalse(
-            $manager->hasAgent(self::INITIATOR_TYPE . ':3'),
+            $manager->wasAskedFor(self::INITIATOR_TYPE . ':3'),
             'The initiator kept running through the freeze, so it is in no remembered roster.',
         );
     }
@@ -235,7 +235,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         // no list; the per-node registry is what the framework can bring back on its own.
         $server->liftPublic();
 
-        $this->assertTrue($manager->hasAgent(self::PER_NODE_TYPE));
+        $this->assertTrue($manager->wasAskedFor(self::PER_NODE_TYPE));
     }
 
     /**
@@ -263,28 +263,12 @@ final class WorkerServerProtectedModeGateTest extends TestCase
     }
 
     /**
-     * Registers an agent on the node the way a start with no worker registered leaves it.
-     *
-     * @param FreezeGateTestWorkerServer $server Server under test
-     * @param string $agentType Agent type to register
-     * @param ?string $agentIndex Agent index to register
-     */
-    private function startAndLeaveUnlinked(FreezeGateTestWorkerServer $server, string $agentType, ?string $agentIndex): void
-    {
-        try {
-            $server->startAgentPublic($agentType, $agentIndex);
-            $this->fail('Worker selection was expected to fail with no workers registered.');
-        } catch (NoSuitableWorkerException) {
-            // Expected: the agent record survives, which is what the roster is read from.
-        }
-    }
-
-    /**
      * Empties the node's roster, standing in for the stop a live worker link completes.
      *
      * {@see WorkerServer::stopAgent()} only removes the record once it has told the hosting
      * worker, and no worker is registered here - so what the freeze remembered would be
-     * indistinguishable from what it never stopped.
+     * indistinguishable from what it never stopped. The starts asked for so far are forgotten
+     * with it, so a case reads only what the resume asked for.
      *
      * @param FreezeGateTestAgentManagerDaemon $manager Agent manager to empty
      */
@@ -293,6 +277,7 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         foreach (array_keys($manager->getAgents()) as $agentId) {
             $manager->removeAgent($agentId);
         }
+        $manager->askedFor = [];
     }
 
     /**
@@ -370,12 +355,46 @@ final class FreezeGateTestLiftRecordingWorkerServer extends FreezeGateTestWorker
 }
 
 /**
- * Agent manager whose factory answers for every type the gate test starts.
+ * Agent manager whose factory answers for every type the gate test starts, and remembers it
+ * was asked.
+ *
+ * The factory is reached only past the freeze gate, so being asked is what "the start passed
+ * the gate" looks like here. The record itself no longer shows it: with no worker registered a
+ * start rolls its record back (HIL-999).
  */
 final class FreezeGateTestAgentManagerDaemon extends AgentManagerDaemon
 {
+    /** Worker index a record carries before a worker is picked for it */
+    private const int UNLINKED_WORKER_INDEX = 0;
+
+    /** @var list<string> Ids of the agents the factory was asked for, in order */
+    public array $askedFor = [];
+
+    /**
+     * Registers an agent unlinked from any worker, the shape a roster entry has before its
+     * worker is picked - which is what the freeze reads its roster from.
+     *
+     * @param string $agentType Agent type to register
+     * @param ?string $agentIndex Agent index to register
+     */
+    public function registerUnlinked(string $agentType, ?string $agentIndex): void
+    {
+        $this->createAndAddAgent($agentType, $agentIndex, self::UNLINKED_WORKER_INDEX, false);
+    }
+
+    /**
+     * @param string $agentId Agent id to look for
+     * @return bool True when the factory was asked for that agent
+     */
+    public function wasAskedFor(string $agentId): bool
+    {
+        return in_array($agentId, $this->askedFor, true);
+    }
+
     protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
+        $this->askedFor[] = $agentIndex === null ? $agentType : "{$agentType}:{$agentIndex}";
+
         return new FreezeGateTestAgentDaemon($agentIndex);
     }
 }

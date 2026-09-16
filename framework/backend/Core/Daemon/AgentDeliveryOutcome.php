@@ -16,7 +16,8 @@ namespace Hilos\Core\Daemon;
  *
  * Every case but {@see self::Delivered} means the signal reached nobody, and each says why
  * separately because the three whys are three different pieces of news: a node on its way out,
- * a peer that cannot be talked to, and an agent nobody can place.
+ * a peer that cannot be talked to, and an agent nobody can place. A fourth why is the only one
+ * about THIS node: the agent belongs here and did not come up (HIL-999).
  *
  * Unbacked on purpose: the value never leaves the master process — it is read by the caller
  * one frame later and never written to a log line, a wire frame or a row.
@@ -34,4 +35,7 @@ enum AgentDeliveryOutcome
 
     /** No node is known to host the agent, so there was no delivery to attempt - not even a local one */
     case AddressUnknown;
+
+    /** The agent belongs on this node and could not be started or reached here: no worker, or the start failed */
+    case StartRefused;
 }

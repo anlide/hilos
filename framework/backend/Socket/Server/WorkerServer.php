@@ -20,7 +20,9 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\LiveConnectionRoster;
+use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -280,6 +282,11 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             } catch (Throwable $throwable) {
                 // Contain a per-node start failure so the remaining per-node agents still start.
                 Logger::error("Failed to start per-node agent {$agentType}: " . $throwable->getMessage());
+                $this->reportContainedFailure(new ContainedFailure(
+                    MasterFailureUnit::AGENT_START,
+                    $this->buildAgentId($agentType, null),
+                    $throwable,
+                ));
             }
         }
     }
@@ -1026,8 +1033,13 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             $preferredWorkerId,
         );
 
-        // If no suitable worker available, throw exception
+        // No suitable worker: roll the temporary record back the way the two gates above do, so
+        // the refusal leaves no agent behind that nobody was ever asked to run (HIL-999)
         if ($workerClient === null) {
+            if (!$agentExisted) {
+                $this->agentManager->removeAgent($agentId);
+            }
+
             $workerType = $agentDaemon->requiresMonopolisticProcess() ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
             throw new NoSuitableWorkerException($workerType, $agentDaemon->requiresMonopolisticProcess());
         }
@@ -1290,9 +1302,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
         // If agent doesn't exist or not linked to worker, try to start it. A start the freeze
         // refuses ends the delivery here, quietly: the gate in startAgent() would otherwise
-        // surface as AgentNotFoundException below, and dispatchSignals() catches only
-        // NoSuitableWorkerException - the freeze would kill the daemon mid-restore. Delivery
-        // to the still-running initiator goes through the branch below and is untouched.
+        // surface as AgentNotFoundException below, and the daemon would record it as a refused
+        // start - with a card to the project and an error page to the asker. A frozen-out signal
+        // is not a refused start; it is protected mode's own answer and is written down as one.
+        // Delivery to the still-running initiator goes through the branch below and is untouched.
         if (!$this->agentManager->hasAgent($agentId)) {
             if ($this->protectedModeRefusesStart($parsedAgentType, $parsedAgentIndex)) {
                 $this->reportSignalFrozenOut($agentId, $messageDto);
@@ -1565,12 +1578,14 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * and a freeze entered on top of one costs the node that agent.
      *
      * An agent LINKED TO NO WORKER is not one of those moments, and this is the whole reason the
-     * link is asked about here. A start that found no free worker throws and leaves its record
-     * behind ({@see startAgentInternal()}), so the node holds an agent nobody was ever asked to
-     * run - and no report about it will ever arrive. Counted as a start in flight it made every
-     * freeze from then on wait out the entry gate's whole deadline and go in on top of it:
-     * measured in run 0232, nine holds of five seconds each, always on the same three agents, and
-     * exactly the three whose start reports the run was short of.
+     * link is asked about here. A start that found no free worker used to throw and leave its
+     * record behind ({@see startAgentInternal()}); it rolls the record back now (HIL-999), and the
+     * link check stays as the guard for any path that can still leave an unlinked record: the
+     * node then holds an agent nobody was ever asked to run, and no report about it will ever
+     * arrive. Counted as a start in flight, such a record made every freeze from then on wait
+     * out the entry gate's whole deadline and go in on top of it: measured in run 0232, nine
+     * holds of five seconds each, always on the same three agents, and exactly the three whose
+     * start reports the run was short of.
      *
      * @return list<string> Ids of agents whose start was asked of a worker and not reported yet
      */

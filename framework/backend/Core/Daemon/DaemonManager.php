@@ -56,12 +56,6 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
-use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
-use Hilos\Core\Agent\Exception\AgentException;
-use Hilos\Core\Agent\Exception\AgentNotFoundException;
-use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
-use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
-use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -233,6 +227,12 @@ abstract class DaemonManager extends BaseManager implements
     /** @var string Message a browser is answered with when the node serving its page cannot be reached */
     private const string SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE = 'This page is temporarily unavailable. Please try again.';
 
+    /** @var string Error code a browser is answered with when the agent serving its page could not be started here */
+    private const string SUBSCRIPTION_AGENT_UNAVAILABLE_CODE = 'agent_unavailable';
+
+    /** @var string Message a browser is answered with when the agent serving its page could not be started here */
+    private const string SUBSCRIPTION_AGENT_UNAVAILABLE_MESSAGE = 'This page is temporarily unavailable. Please try again.';
+
     /** @var string Message a browser is answered with when no registered class serves the group it named */
     private const string SUBSCRIPTION_GROUP_UNSERVED_MESSAGE = 'This channel is not available.';
 
@@ -244,6 +244,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var string Refusal an operator is answered with when the node holding the agent has no live link: command */
     private const string COMMAND_NODE_UNREACHABLE_MESSAGE = 'The node running the agent for %s is unreachable';
+
+    /** @var string Refusal an operator is answered with when the agent owning the command could not be started: command */
+    private const string COMMAND_START_REFUSED_MESSAGE = 'The agent that answers %s could not be started on this node';
 
     /** @var string How the master facade's log line names "every worker of this node" as an addressee */
     private const string MASTER_SIGNAL_WORKERS_LABEL = 'workers';
@@ -260,6 +263,9 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var string Address of the loop iteration on the card of a failure contained there */
     private const string LOOP_FAILURE_ADDRESS = 'daemon loop';
+
+    /** @var string Address of the project's cluster-singleton hook on the card of a start failure contained around it */
+    private const string SINGLETON_HOST_ADDRESS = 'cluster singletons';
 
     /** @var string Journal line for a failure the project's hook raised: class, file, line, message */
     private const string HOOK_FAILURE_FORMAT = 'Failure in the contained-failure hook: %s in %s:%d - %s';
@@ -1895,14 +1901,11 @@ abstract class DaemonManager extends BaseManager implements
      * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration.
      *
-     * @throws AgentException When routing a signal to its agent fails (no suitable
-     *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws InvalidArgumentException When a signal this walk queues cannot be named - the
      *     unsubscribe of a replaced subscription, or a refusal answering a command
      * @throws EnvException When resolving a destination reads cluster configuration and it is invalid
      * @throws ClusterConfigurationException When a node-addressed agent signal reads the local node
      *     id and cluster mode is on with a missing or invalid node config
-     * @throws HilosException Whatever the project's agent-daemon factory raises reaching an agent
      */
     private function dispatchSignals(): void
     {
@@ -2083,7 +2086,7 @@ abstract class DaemonManager extends BaseManager implements
                 }
 
                 if ($destination instanceof AgentAddressedDestination) {
-                    // Counted as reached before anything is attempted, and in all three cases:
+                    // Counted as reached before anything is attempted, and in every case:
                     // what the connection-close fan-out must not do twice is ADDRESS the same
                     // agent, and a delivery that failed here has already been reported to the
                     // browser by the branches below (HIL-745).
@@ -2111,6 +2114,14 @@ abstract class DaemonManager extends BaseManager implements
                             // the address the next frame asks about can exist (HIL-628). Holding
                             // THIS frame is HIL-629.
                             $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
+                            break;
+                        case AgentDeliveryOutcome::StartRefused:
+                            // The agent belongs here and did not come up; the node already wrote
+                            // it down and told the project. The askers are answered as above, and
+                            // the signal's other destinations go on: one agent costs only itself.
+                            // No placement is asked for - the address is known, it is this node.
+                            $this->answerStartRefusedSubscription($signal);
+                            $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
                             break;
                         case AgentDeliveryOutcome::Delivered:
                             break;
@@ -3720,6 +3731,52 @@ abstract class DaemonManager extends BaseManager implements
      */
     protected function answerUnreachableSubscription(SignalDTO $signal): void
     {
+        $this->answerRefusedSubscription(
+            $signal,
+            self::SUBSCRIPTION_NODE_UNREACHABLE_CODE,
+            self::SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE,
+            'the node serving it is unreachable',
+        );
+    }
+
+    /**
+     * Answers a page subscription whose agent belongs on this node and could not be started here.
+     *
+     * The sibling of {@see answerUnreachableSubscription()}, for the one refusal that is about
+     * THIS node (HIL-999): no free worker, or a start that failed. The browser waits on the same
+     * loading flag either way and gets the same frame and sentence; the error code is its own,
+     * because 'node_unreachable' would name a node that is neither another one nor unreachable.
+     *
+     * Protected for the same reason as its sibling: a subclass observes the two reasons apart.
+     *
+     * @param SignalDTO $signal Signal whose agent could not be started on this node
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    protected function answerStartRefusedSubscription(SignalDTO $signal): void
+    {
+        $this->answerRefusedSubscription(
+            $signal,
+            self::SUBSCRIPTION_AGENT_UNAVAILABLE_CODE,
+            self::SUBSCRIPTION_AGENT_UNAVAILABLE_MESSAGE,
+            'the agent serving it could not be started on this node',
+        );
+    }
+
+    /**
+     * Sends the subscription error a page waiting on an undelivered subscribe is owed.
+     *
+     * Shared by the two refusal doors above; what differs between them is the code, the
+     * sentence and the reason the journal line gives. Anything but a PAGE_SUBSCRIBE is left
+     * alone - an update travels on a page whose agent is already up.
+     *
+     * @param SignalDTO $signal Signal that could not be delivered, a subscribe or not
+     * @param string $errorCode Error code of the refusal, one of the SUBSCRIPTION_* codes
+     * @param string $message Sentence the browser is answered with, one of the SUBSCRIPTION_* messages
+     * @param string $reason Why the subscription went unanswered, as the journal line ends
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    private function answerRefusedSubscription(SignalDTO $signal, string $errorCode, string $message, string $reason): void
+    {
         if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
             return;
         }
@@ -3732,9 +3789,7 @@ abstract class DaemonManager extends BaseManager implements
         // The page name travels in the payload or, when the route named it, in the signal name -
         // the same pair every other reader of a subscribe signal takes it from.
         $page = $data->page ?? $signal->signalName->getName();
-        Logger::warning(
-            "Page subscription to '{$page}' refused for '{$data->acceptKey}': the node serving it is unreachable",
-        );
+        Logger::warning("Page subscription to '{$page}' refused for '{$data->acceptKey}': {$reason}");
 
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DAEMON),
@@ -3744,12 +3799,44 @@ abstract class DaemonManager extends BaseManager implements
                 data: new PageSubscriptionErrorSignalData(
                     page: $page,
                     httpCode: HttpConstants::HTTP_SERVICE_UNAVAILABLE,
-                    errorCode: self::SUBSCRIPTION_NODE_UNREACHABLE_CODE,
-                    message: self::SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE,
+                    errorCode: $errorCode,
+                    message: $message,
                 ),
                 targetAcceptKey: $data->acceptKey,
             ),
         );
+    }
+
+    /**
+     * Writes down one agent of this node that did not come up, and tells the project.
+     *
+     * The node's own record of a refused start (HIL-999), made whoever asked: the journal line
+     * first, the card second, the order every contained failure keeps. What it does NOT do is
+     * answer the asker - only the walk knows who that is, and the two record-driven deliveries
+     * owe nobody an answer at all.
+     *
+     * The line carries the failure's own message: the refusal is no longer only a missing
+     * worker, and a fixed sentence would be wrong for every other failure the catch now holds.
+     *
+     * Protected so a subclass can observe what this node records, the same way the subscription
+     * answers are.
+     *
+     * @param string $agentId Id of the agent that did not come up
+     * @param string $agentLabel Agent as the journal names it, type and index
+     * @param string $signalType Type of the signal that asked for it
+     * @param string $signalName Name of the signal that asked for it
+     * @param HilosException $failure Failure the start or the reach raised
+     */
+    protected function answerRefusedAgentStart(
+        string $agentId,
+        string $agentLabel,
+        string $signalType,
+        string $signalName,
+        HilosException $failure,
+    ): void {
+        Logger::error("Agent start refused: {$signalType}/{$signalName} -> agent: {$agentLabel} - {$failure->getMessage()}");
+
+        $this->reportContainedFailure(new ContainedFailure(MasterFailureUnit::AGENT_START, $agentId, $failure));
     }
 
     /**
@@ -4551,13 +4638,8 @@ abstract class DaemonManager extends BaseManager implements
      * hide real router failures.
      *
      * @param SignalDTO $signal Signal DTO
-     * @throws AgentDaemonCreationFailedException When the replaced subscription's agent daemon cannot be created
-     * @throws AgentNotFoundException When the replaced subscription's agent is gone after a start attempt
-     * @throws AgentNotLinkedToWorkerException When the replaced subscription's agent is not linked to a worker
      * @throws EnvException When locating the replaced subscription's agent reads cluster configuration and it is invalid
-     * @throws HilosException Whatever the project's agent-daemon factory raises reaching the replaced agent
      * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
-     * @throws WorkerClientNotFoundException When the worker hosting the replaced subscription's agent is gone
      */
     protected function updateSubscriptions(SignalDTO $signal): void
     {
@@ -5138,13 +5220,16 @@ abstract class DaemonManager extends BaseManager implements
      * browser waiting on a subscription, and the two record-driven deliveries owe nobody one -
      * the connection whose close is being fanned out is the very connection that left.
      *
+     * An agent of this node that does not come up is the one case written down in here rather
+     * than by the caller - the journal line and the project's card are the node's own record,
+     * owed whoever asked - and it no longer escapes as an exception: one agent without a worker
+     * is that agent's failure, not the loop's (HIL-999).
+     *
      * @param WorkerServer $workerServer Worker server hosting the agents of this node
      * @param ?AgentSignalMesh $mesh Outbound peer port for the cross-node forward, or null when cluster mode is off
      * @param AgentAddressedDestination $destination Agent to reach, already placed
      * @param SignalDTO $signal Signal to deliver
      * @return AgentDeliveryOutcome Delivered, or the reason it reached nobody
-     * @throws AgentException When a local agent cannot be reached and the daemon is not shutting down
-     * @throws HilosException Whatever the project's agent-daemon factory raises while the local agent starts
      */
     protected function deliverToAgentDestination(
         WorkerServer $workerServer,
@@ -5190,9 +5275,7 @@ abstract class DaemonManager extends BaseManager implements
         // the case the walk had first, and the only one the two branches above do not take. The
         // callee's parameter type is what holds that reasoning to account, loudly, if a fourth
         // addressed destination is ever added without this method being told about it.
-        return $this->sendSignalToAgentDestination($workerServer, $destination, $signal)
-            ? AgentDeliveryOutcome::ShutdownSkipped
-            : AgentDeliveryOutcome::Delivered;
+        return $this->sendSignalToAgentDestination($workerServer, $destination, $signal);
     }
 
     /**
@@ -5205,17 +5288,23 @@ abstract class DaemonManager extends BaseManager implements
      * replaced subscription - and the latter two called it whatever the answer was, which is
      * the defect HIL-745 closed. A new caller belongs on the method above this one, not here.
      *
+     * Every failure the worker server declares for the reach is caught, not only the worker
+     * pick: the agent lookup that follows a start raises about the same agent that did not come
+     * up, and a project's agent-daemon factory failing is still one agent's failure. Containing
+     * one of them and not the others would leave the node dying on the neighbouring line from
+     * the same event. An Error is not caught - that is the node's own defect, which the loop's
+     * guard exists for.
+     *
      * @param WorkerServer $workerServer Worker server hosting the agents
      * @param AgentDestination $destination Agent instance to reach
      * @param SignalDTO $signal Signal to deliver
-     * @return bool True when the daemon is shutting down and the signal was dropped instead of delivered
-     * @throws AgentException When the agent cannot be reached and the daemon is not shutting down
+     * @return AgentDeliveryOutcome Delivered, ShutdownSkipped when the node is on its way out, or StartRefused
      */
     private function sendSignalToAgentDestination(
         WorkerServer $workerServer,
         AgentDestination $destination,
         SignalDTO $signal,
-    ): bool {
+    ): AgentDeliveryOutcome {
         $agentType = $destination->agentType;
         $agentIndex = $destination->agentIndex;
         // An agent destination names its agent type, so the id is always
@@ -5231,21 +5320,21 @@ abstract class DaemonManager extends BaseManager implements
                 $agentIndex,
                 new DaemonAgentMessageDTO(agentId: $agentId, signal: $signal),
             );
-        } catch (NoSuitableWorkerException $e) {
-            // During shutdown, workers may be unavailable - ignore this error
+        } catch (HilosException $failure) {
+            // A node on its way out has no workers for any of these - not a refusal worth a card
             if ($this->shouldExit) {
                 Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName}"
-                    . " -> agent: {$agentLabel} - no suitable worker available");
+                    . " -> agent: {$agentLabel} - {$failure->getMessage()}");
 
-                return true;
+                return AgentDeliveryOutcome::ShutdownSkipped;
             }
-            // Re-throw if not shutting down
-            Logger::error("Failed to send signal: {$signalType}/{$signalName}"
-                . " -> agent: {$agentLabel} - no suitable worker available");
-            throw $e;
+
+            $this->answerRefusedAgentStart($agentId, $agentLabel, $signalType, $signalName, $failure);
+
+            return AgentDeliveryOutcome::StartRefused;
         }
 
-        return false;
+        return AgentDeliveryOutcome::Delivered;
     }
 
     /**
@@ -5324,7 +5413,17 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $workerServer->onBecameSingletonHost();
+        // The hook is the project's, and a project's override starts agents directly - one of
+        // them without a free worker used to end the loop. Contained whole, the way the per-node
+        // start is contained, and marked done all the same: re-running a half-finished hook each
+        // tick would queue a fresh initial start each tick. A later promotion runs it anew.
+        try {
+            $workerServer->onBecameSingletonHost();
+        } catch (Throwable $failure) {
+            Logger::error("This node's cluster-singleton start did not finish: {$failure->getMessage()}");
+            $this->reportContainedFailure(new ContainedFailure(MasterFailureUnit::AGENT_START, self::SINGLETON_HOST_ADDRESS, $failure));
+        }
+
         $this->singletonsStarted = true;
     }
 

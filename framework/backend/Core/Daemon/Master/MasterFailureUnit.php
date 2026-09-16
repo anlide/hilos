@@ -40,4 +40,7 @@ enum MasterFailureUnit: string implements FailureUnit
      * is the loop the guard exists to prevent. The failure is written and stops there.
      */
     case FAILURE_HOOK = 'failure hook';
+
+    /** One agent that did not come up on this node; the rest of the node kept running */
+    case AGENT_START = 'agent start';
 }

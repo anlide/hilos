@@ -9,7 +9,7 @@ THROWS-PROPAGATION demo/chat/backend/Agents/ModeratorAgent.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Auth/ChatOAuthConfig.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Core/Socket/Client/FrontendHtmlClient.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/ChatWebSocketServer.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/ChatWorkerServer.php 5 # HIL-449
+THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/ChatWorkerServer.php 3 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/FrontendHtmlServer.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Database/View/Collection/Bots.php 3 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Database/View/Item/Event.php 1 # HIL-449

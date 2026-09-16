@@ -7,9 +7,12 @@ namespace Demo\Chat\Core\Socket\Server;
 use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
-use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Utils\Logger;
+use InvalidArgumentException;
+use Throwable;
 
 /**
  * ChatWorkerServer - Worker server with chat-specific agent daemon factory.
@@ -40,8 +43,10 @@ final class ChatWorkerServer extends WorkerServer
      * cluster; the loops stay idempotent because startAgent() skips a shard that is already
      * running.
      *
-     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
-     * @throws NoSuitableWorkerException If no suitable worker is available
+     * Every start is contained on its own (HIL-999): one bot or shard without a free worker
+     * costs that agent, not the bots and shards behind it in the loops.
+     *
+     * @throws InvalidArgumentException When the initial-agents signal cannot be named
      */
     public function onBecameSingletonHost(): void
     {
@@ -51,18 +56,36 @@ final class ChatWorkerServer extends WorkerServer
             if (!$bot->active) {
                 continue;
             }
-            $this->startAgent('bot', (string) $bot->id);
+            $this->startSingleton('bot', (string) $bot->id);
         }
 
         $env = Hilos::$env;
         $mailWorkerCount = $env === null ? 1 : max(1, $env[EnvConstants::MAIL_WORKER_COUNT]->int());
         for ($shard = 1; $shard <= $mailWorkerCount; $shard++) {
-            $this->startAgent(HilosAgentType::HILOS_MAIL, (string) $shard);
+            $this->startSingleton(HilosAgentType::HILOS_MAIL, (string) $shard);
         }
 
         $smsWorkerCount = $env === null ? 1 : max(1, $env[EnvConstants::SMS_WORKER_COUNT]->int());
         for ($shard = 1; $shard <= $smsWorkerCount; $shard++) {
-            $this->startAgent(HilosAgentType::HILOS_SMS, (string) $shard);
+            $this->startSingleton(HilosAgentType::HILOS_SMS, (string) $shard);
+        }
+    }
+
+    /**
+     * Starts one agent of the singleton loops, containing its failure the way the framework's
+     * per-node start does: the line names the agent, and the project hears it as a card.
+     *
+     * @param string $agentType Agent type to start
+     * @param string $agentIndex Index of the bot or shard
+     */
+    private function startSingleton(string $agentType, string $agentIndex): void
+    {
+        try {
+            $this->startAgent($agentType, $agentIndex);
+        } catch (Throwable $throwable) {
+            $agentId = $this->buildAgentId($agentType, $agentIndex);
+            Logger::error("Failed to start cluster-singleton agent {$agentId}: " . $throwable->getMessage());
+            $this->reportContainedFailure(new ContainedFailure(MasterFailureUnit::AGENT_START, $agentId, $throwable));
         }
     }
 }

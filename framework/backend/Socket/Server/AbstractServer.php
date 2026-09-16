@@ -298,6 +298,20 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     }
 
     /**
+     * Hands a failure this server contained to the master's seam.
+     *
+     * The one door a server subclass reports through, so the sink stays private to this class
+     * and a subclass containing a failure of its own - an agent start, say - tells the project
+     * the same way the tick does. A server that was never wired behaves as if nobody listened.
+     *
+     * @param ContainedFailure $failure Failure, the unit it belongs to and where it happened
+     */
+    protected function reportContainedFailure(ContainedFailure $failure): void
+    {
+        $this->containedFailureSink?->reportContainedFailure($failure);
+    }
+
+    /**
      * Called when a new client connection is accepted.
      *
      * Must be implemented by child classes to create specific client type.
@@ -364,7 +378,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                 // Told after the line and before the close: the project answers a
                 // connection that is still one, and a sink that was never wired leaves
                 // the tick behaving exactly as it did before there was one.
-                $this->containedFailureSink?->reportContainedFailure(new ContainedFailure(
+                $this->reportContainedFailure(new ContainedFailure(
                     MasterFailureUnit::CONNECTION,
                     ClientReadFailureLog::connectionAddress($this->getServerName(), $client),
                     $exception
