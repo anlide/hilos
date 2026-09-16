@@ -169,7 +169,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     ];
 
     /**
-     * The moderator's verdict on a requested display name, and the two admin renames.
+     * The moderator's verdict on a requested display name, and the admin rename two pages forward.
      *
      * The verdict is the far end of a person's own rename: this library asks, the moderator
      * answers here, and this library applies the name. The round trip is one agent's business

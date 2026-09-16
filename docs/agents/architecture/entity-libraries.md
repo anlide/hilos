@@ -455,8 +455,8 @@ three session-toast controls are the same again.
 ack.** Statement 1 above says the gatekeeper answers the client itself; read it as
 "the gatekeeper SIDE answers", not "the accepting class answers". The account
 merge is the legal variant: the name sits on an ADMIN page
-(`demo/chat/backend/Pages/Hilos/Users/UserPage.php:57`), the page forwards
-`HILOS_ACCOUNT_MERGE` carrying the accept key and does NOT defer (`:276`), and the
+(`demo/chat/backend/Pages/Hilos/Users/UserPage.php:61`), the page forwards
+`HILOS_ACCOUNT_MERGE` carrying the accept key and does NOT defer (`:255`), and the
 project's own agent answers the initiator under project names — `ackAccountMerge()`
 sending `ACCOUNT_MERGE_SUCCESS` / `ACCOUNT_MERGE_FAIL`
 (`demo/chat/backend/Agents/ChatAgent.php:436`). The condition is that the ack has a
