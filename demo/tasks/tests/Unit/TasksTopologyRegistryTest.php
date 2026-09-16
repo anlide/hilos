@@ -42,6 +42,7 @@ use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
@@ -368,6 +369,11 @@ final class TasksTopologyRegistryTest extends TestCase
             Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
         ));
         $this->assertSame(BackupAgentDaemon::class, AgentRegistry::daemonClass(
+            Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
+        ));
+        // Placed by policy, not hosted by the leader: the agent owns a directory on one node's
+        // disk, and following leadership would move it away from its archives (HIL-940).
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement(
             Hilos::AGENTS[HilosAgentType::HILOS_BACKUP],
         ));
         $this->assertSame(

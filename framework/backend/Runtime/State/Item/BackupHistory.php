@@ -47,6 +47,8 @@ final class BackupHistory extends RtState
     public const string shipOutcome = 'shipOutcome';
     public const string shipError = 'shipError';
     public const string shipEncryption = 'shipEncryption';
+    public const string nodeId = 'nodeId';
+    public const string reachable = 'reachable';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -121,13 +123,27 @@ final class BackupHistory extends RtState
      */
     public ?string $shipEncryption = null;
 
+    /** Cluster node whose disk holds this archive; null on an installation without clustering. */
+    private(set) ?string $nodeId = null;
+
+    /**
+     * Whether the agent that keeps this index can act on the archive - false once it has moved to
+     * another node. Stored rather than derived from the node the agent runs on: moving the agent
+     * changes no row, and a table whose rows did not change tells no open page anything.
+     */
+    public bool $reachable = true;
+
     /**
      * Builds a history row from a scanned sidecar's metadata.
      *
+     * The row is reachable by construction: the scan that found the sidecar ran on the node whose
+     * disk holds it.
+     *
      * @param BackupMetadata $metadata Sidecar metadata
+     * @param ?string $nodeId Node that ran the scan, or null on an installation without clustering
      * @return static Fresh history row
      */
-    public static function fromMetadata(BackupMetadata $metadata): static
+    public static function fromMetadata(BackupMetadata $metadata, ?string $nodeId): static
     {
         $instance = new static();
         $instance->id = $metadata->id;
@@ -150,6 +166,7 @@ final class BackupHistory extends RtState
         $instance->shipOutcome = $metadata->shipOutcome?->value;
         $instance->shipError = $metadata->shipError;
         $instance->shipEncryption = $metadata->shipEncryption;
+        $instance->nodeId = $nodeId;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -183,6 +200,8 @@ final class BackupHistory extends RtState
         $instance->shipOutcome = self::optionalString($row, self::shipOutcome);
         $instance->shipError = self::optionalString($row, self::shipError);
         $instance->shipEncryption = self::optionalString($row, self::shipEncryption);
+        $instance->nodeId = self::optionalString($row, self::nodeId);
+        $instance->reachable = self::requireBool($row, self::reachable);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -220,6 +239,8 @@ final class BackupHistory extends RtState
         $this->shipOutcome = self::patchOptionalString($diff, self::shipOutcome, $this->shipOutcome);
         $this->shipError = self::patchOptionalString($diff, self::shipError, $this->shipError);
         $this->shipEncryption = self::patchOptionalString($diff, self::shipEncryption, $this->shipEncryption);
+        $this->nodeId = self::patchOptionalString($diff, self::nodeId, $this->nodeId);
+        $this->reachable = self::patchBool($diff, self::reachable, $this->reachable);
     }
 
     /**
@@ -267,6 +288,8 @@ final class BackupHistory extends RtState
             self::shipOutcome => $this->shipOutcome,
             self::shipError => $this->shipError,
             self::shipEncryption => $this->shipEncryption,
+            self::nodeId => $this->nodeId,
+            self::reachable => $this->reachable,
         ];
     }
 

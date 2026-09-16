@@ -492,6 +492,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     private ?DeferredQueueHandover $deferredQueueHandover = null;
 
     /**
+     * Cluster node this agent runs on, learned on start; null on an installation without clustering.
+     * Storage is a local directory, so every index row a scan here writes lies on this node's disk.
+     */
+    private ?string $nodeId = null;
+
+    /**
      * Takes storage under watch, rebuilds the runtime backup index, and loads the schedule.
      *
      * No-ops when disabled: nothing is watched, no scan, and no cron rules, so scheduling is off.
@@ -501,10 +507,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      *
      * The watch is taken BEFORE the first scan for the reason the discard-then-scan ordering
      * exists at all: a scan that runs before storage is watched loses whatever lands between
-     * the two, and nothing would ask for it again until the periodic pass.
+     * the two, and nothing would ask for it again until the periodic pass. The node this agent
+     * runs on is learned before either, because the first scan stamps every row it finds with it.
      *
      * @throws BackupScheduleException When the project backup schedule is malformed
-     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws EnvException When a backup env value or a cluster env value is missing or cannot be read as its type
+     * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
      */
     public function onStart(): void
     {
@@ -525,6 +533,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         ) as $key) {
             $this->logAgentError("Backups are enabled but {$key} is not configured; no backup can be created");
         }
+
+        $cluster = Hilos::$cluster;
+        $clustered = $cluster !== null && $cluster->isEnabled();
+        $this->nodeId = $clustered ? $cluster->identity()->nodeId : null;
 
         $this->watchDirectories($this->watchedBackupDirectories());
         $this->refreshHistory();
@@ -1208,6 +1220,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * refusal travels on, a command reply for the CLI and an addressed action error for the page -
      * and everything it checks is checked in the same order it always was:
      *
+     * - the archive's reach, first of all: an archive another node's disk holds cannot be replayed
+     *   from here, and a refusal ahead of the lock leaves no pending restore and asks for no freeze.
+     *   Re-checked though the page draws the button dead, because the client is not the source of
+     *   truth about what this agent can reach;
      * - the single-flight lock, covering both kinds and both windows: a running child (create or
      *   restore) and a restore still waiting for its freeze each refuse a second admission;
      * - {@see RestoreEnvDecision::REFUSE} as a backstop. The matrix is authoritative where the
@@ -1239,6 +1255,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         ?string $initiator,
         ?int $initiatorUserId,
     ): ?string {
+        $holder = $this->unreachableHolder($id);
+        if ($holder !== null) {
+            return "Backup {$id} is stored on node {$holder} and cannot be reached from here";
+        }
         if ($this->childProcess !== null || $this->restoreEngaged()) {
             $busyId = $this->currentBackupId ?? $this->pendingRestoreId;
 
@@ -1535,8 +1555,9 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     /**
      * Deletes one stored backup through the shared delete path and drops its index row.
      *
-     * Re-guards the run in flight (never delete the archive a child is still writing) and
-     * treats an already-removed backup as an idempotent no-op.
+     * Re-guards the run in flight (never delete the archive a child is still writing) and an
+     * archive another node's disk holds, and treats an already-removed backup as an idempotent
+     * no-op.
      *
      * @param BackupDeleteSignalData $data Delete request carrying the backup id
      */
@@ -1548,6 +1569,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
         if ($id === $this->currentBackupId) {
             $this->logAgentWarning("Ignoring delete of in-progress backup {$id}");
+
+            return;
+        }
+        $holder = $this->unreachableHolder($id);
+        if ($holder !== null) {
+            $this->logAgentWarning("Ignoring delete of backup {$id} stored on node {$holder}");
 
             return;
         }
@@ -1585,8 +1612,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     /**
      * Sets a stored backup's keep pin: rewrites the sidecar (truth) and re-mirrors the index.
      *
-     * Only a successful, completed backup can be pinned; the in-progress and non-success
-     * cases are re-guarded here as well as on the page.
+     * Only a successful, completed backup this node's disk holds can be pinned; the in-progress,
+     * out-of-reach and non-success cases are re-guarded here as well as on the page.
      *
      * @param BackupSetKeepSignalData $data Set-keep request carrying the id and desired pin
      */
@@ -1598,6 +1625,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
         if ($id === $this->currentBackupId) {
             $this->logAgentWarning("Ignoring keep toggle of in-progress backup {$id}");
+
+            return;
+        }
+        $holder = $this->unreachableHolder($id);
+        if ($holder !== null) {
+            $this->logAgentWarning("Ignoring keep toggle of backup {$id} stored on node {$holder}");
 
             return;
         }
@@ -3795,16 +3828,19 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * puts a scope directory created since the last pass under watch - they are made lazily
      * ({@see BackupCreator}), so the watched set is state rather than a one-off decision.
      *
-     * The log line is written only when something moved, because the periodic pass runs every
+     * The log lines are written only when something moved, because the periodic pass runs every
      * few minutes forever: an unconditional line would bury the interesting one under hundreds
-     * of identical ones a day.
+     * of identical ones a day. Beside the sync line goes one line per node holding archives this
+     * agent cannot reach - the aggregate a single out-of-reach row cannot give, and the one
+     * sentence that tells an operator after a failover where the old archives went.
      */
     private function refreshHistory(): void
     {
         $this->discardDirectoryChanges();
 
         $result = new BackupHistoryScanner()->scan(Hilos::$env[EnvConstants::BACKUP_DIR]->string());
-        $changes = $this->historiesView()?->actions->syncToScan($result->metadatas) ?? 0;
+        $histories = $this->historiesView();
+        $changes = $histories?->actions->syncToScan($result->metadatas, $this->nodeId) ?? 0;
         $this->reportAnomalies($result);
 
         if ($changes > 0 || $result->anomalies !== []) {
@@ -3814,6 +3850,9 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 $changes,
                 count($result->anomalies),
             ));
+            foreach (self::outOfReachByNode($histories ?? []) as $holder => $count) {
+                $this->logAgentInfo("Backup index: {$count} archives on node {$holder} are out of reach from here");
+            }
         }
 
         $this->watchDirectories($this->watchedBackupDirectories());
@@ -3851,13 +3890,19 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     }
 
     /**
-     * Snapshots the runtime backup index as a plain list of index rows.
+     * Snapshots the archives this node's disk holds as a plain list of index rows.
      *
      * The single reader used by both rotation ({@see pruneHistory()}) and the space estimate
      * ({@see admitBySpace()}): the RT collection is walked once, so both consumers see the same
      * set. Empty when runtime state or the index is unavailable.
      *
-     * @return list<BackupHistory> Current backup index rows
+     * Rows out of reach are left out, and that is what keeps every consumer honest about a local
+     * directory: rotation never selects an archive that is not on this disk, the byte ceiling
+     * counts only the bytes that are, and the estimates and the shipping plan are read from runs
+     * taken here. Counting a node this agent cannot see would make the store refuse runs over an
+     * overflow it could never relieve.
+     *
+     * @return list<BackupHistory> Index rows of the archives this node holds
      */
     private function indexRows(): array
     {
@@ -3868,10 +3913,55 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
 
         $rows = [];
         foreach ($histories as $row) {
-            $rows[] = $row;
+            if ($row->reachable) {
+                $rows[] = $row;
+            }
         }
 
         return $rows;
+    }
+
+    /**
+     * Names the node holding an archive this agent cannot reach.
+     *
+     * The one question the three operator requests - restore, delete, keep pin - ask before they
+     * touch anything, so an archive on another node's disk is refused by name instead of failing
+     * somewhere in the filesystem.
+     *
+     * @param string $id Backup id
+     * @return ?string Node holding the archive when it is out of reach; null when it is reachable or not indexed
+     */
+    private function unreachableHolder(string $id): ?string
+    {
+        $histories = $this->historiesView();
+        if ($histories === null) {
+            return null;
+        }
+
+        $row = $histories[$id];
+        if ($row === null || $row->reachable) {
+            return null;
+        }
+
+        return $row->nodeId;
+    }
+
+    /**
+     * Counts the out-of-reach archives of the index per node holding them.
+     *
+     * @param iterable<BackupHistory> $rows Index rows
+     * @return array<string, int> Out-of-reach archive count keyed by holding node, in first-seen order
+     */
+    private static function outOfReachByNode(iterable $rows): array
+    {
+        $counts = [];
+        foreach ($rows as $row) {
+            if (!$row->reachable && $row->nodeId !== null) {
+                $counts[$row->nodeId] = ($counts[$row->nodeId] ?? 0) + 1;
+            }
+        }
+
+        return $counts;
     }
 
     /**

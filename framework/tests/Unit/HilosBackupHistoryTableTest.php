@@ -312,6 +312,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::restoreMigrationDecision => null,
                         HilosBackupTableRow::restoreMigrationBehind => null,
                         HilosBackupTableRow::restoreMigrationNotice => null,
+                        HilosBackupTableRow::holderNode => null,
                     ],
                 ],
             ],
@@ -480,6 +481,29 @@ final class HilosBackupHistoryTableTest extends TestCase
 
         $this->assertSame('2026-08-16T06:00:00+00:00', $mutation->row?->shippedAt);
         $this->assertSame('ssh: connect timed out', $mutation->row?->shipError);
+    }
+
+    public function testAReachableRowNamesNoNodeAndAnOutOfReachOneNamesItsHolder(): void
+    {
+        // The node is drawn only where it explains a refusal: a healthy cluster stamps every row
+        // with the same node, and repeating it on each of them would be noise.
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'here',
+                BackupHistory::nodeId => 'm2',
+            ])),
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'there',
+                BackupHistory::nodeId => 'm1',
+                BackupHistory::reachable => false,
+            ])),
+        ));
+
+        $here = $table->buildMutationForSourceEvent(SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'here', []));
+        $there = $table->buildMutationForSourceEvent(SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'there', []));
+
+        $this->assertNull($here->row?->holderNode);
+        $this->assertSame('m1', $there->row?->holderNode);
     }
 
     public function testAVerifiedRowCarriesWhenItWasChecked(): void
@@ -887,6 +911,7 @@ final class HilosBackupHistoryTableTest extends TestCase
             BackupHistory::keep => false,
             BackupHistory::dumpBytes => 0,
             BackupHistory::restoreDurationSeconds => 0,
+            BackupHistory::reachable => true,
         ];
     }
 

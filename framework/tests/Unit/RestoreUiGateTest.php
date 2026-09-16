@@ -362,6 +362,7 @@ final class RestoreUiGateTest extends TestCase
             StateBackupHistory::keep => false,
             StateBackupHistory::dumpBytes => 0,
             StateBackupHistory::restoreDurationSeconds => 0,
+            StateBackupHistory::reachable => true,
         ]);
 
         return new BackupHistory($state);

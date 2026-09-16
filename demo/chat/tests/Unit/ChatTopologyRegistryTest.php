@@ -240,19 +240,22 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The four libraries, the delivery shards and the log aggregator: one instance
-        // cluster-wide (per shard index, for the shards), on the node policy picks. An entity
-        // library is placed rather than pinned by rule, and each of the four has a reason of
-        // its own besides: minting an account is a claim one process holds wherever it sits,
+        // The four libraries, the backup agent, the delivery shards and the log aggregator: one
+        // instance cluster-wide (per shard index, for the shards), on the node policy picks. An
+        // entity library is placed rather than pinned by rule, and each of the four has a reason
+        // of its own besides: minting an account is a claim one process holds wherever it sits,
         // every handshake touches sessions, every worker emits into notifications, every admin
-        // screen writes settings through one hand, and the leader has enough to do. The
-        // aggregator is placed so that one holder of the merged log picture survives a
-        // re-election instead of dying with the term.
+        // screen writes settings through one hand, and the leader has enough to do. The backup
+        // agent owns a directory on one node's disk, so it has to stay with it: following
+        // leadership would move it on every master restart to a node whose directory holds none
+        // of its archives. The aggregator is placed so that one holder of the merged log picture
+        // survives a re-election instead of dying with the term.
         $this->assertSame([
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosAgentType::HILOS_BACKUP,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
             AgentType::HILOS_PUSH,

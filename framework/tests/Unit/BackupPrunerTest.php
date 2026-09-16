@@ -470,7 +470,7 @@ final class BackupPrunerTest extends TestCase
             0,
             false,
             BackupStatus::SUCCESS,
-        ));
+        ), null);
         $state->scope = 'retired-scope';
 
         return new BackupHistory($state);
@@ -645,7 +645,7 @@ final class BackupPrunerTest extends TestCase
             $shippedAt = $shipOutcome === BackupShipOutcome::OK ? $createdAt : null;
             $metadata = $metadata->withShipping($shippedAt, $shipOutcome, null, null);
         }
-        $state = StateBackupHistory::fromMetadata($metadata);
+        $state = StateBackupHistory::fromMetadata($metadata, null);
 
         return new BackupHistory($state);
     }

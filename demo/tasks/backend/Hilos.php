@@ -183,6 +183,7 @@ final class Hilos extends HilosFacade
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,
             AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         OAuthAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => OAuthAgent::class,

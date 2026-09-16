@@ -130,6 +130,12 @@ export interface HilosBackupRow {
    * prints, so the two never word one verdict differently.
    */
   readonly restoreMigrationNotice: string | null
+  /**
+   * Cluster node whose disk holds this archive, named only when the backup agent runs
+   * elsewhere and cannot reach it; null otherwise. One key and not a flag beside it:
+   * out of reach IS a named holder, so a row cannot claim one and carry the other.
+   */
+  readonly holderNode: string | null
 }
 
 /**
@@ -278,6 +284,9 @@ export const BACKUP_RESTORE_MIGRATION_BEHIND_FIELD = 'restoreMigrationBehind'
 
 /** Row payload key of the per-connection lines explaining this archive's levels. */
 export const BACKUP_RESTORE_MIGRATION_NOTICE_FIELD = 'restoreMigrationNotice'
+
+/** Row payload key of the node holding an archive the backup agent cannot reach. */
+export const BACKUP_HOLDER_NODE_FIELD = 'holderNode'
 
 /** Migration-gate decision that refuses the archive; the only value the views test for. */
 const BACKUP_MIGRATION_REFUSED = 'refuse'
@@ -530,6 +539,7 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
       slot,
       BACKUP_RESTORE_MIGRATION_NOTICE_FIELD,
     ),
+    holderNode: readStringOrNull(slot, BACKUP_HOLDER_NODE_FIELD),
   }
 }
 
@@ -891,14 +901,33 @@ export function isBackupShipFailed(row: HilosBackupRow): boolean {
   return row.shipState === 'failed'
 }
 
-/** A completed backup, success or failure — the only kind that can be deleted. */
-export function isBackupDeletable(row: HilosBackupRow): boolean {
-  return row.finished !== false
+/**
+ * An archive stored on another cluster node's disk — the backup agent runs elsewhere
+ * and can neither restore, delete, pin nor rotate it. The row stays in the list so
+ * that "these archives are somewhere else" never reads as "no backups were taken".
+ */
+export function isBackupOutOfReach(row: HilosBackupRow): boolean {
+  return row.holderNode !== null
 }
 
-/** A successfully completed backup — the only kind whose keep pin can be toggled. */
+/**
+ * Why an archive cannot be reached, or null when it can. The single wording the three
+ * views put on the node badge, so the explanation cannot drift between them.
+ */
+export function formatBackupOutOfReach(row: HilosBackupRow): string | null {
+  return row.holderNode === null
+    ? null
+    : `Stored on node ${row.holderNode} - the backup agent runs elsewhere, so this archive cannot be reached from here`
+}
+
+/** A completed backup this node holds, success or failure — the only kind that can be deleted. */
+export function isBackupDeletable(row: HilosBackupRow): boolean {
+  return row.finished !== false && !isBackupOutOfReach(row)
+}
+
+/** A successfully completed backup this node holds — the only kind whose keep pin can be toggled. */
 export function isBackupKeepable(row: HilosBackupRow): boolean {
-  return row.finished === true
+  return row.finished === true && !isBackupOutOfReach(row)
 }
 
 /**
@@ -925,14 +954,15 @@ export function offersBackupRestore(row: HilosBackupRow): boolean {
 }
 
 /**
- * An archive that can be replayed: completed successfully, and not known to differ
- * from its recorded digest. The backend decides again on the action — the client is
- * not the source of truth about an installation's environment, or about what the
- * agent is busy with right now.
+ * An archive that can be replayed: completed successfully, within the backup agent's
+ * reach, and not known to differ from its recorded digest. The backend decides again
+ * on the action — the client is not the source of truth about an installation's
+ * environment, about what the agent can reach, or about what it is busy with right now.
  */
 export function isBackupRestorable(row: HilosBackupRow): boolean {
   return (
     row.finished === true &&
+    !isBackupOutOfReach(row) &&
     !isBackupChecksumMismatch(row) &&
     !isBackupMigrationRefused(row)
   )

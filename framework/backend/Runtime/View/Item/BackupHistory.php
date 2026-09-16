@@ -41,6 +41,8 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read ?string $shipError Why the last copy attempt failed; null when none has
  * @property-read ?string $shipEncryption Fingerprint of the recipient set the last copy was
  *     encrypted to; null means it left in the clear
+ * @property-read ?string $nodeId Cluster node whose disk holds this archive; null without clustering
+ * @property-read bool $reachable Whether the agent that keeps this index can act on the archive
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -82,6 +84,8 @@ final class BackupHistory extends RtItem
             StateBackupHistory::shipOutcome => $this->_state->shipOutcome,
             StateBackupHistory::shipError => $this->_state->shipError,
             StateBackupHistory::shipEncryption => $this->_state->shipEncryption,
+            StateBackupHistory::nodeId => $this->_state->nodeId,
+            StateBackupHistory::reachable => $this->_state->reachable,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

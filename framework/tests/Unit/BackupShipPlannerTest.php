@@ -213,6 +213,7 @@ final class BackupShipPlannerTest extends TestCase
             StateBackupHistory::keep => false,
             StateBackupHistory::dumpBytes => 0,
             StateBackupHistory::restoreDurationSeconds => 0,
+            StateBackupHistory::reachable => true,
         ]);
         $rows = [new BackupHistory($state)];
 
@@ -328,7 +329,7 @@ final class BackupShipPlannerTest extends TestCase
             shippedAt: $shipOutcome === BackupShipOutcome::OK ? $createdAt : null,
             shipOutcome: $shipOutcome,
             shipEncryption: $shipEncryption,
-        ));
+        ), null);
 
         return new BackupHistory($state);
     }

@@ -53,6 +53,7 @@ import {
   createHilosRestoreProgress,
   formatBackupDuration,
   formatBackupChecksum,
+  formatBackupOutOfReach,
   formatBackupShipping,
   formatBackupProgressLabel,
   formatBackupSize,
@@ -65,6 +66,7 @@ import {
   isBackupDeletable,
   isBackupKeepable,
   isBackupMigrationRefused,
+  isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
   offersBackupRestore,
@@ -304,16 +306,39 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         emptyText="No backups yet."
       >
         <ng-template #row let-row>
-          <td class="text-nowrap">{{ row.createdAt || '—' }}</td>
-          <td>{{ row.env || '—' }}</td>
-          <td>
+          <td
+            class="text-nowrap"
+            [class.text-body-secondary]="isOutOfReach(row)"
+          >
+            {{ row.createdAt || '—' }}
+            @if (isOutOfReach(row)) {
+              <span
+                class="badge text-bg-secondary"
+                [attr.title]="formatOutOfReach(row)"
+                [attr.data-id]="'hilos-backup-holder-' + row.id"
+                >{{ row.holderNode }}</span
+              ><span class="visually-hidden">{{ formatOutOfReach(row) }}</span>
+            }
+          </td>
+          <td [class.text-body-secondary]="isOutOfReach(row)">
+            {{ row.env || '—' }}
+          </td>
+          <td [class.text-body-secondary]="isOutOfReach(row)">
             <code>{{ row.scope || '—' }}</code>
           </td>
-          <td class="text-end">{{ formatSize(row) }}</td>
-          <td class="text-nowrap">
+          <td class="text-end" [class.text-body-secondary]="isOutOfReach(row)">
+            {{ formatSize(row) }}
+          </td>
+          <td
+            class="text-nowrap"
+            [class.text-body-secondary]="isOutOfReach(row)"
+          >
             <span [class]="checksumClass(row)">{{ formatChecksum(row) }}</span>
           </td>
-          <td class="text-nowrap">
+          <td
+            class="text-nowrap"
+            [class.text-body-secondary]="isOutOfReach(row)"
+          >
             <span [class]="shippingClass(row)">{{ formatShipping(row) }}</span>
             @if (isShipFailed(row) && row.shipError) {
               <button
@@ -328,15 +353,23 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
               </button>
             }
           </td>
-          <td class="text-end">{{ formatDuration(row) }}</td>
-          <td style="min-width: 10rem">
+          <td class="text-end" [class.text-body-secondary]="isOutOfReach(row)">
+            {{ formatDuration(row) }}
+          </td>
+          <td
+            style="min-width: 10rem"
+            [class.text-body-secondary]="isOutOfReach(row)"
+          >
             @if (row.finished === true) {
               <span class="badge text-bg-success">{{ row.status }}</span>
             } @else {
               <span class="badge text-bg-danger">{{ row.status }}</span>
             }
           </td>
-          <td class="text-nowrap">
+          <td
+            class="text-nowrap"
+            [class.text-body-secondary]="isOutOfReach(row)"
+          >
             @if (hasRestoreOutcome(row)) {
               <button
                 type="button"
@@ -372,7 +405,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
               <span class="text-body-secondary">—</span>
             }
           </td>
-          <td class="text-center">
+          <td
+            class="text-center"
+            [class.text-body-secondary]="isOutOfReach(row)"
+          >
             @if (isKeepable(row)) {
               <div class="form-check form-switch d-inline-block m-0">
                 <input
@@ -395,7 +431,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
               <span class="text-body-secondary">—</span>
             }
           </td>
-          <td class="text-end">
+          <td class="text-end" [class.text-body-secondary]="isOutOfReach(row)">
             @if (hasFailureDetail(row)) {
               <button
                 type="button"
@@ -841,6 +877,8 @@ export class HilosBackupPage {
   protected readonly hasRestoreOutcome = hasRestoreOutcome
   protected readonly offersRestore = offersBackupRestore
   protected readonly isShipFailed = isBackupShipFailed
+  protected readonly isOutOfReach = isBackupOutOfReach
+  protected readonly formatOutOfReach = formatBackupOutOfReach
 
   protected readonly backups = computed(() =>
     createHilosBackupsTable(this.context()),
@@ -1227,6 +1265,11 @@ export class HilosBackupPage {
    * @param row The backup row the button belongs to.
    */
   protected restoreBlockedReason(row: HilosBackupRow): string | null {
+    // An archive on another node's disk is out of reach whatever else is true of it.
+    const outOfReach = formatBackupOutOfReach(row)
+    if (outOfReach !== null) {
+      return outOfReach
+    }
     if (isBackupChecksumMismatch(row)) {
       return 'This archive does not match its recorded checksum'
     }

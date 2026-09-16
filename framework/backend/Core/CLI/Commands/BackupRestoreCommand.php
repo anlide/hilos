@@ -683,7 +683,8 @@ HELP;
      */
     private static function indexRow(BackupMetadata $metadata): BackupHistory
     {
-        $state = StateBackupHistory::fromMetadata($metadata);
+        // No node is stamped: the estimator reads sizes and durations, never where an archive lies.
+        $state = StateBackupHistory::fromMetadata($metadata, null);
 
         return new BackupHistory($state);
     }

@@ -35,7 +35,7 @@ final class BackupHistoryStateTest extends TestCase
             status: BackupStatus::SUCCESS,
         );
 
-        $history = BackupHistory::fromMetadata($metadata);
+        $history = BackupHistory::fromMetadata($metadata, null);
 
         $this->assertSame('hist-1', $history->getId());
         // The row's environment is never absent because this is the only way a row is born, and
@@ -62,7 +62,7 @@ final class BackupHistoryStateTest extends TestCase
             keep: false,
             status: BackupStatus::ERROR,
             failureReason: 'child exited with code 1',
-        ));
+        ), null);
 
         $restored = BackupHistory::fromRow($history->toArray());
 
@@ -91,7 +91,7 @@ final class BackupHistoryStateTest extends TestCase
             keep: false,
             status: BackupStatus::ERROR,
             failureReason: 'timed out after 30s',
-        ));
+        ), null);
         $this->assertSame('timed out after 30s', $history->failureReason);
 
         $history->applyDiff([BackupHistory::failureReason => 'child exited with code 1']);
@@ -115,7 +115,7 @@ final class BackupHistoryStateTest extends TestCase
             keep: false,
             status: BackupStatus::SUCCESS,
             dumpBytes: 262144,
-        ));
+        ), null);
         $this->assertSame(262144, $history->dumpBytes);
 
         // The field must survive a runtime row round-trip: the space guard reads it off the index.
@@ -153,7 +153,7 @@ final class BackupHistoryStateTest extends TestCase
             sha256: str_repeat('ab', 32),
             verifiedAt: '2026-08-02T10:00:00+00:00',
             verifyOutcome: BackupVerifyOutcome::OK,
-        ));
+        ), null);
         $this->assertSame(str_repeat('ab', 32), $history->sha256);
         $this->assertSame('2026-08-02T10:00:00+00:00', $history->verifiedAt);
         // The runtime row keeps the outcome as its stored value, like scope and status do.
@@ -198,7 +198,7 @@ final class BackupHistoryStateTest extends TestCase
             status: BackupStatus::SUCCESS,
             shippedAt: '2026-08-16T10:00:00+00:00',
             shipOutcome: BackupShipOutcome::OK,
-        ));
+        ), null);
         $this->assertSame('2026-08-16T10:00:00+00:00', $history->shippedAt);
         // The runtime row keeps the outcome as its stored value, like scope and status do.
         $this->assertSame('ok', $history->shipOutcome);
@@ -226,11 +226,34 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertNull($legacy->shipError);
     }
 
+    public function testPlacementFieldsTransferFromTheScanRoundTripAndUpdateViaDiff(): void
+    {
+        // A row the scan just found is reachable by construction: the scan ran on the node whose
+        // disk holds the sidecar, and that node is what the row remembers.
+        $history = BackupHistory::fromMetadata($this->minimalMetadata('placed-1'), 'm1');
+        $this->assertSame('m1', $history->nodeId);
+        $this->assertTrue($history->reachable);
+
+        $restored = BackupHistory::fromRow($history->toArray());
+        $this->assertSame('m1', $restored->nodeId);
+        $this->assertTrue($restored->reachable);
+
+        // The agent moved away: the mark rides the sync, and a diff without the node keeps it.
+        $history->applyDiff([BackupHistory::reachable => false]);
+        $this->assertFalse($history->reachable);
+        $this->assertSame('m1', $history->nodeId);
+
+        // An installation without clustering stamps no node at all.
+        $single = BackupHistory::fromRow($this->requiredRow('single'));
+        $this->assertNull($single->nodeId);
+        $this->assertTrue($single->reachable);
+    }
+
     public function testHistoriesCollectionLookup(): void
     {
         $histories = BackupHistories::init();
-        $histories->add(BackupHistory::fromMetadata($this->minimalMetadata('a')));
-        $histories->add(BackupHistory::fromMetadata($this->minimalMetadata('b')));
+        $histories->add(BackupHistory::fromMetadata($this->minimalMetadata('a'), null));
+        $histories->add(BackupHistory::fromMetadata($this->minimalMetadata('b'), null));
 
         $this->assertCount(2, $histories);
         $this->assertSame('a', $histories['a']->getId());
@@ -263,7 +286,7 @@ final class BackupHistoryStateTest extends TestCase
 
     public function testHistoryAppliesAnInboundSyncDiff(): void
     {
-        $row = BackupHistory::fromMetadata($this->minimalMetadata('hist-diff'));
+        $row = BackupHistory::fromMetadata($this->minimalMetadata('hist-diff'), null);
 
         $row->applyDiff([
             BackupHistory::keep => true,
@@ -327,6 +350,7 @@ final class BackupHistoryStateTest extends TestCase
             BackupHistory::keep => false,
             BackupHistory::dumpBytes => 0,
             BackupHistory::restoreDurationSeconds => 0,
+            BackupHistory::reachable => true,
         ];
     }
 

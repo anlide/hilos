@@ -189,7 +189,7 @@ final class BackupSpaceGuardTest extends TestCase
             keep: false,
             status: $status,
             dumpBytes: $dumpBytes,
-        ));
+        ), null);
 
         return new BackupHistory($state);
     }

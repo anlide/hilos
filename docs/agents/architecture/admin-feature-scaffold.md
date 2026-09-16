@@ -228,9 +228,15 @@ also registers those. Generate, in any order:
    working default in the catalog rather than leaving it to the deployment (the
    chat demo computes `demo/chat/data/backup`, keeping the env value an override),
    or the feature activates into a state where nothing can ever be written.
-   `BACKUP_DIR` is a local directory, so every archive lives on the same host and
-   disk as the application it protects — and, in a cluster, on whichever node
-   currently holds the monopoly agent. Shipping is what takes a copy off that
+   `BACKUP_DIR` is a local directory, so an archive belongs to the node that took
+   it and lives on that node's disk. In a cluster the monopoly agent is pinned to
+   its node by `AgentPlacement::POLICY`, so a change of leadership — every master
+   restart is one — no longer moves it away from its archives. A dead node still
+   moves it, and that is wanted: the agent comes up elsewhere and goes on taking
+   backups into that node's directory. The archives it leaves behind stay in the
+   index, marked out of reach and named by their node, rather than being dropped —
+   an empty list would read as "no backups were ever taken" — and restore, delete,
+   the keep pin and rotation all refuse them. Shipping is what takes a copy off that
    machine, and it activates through five more values: `BACKUP_SHIP_TARGET` — the
    destination, `ssh://<user>@<host>[:<port>]/<abs-path>` or `file:///<abs-path>`
    (a mounted network share is served by the second, so it needs no scheme of its

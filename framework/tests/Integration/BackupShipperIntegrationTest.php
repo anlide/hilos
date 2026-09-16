@@ -539,7 +539,7 @@ final class BackupShipperIntegrationTest extends TestCase
      */
     private function row(): BackupHistory
     {
-        return new BackupHistory(StateBackupHistory::fromMetadata($this->metadata()));
+        return new BackupHistory(StateBackupHistory::fromMetadata($this->metadata(), null));
     }
 
     /**

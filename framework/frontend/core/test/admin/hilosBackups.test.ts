@@ -5,6 +5,7 @@ import {
   backupMigrationNotes,
   backupProgressPercent,
   formatBackupChecksum,
+  formatBackupOutOfReach,
   formatBackupShipping,
   formatBackupDuration,
   formatBackupEta,
@@ -18,10 +19,14 @@ import {
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
+  isBackupDeletable,
+  isBackupKeepable,
+  isBackupOutOfReach,
   isBackupShipFailed,
   isBackupMigrationRefused,
   isBackupSubsystemBusy,
   isBackupRestorable,
+  offersBackupRestore,
   resolveHilosBackupRow,
   type HilosBackupRow,
   type HilosBackupsContext,
@@ -126,6 +131,7 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     restoreMigrationDecision: null,
     restoreMigrationBehind: null,
     restoreMigrationNotice: null,
+    holderNode: null,
     ...overrides,
   }
 }
@@ -174,6 +180,16 @@ describe('formatBackupSize', () => {
 })
 
 describe('resolveHilosBackupRow', () => {
+  it('reads the node holding an archive out of reach, and its absence as null', () => {
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', { holderNode: 'm1' }))
+        .holderNode,
+    ).toBe('m1')
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', {})).holderNode,
+    ).toBeNull()
+  })
+
   it('reads the checksum state and the verification instant from the slot', () => {
     const resolved = resolveHilosBackupRow(
       backupTableRow('b1', {
@@ -529,6 +545,33 @@ describe('isBackupRestorable', () => {
     expect(isBackupRestorable(row({ finished: null, status: 'error' }))).toBe(
       false,
     )
+  })
+})
+
+describe('isBackupOutOfReach', () => {
+  it('is false for an archive no node is named for', () => {
+    expect(isBackupOutOfReach(row())).toBe(false)
+    expect(formatBackupOutOfReach(row())).toBeNull()
+  })
+
+  it('names the node and the reason for an archive stored elsewhere', () => {
+    const far = row({ holderNode: 'm1' })
+
+    expect(isBackupOutOfReach(far)).toBe(true)
+    expect(formatBackupOutOfReach(far)).toBe(
+      'Stored on node m1 - the backup agent runs elsewhere, so this archive cannot be reached from here',
+    )
+  })
+
+  it('takes every action away but keeps the restore button offered', () => {
+    const far = row({ holderNode: 'm1' })
+
+    expect(isBackupRestorable(far)).toBe(false)
+    expect(isBackupDeletable(far)).toBe(false)
+    expect(isBackupKeepable(far)).toBe(false)
+    // A missing button leaves the operator wondering whether restore exists at all; a
+    // dead one beside the node badge says why this archive cannot be replayed.
+    expect(offersBackupRestore(far)).toBe(true)
   })
 })
 

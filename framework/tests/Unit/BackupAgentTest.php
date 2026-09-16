@@ -6,7 +6,9 @@ namespace Hilos\Tests\Unit;
 
 use DateTimeImmutable;
 use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
+use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreEnvDecision;
@@ -25,7 +27,17 @@ use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
+use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
+use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
+use Hilos\Runtime\View\Collection\BackupHistories;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\RestoreRuntime;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Unit tests for the pure, side-effect-free logic of the backup supervisor.
@@ -39,6 +51,10 @@ use PHPUnit\Framework\TestCase;
  * than at the admission itself, because what they pin is what leaves the agent: the freeze
  * request naming the tab that asked, and the addressed refusal when the run is turned away
  * after the page already acked it.
+ *
+ * The out-of-reach cases (HIL-940) mount the backup index: an archive another node's disk holds
+ * is refused by name at all three operator requests, and the readers of this node's own archives
+ * never count it.
  */
 final class BackupAgentTest extends TestCase
 {
@@ -54,6 +70,8 @@ final class BackupAgentTest extends TestCase
 
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
+        Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$env = null;
         Hilos::$db = null;
@@ -343,6 +361,157 @@ final class BackupAgentTest extends TestCase
         );
     }
 
+    public function testARestoreOfAnArchiveOnAnotherNodeIsRefusedBeforeAnythingIsEngaged(): void
+    {
+        $this->mountIndex($this->indexRow('there', [StateBackupHistory::nodeId => 'm1', StateBackupHistory::reachable => false]));
+
+        new BackupAgent()->onSignalAgent(
+            new AgentSignalData($this->restoreRequest('there', self::INITIATOR)),
+            'test',
+            HilosSignalConstants::BACKUP_AGENT_RESTORE,
+        );
+
+        $error = $this->lastActionError();
+        $this->assertNotNull($error, 'The button is dead on the page, and the agent says why all the same');
+        $this->assertSame('Backup there is stored on node m1 and cannot be reached from here', $error->reason);
+        $this->assertFalse($this->restoreRow()->running, 'A refusal leaves no pending restore behind');
+    }
+
+    public function testADeleteOfAnArchiveOnAnotherNodeIsIgnoredByName(): void
+    {
+        $this->mountIndex($this->indexRow('there', [StateBackupHistory::nodeId => 'm1', StateBackupHistory::reachable => false]));
+
+        ob_start();
+        new BackupAgent()->onSignalAgent(
+            new AgentSignalData(new BackupDeleteSignalData('there')),
+            'test',
+            HilosSignalConstants::BACKUP_AGENT_DELETE,
+        );
+        $log = (string)ob_get_clean();
+
+        $this->assertStringContainsString('Ignoring delete of backup there stored on node m1', $log);
+        $this->assertNotNull($this->histories()['there'], 'The archive is still on the disk of m1');
+    }
+
+    public function testAKeepToggleOfAnArchiveOnAnotherNodeIsIgnoredByName(): void
+    {
+        $this->mountIndex($this->indexRow('there', [StateBackupHistory::nodeId => 'm1', StateBackupHistory::reachable => false]));
+
+        ob_start();
+        new BackupAgent()->onSignalAgent(
+            new AgentSignalData(new BackupSetKeepSignalData('there', true)),
+            'test',
+            HilosSignalConstants::BACKUP_AGENT_SET_KEEP,
+        );
+        $log = (string)ob_get_clean();
+
+        $this->assertStringContainsString('Ignoring keep toggle of backup there stored on node m1', $log);
+        $this->assertFalse($this->histories()['there']?->keep);
+    }
+
+    public function testTheReadersOfThisNodesArchivesNeverCountAnArchiveOutOfReach(): void
+    {
+        // The restore estimate is one of the readers of the index rows: a speed times a size, the
+        // speed being the median of the recent restores. Counted, the far archive would lift it
+        // from 0.1 s/byte to the median of 0.1 and 0.9 - that is, from 100 s to 500 s.
+        $this->mountIndex(
+            $this->indexRow('target', [StateBackupHistory::nodeId => 'm2', StateBackupHistory::sizeBytes => 1000]),
+            $this->indexRow('restored-here', [
+                StateBackupHistory::nodeId => 'm2',
+                StateBackupHistory::sizeBytes => 1000,
+                StateBackupHistory::restoredAt => '2026-09-01T00:00:00+00:00',
+                StateBackupHistory::restoreDurationSeconds => 100,
+            ]),
+            $this->indexRow('restored-there', [
+                StateBackupHistory::nodeId => 'm1',
+                StateBackupHistory::reachable => false,
+                StateBackupHistory::sizeBytes => 1000,
+                StateBackupHistory::restoredAt => '2026-09-02T00:00:00+00:00',
+                StateBackupHistory::restoreDurationSeconds => 900,
+            ]),
+        );
+
+        new BackupAgent()->onSignalAgent(
+            new AgentSignalData($this->restoreRequest('target', null)),
+            'test',
+            HilosSignalConstants::BACKUP_AGENT_RESTORE,
+        );
+
+        $this->assertTrue($this->restoreRow()->running);
+        $this->assertSame(100, $this->restoreRow()->estimatedSeconds);
+    }
+
+    /**
+     * Mounts the backup index holding the given rows, and the restore runtime row beside it.
+     *
+     * @param StateBackupHistory ...$rows Index rows
+     */
+    private function mountIndex(StateBackupHistory ...$rows): void
+    {
+        $states = StateBackupHistories::init();
+        foreach ($rows as $row) {
+            $states->add($row);
+        }
+
+        Hilos::$rt = new BackupAgentTestRtContext();
+        Hilos::$rt->mountFeatureCollection(StateBackupHistory::RT_COLLECTION, $states);
+        Hilos::$rt->setRepresent(
+            StateBackupHistory::RT_COLLECTION,
+            BackupHistories::class,
+            BackupHistoriesActions::class,
+            BackupHistoryActions::class,
+        );
+        Hilos::$rt->mountFeatureItem(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::create());
+        RtTruthSourceRegistry::registerDaemon(StateRestoreRuntime::RT_ITEM);
+    }
+
+    /**
+     * @param string $id Backup id
+     * @param array<string, mixed> $overrides Fields replacing the successful full-scope default
+     * @return StateBackupHistory Index row
+     */
+    private function indexRow(string $id, array $overrides = []): StateBackupHistory
+    {
+        return StateBackupHistory::fromRow($overrides + [
+            StateBackupHistory::id => $id,
+            StateBackupHistory::createdAt => '2026-08-15T10:30:00+00:00',
+            StateBackupHistory::env => 'dev',
+            StateBackupHistory::scope => BackupScope::FULL->value,
+            StateBackupHistory::status => 'success',
+            StateBackupHistory::connections => [],
+            StateBackupHistory::sizeBytes => 0,
+            StateBackupHistory::durationSeconds => 0,
+            StateBackupHistory::keep => false,
+            StateBackupHistory::dumpBytes => 0,
+            StateBackupHistory::restoreDurationSeconds => 0,
+            StateBackupHistory::reachable => true,
+        ]);
+    }
+
+    /**
+     * @return BackupHistories The mounted backup index view
+     */
+    private function histories(): BackupHistories
+    {
+        $view = Hilos::$rt?->hilosBackupHistories;
+
+        return $view instanceof BackupHistories
+            ? $view
+            : throw new RuntimeException('The backup index is not mounted.');
+    }
+
+    /**
+     * @return RestoreRuntime The mounted restore runtime row
+     */
+    private function restoreRow(): RestoreRuntime
+    {
+        $view = Hilos::$rt?->hilosRestoreRuntime;
+
+        return $view instanceof RestoreRuntime
+            ? $view
+            : throw new RuntimeException('The restore runtime singleton is not mounted.');
+    }
+
     /**
      * Drives one page restore through the agent's public signal entrance.
      *
@@ -464,6 +633,16 @@ final class BackupAgentTest extends TestCase
                 };
             }
         };
+    }
+}
+
+/**
+ * Runtime context that registers no project state: a case mounts the backup index itself.
+ */
+final class BackupAgentTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
     }
 }
 

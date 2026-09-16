@@ -40,6 +40,7 @@ import {
   createHilosBackupsTable,
   createHilosRestoreProgress,
   formatBackupChecksum,
+  formatBackupOutOfReach,
   formatBackupShipping,
   formatBackupDuration,
   formatBackupProgressLabel,
@@ -58,6 +59,7 @@ import {
   isBackupDeletable,
   isBackupKeepable,
   isBackupMigrationRefused,
+  isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
   offersBackupRestore,
@@ -183,6 +185,11 @@ const circleColumns: HilosTableColumnOf<HilosBackupCircleRow>[] = [
  * @param row The backup row the button belongs to.
  */
 function restoreBlockedReason(row: HilosBackupRow): string | null {
+  // An archive on another node's disk is out of reach whatever else is true of it.
+  const outOfReach = formatBackupOutOfReach(row)
+  if (outOfReach !== null) {
+    return outOfReach
+  }
   if (isBackupChecksumMismatch(row)) {
     return 'This archive does not match its recorded checksum'
   }
@@ -203,6 +210,12 @@ function restoreBlockedReason(row: HilosBackupRow): string | null {
   return subsystemBusy.value
     ? 'The backup subsystem is busy; wait for the current run to end'
     : null
+}
+
+// An archive another node holds stays in the list, muted cell by cell: the row element
+// belongs to the table, so the mark is worn by what this page draws inside it.
+function outOfReachClass(row: HilosBackupRow): string | undefined {
+  return isBackupOutOfReach(row) ? 'text-body-secondary' : undefined
 }
 
 // Create toolbar: pick a scope and start a backup as a tracked action.
@@ -630,13 +643,27 @@ function openOutcome(row: HilosBackupRow): void {
         formatBackupRunCaption(progress)
       }}</template>
       <template #row="{ row }">
-        <td class="text-nowrap">{{ row.createdAt || '—' }}</td>
-        <td>{{ row.env || '—' }}</td>
-        <td>
+        <td class="text-nowrap" :class="outOfReachClass(row)">
+          {{ row.createdAt || '—' }}
+          <template v-if="isBackupOutOfReach(row)">
+            <span
+              class="badge text-bg-secondary"
+              :title="formatBackupOutOfReach(row) ?? undefined"
+              :data-id="`hilos-backup-holder-${row.id}`"
+              >{{ row.holderNode }}</span
+            ><span class="visually-hidden">{{
+              formatBackupOutOfReach(row)
+            }}</span>
+          </template>
+        </td>
+        <td :class="outOfReachClass(row)">{{ row.env || '—' }}</td>
+        <td :class="outOfReachClass(row)">
           <code>{{ row.scope || '—' }}</code>
         </td>
-        <td class="text-end">{{ formatBackupSize(row) }}</td>
-        <td class="text-nowrap">
+        <td class="text-end" :class="outOfReachClass(row)">
+          {{ formatBackupSize(row) }}
+        </td>
+        <td class="text-nowrap" :class="outOfReachClass(row)">
           <span
             :class="
               isBackupChecksumMismatch(row)
@@ -646,7 +673,7 @@ function openOutcome(row: HilosBackupRow): void {
             >{{ formatBackupChecksum(row) }}</span
           >
         </td>
-        <td class="text-nowrap">
+        <td class="text-nowrap" :class="outOfReachClass(row)">
           <span
             :class="
               isBackupShipFailed(row) ? 'text-danger fw-semibold' : undefined
@@ -665,14 +692,16 @@ function openOutcome(row: HilosBackupRow): void {
             <i class="bi bi-question-circle" aria-hidden="true"></i>
           </button>
         </td>
-        <td class="text-end">{{ formatBackupDuration(row) }}</td>
-        <td style="min-width: 10rem">
+        <td class="text-end" :class="outOfReachClass(row)">
+          {{ formatBackupDuration(row) }}
+        </td>
+        <td style="min-width: 10rem" :class="outOfReachClass(row)">
           <span v-if="row.finished === true" class="badge text-bg-success">{{
             row.status
           }}</span>
           <span v-else class="badge text-bg-danger">{{ row.status }}</span>
         </td>
-        <td class="text-nowrap">
+        <td class="text-nowrap" :class="outOfReachClass(row)">
           <button
             v-if="hasRestoreOutcome(row)"
             type="button"
@@ -710,7 +739,7 @@ function openOutcome(row: HilosBackupRow): void {
           >
           <span v-else class="text-body-secondary">—</span>
         </td>
-        <td class="text-center">
+        <td class="text-center" :class="outOfReachClass(row)">
           <div
             v-if="isBackupKeepable(row)"
             class="form-check form-switch d-inline-block m-0"
@@ -731,7 +760,7 @@ function openOutcome(row: HilosBackupRow): void {
           </div>
           <span v-else class="text-body-secondary">—</span>
         </td>
-        <td class="text-end">
+        <td class="text-end" :class="outOfReachClass(row)">
           <button
             v-if="hasBackupFailureDetail(row)"
             type="button"

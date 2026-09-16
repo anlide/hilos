@@ -54,6 +54,7 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string restoreMigrationDecision = 'restoreMigrationDecision';
     public const string restoreMigrationBehind = 'restoreMigrationBehind';
     public const string restoreMigrationNotice = 'restoreMigrationNotice';
+    public const string holderNode = 'holderNode';
 
     /**
      * @param string $rowKey Stable table row key: the stored backup's id
@@ -87,6 +88,8 @@ final class HilosBackupTableRow extends AbstractTableRow
      *     allowed archive one line per connection joined by newlines, on a refused one the gate's single
      *     refusal sentence, which names the connections that are ahead itself; null when there is
      *     nothing to say
+     * @param ?string $holderNode Node holding this archive, named only when it cannot be reached from
+     *     here; null otherwise
      */
     public function __construct(
         public string $rowKey,
@@ -118,6 +121,9 @@ final class HilosBackupTableRow extends AbstractTableRow
         public ?string $restoreMigrationDecision = null,
         public ?int $restoreMigrationBehind = null,
         public ?string $restoreMigrationNotice = null,
+        // One key and not two: out of reach IS a named holder, and a separate flag beside it would
+        // let a row claim one thing and carry the other.
+        public ?string $holderNode = null,
     ) {
     }
 
@@ -172,6 +178,7 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::restoreMigrationDecision => $this->restoreMigrationDecision,
             self::restoreMigrationBehind => $this->restoreMigrationBehind,
             self::restoreMigrationNotice => $this->restoreMigrationNotice,
+            self::holderNode => $this->holderNode,
         ];
     }
 
@@ -219,6 +226,7 @@ final class HilosBackupTableRow extends AbstractTableRow
             restoreMigrationDecision: self::optionalString($data, self::restoreMigrationDecision),
             restoreMigrationBehind: self::optionalInt($data, self::restoreMigrationBehind),
             restoreMigrationNotice: self::optionalString($data, self::restoreMigrationNotice),
+            holderNode: self::optionalString($data, self::holderNode),
         );
     }
 

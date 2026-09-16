@@ -195,7 +195,7 @@ final class BackupEstimatorTest extends TestCase
             status: $status,
             restoredAt: $restoredAt,
             restoreDurationSeconds: $restoreDurationSeconds,
-        ));
+        ), null);
 
         return new BackupHistory($state);
     }

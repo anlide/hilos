@@ -32,17 +32,19 @@ final class BackupHistoryActions extends RtActions
      *
      * Used by the index refresh for a backup that is still stored but whose sidecar
      * moved (a keep pin toggled, an error record rewritten). A row that did not change
-     * queues nothing.
+     * queues nothing. The scan found the archive on this disk, so a row that was out of
+     * reach becomes reachable again here - the agent has come back to the node it left.
      *
      * @param BackupMetadata $metadata Freshly scanned sidecar metadata
+     * @param ?string $nodeId Node that ran the scan, or null on an installation without clustering
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
-    public function project(BackupMetadata $metadata): void
+    public function project(BackupMetadata $metadata, ?string $nodeId): void
     {
         $this->ensureCanWrite();
 
-        $fresh = StateBackupHistory::fromMetadata($metadata)->toArray();
+        $fresh = StateBackupHistory::fromMetadata($metadata, $nodeId)->toArray();
         $current = $this->state->toArray();
 
         $diff = [];
@@ -53,6 +55,30 @@ final class BackupHistoryActions extends RtActions
         }
 
         $this->applyDiffWithSync($diff);
+    }
+
+    /**
+     * Marks the archive as out of reach from the node the agent now runs on, syncing the mark.
+     *
+     * Called by the index refresh for a row another node's scan put here: its archive is on that
+     * node's disk, so this agent can neither restore, delete, pin nor rotate it. The node the row
+     * names is left alone - where the archive lies never changes.
+     *
+     * @return bool True when the row moved, false when it was already out of reach
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function markOutOfReach(): bool
+    {
+        $this->ensureCanWrite();
+
+        if (!$this->state->reachable) {
+            return false;
+        }
+
+        $this->applyDiffWithSync([StateBackupHistory::reachable => false]);
+
+        return true;
     }
 
     /**

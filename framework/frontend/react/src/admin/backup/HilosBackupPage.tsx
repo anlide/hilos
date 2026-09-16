@@ -47,6 +47,7 @@ import {
   formatBackupChecksum,
   formatBackupShipping,
   formatBackupDuration,
+  formatBackupOutOfReach,
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
@@ -58,6 +59,7 @@ import {
   isBackupDeletable,
   isBackupKeepable,
   isBackupMigrationRefused,
+  isBackupOutOfReach,
   isBackupRestorable,
   isBackupSubsystemBusy,
   offersBackupRestore,
@@ -170,6 +172,26 @@ function statusCell(row: HilosBackupRow) {
   ) : (
     <span className="badge text-bg-danger">{row.status}</span>
   )
+}
+
+/**
+ * A backup cell's classes, muted when another node holds the archive. The row element
+ * belongs to the table, so the mark is worn by the cells this page draws inside it.
+ *
+ * @param row The backup row the cell belongs to.
+ * @param base The cell's own classes, or undefined when it has none.
+ */
+function backupCellClass(
+  row: HilosBackupRow,
+  base: string | undefined,
+): string | undefined {
+  if (!isBackupOutOfReach(row)) {
+    return base
+  }
+
+  return base === undefined
+    ? 'text-body-secondary'
+    : `${base} text-body-secondary`
 }
 
 /**
@@ -376,6 +398,11 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
    * @param row The backup row the button belongs to.
    */
   function restoreBlockedReason(row: HilosBackupRow): string | null {
+    // An archive on another node's disk is out of reach whatever else is true of it.
+    const outOfReach = formatBackupOutOfReach(row)
+    if (outOfReach !== null) {
+      return outOfReach
+    }
     if (isBackupChecksumMismatch(row)) {
       return 'This archive does not match its recorded checksum'
     }
@@ -646,13 +673,34 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         emptyText="No backups yet."
         row={(row) => (
           <>
-            <td className="text-nowrap">{row.createdAt || '—'}</td>
-            <td>{row.env || '—'}</td>
-            <td>
+            <td className={backupCellClass(row, 'text-nowrap')}>
+              {row.createdAt || '—'}
+              {isBackupOutOfReach(row) ? (
+                <>
+                  {' '}
+                  <span
+                    className="badge text-bg-secondary"
+                    title={formatBackupOutOfReach(row) ?? undefined}
+                    data-id={`hilos-backup-holder-${row.id}`}
+                  >
+                    {row.holderNode}
+                  </span>
+                  <span className="visually-hidden">
+                    {formatBackupOutOfReach(row)}
+                  </span>
+                </>
+              ) : null}
+            </td>
+            <td className={backupCellClass(row, undefined)}>
+              {row.env || '—'}
+            </td>
+            <td className={backupCellClass(row, undefined)}>
               <code>{row.scope || '—'}</code>
             </td>
-            <td className="text-end">{formatBackupSize(row)}</td>
-            <td className="text-nowrap">
+            <td className={backupCellClass(row, 'text-end')}>
+              {formatBackupSize(row)}
+            </td>
+            <td className={backupCellClass(row, 'text-nowrap')}>
               <span
                 className={
                   isBackupChecksumMismatch(row)
@@ -663,7 +711,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 {formatBackupChecksum(row)}
               </span>
             </td>
-            <td className="text-nowrap">
+            <td className={backupCellClass(row, 'text-nowrap')}>
               <span
                 className={
                   isBackupShipFailed(row)
@@ -686,9 +734,16 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 </button>
               ) : null}
             </td>
-            <td className="text-end">{formatBackupDuration(row)}</td>
-            <td style={{ minWidth: '10rem' }}>{statusCell(row)}</td>
-            <td className="text-nowrap">
+            <td className={backupCellClass(row, 'text-end')}>
+              {formatBackupDuration(row)}
+            </td>
+            <td
+              className={backupCellClass(row, undefined)}
+              style={{ minWidth: '10rem' }}
+            >
+              {statusCell(row)}
+            </td>
+            <td className={backupCellClass(row, 'text-nowrap')}>
               {hasRestoreOutcome(row) ? (
                 <button
                   type="button"
@@ -729,7 +784,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 <span className="text-body-secondary">—</span>
               )}
             </td>
-            <td className="text-center">
+            <td className={backupCellClass(row, 'text-center')}>
               {isBackupKeepable(row) ? (
                 <div className="form-check form-switch d-inline-block m-0">
                   <input
@@ -752,7 +807,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 <span className="text-body-secondary">—</span>
               )}
             </td>
-            <td className="text-end">
+            <td className={backupCellClass(row, 'text-end')}>
               {hasBackupFailureDetail(row) ? (
                 <button
                   type="button"

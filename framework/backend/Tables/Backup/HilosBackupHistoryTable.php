@@ -348,6 +348,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             restoreMigrationNotice: $refused
                 ? $migration->reason
                 : (implode("\n", $migration->describeGaps()) ?: null),
+            holderNode: $history->reachable ? null : $history->nodeId,
         );
     }
 

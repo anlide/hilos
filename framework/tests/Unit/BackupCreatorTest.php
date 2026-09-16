@@ -461,7 +461,7 @@ final class BackupCreatorTest extends TestCase
      */
     private function rowFor(BackupMetadata $metadata): BackupHistory
     {
-        $state = StateBackupHistory::fromMetadata($metadata);
+        $state = StateBackupHistory::fromMetadata($metadata, null);
 
         return new BackupHistory($state);
     }
