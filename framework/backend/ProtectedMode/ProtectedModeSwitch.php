@@ -132,4 +132,31 @@ interface ProtectedModeSwitch
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void;
+
+    /**
+     * Hears that this node's roster has stopped for the freeze being entered (HIL-1012).
+     *
+     * The roster is stopped one agent per master pass ({@see ProtectedModeAgentFreezer}), so the
+     * moment the node may say "frozen" is no longer the moment the stop was asked for: it is this
+     * one. Whatever a switch says about the freeze taking hold - ready to the initiator, quiesced to
+     * the leader, the leader counting itself - is said from here. Heard for every stop walk,
+     * including the one that closes the verification window back; a switch tells those apart by the
+     * phase its row already carries, and a walk that closes a window back owes nobody an answer.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onRosterStopped(): void;
+
+    /**
+     * Hears that this node's roster is back for the lift in flight (HIL-1012).
+     *
+     * The mirror of {@see onRosterStopped()}. Two lifts end here - the verification window and the
+     * final one - and the phase on the row says which: what a switch finishes is
+     * {@see ProtectedModeExecutor::finishVerifying()} for the first and
+     * {@see ProtectedModeExecutor::finishLift()} for the second. "Back" means every remembered agent
+     * has been asked for, not that every worker has reported it: the lift never waited for those
+     * reports, and waiting for them here would be a second wait of the kind this step removes.
+     */
+    public function onRosterResumed(): void;
 }

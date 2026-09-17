@@ -166,8 +166,8 @@ abstract class WorkerManager extends BaseManager
     /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
 
-    /** Microseconds the same wait sleeps between rounds of the daemon link. */
-    private const int SOURCE_INTEREST_POLL_US = 1000;
+    /** What a wait with no consumer of its own is parked under: the daemon link, waiting for the framework's own rows. */
+    private const string PARKED_LINK_KEY = 'link';
 
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
@@ -194,13 +194,30 @@ abstract class WorkerManager extends BaseManager
     private array $pageSignalRouters = [];
 
     /**
-     * @var list<WorkerDTO> Daemon messages read during a source-interest wait and not yet handled.
+     * @var array<string, list<WorkerDTO>> Frames held behind each consumer that waits for its state,
+     *     in arrival order, keyed by the consumer's name ({@see SourceConsumer}) (HIL-1012).
      *
-     * The wait reads this worker's daemon link to receive one particular answer, and everything
-     * else it finds there arrived for a worker that is mid-way through starting something. Held
-     * here and handled by the ordinary loop instead, in the order they came ({@see run()}).
+     * The first frame under a key is the one that could not be answered yet - an agent start, a
+     * page subscription - and everything after it is addressed to that same consumer. Nothing
+     * addressed to anyone else is held: that is the difference between this and the blocking wait
+     * it replaced, which put every frame of the link by.
      */
-    private array $deferredDaemonMessages = [];
+    private array $parkedFrames = [];
+
+    /** @var array<string, array<string, list<string>>> What each waiting consumer waits for, by source kind */
+    private array $parkedSources = [];
+
+    /** @var array<string, float> Microtime each consumer began waiting, for its deadline and its one log line */
+    private array $parkedSince = [];
+
+    /**
+     * @var ?string Consumer whose parking frame is being handled right now, or null otherwise.
+     *
+     * That frame's wait is over whatever the state says - it was released either because the state
+     * landed or because the deadline passed - so it must now be answered and not parked again. The
+     * frames held behind it are not covered: each may need a wait of its own.
+     */
+    private ?string $releasingParkedKey = null;
 
     /**
      * Creates the worker manager and initializes worker-local framework services.
@@ -325,9 +342,10 @@ abstract class WorkerManager extends BaseManager
                     $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, 'unparsed frame', $failure);
                 }
 
-                // What a source-interest wait put by, before anything read just now: the wait is
-                // a pause in this queue, not a queue of its own (HIL-750).
-                $this->drainDeferredDaemonMessages();
+                // Frames held behind a consumer whose state has landed, or whose wait ran out,
+                // before anything read just now: they arrived earlier, and within one consumer the
+                // order of arrival is the order of handling (HIL-1012).
+                $this->releaseParkedFrames(microtime(true));
 
                 // Process messages from daemon queue
                 while (($message = $this->daemonClient->getNextMessage()) !== null) {
@@ -467,6 +485,19 @@ abstract class WorkerManager extends BaseManager
     public function handleDaemonMessage(WorkerDTO $data): void
     {
         $this->setCurrentAgentId(null);
+
+        // A frame addressed to a consumer still waiting for its state goes behind that wait:
+        // handled now, it would run against an agent not created yet, which reads as `agent not
+        // found` and is dropped (HIL-750). Only such a frame is held - everything else on the
+        // link goes straight through, a command for an agent already up on this worker among it,
+        // and that is what the wait used to cost (HIL-1012).
+        $parkedKey = $this->parkedKeyOf($data);
+        if ($parkedKey !== null) {
+            $this->parkBehind($data, $parkedKey);
+
+            return;
+        }
+
         $type = $data->getType();
 
         switch ($type) {
@@ -686,9 +717,11 @@ abstract class WorkerManager extends BaseManager
             SourceChange::KIND_DB => SourceInterestRegistry::collections(SourceChange::KIND_DB),
         ];
         $this->notifySourceInterest();
-        $this->awaitSourceInterest($mounted);
-        if (!$this->sourcesReady($mounted)) {
-            Logger::error('Worker started without the sources it reads: ' . self::describeSources($mounted));
+        // Held as a wait of the link's own and not in this call: nothing is addressed to a worker
+        // that has just registered, so no frame stands behind it, and the loop goes on ticking
+        // while the rows travel. Whether they came is said where the wait ends.
+        if ($this->waitsForSources(self::PARKED_LINK_KEY, $mounted)) {
+            $this->waitForSources(self::PARKED_LINK_KEY, $mounted);
         }
     }
 
@@ -736,7 +769,14 @@ abstract class WorkerManager extends BaseManager
                 SourceChange::KIND_DB => [...$this->agentReadsDb($agentType), ...$this->agentBorrowsDb($agentType)],
             ];
             $this->raiseSourceInterest(SourceConsumer::agent($agentId), $reads);
-            $this->awaitSourceInterest($reads);
+            if ($this->waitsForSources(SourceConsumer::agent($agentId), $reads)) {
+                // Parked, and nothing created: the start is handled again, from the top, once the
+                // state lands or the wait runs out ({@see releaseParkedFrames()}).
+                $this->waitForSources(SourceConsumer::agent($agentId), $reads);
+                $this->parkBehind($data, SourceConsumer::agent($agentId));
+
+                return;
+            }
             if (!$this->sourcesReady($reads)) {
                 // Nothing has been created yet, so nothing has to be unwound but the interest: an
                 // agent that never started must not leave this worker asking for frames on its behalf.
@@ -1488,6 +1528,7 @@ abstract class WorkerManager extends BaseManager
                         // held frames would otherwise sit out their deadline and then be
                         // dispatched at a socket nobody is listening on.
                         ($this->pageSignalRouters[$agentId] ?? null)?->dropPendingFrames($signalData->acceptKey);
+                        $this->dropParkedFrames(SourceConsumer::page($signalData->acceptKey));
                         $this->agentIdleTracker->dropSubscriber($agentId, $signalData->acceptKey, microtime(true));
                     }
                     $agent->onSignalConnectionClose($signalData, $source, $name);
@@ -1529,8 +1570,17 @@ abstract class WorkerManager extends BaseManager
                     $this->dispatchPreviousPageUnsubscribeIfReplaced($agentId, $agent, $signalData, $name, $source);
                     // After the page it replaces has let go, and before anything is asked of the
                     // new one: the hooks below read the collections this takes up, and the frame
-                    // is judged out of them.
+                    // is judged out of them. Parked when they are not here yet, and handled again
+                    // from the top of this case once they are, or once the wait runs out - the
+                    // replaced page has let go by then, so it lets go exactly once (HIL-1012).
                     $this->takeUpPageSources($signalData->page ?? $name, $signalData->acceptKey);
+                    $pageConsumer = SourceConsumer::page($signalData->acceptKey);
+                    $pageReads = $this->pageSourceReads($signalData->page ?? $name);
+                    if ($this->waitsForSources($pageConsumer, $pageReads)) {
+                        $this->waitForSources($pageConsumer, $pageReads);
+                        $this->parkBehind($data, $pageConsumer);
+                        break;
+                    }
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
@@ -2107,11 +2157,13 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Takes up what one page reads on behalf of its connection, and holds the frame until it lands.
+     * Takes up what one page reads on behalf of its connection.
      *
      * The page names its collections in topology and on its own class, and not by reading them,
      * so the interest can be raised before the page instance is touched - which is the only order
-     * that works, since the reading is exactly what has to wait.
+     * that works, since the reading is exactly what has to wait. The wait itself is not here: a
+     * subscription whose state has not landed is parked by its caller and handled again once it
+     * has, so this worker goes on serving every other connection meanwhile (HIL-1012).
      *
      * No verdict is returned or logged here. Whether the state made it in time is asked again,
      * of the state itself, where the subscription is judged
@@ -2124,17 +2176,24 @@ abstract class WorkerManager extends BaseManager
      */
     private function takeUpPageSources(string $page, string $acceptKey): void
     {
-        $reads = [
-            SourceChange::KIND_RT => $this->pageReadsRt($page),
-            SourceChange::KIND_DB => $this->pageReadsDb($page),
-        ];
-        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $reads);
-        $this->awaitSourceInterest($reads);
+        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $this->pageSourceReads($page));
         // And where this page stands on frozen replicas, which nothing else would ever tell it:
         // the frame that froze them went out before this subscription existed, and the next one
         // only comes when a link moves (HIL-711). A connection has one page, so the answer is
         // re-made on every subscription and the change of page needs no machinery of its own.
         $this->notifyStalenessToPage($acceptKey);
+    }
+
+    /**
+     * @param string $page Page being subscribed to
+     * @return array<string, list<string>> Collections it reads, keyed by the kind constants of {@see SourceChange}
+     */
+    private function pageSourceReads(string $page): array
+    {
+        return [
+            SourceChange::KIND_RT => $this->pageReadsRt($page),
+            SourceChange::KIND_DB => $this->pageReadsDb($page),
+        ];
     }
 
     /**
@@ -2232,96 +2291,222 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Waits until this process holds the state of every named RT collection.
+     * Whether a consumer has to wait for its state rather than be answered now (HIL-1012).
      *
-     * Blocking, and the socket it waits on is pumped here rather than left to the main loop:
-     * both callers owe somebody an answer they are in the middle of giving - a start, a
-     * subscription - and neither can be resumed later out of a queue nothing drains in order.
-     * What they wait for arrives on the same daemon link this manager already reads, so the
-     * wait reads it.
+     * No when the state is here. No when this worker has no daemon link, because nothing would
+     * ever deliver it - the answer then is the one a wait that ran out gives. And no for the
+     * consumer whose held frames are being released: its wait is over whatever the state says.
      *
-     * Every frame the pump yields is handled by the ordinary handler, in the order it arrived.
-     * Taking the snapshot out of the queue first would be faster and wrong: a delta sent before
-     * the snapshot is already inside it, and applying that delta afterwards would put a row back
-     * the way it was several changes ago.
+     * @param string $consumerId Consumer asking, named by {@see SourceConsumer}, or the link's own key
+     * @param array<string, list<string>> $collectionKeysByKind Collections it cannot be answered
+     *     without, keyed by the kind constants of {@see SourceChange}
+     * @return bool True when its frame has to be parked
+     */
+    private function waitsForSources(string $consumerId, array $collectionKeysByKind): bool
+    {
+        return $this->daemonClient !== null
+            && $consumerId !== $this->releasingParkedKey
+            && !$this->sourcesReady($collectionKeysByKind);
+    }
+
+    /**
+     * Opens a wait for a consumer's state, which the loop ends from {@see releaseParkedFrames()}.
      *
-     * The execution frame is put back before returning, because a frame handled in the pump sets
-     * its own and the caller is still inside the one it started in.
+     * The wait replaced a blocking one that polled the daemon link inside the handler for up to its
+     * whole deadline: every frame of the link was put by for that long and no agent of the worker
+     * ticked, while the owner of the state could be stopped on purpose - a protected-mode freeze -
+     * and never going to answer. What such a wait costs now is the waiting consumer alone.
      *
-     * Returns on arrival or on the deadline without saying which: the caller asks
-     * {@see self::sourcesReady()} afterwards, and asks it of the state rather than of the wait.
-     * The two answers differ in the case that matters - state landing between the last poll and
-     * the question - and the reader deserves the later one.
-     *
-     * One wait covers both kinds and one deadline bounds it, because the caller cannot be
+     * One wait covers both kinds and one deadline bounds it, because the consumer cannot be
      * answered without either: two waits in a row would give the same start two different
      * budgets and answer "how long may this take" twice.
      *
-     * @param array<string, list<string>> $collectionKeysByKind Collections the caller cannot be
-     *     answered without, keyed by the kind constants of {@see SourceChange}
+     * @param string $consumerId Consumer that waits, named by {@see SourceConsumer}, or the link's own key
+     * @param array<string, list<string>> $collectionKeysByKind Collections it waits for, keyed by
+     *     the kind constants of {@see SourceChange}
      */
-    private function awaitSourceInterest(array $collectionKeysByKind): void
+    private function waitForSources(string $consumerId, array $collectionKeysByKind): void
     {
-        if ($this->daemonClient === null || $this->sourcesReady($collectionKeysByKind)) {
-            return;
+        $this->parkedSources[$consumerId] = $collectionKeysByKind;
+        $this->parkedSince[$consumerId] = microtime(true);
+        $this->parkedFrames[$consumerId] ??= [];
+    }
+
+    /**
+     * Holds one frame behind the wait of the consumer it is addressed to.
+     *
+     * The whole frame is kept, not a closure over it, so a released frame walks the very same path
+     * as one that never waited ({@see handleDaemonMessage()}).
+     *
+     * @param WorkerDTO $message Frame as it arrived
+     * @param string $consumerId Waiting consumer the frame is addressed to
+     */
+    private function parkBehind(WorkerDTO $message, string $consumerId): void
+    {
+        $this->parkedFrames[$consumerId][] = $message;
+    }
+
+    /**
+     * Names the waiting consumer a frame has to stand behind, if any.
+     *
+     * A frame has at most two consumers: the agent it is addressed to, and the connection behind
+     * it when its signal carries one. Either is enough to hold it. A connection's close is the one
+     * frame not held behind its own connection: there is nobody left to answer, and it is what
+     * drops the wait ({@see dropParkedFrames()}).
+     *
+     * @param WorkerDTO $data Frame that just arrived
+     * @return ?string Consumer it waits behind, or null when it is handled now
+     */
+    private function parkedKeyOf(WorkerDTO $data): ?string
+    {
+        if ($this->parkedSources === []) {
+            return null;
         }
 
-        $agentId = ExecutionContext::currentAgentId();
-        $acceptKey = ExecutionContext::currentAcceptKey();
-        $startedAt = microtime(true);
-        $deadline = $startedAt + AgentConstants::START_DEADLINE_SECONDS;
-        $putByBefore = count($this->deferredDaemonMessages);
+        $agentId = null;
+        if (
+            $data instanceof AgentStartDTO
+            || $data instanceof AgentStopDTO
+            || $data instanceof DaemonAgentMessageDTO
+            || $data instanceof ProtectedModeReadyDTO
+        ) {
+            $agentId = $data->agentId;
+        }
+        if ($agentId !== null && isset($this->parkedSources[SourceConsumer::agent($agentId)])) {
+            return SourceConsumer::agent($agentId);
+        }
 
-        try {
-            while (!$this->sourcesReady($collectionKeysByKind)) {
-                if (microtime(true) >= $deadline || !$this->daemonClient->isConnected()) {
-                    return;
-                }
+        if (
+            !$data instanceof DaemonAgentMessageDTO
+            || !$data->signal->data instanceof WebSocketAcceptKeySignalDTO
+            || $data->signal->signalType->getType() === SignalTypeConstants::CONNECTION_CLOSE
+        ) {
+            return null;
+        }
 
-                $this->pumpDaemonLink();
-                usleep(self::SOURCE_INTEREST_POLL_US);
+        $pageConsumer = SourceConsumer::page($data->signal->data->getAcceptKey());
+
+        return isset($this->parkedSources[$pageConsumer]) ? $pageConsumer : null;
+    }
+
+    /**
+     * Ends every wait whose state has landed or whose deadline has passed, and handles what it held.
+     *
+     * Called once per loop pass, before the frames read in that pass: a held frame arrived earlier,
+     * and within one consumer the order of arrival is the order of handling. The frames are handled
+     * through {@see handleDaemonMessage()} one at a time, each contained the way the loop contains
+     * any frame, and the first of them is handled again from the top - which is what turns a wait
+     * that ran out into today's answers: a start is refused, and a subscription is judged of the
+     * state where it is always judged.
+     *
+     * The key leaves the pool before its frames are handled, so a frame for that consumer arriving
+     * among them goes straight through, and the consumer is marked released for the first frame
+     * alone, so the frame that parked it is answered and not parked again.
+     *
+     * Protected rather than private so a pass can be taken without the rest of the loop, whose
+     * other half needs a live daemon link.
+     *
+     * @param float $now Microtime of this pass
+     */
+    protected function releaseParkedFrames(float $now): void
+    {
+        foreach (array_keys($this->parkedSources) as $consumerId) {
+            $sources = $this->parkedSources[$consumerId] ?? null;
+            if ($sources === null) {
+                // Dropped by a frame released ahead of it in this same pass.
+                continue;
             }
-        } finally {
-            $this->reportSourceInterestWait($collectionKeysByKind, $startedAt, $putByBefore);
-            ExecutionContext::setCurrentAgentId($agentId);
-            ExecutionContext::setCurrentAcceptKey($acceptKey);
+
+            $since = $this->parkedSince[$consumerId];
+            $ready = $this->sourcesReady($sources);
+            if (!$ready && $now < $since + AgentConstants::START_DEADLINE_SECONDS) {
+                continue;
+            }
+
+            $frames = $this->parkedFrames[$consumerId];
+            unset($this->parkedSources[$consumerId], $this->parkedSince[$consumerId], $this->parkedFrames[$consumerId]);
+            $this->reportSourceInterestWait($sources, $ready, $now - $since);
+            if (!$ready && $consumerId === self::PARKED_LINK_KEY) {
+                Logger::error('Worker started without the sources it reads: ' . self::describeSources($sources));
+            }
+
+            // Only the frame that parked the consumer is past its wait. A later frame of the same
+            // consumer - a second subscription of the connection, to another page - may need a
+            // wait of its own, and parks under the same key again; the frames after it then pass
+            // the entry check into that new wait, in order.
+            $head = array_shift($frames);
+            if ($head !== null) {
+                $this->releasingParkedKey = $consumerId;
+                try {
+                    $this->handleReleasedFrame($head);
+                } finally {
+                    $this->releasingParkedKey = null;
+                }
+            }
+            foreach ($frames as $message) {
+                $this->handleReleasedFrame($message);
+            }
         }
     }
 
     /**
-     * Says what a wait for source interest cost this worker's whole link, not just its caller.
+     * Handles one frame a wait held, contained the way the loop contains any frame.
      *
-     * A wait here is a pause in ONE queue ({@see pumpDaemonLink()}), so everything else addressed
-     * to this worker - a command request for an agent living here among it - is put by for as
-     * long as the wait lasts, and arrives at its agent that much later than it was asked for.
-     * That is invisible from both ends: the caller sees silence, the agent sees a request it
-     * answers in milliseconds. Hence the two numbers on one line, and hence a line at all
-     * (HIL-1000).
+     * @param WorkerDTO $message Frame as it arrived
+     */
+    private function handleReleasedFrame(WorkerDTO $message): void
+    {
+        try {
+            $this->handleDaemonMessage($message);
+        } catch (Throwable $failure) {
+            $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
+        } finally {
+            ExecutionContext::clear();
+        }
+    }
+
+    /**
+     * Forgets a wait whose consumer has gone, with every frame held behind it.
      *
-     * Only a wait that actually waited is written down; the overwhelmingly common case is state
-     * already in hand, which costs nothing and is worth no line.
+     * Held frames would otherwise sit out their deadline and then be handled for a socket nobody is
+     * listening on. The interest the wait raised goes with them: nothing will read the state it
+     * asked for.
+     *
+     * @param string $consumerId Consumer that has gone, named by {@see SourceConsumer}
+     */
+    private function dropParkedFrames(string $consumerId): void
+    {
+        if (!isset($this->parkedSources[$consumerId])) {
+            return;
+        }
+
+        unset($this->parkedSources[$consumerId], $this->parkedSince[$consumerId], $this->parkedFrames[$consumerId]);
+        $this->releaseSourceInterest($consumerId);
+    }
+
+    /**
+     * Says how long a consumer waited for its state, once the wait is over.
+     *
+     * The wait costs the waiting consumer alone: nothing else on the link stood behind it
+     * (HIL-1012). Written down because it is invisible from both ends otherwise - the asker sees a
+     * late answer, the owner of the state sees nothing at all - and every wait here spans at least
+     * one loop pass, so every one of them is worth its line.
      *
      * @param array<string, list<string>> $collectionKeysByKind Collections the wait was for
-     * @param float $startedAt Microtime the wait began
-     * @param int $putByBefore Frames already put by when it began
+     * @param bool $ready Whether the state landed, rather than the deadline passing
+     * @param float $waitedSeconds How long the wait lasted
      */
-    private function reportSourceInterestWait(array $collectionKeysByKind, float $startedAt, int $putByBefore): void
+    private function reportSourceInterestWait(array $collectionKeysByKind, bool $ready, float $waitedSeconds): void
     {
-        $waitedMs = (int)round((microtime(true) - $startedAt) * TimeConstants::MS_PER_SECOND);
-        if ($waitedMs === 0) {
-            return;
-        }
-
-        $putBy = count($this->deferredDaemonMessages) - $putByBefore;
+        $waitedMs = (int)round($waitedSeconds * TimeConstants::MS_PER_SECOND);
         $sources = self::describeSources($collectionKeysByKind);
-        if (!$this->sourcesReady($collectionKeysByKind)) {
-            Logger::warning("Source interest: gave up after {$waitedMs}ms without {$sources},"
-                . " putting {$putBy} frame(s) by");
+        if (!$ready) {
+            Logger::warning("Source interest: gave up after {$waitedMs}ms without {$sources}");
 
             return;
         }
 
-        Logger::info("Source interest: waited {$waitedMs}ms for {$sources}, putting {$putBy} frame(s) by");
+        Logger::info("Source interest: waited {$waitedMs}ms for {$sources}");
     }
 
     /**
@@ -2340,75 +2525,6 @@ abstract class WorkerManager extends BaseManager
         }
 
         return true;
-    }
-
-    /**
-     * Moves one round of frames over the daemon link, as the main loop would have.
-     *
-     * A failure is contained exactly as the loop contains it: the wait is inside a message being
-     * handled, and letting an unrelated frame's failure out of here would end the very answer
-     * that is waiting.
-     */
-    private function pumpDaemonLink(): void
-    {
-        if ($this->daemonClient === null) {
-            return;
-        }
-
-        try {
-            $this->daemonClient->write();
-            $this->daemonClient->read();
-        } catch (Throwable $failure) {
-            $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, 'source interest wait', $failure);
-
-            return;
-        }
-
-        while (($message = $this->daemonClient->getNextMessage()) !== null) {
-            // Only the two answers this wait exists for are handled here. Everything else is put
-            // by until the ordinary loop, and that is the whole point rather than tidiness: the
-            // frame that made the master place an agent here travels this same link, and handling
-            // it now would run it against an agent this very call is still waiting to create -
-            // which reads as `agent not found` and is dropped, leaving the browser waiting on a
-            // reply that was thrown away (HIL-750).
-            if (
-                $message->getType() === WorkerConstants::MESSAGE_RT_SNAPSHOT
-                || $message->getType() === WorkerConstants::MESSAGE_DB_INTEREST_READY
-            ) {
-                try {
-                    $this->handleDaemonMessage($message);
-                } catch (Throwable $failure) {
-                    $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
-                }
-
-                continue;
-            }
-
-            $this->deferredDaemonMessages[] = $message;
-        }
-    }
-
-    /**
-     * Handles what a source-interest wait read off the daemon link and put by.
-     *
-     * Drained before the socket is read again, so a frame that arrived during the wait is handled
-     * before anything that arrived after it: this is a pause in one queue, not a second one.
-     *
-     * Shifted one at a time rather than iterated, because handling a message here can start
-     * another agent and so wait again - and what that wait puts by has to land at the back of
-     * this same queue rather than in a copy nobody drains.
-     */
-    private function drainDeferredDaemonMessages(): void
-    {
-        while (($message = array_shift($this->deferredDaemonMessages)) !== null) {
-            try {
-                $this->handleDaemonMessage($message);
-            } catch (Throwable $failure) {
-                $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, $message->getType(), $failure);
-            } finally {
-                ExecutionContext::clear();
-            }
-        }
     }
 
     /**

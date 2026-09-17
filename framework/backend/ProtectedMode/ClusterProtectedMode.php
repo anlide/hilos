@@ -34,16 +34,17 @@ use Hilos\Utils\Logger;
  *   which handle the request locally when this node leads or forward it to the current leader over
  *   the peer channel otherwise. The worker→daemon trigger that reaches these entries is its own slice.
  * - Leader side: an initiator's {@see onEnable()} records the freeze, freezes the leader's own
- *   node, broadcasts quiesce to the followers, and tracks whom it still awaits. Each
- *   {@see onQuiesced()} clears one follower; when none remain the leader marks the mode active and
- *   signals the initiator ready. The initiator's {@see onDisable()} deactivates, broadcasts lift,
+ *   node, broadcasts quiesce to the followers, and tracks whom it still awaits - itself included,
+ *   until its own roster has stopped. Each {@see onQuiesced()} clears one follower; when none remain
+ *   the leader marks the mode active and signals the initiator ready. The initiator's {@see onDisable()} deactivates, broadcasts lift,
  *   and releases the leader's own node. The leader role is gated on holding leadership, driven by
  *   {@see onBecameLeader()} / {@see onLostLeadership()}.
- * - Follower side: {@see onQuiesce()} freezes this node and reports quiesced; {@see onLift()}
- *   releases it. The initiator's own node relays the leader's {@see onReady()} to its agent.
+ * - Follower side: {@see onQuiesce()} freezes this node and, once its roster has stopped
+ *   ({@see onRosterStopped()}), reports quiesced; {@see onLift()} releases it. The initiator's own
+ *   node relays the leader's {@see onReady()} to its agent.
  *
- * A single-node cluster has no followers, so the leader activates the moment it enables. An
- * installation with cluster mode off has no coordinator at all and freezes through
+ * A single-node cluster has no followers, so the leader activates the moment its own roster has
+ * stopped. An installation with cluster mode off has no coordinator at all and freezes through
  * {@see StandaloneProtectedMode} instead; the three interfaces here mark which half of this class
  * each caller uses - the request path ({@see ProtectedModeSwitch}) is shared with that standalone
  * sibling, the leadership hooks ({@see ProtectedModeLeadership}) and the peer frames
@@ -79,7 +80,10 @@ final class ClusterProtectedMode implements
     /** @var ?ProtectedModeQuiesceData Freeze the leader is driving, or null when the leader is idle */
     private ?ProtectedModeQuiesceData $activeFreeze = null;
 
-    /** @var array<string, true> Follower node ids the leader still awaits a quiesced report from */
+    /**
+     * @var array<string, true> Node ids the leader still awaits a quiesced report from - the followers,
+     *     and the leader itself until its own roster has stopped ({@see onRosterStopped()})
+     */
     private array $pendingNodes = [];
 
     /** @var bool True once every follower has quiesced and the leader has signalled ready */
@@ -404,12 +408,15 @@ final class ClusterProtectedMode implements
             $data->initiatorAgentIndex,
             $data->initiatorNodeId,
         );
-        $this->pendingNodes = array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        // The leader waits for itself as it waits for any follower: its own roster stops over
+        // several master passes, and a follower with a shorter one reports back before it has.
+        // Counted only among the followers, that report would activate a freeze the leader's own
+        // node was still serving clients under (HIL-1012).
+        $this->pendingNodes = array_fill_keys([...$this->mesh->followerMasterNodeIds(), $this->selfNodeId], true);
         $this->active = false;
 
         $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
         $this->mesh->broadcastQuiesce($this->activeFreeze);
-        $this->activateWhenAllQuiesced();
     }
 
     /**
@@ -490,9 +497,57 @@ final class ClusterProtectedMode implements
         // The follower is handed neither half of the initiator identity: the accept key is a
         // welcome-path concern of the node that minted it, and the session hash is deliberately
         // recorded on one node only, so a browser reaching another node of the cluster meets the
-        // stub exactly as it does today.
+        // stub exactly as it does today. The quiesced report waits for the roster this starts
+        // stopping, and leaves from onRosterStopped().
         $this->executor->enterActivating($data, null, null);
-        $this->mesh->sendQuiesced($fromNodeId);
+    }
+
+    /**
+     * Says this node is frozen, to whoever is owed it, now that its roster has stopped.
+     *
+     * The leader counts itself quiesced and activates if no follower is outstanding; a follower
+     * reports quiesced to the leader that froze it. A node is only ever one of the two for a given
+     * freeze, so what the class already holds decides which. Both answers belong to the walk that
+     * ENTERS a freeze, and the row says so by still reading activating: the walk that closes the
+     * verification window back runs on a row already written active, and nobody is waiting on it.
+     *
+     * Said here and not when the stop was asked for, because that is the promise {@see onQuiesce()}
+     * makes: a quiesced report for a freeze this node has not entered lets the leader hand ready to
+     * the initiator while the node is still serving its clients.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onRosterStopped(): void
+    {
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVATING)) {
+            return;
+        }
+
+        if ($this->isLeader && $this->activeFreeze !== null) {
+            unset($this->pendingNodes[$this->selfNodeId]);
+            $this->activateWhenAllQuiesced();
+            return;
+        }
+
+        if ($this->freezingLeaderId !== null) {
+            $this->mesh->sendQuiesced($this->freezingLeaderId);
+        }
+    }
+
+    /**
+     * Finishes whichever lift brought the roster back, told apart by the phase already on the row.
+     *
+     * The same on the leader and on a follower: each node tells its own browsers.
+     */
+    public function onRosterResumed(): void
+    {
+        $phase = $this->runtimeView()?->phase;
+        if ($phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
+            $this->executor->finishVerifying();
+        } elseif ($phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->executor->finishLift();
+        }
     }
 
     /**

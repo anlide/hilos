@@ -161,6 +161,8 @@ The worker reads the declaration off the class, before the instance exists.
 agent type to its worker class through the topology (`Hilos::AGENTS`) and take
 `READS_RT` and `READS_DB` from there; the worker raises the interest, waits for
 the master's word that the state has landed, and only then creates the agent.
+The wait parks the start, with the frames addressed to that agent, and the rest
+of the worker's link is served meanwhile (HIL-1012).
 So `onStart()` opens on a collection and not on the emptiness before one. The
 borrowed claims of the class are taken in the same breath
 (`WorkerManager::agentBorrowsRt()`, `WorkerManager::agentBorrowsDb()`) and

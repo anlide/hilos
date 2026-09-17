@@ -22,8 +22,10 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 interface ProtectedModeExecutor
 {
     /**
-     * Freezes this node: writes phase activating locally and stops the node's own agents, leaving
-     * the initiator agent named in the descriptor running.
+     * Freezes this node: writes phase activating locally and asks for the node's own agents to be
+     * stopped, leaving the initiator agent named in the descriptor running. The roster stops over
+     * several master passes; the switch hears the end of it through
+     * {@see ProtectedModeSwitch::onRosterStopped()}, and only from there says the node is frozen.
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
@@ -64,17 +66,33 @@ interface ProtectedModeExecutor
     public function enterDeactivating(): void;
 
     /**
-     * Opens the verification window on this node: writes phase verifying and brings the agents back.
+     * Opens the verification window on this node: writes phase verifying and asks for the agents back.
      *
      * The agents come back here rather than at the lift, because a verifier has nothing to look at
      * while the page agents are stopped. The phase is written FIRST: the agent-start gate refuses
      * every start while the phase is not inactive, so a resume ordered before the phase moved would
      * hand the verifier an empty system.
      *
+     * The locked-out browsers are told here, with the phase: the stub stays and may offer a code
+     * field. What the operator is told comes once the roster is back, from {@see finishVerifying()},
+     * because it takes their tabs onto pages the returning agents answer (HIL-1012).
+     *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterVerifying(): void;
+
+    /**
+     * Takes the operator's browser into the verification window, once this node's roster is back.
+     *
+     * The second half of {@see enterVerifying()}, reached out of
+     * {@see ProtectedModeSwitch::onRosterResumed()}: the initiator's tabs leave the stub and their
+     * pages are answered again. Those pages are answered by the agents the lift brings back, which
+     * is why this half waits for the lift. The broadcast to everyone else does not wait: it needs no
+     * agent, and held back it would overtake frames sent after it. Nothing is carried between the
+     * two halves - the row is read again.
+     */
+    public function finishVerifying(): void;
 
     /**
      * Tells this node's locked-out connections that the verification window now has a code to take.
@@ -92,6 +110,9 @@ interface ProtectedModeExecutor
      *
      * The mirror of {@see enterVerifying()}, and not the same thing as {@see enterActive()}: that
      * one only marks the freeze established, while this one has agents to stop and passes to void.
+     * Here the phase is written BEFORE the stop is asked for, the other way round from the window:
+     * the roster stops over several master passes, and only the phase closes the agent-start gate
+     * those passes interleave with.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -99,12 +120,24 @@ interface ProtectedModeExecutor
     public function reenterActive(): void;
 
     /**
-     * Releases this node: writes phase inactive locally and resumes the agents that were stopped.
+     * Releases this node: writes phase inactive locally and asks for the agents that were stopped.
+     *
+     * Ends at the request, as {@see enterVerifying()} does: the lift frame goes out from
+     * {@see finishLift()} once the roster is back (HIL-1012).
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterInactive(): void;
+
+    /**
+     * Tells this node's connections that the mode has lifted, once its roster is back.
+     *
+     * The second half of {@see enterInactive()}, reached out of
+     * {@see ProtectedModeSwitch::onRosterResumed()}. The frame means "reload", and a browser that
+     * reloads before the agents behind its page were asked for would be answered by nobody.
+     */
+    public function finishLift(): void;
 
     /**
      * Relays to the local initiator agent that the cluster has quiesced and its operation may run.

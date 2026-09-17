@@ -24,11 +24,12 @@ use Hilos\Utils\Logger;
  *
  * It is the {@see ClusterProtectedMode} state machine with everything peer-shaped removed. With no
  * followers there is no quiesce round to wait for and no pendingNodes to track, and with no
- * leadership there is nothing to gate on, so the whole entry collapses into one tick: freeze the
- * node, mark it active, tell the initiator to go. The local half is shared verbatim with the
- * clustered path - the same {@see ProtectedModeExecutor} writes the same
- * {@see ProtectedModeRuntime} row and stops the same agents - so a project sees identical behavior
- * whether or not it clusters, which is the whole point of this class existing.
+ * leadership there is nothing to gate on, so the whole entry collapses into one walk: freeze the
+ * node, and once its roster has stopped ({@see onRosterStopped()}) mark it active and tell the
+ * initiator to go. The local half is shared verbatim with the clustered path - the same
+ * {@see ProtectedModeExecutor} writes the same {@see ProtectedModeRuntime} row and stops the same
+ * agents - so a project sees identical behavior whether or not it clusters, which is the whole
+ * point of this class existing.
  *
  * Two guards mirror the cluster's for the same reasons. A repeat enable is never re-run, because
  * re-entering the freeze re-rolls the stopped-agent roster the release resumes against and would
@@ -65,7 +66,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     }
 
     /**
-     * Freezes this node for a destructive operation and tells the initiator it may run.
+     * Freezes this node for a destructive operation; the initiator is told it may run once the
+     * roster has stopped ({@see onRosterStopped()}).
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -93,8 +95,6 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         );
 
         $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
-        $this->executor->enterActive();
-        $this->executor->notifyInitiatorReady();
     }
 
     /**
@@ -241,6 +241,40 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         }
 
         $this->executor->reenterActive();
+    }
+
+    /**
+     * Marks the freeze active and tells the initiator it may run, now that the roster has stopped.
+     *
+     * Only for the walk that enters a freeze - the row still says activating. The walk that closes
+     * the verification window back runs on a row already written active and answers nobody: that
+     * initiator was told ready when the freeze first took hold. A walk that a lift overtook never
+     * gets here at all ({@see ProtectedModeAgentFreezer::resumeAgentsForProtectedMode()}).
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onRosterStopped(): void
+    {
+        if ($this->activeFreeze === null || $this->runtimeView()?->phase !== StateProtectedModeRuntime::PHASE_ACTIVATING) {
+            return;
+        }
+
+        $this->executor->enterActive();
+        $this->executor->notifyInitiatorReady();
+    }
+
+    /**
+     * Finishes whichever lift brought the roster back, told apart by the phase already on the row.
+     */
+    public function onRosterResumed(): void
+    {
+        $phase = $this->runtimeView()?->phase;
+        if ($phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
+            $this->executor->finishVerifying();
+        } elseif ($phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->executor->finishLift();
+        }
     }
 
     /**

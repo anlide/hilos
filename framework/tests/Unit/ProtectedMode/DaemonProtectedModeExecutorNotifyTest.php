@@ -132,6 +132,11 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
 
+        // Nothing yet: the frame means reload, and it waits for the roster the lift asked for.
+        $this->assertSame([], $this->notifier->frames);
+
+        $this->executor->finishLift();
+
         $this->assertCount(1, $this->notifier->frames);
         [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         $this->assertFalse($state->active);
@@ -156,6 +161,11 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
             StateProtectedModeRuntime::PHASE_VERIFYING,
             Hilos::$rt?->hilosProtectedModeRuntime?->phase,
         );
+        // The broadcast goes with the phase and does not wait for the roster: the locked out need
+        // no agent to read it, and held back it would overtake the first-pass announcement
+        // (HIL-1012). Only the operator's frame waits.
+        $this->assertSame([], $this->notifier->sessionFrames);
+
         $this->assertCount(1, $this->notifier->frames);
         [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
         // Still active: everyone without a pass has to keep seeing the stub. What changed is
@@ -185,6 +195,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->notifier->sessionFrames = [];
 
         $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
 
         $this->assertCount(1, $this->notifier->sessionFrames);
         [$state, $sessionTokenHash] = $this->notifier->sessionFrames[0];
@@ -216,6 +227,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->enterActive();
 
         $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
 
         $this->assertSame(['session-hash-7'], $this->notifier->reassessedSessions);
     }
@@ -228,11 +240,13 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
         $this->executor->enterActive();
         $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
         $this->notifier->reassessedSessions = [];
 
         $this->executor->reenterActive();
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
 
         $this->assertSame([], $this->notifier->reassessedSessions);
     }
@@ -248,6 +262,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->notifier->frames = [];
 
         $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
 
         $this->assertCount(1, $this->notifier->frames);
         $this->assertSame('accept-7', $this->notifier->frames[0][1]);
@@ -278,6 +293,27 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         // one phase they are inside the application.
         $this->assertSame('accept-7', $excludedKey);
         $this->assertSame('session-hash-7', $excludedSession);
+    }
+
+    public function testAPassMintedWhileTheRosterComesBackIsNotAnnouncedAway(): void
+    {
+        // The roster comes back over several passes, and the operator may mint before it is done.
+        // The window's own broadcast went out with the phase, so the last word every locked-out
+        // browser holds is the mint's; and the operator's frame, which waits for the roster, reads
+        // the bit off the row instead of assuming nothing was minted (HIL-1012).
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->notifier->frames = [];
+
+        $this->executor->enterVerifying();
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
+        $this->executor->announcePassIssued();
+        $this->executor->finishVerifying();
+
+        $this->assertCount(2, $this->notifier->frames);
+        $this->assertTrue($this->notifier->frames[1][0]->passIssued);
+        $this->assertCount(1, $this->notifier->sessionFrames);
+        $this->assertTrue($this->notifier->sessionFrames[0][0]->passIssued);
     }
 
     public function testTheMintAnnouncementMovesNoPhaseAndWritesNoPass(): void

@@ -163,6 +163,14 @@ final class FakeFreezeSwitch implements ProtectedModeSwitch
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {
     }
+
+    public function onRosterStopped(): void
+    {
+    }
+
+    public function onRosterResumed(): void
+    {
+    }
 }
 
 /**

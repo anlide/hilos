@@ -265,9 +265,17 @@ ready would run the operation over live nodes.
   is the accepted half of the trade — data over availability — and a stalled mode
   is reported by the watchdog below.
 
-The two guards are the same check in different contexts — one-tick single-node
+The two guards are the same check in different contexts — one-walk single-node
 entry against a leader round that commits followers — so they are written twice
 on purpose and are not merged into a shared helper.
+
+The roster is stopped over several master passes, one agent per pass, and a node
+reports itself frozen only at the END of that walk
+(`ProtectedModeSwitch::onRosterStopped()`, HIL-1012): on a single node it tells the
+initiator ready, on a follower it sends `quiesced` to the leader, and the leader
+counts itself among the nodes it waits for until its own roster has stopped. The
+lift is stepped the same way, and the frames it owes the browsers go out once the
+roster is back (`ProtectedModeExecutor::finishVerifying()` / `finishLift()`).
 
 ## A Freeze That Stops Moving Is Reported, Never Lifted (HIL-482)
 

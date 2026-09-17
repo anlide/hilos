@@ -190,12 +190,14 @@ final class WorkerServerProtectedModeGateTest extends TestCase
 
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
         $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+        $this->passes($server, 1);
         $this->clearRoster($manager);
 
         // The executor writes the inactive phase before it resumes, so the replayed starts
         // pass the gate on their own.
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
         $server->resumeAgentsForProtectedMode();
+        $this->passes($server, 1);
 
         $this->assertTrue($manager->wasAskedFor(self::OTHER_TYPE), 'The remembered agent must come back on lift.');
         $this->assertSame(1, $server->liftHookCalls, 'The lift hook must fire once, after the roster is replayed.');
@@ -212,10 +214,12 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         // declared ?string where buildAgentId() takes string.
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, 3);
         $server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, '3');
+        $this->passes($server, 2);
         $this->clearRoster($manager);
 
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
         $server->resumeAgentsForProtectedMode();
+        $this->passes($server, 2);
 
         $this->assertTrue($manager->wasAskedFor(self::OTHER_TYPE), 'Every agent but the initiator is stopped and replayed.');
         $this->assertFalse(
@@ -260,6 +264,22 @@ final class WorkerServerProtectedModeGateTest extends TestCase
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
+    }
+
+    /**
+     * Takes roster steps over the server, as many as the walk under test needs.
+     *
+     * The freeze and the lift only queue their walk; each master pass takes one agent of it
+     * (HIL-1012).
+     *
+     * @param FreezeGateTestWorkerServer $server Server to step
+     * @param int $count Steps to take
+     */
+    private function passes(FreezeGateTestWorkerServer $server, int $count): void
+    {
+        for ($pass = 0; $pass < $count; $pass++) {
+            $server->rosterStepPublic();
+        }
     }
 
     /**
@@ -331,6 +351,11 @@ class FreezeGateTestWorkerServer extends WorkerServer
     public function liftPublic(): void
     {
         $this->onProtectedModeLifted();
+    }
+
+    public function rosterStepPublic(): void
+    {
+        $this->advanceProtectedModeRoster();
     }
 
     protected function onStart(): void

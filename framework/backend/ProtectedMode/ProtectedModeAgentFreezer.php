@@ -18,11 +18,19 @@ use Hilos\Cluster\Placement\PlacementExecutor;
  *
  * Its mirror, {@see resumeAgentsForProtectedMode()}, brings those same agents back when the freeze
  * lifts ({@see DaemonProtectedModeExecutor::enterInactive()}).
+ *
+ * Both are requests, not walks (HIL-1012). The master's loop is the one every client of the node
+ * stands behind, so the roster is stopped and brought back one agent per pass, and the end of each
+ * walk is told to the node's switch - {@see ProtectedModeSwitch::onRosterStopped()} and
+ * {@see ProtectedModeSwitch::onRosterResumed()} - which is where anything owed after it is said. A
+ * request that arrives while the other walk is unfinished takes it over: a lift drops the agents a
+ * stop had not reached, and a stop inherits the agents a lift had not asked for yet.
  */
 interface ProtectedModeAgentFreezer
 {
     /**
-     * Stops every agent this node hosts except the initiator; a no-op for agents not hosted here.
+     * Asks for every agent this node hosts except the initiator to be stopped; a no-op for agents
+     * not hosted here. Returns before any of them is.
      *
      * Remembers exactly which agents it stopped so {@see resumeAgentsForProtectedMode()} can bring
      * back the same set when the freeze lifts.
@@ -33,11 +41,12 @@ interface ProtectedModeAgentFreezer
     public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void;
 
     /**
-     * Restarts the agents {@see stopAgentsForProtectedMode()} stopped for this freeze; the mirror
-     * of the stop, invoked when the freeze lifts.
+     * Asks for the agents {@see stopAgentsForProtectedMode()} stopped for this freeze to be started
+     * again; the mirror of the stop, invoked when the freeze lifts. Returns before any of them is.
      *
      * Replays each remembered agent through the node's normal start path, whose own leadership and
-     * worker gates drop any that no longer belong here. A no-op when no freeze stopped anything.
+     * worker gates drop any that no longer belong here. When no freeze stopped anything the walk is
+     * empty, and the switch still hears that it finished.
      */
     public function resumeAgentsForProtectedMode(): void;
 

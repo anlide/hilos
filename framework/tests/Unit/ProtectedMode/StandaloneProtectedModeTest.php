@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
  *
  * The machine is driven through the request seam an initiator's daemon calls and observed through
  * a recording fake of the local-node port, so entry, refusal and release are pinned without a
- * daemon: entering runs the whole freeze in one tick and tells the initiator to go, a repeat
+ * daemon: entering asks for the roster to stop and tells the initiator to go once it has, a repeat
  * request never re-enters so the stopped-agent roster is not re-rolled - though the initiator of a
  * freeze that already stands is told ready again rather than refused - only the recorded initiator
  * may release, and a project that mounts no runtime row never gets a ready.
@@ -55,16 +55,71 @@ final class StandaloneProtectedModeTest extends TestCase
         parent::tearDown();
     }
 
-    public function testEnteringFreezesTheNodeAndSignalsTheInitiatorInOneTick(): void
+    public function testEnteringFreezesTheNodeAndWaitsForTheRosterBeforeSignallingTheInitiator(): void
     {
         $this->mode->requestEnable($this->enableData());
 
-        $this->assertSame(['enterActivating', 'enterActive', 'notifyInitiatorReady'], $this->executor->calls);
+        // The roster stops over several master passes, so the node is not frozen yet: a ready
+        // here would start the operation over agents that are still serving (HIL-1012).
+        $this->assertSame(['enterActivating'], $this->executor->calls);
         $this->assertSame('accept-9', $this->executor->activatingAcceptKey);
         $this->assertSame(self::INITIATOR_TYPE, $this->executor->freeze?->initiatorAgentType);
         $this->assertSame(self::INITIATOR_INDEX, $this->executor->freeze?->initiatorAgentIndex);
         // Nothing to name: the freeze never leaves this node, so it carries no node id.
         $this->assertNull($this->executor->freeze?->initiatorNodeId);
+    }
+
+    public function testTheStoppedRosterMarksTheFreezeActiveAndSignalsTheInitiator(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->executor->calls = [];
+
+        $this->mode->onRosterStopped();
+
+        $this->assertSame(['enterActive', 'notifyInitiatorReady'], $this->executor->calls);
+    }
+
+    public function testTheRosterStoppedByClosingTheWindowBackAnswersNobody(): void
+    {
+        // The walk reenterActive() asks for runs on a row already written active, and its initiator
+        // was told ready when the freeze first took hold - a second ready would restart the
+        // operation behind the operator's back.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->onRosterStopped();
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testARosterStoppedUnderNoFreezeAnswersNobody(): void
+    {
+        $this->mode->onRosterStopped();
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testTheRosterBackInTheWindowFinishesTheWindow(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->mode->onRosterResumed();
+
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+    }
+
+    public function testTheRosterBackAfterTheReleaseFinishesTheLift(): void
+    {
+        // A fresh row reads inactive, which is what the real executor writes before it asks for
+        // the roster back.
+        $this->mode->onRosterResumed();
+
+        $this->assertSame(['finishLift'], $this->executor->calls);
     }
 
     public function testRepeatedEnableBeforeTheFreezeSettlesIsDropped(): void
@@ -561,6 +616,11 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
         $this->calls[] = 'enterVerifying';
     }
 
+    public function finishVerifying(): void
+    {
+        $this->calls[] = 'finishVerifying';
+    }
+
     public function announcePassIssued(): void
     {
         $this->calls[] = 'announcePassIssued';
@@ -574,6 +634,11 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function enterInactive(): void
     {
         $this->calls[] = 'enterInactive';
+    }
+
+    public function finishLift(): void
+    {
+        $this->calls[] = 'finishLift';
     }
 
     public function notifyInitiatorReady(): void

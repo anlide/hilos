@@ -52,6 +52,20 @@ public function onTick(): void {
 }
 ```
 
+The framework walks the protected-mode roster this way: a freeze or a lift only
+queues its agents, and `WorkerServer::onTick()` stops or brings back one of them
+per master pass (HIL-1012).
+
+### Park the request, not the loop
+
+A request that cannot be answered until state arrives from another process is
+held, not waited for: the worker parks an agent start or a page subscription
+whose collections have not landed, together with the frames addressed to the same
+consumer, and releases them on a later pass once the state is here or the
+deadline has passed (`WorkerManager::releaseParkedFrames()`, HIL-1012). A
+`usleep()` loop inside the handler would hold every other frame of the link and
+every agent of the worker for as long as it lasts.
+
 ### Monopolistic agent for heavy work
 
 Isolate slow operations in a monopolistic agent.

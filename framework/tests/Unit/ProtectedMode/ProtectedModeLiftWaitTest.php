@@ -111,6 +111,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
 
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
 
         $this->assertSame([], $this->notifier->frames);
         // The freeze itself is over regardless - what waits is only the sentence to the browsers.
@@ -127,6 +128,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->notifier->frames = [];
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
 
         $this->announcer->noteSessionsCarriedOver(2, 1, 0);
 
@@ -143,6 +145,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->notifier->frames = [];
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
 
         $this->announcer->noteSessionsCarriedOver(0, 3, 0);
 
@@ -156,6 +159,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->notifier->frames = [];
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
 
         // A tick inside the wait changes nothing; one past it lifts anyway. A node held shut over
         // an answer that is not coming is worse than a browser that has to sign in again.
@@ -174,6 +178,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->notifier->frames = [];
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
         $this->announcer->noteSessionsCarriedOver(3, 0, 0);
 
         // Both exits stay armed until one of them fires, and neither may fire twice: a second
@@ -207,6 +212,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
 
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
 
         $this->assertCount(1, $this->notifier->frames);
     }
@@ -237,6 +243,7 @@ final class ProtectedModeLiftWaitTest extends TestCase
         $this->notifier->frames = [];
         $this->executor->enterDeactivating();
         $this->executor->enterInactive();
+        $this->executor->finishLift();
     }
 
     /**

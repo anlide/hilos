@@ -33,7 +33,11 @@ use JsonException;
  * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
  * the runtime row this node wrote on entry. On entry it stops this node's own agents through
  * {@see ProtectedModeAgentFreezer}, leaving the initiator agent running; on exit ({@see enterInactive()})
- * the same freezer brings back exactly the agents it stopped.
+ * the same freezer brings back exactly the agents it stopped. The freezer does both one agent per
+ * master pass, so the two transitions that bring agents back are split in two: the phase write, the
+ * request and the stub broadcast here, and the frames that send browsers onto pages in
+ * {@see finishVerifying()} and {@see finishLift()}, which the switch calls once the roster is back
+ * (HIL-1012).
  *
  * The phases a browser can see - entering, opening the verification window, closing back from it
  * and lifting - are also pushed to this node's open connections through
@@ -157,7 +161,15 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // The stub stays up for everyone without a pass, so the frame still says active: what it
         // adds is that this surface may now offer a code field. The window opens with nothing
         // minted, so the surface says to wait rather than showing a field that can take nothing.
-        // The initiator is left out because it is owed the opposite verdict, and gets it below.
+        // The initiator is left out because it is owed the opposite verdict, and gets it once the
+        // roster is back ({@see finishVerifying()}).
+        //
+        // Sent here, with the phase, and not with the roster: it is addressed to the locked out,
+        // who need no agent to read it, and every frame after it assumes it has already landed.
+        // Held until the roster was back, it overtook what came after the phase write - the
+        // announcement of the first pass minted meanwhile, which it would reset to "nothing
+        // minted", and a circle member already let in on a reload, whom it would put back on
+        // the stub (HIL-1012).
         $copy = ProtectedModeStubCopy::forOperation($view->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
             new ProtectedModeStateSignalData(
@@ -171,21 +183,34 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             $view->initiatorAcceptKey,
             $view->initiatorSessionTokenHash,
         );
+    }
+
+    /**
+     * The frames {@see enterVerifying()} owes the operator once the roster it asked for is back.
+     */
+    public function finishVerifying(): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
 
         // This phase is where the operator comes back in, and it has to be pushed: entering the
         // freeze tore no connection down, so every tab of theirs is standing on the stub and would
         // stand there for the whole window waiting for an F5 nobody told them to press. The frame
-        // is the opposite of the broadcast above - active: false, the mode does not hold you - and
-        // it goes to the session so that all their tabs leave the stub at the same moment.
-        // It is a second frame rather than one broadcast without the exclusion, because a personal
-        // frame racing the general one would arrive in either order, and losing that race leaves
-        // the operator on the stub in a system that is running again.
+        // is the opposite of the broadcast enterVerifying() sent - active: false, the mode does not
+        // hold you - and it goes to the session so that all their tabs leave the stub at the same
+        // moment. It is a second frame rather than one broadcast without the exclusion, because a
+        // personal frame racing the general one would arrive in either order, and losing that race
+        // leaves the operator on the stub in a system that is running again.
         // acceptsPass stays true: it carries the row's own bit, and a client reading active: false
         // without it takes the frame for a lift and reloads itself back out of the window.
-        // passIssued is false because the window opens before anything is minted (HIL-718).
+        // passIssued is read off the row as well: the window opens before anything is minted
+        // (HIL-718), but this frame waits for the roster, and a pass can be minted meanwhile.
         // The stub copy stays null for the reason the frame exists - these tabs are leaving the
         // stub - and the banner sentence rides instead: it is what they render once they are out,
         // and it is the same $copy, read from the other side (HIL-736).
+        $copy = ProtectedModeStubCopy::forOperation($view->operation);
         if ($view->initiatorSessionTokenHash !== null) {
             Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeSessionState(
                 new ProtectedModeStateSignalData(
@@ -194,7 +219,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                     title: null,
                     message: null,
                     acceptsPass: true,
-                    passIssued: false,
+                    passIssued: $view->passHashes !== [],
                     bannerMessage: $copy->bannerMessage,
                 ),
                 $view->initiatorSessionTokenHash,
@@ -261,16 +286,19 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
+        // Write the phase before the stop, as enterActivating() does: the roster is stopped one
+        // agent per master pass, and a signal handled between two of those passes would start an
+        // agent the walk had already stopped - unless the agent-start gate is shut, and on
+        // verifying it is open. Active shuts it, so the walk that follows runs behind a closed
+        // gate from its first pass (HIL-1012). The write also voids every pass, which is what the
+        // operator asked for.
+        $view->actions->enterActive();
+        $this->persistFreeze($view);
+
         Hilos::$cluster?->protectedModeAgentFreezer()?->stopAgentsForProtectedMode(
             $view->initiatorAgentType,
             $view->initiatorAgentIndex === null ? null : (string)$view->initiatorAgentIndex,
         );
-
-        // Write the phase after the stop, the mirror of the order enterVerifying() needs: the
-        // agent-start gate is closed on active, so a stop ordered under it cannot race a restart.
-        // The write also voids every pass, which is what the operator asked for.
-        $view->actions->enterActive();
-        $this->persistFreeze($view);
 
         // Nobody is left out, the mirror of the entry above: the window is shut, the agents are
         // down again, and the operator goes back behind the stub together with everyone else. The
@@ -326,7 +354,13 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // Bring back the agents stopped on entry (mirror of enterActivating's freeze) now the
         // freeze has lifted; the freezer replays exactly the set it stopped on this node.
         Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
+    }
 
+    /**
+     * The frame {@see enterInactive()} owes once the roster it asked for is back.
+     */
+    public function finishLift(): void
+    {
         // Tell everyone the mode lifted, the initiator included - both halves of it, the socket
         // that asked and the browser behind it: after a restore its data is as stale as anybody
         // else's, and the frame means "reload". It carries no copy, because nothing renders words

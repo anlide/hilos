@@ -53,6 +53,12 @@ that needs no I/O — a random token — and let the worker persist and verify i
   and signal handlers run in the worker, off the master's loop.
 - A monopolistic agent isolates long-running work with its own timing.
 - The master only mints in-memory values and moves bytes.
+- **Work proportional to something that grows is spread over passes.** The
+  protected-mode freeze used to stop the node's whole roster inside one call of
+  the loop, and a lift brought it back the same way; at nine agents that pass took
+  seconds, and every client of the node stood behind it. The roster is now queued
+  and stepped one agent per pass (`WorkerServer::advanceProtectedModeRoster()`),
+  and whatever the walk owes someone is said when it ends (HIL-1012).
 - **The door out is named: `MasterSignalSender`** (HIL-618), implemented by
   `DaemonManager`. `sendToAgent()` reaches one named agent, `sendToWorkers()`
   every worker of this node; both put a frame in a write buffer and return. Master

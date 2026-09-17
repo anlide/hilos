@@ -26,9 +26,10 @@ use Hilos\ProtectedMode\ProtectedModeCoordinator;
  *
  * The state machine is driven through the {@see ProtectedModeCoordinator} frame handlers and
  * observed through recording fakes of its two ports, so the leader and follower flows are pinned
- * without a live cluster: a leader collects quiesced reports before signalling ready, a single-node
- * cluster activates at once, a follower freezes and reports back, and the leader role is gated on
- * holding leadership. The wire frames and the daemon wiring are covered by their own slices.
+ * without a live cluster: a leader collects quiesced reports - its own roster's among them - before
+ * signalling ready, a single-node cluster activates once its roster has stopped, a follower freezes
+ * and reports back when its roster has, and the leader role is gated on holding leadership. The
+ * wire frames and the daemon wiring are covered by their own slices.
  *
  * Every case runs with the framework-owned freeze row mounted, as a real project boot leaves it;
  * the fail-closed cases unmount it to stand in for a process that carries no runtime state at all.
@@ -64,6 +65,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onBecameLeader();
 
         $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
 
         // The leader freezes its own node and broadcasts, but does not activate yet.
         $this->assertSame(['enterActivating'], $this->executor->calls);
@@ -82,15 +84,87 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
     }
 
-    public function testSingleNodeLeaderActivatesImmediately(): void
+    public function testSingleNodeLeaderActivatesOnceItsOwnRosterHasStopped(): void
     {
         $this->mesh->followers = [];
         $this->coordinator->onBecameLeader();
 
         $this->coordinator->onEnable('node-a', $this->enableData());
 
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([self::SELF], $this->coordinator->pendingNodeIds());
+
+        $this->stopTheRoster();
+
         $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
         $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+    }
+
+    public function testLeaderWaitsForItsOwnRosterEvenOnceEveryFollowerHasReported(): void
+    {
+        // A follower with a shorter roster reports before the leader's own has stopped. Counting
+        // followers only, that report would hand ready to the initiator while the leader's node
+        // was still serving its clients (HIL-1012).
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([self::SELF], $this->coordinator->pendingNodeIds());
+
+        $this->stopTheRoster();
+
+        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+    }
+
+    public function testTheRosterStoppedByClosingTheWindowBackAnswersNobody(): void
+    {
+        // The walk reenterActive() asks for runs on a row already written active: the leader is
+        // already active and a follower has already reported, so neither says anything again.
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onRosterStopped();
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAFollowerClosedBackFromTheWindowDoesNotReportQuiescedAgain(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->stopTheRoster();
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->mesh->calls = [];
+
+        $this->coordinator->onRosterStopped();
+
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testTheRosterBackFinishesWhicheverLiftTheRowSays(): void
+    {
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+
+        $this->coordinator->onRosterResumed();
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+
+        $this->withDaemonTruthSource(static fn() => Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterInactive());
+        $this->executor->calls = [];
+
+        $this->coordinator->onRosterResumed();
+        $this->assertSame(['finishLift'], $this->executor->calls);
     }
 
     public function testLeaderDisableDeactivatesBroadcastsLiftAndReleasesSelf(): void
@@ -153,6 +227,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
         $this->coordinator->onQuiesced('node-b');
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->executor->calls = [];
@@ -169,6 +244,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
         $this->coordinator->onQuiesced('node-b');
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->executor->calls = [];
@@ -190,6 +266,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
         $this->coordinator->onQuiesced('node-b');
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->executor->calls = [];
@@ -241,7 +318,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
-    public function testFollowerFreezesLocallyAndReportsQuiesced(): void
+    public function testFollowerFreezesLocallyAndReportsQuiescedOnceItsRosterHasStopped(): void
     {
         $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
 
@@ -249,6 +326,11 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->assertSame(['enterActivating'], $this->executor->calls);
         $this->assertNull($this->executor->activatingAcceptKey);
+        // The promise onQuiesce() makes: no quiesced report for a node still serving its clients.
+        $this->assertSame([], $this->mesh->calls);
+
+        $this->stopTheRoster();
+
         $this->assertSame([['sendQuiesced', 'node-x']], $this->mesh->calls);
     }
 
@@ -331,6 +413,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable(self::SELF, $this->enableDataFrom(self::SELF));
+        $this->stopTheRoster();
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
@@ -347,6 +430,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onBecameLeader();
 
         $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+        $this->stopTheRoster();
 
         // Routed straight into the leader flow; the leader is the initiator, so the ready is relayed
         // to the local agent instead of being sent over the peer channel to itself.
@@ -693,6 +777,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->calls = [];
 
         $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-c'));
+        $this->stopTheRoster();
 
         $this->assertSame(['enterActivating'], $this->executor->calls);
         $this->assertSame([['sendQuiesced', 'node-y']], $this->mesh->calls);
@@ -732,6 +817,26 @@ final class ClusterProtectedModeTest extends TestCase
             $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null, null);
             $view->actions->enterActive();
         });
+    }
+
+    /**
+     * Tells the coordinator this node's roster has stopped, with the row on activating as the real
+     * executor leaves it for the length of the walk.
+     *
+     * The fake port writes no phase, and the coordinator only answers a walk that ENTERS a freeze -
+     * which it reads off the row - so the case has to put the phase there first.
+     */
+    private function stopTheRoster(): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        $this->withDaemonTruthSource(static function () use ($view): void {
+            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null, null);
+        });
+        $this->coordinator->onRosterStopped();
     }
 
     /**
@@ -966,6 +1071,11 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
         $this->calls[] = 'enterVerifying';
     }
 
+    public function finishVerifying(): void
+    {
+        $this->calls[] = 'finishVerifying';
+    }
+
     public function announcePassIssued(): void
     {
         $this->calls[] = 'announcePassIssued';
@@ -979,6 +1089,11 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function enterInactive(): void
     {
         $this->calls[] = 'enterInactive';
+    }
+
+    public function finishLift(): void
+    {
+        $this->calls[] = 'finishLift';
     }
 
     public function notifyInitiatorReady(): void

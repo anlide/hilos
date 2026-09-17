@@ -7,9 +7,12 @@ namespace Hilos\Socket\Server;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\ProtectedMode\FrozenAgentPlacement;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
@@ -158,6 +161,25 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *     stood on, replayed on lift; empty outside a freeze
      */
     private array $protectedModeStoppedAgents = [];
+
+    /** @var list<string> Agent ids left to stop for the freeze being entered, front first */
+    private array $protectedModeStopQueue = [];
+
+    /** @var ?string Initiator agent id the stop in flight leaves running, null when no stop is in flight */
+    private ?string $protectedModeStopInitiator = null;
+
+    /**
+     * @var ?list<FrozenAgentPlacement> Agents left to bring back for the lift in flight, front first;
+     *     null when no lift is in flight, which an empty list is not - a lift with nothing to replay
+     *     still has to be finished
+     */
+    private ?array $protectedModeResumeQueue = null;
+
+    /** @var int Master passes the walk in flight has taken, for its one closing log line */
+    private int $protectedModeWalkPasses = 0;
+
+    /** @var int Agents the walk in flight has stopped or asked back so far, for the same line */
+    private int $protectedModeWalkAgents = 0;
 
     /**
      * Create worker server with host, port, script paths and agent manager.
@@ -454,12 +476,18 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws HilosException Whatever the project's agent-daemon factory raises
+     * @throws RtActionsCollectionNameNullException When the switch a finished roster walk tells cannot name its row
+     * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
      */
     public function onTick(): void
     {
         // Process clients (read/write)
         // Registration timeout is handled in WorkerClient::onTick()
         parent::onTick();
+
+        // One step of the protected-mode roster walk, every pass. Above the throttle below, which
+        // is for worker processes: a walk that took it would move one agent a second (HIL-1012).
+        $this->advanceProtectedModeRoster();
 
         // Tick worker processes and related checks (check status, read output, handle graceful shutdown)
         // In normal operation, check once per second to reduce system call overhead.
@@ -1541,14 +1569,17 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     }
 
     /**
-     * Stops every agent this node hosts except the initiator, for the protected-mode freeze
-     * ({@see ProtectedModeAgentFreezer}).
+     * Asks for every agent this node hosts except the initiator to be stopped, for the
+     * protected-mode freeze ({@see ProtectedModeAgentFreezer}).
      *
-     * Walks this node's agent roster exactly like {@see onLostSingletonHost()} and stops each
-     * one through {@see stopAgent()}, leaving the initiator agent running so it can carry out
-     * the destructive operation the freeze protects. Snapshots the id list first because
-     * {@see stopAgent()} mutates the roster. Bringing the stopped agents back when the freeze
-     * lifts is the mirror seam, landed in HIL-267 slice 7b.
+     * Snapshots this node's agent roster exactly like {@see onLostSingletonHost()} and queues it;
+     * the stops themselves are taken one per master pass by {@see advanceProtectedModeRoster()},
+     * and the switch hears {@see ProtectedModeSwitch::onRosterStopped()} when the last one is.
+     * Walking the whole roster inside this call used to hold the master's loop for as long as the
+     * roster was long, and every client of the node waited on it (HIL-1012). The initiator agent is
+     * left running so it can carry out the destructive operation the freeze protects, and so is
+     * the mail pool. Bringing the stopped agents back when the freeze lifts is the mirror seam,
+     * landed in HIL-267 slice 7b.
      *
      * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
@@ -1557,38 +1588,31 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     {
         $initiatorAgentId = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
 
-        $this->protectedModeStoppedAgents = [];
+        // A stop over an unfinished lift inherits what that lift had not asked for yet. Those agents
+        // are on no roster - their start was never sent - so the snapshot below cannot see them, and
+        // without this line nothing would ever ask for them again.
+        $this->protectedModeStoppedAgents = $this->protectedModeResumeQueue ?? [];
+        $this->protectedModeResumeQueue = null;
+
+        $this->protectedModeStopQueue = [];
         foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
             if ($agentId === $initiatorAgentId) {
                 continue;
             }
 
-            $parsed = $this->parseAgentId($agentId);
-            if ($parsed->type === HilosAgentType::HILOS_MAIL) {
+            if ($this->parseAgentId($agentId)->type === HilosAgentType::HILOS_MAIL) {
                 // Left running for the same reason the start gate lets it back up: it carries the
                 // alert about this very freeze, and a stopped mail pool would make a stuck node
                 // silent as well as unreachable (HIL-482).
                 continue;
             }
 
-            // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
-            // it the only record of the worker the lift should hand it back to.
-            $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
-            $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
-                $parsed,
-                $workerInfo === null
-                    ? null
-                    : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
-            );
-            $this->stopAgent($parsed->type, $parsed->index);
+            $this->protectedModeStopQueue[] = $agentId;
         }
 
-        // Say the freeze took hold: a restore log otherwise shows the decision to freeze but
-        // nothing about the roster it actually stopped on this node.
-        Logger::info(
-            'Protected mode: froze this node for ' . $initiatorAgentId . ', stopped '
-            . count($this->protectedModeStoppedAgents) . ' agent(s)',
-        );
+        $this->protectedModeStopInitiator = $initiatorAgentId;
+        $this->protectedModeWalkPasses = 0;
+        $this->protectedModeWalkAgents = 0;
     }
 
     /**
@@ -1652,38 +1676,142 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     }
 
     /**
-     * Restarts the agents {@see stopAgentsForProtectedMode()} stopped for this freeze, when it lifts
-     * ({@see ProtectedModeAgentFreezer}).
+     * Asks for the agents {@see stopAgentsForProtectedMode()} stopped for this freeze to be brought
+     * back, when it lifts ({@see ProtectedModeAgentFreezer}).
      *
-     * Replays exactly the remembered set through the same local start bootstrap and placement
-     * use, so each agent comes back on this node as it was, and the placement and worker gates
-     * silently drop any that no longer belong here (e.g. a cluster-singleton whose node lost
-     * leadership during the freeze). The replay carries the placement sanction, because the
-     * remembered set is itself the record of one: every agent in it was running here, so it had
-     * already passed the gate. Without the sanction a {@see AgentPlacement::POLICY} agent would
-     * be refused on the very node placement chose for it, and nothing would ask for it again
-     * while its placement record stands. Clears the remembered set up front so a second call is a
-     * harmless no-op, and contains a per-agent start failure so one bad restart never strands the
-     * rest. Nothing has to be un-set first: the executor writes the phase before it calls this,
-     * and the freeze gate lets starts through on both phases that resume - the verification
-     * window and inactive - so each replayed start passes it on its own. Ends by firing
-     * {@see onProtectedModeLifted()} for whatever else the application wants back.
+     * Queues exactly the remembered set; {@see advanceProtectedModeRoster()} replays it one agent
+     * per master pass through the same local start bootstrap and placement use, so each agent
+     * comes back on this node as it was, and the placement and worker gates silently drop any that
+     * no longer belong here (e.g. a cluster-singleton whose node lost leadership during the
+     * freeze). The replay carries the placement sanction, because the remembered set is itself the
+     * record of one: every agent in it was running here, so it had already passed the gate. Without
+     * the sanction a {@see AgentPlacement::POLICY} agent would be refused on the very node placement
+     * chose for it, and nothing would ask for it again while its placement record stands. Clears
+     * the remembered set up front so a second call adds nothing, and contains a per-agent start
+     * failure so one bad restart never strands the rest. Nothing has to be un-set first: the
+     * executor writes the phase before it calls this, and the freeze gate lets starts through on
+     * both phases that resume - the verification window and inactive - so each replayed start
+     * passes it on its own. The walk ends by firing {@see onProtectedModeLifted()} for whatever
+     * else the application wants back, and then telling the switch
+     * {@see ProtectedModeSwitch::onRosterResumed()}.
      */
     public function resumeAgentsForProtectedMode(): void
     {
-        $stopped = $this->protectedModeStoppedAgents;
-        $this->protectedModeStoppedAgents = [];
+        // A lift over an unfinished stop drops what that stop had not reached: those agents are
+        // still running and were never remembered, so there is nothing of theirs to bring back.
+        $this->protectedModeStopQueue = [];
+        $this->protectedModeStopInitiator = null;
 
-        foreach ($stopped as $frozen) {
+        // A lift over an unfinished lift - the window opened and the mode lifted before the window's
+        // replay was done - keeps what the first had not asked for yet, in front of anything new.
+        $this->protectedModeResumeQueue = [...$this->protectedModeResumeQueue ?? [], ...$this->protectedModeStoppedAgents];
+        $this->protectedModeStoppedAgents = [];
+        $this->protectedModeWalkPasses = 0;
+        $this->protectedModeWalkAgents = 0;
+    }
+
+    /**
+     * Takes one step of the protected-mode roster walk in flight, if there is one.
+     *
+     * One agent per master pass, and never the whole roster in one: at the master's loop period a
+     * roster of twenty costs a fifth of a second spread over passes, where one walk cost that and
+     * more inside a single pass that every client of the node stood behind (HIL-1012). A stop and a
+     * lift are never both in flight - each request drops the other's queue - so the order of the
+     * two branches decides nothing.
+     *
+     * Protected rather than private so a pass can be taken without the rest of {@see onTick()},
+     * whose worker-process half needs a server built from a worker environment.
+     *
+     * @throws RtActionsCollectionNameNullException When the switch a finished walk tells cannot name its row
+     * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
+     */
+    protected function advanceProtectedModeRoster(): void
+    {
+        if ($this->protectedModeStopInitiator !== null) {
+            $this->advanceProtectedModeStop($this->protectedModeStopInitiator);
+        } elseif ($this->protectedModeResumeQueue !== null) {
+            $this->advanceProtectedModeResume();
+        }
+    }
+
+    /**
+     * Stops the next queued agent for the freeze being entered, and closes the walk after the last.
+     *
+     * An agent that left the roster before its turn is not remembered: it was not running when the
+     * freeze reached it, which is what the snapshot would have said had it been taken a pass later.
+     *
+     * @param string $initiatorAgentId Initiator agent id the stop leaves running, for the log line
+     * @throws RtActionsCollectionNameNullException When the switch told about the stopped roster cannot name its row
+     * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
+     */
+    private function advanceProtectedModeStop(string $initiatorAgentId): void
+    {
+        $this->protectedModeWalkPasses++;
+
+        $agentId = array_shift($this->protectedModeStopQueue);
+        if ($agentId !== null && $this->agentManager->hasAgent($agentId)) {
+            $parsed = $this->parseAgentId($agentId);
+
+            // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
+            // it the only record of the worker the lift should hand it back to.
+            $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+            $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
+                $parsed,
+                $workerInfo === null
+                    ? null
+                    : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
+            );
+            $this->stopAgent($parsed->type, $parsed->index);
+            $this->protectedModeWalkAgents++;
+        }
+
+        if ($this->protectedModeStopQueue !== []) {
+            return;
+        }
+
+        $this->protectedModeStopInitiator = null;
+
+        // Say the freeze took hold: a restore log otherwise shows the decision to freeze but
+        // nothing about the roster it actually stopped on this node, nor how long that took.
+        Logger::info(
+            'Protected mode: froze this node for ' . $initiatorAgentId . ', stopped '
+            . $this->protectedModeWalkAgents . ' agent(s) over ' . $this->protectedModeWalkPasses . ' pass(es)',
+        );
+
+        Hilos::$cluster?->protectedMode()?->onRosterStopped();
+    }
+
+    /**
+     * Brings the next queued agent back for the lift in flight, and closes the walk after the last.
+     */
+    private function advanceProtectedModeResume(): void
+    {
+        $this->protectedModeWalkPasses++;
+
+        $frozen = array_shift($this->protectedModeResumeQueue);
+        if ($frozen !== null) {
             try {
                 $this->startAgentInternal($frozen->agent->type, $frozen->agent->index, true, $frozen->workerId);
             } catch (Throwable $e) {
                 $agentId = $this->buildAgentId($frozen->agent->type, $frozen->agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
             }
+            $this->protectedModeWalkAgents++;
         }
 
+        if ($this->protectedModeResumeQueue !== []) {
+            return;
+        }
+
+        $this->protectedModeResumeQueue = null;
+
+        Logger::info(
+            'Protected mode: brought back ' . $this->protectedModeWalkAgents . ' agent(s) over '
+            . $this->protectedModeWalkPasses . ' pass(es)',
+        );
+
         $this->onProtectedModeLifted();
+        Hilos::$cluster?->protectedMode()?->onRosterResumed();
     }
 
     /**
