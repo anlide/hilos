@@ -39,7 +39,7 @@ const props = defineProps<{
 // The declaration does not change over the life of a table, so its parts are
 // read once rather than wrapped in signals (tableFrame.ts, HilosTableFrameState).
 const declaration = props.controller.frame.declaration
-const title = declaration?.title ?? ''
+const title = declaration?.title
 const subtitle = declaration?.subtitle
 const searchBox = declaration?.search
 const mainAction = declaration?.mainAction
@@ -151,7 +151,9 @@ function onSearchInput(event: Event): void {
 
 <template>
   <div>
-    <div class="mb-2">
+    <!-- No declared title, no heading: the page heading above names the table then,
+    and an empty h2 would be a heading with nothing to say. -->
+    <div v-if="title" class="mb-2">
       <h2 :id="titleId" class="h6 mb-0" data-id="hilos-table-title">
         {{ title }}
       </h2>

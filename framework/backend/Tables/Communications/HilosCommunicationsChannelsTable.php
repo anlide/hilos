@@ -141,6 +141,25 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
     }
 
     /**
+     * Declares the channel hub's sortable columns, which here are the row payload keys themselves.
+     *
+     * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
+     * no identifier is built out of it; the map is still declared, because it is the gate that keeps
+     * a window from ordering by a name this table does not sort by.
+     *
+     * @return array<string, string> Wire row fields mapped to the payload keys they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosCommunicationsChannelsTableRow::channel => HilosCommunicationsChannelsTableRow::channel,
+            HilosCommunicationsChannelsTableRow::label => HilosCommunicationsChannelsTableRow::label,
+            HilosCommunicationsChannelsTableRow::driver => HilosCommunicationsChannelsTableRow::driver,
+            HilosCommunicationsChannelsTableRow::enabled => HilosCommunicationsChannelsTableRow::enabled,
+        ];
+    }
+
+    /**
      * Declares what a channel row is searched by: the names it is known under and the driver behind it.
      *
      * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory

@@ -81,6 +81,74 @@ describe('TableViewportController', () => {
     expect(controller.descriptor()?.limit).toBe(25)
   })
 
+  it('a table opened with a preset asks for its own window rather than showing the page one', () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      initialFilter: { channel: 'mail' },
+    })
+    const everyChannel: TableRow[] = [
+      { rowKey: 'mail.host', slots: {} },
+      { rowKey: 'sms.token', slots: {} },
+    ]
+
+    // The page's answer was served by the table's declaration alone, which knows nothing of
+    // the channel a route names: its rows are every channel's, so none of them is drawn.
+    controller.ingestSubscriptionWindow(
+      everyChannel,
+      2,
+      true,
+      null,
+      null,
+      25,
+      [{ field: 'field', direction: 'asc' }],
+      [],
+    )
+
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.frame.body.get()).toBe('loading')
+    expect(sent).toEqual([
+      {
+        filter: { channel: 'mail' },
+        sort: [{ field: 'field', direction: 'asc' }],
+        limit: 25,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: null,
+      },
+    ])
+
+    controller.ingestWindow([everyChannel[0]], 1, true, null, null, 25)
+
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+      'mail.host',
+    ])
+  })
+
+  it('a preset left empty does not hold the page window back', () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      initialFilter: { channel: '' },
+    })
+
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'mail.host', slots: {} }],
+      1,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      [],
+    )
+
+    expect(sent).toEqual([])
+    expect(controller.rows.get()).toHaveLength(1)
+  })
+
   it('setSearch sets the search filter, resets to page 0, and resends', () => {
     const { controller, sent, open } = makeController()
     open([], 50, true, null, null)

@@ -19,14 +19,19 @@
 // instead, which is drawn after the default body: it needs both, the cards to its
 // children and its own figures beneath them, and overriding the default body
 // would cost it the cards. A leaf page goes on overriding the default body with
-// children as before. Bootstrap classes only.
-import { useContext } from 'react'
+// children as before.
+//
+// The heading carries an id the shell provides to what it holds: a table that
+// declares no title of its own takes its accessible name from this heading, which
+// already names it. Bootstrap classes only.
+import { useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 import type { HilosAdminChild } from '@hilos/core'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
+import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'
 
@@ -62,6 +67,7 @@ export function HilosAdminPage({ page, children, body }: HilosAdminPageProps) {
     throw new Error('HilosAdminPage requires a HilosRouterContext provider.')
   }
 
+  const headingId = useId()
   const route = useSignal(router.currentRoute)
   const identity = useSignal(router.pageIdentity)
   const crumbs = hilosCrumbLinks(
@@ -83,29 +89,31 @@ export function HilosAdminPage({ page, children, body }: HilosAdminPageProps) {
         : children
 
   return (
-    <section data-id="hilos-admin-page" data-page={page}>
-      {identity === undefined ? (
-        <div
-          className="placeholder-glow mb-3"
-          data-id="hilos-admin-title-skeleton"
-        >
-          <span className="placeholder col-3 d-block mb-2 rounded" />
-          <span className="placeholder col-6 d-block rounded" />
-        </div>
-      ) : (
-        <>
-          <HilosBreadcrumb crumbs={crumbs} />
-          <h1 className="h4 mb-1" data-id="hilos-admin-title">
-            {identity.label}
-          </h1>
-          {identity.lead ? (
-            <p className="text-body-secondary">{identity.lead}</p>
-          ) : null}
-        </>
-      )}
-      {defaultOrOverride}
-      {body}
-    </section>
+    <HilosPageHeadingIdContext.Provider value={headingId}>
+      <section data-id="hilos-admin-page" data-page={page}>
+        {identity === undefined ? (
+          <div
+            className="placeholder-glow mb-3"
+            data-id="hilos-admin-title-skeleton"
+          >
+            <span className="placeholder col-3 d-block mb-2 rounded" />
+            <span className="placeholder col-6 d-block rounded" />
+          </div>
+        ) : (
+          <>
+            <HilosBreadcrumb crumbs={crumbs} />
+            <h1 id={headingId} className="h4 mb-1" data-id="hilos-admin-title">
+              {identity.label}
+            </h1>
+            {identity.lead ? (
+              <p className="text-body-secondary">{identity.lead}</p>
+            ) : null}
+          </>
+        )}
+        {defaultOrOverride}
+        {body}
+      </section>
+    </HilosPageHeadingIdContext.Provider>
   )
 }
 

@@ -8,8 +8,11 @@
 // placeholder, header, paging, and the pending bar stay framework-owned.
 // (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
 // frame draws the bar and the footer from that declaration instead
-// (HilosTableBar, HilosTableFooter). Bootstrap classes only.
-import { useId } from 'react'
+// (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
+// it says when empty from there too; a table whose page declared nothing is drawn
+// from its props, the older of the two epochs, which the framework's log pages
+// still take. Bootstrap classes only.
+import { useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import type {
   HilosTableColumn,
@@ -19,14 +22,19 @@ import type {
 
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
+import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosViewportTable}. */
 export interface HilosViewportTableProps<R> {
   /** The headless server-windowed controller driving rows, descriptor, and pending. */
   controller: TableViewportController<R>
-  /** Column declarations for the header (labels and sort controls). */
-  columns: HilosTableColumn[]
+  /**
+   * Column declarations for the header (labels and sort controls) of a table whose
+   * page declared no frame; a declared table takes its columns from the declaration
+   * and is not handed these.
+   */
+  columns?: HilosTableColumn[]
   /** Render the cells of one row; the returned `<td>`s fill the row. */
   row: (row: R, rowKey: string) => ReactNode
   /** Accessible name for the table, rendered as a visually-hidden caption. */
@@ -35,7 +43,7 @@ export interface HilosViewportTableProps<R> {
   searchable?: boolean
   /** Placeholder for the search box. */
   searchPlaceholder?: string
-  /** Message shown when there are no rows. */
+  /** Message shown when there are no rows and the page declared no empty state. */
   emptyText?: string
   /** Message shown while the first window is still loading. */
   loadingText?: string
@@ -67,7 +75,7 @@ const PENDING_ROW_CLASS: Record<'move' | 'remove', string> = {
  */
 export function HilosViewportTable<R>({
   controller,
-  columns,
+  columns = [],
   row,
   label,
   searchable = false,
@@ -91,7 +99,23 @@ export function HilosViewportTable<R>({
   // The declaration does not change over the life of a table, so it is read once
   // rather than wrapped in a signal (tableFrame.ts, HilosTableFrameState).
   const declaration = controller.frame.declaration
+  // The columns the table is drawn from: the declaration's own where there is one,
+  // and the prop for a table whose page declared nothing. The header and every cell
+  // spanning the whole row count this one list, so they cannot disagree on its width.
+  const frameColumns: readonly HilosTableColumn[] =
+    declaration?.columns ?? columns
   const titleId = useId()
+  // What names a declared table: its own title when it declared one, and otherwise
+  // the heading of the page it stands on, which already names it. Undefined for a
+  // table that declared neither and stands outside an admin page — it has no name to
+  // take.
+  const pageHeadingId = useContext(HilosPageHeadingIdContext)
+  const nameId = declaration?.title ? titleId : pageHeadingId
+  // What a declared table says when it has no rows is the headline its page declared.
+  // Only the headline: the hint under it, the main action beside it, and the
+  // framework's own "Nothing found" under a search belong to an empty state this view
+  // does not draw yet.
+  const emptyWords = declaration?.empty?.title ?? emptyText
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
   const paginated = pageCount === null || pageCount > 1
@@ -138,12 +162,14 @@ export function HilosViewportTable<R>({
         <HilosTableBar controller={controller} titleId={titleId} />
       ) : null}
 
-      {/* SCAFFOLD: the bar a table draws from props, kept while the five
-          framework pages still pass them. It goes with the props themselves when
-          those pages move onto the declaration (HIL-819). */}
-      {!declaration && (searchable || pendingCount > 0) ? (
+      {/* The bar a table draws from its props, for a table whose page declared no
+          frame — such as the framework's log pages. Its Apply control stays for a
+          declared table too: the room of live messages that carries Apply in Vue is
+          not ported yet (HIL-811…818), and without it pending changes would pile up
+          with no way to show them. */}
+      {(!declaration && searchable) || pendingCount > 0 ? (
         <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
-          {searchable ? (
+          {!declaration && searchable ? (
             <input
               type="search"
               className="form-control"
@@ -178,7 +204,7 @@ export function HilosViewportTable<R>({
       <div className="table-responsive">
         <table
           className="table table-striped table-hover align-middle mb-0"
-          aria-labelledby={declaration ? titleId : undefined}
+          aria-labelledby={declaration ? nameId : undefined}
         >
           {/* A declared table already shows its name as a heading, and a hidden
               caption repeating it would name the table twice. */}
@@ -187,7 +213,7 @@ export function HilosViewportTable<R>({
           ) : null}
           <thead>
             <tr>
-              {columns.map((column) => (
+              {frameColumns.map((column) => (
                 <th
                   key={column.key}
                   scope="col"
@@ -227,7 +253,7 @@ export function HilosViewportTable<R>({
                     narrows the type for the render prop. */}
                 {view.placeholder || view.row === null ? (
                   <td
-                    colSpan={columns.length}
+                    colSpan={frameColumns.length}
                     className="text-center text-muted fst-italic"
                     data-id="hilos-table-placeholder"
                   >
@@ -241,7 +267,7 @@ export function HilosViewportTable<R>({
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={frameColumns.length}
                   className="text-center text-muted py-4"
                 >
                   {!loaded ? (
@@ -257,7 +283,7 @@ export function HilosViewportTable<R>({
                       {loadingText}
                     </span>
                   ) : (
-                    (empty ?? emptyText)
+                    (empty ?? emptyWords)
                   )}
                 </td>
               </tr>
@@ -268,8 +294,8 @@ export function HilosViewportTable<R>({
 
       {declaration ? <HilosTableFooter controller={controller} /> : null}
 
-      {/* SCAFFOLD: the footer a table draws from its own comparisons, kept for
-          the same reason and going the same way as the bar above (HIL-819). */}
+      {/* The footer a table draws from its own comparisons, for the same tables
+          as the bar above. */}
       {!declaration && paginated ? (
         <div className="d-flex justify-content-between align-items-center mt-3">
           <span className="text-muted small" data-id="hilos-table-count">

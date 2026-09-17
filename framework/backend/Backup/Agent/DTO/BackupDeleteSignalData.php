@@ -28,13 +28,18 @@ final class BackupDeleteSignalData extends BaseDTO implements SignalDataInterfac
     /** Payload key: the requesting connection's accept key. */
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
 
+    /** Payload key: the bulk run the delete belongs to. */
+    public const string progressKey = 'progressKey';
+
     /**
      * @param string $backupId Target backup id
      * @param ?string $initiatorAcceptKey Accept key of the connection that asked, or null when none
+     * @param ?string $progressKey Bulk run the delete belongs to, or null for a single-row delete that expects no answer
      */
     public function __construct(
         public readonly string $backupId,
         public readonly ?string $initiatorAcceptKey = null,
+        public readonly ?string $progressKey = null,
     ) {
     }
 
@@ -46,6 +51,7 @@ final class BackupDeleteSignalData extends BaseDTO implements SignalDataInterfac
         return [
             self::backupId => $this->backupId,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
+            self::progressKey => $this->progressKey,
         ];
     }
 
@@ -59,6 +65,7 @@ final class BackupDeleteSignalData extends BaseDTO implements SignalDataInterfac
         return new static(
             backupId: self::requireString($data, self::backupId),
             initiatorAcceptKey: self::optionalString($data, self::initiatorAcceptKey),
+            progressKey: self::optionalString($data, self::progressKey),
         );
     }
 }

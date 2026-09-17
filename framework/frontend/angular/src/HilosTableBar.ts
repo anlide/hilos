@@ -32,19 +32,23 @@ import { HilosTableFilterControl } from './HilosTableFilterControl.js'
   imports: [HilosModal, HilosTableFilterControl],
   template: `
     <div>
-      <div class="mb-2">
-        <h2 [id]="titleId()" class="h6 mb-0" data-id="hilos-table-title">
-          {{ title() }}
-        </h2>
-        @if (subtitle(); as subtitle) {
-          <p
-            class="small text-body-secondary mb-0"
-            data-id="hilos-table-subtitle"
-          >
-            {{ subtitle }}
-          </p>
-        }
-      </div>
+      <!-- No declared title, no heading: the page heading above names the table
+      then, and an empty h2 would be a heading with nothing to say. -->
+      @if (title(); as title) {
+        <div class="mb-2">
+          <h2 [id]="titleId()" class="h6 mb-0" data-id="hilos-table-title">
+            {{ title }}
+          </h2>
+          @if (subtitle(); as subtitle) {
+            <p
+              class="small text-body-secondary mb-0"
+              data-id="hilos-table-subtitle"
+            >
+              {{ subtitle }}
+            </p>
+          }
+        </div>
+      }
 
       @if (searchBox() || filters().length > 0 || mainAction()) {
         <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
@@ -187,7 +191,7 @@ export class HilosTableBar<R> {
   private readonly declaration = computed(
     () => this.controller().frame.declaration,
   )
-  protected readonly title = computed(() => this.declaration()?.title ?? '')
+  protected readonly title = computed(() => this.declaration()?.title)
   protected readonly subtitle = computed(() => this.declaration()?.subtitle)
   protected readonly searchBox = computed(() => this.declaration()?.search)
   protected readonly mainAction = computed(() => this.declaration()?.mainAction)

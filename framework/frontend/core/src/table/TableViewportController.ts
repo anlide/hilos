@@ -366,12 +366,17 @@ export interface TableViewportControllerOptions<R> {
    * key. Called once the first window has landed, when there is anything to
    * count, and again whenever the options change after that; the server then
    * sends the counts by itself.
-   *
-   * SCAFFOLD: no table passes it yet — the counts are drawn in the filter bar,
-   * and the pages move onto the declared frame in HIL-819.
    */
   sendFacets?: (facets: Readonly<Record<string, readonly unknown[]>>) => void
-  /** Initial filter map; empty by default. */
+  /**
+   * Initial filter map — a preset the page puts on its table, such as the channel
+   * a route names; empty by default.
+   *
+   * The window that arrives with the page's own answer is built without it: the
+   * backend serves a cold entry by the table's declaration alone and knows nothing
+   * of a route's param. So a table opening with a preset does not show that
+   * window's rows; it keeps the order and the size it says, and asks for its own.
+   */
   initialFilter?: Record<string, unknown>
   /**
    * Orders of more than one column this table declares, in the sequence the
@@ -389,12 +394,10 @@ export interface TableViewportControllerOptions<R> {
    * What this table's page declares about its frame — title, search, filters,
    * main action, columns, bulk actions, empty state. Optional because a table
    * that declares nothing still has a frame state to read: the footer and the
-   * body follow from the window, not from the declaration.
-   *
-   * SCAFFOLD: no table declares one yet, and no view reads it — the bar and the
-   * footer drawn from it are HIL-801 (Vue) and HIL-810 (React, Angular), and the
-   * five framework pages move onto it in HIL-819. Until then a view keeps taking
-   * its columns, label, and empty text as props.
+   * body follow from the window, not from the declaration. A table that declares
+   * none is drawn from the props its view is handed instead — the older of the
+   * two ways a view is given its columns, which the framework's log pages still
+   * take.
    */
   frame?: HilosTableFrame
 }
@@ -917,8 +920,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * inputs stay silent, and the state reads empty.
    *
    * SCAFFOLD: the Vue panel, its checkbox column and the send over what is marked
-   * read it; React and Angular follow in HIL-810 and HIL-813, and no table declares
-   * bulk operations until HIL-819.
+   * read it; React and Angular follow in HIL-813.
    */
   get selection(): HilosTableSelectionState {
     return this.selectionState
@@ -955,7 +957,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * clears it.
    *
    * SCAFFOLD: the Vue selection panel reads it; React and Angular follow in
-   * HIL-813, and no table declares bulk operations until HIL-819.
+   * HIL-813.
    */
   get bulk(): HilosTableBulkState {
     return this.bulkState
@@ -1326,6 +1328,15 @@ export class TableViewportController<R> implements TableWindowSink {
       this.openingOrderKnown = true
     }
     this.orderSignal.set(sort)
+    if (!this.loadedSignal.get() && this.opensWithPreset()) {
+      // The rows of this window are the whole set, the preset unknown to whoever served it.
+      // Showing them first and the preset's own rows a moment later would flash a table of
+      // everything under a page about one thing, so the skeleton stands until the right ones
+      // come — asked for at the size the backend declared.
+      this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
+      this.send()
+      return
+    }
     this.ingestWindow(
       rows,
       totalCount,
@@ -2197,6 +2208,13 @@ export class TableViewportController<R> implements TableWindowSink {
       Object.keys(facets).length > 0
       ? { ...this.currentDescriptor(), facets }
       : this.currentDescriptor()
+  }
+
+  /** Whether the page opened this table with a preset of its own in the filter map. */
+  private opensWithPreset(): boolean {
+    return Object.values(this.options.initialFilter ?? {}).some(
+      (value) => value !== undefined && value !== null && value !== '',
+    )
   }
 
   /** The viewport descriptor for the current filter, order, size and address. */

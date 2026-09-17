@@ -9,6 +9,7 @@ import {
 import {
   clearCustomSetting,
   setCustomSetting,
+  shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
@@ -156,7 +157,9 @@ async function signInAddressableAdmin(
  */
 async function enableEmailChannel(page: Page): Promise<void> {
   await gotoPage(page, '/hilos/communications')
-  const toggle = page.getByTestId('hilos-channel-enabled-email')
+  // The switch stands in a cell, and the hub is a declared table drawn both as rows
+  // and as cards, so it is aimed at through the copy on screen.
+  const toggle = shownByTestId(page, 'hilos-channel-enabled-email')
   await expect(toggle).toBeVisible()
   if (await toggle.isChecked()) {
     return
@@ -169,7 +172,9 @@ async function enableEmailChannel(page: Page): Promise<void> {
   // landed is the hub re-read from the server reporting the channel on.
   await expect(async () => {
     await gotoPage(page, '/hilos/communications')
-    await expect(page.getByTestId('hilos-channel-enabled-email')).toBeChecked()
+    await expect(
+      shownByTestId(page, 'hilos-channel-enabled-email'),
+    ).toBeChecked()
   }).toPass()
 }
 
@@ -226,7 +231,9 @@ test('marking a row read clears the badge', async ({ page }) => {
   await expect(badge(page)).toHaveText(/^1\b/)
 
   await openBell(page)
-  await page.getByTestId(`hilos-notification-mark-read-${notificationId}`).click()
+  await page
+    .getByTestId(`hilos-notification-mark-read-${notificationId}`)
+    .click()
 
   // The store never turns read optimistically: it turns when the server fans the
   // read signal back, so the badge going and the row's own mark-read control
@@ -290,7 +297,9 @@ test('a read in one tab reaches the other tab of the same user', async ({
 
   await openBell(page)
   await openBell(tabB)
-  await page.getByTestId(`hilos-notification-mark-read-${notificationId}`).click()
+  await page
+    .getByTestId(`hilos-notification-mark-read-${notificationId}`)
+    .click()
 
   // The read is fanned to every connection of the recipient, so tab B settles
   // without asking for anything.
@@ -315,7 +324,9 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
-  await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-table-row-example_boolean'),
+  ).toBeVisible()
 
   const save = page.getByTestId('hilos-settings-edit-save')
   await setCustomSetting(page, 'example_boolean', true)
@@ -337,7 +348,9 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await expect(save).toHaveCount(0)
 })
 
-test('muting the email channel keeps the next emit off it', async ({ page }) => {
+test('muting the email channel keeps the next emit off it', async ({
+  page,
+}) => {
   const { userId } = await signInAddressableAdmin(page)
   await enableEmailChannel(page)
 
@@ -429,8 +442,11 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
     .getAttribute('data-id')
   const key = String(rowId).replace('hilos-table-row-', '')
   const row = page.getByTestId(`hilos-table-row-${key}`)
+  // The control and the panel are drawn by the row and by its card alike, so what
+  // the reader sees is the copy on screen, and a closed panel is closed in both.
   const panel = page.getByTestId(`hilos-table-row-detail-${key}`)
-  const control = page.getByTestId(`hilos-table-expand-${key}`)
+  const shownPanel = shownByTestId(page, `hilos-table-row-detail-${key}`)
+  const control = shownByTestId(page, `hilos-table-expand-${key}`)
 
   // The notification title took no column of its own: it waits in the panel, and
   // the row says nothing of it until the reader opens one.
@@ -440,8 +456,8 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
 
   await control.click()
 
-  await expect(panel).toBeVisible()
-  await expect(panel).toContainText(title)
+  await expect(shownPanel).toBeVisible()
+  await expect(shownPanel).toContainText(title)
   await expect(control).toHaveAttribute('aria-expanded', 'true')
 
   await control.click()
@@ -455,7 +471,7 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
   // stand among every other test's deliveries and the assertion would be measuring
   // paging instead of the panel.
   await control.click()
-  await expect(panel).toBeVisible()
+  await expect(shownPanel).toBeVisible()
   await page.getByTestId('hilos-table-sort-createdAt').click()
   await expect(row).toBeVisible()
   await expect(panel).toHaveCount(0)

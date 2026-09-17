@@ -188,9 +188,12 @@ async function mountPage(context: HilosSettingsContext) {
   return wrapper
 }
 
+// The row's controls stand in the document twice — once in the table and once in the
+// card the same row becomes on a narrow screen — so the button is looked up through
+// the table, which says which of the two is clicked.
 function editButton(key: string): HTMLElement {
   return document.querySelector(
-    `[data-id="hilos-settings-edit-${key}"]`,
+    `table [data-id="hilos-settings-edit-${key}"]`,
   ) as HTMLElement
 }
 

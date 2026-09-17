@@ -3,8 +3,9 @@
 // merged with its persisted override, so the key set is fixed — there is no free
 // "add a setting" (data-model.md, "Cataloged tables"). A row's own actions are the
 // only mutations: set a custom value on an on-default key (add-by-key), edit or
-// reset an override, or delete an orphan. The table, the row view-model, and the
-// add/update/delete round-trips are the core headless's (createHilosSettingsTable /
+// reset an override, or delete an orphan. The table, the frame it declares (its
+// columns, search, and empty words), the row view-model, and the add/update/delete
+// round-trips are the core headless's (createHilosSettingsTable /
 // createHilosSettingsActions); this view owns only the markup, so a project mounts
 // it by passing its HilosSettingsContext and declares the catalog on its backend.
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
@@ -14,19 +15,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
-  SETTING_KEY_FIELD,
-  SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
   hasCustomValue,
   isOrphanSetting,
   resolveSettingEdit,
 } from '@hilos/core'
-import type {
-  HilosSettingRow,
-  HilosSettingsContext,
-  HilosTableColumnOf,
-} from '@hilos/core'
+import type { HilosSettingRow, HilosSettingsContext } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
@@ -44,12 +39,6 @@ export interface HilosSettingsPageProps {
   /** The project context: scope stores and the action lifecycle. */
   context: HilosSettingsContext
 }
-
-const COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
-  { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
-  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 /** Map a setting type to the value input it edits with. */
 function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
@@ -232,12 +221,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   return (
     <HilosAdminPage page={HilosPages.SETTINGS}>
       <HilosViewportTable
-        label="Settings"
         controller={settings.controller}
-        columns={COLUMNS}
-        searchable
-        searchPlaceholder="Search settings…"
-        emptyText="No settings yet."
         row={(row) => (
           <>
             <td>

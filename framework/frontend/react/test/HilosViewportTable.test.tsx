@@ -230,6 +230,27 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(container.querySelector('caption')).toBeNull()
   })
 
+  it('draws the header and the empty words from the declaration when handed no columns', () => {
+    const { controller } = makeController({
+      ...FRAME,
+      empty: { title: 'No backups yet.' },
+    })
+    controller.ingestWindow([], 0, true, null, null, 20)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        row={(r) => <td className="cell">{r.name}</td>}
+      />,
+    )
+
+    expect(
+      container.querySelector('[data-id="hilos-table-sort-name"]')?.textContent,
+    ).toBe('Name')
+    expect(container.querySelector('tbody')?.textContent).toBe(
+      'No backups yet.',
+    )
+  })
+
   it('draws the declared footer instead of the one built from props', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(
@@ -248,7 +269,9 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(container.querySelector('[data-id="hilos-table-page"]')).toBeNull()
   })
 
-  it('leaves the props-driven bar out, Apply button and all', () => {
+  // Apply stays: the room of live messages that carries it in Vue is not ported yet,
+  // and the framework pages on this view take their pending changes through it.
+  it('leaves the props-driven search out but keeps its Apply button', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -259,13 +282,15 @@ describe('HilosViewportTable with a declared frame', () => {
       20,
     )
     controller.ingestDelta({
-      kind: 'row_updated',
+      kind: 'row_moved',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'Alicia' } },
     })
     const { container } = renderDeclared(controller)
 
-    expect(container.querySelector('[data-id="hilos-table-apply"]')).toBeNull()
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-apply"]'),
+    ).toHaveLength(1)
     expect(
       container.querySelectorAll('[data-id="hilos-table-search"]'),
     ).toHaveLength(1)

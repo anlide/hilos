@@ -18,7 +18,11 @@
 // attribute instead, which is drawn after the default content: it needs both, the
 // cards to its children and its own figures beneath them, and replacing the
 // default content would cost it the cards. A leaf page goes on replacing the
-// default content as before. Bootstrap classes only (styling-rules.md).
+// default content as before.
+//
+// The heading carries an id the shell provides to what it holds: a table that
+// declares no title of its own takes its accessible name from this heading, which
+// already names it. Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -30,19 +34,32 @@ import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
 
 import { HilosBreadcrumb } from './HilosBreadcrumb.js'
 import { HilosLink } from './HilosLink.js'
+import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
+
+// Distinct ids so two shells alive at once never give their headings the same one.
+let adminPageHeadingSeq = 0
 
 /** The admin section shell: breadcrumb, heading, lead, and a default body. */
 @Component({
   selector: 'hilos-admin-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosBreadcrumb, HilosLink],
+  // A provider rather than a view provider: the table that reads the id is content
+  // projected into the shell by the page, which a view provider does not reach. The
+  // factory runs once per shell, so every shell names its own heading.
+  providers: [
+    {
+      provide: HILOS_PAGE_HEADING_ID,
+      useFactory: () => `hilos-admin-title-${adminPageHeadingSeq++}`,
+    },
+  ],
   template: `
     <section data-id="hilos-admin-page" [attr.data-page]="page()">
       @if (identity(); as pageIdentity) {
         <hilos-breadcrumb [crumbs]="crumbs()" />
-        <h1 class="h4 mb-1" data-id="hilos-admin-title">
+        <h1 [id]="headingId" class="h4 mb-1" data-id="hilos-admin-title">
           {{ pageIdentity.label }}
         </h1>
         @if (pageIdentity.lead) {
@@ -113,6 +130,7 @@ export class HilosAdminPage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
 
+  protected readonly headingId = inject(HILOS_PAGE_HEADING_ID)
   protected readonly identity = hilosSignal(this.router.pageIdentity)
   protected readonly crumbs = computed(() =>
     hilosCrumbLinks(

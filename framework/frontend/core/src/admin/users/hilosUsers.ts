@@ -29,6 +29,11 @@ import {
 } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
 /** A user's connection presence; a string union so a third state extends it. */
@@ -209,6 +214,48 @@ export interface HilosUsersTable {
 }
 
 /**
+ * The columns of the users table, in display order. The two presence columns name
+ * the connections slot they are built from: that runtime summary is the one thing
+ * on the row that can stop being current, while the rest comes from the user
+ * record in the database, and a database does not go quiet.
+ */
+const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
+  { key: 'id', label: 'ID', sortable: true, cellClass: 'text-body-secondary' },
+  { key: 'name', label: 'Name', sortable: true, cellClass: 'fw-medium' },
+  {
+    key: USER_PRESENCE_FIELD,
+    label: 'Presence',
+    sortable: true,
+    source: USER_CONNECTIONS_SLOT,
+  },
+  {
+    key: USER_ONLINE_SESSION_COUNT_FIELD,
+    label: 'Sessions',
+    sortable: true,
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    source: USER_CONNECTIONS_SLOT,
+  },
+  { key: 'lastActivity', label: 'Last activity', sortable: true },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/**
+ * What the users table declares about its frame. No title: the page heading above
+ * already names it, and the table takes its accessible name from there.
+ */
+const USERS_FRAME: HilosTableFrame = {
+  search: { placeholder: 'Search users…' },
+  columns: USERS_COLUMNS,
+  empty: { title: 'No users yet.' },
+}
+
+/**
  * The server-windowed controller for the Hilos users table: search, sort, and
  * paging change the viewport descriptor sent over the connection, and the backend
  * replies a window plus live deltas scoped to the table's (page, tableKey)
@@ -232,6 +279,7 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
         HILOS_USERS_TABLE,
         descriptor,
       ),
+    frame: USERS_FRAME,
   })
   const teardown: Array<() => void> = []
 

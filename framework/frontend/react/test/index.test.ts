@@ -9,6 +9,7 @@ import {
   HilosLink,
   HilosMagicLinkPage,
   HilosOAuthCallbackPage,
+  HilosPageHeadingIdContext,
   HilosRouterContext,
   HilosView,
   useConnectionState,
@@ -23,6 +24,7 @@ it('exports the @hilos/react public surface', () => {
   expect(HilosLayout).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosRouterContext).toBeTypeOf('object')
+  expect(HilosPageHeadingIdContext).toBeTypeOf('object')
   expect(HilosAuthGateContext).toBeTypeOf('object')
   expect(HilosAuthSurface).toBeTypeOf('function')
   expect(HilosMagicLinkPage).toBeTypeOf('function')

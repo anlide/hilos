@@ -46,7 +46,7 @@ export function HilosTableBar<R>({
   // The declaration does not change over the life of a table, so its parts are
   // read once rather than wrapped in signals (tableFrame.ts, HilosTableFrameState).
   const declaration = controller.frame.declaration
-  const title = declaration?.title ?? ''
+  const title = declaration?.title
   const subtitle = declaration?.subtitle
   const searchBox = declaration?.search
   const mainAction = declaration?.mainAction
@@ -72,19 +72,23 @@ export function HilosTableBar<R>({
 
   return (
     <div>
-      <div className="mb-2">
-        <h2 id={titleId} className="h6 mb-0" data-id="hilos-table-title">
-          {title}
-        </h2>
-        {subtitle ? (
-          <p
-            className="small text-body-secondary mb-0"
-            data-id="hilos-table-subtitle"
-          >
-            {subtitle}
-          </p>
-        ) : null}
-      </div>
+      {/* No declared title, no heading: the page heading above names the table
+          then, and an empty h2 would be a heading with nothing to say. */}
+      {title ? (
+        <div className="mb-2">
+          <h2 id={titleId} className="h6 mb-0" data-id="hilos-table-title">
+            {title}
+          </h2>
+          {subtitle ? (
+            <p
+              className="small text-body-secondary mb-0"
+              data-id="hilos-table-subtitle"
+            >
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {searchBox || filters.length > 0 || mainAction ? (
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">

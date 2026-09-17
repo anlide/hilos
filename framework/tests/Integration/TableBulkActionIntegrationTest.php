@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\AbstractPage;
@@ -18,6 +19,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
 use Hilos\Core\Table\DTO\TableBulkActionDTO;
 use Hilos\Core\Table\DTO\TableBulkReportSignalData;
@@ -58,6 +60,10 @@ final class TableBulkActionIntegrationTest extends FrameworkIntegrationTestCase
 
     private ?SignalRouter $previousSignalRouter = null;
 
+    private ?TableContext $previousTables = null;
+
+    private ?BrowserContext $previousBrowser = null;
+
     /**
      * Raises the scratch table with an unbroken run of rows.
      *
@@ -68,7 +74,22 @@ final class TableBulkActionIntegrationTest extends FrameworkIntegrationTestCase
         parent::setUp();
 
         $this->previousSignalRouter = HilosFacade::$sr;
+        $this->previousTables = HilosFacade::$table;
+        $this->previousBrowser = HilosFacade::$browser;
         HilosFacade::$sr = new SignalRouter();
+        // The framework resolves the key a request names against the topology and the registry,
+        // so the table stands in both, the way a project declares it.
+        HilosFacade::$table = new class extends TableContext {
+            public function configure(): void
+            {
+                $this->register(BulkIntegrationTable::TABLE, new BulkIntegrationTable());
+            }
+        };
+        HilosFacade::$table->configure();
+        $browser = new class extends BrowserContext {
+        };
+        $browser->bindHilosFacade(BulkIntegrationHilos::class);
+        HilosFacade::$browser = $browser;
 
         Database::sql('DROP TABLE IF EXISTS `' . self::TABLE . '`');
         Database::sql(
@@ -94,6 +115,8 @@ final class TableBulkActionIntegrationTest extends FrameworkIntegrationTestCase
         }
         ExecutionContext::clear();
         HilosFacade::$sr = $this->previousSignalRouter;
+        HilosFacade::$table = $this->previousTables;
+        HilosFacade::$browser = $this->previousBrowser;
 
         parent::tearDown();
     }
@@ -292,7 +315,7 @@ final class BulkIntegrationPage extends AbstractPage
      */
     public function openBulkRun(string $acceptKey, TableBulkActionDTO $dto): TableBulkAcceptedReplyDTO
     {
-        return $this->startBulkAction($acceptKey, $dto, new BulkIntegrationTable());
+        return $this->startBulkAction($acceptKey, $dto);
     }
 
     /**
@@ -381,6 +404,16 @@ final class BulkIntegrationTable extends TableDefinition implements ViewportTabl
     public const string TABLE = 'bulkIntegrationTable';
 
     public const string SLOT = 'bulkIntegrationRows';
+
+    /**
+     * Declares the one mass operation the table accepts: the page's delete.
+     *
+     * @return list<string> Action names a run over this table may carry
+     */
+    public function bulkActions(): array
+    {
+        return [BulkIntegrationPage::ACTION];
+    }
 
     /**
      * Answers whether one row is still in the table.
@@ -539,4 +572,14 @@ final class BulkIntegrationObject extends Object_
 final class BulkIntegrationObjects extends Objects
 {
     public const string OBJECT_CLASS = BulkIntegrationObject::class;
+}
+
+/**
+ * The topology the framework resolves the request's table key against: the page carries the table.
+ */
+abstract class BulkIntegrationHilos extends HilosFacade
+{
+    public const array PAGE_TABLES = [
+        BulkIntegrationPage::PAGE => [BulkIntegrationTable::TABLE => []],
+    ];
 }

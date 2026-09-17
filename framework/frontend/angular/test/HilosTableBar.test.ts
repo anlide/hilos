@@ -119,6 +119,24 @@ describe('HilosTableBar', () => {
     expect(byId(fixture, 'hilos-table-subtitle')).toBeNull()
   })
 
+  it('draws no heading and no subtitle when the declaration carries no title', () => {
+    // The page heading names such a table; an empty h2 would be a heading with
+    // nothing to say, and a subtitle would hang under a heading that is not there.
+    const { controller } = makeController({
+      subtitle: 'Every copy this installation keeps',
+      search: {},
+      columns: COLUMNS,
+    })
+    const fixture = mountBar(controller)
+
+    expect(byId(fixture, 'hilos-table-title')).toBeNull()
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('h2'),
+    ).toBeNull()
+    expect(byId(fixture, 'hilos-table-subtitle')).toBeNull()
+    expect(byId(fixture, 'hilos-table-search')).not.toBeNull()
+  })
+
   it('draws no search box when the table does not declare search', () => {
     const { controller } = makeController({
       title: 'Backups',

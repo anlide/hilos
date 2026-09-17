@@ -28,9 +28,14 @@ import {
   readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
+import { subscribeSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
 /** One row of the channels hub table — the framework channels view-model. */
@@ -92,6 +97,11 @@ const CHANNEL_RESET_ACTION = 'communications_channel_reset'
 const CHANNEL_TEST_ACTION = 'communications_channel_test'
 /** The pseudo-field the hub enablement toggle writes (DeliveryChannelSettings::ENABLED_FIELD). */
 export const CHANNEL_ENABLED_FIELD = 'enabled'
+/**
+ * Filter-map key narrowing the fields table to one channel — the backend
+ * `HilosCommunicationsChannelFieldsTable::FILTER_CHANNEL`, preset from the route.
+ */
+const FIELDS_FILTER_CHANNEL = 'channel'
 
 /**
  * The project-supplied context the communications admin reads from: the
@@ -289,6 +299,54 @@ function bindTable(
   ]
 }
 
+/** The columns of the channels hub table, in display order. */
+const CHANNELS_COLUMNS: HilosTableColumnOf<HilosChannelRow>[] = [
+  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
+  { key: HilosChannelRowKey.enabled, label: 'Enabled', sortable: true },
+  { key: HilosChannelRowKey.configured, label: 'Configured' },
+  { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/**
+ * What the channels hub table declares about its frame. No title: the page
+ * heading above already names it, and the table takes its accessible name from
+ * there.
+ */
+const CHANNELS_FRAME: HilosTableFrame = {
+  search: { placeholder: 'Search channels…' },
+  columns: CHANNELS_COLUMNS,
+  empty: { title: 'No delivery channels registered.' },
+}
+
+/** The columns of a channel's fields table, in display order. */
+const FIELDS_COLUMNS: HilosTableColumnOf<HilosChannelFieldRow>[] = [
+  { key: 'field', label: 'Field', sortable: true },
+  { key: 'value', label: 'Value' },
+  { key: 'valueSource', label: 'Source', sortable: true },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/**
+ * What a channel's fields table declares about its frame. No search: a channel
+ * has a handful of fields, and a box over them would find nothing the eye does
+ * not. No title, for the reason the hub has none.
+ */
+const FIELDS_FRAME: HilosTableFrame = {
+  columns: FIELDS_COLUMNS,
+  empty: { title: 'No configurable fields for this channel.' },
+}
+
 /**
  * The server-windowed controller for the channels hub table: one row per
  * registered channel, ordered by channel name. Rows resolve through
@@ -308,6 +366,7 @@ export function createHilosChannelsTable(
         CHANNELS_TABLE,
         descriptor,
       ),
+    frame: CHANNELS_FRAME,
   })
   let teardown: Array<() => void> = []
 
@@ -329,23 +388,23 @@ export function createHilosChannelsTable(
   }
 }
 
-/** A channel's config-fields view: the rows filtered to one channel, plus lifecycle. */
+/** A channel's config-fields table: the controller narrowed to one channel, plus lifecycle. */
 export interface HilosChannelFields {
-  /** The channel's field rows (the global fields table filtered to `channel`). */
-  readonly rows: ReadonlySignal<readonly HilosChannelFieldRow[]>
-  /** Bind the (global) fields table and request its window — call on mount. */
+  /** The server-windowed controller the view renders rows, descriptor, and pending from. */
+  readonly controller: TableViewportController<HilosChannelFieldRow>
+  /** Bind the fields table and follow the route's channel — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
   dispose(): void
 }
 
 /**
- * The single channel's config-fields view. The backend fields table is global
+ * The single channel's config-fields table. The backend fields table is global
  * (one row per field of every channel — a route param does not reach the table
- * query), so this pulls the whole table and filters it to `channel` client-side.
- * The filter is a reactive signal, so navigating between channels re-filters the
- * same window with no re-fetch. Rows resolve through
- * {@link resolveHilosChannelFieldRow} and skip any pending / removed placeholder.
+ * query by itself), so the channel travels as a preset of the filter map and the
+ * server narrows the window: no filter is applied on the client. Navigating to
+ * another channel sets that filter again and asks for the new window. Rows
+ * resolve through {@link resolveHilosChannelFieldRow}.
  *
  * @param context The project context (connection and scope stores).
  * @param channel The route channel to show fields for (a signal — it changes on navigation).
@@ -362,27 +421,25 @@ export function createHilosChannelFields(
         FIELDS_TABLE,
         descriptor,
       ),
+    initialFilter: { [FIELDS_FILTER_CHANNEL]: channel.get() },
+    frame: FIELDS_FRAME,
   })
   let teardown: Array<() => void> = []
-  const rows = computedSignal<readonly HilosChannelFieldRow[]>(() => {
-    const wanted = channel.get()
-
-    return controller.rows
-      .get()
-      .filter((view) => !view.placeholder && view.row !== null)
-      .map((view) => view.row as HilosChannelFieldRow)
-      .filter((row) => row.channel === wanted)
-  })
 
   return {
-    rows,
+    controller,
     start() {
-      teardown = bindTable(
-        context,
-        HilosPages.COMMUNICATIONS_CHANNEL,
-        FIELDS_TABLE,
-        controller,
-      )
+      teardown = [
+        ...bindTable(
+          context,
+          HilosPages.COMMUNICATIONS_CHANNEL,
+          FIELDS_TABLE,
+          controller,
+        ),
+        subscribeSignal(channel, (value) =>
+          controller.setFilter(FIELDS_FILTER_CHANNEL, value),
+        ),
+      ]
     },
     dispose() {
       for (const off of teardown.splice(0)) {

@@ -266,6 +266,25 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
     }
 
     /**
+     * Declares the settings list's sortable columns, which here are the row payload keys themselves.
+     *
+     * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
+     * no identifier is built out of it; the map is still declared, because it is the gate that keeps
+     * a window from ordering by a name this table does not sort by.
+     *
+     * @return array<string, string> Wire row fields mapped to the payload keys they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosSettingTableRow::key => HilosSettingTableRow::key,
+            HilosSettingTableRow::value => HilosSettingTableRow::value,
+            HilosSettingTableRow::type => HilosSettingTableRow::type,
+            HilosSettingTableRow::valueSource => HilosSettingTableRow::valueSource,
+        ];
+    }
+
+    /**
      * Declares what a settings row is searched by: its key, and the value standing against it.
      *
      * @return array<string, string> Searched fields mapped to themselves, these rows being searched in memory

@@ -1548,6 +1548,30 @@ abstract class BrowserContext
     }
 
     /**
+     * Resolves one of a page's tables by the key a request named, or refuses the name.
+     *
+     * Both halves are topology: the key has to stand among the page's table bindings in
+     * {@see Hilos::PAGE_TABLES}, and the table is the one registered under it. A key bound to
+     * another page, or a table that serves no windows, answers null - the caller refuses it.
+     *
+     * @param string $page Page the request was sent to
+     * @param string $tableKey Table key the request named
+     * @return ?ViewportTable The page's table under that key, or null when the page has none
+     */
+    final public function pageViewportTable(string $page, string $tableKey): ?ViewportTable
+    {
+        $hilosClass = $this->hilosClass;
+        $tables = $hilosClass::PAGE_TABLES[$page] ?? [];
+        if (!is_array($tables) || !array_key_exists($tableKey, $tables)) {
+            return null;
+        }
+
+        $table = Hilos::$table?->get($tableKey);
+
+        return $table instanceof ViewportTable ? $table : null;
+    }
+
+    /**
      * Resolves page table bindings from project topology.
      *
      * @param string $page Page name from the subscription mirror

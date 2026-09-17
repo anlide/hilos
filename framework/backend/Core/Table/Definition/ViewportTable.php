@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Definition;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableProgressDTO;
@@ -250,4 +251,16 @@ interface ViewportTable
      * @throws HilosException When the table's own sources refuse the reads its fragments need
      */
     public function browserRow(AbstractTableRow $row): array;
+
+    /**
+     * Declares the mass operations this table accepts, by the action name each one runs under.
+     *
+     * The backend mirror of the operations a page offers for the marked rows on the frontend
+     * (`HilosTableFrame.bulkActions`): a run is refused unless its action stands here, so a table
+     * that declares none takes no mass operation at all, whatever a client sends
+     * ({@see PageSignalRouter::startBulkRun()}).
+     *
+     * @return list<string> Action names a bulk run over this table may carry
+     */
+    public function bulkActions(): array;
 }

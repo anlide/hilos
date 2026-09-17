@@ -139,6 +139,10 @@ export {
   type HilosTableBulkUntouched,
 } from './table/tableBulk.js'
 export {
+  hilosTableBulkAcceptedSchema,
+  hilosTableBulkPayload,
+} from './table/tableBulkRequest.js'
+export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,
   type LoadingButtonState,

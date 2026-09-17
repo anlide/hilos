@@ -4,34 +4,23 @@ inside the admin shell. The journal is served straight from SQL (an unbounded
 table), so it has no live per-row deltas — a status / period filter or a retry
 re-requests the window. The per-channel route ({channelId}) opens the otherwise
 cross-cutting journal with a channel preset; the status picker, the period range,
-and the type/recipient search ride the open viewport filter map (server-side, no
+and the type/recipient search are what the table declares about its frame, drawn
+by the framework's bar, and ride the open viewport filter map (server-side, no
 local filtering). The single row action is retry, shown only on a failed delivery:
 it re-queues the delivery as a tracked action (createHilosDeliveriesActions) and
-refreshes the window. All table logic and the row view-model are the core
-headless's (hilosDeliveries); this view owns only the markup, so a project mounts
-it by passing its HilosDeliveriesContext. Bootstrap classes only (styling-rules.md). -->
+refreshes the window. All table logic, the row view-model, and that declaration
+are the core headless's (hilosDeliveries); this view owns only the markup, so a
+project mounts it by passing its HilosDeliveriesContext. Bootstrap classes only
+(styling-rules.md). -->
 <script setup lang="ts">
 import {
   computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
-  DELIVERY_ATTEMPTS_FIELD,
-  DELIVERY_CHANNEL_FIELD,
-  DELIVERY_CREATED_AT_FIELD,
-  DELIVERY_DELIVERED_AT_FIELD,
-  DELIVERY_FILTER_FROM,
-  DELIVERY_FILTER_STATUS,
-  DELIVERY_FILTER_TO,
-  DELIVERY_LAST_ERROR_FIELD,
-  DELIVERY_NOTIFICATION_TITLE_FIELD,
-  DELIVERY_STATUS_FIELD,
-  DELIVERY_USER_LABEL_FIELD,
-  HILOS_DELIVERY_STATUSES,
   HilosPages,
   isDeliveryRetryable,
   type HilosDeliveriesContext,
   type HilosDeliveryRow,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
@@ -69,30 +58,6 @@ const { sendDeliveryRetry } = createHilosDeliveriesActions(props.context)
 onMounted(() => deliveries.start())
 onUnmounted(() => deliveries.dispose())
 
-const columns: HilosTableColumnOf<HilosDeliveryRow>[] = [
-  { key: DELIVERY_CREATED_AT_FIELD, label: 'Date', sortable: true },
-  { key: DELIVERY_CHANNEL_FIELD, label: 'Channel', sortable: true },
-  { key: DELIVERY_STATUS_FIELD, label: 'Status', sortable: true },
-  {
-    key: DELIVERY_ATTEMPTS_FIELD,
-    label: 'Attempts',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: DELIVERY_DELIVERED_AT_FIELD, label: 'Delivered', sortable: true },
-  { key: DELIVERY_USER_LABEL_FIELD, label: 'Recipient' },
-  // Two fields no column is wide enough for: the title of the notification with its
-  // type under it, and the reason a delivery failed — a whole sentence that stretched
-  // the table around it. Both wait in the panel a row expands into.
-  {
-    key: DELIVERY_NOTIFICATION_TITLE_FIELD,
-    label: 'Notification',
-    detail: true,
-  },
-  { key: DELIVERY_LAST_ERROR_FIELD, label: 'Error', detail: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
-
 // The status contextual badge: failed is danger, sent is success, the rest neutral.
 const STATUS_CLASS: Record<string, string> = {
   failed: 'text-bg-danger',
@@ -112,27 +77,6 @@ function recipientLabel(row: HilosDeliveryRow): string {
   const id = `#${row.userId}`
 
   return row.userLabel ? `${row.userLabel} (${id})` : id
-}
-
-// Domain filters: status and the created_at period ride the open filter map so
-// the backend narrows the window (no local filtering). Empty clears the filter.
-const statusFilter = ref('')
-const fromFilter = ref('')
-const toFilter = ref('')
-
-function onStatus(event: Event): void {
-  statusFilter.value = (event.target as HTMLSelectElement).value
-  deliveriesTable.setFilter(DELIVERY_FILTER_STATUS, statusFilter.value)
-}
-
-function onFrom(event: Event): void {
-  fromFilter.value = (event.target as HTMLInputElement).value
-  deliveriesTable.setFilter(DELIVERY_FILTER_FROM, fromFilter.value)
-}
-
-function onTo(event: Event): void {
-  toFilter.value = (event.target as HTMLInputElement).value
-  deliveriesTable.setFilter(DELIVERY_FILTER_TO, toFilter.value)
 }
 
 // Retry: a per-row tracked action on a failed delivery. On success, re-request the
@@ -155,90 +99,42 @@ async function retry(row: HilosDeliveryRow): Promise<void> {
 
 <template>
   <HilosAdminPage :page="HilosPages.COMMUNICATIONS_DELIVERIES">
-    <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
-      <div v-if="channel">
-        <span class="form-label d-block">Channel</span>
-        <span
-          class="badge text-bg-secondary-subtle text-secondary-emphasis fs-6"
-        >
-          <code>{{ channel }}</code>
-        </span>
-      </div>
-      <div>
-        <label class="form-label" for="hilos-delivery-status">Status</label>
-        <select
-          id="hilos-delivery-status"
-          class="form-select"
-          :value="statusFilter"
-          data-id="hilos-delivery-status"
-          @change="onStatus"
-        >
-          <option
-            v-for="option in HILOS_DELIVERY_STATUSES"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
-      </div>
-      <div>
-        <label class="form-label" for="hilos-delivery-from">From</label>
-        <input
-          id="hilos-delivery-from"
-          type="date"
-          class="form-control"
-          :value="fromFilter"
-          data-id="hilos-delivery-from"
-          @change="onFrom"
-        />
-      </div>
-      <div>
-        <label class="form-label" for="hilos-delivery-to">To</label>
-        <input
-          id="hilos-delivery-to"
-          type="date"
-          class="form-control"
-          :value="toFilter"
-          data-id="hilos-delivery-to"
-          @change="onTo"
-        />
-      </div>
+    <!-- The channel the route opened the journal on is the table's preset, not
+    a filter of its bar: it is named here, above the table, and nothing on the
+    page offers to take it off. -->
+    <div v-if="channel" class="mb-3">
+      <span class="form-label d-block">Channel</span>
+      <span class="badge text-bg-secondary-subtle text-secondary-emphasis fs-6">
+        <code>{{ channel }}</code>
+      </span>
     </div>
 
-    <HilosViewportTable
-      label="Deliveries"
-      :controller="deliveriesTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search type or recipient…"
-      empty-text="No deliveries yet."
-    >
-      <template #row="{ row }">
-        <td class="text-nowrap">{{ row.createdAt || '—' }}</td>
-        <td>
-          <code>{{ row.channel || '—' }}</code>
-        </td>
-        <td>
-          <span class="badge" :class="statusClass(row.status)">{{
-            row.status || '—'
-          }}</span>
-        </td>
-        <td class="text-end">{{ row.attempts }}</td>
-        <td class="text-nowrap">{{ row.deliveredAt || '—' }}</td>
-        <td>{{ recipientLabel(row) }}</td>
-        <td class="text-end">
-          <LoadingButton
-            v-if="isDeliveryRetryable(row)"
-            class="btn-outline-primary btn-sm"
-            :loading="retryBusy && retryPendingId === row.rowKey"
-            :disabled="retryBusy"
-            :data-id="`hilos-delivery-retry-${row.rowKey}`"
-            @click="retry(row)"
-          >
-            Retry
-          </LoadingButton>
-        </td>
+    <HilosViewportTable :controller="deliveriesTable">
+      <template #cell-createdAt="{ row }">{{ row.createdAt || '—' }}</template>
+      <template #cell-channel="{ row }">
+        <code>{{ row.channel || '—' }}</code>
+      </template>
+      <template #cell-status="{ row }">
+        <span class="badge" :class="statusClass(row.status)">{{
+          row.status || '—'
+        }}</span>
+      </template>
+      <template #cell-attempts="{ row }">{{ row.attempts }}</template>
+      <template #cell-deliveredAt="{ row }">{{
+        row.deliveredAt || '—'
+      }}</template>
+      <template #cell-userLabel="{ row }">{{ recipientLabel(row) }}</template>
+      <template #cell-actions="{ row }">
+        <LoadingButton
+          v-if="isDeliveryRetryable(row)"
+          class="btn-outline-primary btn-sm"
+          :loading="retryBusy && retryPendingId === row.rowKey"
+          :disabled="retryBusy"
+          :data-id="`hilos-delivery-retry-${row.rowKey}`"
+          @click="retry(row)"
+        >
+          Retry
+        </LoadingButton>
       </template>
       <template #detail-notificationTitle="{ row }">
         <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>

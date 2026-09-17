@@ -6,6 +6,7 @@ import {
   ConflictHeader,
   ErrorPage,
   HILOS_AUTH_GATE,
+  HILOS_PAGE_HEADING_ID,
   HILOS_ROUTER,
   HilosAdminPage,
   HilosAuthSurface,
@@ -32,6 +33,7 @@ import {
 it('exports the @hilos/angular public surface', () => {
   expect(connectionStateSignal).toBeTypeOf('function')
   expect(HILOS_ROUTER).toBeTypeOf('object')
+  expect(HILOS_PAGE_HEADING_ID).toBeTypeOf('object')
   expect(HILOS_AUTH_GATE).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')

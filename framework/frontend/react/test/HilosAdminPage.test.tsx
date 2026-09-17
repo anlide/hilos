@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { HilosPages, createSignal } from '@hilos/core'
+import { HilosPages, TableViewportController, createSignal } from '@hilos/core'
 import type {
   HilosPageIdentity,
   HilosRouter,
@@ -9,6 +9,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
+import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** The identity a section answers with: a chain above it and cards below. */
@@ -166,5 +167,29 @@ describe('HilosAdminPage', () => {
     expect(
       cards.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+
+  it('names a declared table that has no title of its own by the page heading', () => {
+    const controller = new TableViewportController<{ name: string }>({
+      resolve: (raw) => ({ name: String(raw.slots.name) }),
+      sendViewport: () => {},
+      frame: { search: {}, columns: [{ key: 'name', label: 'Name' }] },
+    })
+    const { container } = renderPage(
+      HilosPages.I18N_LANGUAGE,
+      LEAF_IDENTITY,
+      <HilosViewportTable
+        controller={controller}
+        row={(row) => <td>{row.name}</td>}
+      />,
+    )
+
+    const heading = container.querySelector('[data-id="hilos-admin-title"]')
+    expect(heading?.id).toBeTruthy()
+    expect(
+      container.querySelector('table')?.getAttribute('aria-labelledby'),
+    ).toBe(heading?.id)
+    // One name over one table: the table draws no heading of its own repeating it.
+    expect(container.querySelector('[data-id="hilos-table-title"]')).toBeNull()
   })
 })

@@ -129,15 +129,16 @@ accumulated before the break is gone — the window that arrives outranks it.
 
 ## What the page declares
 
-> **The declaration below is drawn by all three views, and no framework page
-> declares one yet (not in the code yet — HIL-819).** Vue, React, and Angular
+> **The declaration below is drawn by all three views.** Vue, React, and Angular
 > render the bar and the footer from it; what was built on top of them since —
 > the order menu and page numbers, the strip of new rows with Apply, marks,
 > cards, row detail, the worded empty states, the strips of work and of a quiet
 > source — is drawn by Vue alone until its own parity leaf (HIL-811 to HIL-818).
-> The framework's own pages move onto the declaration in HIL-819. So a view still
-> takes its columns, its label, and its empty text as props, and a table that
-> declares nothing keeps drawing the bar and the footer it drew before.
+> Six framework tables declare one — settings, users, the delivery journal,
+> backups, the channels hub and a channel's fields. The framework's log pages and
+> the verifier circle on the backups page still hand their view columns, a label
+> and an empty text as props, and a table that declares nothing keeps drawing the
+> bar and the footer it drew before.
 
 **The page declares; the view draws.** The framework owns the whole bar above the
 table and the whole footer below it, and a page that wants a title, a filter, or
@@ -278,7 +279,21 @@ of a description list not being a cell of a table.
 **A table drawing its frame from props keeps the `#row` slot and gets no cards.**
 There is nothing to address a cell by in that epoch, so there is nothing to build
 a card out of, and such a table keeps its horizontal scroll at every width until
-its page moves onto the declaration (HIL-819).
+its page moves onto the declaration.
+
+**A title is declared only when it tells tables apart.** The one table of a
+framework admin page declares none: the page heading above already names it, the
+bar draws no heading of its own, and the table takes its accessible name from the
+page heading, whose id the admin shell hands down (Vue `hilosPageHeadingIdKey`,
+React and Angular their own context and token). A page holding two tables names
+both.
+
+**A preset is not a filter of the bar.** The channel a route names reaches the
+table as `initialFilter`, and the window the page's own answer carries was built
+without it — the backend serves a cold entry by the table's declaration alone. So
+a table opening with a preset draws none of that window's rows: it keeps the order
+and the size the window says and asks for its own, the skeleton standing until it
+arrives.
 
 Several filter-map entries are set in one window change with `setFilters()`, and
 `resetFilters()` returns the map to the filters the table opened with —
@@ -889,9 +904,8 @@ Everything inside the root keeps the `hilos-table-*` prefix:
 - **counts and paging:** `hilos-table-count`,
   `hilos-table-page-<pageNumber>` (1-based, and only while the count is exact
   enough to have page numbers at all), `hilos-table-prev`, `hilos-table-next`;
-  `hilos-table-page` is the single number the props-driven footer prints and
-  goes with that footer when the framework pages move onto the declaration
-  (HIL-819);
+  `hilos-table-page` is the single number the props-driven footer prints, and
+  only a table that declares no frame still carries it;
 - **states:** `hilos-table-loading` — the skeleton as a whole,
   `hilos-table-skeleton-row` — one row of it (one bar in the cards);
   `hilos-table-empty` with `hilos-table-empty-title`, `hilos-table-empty-hint`

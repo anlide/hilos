@@ -29,8 +29,8 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
 use Hilos\Core\Table\DTO\TableBulkActionDTO;
-use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\Table\Exception\TableBulkActionNotOfferedException;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
@@ -795,22 +795,26 @@ abstract class AbstractPage implements ActionHostInterface
      * outlives the client's action timeout, so the outcome arrives later as its own frame
      * (docs/agents/frontend/wire-protocol.md, "When the work outlives the reply").
      *
-     * The table is resolved by the page, not by the framework: which of this page's tables a
-     * request may name, and under which action, is the page's own question, and the framework
-     * touches no row it was not handed a table for.
+     * The table is resolved by the framework, not by the page: the key the request names has to
+     * be one of this page's tables in the project's topology, and the table is then taken from
+     * the registry the windows are served from. A page handed nothing to pick the table with has
+     * nothing it could pick wrongly - a key from the wire cannot be answered with some other
+     * table's object. Which operations the table takes is its own declaration, held by the router.
      *
      * @param string $acceptKey Connection that asked
      * @param TableBulkActionDTO $dto Request naming the table and the target
-     * @param ViewportTable $table Table this page resolved the request's key to
      * @return TableBulkAcceptedReplyDTO Acceptance carrying the run's key and its honest total
+     * @throws TableBulkActionNotOfferedException When the key is not a table of this page, or the table does not offer the action
      * @throws TableBulkRunBusyException When this connection already has a run on this table
      * @throws HilosException When the page was never handed its router
      */
-    protected function startBulkAction(
-        string $acceptKey,
-        TableBulkActionDTO $dto,
-        ViewportTable $table,
-    ): TableBulkAcceptedReplyDTO {
+    protected function startBulkAction(string $acceptKey, TableBulkActionDTO $dto): TableBulkAcceptedReplyDTO
+    {
+        $table = Hilos::$browser?->pageViewportTable(static::PAGE, $dto->tableKey);
+        if ($table === null) {
+            throw new TableBulkActionNotOfferedException($dto->tableKey, $dto->getAction());
+        }
+
         return $this->requireSignalRouter()->startBulkRun($this, $acceptKey, $dto, $table);
     }
 
@@ -832,6 +836,8 @@ abstract class AbstractPage implements ActionHostInterface
      * @param string $progressKey Run the row belongs to, which the verdict carries back
      * @param string $rowKey Row to judge
      * @throws TableActionException Always, until the page that declared the action overrides this
+     * @throws HilosException When an override cannot declare its verdict; the row is then reported untouched
+     * @throws InvalidArgumentException When an override cannot name the ask it hands the row on with
      */
     public function onBulkRow(string $action, string $progressKey, string $rowKey): void
     {

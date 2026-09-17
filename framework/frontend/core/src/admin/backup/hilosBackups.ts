@@ -36,6 +36,16 @@ import {
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
+import {
+  hilosTableBulkAcceptedSchema,
+  hilosTableBulkPayload,
+} from '../../table/tableBulkRequest.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
+import { type HilosTableSortOrder } from '../../table/tableSortOrder.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosTableProgress } from '../../table/tableProgress.js'
 
@@ -163,6 +173,7 @@ const HILOS_BACKUPS_TABLE = 'hilosBackups'
 const BACKUP_SLOT = 'backup'
 const BACKUP_CREATE_ACTION = 'backup_create'
 const BACKUP_DELETE_ACTION = 'backup_delete'
+const BACKUP_BULK_DELETE_ACTION = 'backup_bulk_delete'
 const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
 const BACKUP_RESTORE_ACTION = 'backup_restore'
 const BACKUP_REOPEN_ACTION = 'backup_reopen'
@@ -174,6 +185,7 @@ const HILOS_BACKUP_CIRCLE_SLOT = 'verifierCircle'
 const BACKUP_ACTIONS = new Set<string>([
   BACKUP_CREATE_ACTION,
   BACKUP_DELETE_ACTION,
+  BACKUP_BULK_DELETE_ACTION,
   BACKUP_SET_KEEP_ACTION,
   BACKUP_RESTORE_ACTION,
   BACKUP_REOPEN_ACTION,
@@ -1393,6 +1405,140 @@ export interface HilosBackupsTable {
   dispose(): void
 }
 
+/** Filter-map key narrowing the list to one scope (backend `HilosBackupHistoryTable::FILTER_SCOPE`). */
+const BACKUP_FILTER_SCOPE = 'scope'
+
+/** Filter-map key of the first day of the period (backend `HilosBackupHistoryTable::FILTER_FROM`). */
+const BACKUP_FILTER_FROM = 'from'
+
+/** Filter-map key of the last day of the period (backend `HilosBackupHistoryTable::FILTER_TO`). */
+const BACKUP_FILTER_TO = 'to'
+
+/** The columns of the backup table, in display order. */
+const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
+  {
+    key: BACKUP_CREATED_AT_FIELD,
+    label: 'Date',
+    sortable: true,
+    cellClass: 'text-nowrap',
+  },
+  { key: BACKUP_ENV_FIELD, label: 'Environment', sortable: true },
+  { key: BACKUP_SCOPE_FIELD, label: 'Scope', sortable: true },
+  {
+    key: BACKUP_SIZE_BYTES_FIELD,
+    label: 'Size',
+    sortable: true,
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+  {
+    key: BACKUP_CHECKSUM_STATE_FIELD,
+    label: 'Checksum',
+    cellClass: 'text-nowrap',
+  },
+  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy', cellClass: 'text-nowrap' },
+  {
+    key: BACKUP_DURATION_SECONDS_FIELD,
+    label: 'Duration',
+    sortable: true,
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+  { key: BACKUP_STATUS_FIELD, label: 'Status', sortable: true },
+  {
+    key: BACKUP_RESTORE_OUTCOME_FIELD,
+    label: 'Restore',
+    cellClass: 'text-nowrap',
+  },
+  {
+    key: BACKUP_KEEP_FIELD,
+    label: 'Keep',
+    headerClass: 'text-center',
+    cellClass: 'text-center',
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/** The part of the backup table's frame that needs nothing from the project. */
+const BACKUPS_FRAME_BASE: HilosTableFrame = {
+  search: { placeholder: 'Search backups…' },
+  filters: [
+    {
+      kind: 'select',
+      key: BACKUP_FILTER_SCOPE,
+      label: 'Scope',
+      options: () => HILOS_BACKUP_SCOPES,
+    },
+    {
+      kind: 'date_range',
+      fromKey: BACKUP_FILTER_FROM,
+      toKey: BACKUP_FILTER_TO,
+      label: 'Period',
+    },
+  ],
+  columns: BACKUPS_COLUMNS,
+  empty: { title: 'No backups yet.' },
+}
+
+/**
+ * What the backup table declares about its frame: a search, the scope and the
+ * period as the filters of its bar, one bulk operation, and no title — the page
+ * heading above already names it. No main action either: the create strip above
+ * the table stays whole until it moves into a dialog (HIL-1021).
+ *
+ * The bulk delete is the one part that needs the connection, so the declaration is
+ * built per table rather than held as a constant. The framework's selection panel
+ * confirms it before the run, and the storage agent judges every copy.
+ *
+ * @param context The project context the delete dispatches over.
+ * @returns The frame declaration.
+ */
+function backupsFrame(context: HilosBackupsContext): HilosTableFrame {
+  return {
+    ...BACKUPS_FRAME_BASE,
+    bulkActions: [
+      {
+        key: 'delete',
+        label: 'Delete',
+        danger: true,
+        run: (target) =>
+          context.actions.dispatch(
+            BACKUP_BULK_DELETE_ACTION,
+            hilosTableBulkPayload(HILOS_BACKUPS_TABLE, target),
+            { replySchema: hilosTableBulkAcceptedSchema },
+          ),
+      },
+    ],
+  }
+}
+
+/**
+ * The orders of more than one column the backup table offers in its menu — the
+ * very keys and components `HilosBackupHistoryTable::sortOrders()` declares. Both
+ * end on the newest copy first, the order the table opens in.
+ */
+const BACKUPS_ORDERS: readonly HilosTableSortOrder[] = [
+  {
+    key: 'scope_created',
+    components: [
+      { field: BACKUP_SCOPE_FIELD, direction: 'asc' },
+      { field: BACKUP_CREATED_AT_FIELD, direction: 'desc' },
+    ],
+  },
+  {
+    key: 'status_created',
+    components: [
+      { field: BACKUP_STATUS_FIELD, direction: 'asc' },
+      { field: BACKUP_CREATED_AT_FIELD, direction: 'desc' },
+    ],
+  },
+]
+
 /**
  * The server-windowed controller for the Hilos backup table: search, sort, and
  * paging change the viewport descriptor sent over the connection, and the backend
@@ -1415,6 +1561,14 @@ export function createHilosBackupsTable(
         HILOS_BACKUPS_TABLE,
         descriptor,
       ),
+    sendFacets: (facets) =>
+      context.connection.sendTableFacets(
+        HilosPages.BACKUP,
+        HILOS_BACKUPS_TABLE,
+        facets,
+      ),
+    declaredOrders: BACKUPS_ORDERS,
+    frame: backupsFrame(context),
   })
   const teardown: Array<() => void> = []
 

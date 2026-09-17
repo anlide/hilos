@@ -5,8 +5,10 @@ merged with its persisted override, so the key set is fixed — there is no free
 only mutations: set a custom value on an on-default key (add-by-key), edit or
 reset an override, or delete an orphan. The table, the row view-model, and the
 add/update/delete round-trips are the core headless's (createHilosSettingsTable /
-createHilosSettingsActions); this view owns only the markup, so a project mounts
-it by passing its HilosSettingsContext and declares the catalog on its backend.
+createHilosSettingsActions), and so is what the table declares about its frame —
+columns, search, empty state; this view owns only the markup, so a project
+mounts it by passing its HilosSettingsContext and declares the catalog on its
+backend.
 Authoritative-backend: a submit dispatches a tracked action and the dialog closes
 on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces as a
 toast and leaves the dialog open with the entered value (toasts.md). Bootstrap classes only (styling-rules.md). -->
@@ -18,11 +20,8 @@ import {
   HilosPages,
   isOrphanSetting,
   resolveSettingEdit,
-  SETTING_KEY_FIELD,
-  SETTING_VALUE_FIELD,
   type HilosSettingRow,
   type HilosSettingsContext,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
@@ -55,12 +54,6 @@ const {
 // window, and unbind on unmount.
 onMounted(() => settings.start())
 onUnmounted(() => settings.dispose())
-
-const columns: HilosTableColumnOf<HilosSettingRow>[] = [
-  { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
-  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 /** Map a setting type to the value input it edits with. */
 function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
@@ -254,66 +247,59 @@ async function submitDelete(): Promise<void> {
 
 <template>
   <HilosAdminPage :page="HilosPages.SETTINGS">
-    <HilosViewportTable
-      label="Settings"
-      :controller="settingsTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search settings…"
-      empty-text="No settings yet."
-    >
-      <template #row="{ row }">
-        <td>
-          <code>{{ row.key }}</code>
-        </td>
-        <td style="max-width: 18rem">
+    <HilosViewportTable :controller="settingsTable">
+      <template #cell-key="{ row }">
+        <code>{{ row.key }}</code>
+      </template>
+      <template #cell-value="{ row }">
+        <div style="max-width: 18rem">
           <HilosSettingValueCell
             :value="row.value"
             :type="row.type"
             :value-source="row.valueSource"
             :default-reference-key="row.defaultReferenceKey"
           />
-        </td>
-        <td class="text-end">
-          <div class="d-flex gap-1 justify-content-end">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary"
-              :title="
+        </div>
+      </template>
+      <template #cell-actions="{ row }">
+        <div class="d-flex gap-1 justify-content-end">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            :title="
+              hasCustomValue(row) || isOrphanSetting(row)
+                ? 'Edit'
+                : 'Set custom value'
+            "
+            :aria-label="
+              hasCustomValue(row) || isOrphanSetting(row)
+                ? 'Edit'
+                : 'Set custom value'
+            "
+            :data-id="`hilos-settings-edit-${row.key}`"
+            @click="openEdit(row)"
+          >
+            <i
+              :class="
                 hasCustomValue(row) || isOrphanSetting(row)
-                  ? 'Edit'
-                  : 'Set custom value'
+                  ? 'bi bi-pencil'
+                  : 'bi bi-plus-lg'
               "
-              :aria-label="
-                hasCustomValue(row) || isOrphanSetting(row)
-                  ? 'Edit'
-                  : 'Set custom value'
-              "
-              :data-id="`hilos-settings-edit-${row.key}`"
-              @click="openEdit(row)"
-            >
-              <i
-                :class="
-                  hasCustomValue(row) || isOrphanSetting(row)
-                    ? 'bi bi-pencil'
-                    : 'bi bi-plus-lg'
-                "
-                aria-hidden="true"
-              ></i>
-            </button>
-            <button
-              v-if="isOrphanSetting(row)"
-              type="button"
-              class="btn btn-sm btn-outline-danger"
-              title="Delete orphan setting"
-              aria-label="Delete orphan setting"
-              :data-id="`hilos-settings-delete-${row.key}`"
-              @click="openDelete(row)"
-            >
-              <i class="bi bi-trash" aria-hidden="true"></i>
-            </button>
-          </div>
-        </td>
+              aria-hidden="true"
+            ></i>
+          </button>
+          <button
+            v-if="isOrphanSetting(row)"
+            type="button"
+            class="btn btn-sm btn-outline-danger"
+            title="Delete orphan setting"
+            aria-label="Delete orphan setting"
+            :data-id="`hilos-settings-delete-${row.key}`"
+            @click="openDelete(row)"
+          >
+            <i class="bi bi-trash" aria-hidden="true"></i>
+          </button>
+        </div>
       </template>
     </HilosViewportTable>
 

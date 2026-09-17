@@ -26,6 +26,11 @@ import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
+import {
   TableViewportController,
   type TableViewportRow,
 } from '../../table/TableViewportController.js'
@@ -263,6 +268,28 @@ export interface HilosSettingsTable {
   dispose(): void
 }
 
+/** The columns of the settings table, in display order. */
+const SETTINGS_COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
+  { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
+  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/**
+ * What the settings table declares about its frame. No title: the page heading
+ * above already names it, and the table takes its accessible name from there.
+ */
+const SETTINGS_FRAME: HilosTableFrame = {
+  search: { placeholder: 'Search settings…' },
+  columns: SETTINGS_COLUMNS,
+  empty: { title: 'No settings yet.' },
+}
+
 /**
  * The server-windowed controller for the Hilos settings table: search, sort, and
  * paging change the viewport descriptor sent over the connection, and the backend
@@ -284,6 +311,7 @@ export function createHilosSettingsTable(
         SETTINGS_TABLE,
         descriptor,
       ),
+    frame: SETTINGS_FRAME,
   })
   const teardown: Array<() => void> = []
 

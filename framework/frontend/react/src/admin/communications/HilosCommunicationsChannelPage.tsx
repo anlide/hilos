@@ -1,16 +1,19 @@
 // HilosCommunicationsChannelPage — the framework Hilos channel-config page
 // (HilosPages.COMMUNICATIONS_CHANNEL): one delivery channel's config fields inside
 // the admin shell. The route {channelId} names the channel; the fields table is
-// global (one row per field of every channel), so the core headless filters it to
-// this channel client-side (createHilosChannelFields). Each editable field shows its
-// effective value and source and can be overridden (edit, in a modal) or reset to
-// its env/default; a secret is shown as set/not-set and never editable. A "Send test
-// notification" button exercises the real delivery path (HIL-201). Writes are tracked
-// actions (createHilosCommunicationsActions): the value redraws from the reactive
-// table's snapshot signal after the backend echo, never optimistically, and a
-// validation failure surfaces as a toast with the backend's domain phrase. Editing
-// happens in a modal — inline forms are forbidden (rules-and-violations.md section E).
-// Bootstrap classes only (styling-rules.md).
+// global (one row per field of every channel), so the core headless presets the
+// channel in the table's filter map and the server narrows the window to it — no
+// filter is applied on the client (createHilosChannelFields). The table is the
+// shared server-windowed one, drawn from what it declares about its frame (its
+// columns and empty words); this view owns only the cells of a row. Each editable
+// field shows its effective value and source and can be overridden (edit, in a
+// modal) or reset to its env/default; a secret is shown as set/not-set and never
+// editable. A "Send test notification" button above the table exercises the real
+// delivery path (HIL-201). Writes are tracked actions (createHilosCommunicationsActions):
+// the value redraws from the reactive table's snapshot signal after the backend
+// echo, never optimistically, and a validation failure surfaces as a toast with the
+// backend's domain phrase. Editing happens in a modal — inline forms are forbidden
+// (rules-and-violations.md section E). Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
@@ -26,6 +29,7 @@ import type {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
@@ -96,8 +100,8 @@ export function HilosCommunicationsChannelPage({
     )
   }
 
-  // The route channel, as a core signal so the filtered fields re-derive on
-  // navigation without a re-fetch of the (shared) global fields table.
+  // The route channel, as a core signal the fields table follows: navigating to
+  // another channel sets the table's channel filter again and asks for its window.
   const channelSignal = useMemo(
     () =>
       computedSignal(
@@ -113,7 +117,6 @@ export function HilosCommunicationsChannelPage({
     () => createHilosChannelFields(context, channelSignal),
     [context, channelSignal],
   )
-  const rows = useSignal(fields.rows)
   const actions = useMemo(
     () => createHilosCommunicationsActions(context),
     [context],
@@ -197,82 +200,61 @@ export function HilosCommunicationsChannelPage({
         </LoadingButton>
       </div>
 
-      <div className="table-responsive">
-        <table className="table table-striped align-middle mb-0">
-          <caption className="visually-hidden">
-            Channel configuration fields
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Field</th>
-              <th scope="col">Value</th>
-              <th scope="col">Source</th>
-              <th scope="col" className="text-end"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key} data-id={`hilos-channel-field-${row.field}`}>
-                <td>
-                  <div className="fw-semibold">{row.label}</div>
-                  <code className="small text-body-secondary">{row.field}</code>
-                </td>
-                <td>
-                  {row.secret ? (
-                    <span className="text-body-secondary fst-italic">
-                      {row.valueSource === 'env' ? 'Set in env' : 'Not set'}
-                    </span>
-                  ) : (
-                    <span>{displayValue(row)}</span>
-                  )}
-                </td>
-                <td>
-                  <span className="badge text-bg-secondary-subtle text-secondary-emphasis">
-                    {SOURCE_LABEL[row.valueSource] ?? row.valueSource}
-                  </span>
-                </td>
-                <td className="text-end">
-                  {row.editable ? (
-                    <div className="d-flex gap-1 justify-content-end">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-primary"
-                        title="Edit"
-                        aria-label="Edit"
-                        data-id={`hilos-channel-field-edit-${row.field}`}
-                        onClick={() => openEdit(row)}
-                      >
-                        <i className="bi bi-pencil" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary"
-                        title="Reset to env/default"
-                        aria-label="Reset to env/default"
-                        disabled={row.valueSource !== 'settings' || reset.busy}
-                        data-id={`hilos-channel-field-reset-${row.field}`}
-                        onClick={() => resetField(row)}
-                      >
-                        <i
-                          className="bi bi-arrow-counterclockwise"
-                          aria-hidden="true"
-                        />
-                      </button>
-                    </div>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="text-center text-muted py-4">
-                  No configurable fields for this channel.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <HilosViewportTable
+        controller={fields.controller}
+        row={(row) => (
+          <>
+            <td>
+              <div className="fw-semibold">{row.label}</div>
+              <code className="small text-body-secondary">{row.field}</code>
+            </td>
+            <td>
+              {row.secret ? (
+                <span className="text-body-secondary fst-italic">
+                  {row.valueSource === 'env' ? 'Set in env' : 'Not set'}
+                </span>
+              ) : (
+                <span>{displayValue(row)}</span>
+              )}
+            </td>
+            <td>
+              <span className="badge text-bg-secondary-subtle text-secondary-emphasis">
+                {SOURCE_LABEL[row.valueSource] ?? row.valueSource}
+              </span>
+            </td>
+            <td className="text-end">
+              {row.editable ? (
+                <div className="d-flex gap-1 justify-content-end">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    title="Edit"
+                    aria-label="Edit"
+                    data-id={`hilos-channel-field-edit-${row.field}`}
+                    onClick={() => openEdit(row)}
+                  >
+                    <i className="bi bi-pencil" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    title="Reset to env/default"
+                    aria-label="Reset to env/default"
+                    disabled={row.valueSource !== 'settings' || reset.busy}
+                    data-id={`hilos-channel-field-reset-${row.field}`}
+                    onClick={() => resetField(row)}
+                  >
+                    <i
+                      className="bi bi-arrow-counterclockwise"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
+              ) : null}
+            </td>
+          </>
+        )}
+      />
 
       <HilosModal
         open={editOpen}

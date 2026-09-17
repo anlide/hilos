@@ -1,21 +1,18 @@
 <!-- HilosUsersPage — the framework Hilos users-list page (HilosPages.USERS): the
-users table inside the admin shell. All table logic and the row view-model are
-the core headless's (createHilosUsersTable / HilosUserRow); this view owns only
-the column set and the cell markup, so a project mounts it by passing its
-HilosUsersContext. The framework owns every cell except the trailing actions
-cell, which a project fills through the `#row-actions` slot (e.g. a link to the
-detail page) — the framework's own row action, the takeover, is drawn ahead of that
-slot. Bootstrap classes only (styling-rules.md). -->
+users table inside the admin shell. All table logic, the row view-model, and what
+the table declares about its frame — columns, search, empty state — are the core
+headless's (createHilosUsersTable / HilosUserRow); this view owns only the markup,
+so a project mounts it by passing its HilosUsersContext. The framework owns every
+cell except the trailing actions cell, which a project fills through the
+`#row-actions` slot (e.g. a link to the detail page) — the framework's own row
+action, the takeover, is drawn ahead of that slot. Bootstrap classes only
+(styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosImpersonate,
   createHilosUsersTable,
   HilosPages,
-  type HilosTableColumnOf,
   type HilosUserRow,
-  USER_CONNECTIONS_SLOT,
-  USER_ONLINE_SESSION_COUNT_FIELD,
-  USER_PRESENCE_FIELD,
   type HilosUsersContext,
 } from '@hilos/core'
 import { onMounted, onUnmounted, ref } from 'vue'
@@ -85,72 +82,41 @@ async function submitImpersonate(): Promise<void> {
     closeImpersonate()
   }
 }
-
-// Only the two presence columns name a source: they are built from the inline
-// connections slot, which is the runtime summary a node keeps and the one thing here
-// that can stop being current. The rest come from the user record in the database,
-// and a database does not go quiet.
-const columns: HilosTableColumnOf<HilosUserRow>[] = [
-  { key: 'id', label: 'ID', sortable: true },
-  { key: 'name', label: 'Name', sortable: true },
-  {
-    key: USER_PRESENCE_FIELD,
-    label: 'Presence',
-    sortable: true,
-    source: USER_CONNECTIONS_SLOT,
-  },
-  {
-    key: USER_ONLINE_SESSION_COUNT_FIELD,
-    label: 'Sessions',
-    sortable: true,
-    headerClass: 'text-end',
-    source: USER_CONNECTIONS_SLOT,
-  },
-  { key: 'lastActivity', label: 'Last activity', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 </script>
 
 <template>
   <HilosAdminPage :page="HilosPages.USERS">
-    <HilosViewportTable
-      label="Users"
-      :controller="usersTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search users…"
-      empty-text="No users yet."
-    >
-      <template #row="{ row }">
-        <td class="text-body-secondary">{{ row.id }}</td>
-        <td class="fw-medium">{{ row.name }}</td>
-        <td>
-          <span
-            class="badge"
-            :class="
-              row.presence === 'online'
-                ? 'text-bg-success'
-                : 'text-bg-secondary'
-            "
-            >{{ row.presence }}</span
-          >
-        </td>
-        <td class="text-end">{{ row.onlineSessionCount }}</td>
-        <td>{{ row.lastActivity ?? '—' }}</td>
-        <td class="text-end">
-          <button
-            v-if="row.id !== currentUid"
-            type="button"
-            class="btn btn-sm btn-outline-secondary me-2"
-            title="Impersonate"
-            aria-label="Impersonate"
-            :data-id="`hilos-users-impersonate-${row.id}`"
-            @click="openImpersonate(row)"
-          >
-            <i class="bi bi-person-badge" aria-hidden="true"></i>
-          </button>
-          <slot name="row-actions" :row="row" />
-        </td>
+    <HilosViewportTable :controller="usersTable">
+      <template #cell-id="{ row }">{{ row.id }}</template>
+      <template #cell-name="{ row }">{{ row.name }}</template>
+      <template #cell-presence="{ row }">
+        <span
+          class="badge"
+          :class="
+            row.presence === 'online' ? 'text-bg-success' : 'text-bg-secondary'
+          "
+          >{{ row.presence }}</span
+        >
+      </template>
+      <template #cell-onlineSessionCount="{ row }">{{
+        row.onlineSessionCount
+      }}</template>
+      <template #cell-lastActivity="{ row }">{{
+        row.lastActivity ?? '—'
+      }}</template>
+      <template #cell-actions="{ row }">
+        <button
+          v-if="row.id !== currentUid"
+          type="button"
+          class="btn btn-sm btn-outline-secondary me-2"
+          title="Impersonate"
+          aria-label="Impersonate"
+          :data-id="`hilos-users-impersonate-${row.id}`"
+          @click="openImpersonate(row)"
+        >
+          <i class="bi bi-person-badge" aria-hidden="true"></i>
+        </button>
+        <slot name="row-actions" :row="row" />
       </template>
     </HilosViewportTable>
 

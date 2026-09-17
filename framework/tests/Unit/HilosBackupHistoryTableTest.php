@@ -6,7 +6,11 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupConnectionMeta;
@@ -746,6 +750,112 @@ final class HilosBackupHistoryTableTest extends TestCase
                 . ' restoring without the compatibility check',
             ],
             explode("\n", (string)$row->restoreMigrationNotice),
+        );
+    }
+
+    public function testTheScopeFilterNarrowsTheListToOneScope(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $keys = $this->windowKeys($table, new TableQueryDTO(filter: [HilosBackupHistoryTable::FILTER_SCOPE => 'full']));
+
+        $this->assertSame(['b1', 'b3'], $keys);
+    }
+
+    public function testThePeriodKeepsBothOfItsDaysWhole(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $keys = $this->windowKeys($table, new TableQueryDTO(filter: [
+            HilosBackupHistoryTable::FILTER_FROM => '2026-07-21',
+            HilosBackupHistoryTable::FILTER_TO => '2026-07-22',
+        ]));
+
+        $this->assertSame(['b2', 'b3'], $keys, 'A copy taken late on the last day of the period is inside it');
+    }
+
+    public function testTheScopeCountsAreTheTotalsTheirWindowsWouldShow(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $facets = $table->facetCounts(
+            new TableQueryDTO(filter: [HilosBackupHistoryTable::FILTER_FROM => '2026-07-21']),
+            [
+                HilosBackupHistoryTable::FILTER_SCOPE => ['full', 'schema-only'],
+                HilosBackupHistoryTable::FILTER_FROM => ['2026-07-20'],
+            ],
+        );
+
+        $this->assertNotNull($facets);
+        $this->assertSame([HilosBackupHistoryTable::FILTER_SCOPE], array_keys($facets), 'A period has no options to count');
+        $scope = $facets[HilosBackupHistoryTable::FILTER_SCOPE];
+        $this->assertSame(2, $scope[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(1, $scope[TableConstants::FACET_KEY_OPTIONS]['full']->count);
+        $this->assertSame(1, $scope[TableConstants::FACET_KEY_OPTIONS]['schema-only']->count);
+    }
+
+    public function testADeclaredOrderOfTwoColumnsIsServed(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $keys = $this->windowKeys($table, new TableQueryDTO(sort: TableSortOrderDTO::of(
+            new TableSortDTO(HilosBackupTableRow::scope),
+            new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_DESC),
+        )));
+
+        $this->assertSame(['b3', 'b1', 'b2'], $keys, 'Scope first, and the newest copy of a scope on top');
+    }
+
+    public function testAnOrderOfTwoColumnsNobodyDeclaredIsDropped(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $keys = $this->windowKeys($table, new TableQueryDTO(sort: TableSortOrderDTO::of(
+            new TableSortDTO(HilosBackupTableRow::env),
+            new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_DESC),
+        )));
+
+        $this->assertSame(['b1', 'b2', 'b3'], $keys, 'An order the list does not offer leaves the index in the order it walks');
+    }
+
+    /**
+     * Binds an index of three archives: two full copies a day and a half apart, a schema-only one between them.
+     *
+     * @return BackupHistories Stored backup index view, walked b1, b2, b3
+     */
+    private function threeArchives(): BackupHistories
+    {
+        return $this->historiesWith(
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'b1',
+                BackupHistory::createdAt => '2026-07-20T10:00:00+00:00',
+                BackupHistory::scope => 'full',
+            ])),
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'b2',
+                BackupHistory::createdAt => '2026-07-21T09:00:00+00:00',
+                BackupHistory::scope => 'schema-only',
+            ])),
+            BackupHistory::fromRow($this->historyRow([
+                BackupHistory::id => 'b3',
+                BackupHistory::createdAt => '2026-07-22T23:30:00+00:00',
+                BackupHistory::scope => 'full',
+            ])),
+        );
+    }
+
+    /**
+     * Runs one window and names its rows by key.
+     *
+     * @param HilosBackupHistoryTable $table Table bound to the fixture index
+     * @param TableQueryDTO $query Window query
+     * @return list<int|string> Row keys of that window, in display order
+     */
+    private function windowKeys(HilosBackupHistoryTable $table, TableQueryDTO $query): array
+    {
+        return array_map(
+            static fn(HilosBackupTableRow $row): int|string => $row->requireRowKey(),
+            $table->getPage($query)->rows,
         );
     }
 

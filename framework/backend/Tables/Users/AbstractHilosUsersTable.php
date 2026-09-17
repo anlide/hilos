@@ -163,6 +163,26 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * Declares the sortable columns every project's users row carries, which here are the row payload keys themselves.
+     *
+     * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
+     * no identifier is built out of it. Presence and the session count are computed on the fly
+     * and could not be handed to an index, but a set filtered in memory needs none
+     * (`docs/agents/frontend/table-sort-orders.md`). A project row adds its own fields - a name,
+     * a last activity - in its subclass, where it declares what they are searched by.
+     *
+     * @return array<string, string> Wire row fields mapped to the payload keys they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            AbstractHilosUserTableRow::id => AbstractHilosUserTableRow::id,
+            AbstractHilosUserTableRow::presence => AbstractHilosUserTableRow::presence,
+            AbstractHilosUserTableRow::onlineSessionCount => AbstractHilosUserTableRow::onlineSessionCount,
+        ];
+    }
+
+    /**
      * Builds a row mutation for a DB user create, update, or delete.
      *
      * @param SourceChange $change DB user source change

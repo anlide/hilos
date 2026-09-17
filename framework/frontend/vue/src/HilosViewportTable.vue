@@ -31,8 +31,8 @@ inside its own body and off an id base of its own. Both branches stand in the
 document and Bootstrap's visibility utilities show one of them.
 It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
 when the controller carries a declaration, and from its own props when it does
-not — two epochs of the same table living side by side while the five framework
-pages have not moved onto the declaration yet (HIL-819).
+not — two epochs of the same table living side by side: the framework's admin
+tables declare, while its log pages still pass props.
 The body is drawn from the state the core decides (HilosTableBody): rows, a
 skeleton of rows while a window change is late, or one of the two worded states
 drawn by HilosTableEmptyState — the page's own "nothing here yet" and the
@@ -63,6 +63,7 @@ import HilosTableEmptyState from './HilosTableEmptyState.vue'
 import HilosTableFooter from './HilosTableFooter.vue'
 import HilosTableLive from './HilosTableLive.vue'
 import HilosTableProgress from './HilosTableProgress.vue'
+import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosTableSelectionEdgeKey } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
 
@@ -70,8 +71,12 @@ const props = withDefaults(
   defineProps<{
     /** The headless server-windowed controller driving rows, descriptor, and pending. */
     controller: TableViewportController<R>
-    /** Column declarations for the header (labels and sort controls). */
-    columns: HilosTableColumn[]
+    /**
+     * Column declarations for the header (labels and sort controls) of a table whose
+     * page declared no frame; a declared table takes its columns from the declaration
+     * and is not handed these.
+     */
+    columns?: HilosTableColumn[]
     /** Accessible name for the table, rendered as a visually-hidden caption. */
     label?: string
     /** Show the search box above the table. */
@@ -90,6 +95,7 @@ const props = withDefaults(
     dataId?: string
   }>(),
   {
+    columns: () => [],
     label: undefined,
     searchable: false,
     searchPlaceholder: 'Search…',
@@ -105,7 +111,7 @@ const props = withDefaults(
 const declaration = props.controller.frame.declaration
 
 // The columns the table is drawn from: the declaration's own where there is one,
-// and the prop while the five framework pages have not moved onto it (HIL-819).
+// and the prop for a table whose page still passes one (the framework's log pages).
 // Everything that measures or draws a column — the header, the cells of a row,
 // the width of a full-row cell, the card — counts THIS list, so a declared table
 // cannot assemble its row from one list and its card from another (Design D7).
@@ -129,6 +135,12 @@ const slots = useSlots()
 // minted here — where both the bar that renders the heading and the table that
 // points at it can see it (Flow F9).
 const titleId = useId()
+
+// What names a declared table: its own title when it declared one, and otherwise the
+// heading of the page it stands on, which already names it (Design D3). Undefined for a
+// table that declared neither and stands outside an admin page — it has no name to take.
+const pageHeadingId = inject(hilosPageHeadingIdKey, undefined)
+const nameId = declaration?.title ? titleId : pageHeadingId
 
 // The base every expanded row's panel takes its id from — minted the same way the
 // title above is, and for the same reason: the control that points at a panel and
@@ -439,9 +451,8 @@ function onSelectPage(event: Event): void {
       </template>
     </HilosTableBar>
 
-    <!-- SCAFFOLD: the bar a table draws from props, kept while the five
-    framework pages still pass them. It goes with the props themselves when
-    those pages move onto the declaration (HIL-819). -->
+    <!-- The bar a table draws from props, kept while a page still passes them —
+    the framework's log pages do. It goes with the props themselves. -->
     <div v-if="!declaration && searchable" class="mb-3">
       <input
         type="search"
@@ -475,14 +486,14 @@ function onSelectPage(event: Event): void {
     nothing left to scroll sideways once the columns became lines of a card
     (Design D8). A table still drawn from props has no cards to fall back on and
     keeps the wrapper at every width, scrollbar and all, until its page moves
-    onto the declaration (HIL-819). -->
+    onto the declaration. -->
     <div
       class="table-responsive"
       :class="{ 'd-none d-md-block': declaration !== null }"
     >
       <table
         class="table table-striped table-hover align-middle mb-0"
-        :aria-labelledby="declaration ? titleId : undefined"
+        :aria-labelledby="declaration ? nameId : undefined"
       >
         <!-- A declared table already shows its name as a heading, and a hidden
         caption repeating it would name the table twice (Flow F9). -->
@@ -662,7 +673,7 @@ function onSelectPage(event: Event): void {
               column at all, and it is what lets the card next door be built from
               the same slots instead of a second markup the page would write. A
               table still drawing its frame from props has no column to address a
-              cell by, so it keeps handing over the whole row (HIL-819). -->
+              cell by, so it keeps handing over the whole row. -->
               <template v-else-if="declaration">
                 <!-- The cell stands even where the page filled no slot: a row one
                 cell short is a row narrower than its header (Flow F3). -->
@@ -861,7 +872,7 @@ function onSelectPage(event: Event): void {
     list holds the cards and nothing else; what the table says in words when it
     has no rows stands BESIDE it, a sentence not being an item of a list. -->
     <div v-if="card" class="d-md-none" data-id="hilos-table-cards">
-      <div v-if="body === 'rows'" role="list" :aria-labelledby="titleId">
+      <div v-if="body === 'rows'" role="list" :aria-labelledby="nameId">
         <div
           v-for="view in rows"
           :key="view.rowKey"
@@ -1096,8 +1107,8 @@ function onSelectPage(event: Event): void {
 
     <HilosTableFooter v-if="declaration" :controller="controller" />
 
-    <!-- SCAFFOLD: the footer a table draws from its own comparisons, kept for
-    the same reason and going the same way as the bar above (HIL-819). -->
+    <!-- The footer a table draws from its own comparisons, kept for the same
+    reason and going the same way as the bar above. -->
     <div
       v-if="!declaration && paginated"
       class="d-flex justify-content-between align-items-center mt-3"

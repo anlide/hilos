@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createHilosChannelFields,
   createHilosCommunicationsActions,
   resolveHilosChannelFieldRow,
   resolveHilosChannelRow,
   type HilosCommunicationsContext,
 } from '../../../src/admin/communications/hilosCommunications.js'
 import { type ActionHandle } from '../../../src/connection/actionLifecycle.js'
+import {
+  type HilosConnection,
+  type TableViewportDescriptor,
+} from '../../../src/connection/HilosConnection.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 /** Build a channels-hub row whose inline `channel` slot carries the given fields. */
@@ -185,5 +192,53 @@ describe('createHilosCommunicationsActions', () => {
     expect(calls).toEqual([
       { action: 'communications_channel_test', payload: { channel: 'email' } },
     ])
+  })
+})
+
+describe('createHilosChannelFields', () => {
+  it('declares a bare frame: no title under the page heading, no search over a handful of fields', () => {
+    const fields = createHilosChannelFields(
+      {
+        connection: {},
+        scopes: new ScopeManager(),
+      } as unknown as HilosCommunicationsContext,
+      createSignal('email'),
+    )
+    const declaration = fields.controller.frame.declaration
+
+    expect(declaration?.title).toBeUndefined()
+    expect(declaration?.search).toBeUndefined()
+    expect(declaration?.empty?.title).toBe(
+      'No configurable fields for this channel.',
+    )
+  })
+
+  it('narrows the table to the route channel on the server and follows the route', () => {
+    const sent: TableViewportDescriptor[] = []
+    const connection = {
+      on: () => () => {},
+      registerTableWindow: () => {},
+      unregisterTableWindow: () => {},
+      sendTableViewport: (
+        _page: string,
+        _tableKey: string,
+        descriptor: TableViewportDescriptor,
+      ) => sent.push(descriptor) > 0,
+    } as unknown as HilosConnection
+    const channel = createSignal('email')
+    const fields = createHilosChannelFields(
+      {
+        connection,
+        scopes: new ScopeManager(),
+      } as unknown as HilosCommunicationsContext,
+      channel,
+    )
+
+    fields.start()
+    channel.set('sms')
+
+    // No filter is applied on the client any more: the next channel is a new window.
+    expect(sent.at(-1)?.filter).toEqual({ channel: 'sms' })
+    fields.dispose()
   })
 })

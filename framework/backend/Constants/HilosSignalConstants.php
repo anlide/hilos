@@ -323,6 +323,9 @@ final class HilosSignalConstants
     /** Client → server: delete a stored backup on the HILOS_BACKUP page. */
     public const string BACKUP_DELETE = 'backup_delete';
 
+    /** Client → server: delete the marked backups, or every one matching a filter, as one bulk run. */
+    public const string BACKUP_BULK_DELETE = 'backup_bulk_delete';
+
     /** Client → server: toggle a stored backup's rotation pin on the HILOS_BACKUP page. */
     public const string BACKUP_SET_KEEP = 'backup_set_keep';
 
@@ -1168,6 +1171,9 @@ final class HilosSignalConstants
 
     /** Page → BackupAgent: delete the carried backup id (shared delete path). */
     public const string BACKUP_AGENT_DELETE = 'backup_agent_delete';
+
+    /** BackupAgent → backup page: how one delete of a bulk run ended, for the run it names. */
+    public const string HILOS_BACKUP_DELETE_DONE = 'hilos_backup_delete_done';
 
     /** Page → BackupAgent: set the carried backup id's keep pin (sidecar rewrite). */
     public const string BACKUP_AGENT_SET_KEEP = 'backup_agent_set_keep';

@@ -18,6 +18,7 @@ use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Auth\Session\SessionIdentityRef;
 use Hilos\Auth\Session\SessionToastSeverity;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
+use Hilos\Backup\Agent\DTO\BackupDeleteDoneSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
@@ -1559,7 +1560,13 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * archive another node's disk holds, and treats an already-removed backup as an idempotent
      * no-op.
      *
+     * A delete that belongs to a bulk run is answered, whichever way it ended: the run waits on a
+     * verdict for every row, and a row left without one would be reported late and in the
+     * framework's words instead of this agent's. A single-row delete carries no run and is
+     * answered by its index row leaving the table, as before.
+     *
      * @param BackupDeleteSignalData $data Delete request carrying the backup id
+     * @throws InvalidArgumentException When the answer to a bulk run cannot be named
      */
     private function handleDeleteRequest(BackupDeleteSignalData $data): void
     {
@@ -1569,24 +1576,23 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
         if ($id === $this->currentBackupId) {
             $this->logAgentWarning("Ignoring delete of in-progress backup {$id}");
+            $this->answerBulkDelete($data, BackupDeleteDoneSignalData::REASON_BEING_TAKEN);
 
             return;
         }
         $holder = $this->unreachableHolder($id);
         if ($holder !== null) {
             $this->logAgentWarning("Ignoring delete of backup {$id} stored on node {$holder}");
+            $this->answerBulkDelete($data, BackupDeleteDoneSignalData::REASON_OUT_OF_REACH);
 
             return;
         }
 
         $histories = $this->historiesView();
-        if ($histories === null) {
-            return;
-        }
-
-        $row = $histories[$id];
-        if ($row === null) {
+        $row = $histories === null ? null : $histories[$id];
+        if ($histories === null || $row === null) {
             $this->logAgentInfo("Backup {$id} already deleted; no-op");
+            $this->answerBulkDelete($data, BackupDeleteDoneSignalData::REASON_GONE);
 
             return;
         }
@@ -1606,7 +1612,30 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             $this->logAgentInfo("Backup deleted: {$id}");
         } catch (Throwable $e) {
             $this->logAgentError("Failed to delete backup {$id}: " . $e->getMessage());
+            $this->answerBulkDelete($data, BackupDeleteDoneSignalData::REASON_FAILED);
+
+            return;
         }
+        $this->answerBulkDelete($data, null);
+    }
+
+    /**
+     * Tells the page how one delete of a bulk run ended, or says nothing to a single-row delete.
+     *
+     * @param BackupDeleteSignalData $data Delete request, carrying the run's key when it belongs to one
+     * @param ?string $reason Why the copy was left alone, or null when it was deleted
+     * @throws InvalidArgumentException When the answer cannot be named
+     */
+    private function answerBulkDelete(BackupDeleteSignalData $data, ?string $reason): void
+    {
+        if ($data->progressKey === null) {
+            return;
+        }
+
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_BACKUP_DELETE_DONE,
+            new BackupDeleteDoneSignalData($data->backupId, $data->progressKey, $reason),
+        );
     }
 
     /**

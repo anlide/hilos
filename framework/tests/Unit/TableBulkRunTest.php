@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -20,6 +21,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Bulk\TableBulkRun;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
 use Hilos\Core\Table\DTO\TableBulkActionDTO;
 use Hilos\Core\Table\DTO\TableBulkReportSignalData;
@@ -30,6 +32,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\Table\Exception\TableBulkActionNotOfferedException;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -56,10 +59,20 @@ final class TableBulkRunTest extends TestCase
     /** @var list<array{name: string, acceptKey: string, payload: array<string, mixed>}> Frames drained from the queue so far */
     private array $drainedFrames = [];
 
+    private ?TableContext $previousTables = null;
+
+    private ?BrowserContext $previousBrowser = null;
+
     protected function setUp(): void
     {
         $this->previousSignalRouter = HilosFacade::$sr;
+        $this->previousTables = HilosFacade::$table;
+        $this->previousBrowser = HilosFacade::$browser;
         HilosFacade::$sr = new SignalRouter();
+        $browser = new class extends BrowserContext {
+        };
+        $browser->bindHilosFacade(BulkRunTestHilos::class);
+        HilosFacade::$browser = $browser;
         $this->drainedFrames = [];
     }
 
@@ -67,6 +80,8 @@ final class TableBulkRunTest extends TestCase
     {
         ExecutionContext::clear();
         HilosFacade::$sr = $this->previousSignalRouter;
+        HilosFacade::$table = $this->previousTables;
+        HilosFacade::$browser = $this->previousBrowser;
 
         parent::tearDown();
     }
@@ -236,7 +251,7 @@ final class TableBulkRunTest extends TestCase
         $this->assertInstanceOf(BulkRunSecondTestPage::class, $second);
         $first->bindSignalRouter($router);
         $second->bindSignalRouter($router);
-        $first->table = new BulkRunTestTable($this->rows(2));
+        $this->registerTable(new BulkRunTestTable($this->rows(2)));
         $first->mode = BulkRunTestPage::MODE_DEFER;
 
         $this->startRun($first, ['r1']);
@@ -318,6 +333,32 @@ final class TableBulkRunTest extends TestCase
         $this->assertSame($over, $run->judged);
     }
 
+    public function testATableThatDeclaresNoMassOperationRefusesTheRun(): void
+    {
+        $table = new BulkRunTestTable($this->rows(2));
+        $table->offered = [];
+        [$router, $page] = $this->openLine($table);
+
+        try {
+            $this->startRun($page, ['r1']);
+            $this->fail('A table declaring no mass operation must refuse one');
+        } catch (TableBulkActionNotOfferedException $e) {
+            $this->assertSame(TableBulkActionNotOfferedException::REASON, $e->getMessage());
+        }
+
+        $this->drive($router);
+        $this->assertSame([], $page->judged, 'Nothing is walked for a run that was never taken');
+    }
+
+    public function testAKeyThatIsNotATableOfThisPageIsRefusedWhateverTheRegistryHolds(): void
+    {
+        [, $page] = $this->openLine(new BulkRunTestTable($this->rows(2)));
+
+        $this->expectException(TableBulkActionNotOfferedException::class);
+
+        $page->openBulkRun(self::ACCEPT_KEY, new BulkRunActionDTO(BulkRunTestHilos::FOREIGN_TABLE, ['r1'], null));
+    }
+
     /**
      * Builds a run with no line behind it, for the rules that are the record's own.
      *
@@ -354,7 +395,7 @@ final class TableBulkRunTest extends TestCase
         $page = $factory->getPage(BulkRunTestPage::PAGE);
         $this->assertInstanceOf(BulkRunTestPage::class, $page);
         $page->bindSignalRouter($router);
-        $page->table = $table;
+        $this->registerTable($table);
 
         return [$router, $page];
     }
@@ -375,6 +416,26 @@ final class TableBulkRunTest extends TestCase
             self::ACCEPT_KEY,
             new BulkRunActionDTO(BulkRunTestTable::TABLE, $rowKeys, $filter),
         );
+    }
+
+    /**
+     * Registers the table under its key, where the framework resolves the key a request names.
+     *
+     * @param BulkRunTestTable $table Table the run will be over
+     */
+    private function registerTable(BulkRunTestTable $table): void
+    {
+        HilosFacade::$table = new class($table) extends TableContext {
+            public function __construct(private readonly BulkRunTestTable $fixture)
+            {
+            }
+
+            public function configure(): void
+            {
+                $this->register(BulkRunTestTable::TABLE, $this->fixture);
+            }
+        };
+        HilosFacade::$table->configure();
     }
 
     /**
@@ -486,9 +547,6 @@ final class BulkRunTestPage extends AbstractPage
     /** What a raising judge tells the person who started the run. */
     public const string REFUSAL = 'This row belongs to somebody else';
 
-    /** Table the page hands the framework; set by the test. */
-    public ?BulkRunTestTable $table = null;
-
     /** How this page's judge answers. */
     public string $mode = self::MODE_TOUCH;
 
@@ -505,7 +563,7 @@ final class BulkRunTestPage extends AbstractPage
      */
     public function openBulkRun(string $acceptKey, TableBulkActionDTO $dto): TableBulkAcceptedReplyDTO
     {
-        return $this->startBulkAction($acceptKey, $dto, $this->table ?? new BulkRunTestTable());
+        return $this->startBulkAction($acceptKey, $dto);
     }
 
     /**
@@ -522,8 +580,9 @@ final class BulkRunTestPage extends AbstractPage
         if ($this->mode === self::MODE_RAISE) {
             throw new TableActionException(self::REFUSAL);
         }
-        if ($this->mode === self::MODE_CONSUME) {
-            $this->table?->remove($rowKey);
+        $table = HilosFacade::$table?->get(BulkRunTestTable::TABLE);
+        if ($this->mode === self::MODE_CONSUME && $table instanceof BulkRunTestTable) {
+            $table->remove($rowKey);
         }
         if ($this->mode === self::MODE_TOUCH || $this->mode === self::MODE_CONSUME) {
             $this->bulkRowTouched($progressKey, $rowKey);
@@ -589,7 +648,7 @@ final class BulkRunSecondTestPage extends AbstractPage
      */
     public function openBulkRun(string $acceptKey, TableBulkActionDTO $dto): TableBulkAcceptedReplyDTO
     {
-        return $this->startBulkAction($acceptKey, $dto, new BulkRunTestTable());
+        return $this->startBulkAction($acceptKey, $dto);
     }
 
     /**
@@ -652,6 +711,19 @@ final class BulkRunTestTable extends TableDefinition implements ViewportTable
     {
         $this->rows = $rows;
         parent::__construct();
+    }
+
+    /** @var list<string> Mass operations the table accepts */
+    public array $offered = [BulkRunTestPage::ACTION];
+
+    /**
+     * Declares the mass operations the table accepts, which the test may take away.
+     *
+     * @return list<string> Action names a run over this table may carry
+     */
+    public function bulkActions(): array
+    {
+        return $this->offered;
     }
 
     /**
@@ -777,4 +849,20 @@ final class BulkRunTestRow extends AbstractTableRow
     {
         return new static(self::requireString($data, 'key'));
     }
+}
+
+/**
+ * The topology the framework resolves a request's table key against: both test pages carry the
+ * table, and a key registered for no page stands beside it. Abstract, because only its
+ * constants are read and the facade leaves its database to a subclass.
+ */
+abstract class BulkRunTestHilos extends HilosFacade
+{
+    /** A table key bound to no page of this topology. */
+    public const string FOREIGN_TABLE = 'bulkRunForeignTable';
+
+    public const array PAGE_TABLES = [
+        BulkRunTestPage::PAGE => [BulkRunTestTable::TABLE => []],
+        BulkRunSecondTestPage::PAGE => [BulkRunTestTable::TABLE => []],
+    ];
 }

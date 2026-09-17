@@ -4,7 +4,8 @@ One row per registered channel (built from the project's channel registry, not a
 hardcoded list), showing its enablement toggle, whether it is fully configured,
 its transport driver, and a link to its configuration page. The table, the row
 view-model, and the enablement round-trip are the core headless's
-(createHilosChannelsTable / createHilosCommunicationsActions); this view owns only
+(createHilosChannelsTable / createHilosCommunicationsActions), and so is what the
+table declares about its frame — columns, search, empty state; this view owns only
 the markup, so a project mounts it by passing its HilosCommunicationsContext.
 The toggle is a tracked action ("client action = loading + signal, never
 fire-forget"): it dispatches the shared set action with the `enabled` field, the
@@ -15,12 +16,10 @@ import {
   CHANNEL_ENABLED_FIELD,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
-  HilosChannelRowKey,
   HilosPages,
   resolveHilosPath,
   type HilosChannelRow,
   type HilosCommunicationsContext,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 import { onMounted, onUnmounted } from 'vue'
 
@@ -48,14 +47,6 @@ onUnmounted(() => channels.dispose())
 // flag disables every switch while one write is settling).
 const { busy: toggleBusy, run: runToggle } = useTrackedAction()
 
-const columns: HilosTableColumnOf<HilosChannelRow>[] = [
-  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
-  { key: HilosChannelRowKey.enabled, label: 'Enabled' },
-  { key: HilosChannelRowKey.configured, label: 'Configured' },
-  { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
-
 /** The channel's configuration page path (its {channelId} route param is the name). */
 function channelPath(row: HilosChannelRow): string {
   return resolveHilosPath(HilosPages.COMMUNICATIONS_CHANNEL, {
@@ -73,61 +64,51 @@ function toggleEnabled(row: HilosChannelRow, event: Event): void {
 
 <template>
   <HilosAdminPage :page="HilosPages.COMMUNICATIONS">
-    <HilosViewportTable
-      label="Delivery channels"
-      :controller="channelsTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search channels…"
-      empty-text="No delivery channels registered."
-    >
-      <template #row="{ row }">
-        <td>
-          <div class="fw-semibold">{{ row.label }}</div>
-          <code class="small text-body-secondary">{{ row.channel }}</code>
-        </td>
-        <td>
-          <div class="form-check form-switch mb-0">
-            <input
-              :id="`hilos-channel-enabled-${row.channel}`"
-              type="checkbox"
-              class="form-check-input"
-              role="switch"
-              :checked="row.enabled"
-              :disabled="toggleBusy"
-              :aria-label="`Enable ${row.label}`"
-              :data-id="`hilos-channel-enabled-${row.channel}`"
-              @change="toggleEnabled(row, $event)"
-            />
-          </div>
-        </td>
-        <td>
-          <span
-            v-if="row.configured"
-            class="badge text-bg-success-subtle text-success-emphasis"
-          >
-            Configured
-          </span>
-          <span
-            v-else
-            class="badge text-bg-warning-subtle text-warning-emphasis"
-            :title="`${row.missingFields} field(s) not set`"
-          >
-            {{ row.missingFields }} missing
-          </span>
-        </td>
-        <td>
-          <code class="small">{{ row.driver ?? '—' }}</code>
-        </td>
-        <td class="text-end">
-          <HilosLink
-            :to="channelPath(row)"
-            class="btn btn-sm btn-outline-primary"
-            :data-id="`hilos-channel-configure-${row.channel}`"
-          >
-            Configure
-          </HilosLink>
-        </td>
+    <HilosViewportTable :controller="channelsTable">
+      <template #cell-channel="{ row }">
+        <div class="fw-semibold">{{ row.label }}</div>
+        <code class="small text-body-secondary">{{ row.channel }}</code>
+      </template>
+      <template #cell-enabled="{ row }">
+        <div class="form-check form-switch mb-0">
+          <input
+            type="checkbox"
+            class="form-check-input"
+            role="switch"
+            :checked="row.enabled"
+            :disabled="toggleBusy"
+            :aria-label="`Enable ${row.label}`"
+            :data-id="`hilos-channel-enabled-${row.channel}`"
+            @change="toggleEnabled(row, $event)"
+          />
+        </div>
+      </template>
+      <template #cell-configured="{ row }">
+        <span
+          v-if="row.configured"
+          class="badge text-bg-success-subtle text-success-emphasis"
+        >
+          Configured
+        </span>
+        <span
+          v-else
+          class="badge text-bg-warning-subtle text-warning-emphasis"
+          :title="`${row.missingFields} field(s) not set`"
+        >
+          {{ row.missingFields }} missing
+        </span>
+      </template>
+      <template #cell-driver="{ row }">
+        <code class="small">{{ row.driver ?? '—' }}</code>
+      </template>
+      <template #cell-actions="{ row }">
+        <HilosLink
+          :to="channelPath(row)"
+          class="btn btn-sm btn-outline-primary"
+          :data-id="`hilos-channel-configure-${row.channel}`"
+        >
+          Configure
+        </HilosLink>
       </template>
     </HilosViewportTable>
   </HilosAdminPage>

@@ -106,9 +106,9 @@ function pressMainAction(): void {
         {{ declaration.empty.hint }}
       </p>
     </template>
-    <!-- SCAFFOLD: a table with no declared empty state still says what its page
-    passed in the empty slot or the emptyText prop. Both go when the five
-    framework pages move onto the declaration (HIL-819). -->
+    <!-- A table with no declared empty state still says what its page passed in
+    the empty slot or the emptyText prop: the framework's log pages hand their
+    words over that way, and no leaf moves them onto the declaration yet. -->
     <div v-else class="text-muted" :class="{ 'mb-3': declaration?.mainAction }">
       <slot />
     </div>

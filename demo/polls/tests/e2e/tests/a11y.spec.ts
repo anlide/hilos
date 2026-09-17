@@ -6,7 +6,7 @@ import { openSignIn } from '../helpers/session'
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
 // table exposes a correct accessibility tree over the live socket: an accessible
-// name from its visually-hidden caption, a labelled search box, and a sortable
+// name from the page heading it stands under, a labeled search box, and a sortable
 // header that reports aria-sort and is operable from the keyboard. The poll
 // (Angular) layer checks this on the users table; the file grows as the a11y arc
 // lands its later steps (modals, app-shell, focus).
@@ -25,7 +25,8 @@ test('the viewport table has an accessible name and a labelled search', async ({
 
   await openUsers(page)
 
-  // The visually-hidden <caption> is the table's accessible name.
+  // The page heading is the table's accessible name: a declared table carries no
+  // title of its own, and points at the heading that already names it.
   await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
 
   // The search box is reachable by an accessible name, not just a placeholder.

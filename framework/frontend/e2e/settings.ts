@@ -1,8 +1,13 @@
 import type { Locator, Page } from '@playwright/test'
 
+import { shownByTestId } from './table.js'
 import { dismissToasts } from './toasts.js'
 
-/** Prefix of each setting row's edit control in all three SDKs. */
+/**
+ * Prefix of each setting row's edit control in all three SDKs. The control lives in a
+ * cell, and a declared table draws its cells twice — once in the row and once in the
+ * card — so it is always looked up through the copy on screen.
+ */
 const SETTING_EDIT_PREFIX = 'hilos-settings-edit-'
 
 /** `data-id` of the switch between a catalog default and a custom value. */
@@ -24,7 +29,7 @@ const SET_CUSTOM_VALUE_LABEL = 'Set custom value'
  * @param key Catalog key of the setting to edit.
  */
 export async function openSettingEdit(page: Page, key: string): Promise<void> {
-  await page.getByTestId(`${SETTING_EDIT_PREFIX}${key}`).click()
+  await shownByTestId(page, `${SETTING_EDIT_PREFIX}${key}`).click()
   await page.getByTestId(SETTING_CUSTOM).waitFor({ state: 'visible' })
 }
 
@@ -87,7 +92,7 @@ export async function clearCustomSetting(
 ): Promise<void> {
   await dismissToasts(page)
 
-  const edit = page.getByTestId(`${SETTING_EDIT_PREFIX}${key}`)
+  const edit = shownByTestId(page, `${SETTING_EDIT_PREFIX}${key}`)
   if ((await edit.getAttribute('aria-label')) === SET_CUSTOM_VALUE_LABEL) {
     return
   }

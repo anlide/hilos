@@ -171,6 +171,20 @@ final class HilosUsersTable extends AbstractHilosUsersTable
     }
 
     /**
+     * Declares the shared sortable columns and the two this demo adds to the shared row.
+     *
+     * @return array<string, string> Wire row fields mapped to the payload keys they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            ...parent::sortableFields(),
+            HilosUserTableRow::name => HilosUserTableRow::name,
+            HilosUserTableRow::lastActivity => HilosUserTableRow::lastActivity,
+        ];
+    }
+
+    /**
      * Declares what a user row is searched by: the name this demo adds to the shared row.
      *
      * The base row carries nothing written in words - a key, two flags and two counts - so the

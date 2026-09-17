@@ -2,10 +2,11 @@
 // (HilosPages.COMMUNICATIONS): the delivery-channels table inside the admin shell.
 // One row per registered channel (built from the project's channel registry, not a
 // hardcoded list), showing its enablement toggle, whether it is fully configured,
-// its transport driver, and a link to its configuration page. The table, the row
-// view-model, and the enablement round-trip are the core headless's
-// (createHilosChannelsTable / createHilosCommunicationsActions); this view owns only
-// the markup, so a project mounts it by passing its HilosCommunicationsContext.
+// its transport driver, and a link to its configuration page. The table, the frame
+// it declares (its columns, search, and empty words), the row view-model, and the
+// enablement round-trip are the core headless's (createHilosChannelsTable /
+// createHilosCommunicationsActions); this view owns only the cell markup, so a
+// project mounts it by passing its HilosCommunicationsContext.
 // The toggle is a tracked action ("client action = loading + signal, never
 // fire-forget"): it dispatches the shared set action with the `enabled` field, the
 // outcome toasts, and the row redraws from the reactive table's snapshot signal —
@@ -13,17 +14,12 @@
 import { useEffect, useMemo } from 'react'
 import {
   CHANNEL_ENABLED_FIELD,
-  HilosChannelRowKey,
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
   resolveHilosPath,
 } from '@hilos/core'
-import type {
-  HilosChannelRow,
-  HilosCommunicationsContext,
-  HilosTableColumnOf,
-} from '@hilos/core'
+import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -35,14 +31,6 @@ export interface HilosCommunicationsPageProps {
   /** The project context: connection, scope stores, and the action lifecycle. */
   context: HilosCommunicationsContext
 }
-
-const COLUMNS: HilosTableColumnOf<HilosChannelRow>[] = [
-  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
-  { key: HilosChannelRowKey.enabled, label: 'Enabled' },
-  { key: HilosChannelRowKey.configured, label: 'Configured' },
-  { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 /** The channel's configuration page path (its {channelId} route param is the name). */
 function channelPath(row: HilosChannelRow): string {
@@ -90,12 +78,7 @@ export function HilosCommunicationsPage({
   return (
     <HilosAdminPage page={HilosPages.COMMUNICATIONS}>
       <HilosViewportTable
-        label="Delivery channels"
         controller={channels.controller}
-        columns={COLUMNS}
-        searchable
-        searchPlaceholder="Search channels…"
-        emptyText="No delivery channels registered."
         row={(row) => (
           <>
             <td>

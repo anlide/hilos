@@ -94,9 +94,9 @@ export interface HilosTableMainAction {
 
 /**
  * One operation offered for the marked rows: its key, its label, whether it reads
- * as destructive, and what it runs.
- *
- * SCAFFOLD: no table declares a bulk operation until HIL-819.
+ * as destructive, and what it runs. The request and the acceptance it reads back
+ * are the framework's (tableBulkRequest.ts); the backend table accepts only the
+ * operations it declares in `bulkActions()`.
  */
 export interface HilosTableBulkAction {
   /** Operation id, unique within the table. */
@@ -133,8 +133,14 @@ export interface HilosTableEmpty {
  * than one bar per page.
  */
 export interface HilosTableFrame {
-  /** Table title in the bar. */
-  readonly title: string
+  /**
+   * Table title above the bar, and the table's accessible name. Absent when the
+   * heading of the page already names the table — the one table on a framework
+   * admin page — and then the table takes its name from that heading, no heading
+   * of its own is drawn, and neither is the line under it. A page holding two
+   * tables names both, since those names are what tell them apart.
+   */
+  readonly title?: string
   /** Line under the title. */
   readonly subtitle?: string
   /** The search box; absent means this table does not search. */

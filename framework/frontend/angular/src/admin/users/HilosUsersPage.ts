@@ -1,11 +1,12 @@
 // HilosUsersPage — the framework Hilos users-list page (HilosPages.USERS): the
-// users table inside the admin shell. All table logic and the row view-model are
-// the core headless's (createHilosUsersTable / HilosUserRow); this view owns only
-// the column set and the cell markup, so a project mounts it by passing its
-// HilosUsersContext. The framework owns every cell except the trailing actions
-// cell, which a project fills through an `<ng-template #rowActions let-row>` (e.g.
-// a link to the detail page) — the framework's own row action, the takeover, is
-// drawn ahead of it. Bootstrap classes only (styling-rules.md).
+// users table inside the admin shell. All table logic, the row view-model, and the
+// frame the table declares — its columns, search, and empty words — are the core
+// headless's (createHilosUsersTable / HilosUserRow); this view owns only the cell
+// markup, so a project mounts it by passing its HilosUsersContext. The framework
+// owns every cell except the trailing actions cell, which a project fills through
+// an `<ng-template #rowActions let-row>` (e.g. a link to the detail page) — the
+// framework's own row action, the takeover, is drawn ahead of it. Bootstrap classes
+// only (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -19,17 +20,11 @@ import {
 import type { TemplateRef } from '@angular/core'
 import {
   HilosPages,
-  USER_ONLINE_SESSION_COUNT_FIELD,
-  USER_PRESENCE_FIELD,
   createHilosImpersonate,
   createHilosUsersTable,
   subscribeSignal,
 } from '@hilos/core'
-import type {
-  HilosTableColumnOf,
-  HilosUserRow,
-  HilosUsersContext,
-} from '@hilos/core'
+import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -43,20 +38,6 @@ export interface UsersRowActionsContext {
   /** The resolved user row (the template's implicit `let-row`). */
   $implicit: HilosUserRow
 }
-
-const COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
-  { key: 'id', label: 'ID', sortable: true },
-  { key: 'name', label: 'Name', sortable: true },
-  { key: USER_PRESENCE_FIELD, label: 'Presence', sortable: true },
-  {
-    key: USER_ONLINE_SESSION_COUNT_FIELD,
-    label: 'Sessions',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: 'lastActivity', label: 'Last activity', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 /** The framework users admin page: the searchable, sortable users table. */
 @Component({
@@ -72,14 +53,7 @@ const COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
   ],
   template: `
     <hilos-admin-page [page]="page">
-      <hilos-viewport-table
-        label="Users"
-        [controller]="users().controller"
-        [columns]="columns"
-        [searchable]="true"
-        searchPlaceholder="Search users…"
-        emptyText="No users yet."
-      >
+      <hilos-viewport-table [controller]="users().controller">
         <ng-template #row let-row>
           <td class="text-body-secondary">{{ row.id }}</td>
           <td class="fw-medium">{{ row.name }}</td>
@@ -164,7 +138,6 @@ export class HilosUsersPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USERS
-  protected readonly columns = COLUMNS
   protected readonly users = computed(() =>
     createHilosUsersTable(this.context()),
   )

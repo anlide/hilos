@@ -33,9 +33,9 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
  * Framework channel-config fields table: one row per config field of every channel (HIL-200).
  *
  * A self-snapshot table built from the channel registry, not a DB source. It carries
- * the fields of all channels; the channel page filters the rows to its own channel
- * by the {@see HilosCommunicationsChannelFieldsTableRow::channel} column (a route
- * param never reaches a table query, so the table is not per-channel). Each row
+ * the fields of all channels; the channel page narrows it to its own channel through the
+ * {@see self::FILTER_CHANNEL} key of the filter map, which the page presets from its route
+ * (a route param never reaches a table query by itself, so the table is not per-channel). Each row
  * projects a {@see ChannelConfigField} plus its resolved value and source from
  * {@see ChannelConfigResolver} — a secret field's value is never sent to the browser.
  * A new channel's fields appear here without any table edit. The writable source
@@ -50,22 +50,23 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'hilosCommunicationsChannelFields';
 
+    /** Filter-map key: narrow the fields to one channel, the one the channel page's route names. */
+    public const string FILTER_CHANNEL = 'channel';
+
     /** Wire slot the row payload rides under; must match the frontend fields slot. */
     private const string ROW_SLOT = 'field';
 
     /**
      * Declares how many rows the first window of the channel fields table carries.
      *
-     * The table is global — one row per field of every channel — and the channel page narrows
-     * it to its own channel on the client, so the window has to hold every field of every
-     * channel at once. A channel has a handful of them and there are few channels, which is
-     * what makes a window this size the cheap answer rather than the extravagant one.
+     * The channel page narrows the table to one channel on the server, and a channel has a
+     * handful of fields, so one window of this size holds all of them and the pager stays idle.
      *
      * @return int Rows the first window carries
      */
     public function windowSize(): int
     {
-        return 500;
+        return 25;
     }
 
     /**
@@ -145,14 +146,37 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
+        $channel = self::filterString($query, self::FILTER_CHANNEL);
         $rows = [];
         foreach ($this->channels() as $descriptor) {
+            if ($channel !== null && $descriptor->name() !== $channel) {
+                continue;
+            }
             foreach ($descriptor->configFields() as $field) {
                 $rows[] = $this->rowForField($descriptor, $field)->toArray();
             }
         }
 
         return $this->filterInMemory($rows, $query);
+    }
+
+    /**
+     * Declares the fields table's sortable columns, which here are the row payload keys themselves.
+     *
+     * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
+     * no identifier is built out of it; the map is still declared, because it is the gate that keeps
+     * a window from ordering by a name this table does not sort by.
+     *
+     * @return array<string, string> Wire row fields mapped to the payload keys they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosCommunicationsChannelFieldsTableRow::channel => HilosCommunicationsChannelFieldsTableRow::channel,
+            HilosCommunicationsChannelFieldsTableRow::field => HilosCommunicationsChannelFieldsTableRow::field,
+            HilosCommunicationsChannelFieldsTableRow::label => HilosCommunicationsChannelFieldsTableRow::label,
+            HilosCommunicationsChannelFieldsTableRow::valueSource => HilosCommunicationsChannelFieldsTableRow::valueSource,
+        ];
     }
 
     /**
@@ -222,6 +246,25 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             secret: $field->secret,
             editable: !$field->secret,
         );
+    }
+
+    /**
+     * Reads one string filter value from the open filter map.
+     *
+     * @param TableQueryDTO $query Window query
+     * @param string $key Filter key
+     * @return ?string Trimmed value, or null when the window filters on nothing here
+     */
+    private static function filterString(TableQueryDTO $query, string $key): ?string
+    {
+        $value = $query->filter[$key] ?? null;
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 
     /**

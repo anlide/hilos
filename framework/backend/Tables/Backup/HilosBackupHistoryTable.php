@@ -13,6 +13,7 @@ use Hilos\Backup\RestoreMigrationDecision;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\BackupShipperFactory;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -25,13 +26,16 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
+use Hilos\Pages\Backup\AbstractHilosBackupPage;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
@@ -62,6 +66,21 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'hilosBackups';
 
+    /** Filter-map key: narrow the list to one backup scope. */
+    public const string FILTER_SCOPE = 'scope';
+
+    /** Filter-map key: the first day of the period, as `YYYY-MM-DD`; a backup taken that day is inside it. */
+    public const string FILTER_FROM = 'from';
+
+    /** Filter-map key: the last day of the period, as `YYYY-MM-DD`; a backup taken that day is inside it. */
+    public const string FILTER_TO = 'to';
+
+    /** Order key: scope first, the newest copy of each scope on top. */
+    public const string ORDER_SCOPE_THEN_CREATED = 'scope_created';
+
+    /** Order key: status first, the newest copy of each status on top. */
+    public const string ORDER_STATUS_THEN_CREATED = 'status_created';
+
     /** Wire slot the row payload rides under; must match the frontend backup slot. */
     private const string ROW_SLOT = 'backup';
 
@@ -83,6 +102,12 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
 
     /** What the run's share is counted out of, the agent having already made it a percentage. */
     private const int PROGRESS_TOTAL = 100;
+
+    /** Filters whose options this table counts: the scope alone, a period having no options to count. */
+    private const array FACETED_FILTERS = [self::FILTER_SCOPE];
+
+    /** Characters of an ISO-8601 instant that name its calendar day, `2026-09-17` out of `2026-09-17T03:00:00+00:00`. */
+    private const int DAY_LENGTH = 10;
 
     /** Migration level this code expects; meaningless until {@see $codeMigrationIndexResolved}. */
     private ?int $codeMigrationIndex = null;
@@ -114,6 +139,19 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     public function defaultSort(): ?TableSortOrderDTO
     {
         return TableSortOrderDTO::of(new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_DESC));
+    }
+
+    /**
+     * Declares the one mass operation the backup list accepts: deleting the marked copies.
+     *
+     * The page judges each copy and hands it to the storage agent ({@see AbstractHilosBackupPage::onBulkRow()});
+     * this declaration is only what lets the run be taken at all.
+     *
+     * @return list<string> Action names a bulk run over this table may carry
+     */
+    public function bulkActions(): array
+    {
+        return [HilosSignalConstants::BACKUP_BULK_DELETE];
     }
 
     /**
@@ -200,6 +238,34 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     }
 
     /**
+     * Counts the options of the scope filter against the stored backup index.
+     *
+     * Each set is narrowed by {@see narrow()} and searched by the same in-memory filter a window
+     * is, so the number beside an option is the total that window would report. The rows are
+     * projected once for every set, and nothing is capped: they are in hand, and the count is exact.
+     *
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
+     * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key
+     * @return array<string, array{any: TableFacetCountDTO, options: array<array-key, TableFacetCountDTO>}> Counts of the
+     *     scope options that were asked about
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     */
+    public function facetCounts(TableQueryDTO $query, array $wanted): ?array
+    {
+        $rows = $this->collectRows();
+
+        return TableFacetTally::forFilters(
+            $query,
+            array_intersect_key($wanted, array_flip(self::FACETED_FILTERS)),
+            fn(TableQueryDTO $set): TableFacetCountDTO => new TableFacetCountDTO(
+                $this->filterInMemory($this->narrow($rows, $set), $set)->totalCount,
+                true,
+            ),
+        );
+    }
+
+    /**
      * Queries the stored backup index.
      *
      * @param TableQueryDTO $query Table query parameters
@@ -209,17 +275,51 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $rows = [];
-        // The index is resolved before it is walked: an unmounted one leaves an empty snapshot,
-        // where iterating null would only have added a warning to that.
-        $histories = $this->histories();
-        if ($histories !== null) {
-            foreach ($histories as $history) {
-                $rows[] = $this->rowFromHistory($history)->toArray();
-            }
-        }
+        return $this->filterInMemory($this->narrow($this->collectRows(), $query), $query);
+    }
 
-        return $this->filterInMemory($rows, $query);
+    /**
+     * Declares the backup list's sortable columns, which here are the row payload keys themselves.
+     *
+     * The rows are ordered in PHP by the in-memory filter, where a field name is an array key and
+     * no identifier is built out of it; the map is still declared, because it is the gate that keeps
+     * a window from ordering by a name this table does not sort by.
+     *
+     * @return array<string, string> Wire row fields mapped to the payload keys they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosBackupTableRow::createdAt => HilosBackupTableRow::createdAt,
+            HilosBackupTableRow::env => HilosBackupTableRow::env,
+            HilosBackupTableRow::scope => HilosBackupTableRow::scope,
+            HilosBackupTableRow::sizeBytes => HilosBackupTableRow::sizeBytes,
+            HilosBackupTableRow::durationSeconds => HilosBackupTableRow::durationSeconds,
+            HilosBackupTableRow::status => HilosBackupTableRow::status,
+        ];
+    }
+
+    /**
+     * Declares the two orders of more than one column the backup list offers in its menu.
+     *
+     * No index stands under either of them, and none is owed: the whole index is walked in memory
+     * on every window, where an order costs nothing (`docs/agents/frontend/table-sort-orders.md`).
+     * Both end on the newest copy first, which is the order the list opens in.
+     *
+     * @return array<string, TableSortOrderDTO> Order key => order it stands for
+     */
+    protected function sortOrders(): array
+    {
+        return [
+            self::ORDER_SCOPE_THEN_CREATED => TableSortOrderDTO::of(
+                new TableSortDTO(HilosBackupTableRow::scope),
+                new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_DESC),
+            ),
+            self::ORDER_STATUS_THEN_CREATED => TableSortOrderDTO::of(
+                new TableSortDTO(HilosBackupTableRow::status),
+                new TableSortDTO(HilosBackupTableRow::createdAt, TableConstants::ORDER_DESC),
+            ),
+        ];
     }
 
     /**
@@ -243,6 +343,112 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     protected function init(): void
     {
         $this->setRowClass(HilosBackupTableRow::class);
+    }
+
+    /**
+     * Projects the whole stored backup index into row payloads.
+     *
+     * @return list<array<string, mixed>> Row payloads, in the order the index hands them over
+     */
+    private function collectRows(): array
+    {
+        $rows = [];
+        // The index is resolved before it is walked: an unmounted one leaves an empty set,
+        // where iterating null would only have added a warning to that.
+        $histories = $this->histories();
+        if ($histories !== null) {
+            foreach ($histories as $history) {
+                $rows[] = $this->rowFromHistory($history)->toArray();
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Applies the scope filter and the period this list answers to.
+     *
+     * The period is compared by calendar day, both ends inclusive, the way the delivery journal
+     * reads the same two keys: a backup taken on the last day of the period is inside it.
+     *
+     * @param list<array<string, mixed>> $rows Rows of the whole index
+     * @param TableQueryDTO $query Window query
+     * @return list<array<string, mixed>> Rows the window asked for
+     */
+    private function narrow(array $rows, TableQueryDTO $query): array
+    {
+        $scope = self::filterString($query, self::FILTER_SCOPE);
+        if ($scope !== null) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $row): bool => $row[HilosBackupTableRow::scope] === $scope,
+            ));
+        }
+
+        $from = self::filterDay($query, self::FILTER_FROM);
+        if ($from !== null) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $row): bool => self::day((string) $row[HilosBackupTableRow::createdAt]) >= $from,
+            ));
+        }
+
+        $to = self::filterDay($query, self::FILTER_TO);
+        if ($to !== null) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $row): bool => self::day((string) $row[HilosBackupTableRow::createdAt]) <= $to,
+            ));
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Reads one string filter value from the open filter map.
+     *
+     * @param TableQueryDTO $query Window query
+     * @param string $key Filter key
+     * @return ?string Trimmed value, or null when the window filters on nothing here
+     */
+    private static function filterString(TableQueryDTO $query, string $key): ?string
+    {
+        $value = $query->filter[$key] ?? null;
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    /**
+     * Reads one bound of the period as the calendar day it names.
+     *
+     * @param TableQueryDTO $query Window query
+     * @param string $key Filter key of the bound
+     * @return ?string The day as `YYYY-MM-DD`, or null when the window sets no such bound
+     */
+    private static function filterDay(TableQueryDTO $query, string $key): ?string
+    {
+        $value = self::filterString($query, $key);
+
+        return $value === null ? null : self::day($value);
+    }
+
+    /**
+     * Cuts an instant down to the calendar day it falls on.
+     *
+     * A string cut rather than a parse: the index writes ISO-8601 and the filter writes a bare
+     * day, so the first ten characters of both are the same `YYYY-MM-DD` and compare as text.
+     *
+     * @param string $instant ISO-8601 instant or bare day
+     * @return string The day as `YYYY-MM-DD`
+     */
+    private static function day(string $instant): string
+    {
+        return substr($instant, 0, self::DAY_LENGTH);
     }
 
     /**

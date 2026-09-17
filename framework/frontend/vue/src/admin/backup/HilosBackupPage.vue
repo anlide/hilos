@@ -12,21 +12,13 @@ runs the addressed progress frames are the only live thing on the page — the
 node is frozen and the table sends nothing. Once it ends, the node stands in a
 verification window, and the one browser that started the restore is offered the
 block that closes it — the backend answers that personally in the page-data
-section, so a second admin looking at the same page sees nothing. All table logic
-and the row view-model are the core headless's too; this view owns only the markup, so a project mounts
-it by passing its HilosBackupsContext. Bootstrap classes only (styling-rules.md). -->
+section, so a second admin looking at the same page sees nothing. All table logic,
+the row view-model, and what the list declares about its frame — columns, search,
+the scope and period filters, empty state — are the core headless's too; this view
+owns only the markup, so a project mounts it by passing its HilosBackupsContext.
+Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
-  BACKUP_CHECKSUM_STATE_FIELD,
-  BACKUP_SHIP_STATE_FIELD,
-  BACKUP_CREATED_AT_FIELD,
-  BACKUP_DURATION_SECONDS_FIELD,
-  BACKUP_ENV_FIELD,
-  BACKUP_KEEP_FIELD,
-  BACKUP_RESTORE_OUTCOME_FIELD,
-  BACKUP_SCOPE_FIELD,
-  BACKUP_SIZE_BYTES_FIELD,
-  BACKUP_STATUS_FIELD,
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
@@ -145,30 +137,6 @@ onUnmounted(() => {
   progressClock.dispose()
 })
 
-const columns: HilosTableColumnOf<HilosBackupRow>[] = [
-  { key: BACKUP_CREATED_AT_FIELD, label: 'Date', sortable: true },
-  { key: BACKUP_ENV_FIELD, label: 'Environment', sortable: true },
-  { key: BACKUP_SCOPE_FIELD, label: 'Scope', sortable: true },
-  {
-    key: BACKUP_SIZE_BYTES_FIELD,
-    label: 'Size',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
-  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy' },
-  {
-    key: BACKUP_DURATION_SECONDS_FIELD,
-    label: 'Duration',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: BACKUP_STATUS_FIELD, label: 'Status', sortable: true },
-  { key: BACKUP_RESTORE_OUTCOME_FIELD, label: 'Restore' },
-  { key: BACKUP_KEEP_FIELD, label: 'Keep', headerClass: 'text-center' },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
-
 const circleColumns: HilosTableColumnOf<HilosBackupCircleRow>[] = [
   { key: BACKUP_CIRCLE_IDENTIFIER_FIELD, label: 'Address', sortable: true },
   { key: BACKUP_CIRCLE_ONLINE_FIELD, label: 'Signed in' },
@@ -212,8 +180,10 @@ function restoreBlockedReason(row: HilosBackupRow): string | null {
     : null
 }
 
-// An archive another node holds stays in the list, muted cell by cell: the row element
-// belongs to the table, so the mark is worn by what this page draws inside it.
+// An archive another node holds stays in the list, muted cell by cell: the row and its
+// cells belong to the table, so the mark is worn by a wrapper this page draws inside
+// each cell. The controls take none: a button carries its own color, and a wrapper
+// around them would fold the controls a card stacks full width into a single item.
 function outOfReachClass(row: HilosBackupRow): string | undefined {
   return isBackupOutOfReach(row) ? 'text-body-secondary' : undefined
 }
@@ -631,19 +601,12 @@ function openOutcome(row: HilosBackupRow): void {
       </div>
     </div>
 
-    <HilosViewportTable
-      label="Backups"
-      :controller="backupsTable"
-      :columns="columns"
-      searchable
-      search-placeholder="Search backups…"
-      empty-text="No backups yet."
-    >
+    <HilosViewportTable :controller="backupsTable">
       <template #table-progress="{ progress }">{{
         formatBackupRunCaption(progress)
       }}</template>
-      <template #row="{ row }">
-        <td class="text-nowrap" :class="outOfReachClass(row)">
+      <template #cell-createdAt="{ row }">
+        <span :class="outOfReachClass(row)">
           {{ row.createdAt || '—' }}
           <template v-if="isBackupOutOfReach(row)">
             <span
@@ -655,15 +618,21 @@ function openOutcome(row: HilosBackupRow): void {
               formatBackupOutOfReach(row)
             }}</span>
           </template>
-        </td>
-        <td :class="outOfReachClass(row)">{{ row.env || '—' }}</td>
-        <td :class="outOfReachClass(row)">
+        </span>
+      </template>
+      <template #cell-env="{ row }">
+        <span :class="outOfReachClass(row)">{{ row.env || '—' }}</span>
+      </template>
+      <template #cell-scope="{ row }">
+        <span :class="outOfReachClass(row)">
           <code>{{ row.scope || '—' }}</code>
-        </td>
-        <td class="text-end" :class="outOfReachClass(row)">
-          {{ formatBackupSize(row) }}
-        </td>
-        <td class="text-nowrap" :class="outOfReachClass(row)">
+        </span>
+      </template>
+      <template #cell-sizeBytes="{ row }">
+        <span :class="outOfReachClass(row)">{{ formatBackupSize(row) }}</span>
+      </template>
+      <template #cell-checksumState="{ row }">
+        <span :class="outOfReachClass(row)">
           <span
             :class="
               isBackupChecksumMismatch(row)
@@ -672,8 +641,10 @@ function openOutcome(row: HilosBackupRow): void {
             "
             >{{ formatBackupChecksum(row) }}</span
           >
-        </td>
-        <td class="text-nowrap" :class="outOfReachClass(row)">
+        </span>
+      </template>
+      <template #cell-shipState="{ row }">
+        <span :class="outOfReachClass(row)">
           <span
             :class="
               isBackupShipFailed(row) ? 'text-danger fw-semibold' : undefined
@@ -691,17 +662,23 @@ function openOutcome(row: HilosBackupRow): void {
           >
             <i class="bi bi-question-circle" aria-hidden="true"></i>
           </button>
-        </td>
-        <td class="text-end" :class="outOfReachClass(row)">
-          {{ formatBackupDuration(row) }}
-        </td>
-        <td style="min-width: 10rem" :class="outOfReachClass(row)">
+        </span>
+      </template>
+      <template #cell-durationSeconds="{ row }">
+        <span :class="outOfReachClass(row)">{{
+          formatBackupDuration(row)
+        }}</span>
+      </template>
+      <template #cell-status="{ row }">
+        <div style="min-width: 10rem" :class="outOfReachClass(row)">
           <span v-if="row.finished === true" class="badge text-bg-success">{{
             row.status
           }}</span>
           <span v-else class="badge text-bg-danger">{{ row.status }}</span>
-        </td>
-        <td class="text-nowrap" :class="outOfReachClass(row)">
+        </div>
+      </template>
+      <template #cell-restoreOutcome="{ row }">
+        <span :class="outOfReachClass(row)">
           <button
             v-if="hasRestoreOutcome(row)"
             type="button"
@@ -738,8 +715,10 @@ function openOutcome(row: HilosBackupRow): void {
             >+{{ backupMigrationBehind(row) }} migrations</span
           >
           <span v-else class="text-body-secondary">—</span>
-        </td>
-        <td class="text-center" :class="outOfReachClass(row)">
+        </span>
+      </template>
+      <template #cell-keep="{ row }">
+        <div :class="outOfReachClass(row)">
           <div
             v-if="isBackupKeepable(row)"
             class="form-check form-switch d-inline-block m-0"
@@ -759,68 +738,68 @@ function openOutcome(row: HilosBackupRow): void {
             />
           </div>
           <span v-else class="text-body-secondary">—</span>
-        </td>
-        <td class="text-end" :class="outOfReachClass(row)">
-          <button
-            v-if="hasBackupFailureDetail(row)"
-            type="button"
-            class="btn btn-sm btn-outline-secondary me-1"
-            title="Show failure reason"
-            aria-label="Show failure reason"
-            :data-id="`hilos-backup-details-${row.id}`"
-            @click="openDetails(row)"
-          >
-            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
-          </button>
-          <template v-if="offersBackupRestore(row)">
-            <template v-if="restoreGate.uiEnabled">
-              <button
-                v-if="restoreBlockedReason(row) !== null"
-                type="button"
-                class="btn btn-sm btn-outline-secondary me-1"
-                title="Why this backup cannot be restored"
-                aria-label="Why this backup cannot be restored"
-                :data-id="`hilos-backup-blocked-why-${row.id}`"
-                @click="openBlocked(row)"
-              >
-                <i class="bi bi-question-circle" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-warning me-1"
-                :disabled="restoreBlockedReason(row) !== null"
-                title="Restore this backup"
-                aria-label="Restore this backup"
-                :data-id="`hilos-backup-restore-${row.id}`"
-                @click="openRestore(row)"
-              >
-                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-              </button>
-            </template>
+        </div>
+      </template>
+      <template #cell-actions="{ row }">
+        <button
+          v-if="hasBackupFailureDetail(row)"
+          type="button"
+          class="btn btn-sm btn-outline-secondary me-1"
+          title="Show failure reason"
+          aria-label="Show failure reason"
+          :data-id="`hilos-backup-details-${row.id}`"
+          @click="openDetails(row)"
+        >
+          <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+        </button>
+        <template v-if="offersBackupRestore(row)">
+          <template v-if="restoreGate.uiEnabled">
             <button
-              v-else
+              v-if="restoreBlockedReason(row) !== null"
               type="button"
               class="btn btn-sm btn-outline-secondary me-1"
-              title="How to restore this backup"
-              aria-label="How to restore this backup"
-              :data-id="`hilos-backup-restore-cli-${row.id}`"
-              @click="openCli(row)"
+              title="Why this backup cannot be restored"
+              aria-label="Why this backup cannot be restored"
+              :data-id="`hilos-backup-blocked-why-${row.id}`"
+              @click="openBlocked(row)"
             >
-              <i class="bi bi-terminal" aria-hidden="true"></i>
+              <i class="bi bi-question-circle" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-warning me-1"
+              :disabled="restoreBlockedReason(row) !== null"
+              title="Restore this backup"
+              aria-label="Restore this backup"
+              :data-id="`hilos-backup-restore-${row.id}`"
+              @click="openRestore(row)"
+            >
+              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
             </button>
           </template>
           <button
-            v-if="isBackupDeletable(row)"
+            v-else
             type="button"
-            class="btn btn-sm btn-outline-danger"
-            title="Delete backup"
-            aria-label="Delete backup"
-            :data-id="`hilos-backup-delete-${row.id}`"
-            @click="openDelete(row)"
+            class="btn btn-sm btn-outline-secondary me-1"
+            title="How to restore this backup"
+            aria-label="How to restore this backup"
+            :data-id="`hilos-backup-restore-cli-${row.id}`"
+            @click="openCli(row)"
           >
-            <i class="bi bi-trash" aria-hidden="true"></i>
+            <i class="bi bi-terminal" aria-hidden="true"></i>
           </button>
-        </td>
+        </template>
+        <button
+          v-if="isBackupDeletable(row)"
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          title="Delete backup"
+          aria-label="Delete backup"
+          :data-id="`hilos-backup-delete-${row.id}`"
+          @click="openDelete(row)"
+        >
+          <i class="bi bi-trash" aria-hidden="true"></i>
+        </button>
       </template>
     </HilosViewportTable>
 

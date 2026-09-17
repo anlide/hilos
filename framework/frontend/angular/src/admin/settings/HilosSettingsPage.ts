@@ -3,8 +3,9 @@
 // merged with its persisted override, so the key set is fixed — there is no free
 // "add a setting" (data-model.md, "Cataloged tables"). A row's own actions are the
 // only mutations: set a custom value on an on-default key (add-by-key), edit or
-// reset an override, or delete an orphan. The table, the row view-model, and the
-// add/update/delete round-trips are the core headless's (createHilosSettingsTable /
+// reset an override, or delete an orphan. The table, the frame it declares (its
+// columns, search, and empty words), the row view-model, and the add/update/delete
+// round-trips are the core headless's (createHilosSettingsTable /
 // createHilosSettingsActions); this view owns only the markup, so a project mounts
 // it by passing its HilosSettingsContext and declares the catalog on its backend.
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
@@ -22,8 +23,6 @@ import {
 } from '@angular/core'
 import {
   HilosPages,
-  SETTING_KEY_FIELD,
-  SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
   hasCustomValue,
@@ -34,7 +33,6 @@ import {
 import type {
   HilosSettingRow,
   HilosSettingsContext,
-  HilosTableColumnOf,
   TableViewportRow,
 } from '@hilos/core'
 
@@ -47,12 +45,6 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 import { HilosSettingValueCell } from './HilosSettingValueCell.js'
-
-const COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
-  { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
-  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 /** Map a setting type to the value input it edits with. */
 function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
@@ -86,14 +78,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
   ],
   template: `
     <hilos-admin-page [page]="page">
-      <hilos-viewport-table
-        label="Settings"
-        [controller]="settings().controller"
-        [columns]="columns"
-        [searchable]="true"
-        searchPlaceholder="Search settings…"
-        emptyText="No settings yet."
-      >
+      <hilos-viewport-table [controller]="settings().controller">
         <ng-template #row let-row>
           <td>
             <code>{{ row.key }}</code>
@@ -337,7 +322,6 @@ export class HilosSettingsPage {
   readonly context = input.required<HilosSettingsContext>()
 
   protected readonly page = HilosPages.SETTINGS
-  protected readonly columns = COLUMNS
   protected readonly hasCustom = hasCustomValue
   protected readonly isOrphan = isOrphanSetting
 

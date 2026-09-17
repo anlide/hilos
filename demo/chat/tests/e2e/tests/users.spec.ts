@@ -10,6 +10,30 @@ import { gotoPage } from '../helpers/page'
 // document reload. Under session≠user a fresh context is anonymous, so each test
 // registers a user to populate the table (the register itself creates the row).
 
+/**
+ * The count the footer shows reads `${first} – ${last} of ${total}`. The pattern
+ * pins the range on screen and takes any total: the shared database grows as the
+ * suite runs, so a total is asserted by bounds rather than by value. This table
+ * filters in memory, so its count is exact and never carries the ceiling's `+`.
+ *
+ * @param first 1-based number of the first row on screen.
+ * @param last 1-based number of the last row on screen.
+ * @returns The pattern the count's text matches.
+ */
+function countOf(first: number, last: number): RegExp {
+  return new RegExp(`^\\s*${first} – ${last} of \\d+\\s*$`)
+}
+
+/**
+ * Read the size of the set off the footer's count.
+ *
+ * @param text The count's text content.
+ * @returns The total after "of", or NaN when the text carries none.
+ */
+function totalOf(text: string | null): number {
+  return Number(/ of (\d+)/.exec(text ?? '')?.[1] ?? Number.NaN)
+}
+
 test('lists users in the framework table and opens a detail page', async ({
   page,
 }) => {
@@ -91,9 +115,9 @@ test('shows the connected user as online with a live session', async ({
   // (the project browser context returned null), so the live user rendered as
   // offline with 0 sessions.
   await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
-  await expect(
-    page.locator('[data-id="hilos-user-detail"] .badge'),
-  ).toHaveText('online')
+  await expect(page.locator('[data-id="hilos-user-detail"] .badge')).toHaveText(
+    'online',
+  )
 })
 
 // HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25
@@ -111,23 +135,35 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
   // is asserted by shape and lower bound, not an exact number on the shared database.
   const count = page.getByTestId('hilos-table-count')
-  await expect(count).toHaveText(/^\s*\d+ total\s*$/)
-  const total = Number((await count.textContent())?.replace(/\D/g, ''))
+  await expect(count).toHaveText(countOf(1, 10))
+  const total = totalOf(await count.textContent())
   expect(total).toBeGreaterThanOrEqual(26)
 
-  // The page indicator starts at page 1 of a multi-page set.
-  const pageIndicator = page.getByTestId('hilos-table-page')
-  await expect(pageIndicator).toHaveText(/^\s*1 \/ \d+\s*$/)
+  // An exact count draws the page numbers, and the page on screen is the one that
+  // says so.
+  const pageOne = page.getByTestId('hilos-table-page-1')
+  const pageTwo = page.getByTestId('hilos-table-page-2')
+  await expect(pageOne).toHaveAttribute('aria-current', 'page')
 
-  // Next advances the window to a different set of rows; prev restores it.
+  // Next advances the window to a different set of rows; prev restores it. The range
+  // and the number move the moment the control is pressed, so the rows are what says
+  // the window arrived.
   const rowKeys = async () =>
     rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
   const firstKeys = JSON.stringify(await rowKeys())
   await page.getByTestId('hilos-table-next').click()
-  await expect(pageIndicator).toHaveText(/^\s*2 \/ \d+\s*$/)
-  await expect.poll(async () => JSON.stringify(await rowKeys())).not.toBe(firstKeys)
+  await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+  await expect(count).toHaveText(countOf(11, 20))
+  await expect
+    .poll(async () => JSON.stringify(await rowKeys()))
+    .not.toBe(firstKeys)
+  const secondKeys = JSON.stringify(await rowKeys())
   await page.getByTestId('hilos-table-prev').click()
-  await expect(pageIndicator).toHaveText(/^\s*1 \/ \d+\s*$/)
+  await expect(pageOne).toHaveAttribute('aria-current', 'page')
+  await expect(count).toHaveText(countOf(1, 10))
+  await expect
+    .poll(async () => JSON.stringify(await rowKeys()))
+    .not.toBe(secondKeys)
 
   // Server search filters the whole selection, not just the loaded window: the shared
   // `seed-` prefix matches the 25 deterministically seeded users, so the filtered total
@@ -144,13 +180,13 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('seed-', { delay: 10 })
-  await expect(count).toHaveText(/^\s*\d+ total\s*$/)
+  await expect(count).toHaveText(countOf(1, 10))
   await expect
-    .poll(async () => Number((await count.textContent())?.replace(/\D/g, '')), {
+    .poll(async () => totalOf(await count.textContent()), {
       timeout: 15000,
     })
     .toBeLessThan(total)
-  const seededTotal = Number((await count.textContent())?.replace(/\D/g, ''))
+  const seededTotal = totalOf(await count.textContent())
   expect(seededTotal).toBeGreaterThanOrEqual(20)
   await expect(rows).toHaveCount(10)
 })

@@ -12,10 +12,11 @@
 // is frozen and the table sends nothing. Once it ends, the node stands in a
 // verification window, and the one browser that started the restore is offered the
 // block that closes it — the backend answers that personally in the page-data section,
-// so a second admin looking at the same page sees nothing. All table logic and the
-// row view-model are the core headless's too; this view owns only the markup, so a
-// project mounts it by passing its HilosBackupsContext. Bootstrap classes only
-// (styling-rules.md).
+// so a second admin looking at the same page sees nothing. All table logic, the row
+// view-model, and what the backup list declares about its frame — its search, the
+// scope and period filters, its columns — are the core headless's too; this view
+// owns only the markup, so a project mounts it by passing its HilosBackupsContext.
+// Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
   HILOS_BACKUP_CIRCLE_COPY,
@@ -24,16 +25,6 @@ import {
   HilosPages,
   BACKUP_CIRCLE_IDENTIFIER_FIELD,
   BACKUP_CIRCLE_ONLINE_FIELD,
-  BACKUP_CREATED_AT_FIELD,
-  BACKUP_ENV_FIELD,
-  BACKUP_SCOPE_FIELD,
-  BACKUP_SIZE_BYTES_FIELD,
-  BACKUP_CHECKSUM_STATE_FIELD,
-  BACKUP_SHIP_STATE_FIELD,
-  BACKUP_DURATION_SECONDS_FIELD,
-  BACKUP_STATUS_FIELD,
-  BACKUP_RESTORE_OUTCOME_FIELD,
-  BACKUP_KEEP_FIELD,
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
@@ -86,30 +77,6 @@ export interface HilosBackupPageProps {
   /** The project context: scope stores, the connection, and the action lifecycle. */
   context: HilosBackupsContext
 }
-
-const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
-  { key: BACKUP_CREATED_AT_FIELD, label: 'Date', sortable: true },
-  { key: BACKUP_ENV_FIELD, label: 'Environment', sortable: true },
-  { key: BACKUP_SCOPE_FIELD, label: 'Scope', sortable: true },
-  {
-    key: BACKUP_SIZE_BYTES_FIELD,
-    label: 'Size',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
-  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy' },
-  {
-    key: BACKUP_DURATION_SECONDS_FIELD,
-    label: 'Duration',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: BACKUP_STATUS_FIELD, label: 'Status', sortable: true },
-  { key: BACKUP_RESTORE_OUTCOME_FIELD, label: 'Restore' },
-  { key: BACKUP_KEEP_FIELD, label: 'Keep', headerClass: 'text-center' },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
   { key: BACKUP_CIRCLE_IDENTIFIER_FIELD, label: 'Address', sortable: true },
@@ -665,12 +632,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       </div>
 
       <HilosViewportTable
-        label="Backups"
         controller={backups.controller}
-        columns={COLUMNS}
-        searchable
-        searchPlaceholder="Search backups…"
-        emptyText="No backups yet."
         row={(row) => (
           <>
             <td className={backupCellClass(row, 'text-nowrap')}>

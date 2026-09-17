@@ -18,13 +18,17 @@ A section ROOT that has content of its own puts it in the named `body` slot
 instead, which is drawn after the default one: it needs both, the cards to its
 children and its own figures beneath them, and overriding the default slot would
 cost it the cards. A leaf page goes on overriding the default slot as before.
+The heading carries an id the shell provides to what it holds: a table that
+declares no title of its own takes its accessible name from this heading, which
+already names it.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { hilosChildLinks, hilosCrumbLinks } from '@hilos/core'
-import { computed, inject } from 'vue'
+import { computed, inject, provide, useId } from 'vue'
 
 import HilosBreadcrumb from './HilosBreadcrumb.vue'
 import HilosLink from './HilosLink.vue'
+import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
 
@@ -36,6 +40,9 @@ if (!router) {
     'HilosAdminPage requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
+
+const headingId = useId()
+provide(hilosPageHeadingIdKey, headingId)
 
 const route = useSignal(router.currentRoute)
 const identity = useSignal(router.pageIdentity)
@@ -60,7 +67,9 @@ const children = computed(() =>
   <section data-id="hilos-admin-page" :data-page="page">
     <template v-if="identity">
       <HilosBreadcrumb :crumbs="crumbs" />
-      <h1 class="h4 mb-1" data-id="hilos-admin-title">{{ identity.label }}</h1>
+      <h1 :id="headingId" class="h4 mb-1" data-id="hilos-admin-title">
+        {{ identity.label }}
+      </h1>
       <p v-if="identity.lead" class="text-body-secondary">
         {{ identity.lead }}
       </p>

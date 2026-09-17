@@ -21,3 +21,4 @@ export {
   openSettingEdit,
   setCustomSetting,
 } from './settings.js'
+export { shownByTestId } from './table.js'

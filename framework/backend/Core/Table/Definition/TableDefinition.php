@@ -349,6 +349,20 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Declares the mass operations this table accepts, by the action name each one runs under.
+     *
+     * Empty is a full declaration and the one most tables make: no mass operation is taken over
+     * them, whatever a client sends. A table offering one names the very action its page declares
+     * in ACTIONS, the name the frontend's bulk operation sends.
+     *
+     * @return list<string> Action names a bulk run over this table may carry; empty by default
+     */
+    public function bulkActions(): array
+    {
+        return [];
+    }
+
+    /**
      * Loads table data for the given table query.
      *
      * Each concrete table owns its row source and may combine DB, runtime,

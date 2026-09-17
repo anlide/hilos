@@ -10,7 +10,10 @@
 // input, carrying core signals, so the view mirrors them into Angular signals.
 // (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
 // frame draws the bar and the footer from that declaration instead
-// (HilosTableBar, HilosTableFooter). Bootstrap classes only.
+// (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
+// it says when empty from there too; a table whose page declared nothing is drawn
+// from its inputs, the older of the two epochs, which the framework's log pages
+// still take. Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -18,6 +21,7 @@ import {
   computed,
   contentChild,
   effect,
+  inject,
   input,
   signal,
 } from '@angular/core'
@@ -34,6 +38,7 @@ import type {
 
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
+import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 
 // Distinct ids so two declared tables on one page never name themselves by the
 // same title.
@@ -58,14 +63,16 @@ export interface ViewportTableRowContext<R> {
         <hilos-table-bar [controller]="controller()" [titleId]="titleId" />
       }
 
-      <!-- SCAFFOLD: the bar a table draws from props, kept while the five
-      framework pages still pass them. It goes with the props themselves when
-      those pages move onto the declaration (HIL-819). -->
-      @if (!declaration() && (searchable() || pendingCount() > 0)) {
+      <!-- The bar a table draws from its inputs, for a table whose page declared
+      no frame — such as the framework's log pages. Its Apply control stays for a
+      declared table too: the room of live messages that carries Apply in Vue is
+      not ported yet (HIL-811…818), and without it pending changes would pile up
+      with no way to show them. -->
+      @if ((!declaration() && searchable()) || pendingCount() > 0) {
         <div
           class="d-flex justify-content-between align-items-center gap-2 mb-3"
         >
-          @if (searchable()) {
+          @if (!declaration() && searchable()) {
             <input
               type="search"
               class="form-control"
@@ -100,7 +107,7 @@ export interface ViewportTableRowContext<R> {
       <div class="table-responsive">
         <table
           class="table table-striped table-hover align-middle mb-0"
-          [attr.aria-labelledby]="declaration() ? titleId : null"
+          [attr.aria-labelledby]="declaration() ? nameId() : null"
         >
           <!-- A declared table already shows its name as a heading, and a hidden
           caption repeating it would name the table twice. -->
@@ -113,7 +120,7 @@ export interface ViewportTableRowContext<R> {
           }
           <thead>
             <tr>
-              @for (column of columns(); track column.key) {
+              @for (column of frameColumns(); track column.key) {
                 <th
                   scope="col"
                   [class]="column.headerClass ?? ''"
@@ -147,7 +154,7 @@ export interface ViewportTableRowContext<R> {
               >
                 @if (view.placeholder) {
                   <td
-                    [attr.colspan]="columns().length"
+                    [attr.colspan]="frameColumns().length"
                     class="text-center text-muted fst-italic"
                     data-id="hilos-table-placeholder"
                   >
@@ -167,7 +174,7 @@ export interface ViewportTableRowContext<R> {
             @if (rows().length === 0) {
               <tr>
                 <td
-                  [attr.colspan]="columns().length"
+                  [attr.colspan]="frameColumns().length"
                   class="text-center text-muted py-4"
                 >
                   @if (!loaded()) {
@@ -185,7 +192,7 @@ export interface ViewportTableRowContext<R> {
                   } @else if (empty(); as emptyTemplate) {
                     <ng-container [ngTemplateOutlet]="emptyTemplate" />
                   } @else {
-                    {{ emptyText() }}
+                    {{ emptyWords() }}
                   }
                 </td>
               </tr>
@@ -198,8 +205,8 @@ export interface ViewportTableRowContext<R> {
         <hilos-table-footer [controller]="controller()" />
       }
 
-      <!-- SCAFFOLD: the footer a table draws from its own comparisons, kept for
-      the same reason and going the same way as the bar above (HIL-819). -->
+      <!-- The footer a table draws from its own comparisons, for the same tables
+      as the bar above. -->
       @if (!declaration() && paginated()) {
         <div class="d-flex justify-content-between align-items-center mt-3">
           <span class="text-muted small" data-id="hilos-table-count">
@@ -244,15 +251,19 @@ export interface ViewportTableRowContext<R> {
 export class HilosViewportTable<R> {
   /** The headless server-windowed controller driving rows, descriptor, and pending. */
   readonly controller = input.required<TableViewportController<R>>()
-  /** Column declarations for the header (labels and sort controls). */
-  readonly columns = input.required<HilosTableColumn[]>()
+  /**
+   * Column declarations for the header (labels and sort controls) of a table whose
+   * page declared no frame; a declared table takes its columns from the declaration
+   * and is not handed these.
+   */
+  readonly columns = input<HilosTableColumn[]>([])
   /** Accessible name for the table, rendered as a visually-hidden caption. */
   readonly label = input<string>()
   /** Show the search box above the table. */
   readonly searchable = input(false)
   /** Placeholder for the search box. */
   readonly searchPlaceholder = input('Search…')
-  /** Message shown when there are no rows. */
+  /** Message shown when there are no rows and the page declared no empty state. */
   readonly emptyText = input('No rows.')
   /** Message shown while the first window is still loading. */
   readonly loadingText = input('Loading…')
@@ -275,7 +286,29 @@ export class HilosViewportTable<R> {
   protected readonly declaration = computed(
     () => this.controller().frame.declaration,
   )
+  // The columns the table is drawn from: the declaration's own where there is one,
+  // and the input for a table whose page declared nothing. The header and every cell
+  // spanning the whole row count this one list, so they cannot disagree on its width.
+  protected readonly frameColumns = computed<readonly HilosTableColumn[]>(
+    () => this.declaration()?.columns ?? this.columns(),
+  )
   protected readonly titleId = `hilos-table-title-${viewportTableSeq++}`
+  // What names a declared table: its own title when it declared one, and otherwise
+  // the heading of the page it stands on, which already names it. Null for a table
+  // that declared neither and stands outside an admin page — it has no name to take.
+  private readonly pageHeadingId = inject(HILOS_PAGE_HEADING_ID, {
+    optional: true,
+  })
+  protected readonly nameId = computed(() =>
+    this.declaration()?.title ? this.titleId : this.pageHeadingId,
+  )
+  // What a declared table says when it has no rows is the headline its page declared.
+  // Only the headline: the hint under it, the main action beside it, and the
+  // framework's own "Nothing found" under a search belong to an empty state this view
+  // does not draw yet.
+  protected readonly emptyWords = computed(
+    () => this.declaration()?.empty?.title ?? this.emptyText(),
+  )
 
   protected readonly rows = signal<readonly TableViewportRow<R>[]>([])
   protected readonly search = signal('')

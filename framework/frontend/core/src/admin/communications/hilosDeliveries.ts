@@ -31,6 +31,11 @@ import { type ScopeManager } from '../../state/ScopeManager.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
 /** One row of the delivery-logs table — the framework delivery-journal view-model. */
@@ -219,6 +224,75 @@ export interface HilosDeliveriesTable {
   dispose(): void
 }
 
+/** The columns of the delivery journal, in display order. */
+const DELIVERIES_COLUMNS: HilosTableColumnOf<HilosDeliveryRow>[] = [
+  {
+    key: DELIVERY_CREATED_AT_FIELD,
+    label: 'Date',
+    sortable: true,
+    cellClass: 'text-nowrap',
+  },
+  { key: DELIVERY_CHANNEL_FIELD, label: 'Channel', sortable: true },
+  { key: DELIVERY_STATUS_FIELD, label: 'Status', sortable: true },
+  {
+    key: DELIVERY_ATTEMPTS_FIELD,
+    label: 'Attempts',
+    sortable: true,
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+  {
+    key: DELIVERY_DELIVERED_AT_FIELD,
+    label: 'Delivered',
+    sortable: true,
+    cellClass: 'text-nowrap',
+  },
+  { key: DELIVERY_USER_LABEL_FIELD, label: 'Recipient' },
+  // Two fields no column is wide enough for: the title of the notification with its
+  // type under it, and the reason a delivery failed — a whole sentence that stretched
+  // the table around it. Both wait in the panel a row expands into.
+  {
+    key: DELIVERY_NOTIFICATION_TITLE_FIELD,
+    label: 'Notification',
+    detail: true,
+  },
+  { key: DELIVERY_LAST_ERROR_FIELD, label: 'Error', detail: true },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/**
+ * What the delivery journal declares about its frame: a search, the status and
+ * the period as the two filters of its bar, and no title — the page heading above
+ * already names it. The channel is not among the filters: it arrives from the
+ * route as the table's preset, and a control for it in the bar would offer to undo
+ * the page the reader opened.
+ */
+const DELIVERIES_FRAME: HilosTableFrame = {
+  search: { placeholder: 'Search type or recipient…' },
+  filters: [
+    {
+      kind: 'select',
+      key: DELIVERY_FILTER_STATUS,
+      label: 'Status',
+      options: () =>
+        HILOS_DELIVERY_STATUSES.filter(({ value }) => value !== ''),
+    },
+    {
+      kind: 'date_range',
+      fromKey: DELIVERY_FILTER_FROM,
+      toKey: DELIVERY_FILTER_TO,
+      label: 'Period',
+    },
+  ],
+  columns: DELIVERIES_COLUMNS,
+  empty: { title: 'No deliveries yet.' },
+}
+
 /**
  * The server-windowed controller for the delivery-logs table: search, the domain
  * filters (channel, status, period), sort, and paging change the viewport
@@ -246,6 +320,7 @@ export function createHilosDeliveriesTable(
         descriptor,
       ),
     initialFilter,
+    frame: DELIVERIES_FRAME,
   })
   const teardown: Array<() => void> = []
 

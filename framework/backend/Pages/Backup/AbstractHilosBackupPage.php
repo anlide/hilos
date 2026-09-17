@@ -6,6 +6,7 @@ namespace Hilos\Pages\Backup;
 
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
+use Hilos\Backup\Agent\DTO\BackupDeleteDoneSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
@@ -40,6 +41,7 @@ use Hilos\Environment\Exception\EnvTypeMismatchException;
 use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Backup\DTO\BackupBulkDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCircleAddActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCircleRemoveActionDTO;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
@@ -49,6 +51,12 @@ use Hilos\Pages\Backup\DTO\BackupRestoreActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Collection\BackupHistories;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Exception\LogicException;
 
 /**
  * AbstractHilosBackupPage - Abstract base for the Hilos backup list page.
@@ -80,11 +88,25 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     public const array ACTIONS = [
         HilosSignalConstants::BACKUP_CREATE => BackupCreateActionDTO::class,
         HilosSignalConstants::BACKUP_DELETE => BackupDeleteActionDTO::class,
+        HilosSignalConstants::BACKUP_BULK_DELETE => BackupBulkDeleteActionDTO::class,
         HilosSignalConstants::BACKUP_SET_KEEP => BackupSetKeepActionDTO::class,
         HilosSignalConstants::BACKUP_RESTORE => BackupRestoreActionDTO::class,
         HilosSignalConstants::BACKUP_REOPEN => BackupReopenActionDTO::class,
         HilosSignalConstants::BACKUP_CIRCLE_ADD => BackupCircleAddActionDTO::class,
         HilosSignalConstants::BACKUP_CIRCLE_REMOVE => BackupCircleRemoveActionDTO::class,
+    ];
+
+    /**
+     * The storage agent's answer to each delete a bulk run asked it for.
+     *
+     * The run lives in the router of the agent serving this page, so the verdict has to come back
+     * to this page: a page-owned signal is routed to that agent, which hands it to
+     * {@see self::onSignalAgent()}.
+     */
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => BackupDeleteDoneSignalData::class,
+        ],
     ];
 
     public const array BROWSER = [
@@ -142,6 +164,13 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
 
                 break;
 
+            case HilosSignalConstants::BACKUP_BULK_DELETE:
+                if (!$dto instanceof BackupBulkDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, BackupBulkDeleteActionDTO::class, $dto);
+                }
+
+                return $this->startBulkAction($acceptKey, $dto);
+
             case HilosSignalConstants::BACKUP_SET_KEEP:
                 if (!$dto instanceof BackupSetKeepActionDTO) {
                     throw new InvalidActionPayloadException($action, BackupSetKeepActionDTO::class, $dto);
@@ -187,6 +216,63 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         }
 
         return null;
+    }
+
+    /**
+     * Judges one backup of a bulk delete: refused in place when it is the copy being taken, and
+     * otherwise handed to the storage agent, whose answer carries the verdict back.
+     *
+     * The page does not own the archive or its index row, so it does not delete anything itself;
+     * it asks the one writer, the way the single-row delete does, and the run's key rides along so
+     * the agent answers ({@see self::onSignalAgent()}).
+     *
+     * @param string $action Action the run was started under (unused: this page runs one bulk action)
+     * @param string $progressKey Run the row belongs to
+     * @param string $rowKey Backup id to delete
+     * @throws HilosException When the page was never handed its router
+     * @throws InvalidArgumentException When the ask or the verdict cannot be named
+     */
+    public function onBulkRow(string $action, string $progressKey, string $rowKey): void
+    {
+        if ($this->isInProgress($rowKey)) {
+            $this->bulkRowUntouched($progressKey, $rowKey, BackupDeleteDoneSignalData::REASON_BEING_TAKEN);
+
+            return;
+        }
+
+        $this->agent->sendToAgent(
+            HilosSignalConstants::BACKUP_AGENT_DELETE,
+            new BackupDeleteSignalData(backupId: $rowKey, progressKey: $progressKey),
+        );
+    }
+
+    /**
+     * Turns the storage agent's answer about one delete into the verdict of its bulk run.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not one this page declares
+     * @throws LogicException When the payload is not the one its name promises
+     * @throws HilosException When the page was never handed its router
+     * @throws InvalidArgumentException When a frame of the run cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        if ($name !== HilosSignalConstants::HILOS_BACKUP_DELETE_DONE) {
+            throw new AgentUnknownSignalException($name);
+        }
+
+        $done = $data->data;
+        if (!$done instanceof BackupDeleteDoneSignalData) {
+            throw new LogicException($name . ' payload must be ' . BackupDeleteDoneSignalData::class);
+        }
+
+        if ($done->reason === null) {
+            $this->bulkRowTouched($done->progressKey, $done->backupId);
+        } else {
+            $this->bulkRowUntouched($done->progressKey, $done->backupId, $done->reason);
+        }
     }
 
     /**

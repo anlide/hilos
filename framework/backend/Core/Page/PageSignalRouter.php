@@ -53,6 +53,7 @@ use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Exception\TableBulkActionNotOfferedException;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -1114,6 +1115,7 @@ class PageSignalRouter
      * @param TableBulkActionDTO $dto Request naming the table and the target
      * @param ViewportTable $table Table the page resolved the request's key to
      * @return TableBulkAcceptedReplyDTO Acceptance carrying the run's key and its honest total
+     * @throws TableBulkActionNotOfferedException When the table does not declare this action among its mass operations
      * @throws TableBulkRunBusyException When this connection already has a run on this table
      */
     public function startBulkRun(
@@ -1122,6 +1124,11 @@ class PageSignalRouter
         TableBulkActionDTO $dto,
         ViewportTable $table,
     ): TableBulkAcceptedReplyDTO {
+        // Asked first, ahead of the busy check: a table that takes no such run has nothing to be busy with.
+        if (!in_array($dto->getAction(), $table->bulkActions(), true)) {
+            throw new TableBulkActionNotOfferedException($dto->tableKey, $dto->getAction());
+        }
+
         foreach ($this->bulkRuns as $running) {
             if ($running->acceptKey === $acceptKey
                 && $running->page === $page->getPageName()

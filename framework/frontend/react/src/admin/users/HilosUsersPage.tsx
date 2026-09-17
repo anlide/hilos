@@ -1,25 +1,20 @@
 // HilosUsersPage — the framework Hilos users-list page (HilosPages.USERS): the
-// users table inside the admin shell. All table logic and the row view-model are
-// the core headless's (createHilosUsersTable / HilosUserRow); this view owns only
-// the column set and the cell markup, so a project mounts it by passing its
-// HilosUsersContext. The framework owns every cell except the trailing actions
-// cell, which a project fills through the `rowActions` render prop (e.g. a link to
-// the detail page) — the framework's own row action, the takeover, is drawn ahead
-// of it. Bootstrap classes only (styling-rules.md).
+// users table inside the admin shell. All table logic, the row view-model, and the
+// frame the table declares — its columns, search, and empty words — are the core
+// headless's (createHilosUsersTable / HilosUserRow); this view owns only the cell
+// markup, so a project mounts it by passing its HilosUsersContext. The framework
+// owns every cell except the trailing actions cell, which a project fills through
+// the `rowActions` render prop (e.g. a link to the detail page) — the framework's
+// own row action, the takeover, is drawn ahead of it. Bootstrap classes only
+// (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   HilosPages,
-  USER_ONLINE_SESSION_COUNT_FIELD,
-  USER_PRESENCE_FIELD,
   createHilosImpersonate,
   createHilosUsersTable,
 } from '@hilos/core'
-import type {
-  HilosTableColumnOf,
-  HilosUserRow,
-  HilosUsersContext,
-} from '@hilos/core'
+import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -36,20 +31,6 @@ export interface HilosUsersPageProps {
   /** The trailing actions cell for one row (e.g. an "Open" link). */
   rowActions?: (row: HilosUserRow) => ReactNode
 }
-
-const COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
-  { key: 'id', label: 'ID', sortable: true },
-  { key: 'name', label: 'Name', sortable: true },
-  { key: USER_PRESENCE_FIELD, label: 'Presence', sortable: true },
-  {
-    key: USER_ONLINE_SESSION_COUNT_FIELD,
-    label: 'Sessions',
-    sortable: true,
-    headerClass: 'text-end',
-  },
-  { key: 'lastActivity', label: 'Last activity', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
 
 /**
  * The framework users admin page: the searchable, sortable users table.
@@ -105,12 +86,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
   return (
     <HilosAdminPage page={HilosPages.USERS}>
       <HilosViewportTable
-        label="Users"
         controller={users.controller}
-        columns={COLUMNS}
-        searchable
-        searchPlaceholder="Search users…"
-        emptyText="No users yet."
         row={(row) => (
           <>
             <td className="text-body-secondary">{row.id}</td>

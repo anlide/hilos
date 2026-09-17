@@ -5,6 +5,7 @@ import {
   draftCustomSetting,
   openSettingEdit,
   setCustomSetting,
+  shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -14,7 +15,10 @@ import { clickSubmit, typeInto } from '../helpers/session'
 // framework HilosViewportTable over the live socket. The window comes from the
 // backend — search, sort, and paging change the viewport descriptor and the
 // server replies a window — so a key is isolated with the search box before it
-// is asserted on (the chat catalog spans four pages of ten). Live edits from
+// is asserted on (the chat catalog spans five pages of ten). The table is a
+// declared one, so it stands in the document twice — rows for a wide screen,
+// cards for a narrow one — and a control inside a cell is aimed at through the
+// copy on screen (shownByTestId). Live edits from
 // another connection hang as pending (a tinted row + an Apply control), while the
 // tab that made the edit applies its own change at once. Each editing test uses a
 // distinct catalog key and resets it to the catalog default, so the suite stays
@@ -66,19 +70,23 @@ test('lists settings in the server window and filters from the search box', asyn
   // window); the reset restores the window and clears the box.
   const search = page.getByTestId('hilos-table-search')
   await typeInto(search, 'chat_bot_language')
-  await expect(page.getByTestId('hilos-table-row-chat_bot_language')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-table-row-chat_bot_language'),
+  ).toBeVisible()
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
 
   await typeInto(search, 'zzz-no-such-setting-zzz')
   await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
   await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  // The words stand in both branches of the table, so they are read off the copy
+  // on screen; that they are gone is asserted of both.
   const noMatches = page.getByTestId('hilos-table-no-matches')
-  await expect(noMatches).toBeVisible()
-  await expect(page.getByTestId('hilos-table-no-matches-terms')).toContainText(
-    '“zzz-no-such-setting-zzz”',
-  )
+  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+  await expect(
+    shownByTestId(page, 'hilos-table-no-matches-terms'),
+  ).toContainText('“zzz-no-such-setting-zzz”')
 
-  await page.getByTestId('hilos-table-no-matches-reset').click()
+  await shownByTestId(page, 'hilos-table-no-matches-reset').click()
   await expect(
     page.locator('[data-id^="hilos-table-row-"]').first(),
   ).toBeVisible()
@@ -86,7 +94,9 @@ test('lists settings in the server window and filters from the search box', asyn
   await expect(search).toHaveValue('')
 })
 
-test('paginates the server window', async ({ page }) => {
+test('paginates the server window by its page numbers and its neighbors', async ({
+  page,
+}) => {
   await signUpAdmin(page)
   await openSettings(page)
 
@@ -95,21 +105,44 @@ test('paginates the server window', async ({ page }) => {
   // retention keys, and the notifications.* keys (the email, push and sms
   // delivery channels plus the delivery-log retention setting) trail onto the
   // third, fourth and fifth.
-  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 5')
-  await expect(
-    page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
-  ).toBeVisible()
-  await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
+  const firstPageRow = page.getByTestId(
+    'hilos-table-row-chat_attachment_max_file_bytes',
+  )
+  const secondPageRow = page.getByTestId('hilos-table-row-example_string')
+  const pageOne = page.getByTestId('hilos-table-page-1')
+  const pageTwo = page.getByTestId('hilos-table-page-2')
 
+  // A cataloged set is counted whole, so the count is exact and the footer draws
+  // a number for every page — five fit the pager without a gap — with the page on
+  // screen as the one that says so (HIL-802). Nothing past the fifth: a number
+  // with no page behind it would lead nowhere.
+  await expect(pageOne).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('hilos-table-page-5')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-page-6')).toHaveCount(0)
+  await expect(firstPageRow).toBeVisible()
+  await expect(secondPageRow).toHaveCount(0)
+
+  // A number leads to its own page. The row is what says the window arrived: the
+  // current number moves the moment it is pressed, the rows only with the answer.
+  await pageTwo.click()
+  await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+  await expect(secondPageRow).toBeVisible()
+  await expect(firstPageRow).toHaveCount(0)
+
+  await pageOne.click()
+  await expect(pageOne).toHaveAttribute('aria-current', 'page')
+  await expect(firstPageRow).toBeVisible()
+  await expect(secondPageRow).toHaveCount(0)
+
+  // Previous and Next stand beside the numbers and still walk one page at a time.
   await page.getByTestId('hilos-table-next').click()
-  await expect(page.getByTestId('hilos-table-page')).toContainText('2 / 5')
-  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
-  await expect(
-    page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
-  ).toHaveCount(0)
+  await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+  await expect(secondPageRow).toBeVisible()
+  await expect(firstPageRow).toHaveCount(0)
 
   await page.getByTestId('hilos-table-prev').click()
-  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 5')
+  await expect(pageOne).toHaveAttribute('aria-current', 'page')
+  await expect(firstPageRow).toBeVisible()
 })
 
 test('a third click on a sorted header returns the table to its initial order', async ({
@@ -145,6 +178,54 @@ test('a third click on a sorted header returns the table to its initial order', 
   await expect(valueHeader).toHaveAttribute('aria-sort', 'none')
   await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
   await expect.poll(order).toEqual(initialOrder)
+})
+
+test('a narrow window draws the settings as cards and never scrolls sideways', async ({
+  page,
+}) => {
+  // HIL-806 acceptance. A declared table is a table on a wide screen and a list of
+  // cards on a narrow one; both are mounted, and Bootstrap's display utilities show
+  // exactly one of them. What a phone must never get is the wide table squeezed
+  // into a sideways scroll — the thing the cards exist to replace.
+  //
+  // The sign-up runs at the usual width: it is not what is under test, and driving
+  // it on a phone would put its own troubles into this verdict. The page itself is
+  // opened narrow, the way a phone opens it.
+  await signUpAdmin(page)
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+  await openSettings(page)
+
+  // The first page opens on the chat_* keys, so this record is on screen in one
+  // branch or the other; which branch is the whole question.
+  const key = 'chat_attachment_max_file_bytes'
+  const cards = page.getByTestId('hilos-table-cards')
+  const card = cards.getByTestId(`hilos-table-card-${key}`)
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+
+  await expect(card).toBeVisible()
+  await expect(row).toBeHidden()
+
+  // Nothing reaches sideways: neither the shell's own scrolling container, which is
+  // where the admin page lives (HilosLayout), nor the document around it.
+  const sidewaysOverflow = (): Promise<number[]> =>
+    page.evaluate(() => {
+      const main = document.getElementById('hilos-main-content')
+      if (main === null) {
+        throw new Error('the shell drew no main container to measure')
+      }
+
+      return [main, document.documentElement].map(
+        (element) => element.scrollWidth - element.clientWidth,
+      )
+    })
+  expect(await sidewaysOverflow()).toEqual([0, 0])
+
+  // Back on a wide screen it is the table again, and the cards are gone from sight:
+  // both branches were drawn from the same window, so the row is there to show.
+  await page.setViewportSize(desktop)
+  await expect(row).toBeVisible()
+  await expect(cards).toBeHidden()
 })
 
 test('a tab applies its own edit at once, with no pending gate', async ({
@@ -187,7 +268,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
   // rather than pretending there is one to edit — this is what the stored row
   // with no value used to hide.
   await expect(
-    page.getByTestId('hilos-settings-edit-example_integer'),
+    shownByTestId(page, 'hilos-settings-edit-example_integer'),
   ).toHaveAttribute('aria-label', 'Set custom value')
 
   // And re-opening the dialog arms the switch from the value, not from the row:
@@ -382,7 +463,9 @@ test('Keep mine on a dirty conflict saves the typed value in both tabs', async (
   await tabB.close()
 })
 
-test('deletes an orphan setting through the confirm modal', async ({ page }) => {
+test('deletes an orphan setting through the confirm modal', async ({
+  page,
+}) => {
   // An uncataloged (orphan) row seeded before the app came up by the composer
   // `test:e2e-seed-orphan` step (cli `test:orphan:create e2e_orphan_delete ...`);
   // keep this key in sync with that step. The full e2e run always db-resets, so
@@ -395,19 +478,21 @@ test('deletes an orphan setting through the confirm modal', async ({ page }) => 
 
   // The delete affordance is orphan-only: a catalog key never exposes it, this
   // uncataloged row does.
-  const deleteButton = page.getByTestId(`hilos-settings-delete-${orphanKey}`)
+  const deleteButton = shownByTestId(page, `hilos-settings-delete-${orphanKey}`)
   await expect(deleteButton).toBeVisible()
 
   // Confirm-modal delete removes the DB row. The initiating tab applies its own
   // change at once (no pending Apply gate); a removed row collapses in place to a
   // "Removed" placeholder rather than pulling the layout up, and its delete
-  // affordance is gone with the row slot.
+  // affordance is gone with the row slot — from the card as well as from the row.
   await deleteButton.click()
   await page.getByTestId('hilos-settings-delete-confirm').click()
   const row = page.getByTestId(`hilos-table-row-${orphanKey}`)
   await expect(row.getByTestId('hilos-table-placeholder')).toBeVisible()
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await expect(page.getByTestId(`hilos-settings-delete-${orphanKey}`)).toHaveCount(0)
+  await expect(
+    page.getByTestId(`hilos-settings-delete-${orphanKey}`),
+  ).toHaveCount(0)
 })
 
 test('refuses a bad value in the words of the rule that refused it', async ({
