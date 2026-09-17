@@ -20,19 +20,26 @@
 // With confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm
 // step instead of discarding a dirty draft. The confirm-step state machine is
 // the core modal controller and the focus trap / scroll lock are core/dom; this
-// view only renders and wires events. Bootstrap classes only, save for the one
-// declaration the Sass layer names — the bottom sheet, which stock Bootstrap
-// has nothing for.
+// view only renders and wires events. Bootstrap classes only, save for the
+// declarations the Sass layer names — the bottom sheet, which stock Bootstrap
+// has nothing for, and the modal layer. A modal opened over a modal learns its
+// depth from the core modal stack by itself, with nothing passed by the surface
+// that opens it, and hands the number to the Sass layer through
+// `--hilos-modal-depth`: each layer dims everything under it and stands one
+// step narrower (mockups/components/modal, the node for a modal over a modal).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import {
   FocusTrap,
   copyToClipboard,
   createModalController,
+  enterModalLayer,
   isClipboardAvailable,
+  leaveModalLayer,
   lockBodyScroll,
   type FocusPlacement,
+  type ModalLayerOwner,
   type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
@@ -140,6 +147,9 @@ export function HilosModal({
   const confirmRef = useRef<HTMLDivElement>(null)
   const trap = useRef(new FocusTrap()).current
   const scrollLockOwner = useRef<ScrollLockOwner>({}).current
+  const modalLayerOwner = useRef<ModalLayerOwner>({}).current
+  // The layer this modal stands on: 0 over the page, 1 over another modal.
+  const [layerDepth, setLayerDepth] = useState(0)
   const [copied, setCopied] = useState(false)
 
   // The controller reads its config live through a ref so it is created once.
@@ -167,6 +177,11 @@ export function HilosModal({
     // dialog: a reopened modal reporting "Copied" is reporting the last visit.
     setCopied(false)
     lockBodyScroll(document, scrollLockOwner)
+    // An effect runs after the first paint and children before parents: a modal
+    // opened over an open one draws its first frame on layer 0, and two modals
+    // opened in one render would take their layers bottom-up. Every nested
+    // panel today opens on a click, over a parent that is already up.
+    setLayerDepth(enterModalLayer(document, modalLayerOwner))
     const root = dialogRef.current
     if (root) {
       trap.activate(root, trapPlacement(initialFocus))
@@ -174,9 +189,10 @@ export function HilosModal({
 
     return () => {
       unlockBodyScroll(scrollLockOwner)
+      leaveModalLayer(modalLayerOwner)
       trap.release()
     }
-  }, [open, modal, scrollLockOwner, trap])
+  }, [open, modal, scrollLockOwner, modalLayerOwner, trap])
 
   // Moving in and out of the confirm step keeps focus inside the visible dialog.
   useEffect(() => {
@@ -206,20 +222,29 @@ export function HilosModal({
     event: KeyboardEvent<HTMLDivElement>,
     root: HTMLDivElement | null,
   ): void {
+    // A key this layer handles stays in this layer. Through the portal the
+    // event still bubbles up the React tree into a modal this one stands over,
+    // whose handler would close that modal too, or hand Tab to its trap.
     if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopPropagation()
       modal.onEsc()
     } else if (event.key === 'Tab' && root) {
+      event.stopPropagation()
       trap.handleTab(root, event.nativeEvent)
     }
   }
 
   return createPortal(
     <>
-      <div className="modal-backdrop fade show" />
+      <div
+        className="modal-backdrop fade show hilos-modal-layer"
+        style={{ '--hilos-modal-depth': layerDepth } as CSSProperties}
+      />
       <div
         ref={dialogRef}
-        className="modal fade show d-block"
+        className="modal fade show d-block hilos-modal-layer"
+        style={{ '--hilos-modal-depth': layerDepth } as CSSProperties}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
@@ -275,7 +300,8 @@ export function HilosModal({
       {confirmVisible ? (
         <div
           ref={confirmRef}
-          className="modal fade show d-block"
+          className="modal fade show d-block hilos-modal-layer"
+          style={{ '--hilos-modal-depth': layerDepth } as CSSProperties}
           tabIndex={-1}
           role="alertdialog"
           aria-modal="true"

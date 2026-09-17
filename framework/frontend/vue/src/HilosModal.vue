@@ -20,18 +20,25 @@ and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md). With
 confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
 instead of discarding a dirty draft. The confirm-step state machine is the core
 modal controller and the focus trap / scroll lock are core/dom; this view only
-renders and wires events. Bootstrap classes only, save for the one declaration
-the Sass layer names — the bottom sheet, which stock Bootstrap has nothing for;
-stacking is the teleport DOM order, not a hand-set z-index. -->
+renders and wires events. Bootstrap classes only, save for the declarations the
+Sass layer names — the bottom sheet, which stock Bootstrap has nothing for, and
+the modal layer. A modal opened over a modal learns its depth from the core
+modal stack by itself, with nothing passed by the surface that opens it, and
+hands the number to the Sass layer through `--hilos-modal-depth`: each layer
+dims everything under it and stands one step narrower
+(mockups/components/modal, the node for a modal over a modal). -->
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import {
   FocusTrap,
   copyToClipboard,
   createModalController,
+  enterModalLayer,
   isClipboardAvailable,
+  leaveModalLayer,
   lockBodyScroll,
   type FocusPlacement,
+  type ModalLayerOwner,
   type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
@@ -126,6 +133,9 @@ const dialog = ref<HTMLElement>()
 const confirmDialog = ref<HTMLElement>()
 const trap = new FocusTrap()
 const scrollLockOwner: ScrollLockOwner = {}
+const modalLayerOwner: ModalLayerOwner = {}
+// The layer this modal stands on: 0 over the page, 1 over another modal.
+const layerDepth = ref(0)
 
 const modal = createModalController({
   confirmOnClose: () => props.confirmOnClose,
@@ -158,6 +168,7 @@ watch(
     copied.value = false
     if (open) {
       lockBodyScroll(document, scrollLockOwner)
+      layerDepth.value = enterModalLayer(document, modalLayerOwner)
       void nextTick(() => {
         const root = activeRoot()
         if (root) {
@@ -166,6 +177,7 @@ watch(
       })
     } else {
       unlockBodyScroll(scrollLockOwner)
+      leaveModalLayer(modalLayerOwner)
       trap.release()
     }
   },
@@ -174,6 +186,7 @@ watch(
 
 onUnmounted(() => {
   unlockBodyScroll(scrollLockOwner)
+  leaveModalLayer(modalLayerOwner)
 })
 
 // Moving in and out of the confirm step keeps focus inside the visible dialog.
@@ -200,10 +213,14 @@ function onTab(event: KeyboardEvent): void {
 <template>
   <teleport to="body">
     <template v-if="modelValue">
-      <div class="modal-backdrop fade show"></div>
+      <div
+        class="modal-backdrop fade show hilos-modal-layer"
+        :style="{ '--hilos-modal-depth': layerDepth }"
+      ></div>
       <div
         ref="dialog"
-        class="modal fade show d-block"
+        class="modal fade show d-block hilos-modal-layer"
+        :style="{ '--hilos-modal-depth': layerDepth }"
         tabindex="-1"
         role="dialog"
         aria-modal="true"
@@ -261,7 +278,8 @@ function onTab(event: KeyboardEvent): void {
       <div
         v-if="confirmVisible"
         ref="confirmDialog"
-        class="modal fade show d-block"
+        class="modal fade show d-block hilos-modal-layer"
+        :style="{ '--hilos-modal-depth': layerDepth }"
         tabindex="-1"
         role="alertdialog"
         aria-modal="true"

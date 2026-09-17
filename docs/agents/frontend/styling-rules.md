@@ -89,6 +89,12 @@ cannot be read where it is written (an identifier handed to `:style` instead of
 an object literal) is a violation of its own, because passing it would make the
 ban one indirection deep.
 
+React writes the same channel under a cast, because its `CSSProperties` types no
+custom property: `style={{ '--hilos-modal-depth': depth } as CSSProperties}`. The
+cast leaves the literal's names where they are written, so the rule reads through
+it; the SDK does not widen React's global style type instead, since that
+declaration would reach every project the package is installed in.
+
 ## The room a live message takes
 
 A live message — a refusal, a strip saying work is running, a bar announcing

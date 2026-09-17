@@ -24,8 +24,15 @@
 // (createPortal) views, this renders in place — Bootstrap's `.modal` is
 // position:fixed, so it overlays the viewport without a portal; a project needing
 // to escape a transformed-ancestor stacking context wraps it in a CDK overlay.
-// Bootstrap classes only, save for the one declaration the Sass layer names —
-// the bottom sheet, which stock Bootstrap has nothing for.
+// Bootstrap classes only, save for the declarations the Sass layer names — the
+// bottom sheet, which stock Bootstrap has nothing for, and the modal layer. A
+// modal opened over a modal learns its depth from the core modal stack by
+// itself, with nothing passed by the surface that opens it, and hands the number
+// to the Sass layer through `--hilos-modal-depth`: each layer dims everything
+// under it and stands one step narrower (mockups/components/modal, the node for
+// a modal over a modal). Rendered in place, a nested layer lifts its z-index
+// inside the stacking context of the modal it stands in, which is still over
+// that modal's dialog.
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -46,9 +53,12 @@ import {
   FocusTrap,
   copyToClipboard,
   createModalController,
+  enterModalLayer,
   isClipboardAvailable,
+  leaveModalLayer,
   lockBodyScroll,
   type FocusPlacement,
+  type ModalLayerOwner,
   type ScrollLockOwner,
   unlockBodyScroll,
 } from '@hilos/core'
@@ -80,10 +90,14 @@ export interface ModalActionsContext {
   imports: [NgTemplateOutlet],
   template: `
     @if (open()) {
-      <div class="modal-backdrop fade show"></div>
+      <div
+        class="modal-backdrop fade show hilos-modal-layer"
+        [style.--hilos-modal-depth]="layerDepth()"
+      ></div>
       <div
         #dialog
-        class="modal fade show d-block"
+        class="modal fade show d-block hilos-modal-layer"
+        [style.--hilos-modal-depth]="layerDepth()"
         tabindex="-1"
         role="dialog"
         aria-modal="true"
@@ -149,7 +163,8 @@ export interface ModalActionsContext {
       @if (confirmVisible()) {
         <div
           #confirmDialog
-          class="modal fade show d-block"
+          class="modal fade show d-block hilos-modal-layer"
+          [style.--hilos-modal-depth]="layerDepth()"
           tabindex="-1"
           role="alertdialog"
           aria-modal="true"
@@ -249,6 +264,7 @@ export class HilosModal {
   private readonly doc = inject(DOCUMENT)
   private readonly trap = new FocusTrap()
   private readonly scrollLockOwner: ScrollLockOwner = {}
+  private readonly modalLayerOwner: ModalLayerOwner = {}
   private readonly dialog = viewChild<ElementRef<HTMLElement>>('dialog')
   private readonly confirmDialog =
     viewChild<ElementRef<HTMLElement>>('confirmDialog')
@@ -264,6 +280,8 @@ export class HilosModal {
   })
   protected readonly confirmVisible = hilosSignal(this.modal.confirmVisible)
   protected readonly copied = signal(false)
+  /** The layer this modal stands on: 0 over the page, 1 over another modal. */
+  protected readonly layerDepth = signal(0)
   protected readonly showCopy = computed(
     () => this.copyText() !== '' && isClipboardAvailable(),
   )
@@ -274,7 +292,8 @@ export class HilosModal {
   }
 
   constructor() {
-    // Lock scroll and trap focus once while open; the cleanup runs on close.
+    // Lock scroll, enter the modal layer and trap focus once while open; the
+    // cleanup runs on close.
     effect((onCleanup) => {
       const root = this.dialog()?.nativeElement
       if (!this.open() || !root) {
@@ -285,9 +304,11 @@ export class HilosModal {
       // dialog: a reopened modal reporting "Copied" is reporting the last visit.
       this.copied.set(false)
       lockBodyScroll(this.doc, this.scrollLockOwner)
+      this.layerDepth.set(enterModalLayer(this.doc, this.modalLayerOwner))
       this.trap.activate(root, trapPlacement(this.initialFocus()))
       onCleanup(() => {
         unlockBodyScroll(this.scrollLockOwner)
+        leaveModalLayer(this.modalLayerOwner)
         this.trap.release()
       })
     })
@@ -313,10 +334,15 @@ export class HilosModal {
   }
 
   protected onKeydown(event: KeyboardEvent, root: HTMLElement): void {
+    // A key this layer handles stays in this layer. Rendered in place, a modal
+    // opened over a modal sits inside that modal's element, whose handler would
+    // close it too, or hand Tab to a trap that holds this layer's elements.
     if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopPropagation()
       this.modal.onEsc()
     } else if (event.key === 'Tab') {
+      event.stopPropagation()
       this.trap.handleTab(root, event)
     }
   }

@@ -154,6 +154,11 @@ export {
   unlockBodyScroll,
   type ScrollLockOwner,
 } from './dom/scrollLock.js'
+export {
+  enterModalLayer,
+  leaveModalLayer,
+  type ModalLayerOwner,
+} from './dom/modalStack.js'
 export { copyToClipboard, isClipboardAvailable } from './dom/clipboard.js'
 export { downloadTextFile } from './dom/downloadTextFile.js'
 export {

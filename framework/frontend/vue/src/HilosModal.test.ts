@@ -26,6 +26,21 @@ function setClipboard(clipboard: Clipboard | undefined): void {
   })
 }
 
+/**
+ * The modal layer depths of every element a selector matches, in DOM order.
+ *
+ * @param selector The elements to read, each of which must be a modal layer.
+ * @returns The value of `--hilos-modal-depth` on each of them.
+ */
+function layerDepths(selector: string): string[] {
+  return [...document.querySelectorAll<HTMLElement>(selector)].map(
+    (element) => {
+      expect(element.classList.contains('hilos-modal-layer')).toBe(true)
+      return element.style.getPropertyValue('--hilos-modal-depth')
+    },
+  )
+}
+
 /** A clipboard that records what was written to it. */
 function recordingClipboard(): void {
   setClipboard({
@@ -67,6 +82,81 @@ describe('HilosModal', () => {
     await first.setProps({ modelValue: false })
 
     expect(document.body.classList.contains('modal-open')).toBe(true)
+  })
+
+  it('stands a lone modal on layer 0, backdrop and dialog alike', () => {
+    mount(HilosModal, { props: { modelValue: true, title: 'Edit' } })
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0'])
+  })
+
+  it('stands a modal opened inside an open modal on layer 1', async () => {
+    mount({
+      components: { HilosModal },
+      template: `
+        <HilosModal :model-value="true" title="Sign in">
+          <HilosModal :model-value="true" title="Error details" />
+        </HilosModal>
+      `,
+    })
+    await flushPromises()
+
+    expect(layerDepths('.modal-backdrop').sort()).toEqual(['0', '1'])
+    expect(layerDepths('[aria-label="Sign in"]')).toEqual(['0'])
+    expect(layerDepths('[aria-label="Error details"]')).toEqual(['1'])
+  })
+
+  it('puts the confirm step on the layer of its own modal', async () => {
+    mount({
+      components: { HilosModal },
+      template: `
+        <HilosModal :model-value="true" title="Sign in">
+          <HilosModal :model-value="true" title="Edit" confirm-on-close />
+        </HilosModal>
+      `,
+    })
+    document
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Edit"] [data-id="modal-close"]',
+      )
+      ?.click()
+    await flushPromises()
+
+    expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['1'])
+  })
+
+  it('opens the next modal over a lone one on layer 1 again after the upper closed', async () => {
+    mount(HilosModal, { props: { modelValue: true, title: 'Sign in' } })
+    const upper = mount(HilosModal, {
+      props: { modelValue: true, title: 'Error details' },
+    })
+
+    await upper.setProps({ modelValue: false })
+    await upper.setProps({ modelValue: true })
+
+    expect(layerDepths('[aria-label="Error details"]')).toEqual(['1'])
+  })
+
+  it('closes only the upper layer on Escape pressed in it', async () => {
+    mount({
+      components: { HilosModal },
+      data: () => ({ signInOpen: true, detailsOpen: true }),
+      template: `
+        <HilosModal v-model="signInOpen" title="Sign in">
+          <HilosModal v-model="detailsOpen" title="Error details" />
+        </HilosModal>
+      `,
+    })
+
+    document
+      .querySelector('[aria-label="Error details"]')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+    await flushPromises()
+
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0'])
   })
 
   it('names the dialog from ariaLabelledby when it carries no visible title', () => {

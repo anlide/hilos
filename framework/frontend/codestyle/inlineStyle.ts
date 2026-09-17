@@ -415,21 +415,30 @@ function expressionProperties(expression: string): string[] | null {
     return null
   }
 
-  return objectProperties(
-    ts.isParenthesizedExpression(statement.expression)
-      ? statement.expression.expression
-      : statement.expression,
-  )
+  return objectProperties(statement.expression)
 }
 
 /**
  * A binding may hand over one map of declarations or an array of them, and both
  * are read the same way: every name of every map, or nothing at all.
  *
+ * A cast or parentheses around a literal leave its names where they are written,
+ * so the literal under them is judged as if they were not there. React needs the
+ * cast — its CSSProperties types no custom property — and a cast over anything
+ * but a literal still hides the names, so nothing is laundered through it.
+ *
  * @param expression Expression the binding evaluates
  * @returns The names it sets, or null when they cannot be read where they stand
  */
 function objectProperties(expression: ts.Expression): string[] | null {
+  if (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression)
+  ) {
+    return objectProperties(expression.expression)
+  }
+
   if (ts.isArrayLiteralExpression(expression)) {
     const names: string[] = []
     for (const element of expression.elements) {

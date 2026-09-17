@@ -83,12 +83,14 @@ it('reports every Vue spelling the bad fixture seeds, one line per element', () 
 
 it('reports the React spellings and all three imperative forms', () => {
   expect(reportFixture('badInlineStyle.tsx')).toEqual([
-    sets('badInlineStyle.tsx', 12, 'maxWidth'),
-    hides('badInlineStyle.tsx', 13),
-    sets('badInlineStyle.tsx', 20, 'color'),
-    sets('badInlineStyle.tsx', 21, 'width'),
-    hides('badInlineStyle.tsx', 22),
-    sets('badInlineStyle.tsx', 23, 'cssText'),
+    sets('badInlineStyle.tsx', 17, 'maxWidth'),
+    hides('badInlineStyle.tsx', 18),
+    sets('badInlineStyle.tsx', 19, 'maxWidth'),
+    hides('badInlineStyle.tsx', 20),
+    sets('badInlineStyle.tsx', 27, 'color'),
+    sets('badInlineStyle.tsx', 28, 'width'),
+    hides('badInlineStyle.tsx', 29),
+    sets('badInlineStyle.tsx', 30, 'cssText'),
   ])
 })
 
@@ -134,4 +136,14 @@ it('keeps an expression carrying a comparison inside its own tag', () => {
       '<div :hidden="a > b" style="color: red"></div>\n',
     ),
   ).toEqual([sets('inline.html', 1, 'color')])
+})
+
+it('reads the object literal a binding wraps in parentheses', () => {
+  expect(
+    checkSource(
+      `${FIXTURES}/inline.html`,
+      '<div :style="(({ \'--hilos-gap\': gap }))"></div>\n' +
+        '<div :style="({ color: tone })"></div>\n',
+    ),
+  ).toEqual([sets('inline.html', 2, 'color')])
 })

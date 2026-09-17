@@ -164,3 +164,31 @@
     }
   }
 }
+
+// WHY: Bootstrap stacks every modal on the same two z-indexes, so a modal opened
+// over a modal puts its backdrop under the dialog below and dims only the page,
+// and draws its dialog at the width of the one it covers. A layer's depth is
+// computed by the core modal stack and has no class to be expressed as — the
+// custom property is the one legal channel (styling-rules.md, "A computed
+// value"). Both z-indexes and the width are read from the variables Bootstrap
+// declares on these very elements, so a size class on the dialog stays in
+// charge and the layer only takes its step off it.
+// WHAT: a modal layer over a modal (mockups/components/modal, the node for a
+// modal over a modal) — its backdrop dims everything under it, the modal below
+// included, and its dialog stands one step narrower so the one below shows at
+// its sides. Depth 0, a modal over the page, computes to stock Bootstrap.
+.modal.hilos-modal-layer {
+  z-index: calc(var(--bs-modal-zindex) + var(--hilos-modal-depth) * 20);
+}
+
+.modal-backdrop.hilos-modal-layer {
+  z-index: calc(var(--bs-backdrop-zindex) + var(--hilos-modal-depth) * 20);
+}
+
+// The narrow screen keeps the sheet: below this width .hilos-modal-sheet lifts
+// the width limit, and a layer rule outside the query would outweigh it there.
+@media (min-width: 768px) {
+  .hilos-modal-layer .modal-dialog {
+    max-width: calc(var(--bs-modal-width) - var(--hilos-modal-depth) * 3rem);
+  }
+}

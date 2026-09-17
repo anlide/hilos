@@ -18,6 +18,21 @@ function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
 }
 
+/**
+ * The modal layer depths of every element a selector matches, in DOM order.
+ *
+ * @param selector The elements to read, each of which must be a modal layer.
+ * @returns The value of `--hilos-modal-depth` on each of them.
+ */
+function layerDepths(selector: string): string[] {
+  return [...document.querySelectorAll<HTMLElement>(selector)].map(
+    (element) => {
+      expect(element.classList.contains('hilos-modal-layer')).toBe(true)
+      return element.style.getPropertyValue('--hilos-modal-depth')
+    },
+  )
+}
+
 /** Put a clipboard in the document, or take it away — plain http has none. */
 function setClipboard(clipboard: Clipboard | undefined): void {
   Object.defineProperty(navigator, 'clipboard', {
@@ -81,6 +96,84 @@ describe('HilosModal', () => {
     )
 
     expect(document.body.classList.contains('modal-open')).toBe(true)
+  })
+
+  it('stands a lone modal on layer 0, backdrop and dialog alike', () => {
+    render(<HilosModal open title="Edit" />)
+
+    expect(layerDepths('.modal-backdrop')).toEqual(['0'])
+    expect(layerDepths('[data-id="modal"]')).toEqual(['0'])
+  })
+
+  it('stands a modal opened inside an open modal on layer 1', () => {
+    const signIn = (detailsOpen: boolean) => (
+      <HilosModal open title="Sign in">
+        <HilosModal open={detailsOpen} title="Error details" />
+      </HilosModal>
+    )
+    const view = render(signIn(false))
+
+    view.rerender(signIn(true))
+
+    expect(layerDepths('.modal-backdrop').sort()).toEqual(['0', '1'])
+    expect(layerDepths('[aria-label="Sign in"]')).toEqual(['0'])
+    expect(layerDepths('[aria-label="Error details"]')).toEqual(['1'])
+  })
+
+  it('puts the confirm step on the layer of its own modal', () => {
+    const signIn = (editOpen: boolean) => (
+      <HilosModal open title="Sign in">
+        <HilosModal open={editOpen} title="Edit" confirmOnClose />
+      </HilosModal>
+    )
+    const view = render(signIn(false))
+    view.rerender(signIn(true))
+
+    fireEvent.click(
+      document.querySelector(
+        '[aria-label="Edit"] [data-id="modal-close"]',
+      ) as Element,
+    )
+
+    expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['1'])
+  })
+
+  it('opens the next modal over a lone one on layer 1 again after the upper closed', () => {
+    const pair = (detailsOpen: boolean) => (
+      <>
+        <HilosModal open title="Sign in" />
+        <HilosModal open={detailsOpen} title="Error details" />
+      </>
+    )
+    const view = render(pair(false))
+    view.rerender(pair(true))
+    view.rerender(pair(false))
+
+    view.rerender(pair(true))
+
+    expect(layerDepths('[aria-label="Error details"]')).toEqual(['1'])
+  })
+
+  it('closes only the upper layer on Escape pressed in it', () => {
+    const closed: string[] = []
+    const signIn = (detailsOpen: boolean) => (
+      <HilosModal open title="Sign in" onClose={() => closed.push('Sign in')}>
+        <HilosModal
+          open={detailsOpen}
+          title="Error details"
+          onClose={() => closed.push('Error details')}
+        />
+      </HilosModal>
+    )
+    const view = render(signIn(false))
+    view.rerender(signIn(true))
+
+    fireEvent.keyDown(
+      document.querySelector('[aria-label="Error details"]') as Element,
+      { key: 'Escape' },
+    )
+
+    expect(closed).toEqual(['Error details'])
   })
 
   it('moves focus into the dialog on open', () => {
