@@ -58,6 +58,7 @@ import {
   type HilosTableProgressFrame,
   type HilosTableProgressState,
 } from './tableProgress.js'
+import { hilosTableRenderedKeys } from './tableRendered.js'
 import {
   type HilosTableSelectionHeader,
   type HilosTableSelectionState,
@@ -369,6 +370,16 @@ export interface TableViewportControllerOptions<R> {
    */
   sendFacets?: (facets: Readonly<Record<string, readonly unknown[]>>) => void
   /**
+   * Send the fields inside this table's row slots its declared columns draw —
+   * typically `HilosConnection.sendTableRendered` bound to this table's page and
+   * key. Called once, when the first window arrives with the page's own answer
+   * and the table did not ask for it: that window was built before the table
+   * mounted, and every window the table asks for carries the list itself. Left
+   * out, or with no declared columns, the server goes on comparing that window's
+   * rows whole.
+   */
+  sendRendered?: (rendered: readonly string[]) => void
+  /**
    * Initial filter map — a preset the page puts on its table, such as the channel
    * a route names; empty by default.
    *
@@ -414,6 +425,9 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly facetOptions: ReadonlySignal<
     Readonly<Record<string, readonly unknown[]>>
   >
+
+  /** Fields of a row the declared columns draw, empty when the table declares no frame. */
+  private readonly renderedKeys: readonly string[]
 
   private readonly orderSignal: WritableSignal<TableSortOrder | undefined>
 
@@ -781,6 +795,9 @@ export class TableViewportController<R> implements TableWindowSink {
         }
       })
     }
+    // The columns are a constant of the table, so what they draw is settled once here and
+    // rides every descriptor as it is: the window frames and the report of a held window.
+    this.renderedKeys = hilosTableRenderedKeys(declaration?.columns ?? [])
     this.frameState = {
       declaration,
       card: declaration ? hilosTableCard(declaration.columns) : null,
@@ -1290,6 +1307,10 @@ export class TableViewportController<R> implements TableWindowSink {
    * nothing on this side would otherwise know what that is. The first one to arrive also
    * settles where a reset of the order goes home to.
    *
+   * The first such window of a table that held none is also where the table says what its
+   * columns draw ({@link TableViewportControllerOptions.sendRendered}): the server built that
+   * window without knowing.
+   *
    * It also carries the work running on the table, and that list REPLACES what has been
    * collected, an empty one clearing it. This is the only cure for a bar left standing by a
    * socket that broke mid-run: while there was no connection the end could not arrive, and
@@ -1328,7 +1349,8 @@ export class TableViewportController<R> implements TableWindowSink {
       this.openingOrderKnown = true
     }
     this.orderSignal.set(sort)
-    if (!this.loadedSignal.get() && this.opensWithPreset()) {
+    const firstWindow = !this.loadedSignal.get()
+    if (firstWindow && this.opensWithPreset()) {
       // The rows of this window are the whole set, the preset unknown to whoever served it.
       // Showing them first and the preset's own rows a moment later would flash a table of
       // everything under a page about one thing, so the skeleton stands until the right ones
@@ -1345,6 +1367,17 @@ export class TableViewportController<R> implements TableWindowSink {
       lastAnchor,
       limit,
     )
+    if (
+      firstWindow &&
+      this.renderedKeys.length > 0 &&
+      this.options.sendRendered !== undefined
+    ) {
+      // The first window of a table that had none was served before the table mounted, so the
+      // server holds it without the fields the columns draw. A table coming back after a broken
+      // socket already reported them with its window, and a later answer to the same page finds
+      // this table loaded: only this one window ever needs telling (HIL-880).
+      this.options.sendRendered(this.renderedKeys)
+    }
   }
 
   /**
@@ -2234,6 +2267,7 @@ export class TableViewportController<R> implements TableWindowSink {
       anchor: this.anchor,
       anchorDirection: this.anchorDirection,
       pageIndex: this.pageIndex,
+      ...(this.renderedKeys.length > 0 ? { rendered: this.renderedKeys } : {}),
     }
   }
 

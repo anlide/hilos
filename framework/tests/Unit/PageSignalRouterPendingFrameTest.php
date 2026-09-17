@@ -34,6 +34,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -388,6 +389,65 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $this->assertSame([[PendingFrameTestPage::TABLE_KEY, null]], $browser->facetCounts);
     }
 
+    public function testARenderedFrameWaitsForTheSubscriptionAndIsLaidOverTheHeldWindow(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        Hilos::$sr?->setTableViewport(self::ACCEPT_KEY, new TableViewportSubscription(tableKey: PendingFrameTestPage::TABLE_KEY));
+
+        $router->dispatchTableRendered(
+            new WebSocketTableRenderedSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, ['name']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        // Held like a viewport frame: the window is read again under the same page guards.
+        $this->assertSame([], $browser->declaredRendered);
+
+        $this->registerSubscription([]);
+        $router->releasePendingFrames();
+
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, ['name']]], $browser->declaredRendered);
+    }
+
+    public function testARenderedFrameAWindowAlreadyCarriesReadsNothingAgain(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        $this->registerSubscription([]);
+        Hilos::$sr?->setTableViewport(
+            self::ACCEPT_KEY,
+            new TableViewportSubscription(tableKey: PendingFrameTestPage::TABLE_KEY, rendered: ['name']),
+        );
+
+        $router->dispatchTableRendered(
+            new WebSocketTableRenderedSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, ['name']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        $this->assertSame([], $browser->declaredRendered);
+    }
+
+    public function testARenderedFrameForATableWithNoWindowReadsNothing(): void
+    {
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        $this->registerSubscription([]);
+
+        $router->dispatchTableRendered(
+            new WebSocketTableRenderedSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, ['name']),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+
+        // The window frame that makes this table's first window carries the list itself.
+        $this->assertSame([], $browser->declaredRendered);
+    }
+
     public function testTheFirstWindowOfATableCarriesEveryCount(): void
     {
         [$browser, $router] = $this->mountFacetedTable();
@@ -685,6 +745,9 @@ final class PendingFrameTestBrowser extends BrowserContext
     /** @var list<array{0: string, 1: ?list<string>}> Tables whose counts were sent, with the filters they were narrowed to */
     public array $facetCounts = [];
 
+    /** @var list<array{0: string, 1: list<string>}> Tables whose windows were told what their tab draws, with the fields named */
+    public array $declaredRendered = [];
+
     public function __construct()
     {
         parent::__construct();
@@ -746,6 +809,19 @@ final class PendingFrameTestBrowser extends BrowserContext
     public function sendTableFacetCounts(string $page, string $acceptKey, TableViewportSubscription $viewport, ?array $only = null): void
     {
         $this->facetCounts[] = [$viewport->tableKey, $only];
+    }
+
+    /**
+     * Records the drawn fields being laid over a window instead of reading a table nothing mounted.
+     *
+     * @param string $page Page the table belongs to (unused)
+     * @param string $acceptKey Connection holding the window (unused)
+     * @param TableViewportSubscription $viewport Window the fields would be laid over
+     * @param list<string> $rendered Fields inside the row slots the tab draws
+     */
+    public function declareTableRendered(string $page, string $acceptKey, TableViewportSubscription $viewport, array $rendered): void
+    {
+        $this->declaredRendered[] = [$viewport->tableKey, $rendered];
     }
 }
 

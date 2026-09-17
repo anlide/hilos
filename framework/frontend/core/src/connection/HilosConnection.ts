@@ -13,6 +13,7 @@ import {
   FIELD_LIMIT,
   FIELD_PAGE,
   FIELD_PAGE_INDEX,
+  FIELD_RENDERED,
   FIELD_REQUEST_ID,
   FIELD_SORT,
   FIELD_TABLE_KEY,
@@ -25,6 +26,7 @@ import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_TABLE_FACETS,
+  SIGNAL_TYPE_TABLE_RENDERED,
   SIGNAL_TYPE_TABLE_VIEWPORT,
   SESSION_ROTATE_COOKIE_SUFFIX,
 } from '../protocol/constants.js'
@@ -123,6 +125,13 @@ export interface TableViewportDescriptor {
    * broken socket gets its counts again. Absent when it asked for none.
    */
   readonly facets?: Readonly<Record<string, readonly unknown[]>>
+  /**
+   * The fields inside the row slots the table draws, so the server compares a changed
+   * row by those alone and sends nothing when none of them moved (tableRendered.ts).
+   * Absent when the table declares no columns, and then the server compares the whole
+   * row.
+   */
+  readonly rendered?: readonly string[]
 }
 
 /**
@@ -739,7 +748,7 @@ export class HilosConnection {
 
   /**
    * Send a table viewport frame — `{type:'table_viewport', page, tableKey,
-   * filter?, sort?, limit, and either anchor + anchorDirection or pageIndex}`, the
+   * filter?, sort?, rendered?, limit, and either anchor + anchorDirection or pageIndex}`, the
    * order riding as the list of its components —
    * declaring the window this connection wants for one table. The server replies a
    * table_window snapshot and scopes live deltas to the delivered rows. Returns false,
@@ -750,7 +759,7 @@ export class HilosConnection {
    *
    * @param page The page the table belongs to.
    * @param tableKey The table key the viewport scopes.
-   * @param descriptor The window descriptor (filter, order, size, address).
+   * @param descriptor The window descriptor (filter, order, size, address, drawn fields).
    */
   sendTableViewport(
     page: string,
@@ -774,6 +783,9 @@ export class HilosConnection {
     }
     if (descriptor.sort !== null && descriptor.sort.length > 0) {
       frame[FIELD_SORT] = descriptor.sort
+    }
+    if (descriptor.rendered !== undefined && descriptor.rendered.length > 0) {
+      frame[FIELD_RENDERED] = descriptor.rendered
     }
 
     return this.send(JSON.stringify(frame))
@@ -802,6 +814,34 @@ export class HilosConnection {
         [FIELD_PAGE]: page,
         [FIELD_TABLE_KEY]: tableKey,
         [FIELD_FACETS]: facets,
+      }),
+    )
+  }
+
+  /**
+   * Send a table rendered frame — `{type:'table_rendered', page, tableKey, rendered}` —
+   * naming the fields inside one table's row slots its columns draw, for the window the
+   * page's own answer brought. That window was built before the table mounted, so it
+   * could not carry the list the way a `table_viewport` frame does; the server lays the
+   * list over the window it holds and sends nothing back, and from then on a change of a
+   * field no cell draws raises no delta. Returns false, sending nothing, unless the
+   * connection is `connected`, like {@link send}.
+   *
+   * @param page The page the table belongs to.
+   * @param tableKey The table key the fields are drawn by.
+   * @param rendered The fields inside the row slots the table draws.
+   */
+  sendTableRendered(
+    page: string,
+    tableKey: string,
+    rendered: readonly string[],
+  ): boolean {
+    return this.send(
+      JSON.stringify({
+        [FIELD_TYPE]: SIGNAL_TYPE_TABLE_RENDERED,
+        [FIELD_PAGE]: page,
+        [FIELD_TABLE_KEY]: tableKey,
+        [FIELD_RENDERED]: rendered,
       }),
     )
   }

@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for what a viewport descriptor knows about the edges of its set, and what it still knows once its count has
- * stopped at a ceiling.
+ * stopped at a ceiling, and for the two ways it compares a delivered row: whole, and cut down to what the tab draws.
  */
 final class TableViewportSubscriptionTest extends TestCase
 {
@@ -111,6 +111,162 @@ final class TableViewportSubscriptionTest extends TestCase
 
         $this->assertSame(TableConstants::COUNT_CEILING, $viewport->totalCount());
         $this->assertFalse($viewport->totalExact());
+    }
+
+    public function testAWindowDeclaringNoDrawnFieldsComparesTheRowWhole(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'users');
+        $viewport->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        $this->assertTrue($viewport->matchesRenderedRow('7', self::userRow(false, 'Ann')));
+        $this->assertFalse($viewport->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+    }
+
+    public function testARowThatChangedOnlyInAnUndrawnFieldDrawsTheSame(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'users', rendered: ['id', 'name', 'presence']);
+        $viewport->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        // The whole row did change, and that answer is untouched: only the drawn part matches.
+        $this->assertFalse($viewport->matchesRow('7', self::userRow(true, 'Ann')));
+        $this->assertTrue($viewport->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+    }
+
+    public function testARowThatChangedInADrawnFieldDoesNotDrawTheSame(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'users', rendered: ['id', 'name', 'presence']);
+        $viewport->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        $this->assertFalse($viewport->matchesRenderedRow('7', self::userRow(false, 'Anna')));
+    }
+
+    public function testAFieldDrawnFromAnySlotIsComparedInEverySlot(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'users', rendered: ['id', 'name', 'presence']);
+        $viewport->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        $this->assertFalse($viewport->matchesRenderedRow('7', self::userRow(false, 'Ann', 'offline')));
+    }
+
+    public function testTheOrderTheFieldsAreDeclaredInDoesNotMatter(): void
+    {
+        // Declared in reverse of the order the row carries them: the cut keeps the row's order, so
+        // a column moved in the declaration does not read as a change of every row.
+        $declared = new TableViewportSubscription(tableKey: 'users', rendered: ['presence', 'name', 'id']);
+        $declared->recordRow('7', self::userRow(false, 'Ann'));
+
+        $this->assertTrue($declared->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+    }
+
+    public function testASlotThatIsNotARecordIsComparedWhole(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'users', rendered: ['id']);
+        $viewport->recordRow('7', [PagePayload::rowKey => '7', PagePayload::slots => ['tags' => ['a', 'b']]]);
+
+        // A list names no fields, so there is nothing to cut it down to.
+        $this->assertFalse($viewport->matchesRenderedRow('7', [PagePayload::rowKey => '7', PagePayload::slots => ['tags' => ['a']]]));
+    }
+
+    public function testAForgottenRowNeverDrawsTheSame(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'users', rendered: ['id', 'name']);
+        $viewport->recordRow('7', self::userRow(false, 'Ann'));
+        $viewport->forgetRow('7');
+
+        $this->assertFalse($viewport->matchesRenderedRow('7', self::userRow(false, 'Ann')));
+    }
+
+    public function testAWindowServedBeforeItsFieldsWereDeclaredLearnsThemAfterwards(): void
+    {
+        // The cold entry: served from the table's declaration, before the tab could say what it draws.
+        $cold = new TableViewportSubscription(tableKey: 'users', limit: 10);
+        $cold->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        $declared = $cold->withRendered(['id', 'name', 'presence'], ['7' => self::userRow(false, 'Ann')]);
+
+        $this->assertSame(['id', 'name', 'presence'], $declared->rendered);
+        $this->assertTrue($declared->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+        $this->assertFalse($declared->matchesRenderedRow('7', self::userRow(true, 'Anna')));
+    }
+
+    public function testTheDeclaredWindowIsStillTheWindowThatWasDelivered(): void
+    {
+        $first = new TableAnchorDTO(['name' => 'Ann', 'id' => 7]);
+        $last = new TableAnchorDTO(['name' => 'Bob', 'id' => 8]);
+        $cold = new TableViewportSubscription(tableKey: 'users', filter: ['search' => 'a'], limit: 2, pageIndex: 3);
+        $cold->recordWindow(
+            ['7' => self::userRow(false, 'Ann'), '8' => self::userRow(false, 'Bob')],
+            40,
+            false,
+            $first,
+            $last,
+            ['7' => $first, '8' => $last],
+        );
+
+        $declared = $cold->withRendered(['name'], []);
+
+        $this->assertSame(['search' => 'a'], $declared->filter);
+        $this->assertSame(2, $declared->limit);
+        $this->assertSame(3, $declared->pageIndex);
+        $this->assertSame(['7', '8'], $declared->rowIds());
+        $this->assertSame(['7' => $first, '8' => $last], $declared->rowAnchors());
+        $this->assertSame(40, $declared->totalCount());
+        $this->assertFalse($declared->totalExact());
+        $this->assertSame($first, $declared->firstAnchor());
+        $this->assertSame($last, $declared->lastAnchor());
+        $this->assertTrue($declared->matchesRow('7', self::userRow(false, 'Ann')));
+    }
+
+    public function testARowThatChangedBeforeTheFieldsArrivedIsStillComparedWhole(): void
+    {
+        $cold = new TableViewportSubscription(tableKey: 'users', limit: 10);
+        $cold->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        // Read again after a rename the connection has not been told of yet. Taking the drawn part
+        // off that read would record "Anna" as delivered, and the rename's own delta would then be
+        // silenced as a change of nothing drawn.
+        $declared = $cold->withRendered(['id', 'name', 'presence'], ['7' => self::userRow(false, 'Anna')]);
+
+        $this->assertFalse($declared->matchesRenderedRow('7', self::userRow(true, 'Anna')));
+        $this->assertFalse($declared->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+    }
+
+    public function testARowTheSecondReadDidNotReturnIsStillComparedWhole(): void
+    {
+        $cold = new TableViewportSubscription(tableKey: 'users', limit: 10);
+        $cold->recordWindow(['7' => self::userRow(false, 'Ann')], 1, true, null, null);
+
+        $declared = $cold->withRendered(['id', 'name', 'presence'], []);
+
+        $this->assertTrue($declared->hasRow('7'));
+        $this->assertFalse($declared->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+    }
+
+    public function testARowDeliveredAfterTheDeclarationIsComparedByWhatIsDrawn(): void
+    {
+        $declared = new TableViewportSubscription(tableKey: 'users', limit: 10)->withRendered(['id', 'name', 'presence'], []);
+        $declared->recordRow('7', self::userRow(false, 'Ann'));
+
+        $this->assertTrue($declared->matchesRenderedRow('7', self::userRow(true, 'Ann')));
+    }
+
+    /**
+     * Builds a wire row of the users table: a record per slot, and a flag no cell draws.
+     *
+     * @param bool $admin Flag the row carries and no cell draws
+     * @param string $name Name the row is drawn with
+     * @param string $presence Presence the connections slot carries
+     * @return array{rowKey: int|string, slots: array<string, mixed>} Wire row of user 7
+     */
+    private static function userRow(bool $admin, string $name, string $presence = 'online'): array
+    {
+        return [
+            PagePayload::rowKey => '7',
+            PagePayload::slots => [
+                'users' => ['id' => 7, 'name' => $name, 'admin' => $admin],
+                'connections' => ['presence' => $presence, 'onlineSessionCount' => 1],
+            ],
+        ];
     }
 
     /**

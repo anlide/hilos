@@ -1421,6 +1421,9 @@ const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     label: 'Date',
     sortable: true,
     cellClass: 'text-nowrap',
+    // The node holding an archive out of reach is named here; every other cell greys
+    // out by the same field, and one column naming it is what the comparison needs.
+    reads: [BACKUP_HOLDER_NODE_FIELD],
   },
   { key: BACKUP_ENV_FIELD, label: 'Environment', sortable: true },
   { key: BACKUP_SCOPE_FIELD, label: 'Scope', sortable: true },
@@ -1435,8 +1438,15 @@ const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     key: BACKUP_CHECKSUM_STATE_FIELD,
     label: 'Checksum',
     cellClass: 'text-nowrap',
+    reads: [BACKUP_VERIFIED_AT_FIELD],
   },
-  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy', cellClass: 'text-nowrap' },
+  {
+    key: BACKUP_SHIP_STATE_FIELD,
+    label: 'Copy',
+    cellClass: 'text-nowrap',
+    // The instant of the last copy, and the reason the last attempt failed behind a button.
+    reads: [BACKUP_SHIPPED_AT_FIELD, BACKUP_SHIP_ERROR_FIELD],
+  },
   {
     key: BACKUP_DURATION_SECONDS_FIELD,
     label: 'Duration',
@@ -1444,23 +1454,55 @@ const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     headerClass: 'text-end',
     cellClass: 'text-end',
   },
-  { key: BACKUP_STATUS_FIELD, label: 'Status', sortable: true },
+  {
+    key: BACKUP_STATUS_FIELD,
+    label: 'Status',
+    sortable: true,
+    reads: [BACKUP_FINISHED_FIELD],
+  },
   {
     key: BACKUP_RESTORE_OUTCOME_FIELD,
     label: 'Restore',
     cellClass: 'text-nowrap',
+    // The phase of a restore still running, the migration gate where no restore has
+    // anything to report, and the outcome dialog the badge opens.
+    reads: [
+      BACKUP_RESTORE_PHASE_FIELD,
+      BACKUP_RESTORE_MIGRATION_DECISION_FIELD,
+      BACKUP_RESTORE_MIGRATION_BEHIND_FIELD,
+      BACKUP_RESTORE_FINISHED_AT_FIELD,
+      BACKUP_RESTORE_FAILURE_REASON_FIELD,
+      BACKUP_RESTORE_DATABASE_TOUCHED_FIELD,
+    ],
   },
   {
     key: BACKUP_KEEP_FIELD,
     label: 'Keep',
     headerClass: 'text-center',
     cellClass: 'text-center',
+    // A pin is offered on a completed archive within reach.
+    reads: [BACKUP_FINISHED_FIELD, BACKUP_HOLDER_NODE_FIELD],
   },
   {
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // Failure detail, restore and delete are each offered by what they ask of the row
+    // (hasBackupFailureDetail, offersBackupRestore, isBackupRestorable, isBackupDeletable
+    // and the page's restore-blocked sentence), and the dialogs they open show the failure
+    // reason, the migration notes, the environment and the scope of the CLI command.
+    reads: [
+      BACKUP_FINISHED_FIELD,
+      BACKUP_FAILURE_REASON_FIELD,
+      BACKUP_HOLDER_NODE_FIELD,
+      BACKUP_CHECKSUM_STATE_FIELD,
+      BACKUP_RESTORE_MIGRATION_DECISION_FIELD,
+      BACKUP_RESTORE_MIGRATION_BEHIND_FIELD,
+      BACKUP_RESTORE_MIGRATION_NOTICE_FIELD,
+      BACKUP_ENV_FIELD,
+      BACKUP_SCOPE_FIELD,
+    ],
   },
 ]
 
@@ -1560,6 +1602,12 @@ export function createHilosBackupsTable(
         HilosPages.BACKUP,
         HILOS_BACKUPS_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.BACKUP,
+        HILOS_BACKUPS_TABLE,
+        rendered,
       ),
     sendFacets: (facets) =>
       context.connection.sendTableFacets(

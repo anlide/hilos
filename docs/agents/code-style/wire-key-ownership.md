@@ -16,6 +16,9 @@ The key of a table column is written as that constant when — and only when —
 same key is read from the payload by a resolver. A column key with no payload
 behind it (`actions`) stays a literal.
 
+A column's `reads` names row-payload keys as well — the fields a cell draws from
+beyond its own key — and takes the same constants on the same condition.
+
 Export the constant from the owning module, and re-export it from
 `core/src/index.ts`, only when a view names it as a column key. A key that only
 the resolver reads stays module-private.

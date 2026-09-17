@@ -369,4 +369,34 @@ abstract class BaseDTO
 
         return $value;
     }
+
+    /**
+     * Reads a list of strings that is allowed to be absent.
+     *
+     * An entry that is not a string refuses the whole list rather than dropping out of it: the
+     * sender named something there, and a list read without it says something the sender did
+     * not say.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?list<string> Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds anything but a list of strings
+     */
+    protected static function optionalStringList(array $data, string $key): ?array
+    {
+        $value = $data[$key] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new InvalidFormatException('Payload carries no list of strings under key ' . $key);
+        }
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                throw new InvalidFormatException('Payload carries no list of strings under key ' . $key);
+            }
+        }
+
+        return $value;
+    }
 }

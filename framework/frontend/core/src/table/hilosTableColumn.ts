@@ -2,8 +2,9 @@
 // agnostic view config — header text, which fields offer a sort control, which
 // classes the header and the body cell carry, which place the column takes in the
 // card a row projects to on a narrow screen, which source its values are built
-// from, which columns a row's bar of running work stretches under, and which of
-// them wait in the panel the row expands into — never
+// from, which columns a row's bar of running work stretches under, which of
+// them wait in the panel the row expands into, and which fields of the row a cell
+// reads beyond its own key — never
 // table logic, which lives in the TableViewportController (table-subscription.md,
 // multiframework-core.md). It lives in the core so every view layer's
 // HilosViewportTable shares one column type.
@@ -79,6 +80,20 @@ export interface HilosTableColumn {
    * is the page's own duty — the framework cannot see the markup a page writes.
    */
   detail?: boolean
+  /**
+   * The fields of the row this column's cell reads beyond its own key, named as the
+   * row carries them on the wire — the field inside a row slot, not the view-model
+   * field the page resolves it into. A cell that opens a dialog reading the row
+   * reads what that dialog reads, too. Absent means the cell reads its key and
+   * nothing else.
+   *
+   * The server compares a changed row by the fields the columns name, their keys and
+   * these together, and sends nothing when none of them moved (tableRendered.ts). A
+   * field a cell reads and no column names is therefore a field whose change never
+   * reaches the screen: the cost of leaving one out is silent, which is why the
+   * actions column, having no key of its own, must say even when it reads nothing.
+   */
+  reads?: readonly string[]
 }
 
 /**
@@ -89,14 +104,22 @@ export interface HilosTableColumn {
  * {@link HilosTableColumn} and stays valid unchanged.
  *
  * {@link HILOS_TABLE_ACTIONS_KEY} is the one virtual key in the SDK: it renders row
- * controls and belongs to no row field.
+ * controls and belongs to no row field. Having no key to be compared by, it must
+ * declare the fields it reads, and an empty list is a valid declaration of none.
  *
  * It is a narrowing of the column rather than a type parameter on it because
  * `keyof TRow` makes the parameter contravariant — a `HilosTableColumn<ItsRow>[]`
  * would then not be accepted by HilosViewportTable, which takes the plain column
  * list and only ever reads the key.
  */
-export type HilosTableColumnOf<TRow> = Omit<HilosTableColumn, 'key'> & {
-  /** Column id, restricted to the row's own fields plus the virtual actions key. */
-  key: (keyof TRow & string) | typeof HILOS_TABLE_ACTIONS_KEY
-}
+export type HilosTableColumnOf<TRow> =
+  | (Omit<HilosTableColumn, 'key'> & {
+      /** Column id, restricted to the row's own fields. */
+      key: keyof TRow & string
+    })
+  | (Omit<HilosTableColumn, 'key' | 'reads'> & {
+      /** The virtual actions key. */
+      key: typeof HILOS_TABLE_ACTIONS_KEY
+      /** The fields of the row the row controls read, empty when they read none. */
+      reads: readonly string[]
+    })

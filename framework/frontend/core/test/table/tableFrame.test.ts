@@ -217,6 +217,7 @@ describe('TableViewportController frame filters', () => {
     controller.setFilter('kind', 'full')
 
     expect(sent).toHaveLength(1)
+    // A declared frame sends the fields its columns draw with every window (HIL-880).
     expect(sent[0]).toEqual({
       filter: { kind: 'full' },
       sort: null,
@@ -224,6 +225,7 @@ describe('TableViewportController frame filters', () => {
       anchor: null,
       anchorDirection: 'after',
       pageIndex: null,
+      rendered: ['createdAt', 'kind'],
     })
   })
 

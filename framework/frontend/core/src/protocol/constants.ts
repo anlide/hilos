@@ -73,6 +73,9 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT = 'table_viewport'
 /** Client frame `type` naming the options of a table's filters to count (PHP `SignalTypeConstants::TABLE_FACETS`). */
 export const SIGNAL_TYPE_TABLE_FACETS = 'table_facets'
 
+/** Client frame `type` naming the fields of a table's rows its columns draw (PHP `SignalTypeConstants::TABLE_RENDERED`). */
+export const SIGNAL_TYPE_TABLE_RENDERED = 'table_rendered'
+
 /** Server frame `type` replying a table window snapshot (PHP `SignalTypeConstants::TABLE_WINDOW`). */
 export const SIGNAL_TYPE_TABLE_WINDOW = 'table_window'
 
@@ -144,6 +147,9 @@ export const FIELD_ANCHOR_DIRECTION = 'anchorDirection'
 
 /** Viewport frame key carrying the page a jump asks for (PHP `SignalPayloadConstants::FIELD_PAGE_INDEX`). */
 export const FIELD_PAGE_INDEX = 'pageIndex'
+
+/** Viewport frame key carrying the fields of a row the table draws (PHP `SignalPayloadConstants::FIELD_RENDERED`). */
+export const FIELD_RENDERED = 'rendered'
 
 /**
  * Subscribe frame key carrying the windows this tab is holding, by table key

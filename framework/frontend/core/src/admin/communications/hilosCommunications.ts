@@ -301,15 +301,32 @@ function bindTable(
 
 /** The columns of the channels hub table, in display order. */
 const CHANNELS_COLUMNS: HilosTableColumnOf<HilosChannelRow>[] = [
-  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
-  { key: HilosChannelRowKey.enabled, label: 'Enabled', sortable: true },
-  { key: HilosChannelRowKey.configured, label: 'Configured' },
+  {
+    key: HilosChannelRowKey.channel,
+    label: 'Channel',
+    sortable: true,
+    reads: [HilosChannelRowKey.label],
+  },
+  {
+    key: HilosChannelRowKey.enabled,
+    label: 'Enabled',
+    sortable: true,
+    // The switch is named after the channel's label.
+    reads: [HilosChannelRowKey.label],
+  },
+  {
+    key: HilosChannelRowKey.configured,
+    label: 'Configured',
+    reads: [HilosChannelRowKey.missingFields],
+  },
   { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
   {
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // One link, built from the row key.
+    reads: [],
   },
 ]
 
@@ -326,14 +343,38 @@ const CHANNELS_FRAME: HilosTableFrame = {
 
 /** The columns of a channel's fields table, in display order. */
 const FIELDS_COLUMNS: HilosTableColumnOf<HilosChannelFieldRow>[] = [
-  { key: 'field', label: 'Field', sortable: true },
-  { key: 'value', label: 'Value' },
+  {
+    key: 'field',
+    label: 'Field',
+    sortable: true,
+    reads: [HilosChannelFieldRowKey.label],
+  },
+  {
+    key: 'value',
+    label: 'Value',
+    // A secret is shown as set or not set, by where its value comes from.
+    reads: [
+      HilosChannelFieldRowKey.secret,
+      HilosChannelFieldRowKey.valueSource,
+    ],
+  },
   { key: 'valueSource', label: 'Source', sortable: true },
   {
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // The buttons stand on an editable field, reset is armed by the source, and the edit
+    // dialog they open reads the field's type, label and value.
+    reads: [
+      HilosChannelFieldRowKey.editable,
+      HilosChannelFieldRowKey.valueSource,
+      HilosChannelFieldRowKey.channel,
+      HilosChannelFieldRowKey.field,
+      HilosChannelFieldRowKey.type,
+      HilosChannelFieldRowKey.label,
+      HilosChannelFieldRowKey.value,
+    ],
   },
 ]
 
@@ -365,6 +406,12 @@ export function createHilosChannelsTable(
         HilosPages.COMMUNICATIONS,
         CHANNELS_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.COMMUNICATIONS,
+        CHANNELS_TABLE,
+        rendered,
       ),
     frame: CHANNELS_FRAME,
   })
@@ -420,6 +467,12 @@ export function createHilosChannelFields(
         HilosPages.COMMUNICATIONS_CHANNEL,
         FIELDS_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.COMMUNICATIONS_CHANNEL,
+        FIELDS_TABLE,
+        rendered,
       ),
     initialFilter: { [FIELDS_FILTER_CHANNEL]: channel.get() },
     frame: FIELDS_FRAME,

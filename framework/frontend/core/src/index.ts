@@ -95,6 +95,7 @@ export {
   type HilosTableSearch,
 } from './table/tableFrame.js'
 export { type HilosTableCard, hilosTableCard } from './table/tableCard.js'
+export { hilosTableRenderedKeys } from './table/tableRendered.js'
 export {
   TABLE_DETAIL_COPY,
   hilosTableDetailFields,

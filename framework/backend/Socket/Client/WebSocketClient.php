@@ -45,6 +45,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\WebSocket\Exception\HandshakeFailedException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
@@ -1248,6 +1249,33 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::TABLE_FACETS),
+                    new SignalName($page),
+                    $dto,
+                );
+                break;
+            }
+
+            case SignalTypeConstants::TABLE_RENDERED: {
+                $page = isset($decoded[SignalPayloadConstants::FIELD_PAGE])
+                    && is_string($decoded[SignalPayloadConstants::FIELD_PAGE])
+                    ? $decoded[SignalPayloadConstants::FIELD_PAGE]
+                    : throw new InvalidFrameException("Page is required for {$type} signal");
+                if ($page === '') {
+                    throw new InvalidFrameException("Page is empty for {$type} signal");
+                }
+
+                $decoded[SignalPayloadConstants::FIELD_ACCEPT_KEY] = $acceptKey;
+
+                // Read by its DTO like the viewport frame above, and refused in the same vocabulary.
+                try {
+                    $dto = WebSocketTableRenderedSignalDTO::fromArray($decoded);
+                } catch (InvalidFormatException $exception) {
+                    throw new InvalidFrameException($exception->getMessage(), $exception);
+                }
+
+                Hilos::$sr->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::TABLE_RENDERED),
                     new SignalName($page),
                     $dto,
                 );

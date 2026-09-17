@@ -381,6 +381,26 @@ describe('table viewport send', () => {
     })
   })
 
+  it('declares the fields a table draws in a frame of their own', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    const sent = connection.sendTableRendered('hilos_users', 'users', [
+      'name',
+      'presence',
+    ])
+
+    expect(sent).toBe(true)
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_rendered',
+      page: 'hilos_users',
+      tableKey: 'users',
+      rendered: ['name', 'presence'],
+    })
+  })
+
   it('an order of more than one column rides as the list of its components', () => {
     const { connection } = createConnection()
     connection.connect()
@@ -454,6 +474,42 @@ describe('table viewport send', () => {
       anchor: null,
       anchorDirection: 'after',
     })
+  })
+
+  it('carries the drawn fields when the table declares them, and omits an empty list', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    connection.sendTableViewport('p', 't', {
+      filter: {},
+      sort: null,
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+      rendered: ['name', 'presence'],
+    })
+    expect(JSON.parse(socket.sent.at(-1) as string).rendered).toEqual([
+      'name',
+      'presence',
+    ])
+
+    connection.sendTableViewport('p', 't', {
+      filter: {},
+      sort: null,
+      limit: 10,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+      rendered: [],
+    })
+    // No list and an empty one mean the same to the server — compare the whole row — and
+    // the frame says it by leaving the key out, as it does for the filter and the order.
+    expect(JSON.parse(socket.sent.at(-1) as string)).not.toHaveProperty(
+      'rendered',
+    )
   })
 
   it('omits an order that is an empty list, the same as a null one', () => {

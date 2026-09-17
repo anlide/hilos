@@ -68,6 +68,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -537,7 +538,7 @@ class PageSignalRouter
      * identity. A refusal here answers nothing at all to the client, which is why it
      * now leaves a log line instead of only an absence.
      *
-     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address)
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address, drawn fields)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
@@ -560,7 +561,7 @@ class PageSignalRouter
     /**
      * Stores one viewport descriptor and replies its window, parked or not.
      *
-     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address)
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address, drawn fields)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
@@ -577,6 +578,7 @@ class PageSignalRouter
             anchor: $data->anchor,
             anchorDirection: $data->anchorDirection,
             pageIndex: $data->pageIndex,
+            rendered: $data->rendered,
         );
         Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
         if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport) === false) {
@@ -638,6 +640,50 @@ class PageSignalRouter
         if ($viewport !== null) {
             Hilos::$browser?->sendTableFacetCounts($name, $data->acceptKey, $viewport);
         }
+    }
+
+    /**
+     * Dispatches a client's table_rendered frame: the fields of one table's rows its columns draw.
+     *
+     * Parked until the connection is identified and subscribed to the page, exactly as the viewport
+     * frame is, because the window is read again under the page guards a window re-checks.
+     *
+     * @param WebSocketTableRenderedSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     */
+    public function dispatchTableRendered(WebSocketTableRenderedSignalDTO $data, string $source, string $name): void
+    {
+        if ($data->acceptKey === '' || $data->tableKey === '') {
+            return;
+        }
+
+        if ($this->parkUntilIdentified(PendingFrameKind::TableRendered, $data, $source, $name)) {
+            return;
+        }
+
+        $this->runTableRenderedFrame($data, $name);
+    }
+
+    /**
+     * Lays the drawn fields a connection declared over the window it already holds for the table.
+     *
+     * The window is not served again and nothing is sent: the list only changes how a later change
+     * of a row is judged ({@see BrowserContext::declareTableRendered()}). A window that already
+     * carries the same list - the tab asked for it itself - is left as it is, and so is a table
+     * this connection holds no window of, whose first window frame carries the list anyway.
+     *
+     * @param WebSocketTableRenderedSignalDTO $data Signal data
+     * @param string $name Signal name (page name)
+     */
+    private function runTableRenderedFrame(WebSocketTableRenderedSignalDTO $data, string $name): void
+    {
+        $viewport = Hilos::$sr?->getTableViewport($data->acceptKey, $data->tableKey);
+        if ($viewport === null || $viewport->rendered === $data->rendered) {
+            return;
+        }
+
+        Hilos::$browser?->declareTableRendered($name, $data->acceptKey, $viewport, $data->rendered);
     }
 
     /**
@@ -1579,7 +1625,7 @@ class PageSignalRouter
      *
      * @param PendingFrameKind $kind Which door the frame arrived at
      * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
-     *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO $data Frame as it arrived
+     *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO $data Frame as it arrived
      * @param string $source Signal source the frame was dispatched with
      * @param string $name Signal name the frame was dispatched with
      * @return bool True when the frame has been parked and must not run now
@@ -1587,7 +1633,7 @@ class PageSignalRouter
     private function parkUntilIdentified(
         PendingFrameKind $kind,
         WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
-            |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO $data,
+            |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO $data,
         string $source,
         string $name,
     ): bool {
@@ -1775,6 +1821,8 @@ class PageSignalRouter
                     $this->runActionFrame($data, $frame->source);
                 } elseif ($data instanceof WebSocketTableViewportSignalDTO) {
                     $this->runTableViewportFrame($data, $frame->source, $frame->name);
+                } elseif ($data instanceof WebSocketTableRenderedSignalDTO) {
+                    $this->runTableRenderedFrame($data, $frame->name);
                 } else {
                     $this->runTableFacetsFrame($data, $frame->source, $frame->name);
                 }

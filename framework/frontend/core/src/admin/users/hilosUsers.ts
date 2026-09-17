@@ -242,6 +242,8 @@ const USERS_COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // The takeover button stands on every row but the reader's own.
+    reads: ['id'],
   },
 ]
 
@@ -278,6 +280,12 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
         HilosPages.USERS,
         HILOS_USERS_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.USERS,
+        HILOS_USERS_TABLE,
+        rendered,
       ),
     frame: USERS_FRAME,
   })

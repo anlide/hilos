@@ -23,6 +23,12 @@ use Hilos\Core\Table\TableConstants;
  * second copy of the row, and it is what lets an edit be judged against the places of the
  * row's NEIGHBOURS rather than against its own former place (HIL-793).
  *
+ * A window whose tab declared the fields it draws keeps a second digest beside the first, of the
+ * row cut down to those fields (HIL-880). The two answer different questions and neither stands
+ * in for the other: the whole row says whether anything reached this connection that it has not
+ * seen, the drawn part says whether the screen would show it. A row can leave its set or move in
+ * the order over a field nobody draws, so only the second question is ever answered by the cut.
+ *
  * The descriptor is immutable; the delivered rows, the total count with the word on how exact
  * it is, and the two places the window sits between are updated as windows are served and as
  * rows leave the set.
@@ -33,6 +39,9 @@ final class TableViewportSubscription
 
     /** @var array<string, ?string> Digest of each delivered row, keyed by row-id key, in display order */
     private array $rowDigests = [];
+
+    /** @var array<string, ?string> Digest of the drawn part of each delivered row, keyed by row-id key; empty when nothing is declared */
+    private array $renderedDigests = [];
 
     /** @var array<string, ?TableAnchorDTO> Place each delivered row stood at, keyed by row-id key, in display order */
     private array $rowAnchors = [];
@@ -57,6 +66,7 @@ final class TableViewportSubscription
      * @param ?TableAnchorDTO $anchor Place the window was asked from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page the window jumped to, or null when it is paged by anchor
+     * @param list<string> $rendered Fields inside the row slots the tab draws, empty when it declared none
      */
     public function __construct(
         public readonly string $tableKey,
@@ -66,6 +76,7 @@ final class TableViewportSubscription
         public readonly ?TableAnchorDTO $anchor = null,
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public readonly ?int $pageIndex = null,
+        public readonly array $rendered = [],
     ) {
     }
 
@@ -90,6 +101,7 @@ final class TableViewportSubscription
         array $rowAnchors = [],
     ): void {
         $this->rowDigests = array_map(self::digest(...), $wireRows);
+        $this->renderedDigests = $this->rendered === [] ? [] : array_map($this->renderedDigest(...), $wireRows);
         $this->rowAnchors = $rowAnchors;
         $this->totalCount = $totalCount;
         $this->totalExact = $totalExact;
@@ -107,6 +119,9 @@ final class TableViewportSubscription
     public function recordRow(string $rowKey, array $wireRow, ?TableAnchorDTO $anchor = null): void
     {
         $this->rowDigests[$rowKey] = self::digest($wireRow);
+        if ($this->rendered !== []) {
+            $this->renderedDigests[$rowKey] = $this->renderedDigest($wireRow);
+        }
         $this->rowAnchors[$rowKey] = $anchor;
     }
 
@@ -123,6 +138,57 @@ final class TableViewportSubscription
     }
 
     /**
+     * The same window, delivered rows and all, judged from now on by the fields the tab draws.
+     *
+     * This is how a window served before its tab could say what it draws - the cold entry, built
+     * from the table's declaration while the table was not yet mounted - learns it afterwards
+     * (HIL-880). Only the digests of the delivered rows are kept here and never the rows, so the
+     * drawn part of each is taken off the rows as the table reads them now, and a row read now is
+     * trusted for it only when its whole digest is still the one delivered. A row that changed in
+     * between, and a row the read did not return, keep no drawn digest and are compared whole
+     * until they are delivered again: a proof is what silences a delta, and there is none for them.
+     *
+     * Everything else is carried over as it stands, the descriptor included, so the window the
+     * connection holds and the one it is judged by stay one window.
+     *
+     * @param list<string> $rendered Fields inside the row slots the tab draws, empty to compare whole rows
+     * @param array<string, array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>}> $wireRows Rows of the
+     *     window as the table reads them now, keyed by row-id key
+     * @return self The window holding the list, with the drawn digests it could prove
+     */
+    public function withRendered(array $rendered, array $wireRows): self
+    {
+        $declared = new self(
+            tableKey: $this->tableKey,
+            filter: $this->filter,
+            sort: $this->sort,
+            limit: $this->limit,
+            anchor: $this->anchor,
+            anchorDirection: $this->anchorDirection,
+            pageIndex: $this->pageIndex,
+            rendered: $rendered,
+        );
+        $declared->rowDigests = $this->rowDigests;
+        $declared->rowAnchors = $this->rowAnchors;
+        $declared->totalCount = $this->totalCount;
+        $declared->totalExact = $this->totalExact;
+        $declared->firstAnchor = $this->firstAnchor;
+        $declared->lastAnchor = $this->lastAnchor;
+        if ($rendered === []) {
+            return $declared;
+        }
+
+        foreach ($this->rowDigests as $rowKey => $delivered) {
+            $wireRow = $wireRows[$rowKey] ?? null;
+            if ($delivered !== null && $wireRow !== null && self::digest($wireRow) === $delivered) {
+                $declared->renderedDigests[$rowKey] = $declared->renderedDigest($wireRow);
+            }
+        }
+
+        return $declared;
+    }
+
+    /**
      * Whether a row is byte-for-byte the row this connection was last given.
      *
      * A row whose digest is unknown - never delivered, or delivered when it could
@@ -136,6 +202,30 @@ final class TableViewportSubscription
     {
         $delivered = $this->rowDigests[$rowKey] ?? null;
         $candidate = self::digest($wireRow);
+
+        return $delivered !== null && $candidate !== null && $delivered === $candidate;
+    }
+
+    /**
+     * Whether a row draws exactly as the row this connection was last given.
+     *
+     * Only the fields the tab declared are compared, so a row that changed in a field no cell
+     * reads answers yes (HIL-880). A window that declared nothing has no cut to compare, and the
+     * question falls back to the whole row, which is how every window was compared before. The
+     * same proof is demanded as there: an unknown digest never matches.
+     *
+     * @param string $rowKey Row-id key
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row to compare
+     * @return bool Whether the delivered row and the given one draw the same
+     */
+    public function matchesRenderedRow(string $rowKey, array $wireRow): bool
+    {
+        if ($this->rendered === []) {
+            return $this->matchesRow($rowKey, $wireRow);
+        }
+
+        $delivered = $this->renderedDigests[$rowKey] ?? null;
+        $candidate = $this->renderedDigest($wireRow);
 
         return $delivered !== null && $candidate !== null && $delivered === $candidate;
     }
@@ -158,7 +248,7 @@ final class TableViewportSubscription
      */
     public function forgetRow(string $rowKey): void
     {
-        unset($this->rowDigests[$rowKey], $this->rowAnchors[$rowKey]);
+        unset($this->rowDigests[$rowKey], $this->renderedDigests[$rowKey], $this->rowAnchors[$rowKey]);
     }
 
     /**
@@ -326,5 +416,41 @@ final class TableViewportSubscription
         $encoded = json_encode($wireRow);
 
         return $encoded === false ? null : hash(self::ROW_DIGEST_ALGO, $encoded);
+    }
+
+    /**
+     * Digest of the part of one delivered wire row the tab draws, or null when it cannot be encoded.
+     *
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row as delivered
+     * @return ?string Digest of the drawn part of the row, or null when json_encode refused it
+     */
+    private function renderedDigest(array $wireRow): ?string
+    {
+        return self::digest($this->projectRow($wireRow));
+    }
+
+    /**
+     * Cuts one wire row down to the fields the tab draws.
+     *
+     * The fields live inside the slots, not at the top of the row, so the cut is made inside every
+     * slot that is a map of field to value; a slot of any other shape names no fields and is kept
+     * whole, and so are the row key and everything else beside the slots. The kept fields stay in
+     * the order the row carries them rather than the order they were declared in: the digest is a
+     * hash of the encoded row, and a column moved in the declaration would otherwise read as a
+     * change of every row in the window.
+     *
+     * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row as delivered
+     * @return array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} The same row holding only the drawn fields
+     */
+    private function projectRow(array $wireRow): array
+    {
+        $drawn = array_flip($this->rendered);
+        foreach ($wireRow[PagePayload::slots] as $slotKey => $slot) {
+            if (is_array($slot) && !array_is_list($slot)) {
+                $wireRow[PagePayload::slots][$slotKey] = array_intersect_key($slot, $drawn);
+            }
+        }
+
+        return $wireRow;
     }
 }

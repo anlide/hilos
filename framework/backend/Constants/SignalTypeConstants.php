@@ -101,6 +101,9 @@ final class SignalTypeConstants
     /** @var string Table facets signal type (client-to-server options of a table's filters to count beside them) */
     public const string TABLE_FACETS = 'table_facets';
 
+    /** @var string Table rendered signal type (client-to-server fields of a table's rows its columns draw) */
+    public const string TABLE_RENDERED = 'table_rendered';
+
     /** @var string Table window signal type (server-to-client window snapshot for one table) */
     public const string TABLE_WINDOW = 'table_window';
 

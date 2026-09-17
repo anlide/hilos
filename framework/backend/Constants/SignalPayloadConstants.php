@@ -66,6 +66,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for the page a table viewport jumps to */
     public const string FIELD_PAGE_INDEX = 'pageIndex';
 
+    /** @var string Payload field key for the fields inside a table row's slots that the tab draws */
+    public const string FIELD_RENDERED = 'rendered';
+
     /** @var string Payload field key for the place the first row of a table window sits at */
     public const string FIELD_FIRST_ANCHOR = 'firstAnchor';
 

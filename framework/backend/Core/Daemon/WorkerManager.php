@@ -80,6 +80,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
@@ -1641,6 +1642,14 @@ abstract class WorkerManager extends BaseManager
                     $this->getPageSignalRouter($agentId, $agent)->dispatchTableFacets($signalData, $source, $name);
                 } else {
                     Logger::error("dispatchTableFacets - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::TABLE_RENDERED:
+                if ($signalData instanceof WebSocketTableRenderedSignalDTO) {
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchTableRendered($signalData, $source, $name);
+                } else {
+                    Logger::error("dispatchTableRendered - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 

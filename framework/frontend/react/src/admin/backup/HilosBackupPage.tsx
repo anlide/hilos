@@ -81,7 +81,13 @@ export interface HilosBackupPageProps {
 const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
   { key: BACKUP_CIRCLE_IDENTIFIER_FIELD, label: 'Address', sortable: true },
   { key: BACKUP_CIRCLE_ONLINE_FIELD, label: 'Signed in' },
-  { key: 'actions', label: '', headerClass: 'text-end' },
+  {
+    key: 'actions',
+    label: '',
+    headerClass: 'text-end',
+    // The remove button and its confirmation name the address.
+    reads: [BACKUP_CIRCLE_IDENTIFIER_FIELD],
+  },
 ]
 
 /**

@@ -111,6 +111,30 @@ The subscription remembers **two** things and needs both:
 - the **rows it actually rendered** — without them there is nothing to compare a
   change against, and a delta would be about the entity instead of the screen.
 
+What of a row is rendered, the client says: a descriptor may carry `rendered`, the
+fields inside the row's slots the table draws. The core builds the list from the
+declared columns (`hilosTableRenderedKeys`, `tableRendered.ts`) — every column's
+key, plus the fields each cell names in `reads` because it draws from more than its
+own key. The actions column has no key to count, so its `reads` is required, and an
+empty list is how it says it reads nothing. A table with no declared frame sends no
+list, and the server then compares the whole row. The server keeps a digest of each
+delivered row whole and a second one of its drawn part (`TableViewportSubscription`),
+and the two answer different questions — see the next section.
+
+The list rides every `table_viewport` frame and the report of a held window at
+`page_subscribe`. One window can carry it in neither: the cold entry, which the server
+builds from the table's declaration and sends with `page_response` before the table
+has mounted. For that window the controller sends **`table_rendered`** once, when the
+page's answer brings the first window of a table that held none
+(`TableViewportControllerOptions.sendRendered`). The server answers it with nothing:
+it reads the held window from the table once more and lays the list over it
+(`BrowserContext::declareTableRendered()`, `TableViewportSubscription::withRendered()`).
+The rows themselves were never kept, so the drawn part of a row is taken from that
+second read, and only for a row whose whole digest is still the one delivered — a row
+that changed in between stays compared whole until it is delivered again, a delta too
+many rather than one too few. A table opening with a preset asks for its own window
+at once and needs no such frame.
+
 The server therefore knows each connection's concrete window and notifies it only
 about what that connection shows, not about every change to the table.
 
@@ -414,7 +438,12 @@ The rendered-row test decides the **value** outcomes only. Place is judged
 separately and wins: a field the table does not render can still be part of the
 sort key, and a change to it moves the row. That is a move — it waits like any
 other — and staying silent about it because no cell would look different is
-exactly how a window drifts away from the set.
+exactly how a window drifts away from the set. Leaving the set is judged the same
+way, on the whole row.
+
+A field a cell reads and no column names is a field whose change never reaches the
+screen, and nothing reports it: the row simply stops refreshing that value. That is
+why `reads` names what the dialogs a cell opens read from the row, too.
 
 On the wire this taxonomy is `table_viewport_delta.kind`, which has three values:
 `row_updated` (a value in place — applied at once, highlighted), `row_moved` (a
@@ -930,9 +959,10 @@ and everything below is addressed to the one connection it concerns:
 
 | Frame | Direction | Carries |
 |---|---|---|
-| `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address — the windows this tab is already holding |
+| `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address, `rendered` included — the windows this tab is already holding |
 | `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `progress` — the first window of each of the page's viewport tables, and the work running on it |
-| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
+| `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
+| `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row`, `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |

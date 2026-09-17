@@ -581,6 +581,69 @@ abstract class BrowserContext
     }
 
     /**
+     * Lays the fields a connection's columns draw over the window it already holds for one table.
+     *
+     * The cold entry is the one window built without the list: the server builds it from the
+     * table's declaration before the table is mounted, and the tab says what it draws only once
+     * that window has arrived (HIL-880). The connection's window keeps digests of the rows it was
+     * given and not the rows, so the same window is read from the table once more and sent
+     * nowhere, and the drawn part of each row still as it was delivered is taken from that read
+     * ({@see TableViewportSubscription::withRendered()}).
+     *
+     * The page guards are re-checked first, as a window re-checks them: a subscription they refuse
+     * gets nothing read on its behalf.
+     *
+     * Nothing here fails the caller. A window that cannot be read again stays as it was and leaves
+     * a line in the log: its rows go on being compared whole, which raises a delta too many and
+     * never one too few.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection holding the window
+     * @param TableViewportSubscription $viewport Window the connection holds for the table
+     * @param list<string> $rendered Fields inside the row slots the tab draws
+     */
+    public function declareTableRendered(string $page, string $acceptKey, TableViewportSubscription $viewport, array $rendered): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        $table = Hilos::$table?->get($viewport->tableKey);
+        if (!$table instanceof ViewportTable) {
+            return;
+        }
+
+        $wireRows = [];
+        try {
+            $pageConfig = $this->pageConfig($page);
+            $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+            if ($pageConfig !== null && !$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
+                return;
+            }
+
+            foreach ($table->getPage($this->viewportQuery($viewport))->rows as $row) {
+                if (!$row instanceof AbstractTableRow) {
+                    continue;
+                }
+                $browserRow = $table->browserRow($row);
+                $wireRows[(string) $browserRow[BrowserPageSignalData::rowKey]] = $this->browserRowToWire($browserRow);
+            }
+        } catch (Throwable $e) {
+            // Without this line a table whose badge still rises over fields nobody draws would look
+            // exactly like one whose tab never declared them.
+            Logger::error(
+                "Drawn fields were not laid over a window its table failed to read again: table={$viewport->tableKey}, "
+                    . "page={$page}, acceptKey={$acceptKey}, "
+                    . 'exception=' . $e::class . ", message={$e->getMessage()}",
+            );
+
+            return;
+        }
+
+        Hilos::$sr->setTableViewport($acceptKey, $viewport->withRendered($rendered, $wireRows));
+    }
+
+    /**
      * Runs one window and records what it delivered to the connection that asked for it.
      *
      * Both frames that carry a window end here — the page subscription's `windows` section and
@@ -772,6 +835,7 @@ abstract class BrowserContext
                 anchor: $reported->anchor,
                 anchorDirection: $reported->anchorDirection,
                 pageIndex: $reported->pageIndex,
+                rendered: $reported->rendered,
             );
         }
 
@@ -781,7 +845,10 @@ abstract class BrowserContext
         }
 
         // The three fields not named here are what HIL-787 already settled and nobody declares:
-        // no filter, no anchor and the edge of the set, which together are the first window.
+        // no filter, no anchor and the edge of the set, which together are the first window. The
+        // drawn fields are not named either, and for another reason: they are declared by the
+        // tab's columns, and the server has none. The table declares them once this window has
+        // reached it (declareTableRendered()); until then its rows are compared whole (HIL-880).
         return new TableViewportSubscription(
             tableKey: $tableKey,
             sort: $table->defaultSort(),
@@ -3088,6 +3155,12 @@ abstract class BrowserContext
      * Past the exit the question is asked once more for a set that looks unnarrowed, which a
      * table's own standing narrowing makes necessary; the answer itself is computed only once.
      *
+     * A window whose tab declared the fields it draws is compared a second time, on that part of
+     * the row alone (HIL-880). The second comparison takes back only the plain update below: a row
+     * that stayed in its slot and changed nothing any cell reads is recorded and sent nowhere. The
+     * removals and the move are left to the whole row, since leaving a set and moving in the order
+     * happen over fields nobody draws as readily as over the drawn ones.
+     *
      * An update that does change the rendered row is then classified by what it does to the
      * WINDOW, because that is what the gate holds — position and membership, not the fields of
      * a record (HIL-793). A row that left the filtered set and a row that moved past an edge of
@@ -3159,6 +3232,12 @@ abstract class BrowserContext
             return null;
         }
 
+        // The row did change, but perhaps only in fields no cell draws (HIL-880). That silences
+        // one answer and no other: "the row changed where it stands". Leaving the set and moving
+        // in the order are still judged on the whole row below, because a row does both over a
+        // field nobody draws, and a screen kept quiet about it would disagree with its own set.
+        $drawnAsBefore = $viewport->matchesRenderedRow($rowKey, $wireRow);
+
         if (!$narrowed && $membership() === false) {
             // Still asked of a set that looks unnarrowed from outside: a table can carry a
             // standing narrowing in its own SQL, and without the question its fallen-out rows
@@ -3181,7 +3260,7 @@ abstract class BrowserContext
             // edits behind the gate raised a badge whose Apply changed nothing on the screen.
             $viewport->recordRow($rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
 
-            return TableViewportDeltaDTO::rowUpdated(
+            return $drawnAsBefore ? null : TableViewportDeltaDTO::rowUpdated(
                 $page,
                 $browserKey,
                 $mutation->rowKey,
@@ -3210,7 +3289,7 @@ abstract class BrowserContext
         $viewport->recordRow($rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
 
         if ($slot !== null && $slot === $shownAt) {
-            return TableViewportDeltaDTO::rowUpdated(
+            return $drawnAsBefore ? null : TableViewportDeltaDTO::rowUpdated(
                 $page,
                 $browserKey,
                 $mutation->rowKey,

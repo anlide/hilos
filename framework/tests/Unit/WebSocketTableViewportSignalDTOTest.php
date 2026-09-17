@@ -194,6 +194,36 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertNull($dto->sort);
     }
 
+    public function testTheDrawnFieldsSurviveTheirWireForm(): void
+    {
+        $restored = WebSocketTableViewportSignalDTO::fromArray(
+            new WebSocketTableViewportSignalDTO(acceptKey: 'ak', tableKey: 't', limit: 10, rendered: ['name', 'presence'])->toArray(),
+        );
+
+        $this->assertSame(['name', 'presence'], $restored->rendered);
+    }
+
+    public function testAFrameDeclaringNoDrawnFieldsCarriesNoKeyForThem(): void
+    {
+        $array = new WebSocketTableViewportSignalDTO(acceptKey: 'ak', tableKey: 't', limit: 10)->toArray();
+
+        // Absent, not empty: absence is what asks the server to compare the rows whole (HIL-880).
+        $this->assertArrayNotHasKey(WebSocketTableViewportSignalDTO::RENDERED, $array);
+        $this->assertSame([], WebSocketTableViewportSignalDTO::fromArray($array)->rendered);
+    }
+
+    public function testADrawnFieldThatIsNotAStringRefusesTheFrame(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+            WebSocketTableViewportSignalDTO::RENDERED => ['name', 7],
+        ]);
+    }
+
     public function testGetAcceptKey(): void
     {
         $this->assertSame('ak', new WebSocketTableViewportSignalDTO(acceptKey: 'ak')->getAcceptKey());

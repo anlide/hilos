@@ -4,6 +4,7 @@ import {
   type TableViewportDescriptor,
 } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../src/table/hilosTableColumn.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
 import {
   type TableSortOrder,
@@ -66,6 +67,113 @@ describe('TableViewportController', () => {
       anchorDirection: 'after',
       pageIndex: null,
     })
+  })
+
+  it('reports the fields its declared columns draw, with every window', () => {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      frame: {
+        columns: [
+          { key: 'name', label: 'Name', sortable: true },
+          { key: HILOS_TABLE_ACTIONS_KEY, label: '', reads: ['id'] },
+        ],
+      },
+    })
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    controller.setSort('name')
+
+    // The same list rides the frame asking for a window and the report of the window held,
+    // so a reconnect keeps comparing rows the way the mounted table did (HIL-880).
+    expect(sent.at(-1)?.rendered).toEqual(['name', 'id'])
+    expect(controller.descriptor()?.rendered).toEqual(['name', 'id'])
+  })
+
+  it('tells the server what it draws once, over the window the page brought', () => {
+    const sent: TableViewportDescriptor[] = []
+    const declared: (readonly string[])[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: (rendered) => declared.push(rendered),
+      frame: {
+        columns: [
+          { key: 'name', label: 'Name', sortable: true },
+          { key: HILOS_TABLE_ACTIONS_KEY, label: '', reads: ['id'] },
+        ],
+      },
+    })
+    const answer = () =>
+      controller.ingestSubscriptionWindow(
+        [],
+        0,
+        true,
+        null,
+        null,
+        10,
+        undefined,
+        [],
+      )
+
+    answer()
+
+    // The cold window was built before the table mounted and holds no list; no window frame
+    // went out to carry one, so the declaration is a frame of its own (HIL-880).
+    expect(declared).toEqual([['name', 'id']])
+    expect(sent).toEqual([])
+
+    // A later answer to the same page finds the table loaded: its window already knows.
+    answer()
+    controller.setSort('name')
+    expect(declared).toEqual([['name', 'id']])
+  })
+
+  it('a table opening with a preset declares nothing apart from its own window frame', () => {
+    const sent: TableViewportDescriptor[] = []
+    const declared: (readonly string[])[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: (rendered) => declared.push(rendered),
+      initialFilter: { channel: 'email' },
+      frame: { columns: [{ key: 'name', label: 'Name', sortable: true }] },
+    })
+
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(declared).toEqual([])
+    expect(sent.at(-1)?.rendered).toEqual(['name'])
+  })
+
+  it('a table that declares no frame carries no drawn fields at all', () => {
+    const { controller, sent, open } = makeController()
+
+    open()
+    controller.setSort('name')
+
+    // Absent rather than empty: absence is what asks the server to compare the whole row.
+    expect(sent.at(-1)).not.toHaveProperty('rendered')
+    expect(controller.descriptor()).not.toHaveProperty('rendered')
   })
 
   it('takes the size and the order of its window from the window itself', () => {

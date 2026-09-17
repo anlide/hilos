@@ -129,4 +129,35 @@ final class TableWindowDescriptorDTOTest extends TestCase
             new TableWindowDescriptorDTO(limit: 10)->toArray(),
         );
     }
+
+    public function testTheDrawnFieldsSurviveTheirWireForm(): void
+    {
+        $restored = TableWindowDescriptorDTO::fromArray(
+            new TableWindowDescriptorDTO(limit: 10, rendered: ['name', 'presence'])->toArray(),
+        );
+
+        $this->assertSame(['name', 'presence'], $restored->rendered);
+    }
+
+    public function testADescriptorDeclaringNoDrawnFieldsCarriesNoKeyForThem(): void
+    {
+        $array = new TableWindowDescriptorDTO(limit: 10)->toArray();
+
+        $this->assertArrayNotHasKey(TableWindowDescriptorDTO::RENDERED, $array);
+        $this->assertSame([], TableWindowDescriptorDTO::fromArray($array)->rendered);
+    }
+
+    /**
+     * Unlike a malformed option, a malformed drawn field is not dropped: a field left out of the
+     * list would stop raising deltas without anyone hearing of it (HIL-880).
+     */
+    public function testADrawnFieldThatIsNotAStringRefusesTheDescriptor(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        TableWindowDescriptorDTO::fromArray([
+            TableWindowDescriptorDTO::LIMIT => 10,
+            TableWindowDescriptorDTO::RENDERED => ['name', ['presence']],
+        ]);
+    }
 }

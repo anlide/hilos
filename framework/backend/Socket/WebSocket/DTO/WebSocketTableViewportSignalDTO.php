@@ -45,6 +45,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
     public const string ANCHOR = 'anchor';
     public const string ANCHOR_DIRECTION = 'anchorDirection';
     public const string PAGE_INDEX = 'pageIndex';
+    public const string RENDERED = 'rendered';
 
     /**
      * Creates a table viewport signal DTO.
@@ -58,6 +59,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      * @param ?TableAnchorDTO $anchor Place the window is taken from, or null for the edge of the set
      * @param TableAnchorDirection $anchorDirection Side of the anchor, and which edge a null anchor means
      * @param ?int $pageIndex Zero-based page to jump to, or null when the window is paged by anchor
+     * @param list<string> $rendered Fields inside the row slots the tab draws, empty when it declared none
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -69,6 +71,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
         public readonly ?TableAnchorDTO $anchor = null,
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public readonly ?int $pageIndex = null,
+        public readonly array $rendered = [],
     ) {
     }
 
@@ -109,6 +112,10 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
             $result[self::SORT] = $this->sort->toArray();
         }
 
+        if ($this->rendered !== []) {
+            $result[self::RENDERED] = $this->rendered;
+        }
+
         return $result;
     }
 
@@ -117,7 +124,8 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      *
      * The size of the window is what the frame is for and is required; the filter and the
      * sort are not, because the SDK leaves an empty filter and an unset ordering out of the
-     * frame entirely. Neither is the address, whose absence names the first window of the set.
+     * frame entirely. Neither is the address, whose absence names the first window of the set,
+     * nor the list of drawn fields, whose absence asks for rows compared whole (HIL-880).
      *
      * This is the one DTO of its family built straight from a client frame, and
      * that seam closes the connection on {@see InvalidFrameException} rather than
@@ -131,7 +139,8 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
      * @throws InvalidFormatException When the frame carries no accept key, table key or limit,
-     *     addresses the window both ways at once, or names a side the anchor has no meaning on
+     *     addresses the window both ways at once, names a side the anchor has no meaning on, or
+     *     lists the drawn fields as anything but strings
      */
     public static function fromArray(array $data): static
     {
@@ -156,6 +165,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
                 : TableAnchorDirection::tryFrom($direction)
                     ?? throw new InvalidFormatException('Table viewport frame carries an unknown anchor direction'),
             pageIndex: $pageIndex,
+            rendered: self::optionalStringList($data, self::RENDERED) ?? [],
         );
     }
 }

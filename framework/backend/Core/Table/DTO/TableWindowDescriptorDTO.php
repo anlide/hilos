@@ -53,6 +53,9 @@ final class TableWindowDescriptorDTO extends BaseDTO
     /** Wire key: the options of the table's filters the tab asked counts beside, by filter key. */
     public const string FACETS = 'facets';
 
+    /** Wire key: the fields inside the row slots the tab draws. */
+    public const string RENDERED = 'rendered';
+
     /**
      * Creates one window descriptor.
      *
@@ -64,6 +67,7 @@ final class TableWindowDescriptorDTO extends BaseDTO
      * @param ?int $pageIndex Zero-based page the window jumped to, or null when it is paged by anchor
      * @param array<string, list<int|float|string|bool>> $facets Options the tab asked counts beside, by filter key;
      *     empty when it asked for none
+     * @param list<string> $rendered Fields inside the row slots the tab draws, empty when it declared none
      */
     public function __construct(
         public readonly array $filter = [],
@@ -73,6 +77,7 @@ final class TableWindowDescriptorDTO extends BaseDTO
         public readonly TableAnchorDirection $anchorDirection = TableAnchorDirection::After,
         public readonly ?int $pageIndex = null,
         public readonly array $facets = [],
+        public readonly array $rendered = [],
     ) {
     }
 
@@ -106,6 +111,10 @@ final class TableWindowDescriptorDTO extends BaseDTO
             $result[self::FACETS] = $this->facets;
         }
 
+        if ($this->rendered !== []) {
+            $result[self::RENDERED] = $this->rendered;
+        }
+
         return $result;
     }
 
@@ -120,10 +129,15 @@ final class TableWindowDescriptorDTO extends BaseDTO
      * malformed option dropped rather than refused: a tab coming back after a broken socket must not
      * lose its window over a number beside an option.
      *
+     * The drawn fields are not read that leniently. A field dropped out of the list stops raising
+     * a delta when it changes, which is a quiet loss the tab never hears of, so a list that is not
+     * all strings refuses the descriptor like a malformed address does (HIL-880).
+     *
      * @param array<string, mixed> $data Source data
      * @return static Descriptor of the window the tab holds
      * @throws InvalidFormatException When the descriptor carries no limit, addresses the window
-     *     both ways at once, or names a side the anchor has no meaning on
+     *     both ways at once, names a side the anchor has no meaning on, or lists the drawn fields as
+     *     anything but strings
      */
     public static function fromArray(array $data): static
     {
@@ -145,6 +159,7 @@ final class TableWindowDescriptorDTO extends BaseDTO
                     ?? throw new InvalidFormatException('Table window descriptor carries an unknown anchor direction'),
             pageIndex: $pageIndex,
             facets: TableFacetTally::wantedOptions(self::optionalArray($data, self::FACETS) ?? []),
+            rendered: self::optionalStringList($data, self::RENDERED) ?? [],
         );
     }
 }

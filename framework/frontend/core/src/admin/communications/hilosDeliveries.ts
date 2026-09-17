@@ -247,7 +247,12 @@ const DELIVERIES_COLUMNS: HilosTableColumnOf<HilosDeliveryRow>[] = [
     sortable: true,
     cellClass: 'text-nowrap',
   },
-  { key: DELIVERY_USER_LABEL_FIELD, label: 'Recipient' },
+  {
+    key: DELIVERY_USER_LABEL_FIELD,
+    label: 'Recipient',
+    // The recipient is named with its id beside the label, and by the id alone without one.
+    reads: [DELIVERY_USER_ID_FIELD],
+  },
   // Two fields no column is wide enough for: the title of the notification with its
   // type under it, and the reason a delivery failed — a whole sentence that stretched
   // the table around it. Both wait in the panel a row expands into.
@@ -255,6 +260,7 @@ const DELIVERIES_COLUMNS: HilosTableColumnOf<HilosDeliveryRow>[] = [
     key: DELIVERY_NOTIFICATION_TITLE_FIELD,
     label: 'Notification',
     detail: true,
+    reads: [DELIVERY_NOTIFICATION_TYPE_FIELD],
   },
   { key: DELIVERY_LAST_ERROR_FIELD, label: 'Error', detail: true },
   {
@@ -262,6 +268,8 @@ const DELIVERIES_COLUMNS: HilosTableColumnOf<HilosDeliveryRow>[] = [
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // Retry stands on a failed delivery only.
+    reads: [DELIVERY_STATUS_FIELD],
   },
 ]
 
@@ -318,6 +326,12 @@ export function createHilosDeliveriesTable(
         HilosPages.COMMUNICATIONS_DELIVERIES,
         DELIVERIES_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.COMMUNICATIONS_DELIVERIES,
+        DELIVERIES_TABLE,
+        rendered,
       ),
     initialFilter,
     frame: DELIVERIES_FRAME,

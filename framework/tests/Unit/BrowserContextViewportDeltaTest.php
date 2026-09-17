@@ -137,6 +137,177 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
+    public function testAFieldNoCellDrawsChangesAndNothingIsSent(): void
+    {
+        // The users table in small: the row carries an admin flag, and the tab draws the key and
+        // the label only. The flag is in the payload, so the whole row did change.
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10, rendered: ['key', 'label']);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha', false)]), 1, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha', true)], $viewport);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['admin' => true]));
+        $context->flushToSignalRouter();
+
+        // No delta and no count: nothing the screen draws moved, so a badge here would be one
+        // whose Apply changes nothing (HIL-880).
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testADrawnFieldBesideAnUndrawnOneStillSendsTheDelta(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10, rendered: ['key', 'label']);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha', false)]), 1, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Renamed', false)], $viewport);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Renamed']));
+        $context->flushToSignalRouter();
+
+        // The row still travels whole: the cut decides whether to send, never what is sent.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+        $this->assertSame(
+            [
+                PagePayload::rowKey => 'alpha',
+                PagePayload::slots => [
+                    ViewportDeltaUnitTable::SLOT => ['key' => 'alpha', 'label' => 'Renamed', 'admin' => false],
+                ],
+            ],
+            $delta->row,
+        );
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testASilencedRowIsRecordedSoItsRepeatTakesTheCheapExit(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10, rendered: ['key', 'label']);
+        $viewport->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha', false)]), 1, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha', true)], $viewport);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['admin' => true]));
+        $context->flushToSignalRouter();
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['admin' => true]));
+        $context->flushToSignalRouter();
+
+        // The first change is a changed row and is asked whether it left the set; the silenced
+        // row is then what the window remembers, so the same row again is the whole-row match
+        // that asks nothing.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame(1, $table->setQuestions);
+    }
+
+    public function testARowMovedByAFieldNoCellDrawsStillMoves(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Tango'), self::row('sierra', 'Sierra'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('sierra', 'Sierra'), self::row('zulu', 'Zulu')],
+            rendered: ['key'],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Tango']));
+        $context->flushToSignalRouter();
+
+        // The window is ordered by the label and draws only the key: the drawn part is the same,
+        // and the row still passed Sierra. The cut answers what the screen shows, not where the
+        // row stands, so the move goes out (HIL-880, Design D6).
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertSame(2, $delta->position);
+    }
+
+    public function testARowThatLeftItsSetOverAFieldNoCellDrawsStillLeaves(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike!')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike')],
+            inSet: false,
+            rendered: ['key'],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Mike!']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+    }
+
+    public function testARowThatKeptItsSlotAndChangedNothingDrawnSendsNothing(): void
+    {
+        $context = $this->bootOrdered(
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Tango'), self::row('zulu', 'Zulu')],
+            [self::row('alpha', 'Alpha'), self::row('mike', 'Mike'), self::row('zulu', 'Zulu')],
+            rendered: ['key'],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'mike', ['label' => 'Tango']));
+        $context->flushToSignalRouter();
+
+        // The ordered twin of the plain case: the place was judged on the whole row, the row is
+        // still between Alpha and Zulu, and what is left is an update nobody would see.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAColdWindowToldWhatTheTabDrawsGoesQuietOnAFieldNoCellDraws(): void
+    {
+        // The cold entry: the window was served with the page, before the table was mounted, so
+        // it carries no list and compares the whole row.
+        $cold = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $cold->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha', false)]), 1, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha', false)], $cold);
+
+        $context->declareTableRendered(ViewportDeltaUnitContext::PAGE, 'ak-1', $cold, ['key', 'label']);
+
+        // The declaration is answered with nothing: the window is read again and kept, not served.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $declared = Hilos::$sr?->getTableViewport('ak-1', ViewportDeltaUnitTable::TABLE);
+        $this->assertNotNull($declared);
+        $this->assertSame(['key', 'label'], $declared->rendered);
+        $this->assertSame(['alpha'], $declared->rowIds());
+
+        self::replaceRows([new ViewportDeltaUnitRow('alpha', 'Alpha', true)]);
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['admin' => true]));
+        $context->flushToSignalRouter();
+
+        // The acceptance of HIL-880 on the road a freshly opened page takes: no badge over a flag
+        // no cell draws.
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAColdWindowToldWhatTheTabDrawsStillSendsADrawnChange(): void
+    {
+        $cold = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $cold->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha', false)]), 1, true, null, null);
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha', false)], $cold);
+        $context->declareTableRendered(ViewportDeltaUnitContext::PAGE, 'ak-1', $cold, ['key', 'label']);
+
+        self::replaceRows([new ViewportDeltaUnitRow('alpha', 'Renamed', false)]);
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Renamed']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAColdWindowWhoseRowAlreadyChangedKeepsSendingThatRow(): void
+    {
+        $cold = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $cold->recordWindow(self::deliveredWindow([new ViewportDeltaUnitRow('alpha', 'Alpha', false)]), 1, true, null, null);
+        // The flag was set after the window went out, and its change is still on its way here.
+        $context = $this->bootWithViewport([new ViewportDeltaUnitRow('alpha', 'Alpha', true)], $cold);
+
+        $context->declareTableRendered(ViewportDeltaUnitContext::PAGE, 'ak-1', $cold, ['key', 'label']);
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['admin' => true]));
+        $context->flushToSignalRouter();
+
+        // The second read is not the row that was delivered, so nothing proves what the tab draws
+        // of it: the row is judged whole, a delta too many rather than one too few.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+    }
+
     public function testAnEditThatKeepsTheRowsSlotAppliesAsAValue(): void
     {
         $context = $this->bootOrdered(
@@ -1196,6 +1367,17 @@ final class BrowserContextViewportDeltaTest extends TestCase
     }
 
     /**
+     * Replaces the rows the fixture table owns, as a write to its source would, keeping the router and its windows.
+     *
+     * @param list<ViewportDeltaUnitRow> $rows Snapshot rows the table owns from now on
+     */
+    private static function replaceRows(array $rows): void
+    {
+        Hilos::$table = new ViewportDeltaUnitTableContext($rows);
+        Hilos::$table->configure();
+    }
+
+    /**
      * Boots a connection holding an ordered window it remembers the places of.
      *
      * @param list<ViewportDeltaUnitRow> $rows Table rows the fixture owns, as they are AFTER the edit
@@ -1204,6 +1386,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
      * @param bool $setQuestionFails Whether the membership question refuses instead of answering
      * @param array<string, mixed> $filter Open filter map narrowing the window's set, search included
      * @param ?int $pageIndex Numbered page the window jumped to, or null when it was asked from the start of the set
+     * @param list<string> $rendered Fields the tab declared it draws, empty when it declared none
      * @return ViewportDeltaUnitContext Booted browser context
      */
     private function bootOrdered(
@@ -1213,6 +1396,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         bool $setQuestionFails = false,
         array $filter = [],
         ?int $pageIndex = null,
+        array $rendered = [],
     ): ViewportDeltaUnitContext {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
@@ -1220,6 +1404,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
             sort: self::byLabel(TableConstants::ORDER_ASC),
             limit: 10,
             pageIndex: $pageIndex,
+            rendered: $rendered,
         );
         $viewport->recordWindow(
             self::deliveredWindow($windowRows),
@@ -1586,9 +1771,15 @@ final class ViewportDeltaUnitTable extends TableDefinition implements SelfSnapsh
 
 final class ViewportDeltaUnitRow extends AbstractTableRow
 {
+    /**
+     * @param string $key Row key
+     * @param string $label Label the row is shown and ordered by
+     * @param ?bool $admin Flag the row carries and no cell draws, or null for a row that does not carry it
+     */
     public function __construct(
         public readonly string $key,
         public readonly string $label,
+        public readonly ?bool $admin = null,
     ) {
     }
 
@@ -1610,10 +1801,15 @@ final class ViewportDeltaUnitRow extends AbstractTableRow
      */
     public function toArray(): array
     {
-        return [
+        $fields = [
             'key' => $this->key,
             'label' => $this->label,
         ];
+        if ($this->admin !== null) {
+            $fields['admin'] = $this->admin;
+        }
+
+        return $fields;
     }
 
     /**
@@ -1625,6 +1821,7 @@ final class ViewportDeltaUnitRow extends AbstractTableRow
         return new static(
             (string) $data['key'],
             (string) $data['label'],
+            $data['admin'] ?? null,
         );
     }
 }

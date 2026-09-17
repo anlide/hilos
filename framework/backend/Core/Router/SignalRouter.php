@@ -48,6 +48,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
@@ -1297,6 +1298,7 @@ class SignalRouter
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_FACETS => $data instanceof WebSocketTableFacetsSignalDTO ? $data->page : null,
+            SignalTypeConstants::TABLE_RENDERED => $data instanceof WebSocketTableRenderedSignalDTO ? $data->page : null,
             // Unsubscribe carries the page in the signal name, which SignalDTO
             // guarantees is non-empty.
             SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),

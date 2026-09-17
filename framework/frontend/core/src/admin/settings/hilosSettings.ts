@@ -271,12 +271,31 @@ export interface HilosSettingsTable {
 /** The columns of the settings table, in display order. */
 const SETTINGS_COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
   { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
-  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
+  {
+    key: SETTING_VALUE_FIELD,
+    label: 'Value',
+    sortable: true,
+    // The cell names where the value comes from, and the key a reference points at.
+    reads: [
+      SETTING_TYPE_FIELD,
+      SETTING_VALUE_SOURCE_FIELD,
+      SETTING_DEFAULT_REFERENCE_KEY_FIELD,
+    ],
+  },
   {
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     headerClass: 'text-end',
     cellClass: 'text-end',
+    // The buttons follow the override and the origin; the edit dialog they open shows the
+    // catalog default beside the value and merges against the live override.
+    reads: [
+      SETTING_OVERRIDE_VALUE_FIELD,
+      SETTING_VALUE_SOURCE_FIELD,
+      SETTING_TYPE_FIELD,
+      SETTING_DEFAULT_VALUE_FIELD,
+      SETTING_DEFAULT_REFERENCE_KEY_FIELD,
+    ],
   },
 ]
 
@@ -310,6 +329,12 @@ export function createHilosSettingsTable(
         HilosPages.SETTINGS,
         SETTINGS_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.SETTINGS,
+        SETTINGS_TABLE,
+        rendered,
       ),
     frame: SETTINGS_FRAME,
   })
