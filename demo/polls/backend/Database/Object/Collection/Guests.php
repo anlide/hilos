@@ -16,7 +16,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Guests - Object collection for poll guests.
+ * Guests - Object collection for polls guests.
  *
  * Persistence of the name a visitor without an account is known by (HIL-611),
  * keyed by the session token that earned it. The whole collection is read and

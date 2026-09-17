@@ -7,7 +7,7 @@ namespace Demo\Polls\Core\Agent\Daemon\Hilos;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgentDaemon;
 
 /**
- * NotificationsLibraryAgentDaemon - daemon proxy for the poll notifications library (HIL-771).
+ * NotificationsLibraryAgentDaemon - daemon proxy for the polls notifications library (HIL-771).
  *
  * Inherits the framework placement whole: a monopolistic singleton, because the notification
  * tables have one writer or they have none. Where that process runs is left to the placement

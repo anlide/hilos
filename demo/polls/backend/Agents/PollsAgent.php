@@ -31,7 +31,7 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
 /**
- * Monopolistic poll worker that owns the main page subscription and the
+ * Monopolistic polls worker that owns the main page subscription and the
  * WebSocket lifecycle signals.
  *
  * Session identity is the framework's, and since HIL-710 it is a library's too: the cookie

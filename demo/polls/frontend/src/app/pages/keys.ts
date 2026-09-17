@@ -1,4 +1,4 @@
-// The poll application's own page keys: the identifier each app page subscribes
+// The polls application's own page keys: the identifier each app page subscribes
 // under, mirroring the demo-specific values in backend `PageConstants`. The
 // framework's `hilos_*` admin keys are not restated here — they come from
 // `@hilos/core` (`HilosPages`/`HILOS_PAGE_ROUTES`), which the router in

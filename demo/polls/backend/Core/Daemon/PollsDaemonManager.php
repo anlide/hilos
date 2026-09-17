@@ -23,7 +23,7 @@ use Hilos\Socket\Server\ServerInterface;
 /**
  * PollsDaemonManager - Main daemon manager for the polls demo.
  *
- * Extends framework DaemonManager: declares the poll server set (HTTP status, worker,
+ * Extends framework DaemonManager: declares the polls server set (HTTP status, worker,
  * WebSocket) and the build-timestamp module. No cron rules yet.
  */
 final class PollsDaemonManager extends DaemonManager
@@ -52,7 +52,7 @@ final class PollsDaemonManager extends DaemonManager
     }
 
     /**
-     * The poll server set: HTTP status, worker, and WebSocket servers.
+     * The polls server set: HTTP status, worker, and WebSocket servers.
      *
      * @param DaemonContext $context Resolved path context
      * @return iterable<ServerInterface> Servers to register, in bind order
@@ -89,7 +89,7 @@ final class PollsDaemonManager extends DaemonManager
     }
 
     /**
-     * The poll modules: build-timestamp exposure for the handshake welcome frame.
+     * The polls modules: build-timestamp exposure for the handshake welcome frame.
      *
      * @param DaemonContext $context Resolved path context
      * @return iterable<DaemonModule> Modules to consider, checked via isActive() before register()

@@ -29,8 +29,8 @@ use Hilos\Tables\Users\AbstractHilosUsersTable;
  * Polls activation of the framework Hilos users table.
  *
  * Binds the demo DB users and RT connections to the framework presence-merge
- * engine and projects them into the poll user row (the framework
- * admin/block/presence fields plus the poll profile fields).
+ * engine and projects them into the polls user row (the framework
+ * admin/block/presence fields plus the polls profile fields).
  */
 final class HilosUsersTable extends AbstractHilosUsersTable
 {

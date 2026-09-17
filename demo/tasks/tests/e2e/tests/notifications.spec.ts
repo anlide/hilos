@@ -15,7 +15,7 @@ import { emitNotification } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
 
 // Notification-center e2e for the tasks demo (HIL-558), the React half of the
-// same coverage the chat and poll demos carry. A notification is emitted through
+// same coverage the chat and polls demos carry. A notification is emitted through
 // the live daemon over its command channel (helpers/notifications.ts), so the row
 // is written and the in-app signal is fanned exactly as a product caller's emit
 // would do it — the browser is then asserted on what the server actually sent,

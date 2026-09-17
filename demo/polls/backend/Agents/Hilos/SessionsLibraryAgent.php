@@ -20,7 +20,7 @@ use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
- * The poll demo's sessions library - and the two seams a project can be asked to answer.
+ * The polls demo's sessions library - and the two seams a project can be asked to answer.
  *
  * Everything a session is lives in {@see AbstractSessionsLibraryAgent} (HIL-710). What this
  * demo has to say for itself is the end of the two operator paths to an administrator:

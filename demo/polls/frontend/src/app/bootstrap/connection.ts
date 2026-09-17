@@ -1,4 +1,4 @@
-// The poll application's single Hilos connection (the project's connection
+// The polls application's single Hilos connection (the project's connection
 // singleton). createHilosConnection (core) merges the framework session and page
 // schemas and wires the stale-build reload; this file only states the project's
 // endpoint policy.

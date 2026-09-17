@@ -10,7 +10,7 @@ test('websocket transport reaches connected', async ({ page }) => {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
-// Session bootstrap e2e: the daemon-issued cookie rides the handshake, the poll
+// Session bootstrap e2e: the daemon-issued cookie rides the handshake, the polls
 // backend resolves an anonymous session and names the visitor behind it on its
 // own `guest_identity` signal (HIL-611), and that name renders through the
 // Angular adapter. The framework handshake_response arrives right after and

@@ -7,7 +7,7 @@ import {
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
-// Hilos settings admin e2e for the poll demo: activating the framework settings
+// Hilos settings admin e2e for the polls demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
 // makes /hilos/settings render the framework settings table over the live socket.
 // Catalog placeholder rows show without any DB override, search filters the client

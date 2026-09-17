@@ -7,7 +7,7 @@ import { openSignIn } from '../helpers/session'
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
 // table exposes a correct accessibility tree over the live socket: an accessible
 // name from the page heading it stands under, a labeled search box, and a sortable
-// header that reports aria-sort and is operable from the keyboard. The poll
+// header that reports aria-sort and is operable from the keyboard. The polls
 // (Angular) layer checks this on the users table; the file grows as the a11y arc
 // lands its later steps (modals, app-shell, focus).
 

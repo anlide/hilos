@@ -12,7 +12,7 @@ use Hilos\Tables\Users\AbstractHilosUserTableRow;
  * Backend row payload for the Hilos users table.
  *
  * Extends the framework base row (id, admin, block, presence, onlineSessionCount)
- * with the poll profile fields.
+ * with the polls profile fields.
  */
 final class HilosUserTableRow extends AbstractHilosUserTableRow
 {

@@ -19,7 +19,7 @@ use Hilos\Socket\Server\WebSocketServer;
 final class PollsWebSocketServer extends WebSocketServer
 {
     /**
-     * Called when a new poll WebSocket client connection is accepted.
+     * Called when a new polls WebSocket client connection is accepted.
      *
      * @param resource $socket Client socket
      * @return PollsWebSocketClient Client instance

@@ -1,5 +1,5 @@
-// The poll's contexts for the six framework Hilos log pages that read live data:
-// the section overview (@hilos/angular HilosLogsPage), the stream list
+// The polls demo's contexts for the six framework Hilos log pages that read live
+// data: the section overview (@hilos/angular HilosLogsPage), the stream list
 // (HilosLogsKeysPage), the worker streams (HilosLogsWorkersPage), the rotation
 // history (HilosLogsRotationsPage), the logging modes (HilosLogsSettingsPage) and
 // the log viewer (HilosLogsViewPage). The framework owns the tables, the

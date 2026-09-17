@@ -11,7 +11,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageReach;
 
 /**
- * MainPage - Main poll page handler.
+ * MainPage - Main polls page handler.
  *
  * Declares no actions or signals yet: the poll CRUD contract arrives with the
  * first data-on-screen rewrite step.

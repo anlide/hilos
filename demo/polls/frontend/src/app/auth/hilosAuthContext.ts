@@ -1,4 +1,4 @@
-// The poll demo's HilosAuthContext: binds the framework sign-in surface
+// The polls demo's HilosAuthContext: binds the framework sign-in surface
 // (@hilos/angular HilosAuthSurface) to this project's connection, scope stores,
 // and action lifecycle, and declares the ways in this deployment offers. The
 // framework owns the machine, the wire, the screens and the copy; the project

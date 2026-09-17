@@ -28,7 +28,7 @@ final class PollsSignalRouter extends SignalRouter
     }
 
     /**
-     * Returns poll agents started on DAEMON/SYSTEM bootstrap signals.
+     * Returns polls agents started on DAEMON/SYSTEM bootstrap signals.
      *
      * @return list<string> Agent type identifiers
      */
@@ -41,7 +41,7 @@ final class PollsSignalRouter extends SignalRouter
     }
 
     /**
-     * Returns the poll owner for WebSocket lifecycle service signals.
+     * Returns the polls owner for WebSocket lifecycle service signals.
      *
      * @return ?string Fallback agent type
      */

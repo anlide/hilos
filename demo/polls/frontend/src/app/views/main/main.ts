@@ -1,4 +1,4 @@
-// The poll main page (PAGE_MAIN). For now it shows the identity line of the
+// The polls main page (PAGE_MAIN). For now it shows the identity line of the
 // session; the real poll views land here later. Rendered by HilosView when the
 // navigator's route is the main page.
 //

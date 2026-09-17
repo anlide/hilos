@@ -9,7 +9,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 
 /**
- * The poll demo's notifications library - a name and nothing else (HIL-771).
+ * The polls demo's notifications library - a name and nothing else (HIL-771).
  *
  * Unlike the sessions and users libraries, this one asks a project for no seam at all:
  * notifications have no project half. A notification row names a recipient by id and carries

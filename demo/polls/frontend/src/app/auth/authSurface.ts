@@ -1,4 +1,4 @@
-// The poll demo's sign-in surface: the framework default (@hilos/angular
+// The polls demo's sign-in surface: the framework default (@hilos/angular
 // HilosAuthSurface) with this project's context closed over it. HilosView mounts
 // the surface through ngComponentOutlet, which passes no inputs, so the context
 // cannot reach it from outside — this wrapper is what closes it, the same way

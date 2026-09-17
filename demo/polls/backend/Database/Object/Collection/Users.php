@@ -8,7 +8,7 @@ use Demo\Polls\Database\PollsDbContext;
 use Hilos\Database\Object\Objects;
 
 /**
- * Users - Object collection for poll users.
+ * Users - Object collection for polls users.
  *
  * @extends Objects<ObjectUser>
  * @method ObjectUser|null current()

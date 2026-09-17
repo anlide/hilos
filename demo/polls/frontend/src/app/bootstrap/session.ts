@@ -1,4 +1,4 @@
-// The poll session identity (the project's session singleton): own the
+// The polls session identity (the project's session singleton): own the
 // scope-partitioned stores and expose the current user. The daemon issues the
 // httpOnly session cookie on the WebSocket handshake, so the client no longer
 // mints it; the handshake-response plumbing and the current-user selector come

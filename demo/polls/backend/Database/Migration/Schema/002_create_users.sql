@@ -2,7 +2,7 @@
 -- Created: 2026-06-20
 -- Index: 002
 -- Description:
---   Durable user identity for the polls demo: the monopolistic poll
+--   Durable user identity for the polls demo: the monopolistic polls
 --   worker registers a user per session token on handshake and reuses it on
 --   reconnect, replacing the former agent-local ephemeral identity.
 --   The admin/block operator flags back the Hilos users admin table activated

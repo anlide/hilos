@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
-// Hilos logs admin e2e for the poll demo: activating the framework logs feature
+// Hilos logs admin e2e for the polls demo: activating the framework logs feature
 // (six pages, the section agent with the per-node store and the cluster
 // aggregator behind it, and three browser tables) makes every screen of the
 // section render over the live socket, drawn by the Angular SDK. This is a smoke

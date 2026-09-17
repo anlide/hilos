@@ -1,4 +1,4 @@
-// The poll's HilosUsersContext: binds the framework Hilos users/user admin pages
+// The polls demo's HilosUsersContext: binds the framework Hilos users/user admin pages
 // (@hilos/angular HilosUsersPage / HilosUserPage) to this project's scope stores,
 // live connection, and typed user collection. The framework owns the table, the
 // row view-model, search/sort/paging, the rename round-trip, and the takeover; the

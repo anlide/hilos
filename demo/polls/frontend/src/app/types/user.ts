@@ -1,6 +1,6 @@
-// The poll user entity and its collection. The framework owns the user's
+// The polls user entity and its collection. The framework owns the user's
 // authorization contract (admin/block), so the domain user extends the SDK
-// `User` and adds only the poll's own profile fields. The `users` slot of the
+// `User` and adds only the polls demo's own profile fields. The `users` slot of the
 // Hilos users/user admin pages and the session `currentUser` selector both
 // resolve to this one `user` entity (data-model.md: one entity per (type,id)
 // per scope).
@@ -19,7 +19,7 @@ import { scopes } from '../bootstrap/session'
 /** The canonical entity type — keep in sync with the backend `users` source. */
 export const USER_TYPE = 'user'
 
-/** The poll user: the framework authorization fields plus poll profile fields. */
+/** The polls user: the framework authorization fields plus polls profile fields. */
 export interface User extends FrameworkUser {
   /** Display name. */
   readonly name: string

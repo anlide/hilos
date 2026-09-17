@@ -8,7 +8,7 @@ use Demo\Polls\Constants\AgentType;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 
 /**
- * Daemon proxy for the poll agent.
+ * Daemon proxy for the polls agent.
  */
 final class PollsAgentDaemon extends AbstractAgentDaemon
 {

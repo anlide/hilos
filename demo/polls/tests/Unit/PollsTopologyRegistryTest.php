@@ -63,7 +63,7 @@ final class PollsTopologyRegistryTest extends TestCase
     }
 
     /**
-     * No poll page is served by the agent of one entity instance yet: this leaf gave the
+     * No polls page is served by the agent of one entity instance yet: this leaf gave the
      * mechanism, and which pages move onto it belongs to the epic (HIL-627).
      */
     public function testNoPageIsServedByTheAgentOfOneInstance(): void
@@ -126,7 +126,7 @@ final class PollsTopologyRegistryTest extends TestCase
 
     public function testPollsAppOwnSurfaceStaysTransportOnly(): void
     {
-        // The poll application's OWN surface stays transport-only: its main page
+        // The polls application's OWN surface stays transport-only: its main page
         // and worker push no server-driven data. The activated Hilos admin
         // features (settings, users, logs) own their actions/signals/browser tables —
         // asserted separately below.

@@ -1,4 +1,4 @@
-// The poll's HilosSettingsContext: binds the framework Hilos settings page
+// The polls demo's HilosSettingsContext: binds the framework Hilos settings page
 // (@hilos/angular HilosSettingsPage) to this project's connection, scope stores,
 // and action lifecycle. The framework owns the table, the value cell, the row
 // view-model, and the add / update / delete round-trips; the project supplies
