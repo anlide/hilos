@@ -396,6 +396,67 @@ function heldIdentifierContext(): {
 }
 
 /**
+ * A context whose magic-link send answers with a code screen that has a LIFE on
+ * it — the one thing the expired screen needs to exist (HIL-828). The cooldown is
+ * armed in the past, so the button rather than the countdown is what it offers.
+ *
+ * @param lifetimeMs How long the code the backend answers with is good for.
+ * @returns The context to mount with, and the dispatch log to assert on.
+ */
+function expiringLetterContext(lifetimeMs: number): {
+  context: HilosAuthContext
+  dispatched: Dispatched
+} {
+  const dispatched: Dispatched = []
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched.push({ action, payload })
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'active',
+              methods: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
+              registerable: [],
+              registrationBlock: null,
+              signInBlock: null,
+            }
+          : {
+              ok: true,
+              resendAt: Date.now() - 1,
+              expiresAt: Date.now() + lifetimeMs,
+            }
+
+      return {
+        requestId: `req-${dispatched.length}`,
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    dispatched,
+    context: createHilosAuthContext({
+      connection,
+      scopes: new ScopeManager(),
+      actions,
+      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
+      channels: [],
+      oauthProviders: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+  }
+}
+
+/**
  * A gate double: the surface only ever asks it to close, and the test asks the
  * double whether that happened.
  *
@@ -932,10 +993,9 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-restart"]').exists()).toBe(false)
 
     // What the press DOES is asserted in the React peer of this file and in the
-    // chat e2e, not here: a SECOND swap of the step branch throws inside Vue's own
-    // patch under this environment, on the markup that predates this leaf just as
-    // much (P-293, now HIL-994). A real browser makes the same move on every run
-    // of auth.spec.
+    // chat e2e, not here. Until HIL-994 a SECOND swap of the step branch threw
+    // inside Vue's own patch under this test project (P-293); the swap works now,
+    // and the press itself is nobody's port yet.
     expect(cancel.attributes('type')).toBe('button')
   })
 
@@ -961,6 +1021,76 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-cancel-registration"]').exists()).toBe(
       false,
     )
+  })
+
+  it('the code screen turns itself into the expired one when the countdown runs out', async () => {
+    vi.useFakeTimers()
+    const { context } = expiringLetterContext(10_000)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-expires-in"]').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flush(wrapper)
+
+    // Nobody is made to type a code that is known to be dead in order to hear
+    // that it is dead: the field and its Confirm go, and one button is left.
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-code-expired"]').text()).toContain(
+      'That code has expired.',
+    )
+    expect(wrapper.find('[data-id="auth-code-renew"]').exists()).toBe(true)
+    // The errand has not changed, so neither has the heading (HIL-606).
+    expect(wrapper.text()).toContain('Check your inbox')
+    // The screen's own news, said calmly - it is not a refusal of anything the
+    // person did.
+    expect(wrapper.find('[data-id="auth-live-polite"]').text()).toContain(
+      'That code has expired.',
+    )
+    expect(wrapper.find('[data-id="auth-live-assertive"]').text()).toBe('')
+  })
+
+  it('the button on the expired screen orders the first send of the flow again', async () => {
+    vi.useFakeTimers()
+    const { context, dispatched } = expiringLetterContext(10_000)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
+    await flush(wrapper)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flush(wrapper)
+
+    await wrapper.find('[data-id="auth-code-renew"]').trigger('click')
+    await flush(wrapper)
+
+    // The send that STARTED this flow, dispatched again - and the code screen
+    // comes back with a field and a countdown of its own. That is the fourth
+    // screen of one mount and the third swap of the step branch: the move this
+    // test project could not make until it compiled templates the way the
+    // shipped build does (HIL-994, vitest.config.ts).
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_DETECT_IDENTIFIER,
+      AUTH_ACTION_REQUEST_MAGIC_LINK,
+      AUTH_ACTION_REQUEST_MAGIC_LINK,
+    ])
+    expect(dispatched[2]?.payload).toEqual({ email: 'someone@example.com' })
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-expires-in"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(false)
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

@@ -28,6 +28,20 @@ transform the Angular CLI applies to its JIT unit-test builds. Skip it and a
 mount looks like it works — the template compiles, the view renders — while the
 input is silently missing.
 
+Because Vue's tests compile the single-file components themselves, the template
+compiler they get is the development one, and its parser keeps comment nodes
+where the shipped build's parser drops them. So
+`framework/frontend/vue/vitest.config.ts` asks `@vitejs/plugin-vue` for
+`comments: false`, and a component test compiles the same template the demos
+ship. Kept, a comment standing between two branches of a `v-if` / `v-else-if`
+chain is hoisted by the compiler into the branch that follows it, which turns
+that branch into a fragment whose anchor is null on the first patch that
+removes it. Drop the option and nothing fails to compile: a component test that
+swaps a step branch a second time fails on an assertion about a field that is
+no longer in the DOM, and the failure never names its cause (HIL-994). The
+`<!--v-if-->` placeholder the runtime writes for a branch-less `v-if` is not a
+template comment and stays.
+
 ### Where a unit test file lives
 
 A test sits next to its module if and only if that module is a Vue SFC; every
