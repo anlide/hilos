@@ -88,6 +88,10 @@ services:
     build:
       context: ../../../framework/docker/stand-gateway
     container_name: chat-stand-gateway-local
+    # The gateway runs on the framework's own TLS server (HIL-921) and loads the
+    # classes it needs from the framework itself, so there is still no composer here.
+    volumes:
+      - ../../../framework:/hilos/framework:ro
     environment:
       MAILPIT_SMTP_HOST: mailpit-local
       MAILPIT_SMTP_PORT: 1025
@@ -96,7 +100,12 @@ services:
       - mailpit-local
     restart: unless-stopped
     networks:
-      - hilos-demo-chat-local-network
+      # One name in every stack, and the name the gateway's certificate is issued
+      # for (HIL-921): the daemon checks the name of the peer it reaches, so the
+      # service name, which differs from stack to stack, cannot be the address.
+      hilos-demo-chat-local-network:
+        aliases:
+          - stand-gateway
 
   # The daemon. Named after the demo rather than <demo>-daemon-local the way tasks and
   # polls name theirs: the name is a deliberate difference between the stacks, kept
@@ -162,10 +171,15 @@ services:
       # generic HTTP provider over the stub, so the message really travels; the
       # Telegram token is fake but non-empty, because the gateway refuses a call
       # that carries no bearer and a daemon without credentials should fail here.
-      - SMS_ENDPOINT_URL=${SMS_ENDPOINT_URL:-http://stand-gateway-local:18000/sms/send}
-      - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-http://stand-gateway-local:18000/telegram}
+      - SMS_ENDPOINT_URL=${SMS_ENDPOINT_URL:-https://stand-gateway:18000/sms/send}
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-https://stand-gateway:18000/telegram}
       - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN:-stand-gateway-token}
       - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosChat}
+      # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
+      # daemon verifies it the way it verifies a provider in production: the trust comes
+      # from the environment, not from a switch in the client. OpenSSL reads this file
+      # beside the system's certificate directory, so every other peer stays trusted.
+      - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
       - LLM_LOCAL_URL=${LLM_LOCAL_URL:-http://host.docker.internal:11434}
       - CHAT_CONTEXT_ANALYZER_URL=${CHAT_CONTEXT_ANALYZER_URL:-}
       - CHAT_CONTEXT_ANALYZER_MODEL=${CHAT_CONTEXT_ANALYZER_MODEL:-qwen2.5:7b}
@@ -209,6 +223,9 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=local
+      # The daemon's trust in the stand gateway's certificate (HIL-921), so a command
+      # that reaches the gateway from here verifies it the same way.
+      - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
       - TERM=xterm-256color
       - DOCKER=true
       - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}

@@ -7,10 +7,14 @@ namespace Hilos\StandGateway;
 /**
  * Store - the stand gateway's state, which has to survive between requests.
  *
- * PHP's built-in server re-enters the script for every request and keeps nothing in
- * memory, so "which numbers are declared absent from Telegram" lives in one JSON file
- * under an exclusive lock. That is the whole of the storage design, and it is enough:
- * one runner, a few writes per suite.
+ * "Which numbers are declared absent from Telegram" lives in one JSON file under an
+ * exclusive lock. That is the whole of the storage design, and it is enough: one runner,
+ * a few writes per suite.
+ *
+ * The file was forced by PHP's built-in server, which re-entered the script for every
+ * request and kept nothing in memory. The gateway has been one long-lived process since
+ * it moved onto the framework's server (HIL-921), so that reason is gone; the file stays
+ * because it still works, not because memory would not.
  *
  * What arrived is deliberately NOT here (HIL-653). A caught message leaves as a letter
  * to Mailpit, so the readable side of every channel is the inbox a person already

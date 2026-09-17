@@ -15,7 +15,7 @@ import { waitForAnyMailTo } from './mail'
 // What remains of the gateway's own API here is arrangement only: what arrived is
 // no longer asked of it.
 const STAND_GATEWAY_URL =
-  process.env.STAND_GATEWAY_URL ?? 'http://stand-gateway-test:18000'
+  process.env.STAND_GATEWAY_URL ?? 'https://stand-gateway:18000'
 
 /** The mail domain the gateway re-addresses a caught Telegram code under. */
 const TELEGRAM_MAIL_DOMAIN = 'telegram.stand'

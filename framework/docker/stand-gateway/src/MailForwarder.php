@@ -22,8 +22,9 @@ namespace Hilos\StandGateway;
  *
  * SMTP is spoken by hand over a plain socket, unauthenticated and unencrypted, exactly
  * as the daemon reaches the same Mailpit (MAIL_SMTP_SECURITY=none). The framework's own
- * transport is a non-blocking state machine tied to the event loop, and this container
- * mounts no framework at all - it is one image with no dependencies, on purpose.
+ * transport is a non-blocking state machine, and a route handler of the framework's
+ * router answers before it returns: a forward that has to finish before the answer has
+ * nowhere to wait but here. The gateway pauses for that one exchange, as it always has.
  */
 final class MailForwarder
 {

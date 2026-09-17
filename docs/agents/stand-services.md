@@ -5,9 +5,9 @@ channel or an emulator, choosing between a stub and an emulator, or looking for
 where a caught message lands. The house is `framework/docker/stand-gateway`
 (HIL-492, HIL-653); this page is the rule for living in it, written for the
 author of the next resident rather than as a description of the two that live
-there today. What a particular future resident looks like — real TLS, behavior
-handles, an OAuth provider, a model — is that leaf's own design (HIL-921,
-HIL-922, HIL-923, HIL-925); this page says only what the house guarantees and
+there today. What a particular future resident looks like — behavior handles,
+an OAuth provider, a model — is that leaf's own design (HIL-922, HIL-923,
+HIL-925); this page says only what the house guarantees and
 what a resident owes it. How to run the suites is [testing.md](testing.md), not
 here.
 
@@ -45,33 +45,39 @@ exist today is the sunset rule below.
 
 ## One Container, One Prefix Per Resident
 
-The house is one container for every non-mail channel: `php:8.4-cli`, PHP's
-built-in server in router mode on port 18000, and nothing installed
-(`framework/docker/stand-gateway/Dockerfile`, `CMD`). There is no autoloader:
-`public/index.php` is seven `require` lines and one `new StandGatewayServer()`,
-and that is on purpose — a dependency here would be a dependency to keep current
-for no gain, and "add your class" is one more `require`.
+The house is one container for every non-mail channel: `php:8.4-cli` running
+the framework's own TLS server on port 18000 (HIL-921) —
+`src/StandGatewayTlsServer.php`, an `AbstractTlsServer` whose connections are
+the framework's `HttpClient` routed by its `HttpRouter`, started by
+`bin/serve.php` (`framework/docker/stand-gateway/Dockerfile`, `CMD`). The image
+installs only the extensions that server needs, in the daemon's order; the
+framework itself is not copied in but mounted read-only from the stack at
+`/hilos/framework`, and `bin/serve.php` loads classes by name from there and from
+`src/`. There is no composer and no vendor directory, on purpose — a dependency
+here would be a dependency to keep current for no gain — so a class the gateway
+uses must not need a package.
 
 A resident is a **route prefix**. `SmsRoutes::CHANNEL` is `sms`,
 `TelegramRoutes::CHANNEL` is `telegram`, and every route of the resident hangs
-under `/<channel>/…`. Matching is an exact comparison of method and path — no
-path parameters, no patterns (`src/Router.php`, class docblock): the gateway has
-a fixed handful of routes, and anything cleverer would be scaffolding for a
-server that will never grow one.
+under `/<channel>/…`, registered on the framework's router by an exact method and
+path. The core hands a route the request body as a raw string; the gateway turns
+it into fields in one place, `StandGatewayTlsServer::handler()`, which every
+route of every resident is wrapped in — JSON when the body is JSON, a form
+otherwise, the query string merged in beneath — so a handler takes an array of
+fields and, when it needs them, the request headers.
 
 Why one container rather than one per channel (HIL-653): a channel here is a
 class beside `TelegramRoutes` and `SmsRoutes` plus an endpoint in the stack's
 compose — not a new service, a new port and a new way to read what it delivered
-(`src/StandGatewayServer.php`, class docblock). The exact recipe is
+(`src/StandGatewayTlsServer.php`, class docblock). The exact recipe is
 [Adding the Next Resident](#adding-the-next-resident).
 
 Two things about the house are deliberate and easy to "fix" by mistake:
 
 - **The image version tracks the repository's PHP**, not the reference mock's.
-  The sources are written in the same PHP as the rest of the repository, and an
-  older image answers a syntax it cannot parse with an empty `200` — which reads
-  downstream as a gateway that refused, not as a broken mock (`Dockerfile`,
-  header comment).
+  The gateway runs the framework's own classes, written in the same PHP as the
+  rest of the repository, and an older image would not parse them — the
+  container would not come up at all (`Dockerfile`, header comment).
 - **Only the housekeeping routes are unprefixed**: `GET /test/health`, which the
   compose healthcheck waits on before it starts the daemon, and
   `POST /test/reset`, which wipes the whole store. They are about the gateway,
@@ -90,7 +96,7 @@ the one `register()` of its routes class:
   arrange any other way: a number nobody put on Telegram.
 
 `framework/docker/stand-gateway/src/TelegramRoutes.php`, `register()`, is the
-sample, with the two halves three lines apart. SMS has no test half, and that is
+sample, with the two halves side by side. SMS has no test half, and that is
 not an omission: there is nothing an SMS spec has to arrange up front.
 
 The two halves differ in whom they trust. The provider half checks what the real
@@ -176,7 +182,7 @@ place.
   stack, where the UI is published on a host port each demo's README lists.
 
 **There is no handle that lists what was delivered, and there will not be one.**
-There was one, and HIL-653 removed it (`src/StandGatewayServer.php`, class
+There was one, and HIL-653 removed it (`src/StandGatewayTlsServer.php`, class
 docblock, "What was here before and is not any more"): a second viewer would
 have nothing to draw from that the inbox does not already show, and a spec that
 read the gateway's list would be reading a stand artifact instead of the
@@ -185,11 +191,16 @@ keep it.
 
 ## State: One File Under a Lock, Wiped by a Handle
 
-The built-in server re-enters `public/index.php` for every request and keeps
-nothing in memory, so whatever a spec arranges up front — today, which numbers
-are declared absent from Telegram — lives in one JSON file under an exclusive
-lock, `/tmp/stand-gateway-state.json` (`src/Store.php`, `PATH`). That is the
-whole storage design, and it is enough: one runner, a few writes per suite.
+Whatever a spec arranges up front — today, which numbers are declared absent
+from Telegram — lives in one JSON file under an exclusive lock,
+`/tmp/stand-gateway-state.json` (`src/Store.php`, `PATH`). That is the whole
+storage design, and it is enough: one runner, a few writes per suite.
+
+The file was forced by PHP's built-in server, which re-entered the script for
+every request and kept nothing in memory. Since the gateway moved onto the
+framework's server (HIL-921) it is one long-lived process, so that reason is
+gone. The decision is left as it stands: the file still works, and replacing it
+with memory is not any leaf's work.
 
 **The file is deliberately not a volume.** State that outlives the container
 would make a spec's outcome depend on what an earlier run left behind, which is
@@ -228,11 +239,31 @@ layer invisible: the instrument of observation removes the thing observed. That
 is why the fork in `AsyncHttpClientTest` plays a TLS peer and not a plain one,
 and why the stand cannot take that regression over until it speaks TLS itself.
 
-Today the three demos reach the gateway over `http://<gateway>:18000`
+The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
-`docker/docker-compose.{local,dev,test}.yml`), and a resident written now
-follows that until the house changes it under every resident at once
-(not in the code yet — HIL-921).
+`docker/docker-compose.{local,dev,test}.yml`). `stand-gateway` is a network
+alias the gateway service carries in every stack, and it is also the name its
+certificate is issued for: the daemon checks the name of the peer it reaches, so
+the service name, which differs from stack to stack, cannot be the address. One
+name means one certificate, and a new demo does not reissue it.
+
+The certificate is fixed and lives in the repository
+(`framework/docker/stand-gateway/tls/`: `server.pem` is what the gateway
+presents, `ca.pem` is what a caller trusts, `issue.php` reissues the pair by
+hand). Trust is given by the environment of the calling container, never by a
+switch in the client: the daemon and CLI services carry
+`SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem`, which OpenSSL
+reads beside the system's certificate directory, so every other peer stays
+trusted; the gateway's own healthcheck trusts `/app/tls/ca.pem` the same way;
+the e2e runner, whose specs call the test half, carries
+`NODE_EXTRA_CA_CERTS` with the same file, which Node adds to its roots. A
+daemon without that trust fails the handshake with a named reason
+(`AsyncHttpTlsHandshakeException`), which is exactly what a production peer
+with a foreign certificate would cause.
+
+The gateway listens on TLS only, and there is no switch for plain HTTP. A
+resident's routes are served over it without doing anything: the transport is
+the house's, not the resident's.
 
 ## Behavior Handles
 
@@ -268,16 +299,21 @@ and name it before writing.
 2. **Both halves in the one `register()`**: the provider half under
    `/<channel>/…`, the test half under `/<channel>/test/…`. No test half when
    there is nothing to arrange up front, as with SMS.
-3. **One line in `StandGatewayServer`'s constructor** —
+3. **One line in `StandGatewayTlsServer`'s constructor** —
    `new <Channel>Routes()->register($this->router)` beside the two that are
    there.
-4. **One `require` in `public/index.php`.** There is no autoloader, on purpose.
+4. **The class in namespace `Hilos\StandGateway`, one class per file, named as
+   the file.** `bin/serve.php` loads classes by name from `src/`, so there is no
+   list of files to add to — and a class from outside `src/` and the framework
+   is not found at all.
 5. **The service and the endpoint in every stack's compose** —
    `demo/{chat,tasks,polls}/docker/docker-compose.{local,dev,test}.yml`. The
    gateway service is one per stack, built from
-   `framework/docker/stand-gateway` with `MAILPIT_SMTP_HOST` pointing at that
+   `framework/docker/stand-gateway`, mounting the framework read-only, carrying
+   the network alias `stand-gateway`, with `MAILPIT_SMTP_HOST` pointing at that
    stack's Mailpit; a resident adds no service, only the daemon's endpoint for
-   it and, if the daemon needs one, a credential (`TELEGRAM_GATEWAY_TOKEN`).
+   it — `https://stand-gateway:18000/<channel>…` — and, if the daemon needs one,
+   a credential (`TELEGRAM_GATEWAY_TOKEN`).
 6. **A daemon environment variable that swaps the production address for the
    emulator's** — the way `SMS_ENDPOINT_URL` and `TELEGRAM_GATEWAY_ENDPOINT_URL`
    do. The switch is one address in the daemon's configuration, not a DNS trick

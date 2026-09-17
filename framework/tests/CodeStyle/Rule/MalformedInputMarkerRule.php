@@ -147,6 +147,9 @@ final class MalformedInputMarkerRule implements CodeStyleRule
             'SocketSetOptionException',
             'SocketWriteException',
         ],
+        'the two ends of a TLS handshake did not agree - on the certificate, on trust, on the protocol - and'
+        . ' which end is at fault is what the OpenSSL reason carried in the message says, not a shape of bytes'
+        . ' this class judged' => ['SocketTlsHandshakeException'],
         'one errno of the socket API given a name: the connection failed beside the reading rather than in it.'
         . ' MessageTooLongException is the one of this family that does judge the input, and it is marked' => [
             'AccessDeniedException',

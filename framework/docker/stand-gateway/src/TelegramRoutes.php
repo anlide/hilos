@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
+use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\HttpConstants;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
+
 /**
  * TelegramRoutes - the Telegram Gateway the stand pretends to be (HIL-492).
  *
@@ -38,30 +42,46 @@ final class TelegramRoutes
     /** Status a failed forward answers with: the upstream this gateway depends on would not take it. */
     private const int STATUS_BAD_GATEWAY = 502;
 
+    /** Request header the provider half reads the bearer token from. */
+    private const string HEADER_AUTHORIZATION = 'Authorization';
+
     /**
      * Registers the channel's provider and arrangement routes.
      *
-     * @param Router $router Router the gateway dispatches through
+     * @param HttpRouter $router Router the gateway dispatches through
      */
-    public function register(Router $router): void
+    public function register(HttpRouter $router): void
     {
         // Provider side: what framework/backend/Telegram/TelegramGatewayClient calls.
-        $router->add('POST', '/telegram/checkSendAbility', $this->checkSendAbility(...));
-        $router->add('POST', '/telegram/sendVerificationMessage', $this->sendVerificationMessage(...));
+        $router->addRoute(
+            HttpConstants::METHOD_POST,
+            '/telegram/checkSendAbility',
+            StandGatewayTlsServer::handler($this->checkSendAbility(...)),
+        );
+        $router->addRoute(
+            HttpConstants::METHOD_POST,
+            '/telegram/sendVerificationMessage',
+            StandGatewayTlsServer::handler($this->sendVerificationMessage(...)),
+        );
 
         // Test side: the one thing a spec cannot arrange any other way.
-        $router->add('POST', '/telegram/test/reachable', $this->testReachable(...));
+        $router->addRoute(
+            HttpConstants::METHOD_POST,
+            '/telegram/test/reachable',
+            StandGatewayTlsServer::handler($this->testReachable(...)),
+        );
     }
 
     /**
      * Answers whether a number can be reached, minting the request id the send quotes back.
      *
      * @param array<string, mixed> $fields Request fields
+     * @param array<string, string> $headers Request headers, names in lowercase
      * @return array<string, mixed> Gateway envelope
      */
-    private function checkSendAbility(array $fields): array
+    private function checkSendAbility(array $fields, array $headers): array
     {
-        if (!self::authorized()) {
+        if (!self::authorized($headers)) {
             return ['ok' => false, 'error' => self::ERROR_TOKEN];
         }
 
@@ -92,11 +112,12 @@ final class TelegramRoutes
      * letter - a person reads it out of the subject the way they read a mailed one.
      *
      * @param array<string, mixed> $fields Request fields
+     * @param array<string, string> $headers Request headers, names in lowercase
      * @return array<string, mixed> Gateway envelope
      */
-    private function sendVerificationMessage(array $fields): array
+    private function sendVerificationMessage(array $fields, array $headers): array
     {
-        if (!self::authorized()) {
+        if (!self::authorized($headers)) {
             return ['ok' => false, 'error' => self::ERROR_TOKEN];
         }
 
@@ -109,9 +130,8 @@ final class TelegramRoutes
             MailForwarder::forward(self::CHANNEL, $phoneNumber, (string)($fields['code'] ?? ''));
         } catch (MailForwardException $exception) {
             error_log('stand gateway could not forward a Telegram code: ' . $exception->getMessage());
-            http_response_code(self::STATUS_BAD_GATEWAY);
 
-            return ['ok' => false, 'error' => self::ERROR_FORWARD_FAILED];
+            return StandGatewayTlsServer::json(['ok' => false, 'error' => self::ERROR_FORWARD_FAILED], self::STATUS_BAD_GATEWAY);
         }
 
         $requestId = (string)($fields['request_id'] ?? '');
@@ -149,12 +169,13 @@ final class TelegramRoutes
     /**
      * Whether the call carried a non-empty bearer token.
      *
+     * @param array<string, string> $headers Request headers, names in lowercase
      * @return bool True when an Authorization bearer is present
      */
-    private static function authorized(): bool
+    private static function authorized(array $headers): bool
     {
-        $header = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+        $header = HttpHeaderHelper::get($headers, self::HEADER_AUTHORIZATION);
 
-        return preg_match('/^Bearer\s+\S+/', $header) === 1;
+        return $header !== null && preg_match('/^Bearer\s+\S+/', $header) === 1;
     }
 }

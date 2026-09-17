@@ -11,6 +11,8 @@ use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
+use Hilos\Socket\Transport\PlainSocketTransport;
+use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -50,15 +52,23 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     protected bool $closeWhenOutputDrained = false;
 
+    /** @var SocketTransportInterface What carries the bytes: the bare socket, or a TLS session over it */
+    private SocketTransportInterface $transport;
+
     /**
      * Create client with socket and read buffer size from env.
      *
+     * A client created without a transport reads and writes the bare socket, which is what
+     * every existing subclass gets by calling `parent::__construct($socket)`.
+     *
      * @param resource|object $socket Client socket resource or Socket object
+     * @param ?SocketTransportInterface $transport Transport over that socket, the bare one when null
      * @throws EnvException When socket read buffer env value is missing or invalid
      */
-    public function __construct($socket)
+    public function __construct($socket, ?SocketTransportInterface $transport = null)
     {
         $this->socket = $socket;
+        $this->transport = $transport ?? new PlainSocketTransport($socket);
 
         $this->readBufferSize = Hilos::$env[EnvConstants::SOCKET_READ_BUFFER_SIZE]->int();
     }
@@ -77,20 +87,21 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
-        // Suppress the PHP warning a reset/broken peer raises (ECONNRESET, EPIPE,
-        // EAGAIN, ...): otherwise the global errorHandler converts it to a generic
-        // ErrorException, which names no socket error and reaches AbstractServer's
-        // tick guard as a node failure rather than the routine drop it is.
-        // Suppressed, socket_read returns false and handleSocketError() raises the
-        // proper SocketException the loop already closes the client on. Surfaced
-        // live by the peer mesh (HIL-185), whose duplicate-link collapse and node
-        // kills reset peer links routinely.
-        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
-        $data = @socket_read($this->socket, $this->readBufferSize, PHP_BINARY_READ);
+        if ($this->transport->needsHandshake()) {
+            $this->advanceHandshake();
+            return;
+        }
 
-        // Empty string means connection closed gracefully
+        $data = $this->transport->read($this->readBufferSize);
+
+        // An empty read closes the connection only when the transport says the stream ended.
+        // On a bare socket it always has; on an encrypted stream the socket also turns readable
+        // for protocol bytes that decrypt to nothing, and closing there would cut a live
+        // connection short - the mirror of the false end of a response in HIL-732.
         if ($data === '') {
-            $this->shouldClose = true;
+            if ($this->transport->isEndOfStream()) {
+                $this->shouldClose = true;
+            }
             return;
         }
 
@@ -120,6 +131,13 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
+        // The application buffer waits for the handshake: nothing written before it finishes
+        // could be read by the peer anyway.
+        if ($this->transport->needsHandshake()) {
+            $this->advanceHandshake();
+            return;
+        }
+
         // Backpressure: a capped client whose peer has stopped draining is dropped
         // rather than buffered to the process memory limit. Closing the one bad link
         // is recoverable (the mesh re-dials); an OOM takes the whole daemon down.
@@ -133,14 +151,16 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         }
 
         $bufferLength = strlen($this->writeBuffer);
-        // Suppress the reset/broken-pipe warning for the same reason as read():
-        // let handleSocketError() raise the catchable SocketException instead of a
-        // fatal ErrorException.
-        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
-        $written = @socket_write($this->socket, $this->writeBuffer);
+        $written = $this->transport->write($this->writeBuffer);
 
         if ($written === false) {
             $this->handleSocketError(SocketOperation::WRITE);
+            return;
+        }
+
+        // Nothing taken is not a failure: an encrypted stream answers "offer the same bytes
+        // again later" this way, and the buffer is left exactly as it is for the next turn.
+        if ($written === 0) {
             return;
         }
 
@@ -210,8 +230,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         }
 
         try {
-            // socket_close returns void
-            socket_close($this->socket);
+            $this->transport->close();
         } catch (TypeError $e) {
             // Socket already closed or invalid - ignore
             $this->socket = null;
@@ -314,4 +333,17 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * @throws HilosException When the subclass fails to announce the close
      */
     abstract protected function onClose(): void;
+
+    /**
+     * Moves the transport's handshake one step, and closes the connection when the peer is refused.
+     *
+     * A refused peer gets no answer at all: a side that did not agree on encryption could not
+     * read one.
+     */
+    private function advanceHandshake(): void
+    {
+        if ($this->transport->advanceHandshake() === false) {
+            $this->markShouldClose();
+        }
+    }
 }

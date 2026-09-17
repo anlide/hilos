@@ -68,6 +68,12 @@ final class HttpConstants
     /** @var int HTTP status code for gone */
     public const int HTTP_GONE = 410;
 
+    /** @var int HTTP status code for a request whose body length the server requires declared */
+    public const int HTTP_LENGTH_REQUIRED = 411;
+
+    /** @var int HTTP status code for a request body larger than the server accepts */
+    public const int HTTP_PAYLOAD_TOO_LARGE = 413;
+
     /** @var int HTTP status code for internal server error */
     public const int HTTP_INTERNAL_ERROR = 500;
 
@@ -87,6 +93,8 @@ final class HttpConstants
         self::HTTP_NOT_FOUND => 'Not Found',
         self::HTTP_CONFLICT => 'Conflict',
         self::HTTP_GONE => 'Gone',
+        self::HTTP_LENGTH_REQUIRED => 'Length Required',
+        self::HTTP_PAYLOAD_TOO_LARGE => 'Payload Too Large',
         self::HTTP_INTERNAL_ERROR => 'Internal Server Error',
         self::HTTP_SERVICE_UNAVAILABLE => 'Service Unavailable',
     ];

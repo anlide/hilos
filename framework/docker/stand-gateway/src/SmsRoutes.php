@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
+use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\HttpConstants;
+
 /**
  * SmsRoutes - the SMS gateway the stand pretends to be (HIL-653).
  *
@@ -38,11 +41,11 @@ final class SmsRoutes
     /**
      * Registers the channel's provider route.
      *
-     * @param Router $router Router the gateway dispatches through
+     * @param HttpRouter $router Router the gateway dispatches through
      */
-    public function register(Router $router): void
+    public function register(HttpRouter $router): void
     {
-        $router->add('POST', '/sms/send', $this->send(...));
+        $router->addRoute(HttpConstants::METHOD_POST, '/sms/send', StandGatewayTlsServer::handler($this->send(...)));
     }
 
     /**
@@ -61,9 +64,8 @@ final class SmsRoutes
             );
         } catch (MailForwardException $exception) {
             error_log('stand gateway could not forward an SMS: ' . $exception->getMessage());
-            http_response_code(self::STATUS_BAD_GATEWAY);
 
-            return ['ok' => false, 'error' => self::ERROR_FORWARD_FAILED];
+            return StandGatewayTlsServer::json(['ok' => false, 'error' => self::ERROR_FORWARD_FAILED], self::STATUS_BAD_GATEWAY);
         }
 
         return ['ok' => true];

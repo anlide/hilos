@@ -11,20 +11,42 @@
 # mail, SMS and Telegram alike, and a channel added later needs a stand endpoint
 # rather than a new way to read it.
 #
-# php:8.4-cli with the built-in server and nothing installed: it serves a few JSON
-# routes, speaks plain SMTP to the stand's relay, and keeps its state in one file,
-# so a dependency here would be a dependency to keep current for no gain. The
-# version tracks the framework's own, not the reference mock's - the sources here
-# are written in the same PHP as the rest of the repository, and an older image
-# answers a syntax it cannot parse with an empty 200, which reads downstream as a
-# gateway that refused rather than as a broken mock.
+# It speaks real TLS, and speaks it through the framework's own server (HIL-921): the
+# daemon verifies this gateway exactly as it verifies a provider in production, and an
+# emulator on plain HTTP would hide the read that only an encrypted stream produces
+# (HIL-732). There is no built-in server any more - it cannot do TLS at all. The
+# framework is not copied in: the stack mounts it read-only at /hilos/framework, and
+# bin/serve.php loads the classes it needs from there, so there are still no composer
+# dependencies to keep current. What the image adds is what that server needs to run:
+# the extensions below, in the daemon's own order.
+#
+# The version tracks the framework's own, not the reference mock's: the gateway runs
+# the framework's classes, written in the same PHP as the rest of the repository, and
+# an older image would not parse them - the container would not come up at all.
 FROM php:8.4-cli
+
+# libevent-dev and libssl-dev: what the PECL "event" extension is compiled against.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libevent-dev \
+    libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# sockets BEFORE event (critical, as in the daemon's image); pcntl lets the process stop
+# on SIGTERM instead of waiting out the container's stop timeout.
+RUN docker-php-ext-install -j$(nproc) sockets pcntl posix
+
+RUN rm -f /usr/local/etc/php/conf.d/docker-php-ext-sockets.ini \
+ && echo "extension=sockets" > /usr/local/etc/php/conf.d/20-sockets.ini
+
+RUN pecl channel-update pecl.php.net \
+ && yes "" | pecl install -o -f event \
+ && rm -f /usr/local/etc/php/conf.d/docker-php-ext-event.ini \
+ && echo "extension=event" > /usr/local/etc/php/conf.d/30-event.ini
 
 WORKDIR /app
 
-COPY public /app/public
+COPY bin /app/bin
 COPY src /app/src
+COPY tls/server.pem tls/ca.pem /app/tls/
 
-# Router mode: every request re-enters public/index.php, which is also why the store
-# is a file rather than memory - the built-in server keeps nothing between requests.
-CMD ["php", "-S", "0.0.0.0:18000", "-t", "/app/public", "/app/public/index.php"]
+CMD ["php", "/app/bin/serve.php"]

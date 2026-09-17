@@ -77,21 +77,32 @@ services:
     build:
       context: ../../../framework/docker/stand-gateway
     container_name: tasks-stand-gateway-test
+    # The gateway runs on the framework's own TLS server (HIL-921) and loads the
+    # classes it needs from the framework itself, so there is still no composer here.
+    volumes:
+      - ../../../framework:/hilos/framework:ro
     environment:
       MAILPIT_SMTP_HOST: tasks-mailpit-test
       MAILPIT_SMTP_PORT: 1025
+      # What the healthcheck below trusts: it reaches the gateway over TLS as well.
+      SSL_CERT_FILE: /app/tls/ca.pem
       TZ: UTC
     depends_on:
       tasks-mailpit-test:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"https://127.0.0.1:18000/test/health\") === false ? 1 : 0);'"]
       interval: 2s
       timeout: 5s
       retries: 30
       start_period: 3s
     networks:
-      - hilos-tasks-test-network
+      # One name in every stack, and the name the gateway's certificate is issued
+      # for (HIL-921): the daemon checks the name of the peer it reaches, so the
+      # service name, which differs from stack to stack, cannot be the address.
+      hilos-tasks-test-network:
+        aliases:
+          - stand-gateway
 
   tasks-daemon-test:
     build: .
@@ -178,15 +189,20 @@ services:
       # stand gateway really mails it on. The URL is the send route in full - the
       # generic provider posts to the endpoint exactly as configured, the way a
       # real gateway's endpoint is a whole address rather than a base.
-      - SMS_ENDPOINT_URL=http://tasks-stand-gateway-test:18000/sms/send
+      - SMS_ENDPOINT_URL=https://stand-gateway:18000/sms/send
       # Telegram Gateway (HIL-492): the stand's own gateway, which is the only
       # reason the endpoint is configurable at all. The channel prefix is the base
       # the client appends its method paths to. The token is what makes the channel
       # configured - the gateway refuses a call that carries no bearer, so a daemon
       # that forgot its credentials fails here rather than in production.
-      - TELEGRAM_GATEWAY_ENDPOINT_URL=http://tasks-stand-gateway-test:18000/telegram
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=https://stand-gateway:18000/telegram
       - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
       - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosTasks
+      # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
+      # daemon verifies it the way it verifies a provider in production: the trust comes
+      # from the environment, not from a switch in the client. OpenSSL reads this file
+      # beside the system's certificate directory, so every other peer stays trusted.
+      - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       tasks-mysql-test:
@@ -259,6 +275,9 @@ services:
     working_dir: /app
     environment:
       - APP_ENV=test
+      # The daemon's trust in the stand gateway's certificate (HIL-921), so a command
+      # that reaches the gateway from here verifies it the same way.
+      - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
       # Where the daemon answers, so a command that writes state the daemon owns can ask
       # whether one is running before it starts (HIL-728). The check is fail-closed: without
       # this pair the CLI refuses such a command rather than risk a second writer, so

@@ -190,9 +190,9 @@ such reasons, all about observability and none about convenience:
 
 The third reason leads to the second step, not past it: an external service is
 **impersonated on the stand**, not worked around with a second process. The stand
-gateway (`framework/docker/stand-gateway`) is one container running PHP's
-built-in server on port 18000, and the channel is the path prefix
-(`framework/docker/stand-gateway/src/Router.php`, `SmsRoutes.php`,
+gateway (`framework/docker/stand-gateway`) is one container running the
+framework's own TLS server on port 18000, and the channel is the path prefix
+(`framework/docker/stand-gateway/src/StandGatewayTlsServer.php`, `SmsRoutes.php`,
 `TelegramRoutes.php`); whatever it catches lands in Mailpit and is read by the
 helpers a spec already uses for a code — `demo/chat/tests/e2e/helpers/sms.ts`
 and `demo/chat/tests/e2e/helpers/telegram.ts`. That inbox, the house, and the
