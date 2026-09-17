@@ -9,7 +9,7 @@ the content, the framework writes the cell — or from the one `#row` slot while
 page still passes its columns as a prop; plus one framework-owned cell at the end
 of the row carrying the state of that row — it waits, its values are behind, or
 both — and the control that opens the row; the placeholder, header, paging, and
-the three strips of live change stay framework-owned.
+the one room of live messages above the rows stay framework-owned.
 A field that did not fit a column of its own is declared `detail` and waits in a
 panel under the row: the framework owns the room, the order and the labels, while
 the page draws every value through a `#detail-<key>` slot, exactly as it draws a
@@ -47,7 +47,6 @@ import {
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
-  hilosTableStaleLabel,
   hilosTableStaleSources,
 } from '@hilos/core'
 import type {
@@ -62,6 +61,7 @@ import type {
 import HilosTableBar from './HilosTableBar.vue'
 import HilosTableEmptyState from './HilosTableEmptyState.vue'
 import HilosTableFooter from './HilosTableFooter.vue'
+import HilosTableLive from './HilosTableLive.vue'
 import HilosTableProgress from './HilosTableProgress.vue'
 import { hilosTableSelectionEdgeKey } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
@@ -163,7 +163,6 @@ const totalCount = useSignal(props.controller.totalCount)
 const totalExact = useSignal(props.controller.totalExact)
 const hasNextPage = useSignal(props.controller.hasNextPage)
 const pendingCount = useSignal(props.controller.pendingCount)
-const announced = useSignal(props.controller.announced)
 
 // Which state the body is in — rows, the skeleton, or one of the two worded
 // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
@@ -179,10 +178,10 @@ const skeletonRows = computed(() =>
   rows.value.length > 0 ? rows.value.length : pageSize.value,
 )
 
-// The two bars this view draws itself. The third place of work, the bulk bar,
-// lives inside the selection panel and is drawn by the bar above the table —
-// anywhere else it would take the room the table bar gives to the project.
-const tableProgress = useSignal(props.controller.progress.table)
+// The row bars this view draws itself. The table bar is drawn by the room of live
+// messages above the rows (HilosTableLive), and the bulk bar lives inside the
+// selection panel and is drawn by the bar above the table — anywhere else it would
+// take the room the table bar gives to the project.
 const rowProgress = useSignal(props.controller.progress.rows)
 
 // A table whose count stopped at its ceiling has no page count to compare against, and the
@@ -200,19 +199,15 @@ const rowColumns = computed(() =>
   frameColumns.value.filter((column) => column.detail !== true),
 )
 
-// Which sources went quiet anywhere in the shown window, which declared columns are
-// built from them, and the sentence the strip says about those columns. The columns
-// are read out of the very list the page declared, so the strip cannot name a column
-// this table does not have — whether it stands in the row or waits in a panel.
+// Which sources went quiet anywhere in the shown window, and which declared columns
+// are built from them — the columns whose headers and row cells carry the mark. The
+// sentence about them is the room of live messages' own (HilosTableLive).
 const staleSources = computed(() => hilosTableStaleSources(rows.value))
 const staleColumns = computed(() =>
   hilosTableStaleColumns(frameColumns.value, staleSources.value),
 )
 const staleColumnKeys = computed(
   () => new Set(staleColumns.value.map((column) => column.key)),
-)
-const staleLabel = computed(() =>
-  hilosTableStaleLabel(staleColumns.value, staleSources.value.size > 0),
 )
 
 // The row-state cell stands while anything waits OR while a shown row's values are
@@ -286,23 +281,6 @@ const progressCells = computed<readonly ProgressCell[]>(() => {
 // what the trailing plus says. Spelling it out in words would say the same thing longer.
 const countLabel = computed(() =>
   totalExact.value ? `${totalCount.value} total` : `${totalCount.value}+ total`,
-)
-
-// The numeral of each strip is chosen here rather than in the template: '1 rows'
-// would stand in the most visible place of the screen.
-const announceLabel = computed(() =>
-  announced.value.above === 1
-    ? '1 new row above the window'
-    : `${announced.value.above} new rows above the window`,
-)
-
-// Only the tail of the waiting sentence is composed here, because the count itself
-// stays a node of its own under `hilos-table-pending` — the handle the outside reads
-// the number by.
-const pendingSuffix = computed(() =>
-  pendingCount.value === 1
-    ? 'row will move or leave'
-    : 'rows will move or leave',
 )
 
 // A row's tint, resolved in the order the mockup resolves it (section 4): amber
@@ -476,84 +454,21 @@ function onSelectPage(event: Event): void {
       />
     </div>
 
-    <!-- Work running over the set as a whole: the framework gives the room and
-    draws the track, and everything a reader sees beside it — a title, a counter,
-    a link, a Stop button — comes from the page through the two slots, because it
-    is the project's business logic and not the framework's (mockup section 5,
-    plate 2). It stands ABOVE both strips of live change: it speaks about work
-    over the set, while they speak about what has already happened to it. -->
-    <div
-      v-if="tableProgress"
-      class="d-flex align-items-start gap-2 mb-2 p-2 rounded border"
-      data-id="hilos-table-progress"
-    >
-      <div class="flex-grow-1">
-        <!-- The caption line stands only where the page filled it: a line that
-        holds its margin with nothing in it is not a reserve but a gap
-        (Flow F7). -->
-        <div v-if="$slots['table-progress']" class="small mb-1">
-          <slot name="table-progress" :progress="tableProgress" />
-        </div>
-        <HilosTableProgress
-          :progress="tableProgress"
-          label="Work on this table"
-        />
-      </div>
-      <slot name="table-progress-action" :progress="tableProgress" />
-    </div>
-
-    <!-- The three strips of live change, in the order of the mockup and outside
-    both epochs of the frame: they speak about what is happening to the rows,
-    not about what the page declared. The freshness strip stands first of them:
-    the other two speak about changes the reader has yet to take, while this one
-    says the values already on screen cannot be trusted. -->
-    <div
-      v-if="staleLabel !== undefined"
-      class="alert alert-info py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
-      role="status"
-      data-id="hilos-table-stale"
-    >
-      <i class="bi bi-snow" aria-hidden="true"></i>
-      <span class="small">{{ staleLabel }}</span>
-    </div>
-
-    <div
-      v-if="announced.above > 0"
-      class="alert alert-secondary py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
-      role="status"
-      data-id="hilos-table-announce"
-    >
-      <i class="bi bi-arrow-down-circle" aria-hidden="true"></i>
-      <span class="small">{{ announceLabel }}</span>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline-secondary ms-auto"
-        data-id="hilos-table-announce-show"
-        @click="controller.show()"
-      >
-        Show
-      </button>
-    </div>
-
-    <div
-      v-if="pendingCount > 0"
-      class="alert alert-warning py-2 px-3 d-flex flex-wrap align-items-center gap-2 mb-2"
-      role="status"
-    >
-      <i class="bi bi-pause-circle" aria-hidden="true"></i>
-      <span class="small">
-        <span data-id="hilos-table-pending">{{ pendingCount }}</span>
-        {{ pendingSuffix }}
-      </span>
-      <button
-        type="button"
-        class="btn btn-sm btn-warning ms-auto"
-        data-id="hilos-table-apply"
-        @click="controller.apply()"
-      >
-        Apply
-      </button>
-    </div>
+    <!-- Everything live the table has to say — work running over the set, a
+    source gone quiet, rows created above the window, changes waiting for Apply —
+    in one room that never changes height, outside both epochs of the frame: it
+    speaks about what is happening to the rows, not about what the page
+    declared. Next to running work, everything a reader sees comes from the page
+    through the two slots, because it is the project's business logic and not
+    the framework's (mockup section 5, plate 2). -->
+    <HilosTableLive :controller="controller" :columns="frameColumns">
+      <template #table-progress="progressProps">
+        <slot name="table-progress" v-bind="progressProps" />
+      </template>
+      <template #table-progress-action="progressProps">
+        <slot name="table-progress-action" v-bind="progressProps" />
+      </template>
+    </HilosTableLive>
 
     <!-- A DECLARED table is a table on a wide screen and a list of cards on a
     narrow one, so its scroll wrapper goes with the table itself: there is

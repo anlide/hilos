@@ -91,6 +91,36 @@ export async function tableRowKeys(page: Page): Promise<string[]> {
 }
 
 /**
+ * Read how far below the top of the table's root its first row stands.
+ *
+ * A live message over the table takes room that was held before it arrived, so
+ * this number is the same before a message comes and after it goes
+ * (styling-rules.md, "The room a live message takes"): the room stands between
+ * the root's top and the rows, and any change of its height changes the number.
+ *
+ * It is read against the root rather than against the screen or the document:
+ * the shell scrolls its own main container (HilosLayout), a click scrolls its
+ * target into view there, and a row that stood still would read as moved
+ * (HIL-1032, a 22px drift after Show). Both edges are read in one pass, so no
+ * scroll can fall between them.
+ *
+ * @param page The Playwright page showing the table.
+ * @returns The distance from the root's top edge to the first row's, in CSS pixels.
+ */
+export async function tableFirstRowTop(page: Page): Promise<number> {
+  return page
+    .getByTestId(TABLE)
+    .evaluate((root, selector) => {
+      const row = root.querySelector(selector)
+      if (row === null) {
+        throw new Error('the table shows no row to measure')
+      }
+
+      return row.getBoundingClientRect().top - root.getBoundingClientRect().top
+    }, ROWS)
+}
+
+/**
  * Wait until exactly one row of the window shows this text, and read its key.
  *
  * The one place a spec finds a row by what it shows, and a forced one: the key of

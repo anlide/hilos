@@ -52,6 +52,7 @@ import {
   type HilosTableFrame,
   type HilosTableFrameState,
 } from './tableFrame.js'
+import { hilosTableLive, type HilosTableLive } from './tableLive.js'
 import {
   type HilosTableProgress,
   type HilosTableProgressFrame,
@@ -631,6 +632,16 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   readonly announced: ReadonlySignal<TableViewportAnnounced>
 
+  /**
+   * The live messages over the table and which of them holds the room above the rows.
+   *
+   * Nothing new is counted here: the four facts are the pending count, the rows announced
+   * above the window, a frozen source anywhere in the window, and the table bar — each
+   * already read by the view on its own. What is added is the precedence, so the one room
+   * is filled the same way by every view.
+   */
+  readonly live: ReadonlySignal<HilosTableLive>
+
   /** False until the first window has been ingested — the view shows "loading" rather than "empty". */
   readonly loaded: ReadonlySignal<boolean>
 
@@ -856,6 +867,14 @@ export class TableViewportController<R> implements TableWindowSink {
       rows: this.rowProgressSignal,
     }
     this.bulkState = { report: this.bulkReportSignal }
+    this.live = computedSignal(() =>
+      hilosTableLive({
+        pending: this.pendingCount.get() > 0,
+        announce: this.announced.get().above > 0,
+        stale: hilosTableStaleSources(this.rows.get()).size > 0,
+        progress: this.progress.table.get() !== null,
+      }),
+    )
   }
 
   /** The current search query (empty string when unset). */

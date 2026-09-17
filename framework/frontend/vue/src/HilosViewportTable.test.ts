@@ -402,7 +402,7 @@ describe('HilosViewportTable', () => {
     )
   })
 
-  it('stands both strips at once when there is new and there is waiting', () => {
+  it('gives the one line to the waiting and keeps the new rows as an icon beside it', () => {
     const { controller } = makeController()
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -420,9 +420,18 @@ describe('HilosViewportTable', () => {
     controller.ingestAnnounce('x', 'above', 2, true)
     const wrapper = mountTable(controller)
 
-    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(true)
+    // One room, one line: the waiting holds it because its button would be hidden
+    // otherwise, and the new rows keep speaking by their icon (Flow F4).
+    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(
+      false,
+    )
     expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="hilos-table-pending"]').text()).toBe('1')
+    expect(
+      wrapper
+        .find('[data-id="hilos-table-live-rest"] .bi-arrow-down-circle')
+        .exists(),
+    ).toBe(true)
   })
 
   it('renders a placeholder for an applied removal', () => {
@@ -1500,7 +1509,7 @@ describe('HilosViewportTable drawing work in progress', () => {
     )
   })
 
-  it('stands above the strips of live change', () => {
+  it('yields the line to new rows and stays on it as an icon', async () => {
     const { controller } = makeController()
     window(controller)
     controller.ingestProgress({
@@ -1512,12 +1521,30 @@ describe('HilosViewportTable drawing work in progress', () => {
     controller.ingestAnnounce('c', 'above', 3, true)
     const wrapper = mountTable(controller)
 
-    const ids = wrapper
-      .findAll('[data-id]')
-      .map((node) => node.attributes('data-id'))
-    expect(ids.indexOf('hilos-table-progress')).toBeLessThan(
-      ids.indexOf('hilos-table-announce'),
+    // Running work is the junior message: while new rows wait to be shown, its own
+    // bar is not on screen and only its icon is (Flow F4/F5).
+    expect(wrapper.find('[data-id="hilos-table-progress"]').exists()).toBe(
+      false,
     )
+    expect(wrapper.find('[data-id="hilos-table-announce"]').exists()).toBe(true)
+    expect(
+      wrapper
+        .find('[data-id="hilos-table-live-rest"] .bi-arrow-repeat')
+        .exists(),
+    ).toBe(true)
+
+    await wrapper.get('[data-id="hilos-table-announce-show"]').trigger('click')
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      3,
+      true,
+      null,
+      null,
+      10,
+    )
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-progress"]').exists()).toBe(true)
   })
 
   it('hands the whole bar, detail and all, to the slots beside the track', () => {
@@ -1556,23 +1583,6 @@ describe('HilosViewportTable drawing work in progress', () => {
     expect(wrapper.get('[data-id="page-progress-stop"]').text()).toBe(
       'Stop nightly',
     )
-  })
-
-  it('leaves no caption line where the page filled no slot', () => {
-    const { controller } = makeController()
-    window(controller)
-    controller.ingestProgress({
-      scope: 'table',
-      progressKey: 'nightly',
-      current: 34,
-      total: 120,
-    })
-    const wrapper = mountTable(controller)
-
-    // A line holding its margin with nothing in it is not a reserve but a gap:
-    // the track is the only thing in the block (Flow F7).
-    const block = wrapper.get('[data-id="hilos-table-progress"]')
-    expect(block.findAll('div.small')).toHaveLength(0)
   })
 
   it('draws nothing for a bulk frame, whose place is the selection panel', () => {

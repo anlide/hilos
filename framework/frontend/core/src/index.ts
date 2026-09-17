@@ -100,6 +100,12 @@ export {
   hilosTableDetailFields,
 } from './table/tableDetail.js'
 export {
+  HILOS_TABLE_LIVE_ORDER,
+  type HilosTableLive,
+  type HilosTableLiveKind,
+  hilosTableLive,
+} from './table/tableLive.js'
+export {
   TABLE_STALENESS_COPY,
   hilosTableStaleColumns,
   hilosTableStaleLabel,

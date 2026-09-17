@@ -658,8 +658,13 @@ a **bar**, and there are exactly three:
    table is the framework's; **the content beside the bar is the project's** and
    is arbitrary: a title, a counter, a link, a cancel button. This is the reserve
    for a product's own business logic. The view hands that place over as **slots**
-   too (`table-progress` above the track and `table-progress-action` beside it),
-   each receiving the whole bar, `detail` and all. It reads no key out of
+   too (`table-progress` on the line the track runs under and
+   `table-progress-action` beside it), each receiving the whole bar, `detail` and
+   all. The bar is one of the four live messages that share the one room above
+   the table, and the most junior of them: while changes wait for Apply, rows wait
+   to be shown, or a source is behind, the line is theirs and the bar stands
+   beside it as an icon (`tableLive.ts`, and
+   [styling-rules.md](styling-rules.md), "The room a live message takes"). It reads no key out of
    `detail` itself: `detail` is the project's arbitrary payload, so a view
    reading keys from it would invent a naming contract nobody declared and oblige
    every other view layer to repeat it letter for letter.
@@ -862,6 +867,13 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   the branch it means**: through `hilos-table-cards` on a narrow screen, through
   the table on a wide one. A bare selector finds the table's copy, the table
   being drawn first;
+- **the room of live messages:** `hilos-table-live-slot` — the room itself,
+  `hilos-table-live-idle` — the invisible twin holding it,
+  `hilos-table-live-rest` — the icons of the messages the line yielded,
+  `hilos-table-live-status` — the hidden region that speaks them. The line
+  carries the handle of the message holding it: `hilos-table-pending-row`,
+  `hilos-table-announce`, `hilos-table-stale` or `hilos-table-progress` — so a
+  message that yielded the line has no handle of its own until it gets it back;
 - **waiting and announcing:** `hilos-table-pending`,
   `hilos-table-pending-move-<rowKey>`, `hilos-table-pending-remove-<rowKey>`,
   `hilos-table-apply`, `hilos-table-announce`, `hilos-table-announce-show`;

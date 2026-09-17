@@ -1440,6 +1440,59 @@ describe('TableViewportController', () => {
     expect(controller.progress.bulk.get()?.progressKey).toBe('delete-40')
   })
 
+  it('recomputes the live room whenever any of its four sources changes', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
+    expect(controller.live.get()).toEqual({ top: null, rest: [] })
+
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    expect(controller.live.get()).toEqual({ top: 'progress', rest: [] })
+
+    controller.ingestDelta({
+      kind: 'row_stale',
+      rowKey: 'a',
+      staleSources: ['presence'],
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'stale',
+      rest: ['progress'],
+    })
+
+    controller.ingestAnnounce('b', 'above', 2, true)
+    expect(controller.live.get()).toEqual({
+      top: 'announce',
+      rest: ['stale', 'progress'],
+    })
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'pending',
+      rest: ['announce', 'stale', 'progress'],
+    })
+
+    // Taking a source away takes its kind out of the room, and the next one moves up.
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 120,
+      total: 120,
+      ended: true,
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'pending',
+      rest: ['announce', 'stale'],
+    })
+  })
+
   it('computes the fraction, clamps it, and leaves it out where there is no total', () => {
     const { controller, open } = makeController()
     open([], 0, true, null, null)
