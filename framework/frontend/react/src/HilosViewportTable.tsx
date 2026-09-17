@@ -4,8 +4,10 @@
 // arrive as pending and are resolved with the Apply button. A removed row
 // renders as a placeholder in its slot — the layout never collapses. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
-// pending, and Apply. Body cells come from the `row` render prop; the
-// placeholder, header, paging, and the pending bar stay framework-owned.
+// pending, and Apply. Body cells come from the `row` render prop, plus one
+// framework-owned cell at the end of the row carrying what waits on that row; the
+// placeholder, header, paging, and the one room of live messages above the rows
+// stay framework-owned.
 // (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
 // frame draws the bar and the footer from that declaration instead
 // (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
@@ -21,10 +23,12 @@ import type {
   HilosTableColumn,
   TableSort,
   TableViewportController,
+  TableViewportRow,
 } from '@hilos/core'
 
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
+import { HilosTableLive } from './HilosTableLive.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosTableSelectionEdgeContext } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
@@ -66,15 +70,6 @@ export interface HilosViewportTableProps<R> {
    * the row's key is printed where this gives nothing.
    */
   bulkUntouched?: (rowKey: string, reason: string) => ReactNode
-}
-
-// A row with an unapplied pending change gets a subtle, theme-aware tint that
-// stands out from the zebra striping: amber for a waiting move, red for a
-// waiting removal. Bootstrap's contextual row classes carry their own dark-mode
-// variants, so they adapt to the active theme with no custom style layer.
-const PENDING_ROW_CLASS: Record<'move' | 'remove', string> = {
-  move: 'table-warning',
-  remove: 'table-danger',
 }
 
 /**
@@ -120,11 +115,15 @@ export function HilosViewportTable<R>({
   // spanning the whole row count this one list, so they cannot disagree on its width.
   const frameColumns: readonly HilosTableColumn[] =
     declaration?.columns ?? columns
+  // The row-state cell stands while anything waits. Header cell and body cell read
+  // this ONE condition, so the two cannot drift apart into a row wider than its header.
+  const markColumn = pendingCount > 0
   // Every cell that spans the whole row — the placeholder of a removed row, the empty
-  // and loading states — counts the columns plus the checkbox column while the table
-  // has marks. This is the ONE place the width is worked out, and everything that
-  // spans a row reads it rather than counting again.
-  const bodyColspan = frameColumns.length + (selectionEnabled ? 1 : 0)
+  // and loading states — counts the columns plus the mark column while it stands plus
+  // the checkbox column while the table has marks. This is the ONE place the width is
+  // worked out, and everything that spans a row reads it rather than counting again.
+  const bodyColspan =
+    frameColumns.length + (markColumn ? 1 : 0) + (selectionEnabled ? 1 : 0)
   const titleId = useId()
   // Which edge the checkbox column sits on — one choice for the whole installation
   // and not a prop of this table, because two tables of one product disagreeing
@@ -154,6 +153,20 @@ export function HilosViewportTable<R>({
   // name one of the two as the whole answer.
   function sortComponent(key: string): TableSort | undefined {
     return order?.find((component) => component.field === key)
+  }
+
+  // A row's tint, resolved in the order the mockup resolves it (section 4): amber
+  // while a pending change waits on the row — a move and a removal alike — and green
+  // for the couple of seconds after a value landed. Waiting outranks the highlight,
+  // because it is the one of the two the reader still has to act on. Red belongs to a
+  // refused write, not to waiting. Bootstrap's contextual row classes carry their own
+  // dark-mode variants, so they adapt to the active theme with no custom style layer.
+  function rowClass(view: TableViewportRow<R>): string | undefined {
+    if (view.pending !== null) {
+      return 'table-warning'
+    }
+
+    return view.highlighted ? 'table-success' : undefined
   }
 
   function sortIcon(key: string): string {
@@ -219,44 +232,28 @@ export function HilosViewportTable<R>({
         />
       ) : null}
 
-      {/* The bar a table draws from its props, for a table whose page declared no
-          frame — such as the framework's log pages. Its Apply control stays for a
-          declared table too: the room of live messages that carries Apply in Vue is
-          not ported yet (HIL-811…818), and without it pending changes would pile up
-          with no way to show them. */}
-      {(!declaration && searchable) || pendingCount > 0 ? (
-        <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
-          {!declaration && searchable ? (
-            <input
-              type="search"
-              className="form-control"
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              value={search}
-              data-id="hilos-table-search"
-              onChange={(event) => controller.setSearch(event.target.value)}
-            />
-          ) : null}
-          {pendingCount > 0 ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-2 ms-auto"
-              aria-label={`Apply ${pendingCount} pending changes`}
-              data-id="hilos-table-apply"
-              onClick={() => controller.apply()}
-            >
-              Apply changes
-              <span
-                className="badge text-bg-light"
-                data-id="hilos-table-pending"
-                aria-hidden="true"
-              >
-                {pendingCount}
-              </span>
-            </button>
-          ) : null}
+      {/* The bar a table draws from props, kept while a page still passes them —
+          the framework's log pages do. It goes with the props themselves. */}
+      {!declaration && searchable ? (
+        <div className="mb-3">
+          <input
+            type="search"
+            className="form-control"
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            value={search}
+            data-id="hilos-table-search"
+            onChange={(event) => controller.setSearch(event.target.value)}
+          />
         </div>
       ) : null}
+
+      {/* Everything live the table has to say — work running over the set, a source
+          gone quiet, rows created above the window, changes waiting for Apply — in
+          one room that never changes height, outside both epochs of the frame: it
+          speaks about what is happening to the rows, not about what the page
+          declared. */}
+      <HilosTableLive controller={controller} columns={frameColumns} />
 
       <div className="table-responsive">
         <table
@@ -299,6 +296,13 @@ export function HilosViewportTable<R>({
                   )}
                 </th>
               ))}
+              {markColumn ? (
+                <th scope="col" className="text-end">
+                  <span className="visually-hidden">
+                    Row state and controls
+                  </span>
+                </th>
+              ) : null}
               {selectionEdge === 'end' ? selectPageCell : null}
             </tr>
           </thead>
@@ -328,9 +332,7 @@ export function HilosViewportTable<R>({
                 <tr
                   key={view.rowKey}
                   data-id={`hilos-table-row-${view.rowKey}`}
-                  className={
-                    view.pending ? PENDING_ROW_CLASS[view.pending] : undefined
-                  }
+                  className={rowClass(view)}
                 >
                   {selectionEdge === 'start' ? selectRowCell : null}
                   {/* A placeholder row carries a null row; the null check also
@@ -346,6 +348,31 @@ export function HilosViewportTable<R>({
                   ) : (
                     row(view.row, view.rowKey)
                   )}
+                  {markColumn && !view.placeholder && view.row !== null ? (
+                    <td className="text-end text-nowrap">
+                      {view.pending === 'move' ? (
+                        <span
+                          className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                          data-id={`hilos-table-pending-move-${view.rowKey}`}
+                        >
+                          <i className="bi bi-arrows-move" aria-hidden="true" />{' '}
+                          Will move
+                        </span>
+                      ) : null}
+                      {view.pending === 'remove' ? (
+                        <span
+                          className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                          data-id={`hilos-table-pending-remove-${view.rowKey}`}
+                        >
+                          <i
+                            className="bi bi-box-arrow-right"
+                            aria-hidden="true"
+                          />{' '}
+                          Will leave
+                        </span>
+                      ) : null}
+                    </td>
+                  ) : null}
                   {selectionEdge === 'end' ? selectRowCell : null}
                 </tr>
               )

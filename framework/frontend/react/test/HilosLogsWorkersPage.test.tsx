@@ -357,13 +357,15 @@ describe('HilosLogsWorkersPage', () => {
     const { connection, pushHeader } = makeConnection()
     const container = mountPage(connection)
 
+    // The footnote by its own classes: the table above it holds the room of its
+    // live messages with an alert of its own, standing at all times.
     pushHeader(header({ nodes: [] }))
-    expect(container.querySelector('.alert')?.textContent).toContain(
+    expect(container.querySelector('.alert.small')?.textContent).toContain(
       'two hands',
     )
 
     pushHeader(header({ nodes: ['node-1'] }))
-    expect(container.querySelector('.alert')?.textContent).toContain(
+    expect(container.querySelector('.alert.small')?.textContent).toContain(
       'different machines',
     )
   })

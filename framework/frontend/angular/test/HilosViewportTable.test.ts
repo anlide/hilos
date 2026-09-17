@@ -1,8 +1,10 @@
-// The branch of the Angular view on a declared frame, under the case names the Vue
-// view and the React port run for it (HIL-801, HIL-810). The host fills the `#row`
-// template, which a component created directly could not be handed. The second
-// group stands the table inside the admin shell, the way the framework's admin
-// pages draw it, where a table declaring no title is named by the page heading.
+// The Angular view under the case names the Vue view and the React port run for it.
+// The first group draws a table whose page declared no frame: its rows' tint, the
+// mark column, and the room of live messages above the rows (HIL-803, HIL-812). The
+// next ones take the branch on a declared frame (HIL-801, HIL-810). The host fills
+// the `#row` template, which a component created directly could not be handed. The
+// admin-page group stands the table inside the admin shell, the way the framework's
+// admin pages draw it, where a table declaring no title is named by the page heading.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
@@ -15,6 +17,7 @@ import type {
   HilosTableColumn,
   HilosTableFrame,
   PageRouteMatch,
+  TableViewportDescriptor,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
@@ -57,6 +60,23 @@ const FRAME: HilosTableFrame = {
   `,
 })
 class ViewportTableHost {
+  controller!: TableViewportController<Row>
+  columns = COLUMNS
+}
+
+/** A host drawing a table whose page declared no frame, from its inputs alone. */
+@Component({
+  selector: 'test-plain-viewport-table-host',
+  imports: [HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller" [columns]="columns">
+      <ng-template #row let-row>
+        <td class="cell">{{ row.name }}</td>
+      </ng-template>
+    </hilos-viewport-table>
+  `,
+})
+class PlainTableHost {
   controller!: TableViewportController<Row>
   columns = COLUMNS
 }
@@ -155,6 +175,279 @@ function query(
   return (fixture.nativeElement as HTMLElement).querySelector(selector)
 }
 
+describe('HilosViewportTable', () => {
+  function makePlainController(): {
+    controller: TableViewportController<Row>
+    sent: TableViewportDescriptor[]
+  } {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+    })
+
+    return { controller, sent }
+  }
+
+  function mountTable(
+    controller: TableViewportController<Row>,
+  ): ComponentFixture<PlainTableHost> {
+    const fixture = TestBed.createComponent(PlainTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function all(
+    fixture: ComponentFixture<unknown>,
+    selector: string,
+  ): Element[] {
+    return Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(selector),
+    )
+  }
+
+  it('highlights a row whose new value landed in place, with no waiting mark', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    const fixture = mountTable(controller)
+
+    expect(
+      query(fixture, '[data-id="hilos-table-row-a"]')?.classList.contains(
+        'table-success',
+      ),
+    ).toBe(true)
+    expect(all(fixture, '[data-id^="hilos-table-pending-"]')).toHaveLength(0)
+  })
+
+  it('marks a waiting row amber and says in words what waits on it', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    const fixture = mountTable(controller)
+
+    expect(
+      query(fixture, '[data-id="hilos-table-row-a"]')?.classList.contains(
+        'table-warning',
+      ),
+    ).toBe(true)
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-pending-move-a"]',
+      )?.textContent?.trim(),
+    ).toBe('Will move')
+    expect(
+      query(fixture, '[data-id="hilos-table-row-b"]')?.classList.contains(
+        'table-warning',
+      ),
+    ).toBe(true)
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-pending-remove-b"]',
+      )?.textContent?.trim(),
+    ).toBe('Will leave')
+  })
+
+  it('lets the waiting outrank the highlight on a row that is both', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    // The value lands and lights the row up; the move that follows is held at the
+    // gate, so the row is highlighted and waiting at the same moment.
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'newer' } },
+    })
+    const fixture = mountTable(controller)
+
+    const row = query(fixture, '[data-id="hilos-table-row-a"]')
+    expect(row?.classList.contains('table-warning')).toBe(true)
+    expect(row?.classList.contains('table-success')).toBe(false)
+  })
+
+  it('grows the mark column with the waiting, header and body at once', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    // An applied removal leaves a placeholder behind and nothing waiting, which is
+    // the state where the mark column must not stand.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const fixture = mountTable(controller)
+    const placeholderSpan = () =>
+      query(fixture, '[data-id="hilos-table-placeholder"]')?.getAttribute(
+        'colspan',
+      )
+
+    expect(all(fixture, 'thead th')).toHaveLength(COLUMNS.length)
+    expect(placeholderSpan()).toBe(String(COLUMNS.length))
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    fixture.detectChanges()
+
+    expect(all(fixture, 'thead th')).toHaveLength(COLUMNS.length + 1)
+    expect(placeholderSpan()).toBe(String(COLUMNS.length + 1))
+  })
+
+  it('raises the announcement strip for rows above the window and counts them', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const fixture = mountTable(controller)
+    const strip = () => query(fixture, '[data-id="hilos-table-announce"]')
+
+    expect(strip()).toBeNull()
+
+    controller.ingestAnnounce('x', 'above', 2, true)
+    fixture.detectChanges()
+
+    expect(strip()?.textContent).toContain('1 new row above the window')
+
+    controller.ingestAnnounce('y', 'above', 3, true)
+    fixture.detectChanges()
+
+    expect(strip()?.textContent).toContain('2 new rows above the window')
+  })
+
+  it('leaves the strip down for a row announced inside the window', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    // The strip has one sentence and it names one place; the other outcome is a
+    // design debt (D-041), and drawing it would mean inventing the words.
+    controller.ingestAnnounce('x', 'inside', 2, true)
+    const fixture = mountTable(controller)
+
+    expect(query(fixture, '[data-id="hilos-table-announce"]')).toBeNull()
+  })
+
+  it('asks for the window again when Show is pressed, and the strip goes', () => {
+    const { controller, sent } = makePlainController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestAnnounce('x', 'above', 2, true)
+    const fixture = mountTable(controller)
+    const asked = sent.length
+
+    query(fixture, '[data-id="hilos-table-announce-show"]')?.click()
+    fixture.detectChanges()
+
+    expect(sent).toHaveLength(asked + 1)
+    expect(query(fixture, '[data-id="hilos-table-announce"]')).toBeNull()
+  })
+
+  it('gives the one line to the waiting and keeps the new rows as an icon beside it', () => {
+    const { controller } = makePlainController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestAnnounce('x', 'above', 2, true)
+    const fixture = mountTable(controller)
+
+    // One room, one line: the waiting holds it because its button would be hidden
+    // otherwise, and the new rows keep speaking by their icon (Flow F4).
+    expect(query(fixture, '[data-id="hilos-table-announce"]')).toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-apply"]')).not.toBeNull()
+    expect(
+      query(fixture, '[data-id="hilos-table-pending"]')?.textContent?.trim(),
+    ).toBe('1')
+    expect(
+      query(fixture, '[data-id="hilos-table-live-rest"] .bi-arrow-down-circle'),
+    ).not.toBeNull()
+  })
+})
+
 describe('HilosViewportTable with a declared frame', () => {
   it('draws the declared bar and names the table by its visible title', () => {
     const fixture = mountDeclared(makeController())
@@ -185,9 +478,7 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(query(fixture, '[data-id="hilos-table-page"]')).toBeNull()
   })
 
-  // Apply stays: the room of live messages that carries it in Vue is not ported yet,
-  // and the framework pages on this view take their pending changes through it.
-  it('leaves the props-driven search out but keeps its Apply button', () => {
+  it('leaves the props-driven bar out and keeps Apply in the waiting strip', () => {
     const controller = makeController()
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -204,12 +495,17 @@ describe('HilosViewportTable with a declared frame', () => {
     })
     const fixture = mountDeclared(controller)
 
-    expect(query(fixture, '[data-id="hilos-table-apply"]')).not.toBeNull()
+    // One search box, the declared one; and the strips speak in both epochs of the
+    // frame, because they are about the rows and not about what the page declared.
     expect(
       (fixture.nativeElement as HTMLElement).querySelectorAll(
         '[data-id="hilos-table-search"]',
       ),
     ).toHaveLength(1)
+    expect(query(fixture, '[data-id="hilos-table-apply"]')).not.toBeNull()
+    expect(
+      query(fixture, '[data-id="hilos-table-pending"]')?.textContent?.trim(),
+    ).toBe('1')
   })
 })
 

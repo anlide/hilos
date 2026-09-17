@@ -17,16 +17,22 @@ export interface HilosTableProgressProps {
   progress: HilosTableProgressState
   /** Accessible name of the track; the wording belongs to the place that draws it. */
   label: string
+  /**
+   * Classes the place drawing the track adds to it — the room of live messages lays
+   * it along the bottom edge of its line.
+   */
+  className?: string
 }
 
 /**
  * The track of one running job.
  *
- * @param props The bar to draw and the accessible name of its track.
+ * @param props The bar to draw, the accessible name of its track, and the classes its place adds.
  */
 export function HilosTableProgress({
   progress,
   label,
+  className,
 }: HilosTableProgressProps) {
   // The percentage the track is filled to, or null when the work named no total —
   // which is the difference between a bar and a striped track, and the difference
@@ -36,7 +42,11 @@ export function HilosTableProgress({
 
   return (
     <div
-      className="progress hilos-progress-track"
+      className={
+        className === undefined
+          ? 'progress hilos-progress-track'
+          : `progress hilos-progress-track ${className}`
+      }
       role="progressbar"
       aria-label={label}
       aria-valuemin={0}

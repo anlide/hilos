@@ -95,7 +95,7 @@ const SEARCH_FILTER_KEY = 'search'
  *
  * The mark lives here and not in the three view packages because it is one behavior — a
  * value landed, say so briefly — and three copies of a countdown drift into three
- * different tables. The views only paint what this signal says (HIL-803, HIL-812).
+ * different tables. The views only paint what this signal says (HIL-803).
  */
 const HIGHLIGHT_MS = 2000
 

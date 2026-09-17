@@ -112,6 +112,260 @@ describe('HilosViewportTable', () => {
     expect(container.querySelector('[data-id="hilos-table-apply"]')).toBeNull()
   })
 
+  it('highlights a row whose new value landed in place, with no waiting mark', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    const { container } = renderTable(controller)
+
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-a"]')
+        ?.classList.contains('table-success'),
+    ).toBe(true)
+    expect(
+      container.querySelectorAll('[data-id^="hilos-table-pending-"]'),
+    ).toHaveLength(0)
+  })
+
+  it('marks a waiting row amber and says in words what waits on it', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    const { container } = renderTable(controller)
+
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-a"]')
+        ?.classList.contains('table-warning'),
+    ).toBe(true)
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-pending-move-a"]')
+        ?.textContent?.trim(),
+    ).toBe('Will move')
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-b"]')
+        ?.classList.contains('table-warning'),
+    ).toBe(true)
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-pending-remove-b"]')
+        ?.textContent?.trim(),
+    ).toBe('Will leave')
+  })
+
+  it('lets the waiting outrank the highlight on a row that is both', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'old' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    // The value lands and lights the row up; the move that follows is held at the
+    // gate, so the row is highlighted and waiting at the same moment.
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'newer' } },
+    })
+    const { container } = renderTable(controller)
+
+    const row = container.querySelector('[data-id="hilos-table-row-a"]')
+    expect(row?.classList.contains('table-warning')).toBe(true)
+    expect(row?.classList.contains('table-success')).toBe(false)
+  })
+
+  it('grows the mark column with the waiting, header and body at once', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    // An applied removal leaves a placeholder behind and nothing waiting, which is
+    // the state where the mark column must not stand.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const { container } = renderTable(controller)
+    const placeholderSpan = () =>
+      container
+        .querySelector('[data-id="hilos-table-placeholder"]')
+        ?.getAttribute('colspan')
+
+    expect(container.querySelectorAll('thead th')).toHaveLength(COLUMNS.length)
+    expect(placeholderSpan()).toBe(String(COLUMNS.length))
+
+    act(() =>
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b',
+        row: { rowKey: 'b', slots: { name: 'Bobby' } },
+      }),
+    )
+
+    expect(container.querySelectorAll('thead th')).toHaveLength(
+      COLUMNS.length + 1,
+    )
+    expect(placeholderSpan()).toBe(String(COLUMNS.length + 1))
+  })
+
+  it('raises the announcement strip for rows above the window and counts them', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const { container } = renderTable(controller)
+    const strip = () =>
+      container.querySelector('[data-id="hilos-table-announce"]')
+
+    expect(strip()).toBeNull()
+
+    act(() => controller.ingestAnnounce('x', 'above', 2, true))
+
+    expect(strip()?.textContent).toContain('1 new row above the window')
+
+    act(() => controller.ingestAnnounce('y', 'above', 3, true))
+
+    expect(strip()?.textContent).toContain('2 new rows above the window')
+  })
+
+  it('leaves the strip down for a row announced inside the window', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    // The strip has one sentence and it names one place; the other outcome is a
+    // design debt (D-041), and drawing it would mean inventing the words.
+    controller.ingestAnnounce('x', 'inside', 2, true)
+    const { container } = renderTable(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-announce"]'),
+    ).toBeNull()
+  })
+
+  it('asks for the window again when Show is pressed, and the strip goes', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestAnnounce('x', 'above', 2, true)
+    const { container } = renderTable(controller)
+    const asked = sent.length
+
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-table-announce-show"]',
+      ) as Element,
+    )
+
+    expect(sent).toHaveLength(asked + 1)
+    expect(
+      container.querySelector('[data-id="hilos-table-announce"]'),
+    ).toBeNull()
+  })
+
+  it('gives the one line to the waiting and keeps the new rows as an icon beside it', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestAnnounce('x', 'above', 2, true)
+    const { container } = renderTable(controller)
+
+    // One room, one line: the waiting holds it because its button would be hidden
+    // otherwise, and the new rows keep speaking by their icon (Flow F4).
+    expect(
+      container.querySelector('[data-id="hilos-table-announce"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-apply"]'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-pending"]')?.textContent,
+    ).toBe('1')
+    expect(
+      container.querySelector(
+        '[data-id="hilos-table-live-rest"] .bi-arrow-down-circle',
+      ),
+    ).not.toBeNull()
+  })
+
   it('renders a placeholder for an applied removal', () => {
     const { controller } = makeController()
     controller.ingestWindow(
@@ -275,9 +529,7 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(container.querySelector('[data-id="hilos-table-page"]')).toBeNull()
   })
 
-  // Apply stays: the room of live messages that carries it in Vue is not ported yet,
-  // and the framework pages on this view take their pending changes through it.
-  it('leaves the props-driven search out but keeps its Apply button', () => {
+  it('leaves the props-driven bar out and keeps Apply in the waiting strip', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -294,12 +546,17 @@ describe('HilosViewportTable with a declared frame', () => {
     })
     const { container } = renderDeclared(controller)
 
-    expect(
-      container.querySelectorAll('[data-id="hilos-table-apply"]'),
-    ).toHaveLength(1)
+    // One search box, the declared one; and the strips speak in both epochs of the
+    // frame, because they are about the rows and not about what the page declared.
     expect(
       container.querySelectorAll('[data-id="hilos-table-search"]'),
     ).toHaveLength(1)
+    expect(
+      container.querySelector('[data-id="hilos-table-apply"]'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-pending"]')?.textContent,
+    ).toBe('1')
   })
 })
 

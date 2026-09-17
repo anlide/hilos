@@ -154,10 +154,12 @@ accumulated before the break is gone — the window that arrives outranks it.
 ## What the page declares
 
 > **The declaration below is drawn by all three views.** Vue, React, and Angular
-> render the bar and the footer from it; what was built on top of them since —
-> the order menu and page numbers, the strip of new rows with Apply, marks,
-> cards, row detail, the worded empty states, the strips of work and of a quiet
-> source — is drawn by Vue alone until its own parity leaf (HIL-811 to HIL-818).
+> render the bar and the footer from it, and the one room of live messages above
+> the rows with the row tint and the waiting marks beside it. What was built on
+> top of them since — the order menu and page numbers, cards, row detail, the
+> worded empty states, the bar of work under a row with the project's places next
+> to running work, and the marks of a quiet source on cells and headers — is
+> drawn by Vue alone until its own parity leaf (HIL-811 to HIL-818).
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
 > the verifier circle on the backups page still hand their view columns, a label
@@ -1023,6 +1025,7 @@ an address does not:
 | the bar the frame is drawn as | `framework/frontend/{vue,react,angular}/src/HilosTableBar.*` |
 | one control of one declared filter | `framework/frontend/{vue,react,angular}/src/HilosTableFilterControl.*` |
 | the footer under the table | `framework/frontend/{vue,react,angular}/src/HilosTableFooter.*` |
+| the one room a table's live messages share | `framework/frontend/{vue,react,angular}/src/HilosTableLive.*` |
 | the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/vue/src/HilosTableEmptyState.vue` |
 | the bar a running job is drawn as | `framework/frontend/{vue,react,angular}/src/HilosTableProgress.*` |
 | the selection panel and the bulk bar | `framework/frontend/{vue,react,angular}/src/HilosTableSelection.*` |

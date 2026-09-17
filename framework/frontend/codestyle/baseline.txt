@@ -6,8 +6,7 @@ SHELL-PARITY framework/frontend/vue/src/HilosActionError.vue 2 # HIL-597
 SHELL-PARITY framework/frontend/vue/src/HilosTableBar.vue 3 # HIL-783
 SHELL-PARITY framework/frontend/vue/src/HilosTableEmptyState.vue 7 # HIL-783
 SHELL-PARITY framework/frontend/vue/src/HilosTableFooter.vue 2 # HIL-783
-SHELL-PARITY framework/frontend/vue/src/HilosTableLive.vue 5 # HIL-783
-SHELL-PARITY framework/frontend/vue/src/HilosViewportTable.vue 18 # HIL-783
+SHELL-PARITY framework/frontend/vue/src/HilosViewportTable.vue 14 # HIL-783
 SHELL-PARITY framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 6 # HIL-597
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.vue 2 # HIL-597
 SHELL-PARITY framework/frontend/vue/src/admin/users/HilosUserPage.vue 1 # HIL-597
