@@ -822,6 +822,13 @@ Remember the outcome, speak on its change, clear on recovery.
   `(not in the code yet — HIL-395)`; rotation, takeout and pruning driven end to
   end are `(not in the code yet — HIL-763)`.
 - Where every stream lands, proven on a live stand by a run and not by reading
-  — the rows of the HIL-872 map as a repeatable check
-  `(not in the code yet — HIL-1018)`; until then the evidence is that leaf's
-  one-off measurement.
+  — `composer run test:log-streams`, the `log-streams` step of the full run:
+  `demo/tasks` stood up, each source provoked on purpose, and every line of
+  `scripts/log-streams.php` asserted where it landed and where it must not be
+  (HIL-1018). It covers rows 1, 2, 5, 6, 8, 10, 11, 13, 14, 15, 17, 18, 19 and
+  23 of the HIL-872 map, and it does not cover rows 3, 4, 7, 9, 12, 16, 20, 21
+  and 22 — row 3 because its line cannot be reached while `rename()`'s own
+  warning goes through the watchdog's error handler first, and the rest
+  because each needs a lever the check does not have yet: a stand whose env
+  does not name the log addresses, a real error out of a live worker or agent,
+  `daemon:monitor` under the probe, the daemon run without a watchdog.

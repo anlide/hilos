@@ -149,6 +149,35 @@ $steps = [
         // that chain breaks at the first red, and the runner is the one that holds the outcome.
         'downsStand' => true,
     ],
+    // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five
+    // scenarios in sequence over demo/tasks, judged against scripts/log-streams.php. In the
+    // tasks group so it never overlaps tasks-check, tasks-php or tasks-e2e over one stand,
+    // and on tasks rather than chat because the chat group is the floor of the whole run
+    // (806s end to end) and this step would lift it; the tasks group has the room. Takes its
+    // stand down at any outcome, standalone as well as here.
+    //
+    // The edge to `cluster` is an ORDER, not a need: this step wants nothing the cluster
+    // produced (no SDK, no built frontend either). Without the edge the two are the longest
+    // steps ready at t=0, so at two lanes the longest-first order put them side by side — a
+    // five-node fleet next to a 28-worker daemon being killed and restarted — and cluster's
+    // liveness scenario 9 ("s1 seen offline after its daemon died") timed out twice after
+    // twelve green runs in a row, then passed alone on the same HEAD (2026-09-17, runs
+    // 0350/0351). The graph has no other lever to keep two steps apart: a group is a stand,
+    // and moving cluster into the tasks group would start it beside chat-e2e instead
+    // (HIL-752). The price is paid knowingly: a red cluster skips this step, in a run that is
+    // red already; and `run-test-suite.php log-streams` runs cluster first, so the step alone
+    // is `composer run test:log-streams`.
+    [
+        'id' => 'log-streams',
+        'command' => 'composer run test:log-streams',
+        'cwd' => '.',
+        'stand' => 'tasks',
+        'deps' => ['cluster'],
+        'group' => 'tasks',
+        'tags' => ['backend', 'demo'],
+        'seconds' => 272,
+        'downsStand' => true,
+    ],
 ];
 
 foreach ($demos as $demo => $seconds) {

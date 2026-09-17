@@ -74,6 +74,7 @@
         "test:framework:frontend:format-check": "docker compose -f framework/docker/docker-compose.frontend.yml run --rm hilos-frontend-cli npm run format:check",
         "test:framework:frontend": "docker compose -f framework/docker/docker-compose.frontend.yml run --rm hilos-frontend-cli sh -c \"set -e; echo '--- frontend: check'; npm run check; echo '--- frontend: unit'; npm run test; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\"",
         "test:suite": "@php scripts/run-test-suite.php",
+        "test:log-streams": "@php scripts/check-log-streams.php",
         "test:stands:down": "@php scripts/down-stands.php",
         "test:frontend:all": "@php scripts/run-test-suite.php frontend",
         "test:cluster:unit": "cd demo/cluster && composer run test:unit",
