@@ -29,6 +29,7 @@ use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
@@ -211,6 +212,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRegisterDTO => $this->handleWorkerRegisterMessage($workerDTO),
             $workerDTO instanceof WorkerLogWriteLevelDTO => $this->handleWorkerLogWriteLevelMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
+            $workerDTO instanceof WorkerAgentStartFailedDTO => $this->handleAgentStartFailedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStoppedDTO => $this->handleAgentStoppedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentMessageDTO => $this->handleAgentMessageMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncCreatedMessageDTO => $this->handleWorkerDbSyncCreatedMessage($workerDTO),
@@ -337,6 +339,17 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $orphan = AgentId::fromId($dto->agentId);
             $this->sendAgentStop($orphan->type, $orphan->index);
         }
+    }
+
+    /**
+     * Handle agent start failed message
+     *
+     * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
+     * @throws InvalidArgumentException When the master cannot name an answer it owes a held frame
+     */
+    private function handleAgentStartFailedMessage(WorkerAgentStartFailedDTO $dto): void
+    {
+        $this->agentManager->handleAgentStartFailed($dto);
     }
 
     /**

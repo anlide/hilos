@@ -90,12 +90,28 @@ library comes up from the bootstrap, and nothing would address it back into
 existence) and on a value that is not a positive whole number of seconds.
 
 **Starting is what addressing does.** The first frame to the agent starts it —
-`WorkerServer::sendSignalToAgent()` starts what it cannot find — so a declaring
-agent needs no start-up pass of its own. On a cluster the address is answered
-before the agent exists anywhere, so the node that met the empty address asks
-for a placement first (`ClusterPlacement::requirePlacement()`): the leader
-places it itself, any other node asks the leader. The frame that provoked that
-is still dropped; holding it until an address exists is HIL-629.
+the master's delivery door calls `WorkerServer::ensureAgentUp()` for an agent
+that has not reported `agent_started` — so a declaring agent needs no start-up
+pass of its own. On a cluster the address is answered before the agent exists
+anywhere, so the node that met the empty address asks for a placement first
+(`ClusterPlacement::requirePlacement()`): the leader places it itself, any other
+node asks the leader.
+
+**The frame that starts an agent waits for it in the master** (HIL-629). It is
+not written behind the start, where a start that failed inside the worker would
+take it along: the master holds it until the worker reports `agent_started`, then
+hands it to that agent ahead of anything sent after it. A frame that met an empty
+address is held the same way, until the agent is up here or the placement view
+names the node that runs it. A start the worker refuses before it holds the agent
+— the state the agent reads did not arrive, the factory failed, a claim was
+refused — comes back as `agent_start_failed`: the master forgets the record it
+wrote, answers the held frames as a start refused on this node, and the next
+frame starts the agent again. An agent whose `onStart()` throws is not such a
+start; the worker keeps it. A frame whose agent is not up within
+`AgentConstants::START_DEADLINE_SECONDS` plus one second is answered the way a
+dropped frame always was — a page with its subscription error, an operator with a
+refusal, a push with a log line. The hold lives in the master's memory and dies
+with it: delivery across a node that fell over is HIL-347.
 
 **Three things must agree before an agent is stopped**, and the count is on the
 worker side, where the agent lives:

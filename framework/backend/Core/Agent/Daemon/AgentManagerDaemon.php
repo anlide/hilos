@@ -28,8 +28,10 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\ProtectedMode\ProtectedModeAgentStopSink;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -159,6 +161,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     private ?AgentLossSink $agentLossSink = null;
 
     /**
+     * @var ?AgentStartSink Who is told how an agent's start on this node ended, null until one registers.
+     *
+     * Its own seam beside the stop sink rather than a second meaning inside it: the stop sink is the
+     * freeze watchdog's alone, while this one lets the master release frames it holds for an agent
+     * that was coming up (HIL-629).
+     */
+    private ?AgentStartSink $agentStartSink = null;
+
+    /**
      * Create agent daemon instance (factory method)
      *
      * Must be implemented in child classes to create specific agent daemon types.
@@ -196,6 +207,18 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function registerAgentStopSink(ProtectedModeAgentStopSink $sink): void
     {
         $this->agentStopSink = $sink;
+    }
+
+    /**
+     * Registers who is told how an agent's start on this node ended.
+     *
+     * One sink and not a list, for the same reason as the stop sink above.
+     *
+     * @param AgentStartSink $sink Who to tell when an agent's start is reported
+     */
+    public function registerAgentStartSink(AgentStartSink $sink): void
+    {
+        $this->agentStartSink = $sink;
     }
 
     /**
@@ -410,6 +433,31 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $workerIndex = $this->getAgentWorkerInfo($agentId)?->workerIndex ?? 'unknown';
 
         Logger::info("Agent '{$agentId}' started on worker #{$workerIndex}");
+
+        // Told after the mark, the same order the stop sink is told in, so frames the master held
+        // for this agent find it started when they are let go (HIL-629).
+        $this->agentStartSink?->onAgentStarted($agentId);
+    }
+
+    /**
+     * Forgets an agent whose start the worker reports as not finished, and says so to the start sink.
+     *
+     * The record goes because it was written before the worker did anything
+     * ({@see WorkerServer::startAgent()}) and, left standing, would call the agent linked and
+     * coming up for good: nothing would ever start it again, and every frame addressed to it would
+     * wait for a report that already came. Without it the next frame starts the agent from
+     * scratch, the way an agent stopped for idleness is started again (HIL-629).
+     *
+     * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
+     * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
+     */
+    public function handleAgentStartFailed(WorkerAgentStartFailedDTO $dto): void
+    {
+        $this->removeAgent($dto->agentId);
+
+        Logger::warning("Agent '{$dto->agentId}' did not start: {$dto->reason}");
+
+        $this->agentStartSink?->onAgentStartFailed($dto->agentId, $dto->reason);
     }
 
     /**

@@ -402,6 +402,18 @@ final class DaemonManagerAgentSignalPeerTestPlacement implements WorkerPlacement
 final class DaemonManagerAgentSignalPeerTestAgentManagerDaemon extends AgentManagerDaemon
 {
     /**
+     * Every agent these cases address counts as up, so the drain hands it the frame rather than
+     * holding the frame for a start report no worker of this test will send (HIL-629).
+     *
+     * @param string $agentId Agent the drain asks about
+     * @return bool Always true
+     */
+    public function isAgentStarted(string $agentId): bool
+    {
+        return true;
+    }
+
+    /**
      * @param string $agentType Agent type that was asked for
      * @param ?string $agentIndex Agent index that was asked for
      * @return AgentDaemonInterface Never returned; these cases start no agent

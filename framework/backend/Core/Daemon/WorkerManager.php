@@ -101,6 +101,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
@@ -164,15 +165,6 @@ abstract class WorkerManager extends BaseManager
 {
     /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
-
-    /**
-     * Seconds a start or a subscription waits for the state of what it reads.
-     *
-     * Long enough that only a master in real trouble misses it - the answer is one round trip
-     * over a link this worker is already reading - and short enough that a browser is told the
-     * page cannot be served rather than left holding an open request.
-     */
-    private const float SOURCE_INTEREST_DEADLINE_SECONDS = 5.0;
 
     /** Microseconds the same wait sleeps between rounds of the daemon link. */
     private const int SOURCE_INTEREST_POLL_US = 1000;
@@ -727,53 +719,65 @@ abstract class WorkerManager extends BaseManager
         $agentType = $parsed->type;
         $agentIndex = $parsed->index;
 
-        // Before the instance exists, because an agent is handed its data rather than asked to
-        // run without it: what the class says it reads is taken up here, and waited for, so
-        // onStart() opens on a collection and not on the emptiness before one. A claim that may
-        // not add is waited for beside the reads: its holder never wrote those rows, so their
-        // copy is on its way here exactly as a read's is.
-        $reads = [
-            SourceChange::KIND_RT => [...$this->agentReadsRt($agentType), ...$this->agentBorrowsRt($agentType)],
-            SourceChange::KIND_DB => [...$this->agentReadsDb($agentType), ...$this->agentBorrowsDb($agentType)],
-        ];
-        $this->raiseSourceInterest(SourceConsumer::agent($agentId), $reads);
-        $this->awaitSourceInterest($reads);
-        if (!$this->sourcesReady($reads)) {
-            // Nothing has been created yet, so nothing has to be unwound but the interest: an
-            // agent that never started must not leave this worker asking for frames on its behalf.
-            $this->releaseSourceInterest(SourceConsumer::agent($agentId));
-
-            throw new AgentCreationFailedException($agentType, $agentIndex);
-        }
-
-        // Create agent using factory method
-        $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
-
-        Logger::logAgentStart($agent->getId(), $agent->getType());
-        // Before the start hook rather than after it: an agent whose onStart() throws is still an
-        // agent this worker holds, and one the tracker has never heard of is never idle.
-        $this->agentIdleTracker->noteStarted($agentId, microtime(true));
-        // Before the start hook and not inside it: an agent writes its first row within onStart(),
-        // so the claim has to stand by then. The hook stays outside the try because the catch
-        // below takes back the start of an agent that never ran, which is why it may skip
-        // onStop(); a hook that throws has run, so it is not undone here, and the agent stays one
-        // this worker holds, as the idle-tracker note above says. The runtime half of the claim
-        // reaches the node not from this line but from notifyRtSourcesRegistered() below, once
-        // the hook has returned.
+        // A start that refuses up to and including its claims leaves nothing on this worker, and
+        // the master is told so before the failure travels on to the loop's containment: it wrote
+        // its own record of the agent before this worker did anything, and holds every frame
+        // addressed to the agent until one of the two reports arrives (HIL-629). The start hook
+        // below stays outside, because an agent whose onStart() throws is one this worker keeps -
+        // a master that forgot it would start a second one elsewhere.
         try {
-            OwnershipDeclaration::claimAll($agent);
-        } catch (Throwable $refusal) {
-            // Half the claims may already stand, and the agent is in the manager since
-            // createAndAddAgent() above: without this the worker would hold an agent nobody ever
-            // started, with some of its rights. Taken back the way runAgentStopHook() takes them,
-            // minus onStop() - a hook that opened nothing has nothing to close.
-            TruthSourceRegistry::unregisterAgent($agentId);
-            RtTruthSourceRegistry::unregisterAgent($agentId);
-            $this->releaseSourceInterest(SourceConsumer::agent($agentId));
-            $this->agentManager->removeAgent($agentId);
-            $this->agentIdleTracker->forget($agentId);
+            // Before the instance exists, because an agent is handed its data rather than asked to
+            // run without it: what the class says it reads is taken up here, and waited for, so
+            // onStart() opens on a collection and not on the emptiness before one. A claim that may
+            // not add is waited for beside the reads: its holder never wrote those rows, so their
+            // copy is on its way here exactly as a read's is.
+            $reads = [
+                SourceChange::KIND_RT => [...$this->agentReadsRt($agentType), ...$this->agentBorrowsRt($agentType)],
+                SourceChange::KIND_DB => [...$this->agentReadsDb($agentType), ...$this->agentBorrowsDb($agentType)],
+            ];
+            $this->raiseSourceInterest(SourceConsumer::agent($agentId), $reads);
+            $this->awaitSourceInterest($reads);
+            if (!$this->sourcesReady($reads)) {
+                // Nothing has been created yet, so nothing has to be unwound but the interest: an
+                // agent that never started must not leave this worker asking for frames on its behalf.
+                $this->releaseSourceInterest(SourceConsumer::agent($agentId));
 
-            throw $refusal;
+                throw new AgentCreationFailedException($agentType, $agentIndex);
+            }
+
+            // Create agent using factory method
+            $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
+
+            Logger::logAgentStart($agent->getId(), $agent->getType());
+            // Before the start hook rather than after it: an agent whose onStart() throws is still an
+            // agent this worker holds, and one the tracker has never heard of is never idle.
+            $this->agentIdleTracker->noteStarted($agentId, microtime(true));
+            // Before the start hook and not inside it: an agent writes its first row within onStart(),
+            // so the claim has to stand by then. The hook stays outside the try because the catch
+            // below takes back the start of an agent that never ran, which is why it may skip
+            // onStop(); a hook that throws has run, so it is not undone here, and the agent stays one
+            // this worker holds, as the idle-tracker note above says. The runtime half of the claim
+            // reaches the node not from this line but from notifyRtSourcesRegistered() below, once
+            // the hook has returned.
+            try {
+                OwnershipDeclaration::claimAll($agent);
+            } catch (Throwable $refusal) {
+                // Half the claims may already stand, and the agent is in the manager since
+                // createAndAddAgent() above: without this the worker would hold an agent nobody ever
+                // started, with some of its rights. Taken back the way runAgentStopHook() takes them,
+                // minus onStop() - a hook that opened nothing has nothing to close.
+                TruthSourceRegistry::unregisterAgent($agentId);
+                RtTruthSourceRegistry::unregisterAgent($agentId);
+                $this->releaseSourceInterest(SourceConsumer::agent($agentId));
+                $this->agentManager->removeAgent($agentId);
+                $this->agentIdleTracker->forget($agentId);
+
+                throw $refusal;
+            }
+        } catch (Throwable $failure) {
+            $this->notifyAgentStartFailed($agentId, $agentType, $agentIndex, $failure->getMessage());
+
+            throw $failure;
         }
         $agent->onStart();
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
@@ -2034,6 +2038,25 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Notifies the daemon that a worker-local agent's start did not finish and left nothing behind.
+     *
+     * The counterpart of {@see notifyAgentStarted()}, sent in its place (HIL-629).
+     *
+     * @param string $agentId Agent id
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for singleton agents
+     * @param string $reason Why the start did not finish, as the failure said it
+     */
+    private function notifyAgentStartFailed(string $agentId, string $agentType, ?string $agentIndex, string $reason): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        $this->daemonClient->send(new WorkerAgentStartFailedDTO($agentId, $agentType, $agentIndex, $reason));
+    }
+
+    /**
      * Reports to the daemon what an agent of this worker claimed: the RT collections it owns,
      * and - through the interest report - everything the claims made this worker a reader of.
      *
@@ -2246,7 +2269,7 @@ abstract class WorkerManager extends BaseManager
         $agentId = ExecutionContext::currentAgentId();
         $acceptKey = ExecutionContext::currentAcceptKey();
         $startedAt = microtime(true);
-        $deadline = $startedAt + self::SOURCE_INTEREST_DEADLINE_SECONDS;
+        $deadline = $startedAt + AgentConstants::START_DEADLINE_SECONDS;
         $putByBefore = count($this->deferredDaemonMessages);
 
         try {

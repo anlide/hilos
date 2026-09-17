@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\ParkedAgentSignal;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
@@ -101,12 +102,19 @@ final class DaemonManagerCommandRefusalTest extends TestCase
     /**
      * Two ways the addressed agent goes missing, and they are worded apart because they are
      * fixed apart: one is a placement that never happened, the other a link that broke.
+     *
+     * The unplaced one is refused when its wait ends rather than at once: the command is held for
+     * the agent while the placement it asked for can still bring it up (HIL-629).
      */
     public function testACommandWhoseAgentNothingPlacedIsRefusedAsUnplaced(): void
     {
         $manager = new DaemonManagerCommandRefusalTestManager();
         $this->queueCommand(DaemonManagerCommandRefusalTestRouter::UNPLACED_COMMAND);
 
+        $manager->drainQueue();
+        $this->assertNull($manager->refusalMessage());
+
+        $manager->expireHeldFrames();
         $manager->drainQueue();
 
         $this->assertSame(
@@ -190,6 +198,18 @@ final class DaemonManagerCommandRefusalTestManager extends DaemonManager
     public function drainQueue(): void
     {
         new ReflectionClass(DaemonManager::class)->getMethod('dispatchSignals')->invoke($this);
+    }
+
+    /**
+     * Moves every frame held for an agent past its deadline, so the next drain answers it.
+     */
+    public function expireHeldFrames(): void
+    {
+        $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
+        $held->setValue($this, array_map(
+            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => new ParkedAgentSignal($parked->signal, $parked->agentId, 0.0),
+            $held->getValue($this),
+        ));
     }
 
     /**
@@ -278,6 +298,18 @@ final class DaemonManagerCommandRefusalTestRouter extends SignalRouter
 
 final class DaemonManagerCommandRefusalTestAgentManagerDaemon extends AgentManagerDaemon
 {
+    /**
+     * Every agent these cases address counts as up, so the drain hands it the frame rather than
+     * holding the frame for a start report no worker of this test will send (HIL-629).
+     *
+     * @param string $agentId Agent the drain asks about
+     * @return bool Always true
+     */
+    public function isAgentStarted(string $agentId): bool
+    {
+        return true;
+    }
+
     protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
         throw new AgentDaemonCreationFailedException('not used in test');

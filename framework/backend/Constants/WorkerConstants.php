@@ -150,6 +150,9 @@ final class WorkerConstants
     /** @var string Agent started notification */
     public const string MESSAGE_AGENT_STARTED = 'agent_started';
 
+    /** @var string Worker -> daemon: an agent's start did not finish, and no agent_started will follow (HIL-629) */
+    public const string MESSAGE_AGENT_START_FAILED = 'agent_start_failed';
+
     /** @var string Agent stopped notification */
     public const string MESSAGE_AGENT_STOPPED = 'agent_stopped';
 

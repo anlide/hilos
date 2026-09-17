@@ -924,6 +924,28 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     }
 
     /**
+     * Starts the agent a frame is addressed to, without delivering the frame.
+     *
+     * Being addressed is what starts an agent, so the master's delivery door keeps starting it at
+     * the moment it is addressed; what it no longer does there is write the frame. A frame for an
+     * agent that has not reported its start is held by the master until the report arrives
+     * (HIL-629), and {@see sendSignalToAgent()} is reached only once it has.
+     *
+     * A start refused quietly - the freeze, or a gate that keeps the agent off this node - leaves
+     * no linked record behind, and that is how the caller tells it from a start under way.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available
+     * @throws HilosException Whatever the project's agent-daemon factory raises
+     */
+    public function ensureAgentUp(string $agentType, ?string $agentIndex): void
+    {
+        $this->startAgent($agentType, $agentIndex);
+    }
+
+    /**
      * Start agent on appropriate worker
      *
      * Agent router: selects appropriate worker and starts agent.

@@ -46,16 +46,19 @@ use Hilos\Cluster\RtReplicaInspector;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\RtSyncSink;
 use Hilos\Cluster\SourceInterestMesh;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -211,6 +214,7 @@ abstract class DaemonManager extends BaseManager implements
     LiveConnectionRoster,
     ContainedFailureSink,
     AgentLossSink,
+    AgentStartSink,
     MasterSignalSender,
     DaemonStatusSource,
     ProtectedModeSnapshotSource,
@@ -296,6 +300,16 @@ abstract class DaemonManager extends BaseManager implements
      */
     private const int SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS = 500;
 
+    /**
+     * @var float Seconds a frame is held for an agent that is not up: the start's own ceiling plus the report's travel (HIL-629)
+     *
+     * Arithmetic on the worker's budget rather than a number of its own, so moving that budget moves
+     * this with it. The extra second is the report's: a master that gave itself exactly the worker's
+     * budget would give up in the very instant the worker's refusal is being written. Seconds rather
+     * than the neighbour's milliseconds, because the value it is derived from is declared in seconds.
+     */
+    private const float AGENT_START_WAIT_SEC = AgentConstants::START_DEADLINE_SECONDS + 1.0;
+
     /** @var float Seconds between attempts at a policy placement that has not taken */
     private const float POLICY_PLACEMENT_RETRY_SEC = 5.0;
 
@@ -359,6 +373,12 @@ abstract class DaemonManager extends BaseManager implements
 
     /** @var list<ParkedSignal> Signals held until the identity behind their connection arrives (HIL-627) */
     private array $parkedSignals = [];
+
+    /** @var list<ParkedAgentSignal> Frames held until the agent they address is up (HIL-629) */
+    private array $parkedAgentSignals = [];
+
+    /** @var list<ParkedAgentSignal> Held frames whose agent reported its start, to be delivered on the next pass */
+    private array $releasedAgentSignals = [];
 
     /** @var ?float microtime of the last stuck-readiness log line; null until the first one */
     private ?float $lastReadinessLogAt = null;
@@ -460,6 +480,9 @@ abstract class DaemonManager extends BaseManager implements
         // initiator's type start again under the freeze it left behind, so a later look at the
         // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
         $this->agentManagerDaemon->registerAgentStopSink($this->protectedModeWatchdog);
+        // Frames addressed to an agent that is coming up wait in the master for its start report,
+        // and are let go the moment it arrives rather than at the next look at the roster (HIL-629).
+        $this->agentManagerDaemon->registerAgentStartSink($this);
         // The manager empties the roster of a dead worker itself; this is only the door out to the
         // project, so the master takes the report rather than a watcher of its own.
         $this->agentManagerDaemon->registerAgentLossSink($this);
@@ -1125,6 +1148,62 @@ abstract class DaemonManager extends BaseManager implements
                 $hookFailure->getMessage()
             ));
         }
+    }
+
+    /**
+     * Lets go of the frames held for an agent whose start was just reported ({@see AgentStartSink}).
+     *
+     * Only moved, not delivered: the report arrives on a worker's link in the socket phase of the
+     * loop, and the frames go out at the head of the next drain ({@see releaseParkedAgentSignals()}),
+     * ahead of anything queued behind them - which is what keeps them in the order they were sent.
+     *
+     * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
+     */
+    public function onAgentStarted(string $agentId): void
+    {
+        $stillParked = [];
+        foreach ($this->parkedAgentSignals as $parked) {
+            if ($parked->agentId === $agentId) {
+                $this->releasedAgentSignals[] = $parked;
+            } else {
+                $stillParked[] = $parked;
+            }
+        }
+
+        $this->parkedAgentSignals = $stillParked;
+    }
+
+    /**
+     * Answers the frames held for an agent whose start the worker reports as not finished ({@see AgentStartSink}).
+     *
+     * At once rather than at the deadline: the report is the answer the deadline stands in for,
+     * and nothing is coming up behind it - the roster has already forgotten the agent, so the next
+     * frame starts it again from scratch. The words are the ones a start refused on this node is
+     * answered with (HIL-999), because that is the true thing to say: the agent belongs here and
+     * did not come up. A page gets its subscription error, an operator the refusal naming the
+     * command, a push this line and nothing else.
+     *
+     * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
+     * @param string $reason Why the start did not finish, as the failure said it
+     * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     */
+    public function onAgentStartFailed(string $agentId, string $reason): void
+    {
+        $stillParked = [];
+        foreach ($this->parkedAgentSignals as $parked) {
+            if ($parked->agentId !== $agentId) {
+                $stillParked[] = $parked;
+                continue;
+            }
+
+            $signal = $parked->signal;
+            Logger::warning("Signal {$signal->signalType->getType()}/{$signal->signalName->getName()} dropped:"
+                . " the start of agent {$agentId} failed - {$reason}");
+            $this->answerStartRefusedSubscription($signal);
+            $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
+        }
+
+        $this->parkedAgentSignals = $stillParked;
     }
 
     /**
@@ -1956,6 +2035,11 @@ abstract class DaemonManager extends BaseManager implements
         // is never coming, which is the one outcome the deadline exists to prevent.
         $released = $this->releaseParkedSignals();
 
+        // Frames held for an agent that was coming up go out first of all (HIL-629): each already
+        // walked, and was held on the one destination that was not up, so it is let go to that
+        // agent alone - never back into the walk, which would reach its other destinations twice.
+        $this->releaseParkedAgentSignals($workerServer, $peerServer);
+
         // Process signals one by one in while-do loop
         while (true) {
             $wasParked = $released !== [];
@@ -2107,13 +2191,15 @@ abstract class DaemonManager extends BaseManager implements
                             $this->refuseUndeliveredCommand($signal, self::COMMAND_NODE_UNREACHABLE_MESSAGE);
                             break;
                         case AgentDeliveryOutcome::AddressUnknown:
-                            $this->answerUnreachableSubscription($signal);
-                            $this->refuseUndeliveredCommand($signal, self::COMMAND_UNPLACED_MESSAGE);
-                            // The drop stands. What is added here is the reason it need not
-                            // repeat: an agent that starts by being addressed is asked for, so
-                            // the address the next frame asks about can exist (HIL-628). Holding
-                            // THIS frame is HIL-629.
+                            // An agent that starts by being addressed is asked for first, so the
+                            // address can come to exist (HIL-628), and this frame is held until the
+                            // agent is up rather than dropped (HIL-629). The asker is answered when
+                            // the wait ends - by the agent, or by the refusal the deadline sends.
                             $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
+                            $this->parkUntilAgentUp($signal, $this->agentManagerDaemon->buildAgentId(
+                                $destination->agentType,
+                                $destination->agentIndex,
+                            ));
                             break;
                         case AgentDeliveryOutcome::StartRefused:
                             // The agent belongs here and did not come up; the node already wrote
@@ -2122,6 +2208,10 @@ abstract class DaemonManager extends BaseManager implements
                             // No placement is asked for - the address is known, it is this node.
                             $this->answerStartRefusedSubscription($signal);
                             $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
+                            break;
+                        case AgentDeliveryOutcome::Held:
+                            // The door held the frame for an agent coming up on this node; like
+                            // any other one agent, it does not stop the other destinations.
                             break;
                         case AgentDeliveryOutcome::Delivered:
                             break;
@@ -5086,6 +5176,7 @@ abstract class DaemonManager extends BaseManager implements
         ) {
             Hilos::$sr->unsubscribeFromAll($data->acceptKey);
             $this->dropParkedSignals($data->acceptKey);
+            $this->dropParkedAgentSignals($data->acceptKey);
         }
     }
 
@@ -5105,6 +5196,28 @@ abstract class DaemonManager extends BaseManager implements
         $this->parkedSignals = array_values(array_filter(
             $this->parkedSignals,
             static function (ParkedSignal $parked) use ($acceptKey): bool {
+                $data = $parked->signal->data;
+
+                return !$data instanceof WebSocketPageSubscribeSignalDTO || $data->acceptKey !== $acceptKey;
+            },
+        ));
+    }
+
+    /**
+     * Forgets the subscriptions this connection had held for an agent that was coming up.
+     *
+     * The same test on the payload as {@see dropParkedSignals()} and for the same reason: a
+     * subscribe let go after its socket is gone binds a record for a dead accept key that nothing
+     * will ever clean. Nothing else held for an agent is dropped here - a push or a command has no
+     * socket of its own to outlive.
+     *
+     * @param string $acceptKey Connection that closed
+     */
+    private function dropParkedAgentSignals(string $acceptKey): void
+    {
+        $this->parkedAgentSignals = array_values(array_filter(
+            $this->parkedAgentSignals,
+            static function (ParkedAgentSignal $parked) use ($acceptKey): bool {
                 $data = $parked->signal->data;
 
                 return !$data instanceof WebSocketPageSubscribeSignalDTO || $data->acceptKey !== $acceptKey;
@@ -5152,6 +5265,26 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Holds a frame for one agent that is not up yet, instead of handing it to nobody (HIL-629).
+     *
+     * Two doors lead here: the walk, for an agent no node is known to host, and the local delivery
+     * door, for an agent whose start on this node has not been reported. Either way the frame is
+     * let go by {@see releaseParkedAgentSignals()} - to the agent once it is up, or to the refusal
+     * it is owed once {@see AGENT_START_WAIT_SEC} has passed.
+     *
+     * @param SignalDTO $signal Signal the walk was delivering
+     * @param string $agentId Agent it waits for
+     */
+    private function parkUntilAgentUp(SignalDTO $signal, string $agentId): void
+    {
+        $this->parkedAgentSignals[] = new ParkedAgentSignal(
+            $signal,
+            $agentId,
+            microtime(true) + self::AGENT_START_WAIT_SEC,
+        );
+    }
+
+    /**
      * Returns the held signals that are ready to be routed, and keeps holding the rest.
      *
      * A signal is ready once the identity behind its connection has arrived, or once its
@@ -5195,6 +5328,93 @@ abstract class DaemonManager extends BaseManager implements
         $this->parkedSignals = $stillParked;
 
         return $released;
+    }
+
+    /**
+     * Lets go of the frames held for agents that were not up, and keeps holding the rest (HIL-629).
+     *
+     * A frame goes out when its agent is up: its start was reported here ({@see onAgentStarted()}
+     * put it aside), or the placement view now names another node, which the forward reaches. Each
+     * goes to its one agent through {@see deliverToAgentDestination()}, the door a frame that never
+     * waited goes through, and never back into the walk: the walk already reached the signal's
+     * other destinations, and a second pass would reach them twice.
+     *
+     * A frame whose agent is still not up when its deadline passes is answered the way a dropped
+     * one used to be at the moment of the drop - a page with its subscription error, an operator
+     * with the refusal naming the command, a push with this line and nothing else.
+     *
+     * No frame is held a second time: a frame goes out only to an agent that is up or elsewhere,
+     * and the delivery door holds neither.
+     *
+     * @param WorkerServer $workerServer Worker server hosting the agents of this node
+     * @param ?AgentSignalMesh $mesh Outbound peer port for a frame whose agent turned up on another node
+     * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
+     */
+    private function releaseParkedAgentSignals(WorkerServer $workerServer, ?AgentSignalMesh $mesh): void
+    {
+        $now = microtime(true);
+        $released = $this->releasedAgentSignals;
+        $this->releasedAgentSignals = [];
+        $stillParked = [];
+        foreach ($this->parkedAgentSignals as $parked) {
+            $agent = AgentId::fromId($parked->agentId);
+            $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($agent->type, $agent->index));
+            if ($destination instanceof RemoteAgentDestination) {
+                $released[] = $parked;
+                continue;
+            }
+
+            if ($parked->deadline > $now) {
+                $stillParked[] = $parked;
+                continue;
+            }
+
+            $signal = $parked->signal;
+            Logger::warning("Signal {$signal->signalType->getType()}/{$signal->signalName->getName()} dropped:"
+                . " agent {$parked->agentId} was not up within " . self::AGENT_START_WAIT_SEC . 's');
+            $this->answerUnreachableSubscription($signal);
+            $this->refuseUndeliveredCommand($signal, self::COMMAND_UNPLACED_MESSAGE);
+        }
+
+        $this->parkedAgentSignals = $stillParked;
+
+        foreach ($released as $parked) {
+            $signal = $parked->signal;
+            $agent = AgentId::fromId($parked->agentId);
+            Logger::info(sprintf(
+                'Signal %s/%s held for agent %s let go after %.3fs',
+                $signal->signalType->getType(),
+                $signal->signalName->getName(),
+                $parked->agentId,
+                $now - ($parked->deadline - self::AGENT_START_WAIT_SEC),
+            ));
+
+            $outcome = $this->deliverToAgentDestination(
+                $workerServer,
+                $mesh,
+                Hilos::$sr->placeAgentDestination(new AgentDestination($agent->type, $agent->index)),
+                $signal,
+            );
+            switch ($outcome) {
+                case AgentDeliveryOutcome::RemoteUnreachable:
+                    $this->answerUnreachableSubscription($signal);
+                    $this->refuseUndeliveredCommand($signal, self::COMMAND_NODE_UNREACHABLE_MESSAGE);
+                    break;
+                case AgentDeliveryOutcome::AddressUnknown:
+                    $this->answerUnreachableSubscription($signal);
+                    $this->refuseUndeliveredCommand($signal, self::COMMAND_UNPLACED_MESSAGE);
+                    break;
+                case AgentDeliveryOutcome::StartRefused:
+                    $this->answerStartRefusedSubscription($signal);
+                    $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
+                    break;
+                case AgentDeliveryOutcome::ShutdownSkipped:
+                case AgentDeliveryOutcome::Held:
+                case AgentDeliveryOutcome::Delivered:
+                    break;
+            }
+        }
     }
 
     /**
@@ -5298,7 +5518,8 @@ abstract class DaemonManager extends BaseManager implements
      * @param WorkerServer $workerServer Worker server hosting the agents
      * @param AgentDestination $destination Agent instance to reach
      * @param SignalDTO $signal Signal to deliver
-     * @return AgentDeliveryOutcome Delivered, ShutdownSkipped when the node is on its way out, or StartRefused
+     * @return AgentDeliveryOutcome Delivered, Held while the agent's start is under way, ShutdownSkipped when
+     *     the node is on its way out, or StartRefused
      */
     private function sendSignalToAgentDestination(
         WorkerServer $workerServer,
@@ -5315,6 +5536,21 @@ abstract class DaemonManager extends BaseManager implements
         $signalName = $signal->signalName->getName();
 
         try {
+            // An agent that has not reported its start is started here, as being addressed always
+            // started it, and the frame waits in the master for the report instead of being written
+            // behind the start: a start that fails inside the worker takes with it every frame
+            // written after it (HIL-629). Held only while a start is under way - a start the freeze
+            // or a placement gate refuses quietly leaves no linked record, and the frame goes on to
+            // the delivery below, which answers it the way it always has.
+            if (!$this->agentManagerDaemon->isAgentStarted($agentId)) {
+                $workerServer->ensureAgentUp($agentType, $agentIndex);
+                if ($this->agentManagerDaemon->getAgent($agentId)?->hasWorkerClient() === true) {
+                    $this->parkUntilAgentUp($signal, $agentId);
+
+                    return AgentDeliveryOutcome::Held;
+                }
+            }
+
             $workerServer->sendSignalToAgent(
                 $agentType,
                 $agentIndex,

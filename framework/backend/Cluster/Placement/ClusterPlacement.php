@@ -329,8 +329,8 @@ final class ClusterPlacement implements WorkerPlacement
      * the same agent is the retry, and a placement that succeeded is answered by {@see locate()}
      * from then on.
      *
-     * The frame that provoked this is still dropped by its caller: holding it until an address
-     * exists is HIL-629.
+     * The frame that provoked this is held by its caller until the agent is up - here, or on the
+     * node the placement names - and answered as undelivered if it is not up in time (HIL-629).
      *
      * @param string $agentType Agent type that was addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent

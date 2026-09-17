@@ -127,7 +127,8 @@ final class WorkerServerRestartAfterIdleTest extends TestCase
             );
         } catch (WorkerClientNotFoundException) {
             // Expected: the start is what this test reads, and no worker process is registered
-            // here for the frame itself to travel down. Delivery to a cold agent is HIL-629.
+            // here for the frame itself to travel down. The master holds a frame for a cold agent
+            // until its start is reported (HIL-629); this test drives the server below that hold.
         }
     }
 

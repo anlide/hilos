@@ -22,7 +22,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -88,6 +90,57 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $this->assertFalse($manager->hostsAgent($failing->getId()));
         $this->assertFalse($manager->hostsAgent($surviving->getId()));
         $this->assertSame(1, $client->closeCount);
+    }
+
+    /**
+     * The master holds every frame for an agent until its start is reported one way or the other,
+     * so a start that refuses says so before the failure goes on to the loop's containment (HIL-629).
+     */
+    public function testAStartThatThrowsReportsItsFailureBeforeTheThrowTravelsOn(): void
+    {
+        $manager = new WorkerManagerStopCleanupTestManager();
+        $client = new WorkerManagerStopCleanupTestClient();
+        $manager->attachClient($client);
+        $agentId = WorkerManagerStopCleanupTestAgent::AGENT_TYPE . ':9';
+
+        try {
+            $manager->handleDaemonMessage(new AgentStartDTO($agentId));
+            $this->fail('The start of an agent the factory cannot build must throw');
+        } catch (RuntimeException $failure) {
+            $this->assertCount(1, $client->sent);
+            $report = $client->sent[0];
+            $this->assertInstanceOf(WorkerAgentStartFailedDTO::class, $report);
+            $this->assertSame($agentId, $report->agentId);
+            $this->assertSame('9', $report->agentIndex);
+            $this->assertSame($failure->getMessage(), $report->reason);
+        }
+
+        $this->assertFalse($manager->hostsAgent($agentId));
+    }
+
+    /**
+     * An agent whose onStart() throws is one this worker keeps, so it is not reported as a failed
+     * start: a master that forgot it would start a second one on another worker.
+     */
+    public function testAStartHookThatThrowsIsNotReportedAsAFailedStart(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+        $agent->startException = new RuntimeException('start hook failed');
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $client = new WorkerManagerStopCleanupTestClient();
+        $manager->attachClient($client);
+
+        try {
+            $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+            $this->fail('A start hook that throws must throw out of the start');
+        } catch (RuntimeException) {
+            $this->assertSame([], array_values(array_filter(
+                $client->sent,
+                static fn(WorkerDTO|array $sent): bool => $sent instanceof WorkerAgentStartFailedDTO,
+            )));
+        }
+
+        $this->assertTrue($manager->hostsAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
     }
 
     public function testHandshakeValidationExceptionDoesNotEscapeWorkerMessage(): void
@@ -211,6 +264,7 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
     public bool $stopHookCalled = false;
     public int $handshakeCallCount = 0;
     public ?ValidationException $handshakeException = null;
+    public ?RuntimeException $startException = null;
 
     /**
      * @param ?string $agentIndex Agent index, so one test can host more than one instance
@@ -239,6 +293,16 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
         return self::RT_COLLECTION;
     }
 
+    /**
+     * @throws RuntimeException When the case asked the start hook to fail
+     */
+    public function onStart(): void
+    {
+        if ($this->startException !== null) {
+            throw $this->startException;
+        }
+    }
+
     public function onStop(): void
     {
         $this->stopHookCalled = true;
@@ -261,12 +325,28 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
 }
 
 /**
- * Daemon client stub that only counts how often the worker closed it.
+ * Daemon client stub that counts how often the worker closed it and keeps what it sent.
  */
 final class WorkerManagerStopCleanupTestClient extends WorkerDaemonClient
 {
     /** How many times cleanup closed this client. */
     public int $closeCount = 0;
+
+    /** @var list<WorkerDTO|array<string, mixed>> Messages the worker sent to the daemon, in order */
+    public array $sent = [];
+
+    /**
+     * @param WorkerDTO|array<string, mixed> $data Message the worker sent
+     */
+    public function send(WorkerDTO|array $data): void
+    {
+        $this->sent[] = $data;
+    }
+
+    public function isConnected(): bool
+    {
+        return true;
+    }
 
     public function close(): void
     {

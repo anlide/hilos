@@ -19,6 +19,7 @@ use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
@@ -106,6 +107,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRegisterDTO::MESSAGE_TYPE => WorkerRegisterDTO::fromArray($data),
             WorkerLogWriteLevelDTO::MESSAGE_TYPE => WorkerLogWriteLevelDTO::fromArray($data),
             WorkerAgentStartedDTO::MESSAGE_TYPE => WorkerAgentStartedDTO::fromArray($data),
+            WorkerAgentStartFailedDTO::MESSAGE_TYPE => WorkerAgentStartFailedDTO::fromArray($data),
             WorkerAgentStoppedDTO::MESSAGE_TYPE => WorkerAgentStoppedDTO::fromArray($data),
             WorkerAgentMessageDTO::MESSAGE_TYPE => WorkerAgentMessageDTO::fromArray($data),
             WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE => DaemonAgentMessageDTO::fromArray($data),

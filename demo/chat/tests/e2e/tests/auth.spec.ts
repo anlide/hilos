@@ -109,34 +109,38 @@ test('registers and signs back in through the gated profile surface, resuming it
   expect(fullLoads).toBe(0)
 })
 
-// HIL-281: disabled — cold-first OAuth login hangs. On the first callback after a
-// fresh daemon boot (or leader re-election) the leader-pinned monopolistic OAuth
-// agent is not yet ready to receive HILOS_OAUTH_PENDING, so the callback worker's
-// sendToAgent is dropped: the pending op is never adopted, the login never binds,
-// and the page hangs on /auth/callback until the frontend backstop fires. A warm
-// retry passes (agent up by then), which was the only thing keeping the suite green.
-// This is a real (narrow) production race too — the first login in the window right
-// after start. TODO: fix the agent-readiness handoff live, then un-fixme.
-test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async ({
+test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   page,
 }) => {
   // OAuth login drives mechanism B end to end offline: the stub provider under
-  // `oauth:github` bounces its authorize URL straight back to /auth/callback, the
+  // `oauth:google` bounces its authorize URL straight back to /auth/callback, the
   // monopolistic OAuth agent (a separate, leader-pinned process) resolves the
   // (provider, subject) to a fresh account, and the bound session rides the
   // current-user fan-out (HIL-161) that signs the visitor in. This is the login-path
   // e2e that was missing while the callback handed the pending op to the agent
   // through a never-synced runtime collection — the copy the agent read stayed empty.
+  //
+  // Quarantined as HIL-281 while the first sign-in after a fresh daemon hung. A
+  // frame for an agent still starting now waits for it in the master (HIL-629),
+  // and this flow was taken off quarantine on the first run against a fresh stand.
+  //
+  // Google and not GitHub: each stub derives its account from its own code, and the
+  // GitHub stub's subject is what profile.spec links to a fresh account later in the
+  // run. Signed in here first, that subject would already belong to this account and
+  // the link would be refused as already linked.
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // Redirect out to the provider (offline stub) and back through the callback; a
-  // successful sign-in lands on the home path with the live session upgraded.
-  await page.getByTestId('auth-icon-oauth-github').click()
-  await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByTestId('message-input')).toBeEnabled()
-  await expect(page.getByTestId('message-signin')).toHaveCount(0)
+  // The trip runs in a window of its own (HIL-633): the stub bounces that window
+  // back to /auth/callback, it couriers the code home and closes, and THIS page
+  // does the exchange — so the sign-in lands in place, on the gated page it
+  // started from, and the address never leaves it.
+  await page.getByTestId('auth-icon-oauth-google').click()
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('auth-oauth-wait')).toHaveCount(0)
+  expect(new URL(page.url()).pathname).toBe('/profile')
 
   // The upgraded session persists: the gated profile now resolves in place, with the
   // OAuth identity bound to the freshly created account.

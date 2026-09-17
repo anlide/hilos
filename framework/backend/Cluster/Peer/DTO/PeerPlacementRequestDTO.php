@@ -18,7 +18,8 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * Carries the agent alone and no node id: naming a target would be this sender picking the host,
  * which is the leader's placement policy to decide. There is no reply frame either — the
  * placement it triggers reaches the asking node as an ordinary view update, and the frame that
- * provoked the request is dropped (its delivery is HIL-629).
+ * provoked the request waits in that node's master until the view names a node running the
+ * agent (HIL-629).
  */
 final class PeerPlacementRequestDTO extends PeerDTO
 {

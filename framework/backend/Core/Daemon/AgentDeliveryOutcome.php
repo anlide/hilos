@@ -14,10 +14,14 @@ namespace Hilos\Core\Daemon;
  * answer and ignore the whole enum. Folding those reactions into the delivery would have made
  * one of the two wrong.
  *
- * Every case but {@see self::Delivered} means the signal reached nobody, and each says why
- * separately because the three whys are three different pieces of news: a node on its way out,
- * a peer that cannot be talked to, and an agent nobody can place. A fourth why is the only one
- * about THIS node: the agent belongs here and did not come up (HIL-999).
+ * Every case but {@see self::Delivered} and {@see self::Held} means the signal reached nobody,
+ * and each says why separately because the three whys are three different pieces of news: a node
+ * on its way out, a peer that cannot be talked to, and an agent nobody can place. A fourth why is
+ * the only one about THIS node: the agent belongs here and did not come up (HIL-999).
+ *
+ * Held is the one case that is not an answer yet: the agent is coming up and the frame waits for
+ * it in the master (HIL-629). Whoever asked is answered when the wait ends - by the agent, or by
+ * the refusal the frame is owed if the agent never arrives.
  *
  * Unbacked on purpose: the value never leaves the master process — it is read by the caller
  * one frame later and never written to a log line, a wire frame or a row.
@@ -38,4 +42,7 @@ enum AgentDeliveryOutcome
 
     /** The agent belongs on this node and could not be started or reached here: no worker, or the start failed */
     case StartRefused;
+
+    /** The agent is not up yet and the frame is being held until it is; nobody is answered now */
+    case Held;
 }

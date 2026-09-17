@@ -407,7 +407,7 @@ caught where it is caught today: at the write, by the registry's guard, with
 
 One refusal belongs beside these although the validator does not make it: the
 start of a single agent whose borrowed claim does not get its state within the
-window a read gets (`WorkerManager::SOURCE_INTEREST_DEADLINE_SECONDS`) is refused
+window a read gets (`AgentConstants::START_DEADLINE_SECONDS`) is refused
 exactly as an undelivered read refuses it — see *Interest And Ownership Are One
 Fact*.
 
