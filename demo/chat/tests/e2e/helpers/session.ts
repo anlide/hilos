@@ -275,6 +275,39 @@ export async function register(page: Page, email: string): Promise<void> {
 }
 
 /**
+ * Take the way PAST the password on the registration password step (HIL-1008).
+ *
+ * The other ending of the same screen: the account is created here, with no
+ * secret of its own, and the mailed link is what it signs in by from then on. It
+ * settles exactly where the password save settles, because what follows it is
+ * the same landing.
+ *
+ * @param page The page sitting on the registration password step.
+ */
+export async function finishWithoutPassword(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-complete-passwordless'))
+  await waitDoneSettled(page)
+}
+
+/**
+ * Register an account with NO password end to end, the way somebody who means to
+ * sign in by a mailed link does (HIL-1008): submit the address, confirm the code,
+ * then take the exit instead of choosing a password.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param email The address to register.
+ */
+export async function registerWithoutPassword(
+  page: Page,
+  email: string,
+): Promise<void> {
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await finishWithoutPassword(page)
+  await continueFromDone(page)
+}
+
+/**
  * Sign in on the currently mounted surface: type the address, wait for the lookup
  * to reveal the password, submit.
  *

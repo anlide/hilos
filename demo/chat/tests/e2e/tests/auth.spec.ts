@@ -17,6 +17,7 @@ import {
   nameFromEmail,
   PASSWORD,
   register,
+  registerWithoutPassword,
   signUp,
   submitFirstPassword,
   submitRegistration,
@@ -233,6 +234,52 @@ test('holds the refusal to one line on a narrow screen', async ({ page }) => {
   )
 })
 
+test('keeps the main button still while the field answers, on a narrow screen', async ({
+  page,
+}) => {
+  const member = uniqueEmail()
+  const free = uniqueEmail()
+
+  // 375 is the narrowest screen the frontend is built for, and the one the owner
+  // saw the form jump on. What must not move is the button under the field.
+  await page.setViewportSize({ width: 375, height: 800 })
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, member)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // A free address: the grey line under the field and nothing else.
+  await typeInto(page.getByTestId('auth-identifier'), free)
+  await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
+    'No account yet — this creates one.',
+  )
+  const roomTaken = (await page.getByTestId('auth-submit').boundingBox())?.y
+  expect(roomTaken).toBeDefined()
+
+  // An account that signs in with a password: the reveal, which is the tallest
+  // thing this slot ever holds and therefore what its room was measured on.
+  await typeInto(page.getByTestId('auth-identifier'), member)
+  await expect(page.getByTestId('auth-password')).toBeVisible()
+  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
+    roomTaken,
+  )
+
+  // And back. The room was taken with the first character and never given up,
+  // so no reply the lookup brings moves what sits under it (HIL-1008).
+  await typeInto(page.getByTestId('auth-identifier'), free)
+  await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
+    'No account yet — this creates one.',
+  )
+  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
+    roomTaken,
+  )
+})
+
 test('gates sending behind the surface, and returns the identity line to anonymous on logout', async ({
   page,
 }) => {
@@ -323,7 +370,7 @@ test('holds the address on submit and creates the account only on the mailed cod
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
 })
 
-test('registers a stranger by the code that came with the sign-in link', async ({
+test('makes an account with no password, then signs it in by the mailed code', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -331,16 +378,24 @@ test('registers a stranger by the code that came with the sign-in link', async (
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  // A free address: the lookup turns the one field into a registration, and the
-  // envelope is the passwordless way through it. No password field stands beside
-  // it any more — a registration is asked for one after the code (HIL-825).
-  await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
-  await page.getByTestId('auth-icon-magic-link').click()
+  // Where the choice between a password and none lives since HIL-1008: not at the
+  // address field, where both roads mail the same address and there is nothing to
+  // choose between, but under Save password, once the address is proved.
+  await registerWithoutPassword(page, email)
+  await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
+  await logout(page)
 
-  // Nothing is sent before the terms: accepting them is what mails the letter.
-  await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
+  // And what the account it made signs in by from then on. The link is its only
+  // way in, so the lookup promotes it to the MAIN button instead of standing it
+  // beside a password field that does not exist.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
+    'This account has no password.',
+  )
+  await expect(page.getByTestId('auth-password')).toHaveCount(0)
+  await clickSubmit(page.getByTestId('auth-icon-magic-link'))
 
   // The screen the person asked for does not change under them — it grows a
   // field (HIL-606). The link is still there to click; this spec is the person
@@ -354,8 +409,9 @@ test('registers a stranger by the code that came with the sign-in link', async (
   await continueFromDone(page)
   await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
 
-  // One letter, whichever half was used — the code did not buy a second one.
-  expect(await mailsTo(email)).toHaveLength(1)
+  // Two letters and no more: the code that proved the address, and the link that
+  // signed it back in. Neither half of the second one bought a third.
+  expect(await mailsTo(email)).toHaveLength(2)
 })
 
 test('signs a member in by the code, on an address that already has an account', async ({
@@ -406,21 +462,27 @@ function returnPath(url: string): string {
   return `${parsed.pathname}${parsed.search}`
 }
 
-test('signs a stranger in by clicking the link in the letter, from a cold load', async ({
+test('signs a member in by clicking the link in the letter, from a cold load', async ({
   page,
 }) => {
   const email = uniqueEmail()
 
+  // An account made the ordinary way first. The envelope stands where it still
+  // stands after HIL-1008 — beside the password field of an account that has one,
+  // as the way past that password — and a free address no longer offers it at all.
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
 
   // The other half of the letter (HIL-606 covers the code): this is the person
   // whose mail is open on the same device, who just clicks.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
   await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
+  await expect(page.getByTestId('auth-password')).toBeVisible()
   await page.getByTestId('auth-icon-magic-link').click()
-  await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
   // The click itself: a full browser load of the return route, which is the
@@ -435,8 +497,9 @@ test('signs a stranger in by clicking the link in the letter, from a cold load',
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(nameFromEmail(email))
 
-  // One letter, whichever half was used — the click did not buy a second one.
-  expect(await mailsTo(email)).toHaveLength(1)
+  // Two letters and no more: the code the account was made with, and the link it
+  // came back by. Whichever half of the second was used, the click bought no third.
+  expect(await mailsTo(email)).toHaveLength(2)
 })
 
 test('turns a tampered sign-in link down on its own screen', async ({
@@ -444,13 +507,19 @@ test('turns a tampered sign-in link down on its own screen', async ({
 }) => {
   const email = uniqueEmail()
 
+  // An account first, for the same reason as the case above: the envelope is
+  // offered beside a password, never on a free address (HIL-1008).
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await register(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await logout(page)
+
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await typeInto(page.getByTestId('auth-identifier'), email)
-  await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
+  await expect(page.getByTestId('auth-password')).toBeVisible()
   await page.getByTestId('auth-icon-magic-link').click()
-  await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
   // A token nobody minted. The point is WHICH screen answers: a refusal that
@@ -464,7 +533,7 @@ test('turns a tampered sign-in link down on its own screen', async ({
   await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
   // Nothing was signed in, and the letter is still the only one.
   await expect(page.getByTestId('nav-logout')).toHaveCount(0)
-  expect(await mailsTo(email)).toHaveLength(1)
+  expect(await mailsTo(email)).toHaveLength(2)
 })
 
 test('says how the letter is going, to every tab of the browser and across a reload', async ({

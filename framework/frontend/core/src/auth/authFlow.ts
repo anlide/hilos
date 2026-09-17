@@ -378,7 +378,7 @@ export type AuthFlowScreen =
   | 'done_signed_in'
 
 /** What a submit dispatch is: the step's form, or a code re-send. */
-export type AuthSubmitAction = 'submit' | 'resend'
+export type AuthSubmitAction = 'submit' | 'resend' | 'finish_without_password'
 
 /** Wiring for {@link createAuthFlow}. */
 export interface AuthFlowOptions {
@@ -457,6 +457,17 @@ export interface AuthFlow {
   readonly error: ReadonlySignal<AuthFlowError | null>
   /** Whether the active step's form is complete enough to submit. */
   readonly submittable: ReadonlySignal<boolean>
+  /**
+   * Whether the password screen may offer the way past it — creating the account
+   * with no password and signing in by a mailed link instead (HIL-1008).
+   *
+   * Half of the gate and the half the machine owns: whether the project mounted a
+   * passwordless way in that serves an address at all. The other half is whether
+   * this installation can mail, which the handshake answers and the view reads
+   * beside this signal. Both are needed, because the exit must never create an
+   * account nobody can get back into.
+   */
+  readonly canFinishWithoutPassword: ReadonlySignal<boolean>
   /** The icon methods currently visible against the identifier field. */
   readonly icons: ReadonlySignal<readonly AuthFlowMethodDescriptor[]>
   /** The code channels applicable to the current identifier kind. */
@@ -539,6 +550,17 @@ export interface AuthFlow {
    * screen submits. Everywhere else it dispatches. A no-op while pending.
    */
   submit(): Promise<void>
+  /**
+   * Finish a proved registration with no password, the exit that stands beside
+   * this screen's submit (HIL-1008).
+   *
+   * A dispatch of the machine's own and not a button the surface wires itself,
+   * because what comes back has to be APPLIED: the landing is announced over the
+   * session, but a refusal - a hold that ran out, an address that became
+   * somebody's meanwhile - is answered inline exactly as the password save's is,
+   * and the error and the rollback are the machine's to set.
+   */
+  finishWithoutPassword(): Promise<void>
   /**
    * Re-send the active code. Blocked (a silent no-op) until
    * {@link resendAvailableAt}; the backend re-arms the gate via
@@ -1209,6 +1231,22 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   const screenKey = computedSignal(() =>
     screenKeyOf(flow.get(), detection.get().result),
   )
+  // A device key and an external provider do not count, deliberately: an account
+  // created a second ago has no key registered against it and no identity linked
+  // to it, so neither is a way back into it. The magic link is named directly, the
+  // way the password key is named directly throughout this file, rather than
+  // through a new field on the descriptor nobody else would read.
+  const canFinishWithoutPassword = computedSignal(() => {
+    const state = flow.get()
+
+    return (
+      state.step === 'set_password' &&
+      state.intent === 'register' &&
+      options.methods.some(
+        (descriptor) => descriptor.key === MAGIC_LINK_METHOD_KEY,
+      )
+    )
+  })
   const primaryAction = computedSignal<AuthFlowPrimaryAction>(() => {
     const state = flow.get()
     switch (state.step) {
@@ -1667,6 +1705,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     pending,
     error,
     submittable,
+    canFinishWithoutPassword,
     icons,
     channels,
     primaryAction,
@@ -1794,6 +1833,14 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
+    },
+    async finishWithoutPassword(): Promise<void> {
+      if (pending.get() || !canFinishWithoutPassword.get()) {
+        return
+      }
+      await dispatch(() =>
+        options.onSubmit('finish_without_password', flow.get(), form.get()),
+      )
     },
     async resend(): Promise<void> {
       if (pending.get() || isResendBlocked()) {

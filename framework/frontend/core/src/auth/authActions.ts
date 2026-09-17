@@ -58,6 +58,7 @@ import {
   AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_COMPLETE_PASSWORD_RESET,
   AUTH_ACTION_COMPLETE_REGISTRATION,
+  AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_CONFIRM_PASSWORD_RESET,
@@ -330,13 +331,26 @@ function submitAuthFlow(
       // with it, for a registration, the hold this address was kept under.
       return startCodeFlow(context, flow, form)
     case 'set_password':
-      // One screen, two endings (HIL-825): a recovery writes the password of an
-      // account that exists, a registration CREATES the account on the address it
-      // just proved. The address is deliberately absent from both payloads: the
-      // backend reads it off what the accepted code left on this session — a
-      // grant for the recovery, the proved hold for the registration — so a
-      // payload cannot name an account other than the one whose mailbox was just
-      // proven.
+      // The way PAST the password is asked for by name rather than by intent
+      // (HIL-1008): it is the same screen and the same proved hold, but a
+      // different ending, and reading it off the intent would make the branch
+      // below say two things at once. It carries no payload at all — not even
+      // the password the other two send.
+      if (action === 'finish_without_password') {
+        return dispatchFlow(
+          context,
+          AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
+          {},
+        )
+      }
+
+      // One screen, two endings with a password in them (HIL-825): a recovery
+      // writes the password of an account that exists, a registration CREATES
+      // the account on the address it just proved. The address is deliberately
+      // absent from both payloads: the backend reads it off what the accepted
+      // code left on this session — a grant for the recovery, the proved hold
+      // for the registration — so a payload cannot name an account other than
+      // the one whose mailbox was just proven.
       return dispatchFlow(
         context,
         flow.intent === 'register'

@@ -264,6 +264,7 @@ const detection = useSignal(auth.detection)
 const pending = useSignal(auth.pending)
 const error = useSignal(auth.error)
 const submittable = useSignal(auth.submittable)
+const canFinishWithoutPassword = useSignal(auth.canFinishWithoutPassword)
 const icons = useSignal(auth.icons)
 const channels = useSignal(auth.channels)
 const primaryAction = useSignal(auth.primaryAction)
@@ -325,14 +326,30 @@ const heading = computed(() =>
 
 const submitLabel = computed(() => SUBMIT_LABELS[screenKey.value])
 
+// The way past the password, gated by both halves of the same question: whether
+// the project mounted a passwordless way in that serves an address (the machine
+// knows the registry) and whether this installation can mail at all (the
+// handshake answers that, the same key the recovery key reads). Either half
+// missing and the exit would create an account nobody could get back into.
+const showFinishWithoutPassword = computed(
+  () => canFinishWithoutPassword.value && codeDelivery.value.email,
+)
+
 // The password screen says which of its two endings this is. A recovery is
 // replacing a password that exists; a registration is about to create the
 // account, and the sentence has to say so before the button does (HIL-825).
-const setPasswordLead = computed(() =>
-  state.value.intent === 'register'
-    ? 'Your address is confirmed. Choose a password — your account is created when you save it.'
-    : 'The code was accepted. Choose a new password.',
-)
+// A registration that is ALSO offered the way past the password says so here
+// too (HIL-1008): the sentence is the only place the second road is explained,
+// and promising it where the exit is not offered would be a lie.
+const setPasswordLead = computed(() => {
+  if (state.value.intent !== 'register') {
+    return 'The code was accepted. Choose a new password.'
+  }
+
+  return showFinishWithoutPassword.value
+    ? 'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
+    : 'Your address is confirmed. Choose a password — your account is created when you save it.'
+})
 
 const newPasswordLabel = computed(() =>
   state.value.intent === 'register' ? 'Password' : 'New password',
@@ -444,28 +461,14 @@ const showPassword = computed(() => {
   )
 })
 
-// The row that carries the main way in and the ways past it. It outlives the
-// password field (HIL-825): a free address is registered without one, but the
-// envelope beside it is still the passwordless way to register that address, and
-// dropping it with the field would have taken the magic link's only entrance on
-// this screen. So the row stands wherever the main way IS a password - the one
-// this account signs in with, or the one this registration will ask for after
-// the code.
-const showPasswordRow = computed(() => {
-  if (showPassword.value) {
-    return true
-  }
-  const result = detection.value.result
-
-  return (
-    adjacentIcons.value.length > 0 &&
-    state.value.step === 'identifier' &&
-    result !== null &&
-    result.kind === 'email' &&
-    result.status === 'none' &&
-    result.registerable.includes(PASSWORD_METHOD_KEY)
-  )
-})
+// The room under the identifier field is taken from the first character typed
+// and never given back while something is in the field: the reveal and the hint
+// are mutually exclusive, so without it the step would change height on every
+// reply the lookup brings (styling-rules.md, "The room a live message takes").
+// An empty field is deliberately outside it - the icon row above leaves with the
+// first character, there is nothing to answer yet, and the longest sentence of
+// all lives there (an installation with no channel at all).
+const roomHeld = computed(() => form.value.identifier.trim() !== '')
 
 // The recovery key sits beside the password and only for an account that HAS one:
 // there is nothing to reset for an address that signs in by link, and nothing at
@@ -783,6 +786,14 @@ function startRecovery(): void {
 function cancelRegistration(): void {
   void authActions.cancelRegistration()
   auth.backToIdentifier()
+}
+
+// The way past the password on the screen that asks for one: the account is
+// created here and now, with the mailed link as its way in. The machine
+// dispatches it, so a refusal lands in the error row and rolls the surface back
+// exactly as the password save's does.
+function completeWithoutPassword(): void {
+  void auth.finishWithoutPassword()
 }
 
 // The way back into a code this browser is already holding, offered by the
@@ -1212,72 +1223,88 @@ onUnmounted(() => {
           :value="form.identifier"
           @input="updateIdentifier($event)"
         />
-        <div
-          v-if="identifierHint"
-          class="form-text"
-          data-id="auth-identifier-hint"
-        >
-          {{ identifierHint }}
-        </div>
-      </div>
-
-      <!-- The password lives inside this step, revealed by the reply — and only for
-      an account that HAS one, since HIL-825 (a registration is asked for its
-      password after the code), which is why the autofill hint is unconditional.
-      Beside it stand the ways past it: the envelope for an account that would
-      rather have a link, the key for one that forgot the password. The envelope
-      outlives the field: on a free address it is the way to register WITHOUT a
-      password, and there is nowhere else on this screen for it to stand. -->
-      <div v-if="showPasswordRow" class="mb-3">
-        <label
-          v-if="showPassword"
-          class="form-label small fw-semibold"
-          for="auth-password"
-        >
-          Password
-        </label>
-        <div
-          class="d-flex align-items-center gap-2"
-          :class="{ 'justify-content-center': !showPassword }"
-        >
-          <input
-            v-if="showPassword"
-            id="auth-password"
-            type="password"
-            class="form-control"
-            autocomplete="current-password"
-            data-id="auth-password"
-            :value="form.password"
-            @input="updatePassword($event)"
-          />
-          <LoadingButton
-            v-for="method in adjacentIcons"
-            :key="method.key"
-            type="button"
-            class="btn-outline-secondary"
-            :loading="pending && state.methodKey === method.key"
-            :disabled="pending"
-            :aria-label="method.label"
-            :title="method.label"
-            :data-id="methodDataId(method.key)"
-            @click="chooseMethod(method.key)"
-          >
-            <i :class="methodIcon(method.key)" aria-hidden="true" />
-          </LoadingButton>
-          <button
-            v-if="showRecovery"
-            type="button"
-            class="btn btn-outline-secondary"
-            aria-label="Forgot your password?"
-            title="Forgot your password?"
-            data-id="auth-recovery"
-            @click="startRecovery()"
-          >
-            <i class="bi bi-key" aria-hidden="true" />
-          </button>
-        </div>
-        <div v-if="state.intent === 'register'" class="form-text">
-          At least {{ PASSWORD_MIN_LENGTH }} characters.
+        <!-- One room under the field for the whole conversation with it: the
+        reveal when the reply is an account that signs in with a password, the
+        grey line otherwise, and nothing while the first lookup runs. The reveal
+        is the tallest of the three, so an invisible twin of it holds the room
+        and the line lies over that twin — the content it covers is the twin and
+        nothing else (styling-rules.md, "The room a live message takes").
+        A free address has no row here at all: its one way on is the main button
+        (mockup node `new_email`). A found account has one because the envelope
+        and the key walk past the FIELD standing beside them — with no field
+        there is nothing for them to walk past. -->
+        <div class="position-relative" data-id="auth-reveal-slot">
+          <template v-if="showPassword">
+            <label class="form-label small fw-semibold" for="auth-password">
+              Password
+            </label>
+            <div class="d-flex align-items-center gap-2">
+              <input
+                id="auth-password"
+                type="password"
+                class="form-control"
+                autocomplete="current-password"
+                data-id="auth-password"
+                :value="form.password"
+                @input="updatePassword($event)"
+              />
+              <LoadingButton
+                v-for="method in adjacentIcons"
+                :key="method.key"
+                type="button"
+                class="btn-outline-secondary"
+                :loading="pending && state.methodKey === method.key"
+                :disabled="pending"
+                :aria-label="method.label"
+                :title="method.label"
+                :data-id="methodDataId(method.key)"
+                @click="chooseMethod(method.key)"
+              >
+                <i :class="methodIcon(method.key)" aria-hidden="true" />
+              </LoadingButton>
+              <button
+                v-if="showRecovery"
+                type="button"
+                class="btn btn-outline-secondary"
+                aria-label="Forgot your password?"
+                title="Forgot your password?"
+                data-id="auth-recovery"
+                @click="startRecovery()"
+              >
+                <i class="bi bi-key" aria-hidden="true" />
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <div
+              v-if="roomHeld"
+              class="invisible"
+              aria-hidden="true"
+              data-id="auth-reveal-idle"
+            >
+              <!-- Spans and divs where the real row has a control: the twin holds
+              room, it does not take focus or name anything. The label stays a
+              `label` because Bootstrap's reboot makes that one inline-block, and
+              a div in its place is two pixels shorter — which is a jump, since
+              this is what the room is measured by. One icon is enough: the row is
+              a flex of equally tall things, so their number is not its height. -->
+              <label class="form-label small fw-semibold">Password</label>
+              <div class="d-flex align-items-center gap-2">
+                <div class="form-control">&nbsp;</div>
+                <span class="btn position-relative btn-outline-secondary">
+                  <span><i class="bi bi-envelope" aria-hidden="true" /></span>
+                </span>
+              </div>
+            </div>
+            <div
+              v-if="identifierHint"
+              class="form-text"
+              :class="roomHeld ? 'position-absolute top-0 start-0 w-100' : ''"
+              data-id="auth-identifier-hint"
+            >
+              {{ identifierHint }}
+            </div>
+          </template>
         </div>
       </div>
 
@@ -1700,6 +1727,20 @@ onUnmounted(() => {
       >
         {{ submitLabel }}
       </LoadingButton>
+
+      <!-- Two ways to FINISH the registration, then the way to drop it, and the
+      order carries that meaning (HIL-1008). Unemphasized rather than a second
+      primary: choosing a password is still the road this screen is named after. -->
+      <button
+        v-if="showFinishWithoutPassword"
+        type="button"
+        class="btn btn-link btn-sm w-100"
+        :disabled="pending"
+        data-id="auth-complete-passwordless"
+        @click="completeWithoutPassword()"
+      >
+        Create it without a password
+      </button>
 
       <!-- The same way out the code screen carries, for the same reason: this
       screen has no address field and no step behind it, so whoever changed their

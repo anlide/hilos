@@ -37,6 +37,10 @@ export const AUTH_ACTION_COMPLETE_PASSWORD_RESET =
 /** Client→server: save the first password of a proved registration, which creates the account (PHP `HilosSignalConstants::HILOS_COMPLETE_REGISTRATION`). */
 export const AUTH_ACTION_COMPLETE_REGISTRATION = 'hilos_complete_registration'
 
+/** Client→server: create the account of a proved registration with no password at all (PHP `HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS`). */
+export const AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS =
+  'hilos_complete_registration_passwordless'
+
 /** Client→server: send a one-time login code to a phone over a chosen channel (PHP `HilosSignalConstants::HILOS_REQUEST_PHONE_CODE`). */
 export const AUTH_ACTION_REQUEST_PHONE_CODE = 'hilos_request_phone_code'
 

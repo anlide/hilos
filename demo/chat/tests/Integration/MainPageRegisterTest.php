@@ -11,6 +11,7 @@ use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
@@ -444,6 +445,125 @@ final class MainPageRegisterTest extends IntegrationTestCase
                 Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
                 'A hold that was never proved buys no account',
             );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The way past the password screen creates the account with a mailed link instead.
+     *
+     * The second ending of the same screen (HIL-1008). What lands is a MAGIC-LINK identity
+     * on the proved address and no secret at all: the hold behind it was taken for a
+     * password, so the landing is TOLD what this exit earns rather than reading the hold.
+     * Everything after it is the ordinary landing - verified identity, the name off the
+     * address, the session signed in, the hold released.
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testTheWayPastThePasswordCreatesAnAccountThatSignsInByLink(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'nopw-ak');
+        $this->register($agent, 'nopw-ak', $email);
+        $this->seedKnownCode($email);
+        $this->confirm($agent, 'nopw-ak', $email, self::CODE);
+
+        try {
+            $outcome = $this->completePasswordless($agent, 'nopw-ak');
+
+            $this->assertTrue($outcome->ok);
+            $this->assertSame(AuthFlowStep::DONE, $outcome->step);
+
+            $identity = Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email);
+            $this->assertNotNull($identity, 'The exit must leave the account a way back in');
+            $this->assertTrue($identity->verified, 'The code that came before it is the proof of ownership');
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
+                'The whole point of this exit is that no password is made up',
+            );
+            $this->assertNull($this->readIdentitySecret($email), 'Nothing secret is stored for it');
+
+            $userId = $identity->userId;
+            $this->assertNotNull($userId);
+            $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
+
+            $this->assertSame($userId, $this->sessionOf('nopw-ak')?->userId);
+            $this->assertSame($userId, Hilos::$rt->connections['nopw-ak']->userId);
+            $this->assertNull($this->holdOf('nopw-ak'), 'The hold is released on success');
+            $this->assertSame(0, $this->reservationRowCount($email));
+            $this->assertNull(Hilos::$rt->hilosRegistrationWaiters['nopw-ak'], 'The landing waiter is released');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The way past the password rolls back with no proved hold behind it, as the save does.
+     *
+     * Same answer as {@see testSavingWithoutAProvedHoldRollsBack()} and for the same
+     * reason: the address this exit would create an account for is read off the hold, so
+     * with no hold there is no address and nothing honest to do but the address field.
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testTheWayPastThePasswordWithoutAProvedHoldRollsBack(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'nopw-unproved-ak');
+        $this->register($agent, 'nopw-unproved-ak', $email);
+
+        try {
+            $outcome = $this->completePasswordless($agent, 'nopw-unproved-ak');
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_RESERVATION_EXPIRED, $outcome->code);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email),
+                'A hold that was never proved buys no account',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * An address taken while this screen was being read sends this exit to sign-in too.
+     *
+     * The hold keeps a second REGISTRATION off the address, not an account arriving by
+     * another road, so the question is asked once more at the last moment it can matter -
+     * here as at the password save.
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testTheWayPastThePasswordOnATakenAddressAnswersIdentifierTaken(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'nopw-taken-ak');
+        $this->register($agent, 'nopw-taken-ak', $email);
+        $this->seedKnownCode($email);
+        $this->confirm($agent, 'nopw-taken-ak', $email, self::CODE);
+
+        $elsewhere = Hilos::$db->users->actions->createWithName('elsewhere');
+        Hilos::$db->identities->createPasswordIdentity((int)$elsewhere->id, $email, self::PASSWORD);
+
+        try {
+            $outcome = $this->completePasswordless($agent, 'nopw-taken-ak');
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN, $outcome->code);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $outcome->step);
+            $this->assertSame(AuthFlowIntent::LOGIN, $outcome->intent);
+            $this->assertNull(
+                Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $email),
+                'No second account is built for an address that already has one',
+            );
+            $this->assertNull($this->sessionOf('nopw-taken-ak')?->userId, 'Nobody is signed in');
         } finally {
             $this->cleanUp();
         }
@@ -1559,6 +1679,29 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $acceptKey,
             HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
             new CompleteRegistrationActionDTO($password),
+        );
+        $handedOver = $this->deliverLibraryFrames($agent);
+        $outcome = $reply ?? $handedOver;
+        $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
+
+        return $outcome;
+    }
+
+    /**
+     * Dispatches the way past the password screen, which creates the account with none.
+     *
+     * @param ChatAgent $agent Agent owning the page
+     * @param string $acceptKey Acting connection accept key
+     * @return AuthFlowOutcome The outcome the surface is answered with
+     * @throws HilosException When the passwordless complete handler rejects the action
+     */
+    private function completePasswordless(ChatAgent $agent, string $acceptKey): AuthFlowOutcome
+    {
+        ExecutionContext::setCurrentAcceptKey($acceptKey);
+        $reply = $this->usersLibrary()->onAgentAction(
+            $acceptKey,
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS,
+            new CompleteRegistrationPasswordlessActionDTO(),
         );
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;

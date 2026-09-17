@@ -27,6 +27,7 @@ use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
@@ -188,6 +189,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => CompleteRegistrationActionDTO::class,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS =>
+            CompleteRegistrationPasswordlessActionDTO::class,
         HilosSignalConstants::HILOS_CANCEL_REGISTRATION => CancelRegistrationActionDTO::class,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
@@ -208,7 +211,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Every anonymous-reachable door into an account is throttled (HIL-420), and the list
      * is exactly that: the ones that guess a secret and the ones that make the server spend
      * something on a stranger's say-so - an email, an SMS, a password hash, a registration
-     * reservation. Reads are absent, with the one exception that proves the rule:
+     * reservation, an account. Reads are absent, with the one exception that proves the rule:
      * DETECT_IDENTIFIER answers whether an account exists, which is precisely what an
      * enumerator wants, and this list is the whole of what keeps that answer expensive
      * (HIL-414). Canceling a registration is absent because it spends nothing and can only
@@ -224,6 +227,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
         HilosSignalConstants::HILOS_CONFIRM_REGISTER,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
@@ -820,6 +824,17 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 return $this->passwordCommands()->completeRegistration($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS:
+                if (!$dto instanceof CompleteRegistrationPasswordlessActionDTO) {
+                    throw new InvalidActionPayloadException(
+                        $action,
+                        CompleteRegistrationPasswordlessActionDTO::class,
+                        $dto,
+                    );
+                }
+
+                return $this->passwordCommands()->completeRegistrationPasswordless($acceptKey, $dto);
 
             case HilosSignalConstants::HILOS_CANCEL_REGISTRATION:
                 if (!$dto instanceof CancelRegistrationActionDTO) {

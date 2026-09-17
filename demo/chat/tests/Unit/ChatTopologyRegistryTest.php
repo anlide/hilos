@@ -31,6 +31,7 @@ use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
@@ -634,6 +635,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_CANCEL_REGISTRATION => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -690,6 +692,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
             HilosSignalConstants::HILOS_CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
             HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => CompleteRegistrationActionDTO::class,
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS =>
+                CompleteRegistrationPasswordlessActionDTO::class,
             HilosSignalConstants::HILOS_CANCEL_REGISTRATION => CancelRegistrationActionDTO::class,
             HilosSignalConstants::HILOS_REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
             HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,

@@ -515,6 +515,9 @@ final class HilosSignalConstants
     /** Client → server: save the first password of a proved registration, which creates the account (public, anonymous-reachable, HIL-825). */
     public const string HILOS_COMPLETE_REGISTRATION = 'hilos_complete_registration';
 
+    /** Client → server: create the account of a proved registration with no password at all (public, anonymous-reachable, HIL-1008). */
+    public const string HILOS_COMPLETE_REGISTRATION_PASSWORDLESS = 'hilos_complete_registration_passwordless';
+
     /**
      * Client → server: send a one-time login code to a phone over a chosen channel
      * (public, anonymous-reachable, HIL-492).

@@ -336,7 +336,10 @@ final class RegistrationReservationService
      * hold carries no credential at all since HIL-825, and a registration that ends on
      * a password screen hands the plaintext straight through to the identity that is
      * being written. With no password - a link, a number - the hold's own type names
-     * the secret-less identity instead. The identity is created VERIFIED either way:
+     * the secret-less identity instead, unless the caller names one over it: the way
+     * past the password screen (HIL-1008) ends a hold taken for a password, and what it
+     * earns is the mailed link the surface offered, not the hold's own type. The
+     * identity is created VERIFIED either way:
      * whatever came back, code or link, is the proof of ownership that the old
      * "register now, confirm later" flag used to wait for.
      *
@@ -350,6 +353,7 @@ final class RegistrationReservationService
      * @param string $identifier Normalized identifier just proven (lowercased email)
      * @param int $userId Freshly minted user the identity belongs to
      * @param ?string $plainPassword Password the account is being created with, or null for a method that carries none
+     * @param ?string $landAs Identity a secret-less landing earns (see IdentityType), or null to take the hold's own type
      * @return list<string> Session tokens whose hold on the identifier this call dropped
      * @throws LogicException When the landing hold carries neither a password nor a landable type
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
@@ -364,13 +368,14 @@ final class RegistrationReservationService
         string $identifier,
         int $userId,
         ?string $plainPassword = null,
+        ?string $landAs = null,
     ): array {
         $collection = $this->collection();
 
         $reservation = $collection->findActiveForSession($sessionToken);
         $ownHold = $reservation !== null && $reservation->identifier === $identifier ? $reservation : null;
         if ($ownHold !== null) {
-            $this->land($ownHold, $userId, $plainPassword);
+            $this->land($ownHold, $userId, $plainPassword, $landAs);
         } else {
             $this->landWithoutHold($identifier, $userId);
         }
@@ -390,21 +395,28 @@ final class RegistrationReservationService
      * the hold was made under: it is hashed here, at the moment the account comes into
      * being, so no hash for an account that does not exist is ever stored anywhere
      * (HIL-825). Without one, the hold's own type names the secret-less identity that
-     * method earns. A hold that is neither is a contradiction - nothing but a submit
-     * could have written it - so it is refused rather than landed into an account
-     * nobody could ever sign into.
+     * method earns, unless the caller names one over it - which is what the way past the
+     * password screen does (HIL-1008): its hold was taken for a password, and the exit it
+     * was left by is the mailed link. A hold that names neither is a contradiction -
+     * nothing but a submit could have written it - so it is refused rather than landed
+     * into an account nobody could ever sign into.
      *
      * @param ObjectRegistrationReservation $reservation This session's hold, whose proof was just accepted
      * @param int $userId Freshly minted user the identity belongs to
      * @param ?string $plainPassword Password the account is being created with, or null for a method that carries none
+     * @param ?string $landAs Identity a secret-less landing earns (see IdentityType), or null to take the hold's own type
      * @throws LogicException When the hold carries neither a password nor a landable type
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
      * @throws EmptyValueException When the reservation holds an empty identifier
      * @throws DatabaseException When an identity or reservation query fails
      * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
-    private function land(ObjectRegistrationReservation $reservation, int $userId, ?string $plainPassword): void
-    {
+    private function land(
+        ObjectRegistrationReservation $reservation,
+        int $userId,
+        ?string $plainPassword,
+        ?string $landAs = null,
+    ): void {
         $identifier = $reservation->identifier;
         if ($plainPassword !== null) {
             $this->identities()->createPasswordIdentity($userId, $identifier, $plainPassword)->markVerified();
@@ -412,7 +424,7 @@ final class RegistrationReservationService
             return;
         }
 
-        match ($reservation->type) {
+        match ($landAs ?? $reservation->type) {
             IdentityType::MAGIC_LINK => $this->identities()->createMagicLinkIdentity($userId, $identifier),
             IdentityType::SMS => $this->identities()->createSmsIdentity($userId, $identifier),
             default => throw new LogicException("Reservation for {$identifier} landed without a password"),

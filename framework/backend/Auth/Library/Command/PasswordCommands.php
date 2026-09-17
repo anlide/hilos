@@ -9,6 +9,7 @@ use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
@@ -458,6 +459,78 @@ final class PasswordCommands extends AbstractLibraryCommands
             $email,
             $this->displayNameFromEmail($email),
             $dto->password,
+        );
+    }
+
+    /**
+     * Creates the account of a proved registration with no password at all.
+     *
+     * The second ending of the same screen (HIL-1008). The choice between a password and
+     * none belongs here and not at the address field: at the address field both roads
+     * mail the same address, and the difference between them only exists once the address
+     * is proved. The surface offers this exit only where the new account would have a way
+     * back in - a passwordless method the project mounted, and an installation that can
+     * mail it.
+     *
+     * No second letter is spent, and none is needed: the address was proved by the code
+     * this screen was reached with.
+     *
+     * The account lands as a MAGIC-LINK identity, and the landing is told so rather than
+     * left to read it off the hold: this hold was taken for a password
+     * ({@see register()}), and a secret-less landing that trusted its type would refuse
+     * itself. Which identity it is, is not a choice made here - it is the one the surface
+     * gated the exit on, since an account with no way back in is the thing that gate
+     * exists to prevent.
+     *
+     * The same answers as {@see completeRegistration()}, minus the one about a password
+     * that is not there. No proved hold rolls the surface back to the address field; the
+     * address having become somebody's while the person was reading the screen is a move
+     * to sign-in, and the race between browsers is settled where it is settled for the
+     * password road, by {@see AbstractLibraryCommands::landRegistration()} catching the
+     * duplicate identity.
+     *
+     * @param string $acceptKey Accept key the action arrived on
+     * @param CompleteRegistrationPasswordlessActionDTO $dto Parsed complete payload (no fields)
+     * @return ?AuthFlowOutcome Where the surface goes next, or null when the session holder answers
+     * @throws ItemNotFoundForUpdateException When the acting connection has no session
+     * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws InvalidFormatException When the proved address is not a valid identifier
+     * @throws InvalidArgumentException When the landing frame cannot be named or queued
+     * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
+     */
+    public function completeRegistrationPasswordless(
+        string $acceptKey,
+        CompleteRegistrationPasswordlessActionDTO $dto,
+    ): ?AuthFlowOutcome {
+        $acting = $this->acting($acceptKey);
+
+        $email = new RegistrationReservationService()->findProvenForSession($acting->sessionToken)?->identifier;
+        if ($email === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::REGISTER,
+                AuthMessages::RESERVATION_EXPIRED,
+            );
+        }
+
+        // Asked once more, for the reason it is asked at the code: the hold keeps a second
+        // REGISTRATION off the address, not an account that arrived by another road while
+        // somebody was choosing between a password and none.
+        if ($this->emailBelongsToAccount($email)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                AuthMessages::IDENTIFIER_TAKEN,
+            );
+        }
+
+        return $this->landRegistration(
+            $acting,
+            $email,
+            $this->displayNameFromEmail($email),
+            landAs: IdentityType::MAGIC_LINK,
         );
     }
 

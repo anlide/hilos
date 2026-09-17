@@ -232,18 +232,18 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
   await test.step('code from the letter', async () => {
     const email = uniqueEmail()
 
+    // An account first. The envelope stands where it still stands after HIL-1008
+    // — beside the password field of an account that has one, as the way past
+    // that password — and a free address no longer offers it at all.
     await openSignIn(page)
+    await register(page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(page)
 
-    // A free address: the lookup turns the one field into a registration, and the
-    // envelope is the passwordless way through it. No password field stands beside
-    // it any more — a registration is asked for one after the code (HIL-825).
+    await openSignIn(page)
     await typeInto(page.getByTestId('auth-identifier'), email)
-    await expect(page.getByTestId('auth-password')).toHaveCount(0)
+    await expect(page.getByTestId('auth-password')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
-
-    // Nothing is sent before the terms: accepting them is what mails the letter.
-    await page.getByTestId('auth-consent-accept').check()
-    await clickSubmit(page.getByTestId('auth-submit'))
 
     // The screen the person asked for does not change under them — it grows a
     // field (HIL-606). The link is still there to click; this step is the person
@@ -257,8 +257,9 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await continueFromDone(page)
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-    // One letter, whichever half was used — the code did not buy a second one.
-    expect(await mailsTo(email)).toHaveLength(1)
+    // Two letters and no more: the code the account was made with, and the link
+    // it came back by. Whichever half of the second was used, no third followed.
+    expect(await mailsTo(email)).toHaveLength(2)
 
     await logout(page)
   })
@@ -267,12 +268,14 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     const email = uniqueEmail()
 
     await openSignIn(page)
+    await register(page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(page)
 
+    await openSignIn(page)
     await typeInto(page.getByTestId('auth-identifier'), email)
-    await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
+    await expect(page.getByTestId('auth-password')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
-    await page.getByTestId('auth-consent-accept').check()
-    await clickSubmit(page.getByTestId('auth-submit'))
     await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
     // The click itself: a full browser load of the return route, which is the
@@ -289,8 +292,8 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     await expect(page.getByTestId('nav-logout')).toBeVisible()
     await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-    // One letter, whichever half was used — the click did not buy a second one.
-    expect(await mailsTo(email)).toHaveLength(1)
+    // Two letters and no more, for the reason the step above gives.
+    expect(await mailsTo(email)).toHaveLength(2)
 
     // The click signed the session in, so the surface says what was achieved
     // and waits for Continue (HIL-422) — over the shell, in the way of the
@@ -303,11 +306,14 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
     const email = uniqueEmail()
 
     await openSignIn(page)
+    await register(page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await logout(page)
+
+    await openSignIn(page)
     await typeInto(page.getByTestId('auth-identifier'), email)
-    await expect(page.getByTestId('auth-icon-magic-link')).toBeVisible()
+    await expect(page.getByTestId('auth-password')).toBeVisible()
     await page.getByTestId('auth-icon-magic-link').click()
-    await page.getByTestId('auth-consent-accept').check()
-    await clickSubmit(page.getByTestId('auth-submit'))
     await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
     // A token nobody minted. The point is WHICH screen answers: a refusal that
@@ -319,9 +325,9 @@ test('walks both halves of the sign-in link, and turns a tampered one down', asy
 
     await expect(page.getByTestId('auth-magic-error')).toBeVisible()
     await expect(page.getByTestId('auth-magic-to-login')).toBeVisible()
-    // Nothing was signed in, and the letter is still the only one.
+    // Nothing was signed in, and no third letter went out.
     await expect(page.getByTestId('nav-logout')).toHaveCount(0)
-    expect(await mailsTo(email)).toHaveLength(1)
+    expect(await mailsTo(email)).toHaveLength(2)
   })
 })
 

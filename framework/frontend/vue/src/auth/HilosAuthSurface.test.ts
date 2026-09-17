@@ -13,6 +13,7 @@
 import {
   ActionError,
   ActionLifecycle,
+  AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LOGIN,
@@ -79,6 +80,23 @@ const RESUMED_CODE_STEP = {
   intent: 'register',
   step: 'code',
   channel: null,
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
+/**
+ * What a session that proved its address and owes a password comes back to: the
+ * password screen of a registration, which is the screen the way past it lives on
+ * (HIL-1008).
+ */
+const PROVED_REGISTRATION_STEP = {
+  identifier: 'newcomer@example.com',
+  kind: 'email',
+  intent: 'register',
+  step: 'set_password',
+  channel: null,
+  // A deadline is not optional on this step: the hold behind the screen runs
+  // out, and a node without one is dropped as half-written (sessionScope).
   expiresAt: Date.now() + 600000,
   code: null,
 }
@@ -279,6 +297,56 @@ function freeIdentifierContext(
     scopes: new ScopeManager(),
     actions,
     methods: [PASSWORD_FLOW_METHOD],
+    channels: [],
+    oauthProviders: [],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
+}
+
+/**
+ * A context whose lookup answers a free address this deployment WILL register,
+ * by both roads it has (HIL-1008). This is the reply that used to put a second
+ * way on beside the main button: the envelope stood on the strength of
+ * `registerable` naming the magic link, and the password hint stood on the
+ * intent alone.
+ *
+ * @returns The context to mount with.
+ */
+function registrableIdentifierContext(): HilosAuthContext {
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'none',
+              methods: [],
+              registerable: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
+              registrationBlock: null,
+              signInBlock: null,
+            }
+          : undefined
+
+      return {
+        requestId: 'req-registrable',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: new ScopeManager(),
+    actions,
+    methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
     channels: [],
     oauthProviders: [],
     termsPath: '/terms',
@@ -901,6 +969,157 @@ describe('HilosAuthSurface', () => {
 
     expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
       'No account for this, and registration is closed.',
+    )
+  })
+
+  it('leaves a free address one way on, and no password hint beside it', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    // The main button is the whole road from here: the envelope beside it sent
+    // mail to the same address and meant the same thing (HIL-1008).
+    expect(wrapper.find('[data-id="auth-submit"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-icon-magic-link"]').exists()).toBe(
+      false,
+    )
+    // And no rule about a password on a screen that asks for none: this
+    // registration is asked for one after the code (HIL-825).
+    expect(wrapper.find('[data-id="auth-password"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('At least')
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').text()).toBe(
+      'No account yet — this creates one.',
+    )
+  })
+
+  it('holds one room under the field for the hint and the reveal alike', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    // Before the first character there is no room to hold: the icon row above
+    // still stands, and the hint under the field is the tallest thing here.
+    expect(wrapper.find('[data-id="auth-reveal-slot"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-reveal-idle"]').exists()).toBe(false)
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await flush(wrapper)
+
+    // Typed, and the lookup has not answered yet: the room is already taken, so
+    // the reply that follows changes what is inside it and not its height.
+    expect(wrapper.find('[data-id="auth-reveal-idle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').exists()).toBe(
+      false,
+    )
+
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-reveal-idle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').exists()).toBe(true)
+  })
+
+  it('gives the reveal the same room the twin was holding', async () => {
+    vi.useFakeTimers()
+    const context = liveAccountContext([PASSWORD_METHOD_KEY], null)
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: false,
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    // The reveal is what the twin was a copy of, so it stands in the same slot
+    // and the twin steps aside for it.
+    expect(wrapper.find('[data-id="auth-reveal-slot"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-password"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-reveal-idle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-identifier-hint"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('offers the way past the password where a link can be mailed, and says so', async () => {
+    const { context, dispatched } = magicLinkContext()
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-new-password"]').exists()).toBe(true)
+    // The sentence is the only place the second road is explained, so it changes
+    // with the control rather than standing on its own.
+    expect(wrapper.text()).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    const exit = wrapper.find('[data-id="auth-complete-passwordless"]')
+    expect(exit.exists()).toBe(true)
+    await exit.trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
+    ])
+    // No address on the wire: the one this creates an account for is read off
+    // the proved hold of this session on the server.
+    expect(dispatched[0]?.payload).toEqual({})
+  })
+
+  it('keeps the way past the password off a registry that mounted no link', async () => {
+    const { context } = passwordOnlyContext()
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-new-password"]').exists()).toBe(true)
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
+    ).toBe(false)
+    expect(wrapper.text()).toContain(
+      'Choose a password — your account is created when you save it.',
+    )
+  })
+
+  it('keeps it off an installation that cannot mail the link it would rely on', async () => {
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: true,
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    // The method is mounted and the screen is the right one; what is missing is
+    // the half the handshake answers, and without it the account would be made
+    // with no way back into it.
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
+    ).toBe(false)
+    expect(wrapper.text()).toContain(
+      'Choose a password — your account is created when you save it.',
     )
   })
 
