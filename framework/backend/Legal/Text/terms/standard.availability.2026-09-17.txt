@@ -1,0 +1,3 @@
+The service is provided as is, with no promise of uptime.
+
+The service is run with care, but it may be unavailable at times, for maintenance or because something failed. No particular level of availability is promised, and no compensation is owed for time it was unavailable.

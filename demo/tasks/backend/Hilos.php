@@ -26,6 +26,7 @@ use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
 use Demo\Tasks\Database\Settings\TasksSettingsCatalog;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Environment\TasksEnvCatalog;
+use Demo\Tasks\Legal\TasksLegalCatalog;
 use Demo\Tasks\Pages\Hilos\AboutPage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
@@ -112,6 +113,8 @@ final class Hilos extends HilosFacade
     protected const string CODE_CHANNEL_REGISTRY = TasksCodeChannelRegistry::class;
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
+
+    protected const ?string LEGAL_CATALOG = TasksLegalCatalog::class;
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,

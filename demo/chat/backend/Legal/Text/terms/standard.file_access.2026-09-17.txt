@@ -1,0 +1,3 @@
+Files are reachable by direct link.
+
+The standard serves a file only to its owner. Here anyone who has the link to a file can open it, without signing in.

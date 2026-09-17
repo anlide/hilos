@@ -1,0 +1,3 @@
+Conversations are visible to moderators.
+
+People operating the service may read conversations to handle reports.

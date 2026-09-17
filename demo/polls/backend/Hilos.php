@@ -25,6 +25,7 @@ use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
 use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Database\Settings\PollsSettingsCatalog;
 use Demo\Polls\Environment\PollsEnvCatalog;
+use Demo\Polls\Legal\PollsLegalCatalog;
 use Demo\Polls\Pages\Hilos\AboutPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\LicensePage;
@@ -104,6 +105,8 @@ final class Hilos extends HilosFacade
     protected const string SETTINGS_CATALOG = PollsSettingsCatalog::class;
 
     protected const string CODE_CHANNEL_REGISTRY = PollsCodeChannelRegistry::class;
+
+    protected const ?string LEGAL_CATALOG = PollsLegalCatalog::class;
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,

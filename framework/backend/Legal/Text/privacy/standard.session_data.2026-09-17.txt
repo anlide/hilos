@@ -1,0 +1,3 @@
+A sign-in session records what it needs to keep you signed in, and nothing more.
+
+For each session the service records when it started, when it was last active, the network address it came from and a description of the browser or device. You can see your active sessions and end any of them. An ended session stops working at once.

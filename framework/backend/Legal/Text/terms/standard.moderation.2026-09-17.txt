@@ -1,0 +1,3 @@
+Content is read by automation only.
+
+The service may check content automatically to stop spam and abuse. No person reads your content as part of that check.

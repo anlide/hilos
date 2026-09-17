@@ -54,6 +54,7 @@ use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
+use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
@@ -232,6 +233,8 @@ final class Hilos extends HilosFacade
     protected const ?string LLM_PROFILE_OVERRIDE = ChatLlmProfileOverrideSource::class;
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
+
+    protected const ?string LEGAL_CATALOG = LegalCatalog::class;
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
 

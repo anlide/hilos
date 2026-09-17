@@ -1,0 +1,3 @@
+An account can be blocked for breaking the rules of the service.
+
+An account is blocked for abuse of the service or of other people: sending spam, attacking the service, impersonating someone, or publishing content that is unlawful. A blocked account cannot sign in. Blocking is decided by the people operating the service.

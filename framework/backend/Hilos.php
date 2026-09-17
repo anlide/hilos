@@ -52,6 +52,8 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
+use Hilos\Legal\LegalCatalogProviderInterface;
+use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Log\LogWriteLevelSubscriber;
 use Hilos\LLM\Routing\LlmProfileCatalogStub;
 use Hilos\LLM\Routing\LlmProfileOverrideSource;
@@ -119,6 +121,18 @@ abstract class Hilos implements TruthSourceOwner
      * @var ?class-string<CatalogProviderInterface>
      */
     protected const ?string BACKUP_CATALOG = null;
+
+    /**
+     * Optional legal catalog provider class: the revisions of the project's legal documents.
+     *
+     * The framework carries the standard sets and never invents a revision on a project's behalf,
+     * since publishing one is the project's deploy and an acceptance record names it. Null means
+     * the installation publishes no legal documents, which is legitimate for one with no public
+     * registration.
+     *
+     * @var ?class-string<LegalCatalogProviderInterface>
+     */
+    protected const ?string LEGAL_CATALOG = null;
 
     /**
      * Delivery-channel registry class (HIL-196).
@@ -379,6 +393,20 @@ abstract class Hilos implements TruthSourceOwner
     public static function getPageCatalogClass(): string
     {
         return static::appClass()::PAGE_CATALOG;
+    }
+
+    /**
+     * Returns the project's legal catalog provider class, or null when it publishes no legal documents.
+     *
+     * The framework half - the standard sets - is a catalog nobody declares, so this names only the
+     * project's revisions; {@see LegalCatalogResolver} composes the two. Resolved through
+     * {@see appClass()} for the same reason as {@see getBackupCatalogClass()}.
+     *
+     * @return ?class-string<LegalCatalogProviderInterface> Legal catalog provider class
+     */
+    public static function legalCatalogClass(): ?string
+    {
+        return static::appClass()::LEGAL_CATALOG;
     }
 
     /**

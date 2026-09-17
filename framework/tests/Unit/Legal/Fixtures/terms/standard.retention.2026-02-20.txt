@@ -1,0 +1,3 @@
+Messages are kept indefinitely.
+
+A message stays until you delete it.

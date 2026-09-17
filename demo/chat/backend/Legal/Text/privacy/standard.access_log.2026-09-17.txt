@@ -1,0 +1,3 @@
+No access logs are kept at all.
+
+The standard keeps access logs for 12 months. Here nothing is recorded about when your account is used or from which network address.

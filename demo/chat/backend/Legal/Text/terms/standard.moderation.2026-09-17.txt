@@ -1,0 +1,3 @@
+Conversations are visible to moderators.
+
+The standard does not provide for this. Here the contents of chats are read by people, not only by automation: moderators may open a conversation to handle a report or to stop abuse.
