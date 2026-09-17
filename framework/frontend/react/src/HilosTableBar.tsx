@@ -1,16 +1,21 @@
 // HilosTableBar — the strip above a table, drawn from what the page DECLARED
 // (HilosTableFrame) and never from props of its own: the title and subtitle, the
-// search box, the declared filters, and the one main action pinned right. It holds
-// NO table logic — the controller owns the descriptor, and every control here is a
-// call into it (multiframework-core.md). Internal to the React view layer on
-// purpose: it is not exported from index.ts, because a bar has no meaning away from
-// the table it sits on (mockups/components/table section 7). The React port of the
-// Vue reference (vue/src/HilosTableBar.vue), under the same names and words.
+// search box, the declared filters, and the one main action pinned right. Under the
+// title it shows EITHER those controls OR the selection panel, never both: actions
+// over one record and over twenty standing side by side is the confusion the panel
+// exists against (mockups/components/table section 6). It holds NO table logic —
+// the controller owns the descriptor, and every control here is a call into it
+// (multiframework-core.md). Internal to the React view layer on purpose: it is not
+// exported from index.ts, because a bar has no meaning away from the table it sits
+// on (mockups/components/table section 7). The React port of the Vue reference
+// (vue/src/HilosTableBar.vue), under the same names and words.
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
 
 import { HilosModal } from './HilosModal.js'
 import { HilosTableFilterControl } from './HilosTableFilterControl.js'
+import { HilosTableSelection } from './HilosTableSelection.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosTableBar}. */
@@ -24,6 +29,11 @@ export interface HilosTableBarProps<R> {
    * see it.
    */
   titleId: string
+  /**
+   * The human name of one row a bulk run left untouched, handed down to the
+   * selection panel; the bar only passes it on.
+   */
+  bulkUntouched?: (rowKey: string, reason: string) => ReactNode
 }
 
 // A date range is one control over two keys, and it is listed under the lower
@@ -37,11 +47,13 @@ function filterKey(view: HilosTableFilterView): string {
 /**
  * The declared strip above a table.
  *
- * @param props The controller and the id the title carries.
+ * @param props The controller, the id the title carries, and the name an
+ *   untouched row is printed by.
  */
 export function HilosTableBar<R>({
   controller,
   titleId,
+  bulkUntouched,
 }: HilosTableBarProps<R>) {
   // The declaration does not change over the life of a table, so its parts are
   // read once rather than wrapped in signals (tableFrame.ts, HilosTableFrameState).
@@ -58,6 +70,35 @@ export function HilosTableBar<R>({
   const search = useSignal(controller.search)
   const filters = useSignal(controller.frame.filters)
   const activeFilterCount = useSignal(controller.frame.activeFilterCount)
+
+  // A table has marks exactly when its page declared bulk operations, and that never
+  // changes over its life — so the panel is MOUNTED on that sign and only shows itself
+  // on the three below. What it carries is a dialog, and a dialog owns the page's
+  // scroll lock; one that came and went with what the server sends would pass that
+  // lock around on nobody's behalf. The filters dialog below is gated the same way and
+  // for the same reason.
+  const selectionEnabled = controller.selection.enabled
+
+  const selectionTarget = useSignal(controller.selection.target)
+  const bulkProgress = useSignal(controller.progress.bulk)
+  const bulkReport = useSignal(controller.bulk.report)
+
+  // Which run's report the reader has dismissed. It is state of the VIEW and kept
+  // against the key of the run: the core holds its report until the next run
+  // replaces it, on purpose, and a new run brings a new key and is shown again
+  // (Flow F12).
+  const [dismissedReport, setDismissedReport] = useState<string | null>(null)
+  const shownReport =
+    bulkReport !== null && bulkReport.progressKey !== dismissedReport
+      ? bulkReport
+      : null
+
+  // What stands in the strip: the selection panel while ANY of its three counts
+  // holds — something marked, a run going, or a report on screen — and the ordinary
+  // controls otherwise. Worked out once and read by both, so the two can never
+  // stand at the same time (Flow F4).
+  const selectionPanel =
+    selectionTarget !== null || bulkProgress !== null || shownReport !== null
 
   // Narrow screens put the filters in a modal rather than an offcanvas of the
   // SDK's own: the SDK ships Bootstrap's CSS and not its JS, so an offcanvas would
@@ -90,7 +131,7 @@ export function HilosTableBar<R>({
         </div>
       ) : null}
 
-      {searchBox || filters.length > 0 || mainAction ? (
+      {!selectionPanel && (searchBox || filters.length > 0 || mainAction) ? (
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
           {searchBox ? (
             <div className="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0">
@@ -178,6 +219,16 @@ export function HilosTableBar<R>({
             </button>
           ) : null}
         </div>
+      ) : null}
+
+      {selectionEnabled ? (
+        <HilosTableSelection
+          controller={controller}
+          shown={selectionPanel}
+          report={shownReport}
+          onDismiss={setDismissedReport}
+          bulkUntouched={bulkUntouched}
+        />
       ) : null}
 
       {/* Under the same condition as the button that opens it: a table with no

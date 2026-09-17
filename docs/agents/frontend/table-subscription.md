@@ -754,19 +754,22 @@ record and over twenty never stand side by side.
   separately, and the report names the untouched rows one by one. "39 of 40
   deleted" without names is a message after which the reader has to go looking.
   The report carries a `rowKey` and a reason, and the human name of that row is
-  the page's: the framework hands the place over as a **slot**
-  (`bulk-untouched` in Vue, given the `rowKey` and the `reason`) and prints the
-  key where the page filled nothing. It cannot do better — the row has left the
-  window by then.
+  the page's: the framework hands the place over as a **slot** (`bulk-untouched`
+  in Vue, the `bulkUntouched` render prop in React, an
+  `<ng-template #bulkUntouched>` in Angular — each given the `rowKey` and the
+  `reason`) and prints the key where the page filled nothing. It cannot do
+  better — the row has left the window by then.
 - A table may declare **no** bulk actions, and then it has no selection column at
   all. Which edge that column sits on is the project's choice, and within one
   installation it is the same edge everywhere — a choice of the VIEW, which draws
   the column; the core declares no edge, having nowhere to draw one and no reader
-  for it. The view takes it as **one injection for the whole application**
-  (`app.provide(hilosTableSelectionEdgeKey, 'end')` in Vue), defaulting to the
-  left edge where the project provides nothing. A prop on each table would hand
-  the product the right to disagree with itself, which is the one thing the rule
-  is about.
+  for it. The view takes it as **one injection for the whole application** —
+  `app.provide(hilosTableSelectionEdgeKey, 'end')` in Vue,
+  `<HilosTableSelectionEdgeContext.Provider value="end">` in React,
+  `{ provide: HILOS_TABLE_SELECTION_EDGE, useValue: 'end' }` in Angular —
+  defaulting to the left edge in all three where the project provides nothing. A
+  prop on each table would hand the product the right to disagree with itself,
+  which is the one thing the rule is about.
 - **The selection is state of the window controller**, next to the pending changes
   and the placeholders, because every rule above is a rule about the window. It
   reads as one of the two shapes the request carries — the row keys, or the filter
@@ -991,6 +994,6 @@ an address does not:
 | one control of one declared filter | `framework/frontend/{vue,react,angular}/src/HilosTableFilterControl.*` |
 | the footer under the table | `framework/frontend/{vue,react,angular}/src/HilosTableFooter.*` |
 | the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/vue/src/HilosTableEmptyState.vue` |
-| the bar a running job is drawn as | `framework/frontend/vue/src/HilosTableProgress.vue` |
-| the selection panel and the bulk bar | `framework/frontend/vue/src/HilosTableSelection.vue` |
-| the edge the selection column sits on | `framework/frontend/vue/src/hilosTableSelectionEdge.ts` |
+| the bar a running job is drawn as | `framework/frontend/{vue,react,angular}/src/HilosTableProgress.*` |
+| the selection panel and the bulk bar | `framework/frontend/{vue,react,angular}/src/HilosTableSelection.*` |
+| the edge the selection column sits on | `framework/frontend/{vue,react,angular}/src/hilosTableSelectionEdge.ts` |

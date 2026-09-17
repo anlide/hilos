@@ -13,7 +13,10 @@
 // (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
 // it says when empty from there too; a table whose page declared nothing is drawn
 // from its inputs, the older of the two epochs, which the framework's log pages
-// still take. Bootstrap classes only.
+// still take. A table whose page declared bulk operations also carries the
+// framework's checkbox column, on whichever edge the installation provided — one
+// choice for the whole application rather than an input of this table
+// (mockups/components/table section 6). Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -29,6 +32,7 @@ import type { TemplateRef, WritableSignal } from '@angular/core'
 import { subscribeSignal } from '@hilos/core'
 import type {
   HilosTableColumn,
+  HilosTableSelectionHeader,
   ReadonlySignal,
   TableSort,
   TableSortOrder,
@@ -39,6 +43,7 @@ import type {
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
+import { HILOS_TABLE_SELECTION_EDGE } from './hilosTableSelectionEdge.js'
 
 // Distinct ids so two declared tables on one page never name themselves by the
 // same title.
@@ -52,6 +57,14 @@ export interface ViewportTableRowContext<R> {
   rowKey: string
 }
 
+/** The context a HilosViewportTable `#bulkUntouched` template receives. */
+export interface BulkUntouchedContext {
+  /** The key of the row a bulk run left untouched (the template's implicit `let-rowKey`). */
+  $implicit: string
+  /** Why the run left it alone, as the server said it. */
+  reason: string
+}
+
 /** The framework-owned table chrome over a headless TableViewportController. */
 @Component({
   selector: 'hilos-viewport-table',
@@ -60,7 +73,11 @@ export interface ViewportTableRowContext<R> {
   template: `
     <div [attr.data-id]="dataId()">
       @if (declaration()) {
-        <hilos-table-bar [controller]="controller()" [titleId]="titleId" />
+        <hilos-table-bar
+          [controller]="controller()"
+          [titleId]="titleId"
+          [bulkUntouched]="bulkUntouched()"
+        />
       }
 
       <!-- The bar a table draws from its inputs, for a table whose page declared
@@ -120,6 +137,22 @@ export interface ViewportTableRowContext<R> {
           }
           <thead>
             <tr>
+              <!-- The checkbox column stands on the edge the installation chose,
+              outside the declared columns on either side of them: it belongs to
+              the framework, and the page's columns are the page's. -->
+              @if (selectionEnabled() && selectionEdge === 'start') {
+                <th scope="col" class="hilos-table-selection-cell">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    aria-label="Select all rows on this page"
+                    data-id="hilos-table-select-page"
+                    [checked]="selectionHeader() === 'all'"
+                    [indeterminate]="selectionHeader() === 'some'"
+                    (change)="onSelectPage($event)"
+                  />
+                </th>
+              }
               @for (column of frameColumns(); track column.key) {
                 <th
                   scope="col"
@@ -144,6 +177,19 @@ export interface ViewportTableRowContext<R> {
                   }
                 </th>
               }
+              @if (selectionEnabled() && selectionEdge === 'end') {
+                <th scope="col" class="hilos-table-selection-cell">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    aria-label="Select all rows on this page"
+                    data-id="hilos-table-select-page"
+                    [checked]="selectionHeader() === 'all'"
+                    [indeterminate]="selectionHeader() === 'some'"
+                    (change)="onSelectPage($event)"
+                  />
+                </th>
+              }
             </tr>
           </thead>
           <tbody>
@@ -152,9 +198,29 @@ export interface ViewportTableRowContext<R> {
                 [attr.data-id]="'hilos-table-row-' + view.rowKey"
                 [class]="view.pending ? pendingRowClass[view.pending] : ''"
               >
+                <!-- A row drawn as a placeholder carries no checkbox: there is
+                nothing to mark in the trace of a row that left, and the core would
+                not take its key anyway (Flow F1). Its own cell spans the whole row,
+                so the column is simply not there for it. -->
+                @if (
+                  selectionEnabled() &&
+                  selectionEdge === 'start' &&
+                  !view.placeholder
+                ) {
+                  <td class="hilos-table-selection-cell">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      aria-label="Select row"
+                      [attr.data-id]="'hilos-table-select-' + view.rowKey"
+                      [checked]="view.selected"
+                      (change)="onSelectRow(view.rowKey, $event)"
+                    />
+                  </td>
+                }
                 @if (view.placeholder) {
                   <td
-                    [attr.colspan]="frameColumns().length"
+                    [attr.colspan]="bodyColspan()"
                     class="text-center text-muted fst-italic"
                     data-id="hilos-table-placeholder"
                   >
@@ -169,12 +235,28 @@ export interface ViewportTableRowContext<R> {
                     }"
                   />
                 }
+                @if (
+                  selectionEnabled() &&
+                  selectionEdge === 'end' &&
+                  !view.placeholder
+                ) {
+                  <td class="hilos-table-selection-cell">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      aria-label="Select row"
+                      [attr.data-id]="'hilos-table-select-' + view.rowKey"
+                      [checked]="view.selected"
+                      (change)="onSelectRow(view.rowKey, $event)"
+                    />
+                  </td>
+                }
               </tr>
             }
             @if (rows().length === 0) {
               <tr>
                 <td
-                  [attr.colspan]="frameColumns().length"
+                  [attr.colspan]="bodyColspan()"
                   class="text-center text-muted py-4"
                 >
                   @if (!loaded()) {
@@ -279,6 +361,13 @@ export class HilosViewportTable<R> {
   protected readonly row =
     contentChild.required<TemplateRef<ViewportTableRowContext<R>>>('row')
   protected readonly empty = contentChild<TemplateRef<unknown>>('empty')
+  /**
+   * The human name of one row a bulk run left untouched, for the report of the run:
+   * `<ng-template #bulkUntouched let-rowKey let-reason="reason">`. The row's key is
+   * printed where the page gives none.
+   */
+  protected readonly bulkUntouched =
+    contentChild<TemplateRef<BulkUntouchedContext>>('bulkUntouched')
 
   // The declaration does not change over the life of a table, so it is read off
   // the controller rather than mirrored as a signal (tableFrame.ts,
@@ -291,6 +380,26 @@ export class HilosViewportTable<R> {
   // spanning the whole row count this one list, so they cannot disagree on its width.
   protected readonly frameColumns = computed<readonly HilosTableColumn[]>(
     () => this.declaration()?.columns ?? this.columns(),
+  )
+  // The marks, and the one sign that this table has them: a page that declared bulk
+  // operations. There is no second sign — a table drawing its frame from inputs has
+  // no declaration, so `enabled` is already false for it (Flow F14).
+  protected readonly selectionEnabled = computed(
+    () => this.controller().selection.enabled,
+  )
+  protected readonly selectionHeader = signal<HilosTableSelectionHeader>('none')
+  // Which edge the checkbox column sits on — one choice for the whole installation
+  // and not an input of this table, because two tables of one product disagreeing
+  // about it is the very thing the rule forbids (Design D5). A project that
+  // provided nothing gets the left edge, where lists usually keep it.
+  protected readonly selectionEdge =
+    inject(HILOS_TABLE_SELECTION_EDGE, { optional: true }) ?? 'start'
+  // Every cell that spans the whole row — the placeholder of a removed row, the empty
+  // and loading states — counts the columns plus the checkbox column while the table
+  // has marks. This is the ONE place the width is worked out, and everything that
+  // spans a row reads it rather than counting again.
+  protected readonly bodyColspan = computed(
+    () => this.frameColumns().length + (this.selectionEnabled() ? 1 : 0),
   )
   protected readonly titleId = `hilos-table-title-${viewportTableSeq++}`
   // What names a declared table: its own title when it declared one, and otherwise
@@ -369,6 +478,7 @@ export class HilosViewportTable<R> {
         bind(controller.hasNextPage, this.hasNextPage),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.loaded, this.loaded),
+        bind(controller.selection.header, this.selectionHeader),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {
@@ -413,5 +523,23 @@ export class HilosViewportTable<R> {
 
   protected onSearchInput(event: Event): void {
     this.controller().setSearch((event.target as HTMLInputElement).value)
+  }
+
+  // The checkbox tells the core the state it is now IN rather than asking it to
+  // toggle: the state of a checkbox is what the reader sees, and a toggle sent from
+  // a box the browser has already flipped is a second answer to one question
+  // (Flow F1).
+  protected onSelectRow(rowKey: string, event: Event): void {
+    this.controller().selectRow(
+      rowKey,
+      (event.target as HTMLInputElement).checked,
+    )
+  }
+
+  // One input for both directions: the header box goes to "all" out of none and out
+  // of the half-marked state alike, and clears the window only from "all" — which is
+  // what the core does with the state the box is now in (Flow F2).
+  protected onSelectPage(event: Event): void {
+    this.controller().selectWindow((event.target as HTMLInputElement).checked)
   }
 }

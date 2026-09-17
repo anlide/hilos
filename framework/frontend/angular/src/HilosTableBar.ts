@@ -1,11 +1,14 @@
 // HilosTableBar — the strip above a table, drawn from what the page DECLARED
 // (HilosTableFrame) and never from inputs of its own: the title and subtitle, the
-// search box, the declared filters, and the one main action pinned right. It holds
-// NO table logic — the controller owns the descriptor, and every control here is a
-// call into it (multiframework-core.md). Internal to the Angular view layer on
-// purpose: it is not exported from index.ts, because a bar has no meaning away
-// from the table it sits on (mockups/components/table section 7). The Angular port
-// of the Vue reference (vue/src/HilosTableBar.vue), under the same names and words.
+// search box, the declared filters, and the one main action pinned right. Under the
+// title it shows EITHER those controls OR the selection panel, never both: actions
+// over one record and over twenty standing side by side is the confusion the panel
+// exists against (mockups/components/table section 6). It holds NO table logic —
+// the controller owns the descriptor, and every control here is a call into it
+// (multiframework-core.md). Internal to the Angular view layer on purpose: it is
+// not exported from index.ts, because a bar has no meaning away from the table it
+// sits on (mockups/components/table section 7). The Angular port of the Vue
+// reference (vue/src/HilosTableBar.vue), under the same names and words.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -14,22 +17,27 @@ import {
   input,
   signal,
 } from '@angular/core'
-import type { WritableSignal } from '@angular/core'
+import type { TemplateRef, WritableSignal } from '@angular/core'
 import { subscribeSignal } from '@hilos/core'
 import type {
+  HilosTableBulkReport,
   HilosTableFilterView,
+  HilosTableProgress,
+  HilosTableSelectionTarget,
   ReadonlySignal,
   TableViewportController,
 } from '@hilos/core'
 
 import { HilosModal } from './HilosModal.js'
 import { HilosTableFilterControl } from './HilosTableFilterControl.js'
+import { HilosTableSelection } from './HilosTableSelection.js'
+import type { BulkUntouchedContext } from './HilosViewportTable.js'
 
 /** The declared strip above a table. */
 @Component({
   selector: 'hilos-table-bar',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosModal, HilosTableFilterControl],
+  imports: [HilosModal, HilosTableFilterControl, HilosTableSelection],
   template: `
     <div>
       <!-- No declared title, no heading: the page heading above names the table
@@ -50,7 +58,10 @@ import { HilosTableFilterControl } from './HilosTableFilterControl.js'
         </div>
       }
 
-      @if (searchBox() || filters().length > 0 || mainAction()) {
+      @if (
+        !selectionPanel() &&
+        (searchBox() || filters().length > 0 || mainAction())
+      ) {
         <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
           @if (searchBox()) {
             <div
@@ -141,6 +152,16 @@ import { HilosTableFilterControl } from './HilosTableFilterControl.js'
         </div>
       }
 
+      @if (selectionEnabled()) {
+        <hilos-table-selection
+          [controller]="controller()"
+          [shown]="selectionPanel()"
+          [report]="shownReport()"
+          [bulkUntouched]="bulkUntouched()"
+          (dismiss)="dismissedReport.set($event)"
+        />
+      }
+
       <!-- Under the same condition as the button that opens it: a table with no
       filters has nothing to show here, and a dialog no button can reach would be
       one more owner of the page's scroll lock for nobody. -->
@@ -184,6 +205,13 @@ export class HilosTableBar<R> {
    * it.
    */
   readonly titleId = input.required<string>()
+  /**
+   * The human name of one row a bulk run left untouched, handed down to the
+   * selection panel; the bar only passes it on.
+   */
+  readonly bulkUntouched = input<
+    TemplateRef<BulkUntouchedContext> | undefined
+  >()
 
   // The declaration does not change over the life of a table, so its parts are
   // read off it rather than mirrored as signals (tableFrame.ts,
@@ -220,6 +248,46 @@ export class HilosTableBar<R> {
   // layer would then have to repeat.
   protected readonly filtersOpen = signal(false)
 
+  // A table has marks exactly when its page declared bulk operations, and that never
+  // changes over its life — so the panel is MOUNTED on that sign and only shows itself
+  // on the three below. What it carries is a dialog, and a dialog owns the page's
+  // scroll lock; one that came and went with what the server sends would pass that
+  // lock around on nobody's behalf. The filters dialog below is gated the same way and
+  // for the same reason.
+  protected readonly selectionEnabled = computed(
+    () => this.controller().selection.enabled,
+  )
+
+  private readonly selectionTarget = signal<HilosTableSelectionTarget | null>(
+    null,
+  )
+  private readonly bulkProgress = signal<HilosTableProgress | null>(null)
+  private readonly bulkReport = signal<HilosTableBulkReport | null>(null)
+
+  // Which run's report the reader has dismissed. It is state of the VIEW and kept
+  // against the key of the run: the core holds its report until the next run
+  // replaces it, on purpose, and a new run brings a new key and is shown again
+  // (Flow F12).
+  protected readonly dismissedReport = signal<string | null>(null)
+  protected readonly shownReport = computed(() => {
+    const report = this.bulkReport()
+
+    return report !== null && report.progressKey !== this.dismissedReport()
+      ? report
+      : null
+  })
+
+  // What stands in the strip: the selection panel while ANY of its three counts
+  // holds — something marked, a run going, or a report on screen — and the ordinary
+  // controls otherwise. Worked out once and read by both, so the two can never
+  // stand at the same time (Flow F4).
+  protected readonly selectionPanel = computed(
+    () =>
+      this.selectionTarget() !== null ||
+      this.bulkProgress() !== null ||
+      this.shownReport() !== null,
+  )
+
   constructor() {
     // The controller arrives via input (not at construction) and carries core
     // signals, so mirror them into the Angular signals above once it is bound;
@@ -238,6 +306,9 @@ export class HilosTableBar<R> {
         bind(controller.search, this.search),
         bind(controller.frame.filters, this.filters),
         bind(controller.frame.activeFilterCount, this.activeFilterCount),
+        bind(controller.selection.target, this.selectionTarget),
+        bind(controller.progress.bulk, this.bulkProgress),
+        bind(controller.bulk.report, this.bulkReport),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {

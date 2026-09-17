@@ -28,6 +28,10 @@ export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'
 export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'
 export { HilosRouterContext } from './hilosRouterContext.js'
+export {
+  HilosTableSelectionEdgeContext,
+  type HilosTableSelectionEdge,
+} from './hilosTableSelectionEdge.js'
 export { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'

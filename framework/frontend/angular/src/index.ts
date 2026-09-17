@@ -18,6 +18,10 @@ export {
   type HilosTrackedAction,
 } from './hilosTrackedAction.js'
 export { HILOS_ROUTER } from './hilosRouterToken.js'
+export {
+  HILOS_TABLE_SELECTION_EDGE,
+  type HilosTableSelectionEdge,
+} from './hilosTableSelectionEdge.js'
 export { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 export { HILOS_AUTH_GATE } from './auth/hilosAuthGateToken.js'
 export { HilosAuthSurface } from './auth/HilosAuthSurface.js'
@@ -70,6 +74,7 @@ export { HilosToastHost } from './HilosToastHost.js'
 export type { HilosToastCorner } from './hilosToastCorner.js'
 export {
   HilosViewportTable,
+  type BulkUntouchedContext,
   type ViewportTableRowContext,
 } from './HilosViewportTable.js'
 export {

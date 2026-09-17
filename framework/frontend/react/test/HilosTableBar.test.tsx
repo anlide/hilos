@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { TableViewportController } from '@hilos/core'
-import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
+import type {
+  ActionHandle,
+  HilosTableBulkAccepted,
+  HilosTableFrame,
+  TableViewportDescriptor,
+} from '@hilos/core'
 
 import { HilosTableBar } from '../src/HilosTableBar.js'
 
@@ -273,5 +278,158 @@ describe('HilosTableBar', () => {
     renderBar(controller)
 
     expect(byId('hilos-table-main-action')).toBeNull()
+  })
+})
+
+describe('HilosTableBar showing the selection panel instead of its controls', () => {
+  /**
+   * The sender of the declared operation, which these tests never press: what the
+   * bar decides is which of the two strips stands, and the panel is tested next
+   * door.
+   */
+  function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+    throw new Error('the declaration is only read here')
+  }
+
+  const BULK: HilosTableFrame = {
+    title: 'Backups',
+    search: {},
+    columns: COLUMNS,
+    bulkActions: [
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    ],
+  }
+
+  function windowed(): TableViewportController<unknown> {
+    const { controller } = makeController(BULK)
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+
+    return controller
+  }
+
+  /** What the bar shows right now, and that the title never leaves with it. */
+  function strips(): { controls: boolean; panel: boolean } {
+    const title = byId('hilos-table-title')
+    expect(title?.textContent).toBe('Backups')
+    expect(title?.id).toBe('table-title')
+
+    return {
+      controls: byId('hilos-table-search') !== null,
+      panel: byId('hilos-table-selection') !== null,
+    }
+  }
+
+  it('keeps the ordinary controls while nothing is marked', () => {
+    renderBar(windowed())
+
+    expect(strips()).toEqual({ controls: true, panel: false })
+  })
+
+  it('holds an open confirmation when the marks go and the strip with them', () => {
+    const controller = windowed()
+    renderBar(controller)
+
+    act(() => controller.selectRow('a', true))
+    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
+    expect(byId('modal')).not.toBeNull()
+
+    act(() => controller.clearSelection())
+
+    // The strip goes, the dialog stays: it holds the focus and the page's scroll
+    // lock, and a window arriving with none of the marked rows left is not a
+    // reason to take a dialog the reader is standing in off the screen.
+    expect(strips()).toEqual({ controls: true, panel: false })
+    expect(byId('modal')).not.toBeNull()
+  })
+
+  it('swaps the controls for the panel from the first marked row', () => {
+    const controller = windowed()
+    renderBar(controller)
+
+    act(() => controller.selectRow('a', true))
+
+    expect(strips()).toEqual({ controls: false, panel: true })
+  })
+
+  it('holds the panel on a running bar with nothing marked', () => {
+    const controller = windowed()
+    renderBar(controller)
+
+    // Which is the case the rule exists for: a run deletes the rows it was given,
+    // they drop out of the selection by themselves, and the bar of the work must
+    // not leave with them.
+    act(() =>
+      controller.ingestProgress({
+        scope: 'bulk',
+        progressKey: 'run-1',
+        current: 12,
+        total: 40,
+      }),
+    )
+
+    expect(controller.selection.count.get()).toBe(0)
+    expect(strips()).toEqual({ controls: false, panel: true })
+  })
+
+  it('holds the panel on a report with nothing marked, and lets it go when dismissed', () => {
+    const controller = windowed()
+    renderBar(controller)
+
+    act(() =>
+      controller.ingestBulkReport({
+        progressKey: 'run-1',
+        touched: 39,
+        untouched: [],
+        untouchedOmitted: 0,
+      }),
+    )
+    expect(strips()).toEqual({ controls: false, panel: true })
+
+    fireEvent.click(byId('hilos-table-bulk-report-close') as HTMLElement)
+
+    // The core still holds the report — it is cleared by the next run and by
+    // nothing else — and the panel goes all the same, because what the reader
+    // dismissed is off their screen.
+    expect(controller.bulk.report.get()).not.toBeNull()
+    expect(strips()).toEqual({ controls: true, panel: false })
+  })
+
+  it('shows the report of the next run after the previous one was dismissed', () => {
+    const controller = windowed()
+    renderBar(controller)
+
+    act(() =>
+      controller.ingestBulkReport({
+        progressKey: 'run-1',
+        touched: 1,
+        untouched: [],
+        untouchedOmitted: 0,
+      }),
+    )
+    fireEvent.click(byId('hilos-table-bulk-report-close') as HTMLElement)
+
+    act(() =>
+      controller.ingestBulkReport({
+        progressKey: 'run-2',
+        touched: 2,
+        untouched: [],
+        untouchedOmitted: 0,
+      }),
+    )
+
+    expect(strips()).toEqual({ controls: false, panel: true })
+    expect(byId('hilos-table-bulk-report')?.textContent).toContain(
+      'Changed 2 rows',
+    )
   })
 })

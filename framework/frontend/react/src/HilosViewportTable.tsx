@@ -11,7 +11,10 @@
 // (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
 // it says when empty from there too; a table whose page declared nothing is drawn
 // from its props, the older of the two epochs, which the framework's log pages
-// still take. Bootstrap classes only.
+// still take. A table whose page declared bulk operations also carries the
+// framework's checkbox column, on whichever edge the installation provided — one
+// choice for the whole application rather than a prop of this table
+// (mockups/components/table section 6). Bootstrap classes only.
 import { useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import type {
@@ -23,6 +26,7 @@ import type {
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
+import { HilosTableSelectionEdgeContext } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosViewportTable}. */
@@ -57,6 +61,11 @@ export interface HilosViewportTableProps<R> {
    * the two can be told apart from outside.
    */
   dataId?: string
+  /**
+   * The human name of one row a bulk run left untouched, for the report of the run;
+   * the row's key is printed where this gives nothing.
+   */
+  bulkUntouched?: (rowKey: string, reason: string) => ReactNode
 }
 
 // A row with an unapplied pending change gets a subtle, theme-aware tint that
@@ -85,6 +94,7 @@ export function HilosViewportTable<R>({
   empty,
   placeholderText = 'Removed',
   dataId = 'hilos-viewport-table',
+  bulkUntouched,
 }: HilosViewportTableProps<R>) {
   const rows = useSignal(controller.rows)
   const search = useSignal(controller.search)
@@ -96,6 +106,12 @@ export function HilosViewportTable<R>({
   const hasNextPage = useSignal(controller.hasNextPage)
   const pendingCount = useSignal(controller.pendingCount)
   const loaded = useSignal(controller.loaded)
+  // The marks, and the one sign that this table has them: a page that declared bulk
+  // operations. There is no second sign — a table drawing its frame from props has
+  // no declaration, so `enabled` is already false for it (Flow F14).
+  const selection = controller.selection
+  const selectionEnabled = selection.enabled
+  const selectionHeader = useSignal(selection.header)
   // The declaration does not change over the life of a table, so it is read once
   // rather than wrapped in a signal (tableFrame.ts, HilosTableFrameState).
   const declaration = controller.frame.declaration
@@ -104,7 +120,17 @@ export function HilosViewportTable<R>({
   // spanning the whole row count this one list, so they cannot disagree on its width.
   const frameColumns: readonly HilosTableColumn[] =
     declaration?.columns ?? columns
+  // Every cell that spans the whole row — the placeholder of a removed row, the empty
+  // and loading states — counts the columns plus the checkbox column while the table
+  // has marks. This is the ONE place the width is worked out, and everything that
+  // spans a row reads it rather than counting again.
+  const bodyColspan = frameColumns.length + (selectionEnabled ? 1 : 0)
   const titleId = useId()
+  // Which edge the checkbox column sits on — one choice for the whole installation
+  // and not a prop of this table, because two tables of one product disagreeing
+  // about it is the very thing the rule forbids (Design D5). A project that
+  // provided nothing gets the left edge, where lists usually keep it.
+  const selectionEdge = useContext(HilosTableSelectionEdgeContext)
   // What names a declared table: its own title when it declared one, and otherwise
   // the heading of the page it stands on, which already names it. Undefined for a
   // table that declared neither and stands outside an admin page — it has no name to
@@ -156,10 +182,41 @@ export function HilosViewportTable<R>({
     return component.direction === 'asc' ? 'ascending' : 'descending'
   }
 
+  // The checkbox tells the core the state it is now IN rather than asking it to
+  // toggle: the state of a checkbox is what the reader sees, and a toggle sent from
+  // a box the browser has already flipped is a second answer to one question
+  // (Flow F1). The header box is one input for both directions: it goes to "all"
+  // out of none and out of the half-marked state alike, and clears the window only
+  // from "all" — which is what the core does with the state the box is now in
+  // (Flow F2).
+  const selectPageCell = selectionEnabled ? (
+    <th scope="col" className="hilos-table-selection-cell">
+      <input
+        className="form-check-input"
+        type="checkbox"
+        aria-label="Select all rows on this page"
+        data-id="hilos-table-select-page"
+        checked={selectionHeader === 'all'}
+        // React has no attribute for the half-marked state: it is a property of the
+        // node, set on the mounted input (Flow F4).
+        ref={(node) => {
+          if (node !== null) {
+            node.indeterminate = selectionHeader === 'some'
+          }
+        }}
+        onChange={(event) => controller.selectWindow(event.target.checked)}
+      />
+    </th>
+  ) : null
+
   return (
     <div data-id={dataId}>
       {declaration ? (
-        <HilosTableBar controller={controller} titleId={titleId} />
+        <HilosTableBar
+          controller={controller}
+          titleId={titleId}
+          bulkUntouched={bulkUntouched}
+        />
       ) : null}
 
       {/* The bar a table draws from its props, for a table whose page declared no
@@ -213,6 +270,10 @@ export function HilosViewportTable<R>({
           ) : null}
           <thead>
             <tr>
+              {/* The checkbox column stands on the edge the installation chose,
+                  outside the declared columns on either side of them: it belongs to
+                  the framework, and the page's columns are the page's. */}
+              {selectionEdge === 'start' ? selectPageCell : null}
               {frameColumns.map((column) => (
                 <th
                   key={column.key}
@@ -238,36 +299,61 @@ export function HilosViewportTable<R>({
                   )}
                 </th>
               ))}
+              {selectionEdge === 'end' ? selectPageCell : null}
             </tr>
           </thead>
           <tbody>
-            {rows.map((view) => (
-              <tr
-                key={view.rowKey}
-                data-id={`hilos-table-row-${view.rowKey}`}
-                className={
-                  view.pending ? PENDING_ROW_CLASS[view.pending] : undefined
-                }
-              >
-                {/* A placeholder row carries a null row; the null check also
-                    narrows the type for the render prop. */}
-                {view.placeholder || view.row === null ? (
-                  <td
-                    colSpan={frameColumns.length}
-                    className="text-center text-muted fst-italic"
-                    data-id="hilos-table-placeholder"
-                  >
-                    {placeholderText}
+            {rows.map((view) => {
+              // A row drawn as a placeholder carries no checkbox: there is nothing
+              // to mark in the trace of a row that left, and the core would not take
+              // its key anyway (Flow F1). Its own cell spans the whole row, so the
+              // column is simply not there for it.
+              const selectRowCell =
+                selectionEnabled && !view.placeholder && view.row !== null ? (
+                  <td className="hilos-table-selection-cell">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      aria-label="Select row"
+                      data-id={`hilos-table-select-${view.rowKey}`}
+                      checked={view.selected}
+                      onChange={(event) =>
+                        controller.selectRow(view.rowKey, event.target.checked)
+                      }
+                    />
                   </td>
-                ) : (
-                  row(view.row, view.rowKey)
-                )}
-              </tr>
-            ))}
+                ) : null
+
+              return (
+                <tr
+                  key={view.rowKey}
+                  data-id={`hilos-table-row-${view.rowKey}`}
+                  className={
+                    view.pending ? PENDING_ROW_CLASS[view.pending] : undefined
+                  }
+                >
+                  {selectionEdge === 'start' ? selectRowCell : null}
+                  {/* A placeholder row carries a null row; the null check also
+                      narrows the type for the render prop. */}
+                  {view.placeholder || view.row === null ? (
+                    <td
+                      colSpan={bodyColspan}
+                      className="text-center text-muted fst-italic"
+                      data-id="hilos-table-placeholder"
+                    >
+                      {placeholderText}
+                    </td>
+                  ) : (
+                    row(view.row, view.rowKey)
+                  )}
+                  {selectionEdge === 'end' ? selectRowCell : null}
+                </tr>
+              )
+            })}
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={frameColumns.length}
+                  colSpan={bodyColspan}
                   className="text-center text-muted py-4"
                 >
                   {!loaded ? (

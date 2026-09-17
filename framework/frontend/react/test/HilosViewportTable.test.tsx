@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { TableViewportController } from '@hilos/core'
 import type {
+  ActionHandle,
+  HilosTableBulkAccepted,
   HilosTableColumn,
   HilosTableFrame,
   TableViewportDescriptor,
 } from '@hilos/core'
 
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
+import {
+  HilosTableSelectionEdgeContext,
+  type HilosTableSelectionEdge,
+} from '../src/hilosTableSelectionEdge.js'
 
 interface Row {
   name: string
@@ -294,5 +300,191 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(
       container.querySelectorAll('[data-id="hilos-table-search"]'),
     ).toHaveLength(1)
+  })
+})
+
+describe('HilosViewportTable with a selection column', () => {
+  afterEach(cleanup)
+
+  /**
+   * The sender of the declared operation, which this file never presses: the column
+   * is what it is about, and the panel that presses is tested next door.
+   */
+  function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+    throw new Error('the declaration is only read here')
+  }
+
+  // The table of a page that declared one bulk operation — the one sign that it
+  // has marks at all, and the whole reason the column stands.
+  const BULK_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: COLUMNS,
+    bulkActions: [
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    ],
+  }
+
+  /** The same table with nothing declared for marked rows. */
+  const PLAIN_FRAME: HilosTableFrame = { title: 'Backups', columns: COLUMNS }
+
+  function renderWithEdge(
+    controller: TableViewportController<Row>,
+    edge?: HilosTableSelectionEdge,
+  ) {
+    const table = (
+      <HilosViewportTable
+        controller={controller}
+        columns={COLUMNS}
+        row={(r) => <td className="cell">{r.name}</td>}
+      />
+    )
+
+    return render(
+      edge === undefined ? (
+        table
+      ) : (
+        <HilosTableSelectionEdgeContext.Provider value={edge}>
+          {table}
+        </HilosTableSelectionEdgeContext.Provider>
+      ),
+    )
+  }
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function input(container: HTMLElement, id: string): HTMLInputElement | null {
+    return container.querySelector<HTMLInputElement>(`[data-id="${id}"]`)
+  }
+
+  it('draws no checkbox column for a table that declared no bulk operations', () => {
+    const { controller } = makeController(PLAIN_FRAME)
+    window(controller)
+    const { container } = renderWithEdge(controller)
+
+    expect(input(container, 'hilos-table-select-page')).toBeNull()
+    expect(input(container, 'hilos-table-select-a')).toBeNull()
+    expect(container.querySelectorAll('thead th')).toHaveLength(COLUMNS.length)
+  })
+
+  it('puts the column first by default and last where the app asked for the end', () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+
+    const left = renderWithEdge(controller).container
+    expect(
+      left
+        .querySelectorAll('thead th')[0]
+        ?.classList.contains('hilos-table-selection-cell'),
+    ).toBe(true)
+    const leftCells = left.querySelectorAll('[data-id="hilos-table-row-a"] td')
+    expect(leftCells[0]?.querySelector('input')?.dataset['id']).toBe(
+      'hilos-table-select-a',
+    )
+    cleanup()
+
+    const right = renderWithEdge(controller, 'end').container
+    const headers = right.querySelectorAll('thead th')
+    expect(
+      headers[headers.length - 1]?.classList.contains(
+        'hilos-table-selection-cell',
+      ),
+    ).toBe(true)
+    const rightCells = right.querySelectorAll(
+      '[data-id="hilos-table-row-a"] td',
+    )
+    expect(
+      rightCells[rightCells.length - 1]?.querySelector('input')?.dataset['id'],
+    ).toBe('hilos-table-select-a')
+  })
+
+  it('tells the core the state each checkbox is now in', () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    const { container } = renderWithEdge(controller)
+
+    fireEvent.click(input(container, 'hilos-table-select-a') as HTMLElement)
+    expect(controller.selection.count.get()).toBe(1)
+    fireEvent.click(input(container, 'hilos-table-select-a') as HTMLElement)
+    expect(controller.selection.count.get()).toBe(0)
+
+    fireEvent.click(input(container, 'hilos-table-select-page') as HTMLElement)
+    expect(controller.selection.count.get()).toBe(2)
+    fireEvent.click(input(container, 'hilos-table-select-page') as HTMLElement)
+    expect(controller.selection.count.get()).toBe(0)
+  })
+
+  it('shows the header checkbox empty, half-marked and full', () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    const { container } = renderWithEdge(controller)
+    const header = () =>
+      input(container, 'hilos-table-select-page') as HTMLInputElement
+
+    expect(header().checked).toBe(false)
+    expect(header().indeterminate).toBe(false)
+
+    act(() => controller.selectRow('a', true))
+    expect(header().checked).toBe(false)
+    expect(header().indeterminate).toBe(true)
+
+    act(() => controller.selectRow('b', true))
+    expect(header().checked).toBe(true)
+    expect(header().indeterminate).toBe(false)
+  })
+
+  it('gives a row shown as a placeholder no checkbox', () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const { container } = renderWithEdge(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-placeholder"]'),
+    ).not.toBeNull()
+    expect(input(container, 'hilos-table-select-a')).toBeNull()
+    expect(input(container, 'hilos-table-select-b')).not.toBeNull()
+  })
+
+  it('counts the checkbox column into every cell that spans the row', () => {
+    const { controller } = makeController(BULK_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const { container } = renderWithEdge(controller)
+
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-placeholder"]')
+        ?.getAttribute('colspan'),
+    ).toBe(String(COLUMNS.length + 1))
+    cleanup()
+
+    const empty = makeController(BULK_FRAME)
+    empty.controller.ingestWindow([], 0, true, null, null, 10)
+    const emptyTable = renderWithEdge(empty.controller).container
+    expect(emptyTable.querySelector('tbody td')?.getAttribute('colspan')).toBe(
+      String(COLUMNS.length + 1),
+    )
   })
 })

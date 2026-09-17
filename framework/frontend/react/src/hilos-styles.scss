@@ -189,3 +189,26 @@
     max-width: calc(var(--bs-modal-width) - var(--hilos-modal-depth) * 3rem);
   }
 }
+
+// WHY: Bootstrap's progress bar takes its width from an inline style, and a width
+// computed from the server's own two numbers has no class to be expressed as — the
+// custom property is the one legal channel (styling-rules.md, "A computed value").
+// WHAT: the filled part of a table's progress bar, handed a percentage by the view.
+.hilos-progress {
+  width: calc(var(--hilos-progress) * 1%);
+}
+
+// WHY: Bootstrap ships no height utility for .progress, and the stock 1rem inside a
+// table reads as another row of content rather than as a bar under one.
+// WHAT: the track of a table's progress bar — the thin bar the mockup draws
+// (mockups/components/table section 5).
+.hilos-progress-track {
+  height: 0.35rem;
+}
+
+// WHY: Bootstrap has no width utility narrow enough for a checkbox column, and a
+// column that takes its share of the table pushes the content columns around.
+// WHAT: the framework's selection column, header and body cell alike.
+.hilos-table-selection-cell {
+  width: 2.5rem;
+}
