@@ -26,6 +26,7 @@ import {
 } from '../helpers/session'
 import { expectPageRefused, gotoAuthReturn, gotoPage } from '../helpers/page'
 import { uniquePhone, waitForSmsCode } from '../helpers/sms'
+import { dictateGatewayBehavior } from '../helpers/gateway'
 import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
@@ -946,6 +947,31 @@ test('leaves a number that is not on Telegram free to sign in by SMS', async ({
   await continueFromDone(page)
 
   await expect(page.getByTestId('self-user')).toHaveText(phone)
+})
+
+test('says the code could not be sent when the Telegram gateway fails the send', async ({
+  page,
+}) => {
+  // The probe still passes and only the send is refused, so this is not the "number
+  // is not on Telegram" case above: the refusal travels back through the transport
+  // that delivers the code, as a 500 the daemon reads as a failed send (HIL-922).
+  const phone = uniquePhone()
+  await dictateGatewayBehavior('/telegram/sendVerificationMessage', phone, {
+    status: 500,
+  })
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await page.getByTestId('message-signin').click()
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-telegram'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  await expect(page.getByTestId('auth-error')).toContainText(
+    'Could not send the code',
+  )
+  await expect(page.getByTestId('auth-code')).toHaveCount(0)
 })
 
 test('comes back to the phone code screen after a reload, and finishes there', async ({

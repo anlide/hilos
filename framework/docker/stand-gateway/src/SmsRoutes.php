@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
-use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
 
 /**
@@ -21,7 +20,7 @@ use Hilos\Constants\HttpConstants;
  * bearer is checked for the opposite reason - the real Gateway demands one, so a daemon
  * that forgot its credentials has to fail on the stand rather than in production.
  */
-final class SmsRoutes
+final class SmsRoutes implements GatewayResident
 {
     /** Channel name, which becomes the mail domain a caught message is read under. */
     public const string CHANNEL = 'sms';
@@ -39,13 +38,18 @@ final class SmsRoutes
     private const int STATUS_BAD_GATEWAY = 502;
 
     /**
-     * Registers the channel's provider route.
+     * Registers the channel's provider route on one connection, keyed by the recipient.
      *
-     * @param HttpRouter $router Router the gateway dispatches through
+     * @param GatewayRoutes $routes Routes of the connection being accepted
      */
-    public function register(HttpRouter $router): void
+    public function register(GatewayRoutes $routes): void
     {
-        $router->addRoute(HttpConstants::METHOD_POST, '/sms/send', StandGatewayTlsServer::handler($this->send(...)));
+        $routes->provider(
+            HttpConstants::METHOD_POST,
+            '/sms/send',
+            $this->send(...),
+            static fn(array $fields): string => (string)($fields['to'] ?? ''),
+        );
     }
 
     /**

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
-use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 
@@ -25,7 +24,7 @@ use Hilos\Utils\Helpers\HttpHeaderHelper;
  * verification status. Hilos verifies its own codes, so those are surface the framework
  * never touches, and faking them would invite someone to rely on them.
  */
-final class TelegramRoutes
+final class TelegramRoutes implements GatewayResident
 {
     /** Channel name, which becomes the mail domain a caught code is read under. */
     public const string CHANNEL = 'telegram';
@@ -46,30 +45,22 @@ final class TelegramRoutes
     private const string HEADER_AUTHORIZATION = 'Authorization';
 
     /**
-     * Registers the channel's provider and arrangement routes.
+     * Registers the channel's provider and arrangement routes on one connection.
      *
-     * @param HttpRouter $router Router the gateway dispatches through
+     * Both provider routes are keyed by the number: it is the value of the call a spec coins.
+     *
+     * @param GatewayRoutes $routes Routes of the connection being accepted
      */
-    public function register(HttpRouter $router): void
+    public function register(GatewayRoutes $routes): void
     {
+        $byNumber = static fn(array $fields): string => (string)($fields['phone_number'] ?? '');
+
         // Provider side: what framework/backend/Telegram/TelegramGatewayClient calls.
-        $router->addRoute(
-            HttpConstants::METHOD_POST,
-            '/telegram/checkSendAbility',
-            StandGatewayTlsServer::handler($this->checkSendAbility(...)),
-        );
-        $router->addRoute(
-            HttpConstants::METHOD_POST,
-            '/telegram/sendVerificationMessage',
-            StandGatewayTlsServer::handler($this->sendVerificationMessage(...)),
-        );
+        $routes->provider(HttpConstants::METHOD_POST, '/telegram/checkSendAbility', $this->checkSendAbility(...), $byNumber);
+        $routes->provider(HttpConstants::METHOD_POST, '/telegram/sendVerificationMessage', $this->sendVerificationMessage(...), $byNumber);
 
         // Test side: the one thing a spec cannot arrange any other way.
-        $router->addRoute(
-            HttpConstants::METHOD_POST,
-            '/telegram/test/reachable',
-            StandGatewayTlsServer::handler($this->testReachable(...)),
-        );
+        $routes->test(HttpConstants::METHOD_POST, '/telegram/test/reachable', $this->testReachable(...));
     }
 
     /**

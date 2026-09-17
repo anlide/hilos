@@ -5,11 +5,10 @@ channel or an emulator, choosing between a stub and an emulator, or looking for
 where a caught message lands. The house is `framework/docker/stand-gateway`
 (HIL-492, HIL-653); this page is the rule for living in it, written for the
 author of the next resident rather than as a description of the two that live
-there today. What a particular future resident looks like — behavior handles,
-an OAuth provider, a model — is that leaf's own design (HIL-922, HIL-923,
-HIL-925); this page says only what the house guarantees and
-what a resident owes it. How to run the suites is [testing.md](testing.md), not
-here.
+there today. What a particular future resident looks like — an OAuth provider, a
+model — is that leaf's own design (HIL-923, HIL-925); this page says only what
+the house guarantees and what a resident owes it. How to run the suites is
+[testing.md](testing.md), not here.
 
 ## Why a Stand Emulates Rather Than Stubs
 
@@ -59,12 +58,19 @@ uses must not need a package.
 
 A resident is a **route prefix**. `SmsRoutes::CHANNEL` is `sms`,
 `TelegramRoutes::CHANNEL` is `telegram`, and every route of the resident hangs
-under `/<channel>/…`, registered on the framework's router by an exact method and
-path. The core hands a route the request body as a raw string; the gateway turns
-it into fields in one place, `StandGatewayTlsServer::handler()`, which every
-route of every resident is wrapped in — JSON when the body is JSON, a form
-otherwise, the query string merged in beneath — so a handler takes an array of
-fields and, when it needs them, the request headers.
+under `/<channel>/…`, registered by an exact method and path through
+`src/GatewayRoutes.php` — the routes of ONE connection. The gateway builds them
+for every connection it accepts (`StandGatewayTlsServer::onCreateClient()`), with
+a router of their own, and every resident registers on them: a behavior a spec
+dictated is played out on the connection that carries the call
+([Behavior Handles](#behavior-handles)), so a route has to know which connection
+that is, and it knows from the routes it was registered through. The core hands a
+route the request body as a raw string; `GatewayRoutes` turns it into fields in
+one place, the wrapper every route of every resident goes through — JSON when the
+body is JSON, a form otherwise, the query string merged in beneath — so a handler
+takes an array of fields and, when it needs them, the request headers. A provider
+route is registered together with its key: the value of the call a declared
+behavior is scoped to.
 
 Why one container rather than one per channel (HIL-653): a channel here is a
 class beside `TelegramRoutes` and `SmsRoutes` plus an endpoint in the stack's
@@ -78,22 +84,30 @@ Two things about the house are deliberate and easy to "fix" by mistake:
   The gateway runs the framework's own classes, written in the same PHP as the
   rest of the repository, and an older image would not parse them — the
   container would not come up at all (`Dockerfile`, header comment).
-- **Only the housekeeping routes are unprefixed**: `GET /test/health`, which the
-  compose healthcheck waits on before it starts the daemon, and
-  `POST /test/reset`, which wipes the whole store. They are about the gateway,
-  not about any resident, and a resident does not add to them.
+- **Only the house's own routes are unprefixed**, and there are three:
+  `GET /test/health`, which the compose healthcheck waits on before it starts the
+  daemon; `POST /test/reset`, which wipes the whole store; and
+  `POST /test/behavior`, which dictates how a provider route answers. They are
+  about the gateway, not about any resident — the behavior levers work the same
+  on every provider route, so they are the house's — and a resident does not add
+  to them.
 
 ## Two Halves of a Resident's Routes
 
 A resident's routes come in two halves, and they are registered side by side in
 the one `register()` of its routes class:
 
-- the **provider half** — what the product calls. For Telegram that is
+- the **provider half** — what the product calls, registered with
+  `GatewayRoutes::provider()`. For Telegram that is
   `POST /telegram/checkSendAbility` and `POST /telegram/sendVerificationMessage`,
-  what `framework/backend/Telegram/TelegramGatewayClient.php` posts;
-- the **test half** — what the spec calls, under `/<channel>/test/…`. For
-  Telegram that is `POST /telegram/test/reachable`, the one thing a spec cannot
-  arrange any other way: a number nobody put on Telegram.
+  what `framework/backend/Telegram/TelegramGatewayClient.php` posts. Each route
+  names its **key** — the value of the call the spec coined itself, which a
+  declared behavior is scoped to: `phone_number` for both Telegram routes, `to`
+  for `POST /sms/send`;
+- the **test half** — what the spec calls, under `/<channel>/test/…`, registered
+  with `GatewayRoutes::test()`. For Telegram that is
+  `POST /telegram/test/reachable`, the one thing a spec cannot arrange any other
+  way: a number nobody put on Telegram.
 
 `framework/docker/stand-gateway/src/TelegramRoutes.php`, `register()`, is the
 sample, with the two halves side by side. SMS has no test half, and that is
@@ -108,8 +122,8 @@ carries no credentials at all: it is called by a spec, not by the product.
 
 **Behavior is steered through the emulator's own HTTP handles, never through
 the daemon's command channel.** A spec already holds an HTTP client —
-`demo/chat/tests/e2e/helpers/telegram.ts` posts JSON to the test half with a
-bare `fetch` — and the test half is the emulator's user interface. The daemon's
+`demo/chat/tests/e2e/helpers/gateway.ts` posts JSON to the gateway with a bare
+`fetch` — and the test routes are the emulator's user interface. The daemon's
 command channel is about the daemon; an external service is not configured
 through it, and a handle that lived there would make the product carry test
 wiring for a service it does not own. This is also the owner's requirement on
@@ -191,8 +205,9 @@ keep it.
 
 ## State: One File Under a Lock, Wiped by a Handle
 
-Whatever a spec arranges up front — today, which numbers are declared absent
-from Telegram — lives in one JSON file under an exclusive lock,
+Whatever a spec arranges up front — which numbers are declared absent from
+Telegram, and the queues of declared behaviors — lives in one JSON file under an
+exclusive lock,
 `/tmp/stand-gateway-state.json` (`src/Store.php`, `PATH`). That is the whole
 storage design, and it is enough: one runner, a few writes per suite.
 
@@ -208,10 +223,10 @@ exactly the class of flake a stand exists to remove (`Store.php`, class
 docblock). What arrived is deliberately not in the file either — it left as a
 letter — so the store holds only the arrangement.
 
-**Wiping is a handle**: `POST /test/reset` forgets everything
-(`Store::reset()`). It is a whole-store wipe, so it is for a spec that genuinely
-needs a clean slate and not for ordinary isolation: everything the store holds
-is keyed by the value a spec coined (a number), and a unique value per test
+**Wiping is a handle**: `POST /test/reset` forgets everything, declared behaviors
+included (`Store::reset()`). It is a whole-store wipe, so it is for a spec that
+genuinely needs a clean slate and not for ordinary isolation: everything the store
+holds is keyed by the value a spec coined (a number), and a unique value per test
 isolates it already. Calling reset under parallel workers would clear state a
 neighboring spec is still using (`helpers/telegram.ts`, `resetTelegram()`).
 
@@ -267,13 +282,82 @@ the house's, not the resident's.
 
 ## Behavior Handles
 
-A resident answers the way a spec tells it to. Four levers, all on the test half
-and all dictated over HTTP before the product's call arrives: the **status** the
-provider half answers with, a **delay** before the answer, a **cut** in the
-middle of the response, and a **hold** — keeping the connection open for a
-while after the answer is complete.
+A provider route answers the way a spec tells it to (HIL-922). The spec declares
+the answer over HTTP, on the house's own route, before the product's call arrives,
+and the declaration is spent on exactly one call. Four levers: the **status** the
+call is refused with, a **delay** before the answer, a **cut** in the middle of
+the answer, and a **hold** — keeping the connection open for a while after the
+answer is complete.
 
-The last one is not a nicety, and the number behind it was measured while
+**The wire.** `POST /test/behavior` with a JSON body:
+
+```json
+{"path": "/telegram/sendVerificationMessage", "key": "+15550001234", "status": 500}
+```
+
+`path` names a provider route of a resident and `key` the value of the call the
+declaration is scoped to; `status`, `delayMs`, `cut` and `holdMs` are the levers,
+each optional. Accepted — `200 {"ok":true}`. Refused —
+`400 {"ok":false,"error":<code>}`, and the checks run in this order, so the first
+mistake is the one named:
+
+1. `FIELD_UNKNOWN` — a key that is not one of the six; this is what catches
+   `delay_ms` written for `delayMs`;
+2. `PATH_NOT_PROVIDER` — the path is not a provider route: a path nobody
+   registered, a resident's test half, or a house route;
+3. `KEY_REQUIRED` — the key is missing, not a string, or empty;
+4. `STATUS_OUT_OF_RANGE` — the status is not an integer from 400 to 599;
+5. `DURATION_INVALID` — `delayMs` or `holdMs` is not an integer of at least 0;
+6. `CUT_INVALID` — `cut` is not a boolean.
+
+The types are strict because the helper sends JSON only; a refusal fails the spec
+where the declaration was made, rather than later on a provider that answered as
+usual. A declaration of `path` and `key` alone is legitimate: it answers as usual,
+which is how a spec writes "then normally" inside a sequence.
+
+**Scoped to the pair of path and key, not to the channel's next call.** The chat
+e2e suite runs fully parallel (`demo/chat/tests/e2e/playwright.config.ts`), and a
+declaration for "the next call" would be spent by a neighboring worker's call. The
+key is the value the spec coined itself — the number `uniquePhone()` produced, for
+Telegram and SMS alike — which isolates a declaration exactly as it isolates a
+number declared absent ([State](#state-one-file-under-a-lock-wiped-by-a-handle)).
+Each provider route names its key when it is registered, because only the resident
+knows which value of its call a spec coins.
+
+**One declaration answers one call, and declarations queue.** Declarations for the
+same pair are taken in the order they were made: three refusals make a provider
+that fails three retries, and "500, then slow, then as usual" is three
+declarations — there is no counter field.
+
+**What each lever does**, and they combine in one declaration ("500 after two
+seconds", "cut, then hold"):
+
+- **status** — the resident's handler is not called: a provider that failed
+  delivered nothing, and a letter in Mailpit for a refused call would be a lie a
+  spec could read. The answer carries the status, `Content-Type: application/json`
+  and the body `{"ok":false,"error":"STATUS_DICTATED"}`.
+- **delayMs** — the answer is built when the call arrives (a letter, if any, is
+  forwarded then), and its bytes leave that many milliseconds after the call was
+  routed. The connection is read all the while, so a peer that gives up first
+  takes it down at once.
+- **cut** — the status line, the headers with the full `Content-Length`, and the
+  first `floor(length / 2)` bytes of the body leave; then the connection closes.
+- **holdMs** — after the last byte of the answer, whole or cut, the connection
+  stays open that many milliseconds and then the gateway closes it; whatever
+  arrives meanwhile is thrown away, and a peer that closes first ends it at once.
+
+A call with a cut or a hold always ends its connection, even when the request
+asked for keep-alive. A status and a delay leave the connection's policy alone,
+and the next request on a kept-alive connection is answered without levers.
+
+**How precise a deadline is.** A delay and a hold are deadlines the gateway's tick
+checks every 10 ms (`bin/serve.php`, `LOOP_PAUSE_US`), never a pause inside a
+handler: the gateway is one process serving every connection, and a handler that
+stopped to wait would stall all of them — the very failure a delay exists to
+imitate on ONE call. A deadline never comes early and comes at most one tick late,
+so a spec measures only the lower bound.
+
+The hold is not a nicety, and the number behind it was measured while
 HIL-732 was being fixed (recorded on the epic, HIL-918): a counterpart that
 closes the connection right after its answer gives a GREEN test on broken code
 five times out of five; the same counterpart holding the connection for 50 ms
@@ -283,9 +367,13 @@ class of read-loop defects testable at all.
 
 The handles are the house's, not one resident's: a status or a hold is dictated
 the same way for every provider half, so a spec learns one arrangement and the
-failed-provider scenarios (HIL-926) are written once. What exactly the handles
-are called and how a dictated answer is scoped to one call is that leaf's design
-(not in the code yet — HIL-922).
+failed-provider scenarios (HIL-926) are written once. The declaration is
+`src/Behavior.php`, the queues live in `Store`, `GatewayRoutes::provider()` takes
+the declaration on the call, and `src/StandGatewayHttpClient.php` plays the delay,
+the cut and the hold out on the connection. A spec dictates through
+`dictateGatewayBehavior()` in `demo/chat/tests/e2e/helpers/gateway.ts`; the
+gateway's own mechanics are held to this contract by
+`demo/chat/tests/e2e/tests/stand-gateway.spec.ts`.
 
 ## Adding the Next Resident
 
@@ -293,15 +381,16 @@ Seven steps, each with the sample to copy. A resident that needs an eighth is
 telling you it is a different kind ([above](#three-kinds-of-resident)) — stop
 and name it before writing.
 
-1. **A routes class** beside `src/SmsRoutes.php` and `src/TelegramRoutes.php`,
-   with a public `CHANNEL` constant. The constant is the route prefix and, for a
-   message channel, the mail domain a caught message is read under.
-2. **Both halves in the one `register()`**: the provider half under
-   `/<channel>/…`, the test half under `/<channel>/test/…`. No test half when
-   there is nothing to arrange up front, as with SMS.
-3. **One line in `StandGatewayTlsServer`'s constructor** —
-   `new <Channel>Routes()->register($this->router)` beside the two that are
-   there.
+1. **A routes class implementing `GatewayResident`** beside `src/SmsRoutes.php`
+   and `src/TelegramRoutes.php`, with a public `CHANNEL` constant. The constant is
+   the route prefix and, for a message channel, the mail domain a caught message
+   is read under.
+2. **Both halves in the one `register(GatewayRoutes $routes)`**: the provider half
+   under `/<channel>/…` through `provider()`, naming the key of each route, and the
+   test half under `/<channel>/test/…` through `test()`. No test half when there is
+   nothing to arrange up front, as with SMS.
+3. **One entry in the `$residents` list of `StandGatewayTlsServer`'s
+   constructor** — `new <Channel>Routes()` beside the two that are there.
 4. **The class in namespace `Hilos\StandGateway`, one class per file, named as
    the file.** `bin/serve.php` loads classes by name from `src/`, so there is no
    list of files to add to — and a class from outside `src/` and the framework
@@ -321,7 +410,9 @@ and name it before writing.
 7. **A spec helper** beside `demo/chat/tests/e2e/helpers/sms.ts` and
    `telegram.ts` (and their twins under `demo/polls/tests/e2e/helpers/`): for a
    message channel, a `waitFor<Channel>…()` that reads the letter by recipient,
-   and one function per test handle.
+   and one function per test handle. The behavior levers are not a test handle
+   of the resident: a spec dictates them through `helpers/gateway.ts`, and the
+   resident brings no helper of its own for them.
 
 What a resident does NOT bring:
 

@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test'
+import { postToGateway } from './gateway'
 import { waitForAnyMailTo } from './mail'
 
 // The stand's window into the messenger (HIL-492, HIL-653). A Telegram code has
@@ -14,8 +14,6 @@ import { waitForAnyMailTo } from './mail'
 //
 // What remains of the gateway's own API here is arrangement only: what arrived is
 // no longer asked of it.
-const STAND_GATEWAY_URL =
-  process.env.STAND_GATEWAY_URL ?? 'https://stand-gateway:18000'
 
 /** The mail domain the gateway re-addresses a caught Telegram code under. */
 const TELEGRAM_MAIL_DOMAIN = 'telegram.stand'
@@ -55,7 +53,10 @@ export async function setTelegramReachable(
   phone: string,
   reachable: boolean,
 ): Promise<void> {
-  await post('/telegram/test/reachable', { phone_number: phone, reachable })
+  await postToGateway('/telegram/test/reachable', {
+    phone_number: phone,
+    reachable,
+  })
 }
 
 /**
@@ -67,20 +68,5 @@ export async function setTelegramReachable(
  * would clear state a neighbouring spec is still using.
  */
 export async function resetTelegram(): Promise<void> {
-  await post('/test/reset', {})
-}
-
-/**
- * Call one test route on the stand gateway.
- *
- * @param path The route path.
- * @param payload The JSON body.
- */
-async function post(path: string, payload: unknown): Promise<void> {
-  const response = await fetch(`${STAND_GATEWAY_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  expect(response.ok, `stand gateway refused ${path}`).toBe(true)
+  await postToGateway('/test/reset', {})
 }

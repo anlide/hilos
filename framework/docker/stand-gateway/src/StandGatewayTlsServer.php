@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\StandGateway;
 
-use Closure;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
 use Hilos\Environment\Exception\EnvException;
@@ -20,85 +19,47 @@ use Socket;
  * one is a class beside {@see TelegramRoutes} and {@see SmsRoutes} plus an endpoint in
  * the stack's compose - not a new service, a new port and a new way to read it.
  *
- * Only the housekeeping routes stay unprefixed, because they are about the gateway
- * rather than about any channel: a reset that wipes the whole store, and a health
- * probe the compose healthcheck waits on.
+ * Only the house's own routes stay unprefixed, because they are about the gateway
+ * rather than about any channel: a reset that wipes the whole store, a health probe the
+ * compose healthcheck waits on, and the behavior handle. The levers a spec dictates -
+ * a status, a delay, a cut, a hold - are the house's too (HIL-922): they work the same on
+ * every provider route of every resident, so a spec learns one arrangement.
+ *
+ * A resident's routes are assembled per connection rather than once: a declared
+ * behavior is played out on the connection that carries the call, and each connection
+ * routes through its own {@see GatewayRoutes} bound to its own client.
  *
  * The gateway speaks real TLS and does it through the framework's own server (HIL-921):
  * the daemon verifies the peer on the stand exactly as it does in production, and the
  * encrypted read that behaves differently from a bare one (HIL-732) is the read the
  * daemon's client meets here. HTTP is parsed by the framework's {@see HttpClient} and
  * routed by its {@see HttpRouter}; what stays the gateway's own is turning a raw body
- * into fields, because the core hands a route the body undecoded.
+ * into fields, because the core hands a route the body undecoded, and sending an answer
+ * the way a spec dictated ({@see StandGatewayHttpClient}).
  *
  * What was here before and is not any more: a route that listed delivered messages.
  * Everything the gateway catches is forwarded to the stand's Mailpit, so what arrived
  * is read where mail is read - by the runner and by a person, out of the same inbox.
  *
- * @extends AbstractTlsServer<HttpClient>
+ * @extends AbstractTlsServer<StandGatewayHttpClient>
  */
 final class StandGatewayTlsServer extends AbstractTlsServer
 {
-    /** @var HttpRouter Router every connection of this gateway routes through */
-    private HttpRouter $router;
+    /** @var list<GatewayResident> Channels living in the gateway, registered on every connection */
+    private array $residents;
 
     /**
-     * Assembles the channels' routes and the gateway's own two.
+     * Assembles the channels living in the gateway.
      *
      * @param string $host Host to bind
      * @param int $port Port to bind
      * @param string $certificateFile PEM file holding the certificate and its private key
-     * @throws EnvException When the router cannot read the session cookie name
      */
     public function __construct(string $host, int $port, string $certificateFile)
     {
         parent::__construct($host, $port, $certificateFile);
 
-        $this->router = new HttpRouter();
-
-        new TelegramRoutes()->register($this->router);
-        new SmsRoutes()->register($this->router);
-
-        // Gateway-wide, and therefore unprefixed: neither belongs to a channel.
-        $this->router->addRoute(HttpConstants::METHOD_GET, '/test/health', self::handler($this->testHealth(...)));
-        $this->router->addRoute(HttpConstants::METHOD_POST, '/test/reset', self::handler($this->testReset(...)));
-    }
-
-    /**
-     * Wraps a gateway handler into the shape the router calls.
-     *
-     * The framework client posts a form; the test routes are called from Playwright,
-     * which posts JSON. Accepting both keeps one handler shape for every route, and the
-     * query string is merged in beneath the body.
-     *
-     * The handler gets the request headers as its second argument; one that does not
-     * read them may leave the parameter out. What it returns reaches the router as is:
-     * a payload is answered as JSON with 200, and a response built by {@see json()}
-     * keeps its own status.
-     *
-     * @param callable(array<string, mixed>, array<string, string>): array<string, mixed> $handler Gateway handler
-     * @return Closure(array{request: array<string, mixed>, params: array<string, string>}): array<string, mixed> Route handler
-     */
-    public static function handler(callable $handler): Closure
-    {
-        return static function (array $args) use ($handler): array {
-            $request = $args['request'];
-            $raw = $request[HttpConstants::REQUEST_KEY_BODY];
-            $fields = [];
-
-            if ($raw !== '') {
-                $decoded = json_decode($raw, true);
-                if (is_array($decoded)) {
-                    $fields = $decoded;
-                } else {
-                    parse_str($raw, $fields);
-                }
-            }
-
-            parse_str($request[HttpConstants::REQUEST_KEY_QUERY], $query);
-
-            return $handler($fields + $query, $request[HttpConstants::REQUEST_KEY_HEADERS]);
-        };
+        $this->residents = [new TelegramRoutes(), new SmsRoutes()];
     }
 
     /**
@@ -128,19 +89,33 @@ final class StandGatewayTlsServer extends AbstractTlsServer
     }
 
     /**
-     * Gives the accepted connection an HTTP client that speaks TLS and routes through this gateway.
+     * Gives the accepted connection a client that speaks TLS, with its own routes of every resident and of the gateway.
      *
      * The router is set here because nothing else would set it: in the daemon the manager
      * hands its router to every HTTP client it accepts, and this process has no manager.
+     * It is a router per connection because its routes are bound to this client: a
+     * behavior declared for a call is played out on the connection the call came over.
      *
      * @param Socket $socket Accepted client socket
-     * @return HttpClient Client instance
-     * @throws EnvException When the client cannot read its buffer or keep-alive env values
+     * @return StandGatewayHttpClient Client instance
+     * @throws EnvException When the client cannot read its buffer or keep-alive env values, or the router its session cookie name
      */
-    protected function onCreateClient($socket): HttpClient
+    protected function onCreateClient($socket): StandGatewayHttpClient
     {
-        $client = new HttpClient($socket, $this->createTransport($socket));
-        $client->setRouter($this->router);
+        $client = new StandGatewayHttpClient($socket, $this->createTransport($socket));
+        $router = new HttpRouter();
+        $routes = new GatewayRoutes($router, $client);
+
+        foreach ($this->residents as $resident) {
+            $resident->register($routes);
+        }
+
+        // Gateway-wide, and therefore unprefixed: none of them belongs to a channel.
+        $routes->test(HttpConstants::METHOD_GET, '/test/health', $this->testHealth(...));
+        $routes->test(HttpConstants::METHOD_POST, '/test/reset', $this->testReset(...));
+        $routes->test(HttpConstants::METHOD_POST, '/test/behavior', fn(array $fields): array => $this->testBehavior($routes, $fields));
+
+        $client->setRouter($router);
 
         return $client;
     }
@@ -168,7 +143,7 @@ final class StandGatewayTlsServer extends AbstractTlsServer
     }
 
     /**
-     * Test route: forget every declared number.
+     * Test route: forget every declared number and every declared behavior.
      *
      * @param array<string, mixed> $fields Request fields (unused)
      * @return array<string, mixed> Acknowledgement
@@ -176,6 +151,42 @@ final class StandGatewayTlsServer extends AbstractTlsServer
     private function testReset(array $fields): array
     {
         Store::reset();
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Test route: declare how a provider route answers its next call carrying a key.
+     *
+     * The declaration is checked in the order its contract lists - an unknown key, the path,
+     * the key, then the levers - and a refusal is a 400 with the code, so the spec helper
+     * fails where the declaration was made rather than later on a provider that answered as
+     * usual. The path is checked against this connection's routes, which is where the
+     * residents registered their provider halves.
+     *
+     * @param GatewayRoutes $routes Routes of the connection the declaration came over
+     * @param array<string, mixed> $fields Request fields
+     * @return array<string, mixed> Acknowledgement, or a 400 naming the refusal
+     */
+    private function testBehavior(GatewayRoutes $routes, array $fields): array
+    {
+        try {
+            Behavior::refuseUnknownField($fields);
+
+            $path = $fields[Behavior::FIELD_PATH] ?? null;
+            if (!is_string($path) || !$routes->isProvider($path)) {
+                throw new InvalidBehaviorException(InvalidBehaviorException::PATH_NOT_PROVIDER);
+            }
+
+            $key = $fields[Behavior::FIELD_KEY] ?? null;
+            if (!is_string($key) || $key === '') {
+                throw new InvalidBehaviorException(InvalidBehaviorException::KEY_REQUIRED);
+            }
+
+            Store::pushBehavior($path, $key, Behavior::fromFields($fields));
+        } catch (InvalidBehaviorException $refusal) {
+            return self::json(['ok' => false, 'error' => $refusal->error], HttpConstants::HTTP_BAD_REQUEST);
+        }
 
         return ['ok' => true];
     }
