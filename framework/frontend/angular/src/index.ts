@@ -75,7 +75,9 @@ export type { HilosToastCorner } from './hilosToastCorner.js'
 export {
   HilosViewportTable,
   type BulkUntouchedContext,
+  type ViewportTableProgressContext,
   type ViewportTableRowContext,
+  type ViewportTableRowProgressContext,
 } from './HilosViewportTable.js'
 export {
   HilosDropdown,

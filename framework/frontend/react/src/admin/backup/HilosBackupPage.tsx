@@ -40,6 +40,7 @@ import {
   formatBackupDuration,
   formatBackupOutOfReach,
   formatBackupProgressLabel,
+  formatBackupRunCaption,
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
@@ -639,6 +640,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
 
       <HilosViewportTable
         controller={backups.controller}
+        tableProgress={(progress) => formatBackupRunCaption(progress)}
         row={(row) => (
           <>
             <td className={backupCellClass(row, 'text-nowrap')}>

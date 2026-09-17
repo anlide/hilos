@@ -1,5 +1,6 @@
 // The Angular port of vue/src/HilosTableLive.test.ts, under the same case names the
 // Vue reference and the React port run.
+import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
 import { TableViewportController } from '@hilos/core'
@@ -63,6 +64,32 @@ function liveThree(controller: TableViewportController<Row>): void {
     rowKey: 'a',
     staleSources: ['connections'],
   })
+}
+
+/** A host handing the room the project's words and control beside the track. */
+@Component({
+  selector: 'test-table-live-progress-host',
+  imports: [HilosTableLive],
+  template: `
+    <hilos-table-live
+      [controller]="controller"
+      [columns]="columns"
+      [tableProgress]="title"
+      [tableProgressAction]="stop"
+    />
+    <ng-template #title let-progress>
+      <span data-id="page-progress-title">{{ progress.detail['title'] }}</span>
+    </ng-template>
+    <ng-template #stop let-progress>
+      <button type="button" data-id="page-progress-stop">
+        Stop {{ progress.progressKey }}
+      </button>
+    </ng-template>
+  `,
+})
+class TableLiveProgressHost {
+  controller!: TableViewportController<Row>
+  columns = COLUMNS
 }
 
 function mountLive(
@@ -216,9 +243,8 @@ describe('HilosTableLive', () => {
     )
   })
 
-  // The project's words and control beside the track are not ported yet (HIL-814),
-  // so this case reads the line and its track alone. The placing classes sit on the
-  // track's own element, the way an Angular component takes a class from its user.
+  // The placing classes sit on the track's own element, the way an Angular component
+  // takes a class from its user.
   it('draws running work on one line, the track along its bottom edge', () => {
     const controller = makeController()
     controller.ingestProgress({
@@ -228,12 +254,22 @@ describe('HilosTableLive', () => {
       total: 120,
       detail: { title: 'Nightly check' },
     })
-    const fixture = mountLive(controller)
+    const fixture = TestBed.createComponent(TableLiveProgressHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
 
     const line = query(
       fixture,
       '[data-id="hilos-table-progress"]',
     ) as HTMLElement
+    expect(
+      line
+        .querySelector('[data-id="page-progress-title"]')
+        ?.textContent?.trim(),
+    ).toBe('Nightly check')
+    expect(
+      line.querySelector('[data-id="page-progress-stop"]')?.textContent?.trim(),
+    ).toBe('Stop nightly')
     const host = line.querySelector('hilos-table-progress') as HTMLElement
     expect(
       host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow'),

@@ -19,6 +19,7 @@
 // The controller arrives via input, carrying core signals, so the room mirrors them
 // into Angular signals. The Angular port of the Vue reference
 // (vue/src/HilosTableLive.vue), under the same names and words.
+import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -27,7 +28,7 @@ import {
   input,
   signal,
 } from '@angular/core'
-import type { WritableSignal } from '@angular/core'
+import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
   hilosTableStaleColumns,
   hilosTableStaleLabel,
@@ -46,6 +47,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosTableProgress } from './HilosTableProgress.js'
+import type { ViewportTableProgressContext } from './HilosViewportTable.js'
 
 /**
  * The message row and its idle twin, to the character — only `invisible` on the
@@ -93,7 +95,7 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
 @Component({
   selector: 'hilos-table-live',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosTableProgress],
+  imports: [HilosTableProgress, NgTemplateOutlet],
   template: `
     <div class="position-relative mb-2" data-id="hilos-table-live-slot">
       <div
@@ -120,6 +122,13 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
               {{ announceLabel() }}
             } @else if (top === 'stale') {
               {{ staleLabel() }}
+            } @else if (tableBar(); as progress) {
+              <!-- No check for whether the page filled the place: an empty one
+              draws nothing, and the twin holds the height either way. -->
+              <ng-container
+                [ngTemplateOutlet]="tableProgress() ?? null"
+                [ngTemplateOutletContext]="{ $implicit: progress }"
+              />
             }
           </span>
           @if (live().rest.length > 0) {
@@ -153,7 +162,11 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
             >
               Show
             </button>
-          } @else if (top === 'progress' && tableProgress(); as progress) {
+          } @else if (top === 'progress' && tableBar(); as progress) {
+            <ng-container
+              [ngTemplateOutlet]="tableProgressAction() ?? null"
+              [ngTemplateOutletContext]="{ $implicit: progress }"
+            />
             <!-- The track runs along the bottom edge of the line and adds no height;
             the line is positioned itself, so it is the box the track sits in. -->
             <hilos-table-progress
@@ -182,6 +195,14 @@ export class HilosTableLive<R> {
    * source that went quiet, so the room cannot name a column the table does not have.
    */
   readonly columns = input.required<readonly HilosTableColumn[]>()
+  /** The project's own words about the work running on the table, on the line itself. */
+  readonly tableProgress = input<
+    TemplateRef<ViewportTableProgressContext> | undefined
+  >()
+  /** The project's own control for that work, standing where a button stands. */
+  readonly tableProgressAction = input<
+    TemplateRef<ViewportTableProgressContext> | undefined
+  >()
 
   protected readonly twinClass = `${ROW_CLASS} alert-secondary invisible`
   protected readonly icon = ICON
@@ -195,9 +216,7 @@ export class HilosTableLive<R> {
     inside: 0,
     total: 0,
   })
-  protected readonly tableProgress = signal<HilosTableProgressState | null>(
-    null,
-  )
+  protected readonly tableBar = signal<HilosTableProgressState | null>(null)
 
   // The sentence about the columns that went quiet, read out of the very list the
   // table is drawn from.
@@ -266,7 +285,7 @@ export class HilosTableLive<R> {
         bind(controller.rows, this.rows),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.announced, this.announced),
-        bind(controller.progress.table, this.tableProgress),
+        bind(controller.progress.table, this.tableBar),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {

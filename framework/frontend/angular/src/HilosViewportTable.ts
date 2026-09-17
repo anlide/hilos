@@ -34,6 +34,7 @@ import type { TemplateRef, WritableSignal } from '@angular/core'
 import { subscribeSignal } from '@hilos/core'
 import type {
   HilosTableColumn,
+  HilosTableProgress as HilosTableProgressState,
   HilosTableSelectionHeader,
   ReadonlySignal,
   TableSort,
@@ -45,6 +46,7 @@ import type {
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
+import { HilosTableProgress } from './HilosTableProgress.js'
 import { HILOS_PAGE_HEADING_ID } from './hilosPageHeadingToken.js'
 import { HILOS_TABLE_SELECTION_EDGE } from './hilosTableSelectionEdge.js'
 
@@ -60,6 +62,23 @@ export interface ViewportTableRowContext<R> {
   rowKey: string
 }
 
+/** The context a HilosViewportTable `#tableProgress` or `#tableProgressAction` template receives. */
+export interface ViewportTableProgressContext {
+  /** The bar of the work running on the table (the template's implicit `let-progress`). */
+  $implicit: HilosTableProgressState
+}
+
+/** The context a HilosViewportTable `#rowProgress` template receives. */
+export interface ViewportTableRowProgressContext {
+  /** The bar of the work running over one row (the template's implicit `let-progress`). */
+  $implicit: HilosTableProgressState
+  /** The key of the row the work runs over. */
+  rowKey: string
+}
+
+/** One cell of a row bar's row: how many columns it spans, and whether the bar is under it. */
+type ProgressCell = { span: number; covered: boolean }
+
 /** The context a HilosViewportTable `#bulkUntouched` template receives. */
 export interface BulkUntouchedContext {
   /** The key of the row a bulk run left untouched (the template's implicit `let-rowKey`). */
@@ -72,7 +91,13 @@ export interface BulkUntouchedContext {
 @Component({
   selector: 'hilos-viewport-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosTableBar, HilosTableFooter, HilosTableLive, NgTemplateOutlet],
+  imports: [
+    HilosTableBar,
+    HilosTableFooter,
+    HilosTableLive,
+    HilosTableProgress,
+    NgTemplateOutlet,
+  ],
   template: `
     <div [attr.data-id]="dataId()">
       @if (declaration()) {
@@ -107,6 +132,8 @@ export interface BulkUntouchedContext {
       <hilos-table-live
         [controller]="controller()"
         [columns]="frameColumns()"
+        [tableProgress]="tableProgress()"
+        [tableProgressAction]="tableProgressAction()"
       />
 
       <div class="table-responsive">
@@ -270,6 +297,39 @@ export interface BulkUntouchedContext {
                   </td>
                 }
               </tr>
+
+              <!-- Work running over this one row, drawn right under it and only
+              while the row is on screen: a key absent from the window takes up
+              nothing and comes back with its row. A row drawn as a placeholder
+              gets no bar under it even if the key is still in the map — the core
+              takes a removed row's bar down at once, so that is a race rather
+              than a normal state, and the condition here is the same one that
+              draws the placeholder above. -->
+              @if (!view.placeholder && rowBar(view.rowKey); as bar) {
+                <tr [attr.data-id]="'hilos-table-progress-row-' + view.rowKey">
+                  @for (cell of progressCells(); track $index) {
+                    <td [attr.colspan]="cell.span" class="pt-0">
+                      @if (cell.covered) {
+                        @if (rowProgress(); as caption) {
+                          <div class="small text-body-secondary mb-1">
+                            <ng-container
+                              [ngTemplateOutlet]="caption"
+                              [ngTemplateOutletContext]="{
+                                $implicit: bar,
+                                rowKey: view.rowKey,
+                              }"
+                            />
+                          </div>
+                        }
+                        <hilos-table-progress
+                          [progress]="bar"
+                          label="Work on this row"
+                        />
+                      }
+                    </td>
+                  }
+                </tr>
+              }
             }
             @if (rows().length === 0) {
               <tr>
@@ -386,6 +446,27 @@ export class HilosViewportTable<R> {
    */
   protected readonly bulkUntouched =
     contentChild<TemplateRef<BulkUntouchedContext>>('bulkUntouched')
+  /**
+   * The project's own words about the work running on the table, drawn on the line
+   * of the room of live messages above the rows: `<ng-template #tableProgress
+   * let-progress>`.
+   */
+  protected readonly tableProgress =
+    contentChild<TemplateRef<ViewportTableProgressContext>>('tableProgress')
+  /**
+   * The project's own control for that work, standing where a button stands:
+   * `<ng-template #tableProgressAction let-progress>`.
+   */
+  protected readonly tableProgressAction = contentChild<
+    TemplateRef<ViewportTableProgressContext>
+  >('tableProgressAction')
+  /**
+   * The project's own words about the work running over one row, drawn above its
+   * track: `<ng-template #rowProgress let-progress let-rowKey="rowKey">`. Where the
+   * page gives none, the row of the bar carries the track alone.
+   */
+  protected readonly rowProgress =
+    contentChild<TemplateRef<ViewportTableRowProgressContext>>('rowProgress')
 
   // The declaration does not change over the life of a table, so it is read off
   // the controller rather than mirrored as a signal (tableFrame.ts,
@@ -453,6 +534,13 @@ export class HilosViewportTable<R> {
   protected readonly hasNextPage = signal(false)
   protected readonly pendingCount = signal(0)
   protected readonly loaded = signal(false)
+  // The row bars this view draws itself. The table bar is drawn by the room of live
+  // messages above the rows (HilosTableLive), and the bulk bar lives inside the
+  // selection panel and is drawn by the bar above the table — anywhere else it would
+  // take the room the table bar gives to the project.
+  protected readonly rowProgressBars = signal<
+    ReadonlyMap<string, HilosTableProgressState>
+  >(new Map())
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
   protected readonly paginated = computed(() => {
@@ -467,6 +555,44 @@ export class HilosViewportTable<R> {
       ? `${this.totalCount()} total`
       : `${this.totalCount()}+ total`,
   )
+
+  // The cells of a row bar's row, in the order the columns are declared: runs of
+  // marked columns merge into one covered cell, runs of unmarked ones into one
+  // empty cell, and the waiting cell is added exactly while it stands over the
+  // ordinary rows. No column marked means one covered cell across the whole row.
+  // The checkbox column takes an empty cell of its own on whichever edge it sits.
+  //
+  // The spans add up to bodyColspan by construction, which is what keeps the row
+  // from growing wider than its header the moment a waiting change appears.
+  protected readonly progressCells = computed<readonly ProgressCell[]>(() => {
+    const columns = this.frameColumns()
+    const cells: ProgressCell[] = []
+    for (const column of columns) {
+      const covered = column.progress === true
+      const last = cells[cells.length - 1]
+      if (last !== undefined && last.covered === covered) {
+        last.span += 1
+      } else {
+        cells.push({ span: 1, covered })
+      }
+    }
+    if (!columns.some((column) => column.progress === true)) {
+      cells.splice(0, cells.length, { span: columns.length, covered: true })
+    }
+    if (this.markColumn()) {
+      cells.push({ span: 1, covered: false })
+    }
+    if (this.selectionEnabled()) {
+      const selectionCell: ProgressCell = { span: 1, covered: false }
+      if (this.selectionEdge === 'start') {
+        cells.unshift(selectionCell)
+      } else {
+        cells.push(selectionCell)
+      }
+    }
+
+    return cells
+  })
 
   constructor() {
     // The controller arrives via input (not at construction) and carries core
@@ -494,6 +620,7 @@ export class HilosViewportTable<R> {
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.loaded, this.loaded),
         bind(controller.selection.header, this.selectionHeader),
+        bind(controller.progress.rows, this.rowProgressBars),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {
@@ -523,6 +650,13 @@ export class HilosViewportTable<R> {
   // name one of the two as the whole answer.
   protected sortComponent(key: string): TableSort | undefined {
     return this.order()?.find((component) => component.field === key)
+  }
+
+  // The bar running over one row, or undefined when none is. Read out of the map
+  // by key rather than off the row's own projection, which is the tie the channel
+  // exists to cut (tableProgress.ts): the bar outlives the window the row sits in.
+  protected rowBar(rowKey: string): HilosTableProgressState | undefined {
+    return this.rowProgressBars().get(rowKey)
   }
 
   protected sortIcon(key: string): string {

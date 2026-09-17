@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { TableViewportController } from '@hilos/core'
-import type { HilosTableColumn } from '@hilos/core'
+import type { HilosTableColumn, HilosTableProgress } from '@hilos/core'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
 
@@ -181,8 +181,6 @@ describe('HilosTableLive', () => {
     )
   })
 
-  // The project's words and control beside the track are not ported yet (HIL-814),
-  // so this case reads the line and its track alone.
   it('draws running work on one line, the track along its bottom edge', () => {
     const controller = makeController()
     controller.ingestProgress({
@@ -192,9 +190,26 @@ describe('HilosTableLive', () => {
       total: 120,
       detail: { title: 'Nightly check' },
     })
-    const { container } = renderLive(controller)
+    const { container } = render(
+      <HilosTableLive
+        controller={controller}
+        columns={COLUMNS}
+        tableProgress={(progress: HilosTableProgress) => (
+          <span data-id="page-progress-title">
+            {String(progress.detail['title'])}
+          </span>
+        )}
+        tableProgressAction={(progress: HilosTableProgress) => (
+          <button type="button" data-id="page-progress-stop">
+            {`Stop ${progress.progressKey}`}
+          </button>
+        )}
+      />,
+    )
 
     const line = byId(container, 'hilos-table-progress') as HTMLElement
+    expect(byId(line, 'page-progress-title')?.textContent).toBe('Nightly check')
+    expect(byId(line, 'page-progress-stop')?.textContent).toBe('Stop nightly')
     const track = line.querySelector('[role="progressbar"]') as HTMLElement
     expect(track.getAttribute('aria-valuenow')).toBe('28')
     expect(track.classList.contains('position-absolute')).toBe(true)

@@ -155,10 +155,10 @@ accumulated before the break is gone — the window that arrives outranks it.
 
 > **The declaration below is drawn by all three views.** Vue, React, and Angular
 > render the bar and the footer from it, and the one room of live messages above
-> the rows with the row tint and the waiting marks beside it. What was built on
+> the rows with the row tint and the waiting marks beside it, the bar of work
+> under a row and the project's places next to running work. What was built on
 > top of them since — the order menu and page numbers, cards, row detail, the
-> worded empty states, the bar of work under a row with the project's places next
-> to running work, and the marks of a quiet source on cells and headers — is
+> worded empty states, and the marks of a quiet source on cells and headers — is
 > drawn by Vue alone until its own parity leaf (HIL-811 to HIL-818).
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
@@ -699,14 +699,17 @@ a **bar**, and there are exactly three:
    optional `progress` flag on `HilosTableColumn`; no column marked stretches the
    bar under the whole row. It is tied to the row key: the row goes, the bar
    goes. The caption above it belongs to the project, and the view hands it over
-   as a **slot** (`row-progress` in Vue) rather than reading a key of `detail`.
+   as a **slot** (`row-progress` in Vue, the `rowProgress` render prop in React,
+   the `#rowProgress` template in Angular) rather than reading a key of `detail`.
 2. **The table bar** — for work that has no row of its own. The place above the
    table is the framework's; **the content beside the bar is the project's** and
    is arbitrary: a title, a counter, a link, a cancel button. This is the reserve
    for a product's own business logic. The view hands that place over as **slots**
    too (`table-progress` on the line the track runs under and
-   `table-progress-action` beside it), each receiving the whole bar, `detail` and
-   all. The bar is one of the four live messages that share the one room above
+   `table-progress-action` beside it in Vue; `tableProgress` and
+   `tableProgressAction` render props in React; `#tableProgress` and
+   `#tableProgressAction` templates in Angular), each receiving the whole bar,
+   `detail` and all. The bar is one of the four live messages that share the one room above
    the table, and the most junior of them: while changes wait for Apply, rows wait
    to be shown, or a source is behind, the line is theirs and the bar stands
    beside it as an icon (`tableLive.ts`, and

@@ -17,10 +17,12 @@
 // framework's checkbox column, on whichever edge the installation provided — one
 // choice for the whole application rather than a prop of this table
 // (mockups/components/table section 6). Bootstrap classes only.
-import { useContext, useId } from 'react'
+import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import type {
   HilosTableColumn,
+  // Aliased because the component drawing one of these carries the same name.
+  HilosTableProgress as TableProgressBar,
   TableSort,
   TableViewportController,
   TableViewportRow,
@@ -29,6 +31,7 @@ import type {
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
+import { HilosTableProgress } from './HilosTableProgress.js'
 import { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 import { HilosTableSelectionEdgeContext } from './hilosTableSelectionEdge.js'
 import { useSignal } from './useSignal.js'
@@ -66,16 +69,31 @@ export interface HilosViewportTableProps<R> {
    */
   dataId?: string
   /**
+   * The project's own words about the work running on the table, drawn on the line
+   * of the room of live messages above the rows.
+   */
+  tableProgress?: (progress: TableProgressBar) => ReactNode
+  /** The project's own control for that work, standing where a button stands. */
+  tableProgressAction?: (progress: TableProgressBar) => ReactNode
+  /**
+   * The project's own words about the work running over one row, drawn above its
+   * track; where this gives nothing, the row of the bar carries the track alone.
+   */
+  rowProgress?: (progress: TableProgressBar, rowKey: string) => ReactNode
+  /**
    * The human name of one row a bulk run left untouched, for the report of the run;
    * the row's key is printed where this gives nothing.
    */
   bulkUntouched?: (rowKey: string, reason: string) => ReactNode
 }
 
+/** One cell of a row bar's row: how many columns it spans, and whether the bar is under it. */
+type ProgressCell = { span: number; covered: boolean }
+
 /**
  * The framework-owned table chrome over a headless {@link TableViewportController}.
  *
- * @param props The controller, columns, row renderer, and label / search / empty / placeholder config.
+ * @param props The controller, columns, row renderer, label / search / empty / placeholder config, and the project's places beside running work.
  */
 export function HilosViewportTable<R>({
   controller,
@@ -89,6 +107,9 @@ export function HilosViewportTable<R>({
   empty,
   placeholderText = 'Removed',
   dataId = 'hilos-viewport-table',
+  tableProgress,
+  tableProgressAction,
+  rowProgress,
   bulkUntouched,
 }: HilosViewportTableProps<R>) {
   const rows = useSignal(controller.rows)
@@ -101,6 +122,11 @@ export function HilosViewportTable<R>({
   const hasNextPage = useSignal(controller.hasNextPage)
   const pendingCount = useSignal(controller.pendingCount)
   const loaded = useSignal(controller.loaded)
+  // The row bars this view draws itself. The table bar is drawn by the room of live
+  // messages above the rows (HilosTableLive), and the bulk bar lives inside the
+  // selection panel and is drawn by the bar above the table — anywhere else it would
+  // take the room the table bar gives to the project.
+  const rowProgressBars = useSignal(controller.progress.rows)
   // The marks, and the one sign that this table has them: a page that declared bulk
   // operations. There is no second sign — a table drawing its frame from props has
   // no declaration, so `enabled` is already false for it (Flow F14).
@@ -148,11 +174,54 @@ export function HilosViewportTable<R>({
   // what the trailing plus says.
   const countLabel = totalExact ? `${totalCount} total` : `${totalCount}+ total`
 
+  // The cells of a row bar's row, in the order the columns are declared: runs of
+  // marked columns merge into one covered cell, runs of unmarked ones into one
+  // empty cell, and the waiting cell is added exactly while it stands over the
+  // ordinary rows. No column marked means one covered cell across the whole row.
+  // The checkbox column takes an empty cell of its own on whichever edge it sits.
+  //
+  // The spans add up to bodyColspan by construction, which is what keeps the row
+  // from growing wider than its header the moment a waiting change appears.
+  const progressCells: ProgressCell[] = []
+  for (const column of frameColumns) {
+    const covered = column.progress === true
+    const last = progressCells[progressCells.length - 1]
+    if (last !== undefined && last.covered === covered) {
+      last.span += 1
+    } else {
+      progressCells.push({ span: 1, covered })
+    }
+  }
+  if (!frameColumns.some((column) => column.progress === true)) {
+    progressCells.splice(0, progressCells.length, {
+      span: frameColumns.length,
+      covered: true,
+    })
+  }
+  if (markColumn) {
+    progressCells.push({ span: 1, covered: false })
+  }
+  if (selectionEnabled) {
+    const selectionCell: ProgressCell = { span: 1, covered: false }
+    if (selectionEdge === 'start') {
+      progressCells.unshift(selectionCell)
+    } else {
+      progressCells.push(selectionCell)
+    }
+  }
+
   // The arrow a header carries: every column the order runs by gets one, because
   // an order of two columns is sorted by both of them and a single arrow would
   // name one of the two as the whole answer.
   function sortComponent(key: string): TableSort | undefined {
     return order?.find((component) => component.field === key)
+  }
+
+  // The bar running over one row, or undefined when none is. Read out of the map
+  // by key rather than off the row's own projection, which is the tie the channel
+  // exists to cut (tableProgress.ts): the bar outlives the window the row sits in.
+  function rowBar(rowKey: string): TableProgressBar | undefined {
+    return rowProgressBars.get(rowKey)
   }
 
   // A row's tint, resolved in the order the mockup resolves it (section 4): amber
@@ -253,7 +322,12 @@ export function HilosViewportTable<R>({
           one room that never changes height, outside both epochs of the frame: it
           speaks about what is happening to the rows, not about what the page
           declared. */}
-      <HilosTableLive controller={controller} columns={frameColumns} />
+      <HilosTableLive
+        controller={controller}
+        columns={frameColumns}
+        tableProgress={tableProgress}
+        tableProgressAction={tableProgressAction}
+      />
 
       <div className="table-responsive">
         <table
@@ -327,54 +401,90 @@ export function HilosViewportTable<R>({
                     />
                   </td>
                 ) : null
+              const bar = rowBar(view.rowKey)
 
               return (
-                <tr
-                  key={view.rowKey}
-                  data-id={`hilos-table-row-${view.rowKey}`}
-                  className={rowClass(view)}
-                >
-                  {selectionEdge === 'start' ? selectRowCell : null}
-                  {/* A placeholder row carries a null row; the null check also
+                <Fragment key={view.rowKey}>
+                  <tr
+                    data-id={`hilos-table-row-${view.rowKey}`}
+                    className={rowClass(view)}
+                  >
+                    {selectionEdge === 'start' ? selectRowCell : null}
+                    {/* A placeholder row carries a null row; the null check also
                       narrows the type for the render prop. */}
-                  {view.placeholder || view.row === null ? (
-                    <td
-                      colSpan={bodyColspan}
-                      className="text-center text-muted fst-italic"
-                      data-id="hilos-table-placeholder"
-                    >
-                      {placeholderText}
-                    </td>
-                  ) : (
-                    row(view.row, view.rowKey)
-                  )}
-                  {markColumn && !view.placeholder && view.row !== null ? (
-                    <td className="text-end text-nowrap">
-                      {view.pending === 'move' ? (
-                        <span
-                          className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                          data-id={`hilos-table-pending-move-${view.rowKey}`}
-                        >
-                          <i className="bi bi-arrows-move" aria-hidden="true" />{' '}
-                          Will move
-                        </span>
-                      ) : null}
-                      {view.pending === 'remove' ? (
-                        <span
-                          className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                          data-id={`hilos-table-pending-remove-${view.rowKey}`}
-                        >
-                          <i
-                            className="bi bi-box-arrow-right"
-                            aria-hidden="true"
-                          />{' '}
-                          Will leave
-                        </span>
-                      ) : null}
-                    </td>
+                    {view.placeholder || view.row === null ? (
+                      <td
+                        colSpan={bodyColspan}
+                        className="text-center text-muted fst-italic"
+                        data-id="hilos-table-placeholder"
+                      >
+                        {placeholderText}
+                      </td>
+                    ) : (
+                      row(view.row, view.rowKey)
+                    )}
+                    {markColumn && !view.placeholder && view.row !== null ? (
+                      <td className="text-end text-nowrap">
+                        {view.pending === 'move' ? (
+                          <span
+                            className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                            data-id={`hilos-table-pending-move-${view.rowKey}`}
+                          >
+                            <i
+                              className="bi bi-arrows-move"
+                              aria-hidden="true"
+                            />{' '}
+                            Will move
+                          </span>
+                        ) : null}
+                        {view.pending === 'remove' ? (
+                          <span
+                            className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                            data-id={`hilos-table-pending-remove-${view.rowKey}`}
+                          >
+                            <i
+                              className="bi bi-box-arrow-right"
+                              aria-hidden="true"
+                            />{' '}
+                            Will leave
+                          </span>
+                        ) : null}
+                      </td>
+                    ) : null}
+                    {selectionEdge === 'end' ? selectRowCell : null}
+                  </tr>
+
+                  {/* Work running over this one row, drawn right under it and only
+                    while the row is on screen: a key absent from the window takes
+                    up nothing and comes back with its row. A row drawn as a
+                    placeholder gets no bar under it even if the key is still in the
+                    map — the core takes a removed row's bar down at once, so that is
+                    a race rather than a normal state, and the condition here is the
+                    same pair that draws the placeholder above. */}
+                  {bar !== undefined &&
+                  !view.placeholder &&
+                  view.row !== null ? (
+                    <tr data-id={`hilos-table-progress-row-${view.rowKey}`}>
+                      {progressCells.map((cell, index) => (
+                        <td key={index} colSpan={cell.span} className="pt-0">
+                          {cell.covered ? (
+                            <>
+                              {rowProgress !== undefined ? (
+                                <div className="small text-body-secondary mb-1">
+                                  {rowProgress(bar, view.rowKey)}
+                                </div>
+                              ) : null}
+                              <HilosTableProgress
+                                progress={bar}
+                                label="Work on this row"
+                              />
+                            </>
+                          ) : null}
+                        </td>
+                      ))}
+                    </tr>
                   ) : null}
-                  {selectionEdge === 'end' ? selectRowCell : null}
-                </tr>
+                </Fragment>
               )
             })}
             {rows.length === 0 ? (

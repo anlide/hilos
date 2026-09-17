@@ -6,6 +6,7 @@ import type {
   HilosTableBulkAccepted,
   HilosTableColumn,
   HilosTableFrame,
+  HilosTableProgress,
   TableViewportDescriptor,
 } from '@hilos/core'
 
@@ -743,5 +744,271 @@ describe('HilosViewportTable with a selection column', () => {
     expect(emptyTable.querySelector('tbody td')?.getAttribute('colspan')).toBe(
       String(COLUMNS.length + 1),
     )
+  })
+})
+
+describe('HilosViewportTable drawing work in progress', () => {
+  afterEach(cleanup)
+
+  it('hands the whole bar, detail and all, to the places beside the track', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+      detail: { title: 'Nightly check' },
+    })
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        columns={COLUMNS}
+        row={(r) => <td>{r.name}</td>}
+        tableProgress={(progress: HilosTableProgress) => (
+          <span data-id="page-progress-title">
+            {`${String(progress.detail['title'])} — ${progress.current} of ${progress.total}`}
+          </span>
+        )}
+        tableProgressAction={(progress: HilosTableProgress) => (
+          <button type="button" data-id="page-progress-stop">
+            {`Stop ${progress.progressKey}`}
+          </button>
+        )}
+      />,
+    )
+
+    const line = container.querySelector('[data-id="hilos-table-progress"]')
+    expect(
+      line?.querySelector('[data-id="page-progress-title"]')?.textContent,
+    ).toBe('Nightly check — 34 of 120')
+    expect(
+      line?.querySelector('[data-id="page-progress-stop"]')?.textContent,
+    ).toBe('Stop nightly')
+  })
+})
+
+describe('HilosViewportTable drawing work over one row', () => {
+  afterEach(cleanup)
+
+  // Columns that name where the bar goes: under the two content columns and not
+  // under the actions one, the way the mockup draws it.
+  const MARKED_COLUMNS: HilosTableColumn[] = [
+    { key: 'mark', label: '' },
+    { key: 'name', label: 'Name', progress: true },
+    { key: 'kind', label: 'Kind', progress: true },
+    { key: 'actions', label: '' },
+  ]
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function rowBar(
+    controller: TableViewportController<Row>,
+    rowKey: string,
+  ): void {
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: `pack-${rowKey}`,
+      rowKey,
+      current: 34,
+      total: 110,
+      detail: { note: 'packed 3.4 GB of 11 GB' },
+    })
+  }
+
+  function renderMarked(controller: TableViewportController<Row>) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        columns={MARKED_COLUMNS}
+        row={(r) => (
+          <>
+            <td />
+            <td>{r.name}</td>
+            <td />
+            <td />
+          </>
+        )}
+      />,
+    )
+  }
+
+  function barCells(container: HTMLElement): HTMLElement[] {
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-id="hilos-table-progress-row-a"] td',
+      ),
+    )
+  }
+
+  it('draws the bar in a row of its own right after the row it belongs to', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'a')
+    const { container } = renderTable(controller)
+
+    const ids = Array.from(container.querySelectorAll('tbody tr')).map((node) =>
+      node.getAttribute('data-id'),
+    )
+    expect(ids).toEqual([
+      'hilos-table-row-a',
+      'hilos-table-progress-row-a',
+      'hilos-table-row-b',
+    ])
+  })
+
+  it('stretches the bar under the marked columns and leaves the rest empty', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'a')
+    const { container } = renderMarked(controller)
+
+    const cells = barCells(container)
+    expect(cells.map((cell) => cell.getAttribute('colspan'))).toEqual([
+      '1',
+      '2',
+      '1',
+    ])
+    expect(cells[1]?.querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(cells[0]?.querySelector('[role="progressbar"]')).toBeNull()
+    expect(cells[2]?.querySelector('[role="progressbar"]')).toBeNull()
+  })
+
+  it('stretches the bar across the whole row when no column is marked', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'a')
+    const { container } = renderTable(controller)
+
+    const cells = barCells(container)
+    expect(cells).toHaveLength(1)
+    expect(cells[0]?.getAttribute('colspan')).toBe('1')
+    expect(cells[0]?.querySelector('[role="progressbar"]')).not.toBeNull()
+  })
+
+  it('adds the waiting cell to the bar row exactly as the header does', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'a')
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    const { container } = renderMarked(controller)
+
+    const spans = barCells(container).map((cell) =>
+      Number(cell.getAttribute('colspan')),
+    )
+    // The header grew by the waiting column, and the bar row grew with it: the
+    // two are one sum, so the row can never be wider than its header.
+    expect(spans.reduce((total, span) => total + span, 0)).toBe(
+      container.querySelectorAll('thead th').length,
+    )
+    expect(spans).toEqual([1, 2, 1, 1])
+  })
+
+  it('hands the whole bar to the row-progress place', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'a')
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        columns={COLUMNS}
+        row={(r) => <td>{r.name}</td>}
+        rowProgress={(progress: HilosTableProgress, rowKey: string) => (
+          <span data-id={`page-row-note-${rowKey}`}>
+            {String(progress.detail['note'])}
+          </span>
+        )}
+      />,
+    )
+
+    expect(
+      container.querySelector('[data-id="page-row-note-a"]')?.textContent,
+    ).toBe('packed 3.4 GB of 11 GB')
+  })
+
+  it('leaves no caption line under a row where the page filled no place', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'a')
+    const { container } = renderTable(controller)
+
+    const row = container.querySelector(
+      '[data-id="hilos-table-progress-row-a"]',
+    ) as HTMLElement
+    expect(row.querySelectorAll('div.small')).toHaveLength(0)
+    expect(row.querySelector('[role="progressbar"]')).not.toBeNull()
+  })
+
+  it('draws no bar for a key outside the current window', () => {
+    const { controller } = makeController()
+    window(controller)
+    rowBar(controller, 'z')
+    const { container } = renderTable(controller)
+
+    expect(
+      container.querySelectorAll('[data-id^="hilos-table-progress-row-"]'),
+    ).toHaveLength(0)
+  })
+
+  it('draws no bar under a row shown as a placeholder', () => {
+    const { controller } = makeController()
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    // The bar arrives AFTER the row became a placeholder, which is the one order
+    // in which the core cannot have taken it down already: a removal drops the
+    // bar at once, so this race is what the view's own condition is there for.
+    rowBar(controller, 'a')
+    const { container } = renderTable(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-placeholder"]'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-progress-row-a"]'),
+    ).toBeNull()
+  })
+
+  it('draws no row under any row for a bar over the whole table', () => {
+    const { controller } = makeController()
+    window(controller)
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 34,
+      total: 120,
+    })
+    const { container } = renderTable(controller)
+
+    expect(
+      container.querySelectorAll('[data-id^="hilos-table-progress-row-"]'),
+    ).toHaveLength(0)
   })
 })

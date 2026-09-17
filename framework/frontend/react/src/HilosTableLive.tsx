@@ -23,9 +23,12 @@ import {
   hilosTableStaleLabel,
   hilosTableStaleSources,
 } from '@hilos/core'
+import type { ReactNode } from 'react'
 import type {
   HilosTableColumn,
   HilosTableLiveKind,
+  // Aliased because the component drawing one of these carries the same name.
+  HilosTableProgress as TableProgressBar,
   TableViewportController,
 } from '@hilos/core'
 
@@ -41,6 +44,10 @@ export interface HilosTableLiveProps<R> {
    * source that went quiet, so the room cannot name a column the table does not have.
    */
   columns: readonly HilosTableColumn[]
+  /** The project's own words about the work running on the table, on the line itself. */
+  tableProgress?: (progress: TableProgressBar) => ReactNode
+  /** The project's own control for that work, standing where a button stands. */
+  tableProgressAction?: (progress: TableProgressBar) => ReactNode
 }
 
 /**
@@ -88,17 +95,19 @@ const REST_WORDS: Record<HilosTableLiveKind, string> = {
 /**
  * The room of live messages above one table.
  *
- * @param props The controller the room reads and drives, and the columns the table is drawn from.
+ * @param props The controller the room reads and drives, the columns the table is drawn from, and the project's places beside the track of running work.
  */
 export function HilosTableLive<R>({
   controller,
   columns,
+  tableProgress,
+  tableProgressAction,
 }: HilosTableLiveProps<R>) {
   const live = useSignal(controller.live)
   const rows = useSignal(controller.rows)
   const pendingCount = useSignal(controller.pendingCount)
   const announced = useSignal(controller.announced)
-  const tableProgress = useSignal(controller.progress.table)
+  const tableBar = useSignal(controller.progress.table)
 
   // The sentence about the columns that went quiet, read out of the very list the
   // table is drawn from.
@@ -169,6 +178,9 @@ export function HilosTableLive<R>({
             ) : null}
             {top === 'announce' ? announceLabel : null}
             {top === 'stale' ? staleLabel : null}
+            {/* No check for whether the page filled the place: an empty one draws
+                nothing, and the twin holds the height either way. */}
+            {top === 'progress' && tableBar ? tableProgress?.(tableBar) : null}
           </span>
           {live.rest.length > 0 ? (
             <span
@@ -204,14 +216,18 @@ export function HilosTableLive<R>({
               Show
             </button>
           ) : null}
-          {/* The track runs along the bottom edge of the line and adds no height;
-              the line is positioned itself, so it is the box the track sits in. */}
-          {top === 'progress' && tableProgress ? (
-            <HilosTableProgress
-              className="position-absolute bottom-0 start-0 w-100 rounded-0"
-              progress={tableProgress}
-              label="Work on this table"
-            />
+          {top === 'progress' && tableBar ? (
+            <>
+              {tableProgressAction?.(tableBar)}
+              {/* The track runs along the bottom edge of the line and adds no
+                  height; the line is positioned itself, so it is the box the track
+                  sits in. */}
+              <HilosTableProgress
+                className="position-absolute bottom-0 start-0 w-100 rounded-0"
+                progress={tableBar}
+                label="Work on this table"
+              />
+            </>
           ) : null}
         </div>
       ) : null}

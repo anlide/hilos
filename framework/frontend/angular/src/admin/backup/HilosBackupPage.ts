@@ -47,6 +47,7 @@ import {
   formatBackupOutOfReach,
   formatBackupShipping,
   formatBackupProgressLabel,
+  formatBackupRunCaption,
   formatBackupSize,
   formatRestoreCliCommand,
   formatRestoreOutcomeLine,
@@ -271,6 +272,9 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
       </div>
 
       <hilos-viewport-table [controller]="backups().controller">
+        <ng-template #tableProgress let-progress>{{
+          formatBackupRunCaption(progress)
+        }}</ng-template>
         <ng-template #row let-row>
           <td
             class="text-nowrap"
@@ -844,6 +848,7 @@ export class HilosBackupPage {
   protected readonly isShipFailed = isBackupShipFailed
   protected readonly isOutOfReach = isBackupOutOfReach
   protected readonly formatOutOfReach = formatBackupOutOfReach
+  protected readonly formatBackupRunCaption = formatBackupRunCaption
 
   protected readonly backups = computed(() =>
     createHilosBackupsTable(this.context()),
