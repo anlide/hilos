@@ -110,13 +110,16 @@ const identifierDetectionSchema = z.object({
   identifier: z.string(),
   normalized: z.string(),
   kind: z.enum(['email', 'phone']),
-  status: z.enum(['none', 'pending', 'active']),
+  status: z.enum(['none', 'pending', 'proven', 'active']),
   methods: z.array(z.string()),
   registerable: z.array(z.string()),
   // Present on every reply and non-null only for `none` (HIL-830), so it is read
   // as a nullable rather than an optional: an absent key would mean a backend
   // that predates the field, and the surface has nothing to say about that.
   registrationBlock: z.enum(['closed', 'no_channel']).nullable(),
+  // The sign-in twin (HIL-973), non-null only for `active`; nullable and not
+  // optional for the same reason.
+  signInBlock: z.enum(['no_channel']).nullable(),
 })
 
 /**

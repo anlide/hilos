@@ -43,6 +43,12 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
  * comparing flags. It rides `none` alone: a held or owned identifier is not up for
  * registration at all, and a slot that was always null there would eventually be read
  * as "cause unknown".
+ *
+ * An `active` account that has nothing left to sign in with says why too (HIL-973),
+ * in its own slot and by the same rule: the reason is resolved here, never by the
+ * surface setting `codeDelivery` beside an empty `methods`. It rides `active` alone,
+ * the sign-in twin of the registration slot, and the two slots share one vocabulary
+ * of causes.
  */
 final class IdentifierDetection extends ActionReplyDTO
 {
@@ -67,7 +73,7 @@ final class IdentifierDetection extends ActionReplyDTO
     /** Registration is not offered because the project enabled no way to register. */
     public const string BLOCK_CLOSED = 'closed';
 
-    /** Registration is not offered because this installation cannot deliver a code. */
+    /** Registration or sign-in is not offered because this installation cannot deliver a code or a link. */
     public const string BLOCK_NO_CHANNEL = 'no_channel';
 
     /** Wire key for the verbatim echo of the looked-up identifier. */
@@ -91,6 +97,9 @@ final class IdentifierDetection extends ActionReplyDTO
     /** Wire key for why registration is not offered on a free identifier. */
     private const string FIELD_REGISTRATION_BLOCK = 'registrationBlock';
 
+    /** Wire key for why an existing account is offered no way to sign in. */
+    private const string FIELD_SIGN_IN_BLOCK = 'signInBlock';
+
     /**
      * @param string $identifier Identifier exactly as it was submitted
      * @param string $normalized Identifier in its canonical form
@@ -99,6 +108,7 @@ final class IdentifierDetection extends ActionReplyDTO
      * @param list<string> $methods Method keys of the existing account (see AuthMethodKey)
      * @param list<string> $registerable Method keys registration is open with (see AuthMethodKey)
      * @param ?string $registrationBlock Why registration is not offered (see self::BLOCK_*), or null when it is
+     * @param ?string $signInBlock Why the account is offered no way to sign in (see self::BLOCK_*), or null when it is
      */
     private function __construct(
         public readonly string $identifier,
@@ -108,6 +118,7 @@ final class IdentifierDetection extends ActionReplyDTO
         public readonly array $methods,
         public readonly array $registerable,
         public readonly ?string $registrationBlock = null,
+        public readonly ?string $signInBlock = null,
     ) {
     }
 
@@ -173,11 +184,17 @@ final class IdentifierDetection extends ActionReplyDTO
      * @param string $normalized Identifier in its canonical form
      * @param string $kind Classification (see self::KIND_*)
      * @param list<string> $methods Method keys the account signs in with (see AuthMethodKey)
+     * @param ?string $signInBlock Why `methods` is empty (see self::BLOCK_*), or null when it is not or no cause is named
      * @return static Detection with status `active`
      */
-    public static function owned(string $identifier, string $normalized, string $kind, array $methods): static
-    {
-        return new static($identifier, $normalized, $kind, self::STATUS_ACTIVE, $methods, []);
+    public static function owned(
+        string $identifier,
+        string $normalized,
+        string $kind,
+        array $methods,
+        ?string $signInBlock = null,
+    ): static {
+        return new static($identifier, $normalized, $kind, self::STATUS_ACTIVE, $methods, [], null, $signInBlock);
     }
 
     /**
@@ -189,7 +206,8 @@ final class IdentifierDetection extends ActionReplyDTO
      *     methods: list<string>,
      *     registerable: list<string>,
      *     registrationBlock: ?string,
-     * } Wire form; both lists and the block are always present, empty or null where the status has none
+     *     signInBlock: ?string,
+     * } Wire form; both lists and both blocks are always present, empty or null where the status has none
      */
     public function toArray(): array
     {
@@ -201,6 +219,7 @@ final class IdentifierDetection extends ActionReplyDTO
             self::FIELD_METHODS => $this->methods,
             self::FIELD_REGISTERABLE => $this->registerable,
             self::FIELD_REGISTRATION_BLOCK => $this->registrationBlock,
+            self::FIELD_SIGN_IN_BLOCK => $this->signInBlock,
         ];
     }
 
@@ -219,6 +238,7 @@ final class IdentifierDetection extends ActionReplyDTO
             self::requireMethodKeys($data, self::FIELD_METHODS),
             self::requireMethodKeys($data, self::FIELD_REGISTERABLE),
             self::optionalString($data, self::FIELD_REGISTRATION_BLOCK),
+            self::optionalString($data, self::FIELD_SIGN_IN_BLOCK),
         );
     }
 

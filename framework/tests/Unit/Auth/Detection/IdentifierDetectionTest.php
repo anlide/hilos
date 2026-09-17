@@ -12,14 +12,15 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the identifier-lookup reply the surface reveals from (HIL-414).
  *
- * What is guarded here is the shape, not the lookup: the seven keys the frontend
+ * What is guarded here is the shape, not the lookup: the eight keys the frontend
  * `IdentifierDetection` interface declares are always present, the verbatim echo
  * survives normalization, and each status carries only the method list that makes
  * sense for it — a `pending` or `proven` hold naming a way in, or a `none` naming an
  * account's methods, would both send the surface somewhere the backend refuses to
  * follow. The
  * seventh key is the reason registration is not offered (HIL-830), and it rides
- * `none` alone for the same reason the two lists are kept apart.
+ * `none` alone for the same reason the two lists are kept apart. The eighth is its
+ * sign-in twin (HIL-973): why an account is offered no way in, riding `active` alone.
  */
 final class IdentifierDetectionTest extends TestCase
 {
@@ -42,6 +43,7 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->methods);
         self::assertSame([AuthMethodKey::PASSWORD, AuthMethodKey::MAGIC_LINK], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'Something registerable is not blocked by anything');
+        self::assertNull($detection->signInBlock, 'A free identifier has no account to sign in to');
     }
 
     /**
@@ -70,6 +72,7 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $noChannel->registerable);
         self::assertSame(IdentifierDetection::BLOCK_CLOSED, $closed->registrationBlock);
         self::assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $noChannel->registrationBlock);
+        self::assertNull($noChannel->signInBlock, 'A refused registration is not a refused sign-in');
     }
 
     /**
@@ -87,6 +90,7 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->methods);
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'A hold is not a refused registration');
+        self::assertNull($detection->signInBlock, 'A hold has no account to sign in to');
     }
 
     /**
@@ -111,6 +115,7 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([], $detection->methods);
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'A proved hold is not a refused registration');
+        self::assertNull($detection->signInBlock, 'A proved hold has no account to sign in to yet');
     }
 
     /**
@@ -129,10 +134,30 @@ final class IdentifierDetectionTest extends TestCase
         self::assertSame([AuthMethodKey::SMS], $detection->methods);
         self::assertSame([], $detection->registerable);
         self::assertNull($detection->registrationBlock, 'An owned identifier is not up for registration at all');
+        self::assertNull($detection->signInBlock, 'An account with a way in is not blocked by anything');
     }
 
     /**
-     * The wire form carries all seven keys, and the echo is what was asked, not what it normalized to.
+     * An owned identifier with nothing to sign in with carries why, and only in its own slot.
+     */
+    public function testOwnedIdentifierCarriesTheReasonSignInIsNotOffered(): void
+    {
+        $detection = IdentifierDetection::owned(
+            self::TYPED_EMAIL,
+            self::NORMALIZED_EMAIL,
+            IdentifierDetection::KIND_EMAIL,
+            [],
+            IdentifierDetection::BLOCK_NO_CHANNEL,
+        );
+
+        self::assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
+        self::assertSame([], $detection->methods);
+        self::assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $detection->signInBlock);
+        self::assertNull($detection->registrationBlock, 'A refused sign-in is not a refused registration');
+    }
+
+    /**
+     * The wire form carries all eight keys, and the echo is what was asked, not what it normalized to.
      */
     public function testWireFormCarriesEveryKeyAndTheVerbatimEcho(): void
     {
@@ -151,6 +176,7 @@ final class IdentifierDetectionTest extends TestCase
             'methods' => [AuthMethodKey::PASSWORD],
             'registerable' => [],
             'registrationBlock' => null,
+            'signInBlock' => null,
         ], $detection->toArray());
     }
 
@@ -165,6 +191,24 @@ final class IdentifierDetectionTest extends TestCase
             self::TYPED_EMAIL,
             self::NORMALIZED_EMAIL,
             IdentifierDetection::KIND_EMAIL,
+            [],
+            IdentifierDetection::BLOCK_NO_CHANNEL,
+        );
+
+        self::assertSame($detection->toArray(), IdentifierDetection::fromArray($detection->toArray())->toArray());
+    }
+
+    /**
+     * A refused sign-in survives the wire round-trip unchanged.
+     *
+     * @throws InvalidFormatException Never in the success path
+     */
+    public function testRefusedSignInRoundTrips(): void
+    {
+        $detection = IdentifierDetection::owned(
+            '+1 555 010 1234',
+            '+15550101234',
+            IdentifierDetection::KIND_PHONE,
             [],
             IdentifierDetection::BLOCK_NO_CHANNEL,
         );
@@ -189,6 +233,7 @@ final class IdentifierDetectionTest extends TestCase
             'methods' => [17],
             'registerable' => [],
             'registrationBlock' => null,
+            'signInBlock' => null,
         ]);
     }
 }

@@ -13,6 +13,8 @@
 // step it deliberately does not move. HIL-646 adds the reveal a typed re-ask
 // holds on to, the submit that is muted for as long as it does, and the two
 // places that deliberately keep nothing (the return and a failed lookup).
+// HIL-973 adds the answer the icon row and a found number's channel choice now
+// ask, and the proven reply the lookup schema lets through.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -38,7 +40,8 @@ import {
   type DetectionState,
   type IdentifierDetection,
 } from '../../src/auth/authFlow.js'
-import { toFlowPatch } from '../../src/auth/authActions.js'
+import { createAuthActions, toFlowPatch } from '../../src/auth/authActions.js'
+import { type HilosAuthContext } from '../../src/auth/authContext.js'
 
 /** One second in ms — the scale a backend `resendAt` moment is built in here. */
 const SECOND_MS = 1000
@@ -108,6 +111,7 @@ function detected(
     methods: ['password'],
     registerable: ['password'],
     registrationBlock: null,
+    signInBlock: null,
     ...overrides,
   }
 }
@@ -186,7 +190,9 @@ describe('oauthFlowMethod — the shape every provider button shares', () => {
 
 describe('visibleMethodIcons — the matrix on the four input states', () => {
   it('empty field: whenEmpty icons only (both providers, passkey); magic link hidden', () => {
-    expect(visibleMethodIcons(ALL_METHODS, '', 'unknown', 'login')).toEqual([
+    expect(
+      visibleMethodIcons(ALL_METHODS, '', 'unknown', 'login', null),
+    ).toEqual([
       OAUTH_GITHUB_FLOW_METHOD,
       OAUTH_GOOGLE_FLOW_METHOD,
       PASSKEY_FLOW_METHOD,
@@ -195,26 +201,26 @@ describe('visibleMethodIcons — the matrix on the four input states', () => {
 
   it('typing an unrecognized value hides the whole row', () => {
     expect(
-      visibleMethodIcons(ALL_METHODS, 'john doe', 'unknown', 'login'),
+      visibleMethodIcons(ALL_METHODS, 'john doe', 'unknown', 'login', null),
     ).toEqual([])
   })
 
   it('typing an email: magic link only (both providers and passkey vanish on typing)', () => {
     expect(
-      visibleMethodIcons(ALL_METHODS, 'a@b.com', 'email', 'login'),
+      visibleMethodIcons(ALL_METHODS, 'a@b.com', 'email', 'login', null),
     ).toEqual([MAGIC_LINK_FLOW_METHOD])
   })
 
   it('typing a phone: nothing — the providers vanish here too, magic link is email-only', () => {
     expect(
-      visibleMethodIcons(ALL_METHODS, '+79991234567', 'phone', 'login'),
+      visibleMethodIcons(ALL_METHODS, '+79991234567', 'phone', 'login', null),
     ).toEqual([])
   })
 
   it('honors descriptor intents: a login-only icon hides under register', () => {
-    expect(visibleMethodIcons(ALL_METHODS, '', 'unknown', 'register')).toEqual([
-      PASSKEY_FLOW_METHOD,
-    ])
+    expect(
+      visibleMethodIcons(ALL_METHODS, '', 'unknown', 'register', null),
+    ).toEqual([PASSKEY_FLOW_METHOD])
   })
 
   it('honors descriptor-level identifierKinds while typing', () => {
@@ -225,12 +231,129 @@ describe('visibleMethodIcons — the matrix on the four input states', () => {
       identifierKinds: ['phone'],
       visibility: { whenTyping: true },
     } as const
-    expect(visibleMethodIcons([smsIcon], 'a@b.com', 'email', 'login')).toEqual(
-      [],
-    )
     expect(
-      visibleMethodIcons([smsIcon], '+79991234567', 'phone', 'login'),
+      visibleMethodIcons([smsIcon], 'a@b.com', 'email', 'login', null),
+    ).toEqual([])
+    expect(
+      visibleMethodIcons([smsIcon], '+79991234567', 'phone', 'login', null),
     ).toEqual([smsIcon])
+  })
+
+  it('a resolved reply that does not name the link darkens the envelope (HIL-973)', () => {
+    expect(
+      visibleMethodIcons(ALL_METHODS, 'a@b.com', 'email', 'login', [
+        'password',
+      ]),
+    ).toEqual([])
+    expect(
+      visibleMethodIcons(ALL_METHODS, 'a@b.com', 'email', 'login', [
+        'password',
+        MAGIC_LINK_METHOD_KEY,
+      ]),
+    ).toEqual([MAGIC_LINK_FLOW_METHOD])
+  })
+
+  it('an empty field asks no reply: its icons name no identifier', () => {
+    expect(visibleMethodIcons(ALL_METHODS, '', 'unknown', 'login', [])).toEqual(
+      [OAUTH_GITHUB_FLOW_METHOD, OAUTH_GOOGLE_FLOW_METHOD, PASSKEY_FLOW_METHOD],
+    )
+  })
+})
+
+describe('a live account on an installation that cannot send (HIL-973)', () => {
+  it('the machine hides the envelope from an account the reply names no link for', async () => {
+    const flow = setup()
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.icons.get()).toEqual([])
+  })
+
+  it('the machine keeps the envelope for an account the reply names it for', async () => {
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, methods: ['password', MAGIC_LINK_METHOD_KEY] }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.icons.get()).toEqual([MAGIC_LINK_FLOW_METHOD])
+  })
+
+  it('a found number with nothing to sign in with gets no channel to press', async () => {
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          methods: [],
+          signInBlock: 'no_channel',
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    expect(flow.primaryAction.get()).toBeNull()
+    expect(flow.submittable.get()).toBe(false)
+  })
+
+  it('an address with nothing to sign in with gets no primary action', async () => {
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, methods: [], signInBlock: 'no_channel' }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.primaryAction.get()).toBeNull()
+    expect(flow.submittable.get()).toBe(false)
+  })
+})
+
+describe('the lookup reply schema', () => {
+  /**
+   * A context whose dispatch validates the given wire reply with the schema the
+   * lookup hands it, and answers with the parsed value.
+   *
+   * @param wire The reply as the backend sends it.
+   */
+  function contextReplying(wire: unknown): HilosAuthContext {
+    return {
+      actions: {
+        dispatch: (
+          _name: string,
+          _payload: unknown,
+          options: { replySchema: { parse(value: unknown): unknown } },
+        ) => ({
+          done: Promise.resolve({ reply: options.replySchema.parse(wire) }),
+        }),
+      },
+    } as unknown as HilosAuthContext
+  }
+
+  const wireReply = {
+    identifier: 'a@b.com',
+    normalized: 'a@b.com',
+    kind: 'email',
+    methods: [],
+    registerable: [],
+    registrationBlock: null,
+    signInBlock: null,
+  }
+
+  it('lets a proven reply through (HIL-825), which the backend does send', async () => {
+    const actions = createAuthActions(
+      contextReplying({ ...wireReply, status: 'proven' }),
+    )
+    await expect(actions.onDetect('a@b.com')).resolves.toMatchObject({
+      status: 'proven',
+    })
+  })
+
+  it('carries the reason an account is offered no way in', async () => {
+    const actions = createAuthActions(
+      contextReplying({
+        ...wireReply,
+        status: 'active',
+        signInBlock: 'no_channel',
+      }),
+    )
+    await expect(actions.onDetect('a@b.com')).resolves.toMatchObject({
+      signInBlock: 'no_channel',
+    })
   })
 })
 
@@ -429,7 +552,7 @@ describe('detection', () => {
           identifier,
           normalized: '+79991234567',
           kind: 'phone',
-          methods: [],
+          methods: ['sms'],
         }),
     })
     await typeAndDetect(flow, typed)
@@ -679,7 +802,7 @@ describe('primaryAction — the six shapes', () => {
           identifier,
           normalized: identifier,
           kind: 'phone',
-          methods: [],
+          methods: ['sms'],
         }),
     })
     await typeAndDetect(flow, '+79991234567')
@@ -1010,7 +1133,7 @@ describe('code channels: choosing the channel IS the send', () => {
           identifier,
           normalized: identifier,
           kind: 'phone',
-          methods: [],
+          methods: ['sms'],
         }),
     })
     await typeAndDetect(flow, '+79991234567')
@@ -1073,7 +1196,7 @@ describe('resend gate', () => {
           identifier,
           normalized: identifier,
           kind: 'phone',
-          methods: [],
+          methods: ['sms'],
         }),
     })
     await typeAndDetect(flow, '+79991234567')
@@ -1815,7 +1938,7 @@ describe('method-set-agnostic', () => {
           identifier,
           normalized: identifier,
           kind: 'phone',
-          methods: [],
+          methods: ['sms'],
         }),
     })
     await typeAndDetect(flow, '+79991234567')

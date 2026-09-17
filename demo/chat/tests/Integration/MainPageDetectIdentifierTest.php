@@ -16,6 +16,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Constants\EnvConstants;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\HilosSignalConstants;
@@ -32,12 +33,14 @@ use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrat
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\HilosException;
+use Hilos\Mail\MailTransportFactory;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
+use Hilos\Sms\SmsChannelConfig;
 
 /**
  * Integration tests for the live identifier lookup (HIL-414).
@@ -53,6 +56,11 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  * rather than free (otherwise a second code is asked for), and a method the
  * project has NOT enabled must never be named (otherwise the surface renders a
  * button whose submit the backend refuses).
+ *
+ * The installation's plumbing is the third property (HIL-973): an account on a
+ * deployment that cannot send is not offered what would be sent, and one left with
+ * nothing is told why. Those cases take the transport away through the process
+ * environment, which wins on every read, and put back what the stand set.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class MainPageDetectIdentifierTest extends IntegrationTestCase
@@ -379,6 +387,120 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     }
 
     /**
+     * A link-only account on an installation that mails nobody has no way in, and is told why.
+     *
+     * The file transport with no directory is the fallback a checkout with no relay lands
+     * on: it writes nothing a guest will read, so offering the mailed link would walk the
+     * person to a screen waiting for a letter that is never going to leave.
+     *
+     * @throws HilosException When setup or the lookup fails
+     */
+    public function testLinkOnlyAccountWithNoMailHasNoWayInAndSaysWhy(): void
+    {
+        $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUser($email, IdentityType::MAGIC_LINK, $email);
+        $previous = $this->overrideEnv([
+            EnvConstants::MAIL_TRANSPORT->name => MailTransportFactory::TRANSPORT_FILE,
+            EnvConstants::MAIL_FILE_DIR->name => '',
+        ]);
+
+        try {
+            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($email, RandomHelper::hex(16));
+
+            $this->assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
+            $this->assertSame([], $detection->methods);
+            $this->assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $detection->signInBlock);
+            $this->assertNull($detection->registrationBlock);
+        } finally {
+            $this->restoreEnv($previous);
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * An account WITH a password on the same installation keeps its password and nothing is refused.
+     *
+     * @throws HilosException When setup or the lookup fails
+     */
+    public function testPasswordAccountWithNoMailKeepsItsPassword(): void
+    {
+        $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUser($email, IdentityType::PASSWORD, $email);
+        $previous = $this->overrideEnv([
+            EnvConstants::MAIL_TRANSPORT->name => MailTransportFactory::TRANSPORT_FILE,
+            EnvConstants::MAIL_FILE_DIR->name => '',
+        ]);
+
+        try {
+            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($email, RandomHelper::hex(16));
+
+            $this->assertSame([AuthMethodKey::PASSWORD], $detection->methods);
+            $this->assertNull($detection->signInBlock);
+        } finally {
+            $this->restoreEnv($previous);
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A number with no configured channel is offered no code, and is told why.
+     *
+     * Both phone channels the demo registers are taken away: the SMS provider is pinned to
+     * the stub, and the messenger gateway loses its token.
+     *
+     * @throws HilosException When setup or the lookup fails
+     */
+    public function testPhoneAccountWithNoChannelHasNoWayInAndSaysWhy(): void
+    {
+        $this->bootAgent();
+        $phone = $this->uniquePhone();
+        $this->seedUser($this->uniqueEmail(), IdentityType::SMS, $phone);
+        $previous = $this->overrideEnv([
+            EnvConstants::SMS_PROVIDER->name => SmsChannelConfig::PROVIDER_STUB,
+            EnvConstants::TELEGRAM_GATEWAY_TOKEN->name => '',
+        ]);
+
+        try {
+            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($phone, RandomHelper::hex(16));
+
+            $this->assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
+            $this->assertSame([], $detection->methods);
+            $this->assertSame(IdentifierDetection::BLOCK_NO_CHANNEL, $detection->signInBlock);
+        } finally {
+            $this->restoreEnv($previous);
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * An installation that DECLARED it keeps its letters at home still offers the link (HIL-827).
+     *
+     * @throws HilosException When setup or the lookup fails
+     */
+    public function testDeclaredFileMailStillOffersTheLink(): void
+    {
+        $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUser($email, IdentityType::MAGIC_LINK, $email);
+        $previous = $this->overrideEnv([
+            EnvConstants::MAIL_TRANSPORT->name => MailTransportFactory::TRANSPORT_FILE,
+            EnvConstants::MAIL_FILE_DIR->name => sys_get_temp_dir(),
+        ]);
+
+        try {
+            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($email, RandomHelper::hex(16));
+
+            $this->assertSame([AuthMethodKey::MAGIC_LINK], $detection->methods);
+            $this->assertNull($detection->signInBlock);
+        } finally {
+            $this->restoreEnv($previous);
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * An input that is neither an address nor a number is refused, not answered `unknown`.
      *
      * @throws HilosException When setup or lookup handling fails
@@ -577,6 +699,35 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
             . '`' . EntityIdentity::verified . '`) VALUES (?, ?, ?, ?, 1)',
             $params,
         );
+    }
+
+    /**
+     * Sets process environment variables and returns what they held before.
+     *
+     * @param array<string, string> $values Variable name to the value this case needs
+     * @return array<string, string|false> Variable name to its previous value, false when it was unset
+     */
+    private function overrideEnv(array $values): array
+    {
+        $previous = [];
+        foreach ($values as $name => $value) {
+            $previous[$name] = getenv($name);
+            putenv($name . '=' . $value);
+        }
+
+        return $previous;
+    }
+
+    /**
+     * Puts back the process environment {@see self::overrideEnv()} changed.
+     *
+     * @param array<string, string|false> $previous Variable name to its previous value, false when it was unset
+     */
+    private function restoreEnv(array $previous): void
+    {
+        foreach ($previous as $name => $value) {
+            putenv($value === false ? $name : $name . '=' . $value);
+        }
     }
 
     /**

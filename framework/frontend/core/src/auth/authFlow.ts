@@ -258,6 +258,14 @@ export interface IdentifierDetection {
    * resolving which is the backend's — never a comparison of flags here.
    */
   readonly registrationBlock: 'closed' | 'no_channel' | null
+  /**
+   * Why an existing account is offered no way to sign in, or `null` when it is
+   * (HIL-973) — the `active` twin of {@link registrationBlock}. Non-null only
+   * beside an empty `methods`: `no_channel` is this installation having nothing
+   * to send the account's link or code with. An empty `methods` with `null`
+   * here names no cause, and the surface says nothing new about it.
+   */
+  readonly signInBlock: 'no_channel' | null
 }
 
 /**
@@ -899,16 +907,24 @@ function isIconVisible(
  * `intents` hides outside them (OAuth is login-only), and one constrained by
  * its top-level `identifierKinds` hides while typing a kind it does not serve.
  *
+ * Once a lookup has answered, a typed identifier also asks the ANSWER (HIL-973):
+ * an icon method survives only when the reply named its key. The kind alone
+ * says the envelope could serve an address; only the backend knows whether
+ * this account has it and whether this installation can mail it.
+ *
  * @param methods The project's ordered method descriptors.
  * @param identifier The current identifier field value.
  * @param kind The current identifier classification.
  * @param intent The current flow intent.
+ * @param named The method keys the resolved lookup reply named for its status,
+ *   or `null` while there is no reply to ask.
  */
 export function visibleMethodIcons(
   methods: readonly AuthFlowMethodDescriptor[],
   identifier: string,
   kind: IdentifierKind,
   intent: AuthIntent,
+  named: readonly string[] | null,
 ): readonly AuthFlowMethodDescriptor[] {
   const empty = identifier.trim() === ''
   if (!empty && kind === 'unknown') {
@@ -922,8 +938,35 @@ export function visibleMethodIcons(
       (empty ||
         method.identifierKinds === undefined ||
         method.identifierKinds.includes(kind)) &&
+      (empty || named === null || named.includes(method.key)) &&
       isIconVisible(method, empty, kind),
   )
+}
+
+/**
+ * The method keys a lookup reply offers the person, by the list its status
+ * reads: an account names what it signs in with, a free identifier what it can
+ * be registered with, and a hold names nothing — its way on is a resume, not a
+ * method.
+ *
+ * @param result The lookup reply, or `null` when none has resolved.
+ * @returns The named keys, or `null` when there is no reply.
+ */
+function namedMethodKeys(
+  result: IdentifierDetection | null,
+): readonly string[] | null {
+  if (result === null) {
+    return null
+  }
+  switch (result.status) {
+    case 'active':
+      return result.methods
+    case 'none':
+      return result.registerable
+    case 'pending':
+    case 'proven':
+      return []
+  }
 }
 
 /**
@@ -1157,6 +1200,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       form.get().identifier,
       flow.get().identifierKind,
       flow.get().intent,
+      namedMethodKeys(detection.get().result),
     ),
   )
   const channels = computedSignal(() =>
@@ -1194,8 +1238,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         }
         if (result.kind === 'phone') {
           // A phone never reveals a password; its channel choice IS the send —
-          // and only when the account signs in or registration is open.
+          // and only when the account signs in or registration is open. A found
+          // number asks its methods too (HIL-973): with nothing to send its code
+          // over, the choice would send nothing.
           if (result.status === 'none' && result.registerable.length === 0) {
+            return null
+          }
+          if (result.status === 'active' && result.methods.length === 0) {
             return null
           }
           const applicable = channels.get()

@@ -1195,12 +1195,33 @@ export class HilosAuthSurface {
     this.state().intent === 'register' ? 'Password' : 'New password',
   )
 
+  // An account this installation offers no way into, said as the refusal it is
+  // (HIL-973): the person cannot get into their OWN account, so the sentence
+  // goes to the refusal row and not to the calm hint under the field. Why it is
+  // empty was resolved on the backend, never by comparing flags here.
+  private readonly signInRefusal = computed<string | null>(() => {
+    const result = this.detection().result
+    if (
+      this.state().step !== 'identifier' ||
+      result === null ||
+      result.status !== 'active' ||
+      result.signInBlock !== 'no_channel'
+    ) {
+      return null
+    }
+
+    return result.kind === 'phone'
+      ? 'This account signs in by a code, and this installation has nothing to send it with. Whoever runs it can set that up.'
+      : 'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.'
+  })
+
   // The inline refusal: the backend's own sentence when it sent one, its
-  // semantic code turned into ours when it did not.
+  // semantic code turned into ours when it did not, and an account left with no
+  // way in when no action was refused.
   protected readonly errorMessage = computed<string | null>(() => {
     const shown = this.error()
     if (shown === null) {
-      return null
+      return this.signInRefusal()
     }
 
     return (
@@ -1318,7 +1339,9 @@ export class HilosAuthSurface {
 
   // The recovery key sits beside the password and only for an account that HAS
   // one: there is nothing to reset for an address that signs in by link, and
-  // nothing at all for one that has no account yet.
+  // nothing at all for one that has no account yet. Its whole road is mail, so
+  // an installation that cannot mail does not offer it (HIL-973) — and says
+  // nothing about it, since the password beside it still works.
   protected readonly showRecovery = computed(() => {
     const result = this.detection().result
 
@@ -1326,7 +1349,8 @@ export class HilosAuthSurface {
       this.showPassword() &&
       result !== null &&
       result.status === 'active' &&
-      result.methods.includes(PASSWORD_METHOD_KEY)
+      result.methods.includes(PASSWORD_METHOD_KEY) &&
+      this.codeDelivery().email
     )
   })
 
@@ -1379,6 +1403,12 @@ export class HilosAuthSurface {
     // creates the account (HIL-825).
     if (result.status === 'proven') {
       return 'You confirmed this address. Choose a password to finish.'
+    }
+
+    // An account refused a way in is told so in the refusal row; the same fact
+    // in grey here would read as a second problem (HIL-973).
+    if (this.signInRefusal() !== null) {
+      return null
     }
 
     return this.showPassword() ? null : 'This account has no password.'

@@ -145,6 +145,7 @@ function contextAnswering(
               methods,
               registerable: [],
               registrationBlock: null,
+              signInBlock: null,
             }
           : undefined
 
@@ -214,6 +215,7 @@ function expiringLetterContext(lifetimeMs: number): {
               methods: [PASSWORD_METHOD_KEY, MAGIC_LINK_METHOD_KEY],
               registerable: [],
               registrationBlock: null,
+              signInBlock: null,
             }
           : {
               ok: true,
@@ -273,6 +275,7 @@ function heldIdentifierContext(): {
               methods: [],
               registerable: [],
               registrationBlock: null,
+              signInBlock: null,
             }
           : undefined
 
@@ -297,6 +300,59 @@ function heldIdentifierContext(): {
       privacyPath: '/privacy',
     }),
   }
+}
+
+/**
+ * A context whose lookup answers an existing email account on an installation
+ * that may not be able to mail (HIL-973): the methods the backend left it and,
+ * when none are left, why.
+ *
+ * @param methods What the account signs in with after the delivery filter.
+ * @param signInBlock Why the account is offered no way in, or null.
+ * @returns The context to mount with.
+ */
+function liveAccountContext(
+  methods: readonly string[],
+  signInBlock: 'no_channel' | null,
+): HilosAuthContext {
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'active',
+              methods,
+              registerable: [],
+              registrationBlock: null,
+              signInBlock,
+            }
+          : undefined
+
+      return {
+        requestId: 'req-live',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: new ScopeManager(),
+    actions,
+    methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
+    channels: [],
+    oauthProviders: [],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
 }
 
 /**
@@ -326,6 +382,7 @@ function freeIdentifierContext(
               methods: [],
               registerable: [],
               registrationBlock,
+              signInBlock: null,
             }
           : undefined
 
@@ -376,6 +433,7 @@ function provenOnReturnContext(): HilosAuthContext {
           methods: [],
           registerable: answered ? [] : [PASSWORD_METHOD_KEY],
           registrationBlock: null,
+          signInBlock: null,
         }
         answered = true
       }
@@ -810,6 +868,66 @@ describe('HilosAuthSurface', () => {
     expect(byId('auth-identifier-hint')?.textContent).toBe(
       'No account for this, and registration is closed.',
     )
+  })
+
+  it('refuses an account left with no way in, in the refusal row and not the hint', async () => {
+    vi.useFakeTimers()
+    render(<HilosAuthSurface context={liveAccountContext([], 'no_channel')} />)
+
+    type('auth-identifier', 'linkonly@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(byId('auth-error')?.textContent).toBe(
+      'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.',
+    )
+    // One fact, one voice: the grey line does not repeat it.
+    expect(byId('auth-identifier-hint')).toBeNull()
+    expect(byId('auth-password')).toBeNull()
+    expect(byId('auth-icon-magic-link')).toBeNull()
+    // The field stays: another address is the one thing left to try.
+    expect(byId('auth-identifier')).not.toBeNull()
+  })
+
+  it('keeps the password but drops the recovery key where nothing can mail', async () => {
+    vi.useFakeTimers()
+    const context = liveAccountContext([PASSWORD_METHOD_KEY], null)
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: false,
+    })
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(byId('auth-password')).not.toBeNull()
+    expect(byId('auth-recovery')).toBeNull()
+    expect(byId('auth-icon-magic-link')).toBeNull()
+    expect(byId('auth-error')).toBeNull()
+  })
+
+  it('offers the recovery key where mail can go out', async () => {
+    vi.useFakeTimers()
+    const context = liveAccountContext([PASSWORD_METHOD_KEY], null)
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: true,
+      phone: false,
+    })
+    render(<HilosAuthSurface context={context} />)
+
+    type('auth-identifier', 'someone@example.com')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    })
+    await flush()
+
+    expect(byId('auth-recovery')).not.toBeNull()
   })
 
   it('the code screen turns itself into the expired one when the countdown runs out', async () => {

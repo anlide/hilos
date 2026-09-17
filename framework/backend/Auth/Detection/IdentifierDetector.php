@@ -124,9 +124,19 @@ final class IdentifierDetector
         $kind = self::kindOf($identifier);
         $normalized = $this->normalize($identifier, $kind);
 
+        $delivery = new CodeDeliveryAvailability();
+
         $userId = $this->findAccountId($kind, $normalized);
         if ($userId !== null) {
-            return IdentifierDetection::owned($identifier, $normalized, $kind, $this->accountMethods($userId, $kind));
+            $methods = $this->accountMethods($userId, $kind, $delivery);
+
+            return IdentifierDetection::owned(
+                $identifier,
+                $normalized,
+                $kind,
+                $methods,
+                $this->signInBlock($kind, $methods, $delivery),
+            );
         }
 
         $hold = new RegistrationReservationService()->findActiveForSession($sessionToken);
@@ -136,7 +146,7 @@ final class IdentifierDetector
                 : IdentifierDetection::held($identifier, $normalized, $kind);
         }
 
-        $registerable = $this->registerableMethods($kind, new CodeDeliveryAvailability());
+        $registerable = $this->registerableMethods($kind, $delivery);
 
         return IdentifierDetection::free(
             $identifier,
@@ -215,17 +225,21 @@ final class IdentifierDetector
      * a shorter project registry - the enabled set stays whole for HIL-427, and
      * dropping the keys is detection's own decision.
      *
-     * No one is locked out by it: an account is found by a VERIFIED email (or a
-     * phone), so `magic_link` always applies to it, and a person who has only ever
-     * used a provider still gets in by the mailed link.
+     * The filter itself locks nobody out: an account is found by a VERIFIED email (or
+     * a phone), so `magic_link` applies to it, and a person who has only ever used a
+     * provider still gets in by the mailed link. What can empty the list is the
+     * installation (HIL-973): a method that SENDS is offered only where this deployment
+     * can deliver what it sends, and the empty answer then names that cause
+     * ({@see self::signInBlock()}).
      *
      * @param int $userId Owning user id
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
+     * @param CodeDeliveryAvailability $delivery What this installation can send a code or a link to
      * @return list<string> Enabled method keys the account holds, in project order
      * @throws DatabaseException When the identity query fails
      * @throws LogicException When the identities object collection is unavailable
      */
-    private function accountMethods(int $userId, string $kind): array
+    private function accountMethods(int $userId, string $kind, CodeDeliveryAvailability $delivery): array
     {
         $identities = $this->identities()->listByUser($userId);
 
@@ -234,7 +248,7 @@ final class IdentifierDetector
             if (str_starts_with($methodKey, AuthMethodKey::OAUTH_PREFIX)) {
                 continue;
             }
-            if ($this->accountHasMethod($identities, $methodKey, $kind)) {
+            if ($this->accountHasMethod($identities, $methodKey, $kind, $delivery)) {
                 $methods[] = $methodKey;
             }
         }
@@ -252,20 +266,31 @@ final class IdentifierDetector
      * @param list<ObjectIdentity> $identities Every identity the account owns
      * @param string $methodKey Enabled method key (see AuthMethodKey)
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
+     * @param CodeDeliveryAvailability $delivery What this installation can send a code or a link to
      * @return bool True when the surface may offer this method
      */
-    private function accountHasMethod(array $identities, string $methodKey, string $kind): bool
-    {
+    private function accountHasMethod(
+        array $identities,
+        string $methodKey,
+        string $kind,
+        CodeDeliveryAvailability $delivery,
+    ): bool {
         return match ($methodKey) {
             // A sign-in link needs no identity of its own - it is mailed to the address
             // that was typed, and the account is already known to answer at it, so
-            // whether one was ever set up is not a question that exists here.
-            AuthMethodKey::MAGIC_LINK => $kind === IdentifierDetection::KIND_EMAIL,
+            // whether one was ever set up is not a question that exists here. It does
+            // need a way to be MAILED, which is not a property of the account and is
+            // asked of the installation (HIL-973).
+            AuthMethodKey::MAGIC_LINK => $kind === IdentifierDetection::KIND_EMAIL
+                && $delivery->canDeliverTo($kind),
             // Any password row the account holds answers for every address it holds: an
             // account has at most one (HIL-692), and the sign-in reads it by account too.
             AuthMethodKey::PASSWORD => $kind === IdentifierDetection::KIND_EMAIL
                 && $this->holdsType($identities, IdentityType::PASSWORD),
-            AuthMethodKey::SMS => $kind === IdentifierDetection::KIND_PHONE,
+            // A code to a number is sent the same way a registration code is, and is
+            // offered only where it has a channel to go out on.
+            AuthMethodKey::SMS => $kind === IdentifierDetection::KIND_PHONE
+                && $delivery->canDeliverTo($kind),
             default => false,
         };
     }
@@ -334,6 +359,33 @@ final class IdentifierDetector
         return $this->enabledMethodsFor($kind) === []
             ? IdentifierDetection::BLOCK_CLOSED
             : IdentifierDetection::BLOCK_NO_CHANNEL;
+    }
+
+    /**
+     * Says why an existing account is offered no way to sign in, or that it is.
+     *
+     * The sign-in twin of {@see self::registrationBlock()}, with one difference that is
+     * the reason this is its own method: delivery IS asked again here rather than read
+     * off the emptiness. This list is also emptied by an account that simply holds no
+     * password on a kind whose link or code the project never enabled, and emptiness
+     * alone does not tell the two apart.
+     *
+     * On an installation that CAN deliver, that second state is the only one left, and
+     * it names no cause - it stays as quiet as it was before this leaf, because a
+     * `closed` wording for sign-in would name a decision nobody took (HIL-973).
+     *
+     * @param string $kind Classification (see IdentifierDetection::KIND_*)
+     * @param list<string> $methods What the account signs in with after the delivery filter
+     * @param CodeDeliveryAvailability $delivery What this installation can send a code or a link to
+     * @return ?string Reason (see IdentifierDetection::BLOCK_*), or null when a method is offered or no cause is named
+     */
+    private function signInBlock(string $kind, array $methods, CodeDeliveryAvailability $delivery): ?string
+    {
+        if ($methods !== []) {
+            return null;
+        }
+
+        return $delivery->canDeliverTo($kind) ? null : IdentifierDetection::BLOCK_NO_CHANNEL;
     }
 
     /**
