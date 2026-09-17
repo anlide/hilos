@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -15,6 +16,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
+use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
+use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -41,15 +44,21 @@ final class StandaloneProtectedModeTest extends TestCase
 
     private StandaloneProtectedMode $mode;
 
+    private FakeStandaloneInitiatorRelay $relay;
+
     protected function setUp(): void
     {
         $this->executor = new FakeStandaloneExecutor();
         $this->mode = new StandaloneProtectedMode($this->executor);
+        $this->relay = new FakeStandaloneInitiatorRelay();
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerProtectedModeInitiatorRelay($this->relay);
         $this->mount();
     }
 
     protected function tearDown(): void
     {
+        Hilos::$cluster = null;
         Hilos::$rt = null;
 
         parent::tearDown();
@@ -127,11 +136,20 @@ final class StandaloneProtectedModeTest extends TestCase
         // The fake executor writes no row, so the freeze is still on its way in - and an entry
         // run twice re-rolls the stopped-agent roster the release resumes against.
         $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
         $this->executor->calls = [];
+        $this->relay->refusedCalls = [];
 
         $this->mode->requestEnable($this->enableData());
 
         $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            [
+                'agentType' => self::INITIATOR_TYPE,
+                'agentIndex' => (string)self::INITIATOR_INDEX,
+                'reason' => ProtectedModeRefusalCopy::ANOTHER_OPERATION,
+            ],
+        ], $this->relay->refusedCalls);
     }
 
     public function testTheInitiatorOfASettledFreezeIsToldReadyAgainInsteadOfRefused(): void
@@ -154,24 +172,60 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->mode->requestEnable($this->enableData());
         $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
         $this->executor->calls = [];
+        $this->relay->refusedCalls = [];
 
         $this->mode->requestEnable($this->enableData('chat', null));
 
         $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            [
+                'agentType' => 'chat',
+                'agentIndex' => null,
+                'reason' => ProtectedModeRefusalCopy::FOREIGN_FREEZE,
+            ],
+        ], $this->relay->refusedCalls);
     }
 
-    public function testEnableInsideTheVerificationWindowIsDropped(): void
+    public function testEnableInsideTheVerificationWindowReentersActiveForNewOperationAndSignalsReady(): void
     {
-        // Only a settled freeze answers ready: inside the window the agents are back up, so the
-        // node is not quiesced and an operation that believed a ready would run over live clients.
         $this->mode->requestEnable($this->enableData());
         $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
         $this->enterVerifyingOnTheRuntimeRow();
         $this->executor->calls = [];
 
+        $enable = new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-second',
+            initiatorSessionTokenHash: 'session-hash-second',
+            initiatorAgentType: self::INITIATOR_TYPE,
+            initiatorAgentIndex: self::INITIATOR_INDEX,
+            initiatorNodeId: null,
+        );
+        $this->mode->requestEnable($enable);
+
+        $this->assertSame(['reenterActiveForNewOperation', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame('accept-second', $this->executor->reenteredAcceptKey);
+        $this->assertSame('session-hash-second', $this->executor->reenteredSessionTokenHash);
+    }
+
+    public function testEnableInsideTheVerificationWindowFromAnotherAgentIsRefused(): void
+    {
         $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->relay->refusedCalls = [];
+
+        $this->mode->requestEnable($this->enableData('chat', null));
 
         $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            [
+                'agentType' => 'chat',
+                'agentIndex' => null,
+                'reason' => ProtectedModeRefusalCopy::FOREIGN_FREEZE,
+            ],
+        ], $this->relay->refusedCalls);
     }
 
     public function testInitiatorReleasesTheFreeze(): void
@@ -422,10 +476,18 @@ final class StandaloneProtectedModeTest extends TestCase
         // Fail-closed: the initiator waits for ready before it destroys anything, so refusing to
         // enter keeps it waiting instead of letting it run over a live system.
         Hilos::$rt = null;
+        $this->relay->refusedCalls = [];
 
         $this->mode->requestEnable($this->enableData());
 
         $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            [
+                'agentType' => self::INITIATOR_TYPE,
+                'agentIndex' => (string)self::INITIATOR_INDEX,
+                'reason' => ProtectedModeRefusalCopy::NO_RUNTIME_ROW,
+            ],
+        ], $this->relay->refusedCalls);
     }
 
     /**
@@ -631,6 +693,19 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
         $this->calls[] = 'reenterActive';
     }
 
+    /** @var ?string Accept key passed to the most recent reenterActiveForNewOperation call */
+    public ?string $reenteredAcceptKey = null;
+
+    /** @var ?string Session token hash passed to the most recent reenterActiveForNewOperation call */
+    public ?string $reenteredSessionTokenHash = null;
+
+    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
+    {
+        $this->calls[] = 'reenterActiveForNewOperation';
+        $this->reenteredAcceptKey = $initiatorAcceptKey;
+        $this->reenteredSessionTokenHash = $initiatorSessionTokenHash;
+    }
+
     public function enterInactive(): void
     {
         $this->calls[] = 'enterInactive';
@@ -644,5 +719,34 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function notifyInitiatorReady(): void
     {
         $this->calls[] = 'notifyInitiatorReady';
+    }
+}
+
+/**
+ * Recording fake of the initiator relay port: captures ready and refusal notices.
+ */
+final class FakeStandaloneInitiatorRelay implements ProtectedModeInitiatorRelay
+{
+    /** @var list<array{agentType: string, agentIndex: ?string}> */
+    public array $readyCalls = [];
+
+    /** @var list<array{agentType: string, agentIndex: ?string, reason: string}> */
+    public array $refusedCalls = [];
+
+    public function deliverProtectedModeReady(string $agentType, ?string $agentIndex): void
+    {
+        $this->readyCalls[] = [
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+        ];
+    }
+
+    public function deliverProtectedModeRefused(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $this->refusedCalls[] = [
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+            'reason' => $reason,
+        ];
     }
 }

@@ -1766,6 +1766,40 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     }
 
     /**
+     * Answers a refusal delivered for the freeze this agent requested.
+     *
+     * Delivered when protected mode cannot be entered — another operation is active, the freeze
+     * belongs to another agent, no leader exists to coordinate it, or this process holds no
+     * runtime state. The restore fails immediately with the reason rather than waiting out the
+     * freeze timeout, while the node's phase and freeze state are left untouched.
+     *
+     * @param string $reason Human-readable operator-facing refusal reason
+     * @throws DatabaseException When recording the failure or re-reading state fails
+     * @throws LogicException When the database handler state is inconsistent
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
+     * @throws HilosException Whatever finishing a restore raises
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
+     */
+    public function onProtectedModeRefused(string $reason): void
+    {
+        if ($this->pendingRestoreId === null) {
+            $this->logAgentWarning("Protected mode refused ('{$reason}') but no restore is pending");
+            return;
+        }
+
+        $this->currentBackupId = $this->pendingRestoreId;
+        $this->startedAt = $this->pendingRestoreSince;
+        $this->runKind = BackupRunKind::RESTORE;
+        $this->finishRestore(
+            false,
+            $reason,
+            // Nothing was ever spawned, so nothing can have been written.
+            databaseTouched: false,
+        );
+    }
+
+    /**
      * Starts one backup unless one is already running (the single-flight lock).
      *
      * Generates the id, marks the runtime running, and spawns the `backup:run` child. Every
@@ -2851,14 +2885,13 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     /**
      * Expires a restore that was admitted but whose freeze never became ready.
      *
-     * The enable request can be dropped without a word to this agent (no known leader, a
-     * stale freeze already in flight, an unmounted protected-mode row are all log-and-return
-     * paths in the switch), and nothing else bounds the wait: the child timeout arms only at
-     * spawn. Left alone, the pending state would suppress the schedule and refuse every
-     * create and restore until an agent restart, while the CLI monitor polls a PENDING row
-     * forever. Expiring finishes the run as failed through the one finalizer, which also
-     * sends the disable — a no-op warning on a node that never froze, the needed lift on one
-     * that froze after the deadline.
+     * A freeze request that cannot enter is answered with a refusal ({@see onProtectedModeRefused()}),
+     * so this timeout is no longer the primary rejection path — it stands as a safety net against
+     * a lost frame or a dead coordinator. Left alone, the pending state would suppress the schedule
+     * and refuse every create and restore until an agent restart, while the CLI monitor polls a
+     * PENDING row forever. Expiring finishes the run as failed through the one finalizer, which also
+     * sends the disable — a no-op warning on a node that never froze, the needed lift on one that
+     * froze after the deadline.
      */
     private function expireStalePendingRestore(): void
     {
@@ -2874,7 +2907,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $this->runKind = BackupRunKind::RESTORE;
         $this->finishRestore(
             false,
-            'protected mode never became ready within ' . self::RESTORE_FREEZE_WAIT_SECONDS . 's',
+            'the node did not freeze in time, nothing was restored',
             // Nothing was ever spawned, so nothing can have been written.
             databaseTouched: false,
         );

@@ -40,6 +40,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
@@ -1133,6 +1134,20 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
+     * Routes a received protected-mode refused confirmation to the local handler for the initiator to act on.
+     *
+     * @param PeerLink $link Link the refusal arrived on
+     * @param PeerProtectedModeRefusedDTO $frame Received protected-mode refused frame
+     */
+    public function onProtectedModeRefusedReceived(PeerLink $link, PeerProtectedModeRefusedDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onRefused($from, $frame->reason);
+        }
+    }
+
+    /**
      * Routes a received protected-mode disable request to the local handler for the leader to act on.
      *
      * @param PeerLink $link Link the request arrived on
@@ -1411,6 +1426,17 @@ final class PeerServer extends AbstractServer implements
     public function sendReady(string $initiatorNodeId): void
     {
         $this->sendToMaster($initiatorNodeId, new PeerProtectedModeReadyDTO());
+    }
+
+    /**
+     * Signals the initiator that protected mode was refused and cannot be entered.
+     *
+     * @param string $initiatorNodeId Node id that hosts the initiator agent
+     * @param string $reason Human-readable operator-facing refusal reason
+     */
+    public function sendRefused(string $initiatorNodeId, string $reason): void
+    {
+        $this->sendToMaster($initiatorNodeId, new PeerProtectedModeRefusedDTO($reason));
     }
 
     /**

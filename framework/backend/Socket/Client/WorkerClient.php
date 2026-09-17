@@ -27,6 +27,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
+use Hilos\Socket\Worker\DTO\ProtectedModeRefusedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
@@ -800,6 +801,27 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
         $dto = new ProtectedModeReadyDTO(
             agentId: $agentId,
+        );
+
+        $this->send($dto->toJson());
+    }
+
+    /**
+     * Send protected-mode refused relay to worker for a specific initiator agent.
+     *
+     * @param string $agentType Initiator agent type
+     * @param ?string $agentIndex Initiator agent index, or null for a singleton agent
+     * @param string $reason Human-readable operator-facing refusal message
+     */
+    public function sendProtectedModeRefused(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        // external-boundary: the neutral element of the agent id — a singleton is the bare type
+        $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
+        Logger::debug("Sending protected_mode_refused signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
+
+        $dto = new ProtectedModeRefusedDTO(
+            agentId: $agentId,
+            reason: $reason,
         );
 
         $this->send($dto->toJson());

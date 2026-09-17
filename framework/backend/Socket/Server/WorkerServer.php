@@ -11,7 +11,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\ProtectedMode\FrozenAgentPlacement;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
-use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
@@ -80,7 +80,11 @@ use Throwable;
  *
  * @extends AbstractServer<WorkerClientInterface>
  */
-abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink, ProtectedModeReadyRelay, ProtectedModeAgentFreezer
+abstract class WorkerServer extends AbstractServer implements
+    PlacementExecutor,
+    AgentSignalSink,
+    ProtectedModeInitiatorRelay,
+    ProtectedModeAgentFreezer
 {
     /**
      * @var array<string, array<string, Process|string|int>> Workers indexed by key (format:
@@ -1485,7 +1489,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
     /**
      * Relays the leader's protected-mode ready to the worker hosting the initiator agent
-     * ({@see ProtectedModeReadyRelay}).
+     * ({@see ProtectedModeInitiatorRelay}).
      *
      * Resolves the agent's worker exactly like {@see stopAgent()} but leaves the agent running —
      * a no-op when the agent is not hosted on this node.
@@ -1519,6 +1523,45 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         }
 
         $workerClient->sendProtectedModeReady($agentType, $agentIndex);
+    }
+
+    /**
+     * Relays the leader's protected-mode refusal to the worker hosting the initiator agent
+     * ({@see ProtectedModeInitiatorRelay}).
+     *
+     * Resolves the agent's worker exactly like {@see deliverProtectedModeReady()} but delivers
+     * the refusal reason — a no-op when the agent is not hosted on this node.
+     *
+     * Both ways of reaching nobody are written down (HIL-1000). The refusal relay answers an
+     * initiator's enter when it cannot be granted, so an undelivered one is not a frame lost among many: it
+     * is a caller that will now wait out its whole window and be told nothing.
+     *
+     * @param string $agentType Initiator agent type
+     * @param ?string $agentIndex Initiator agent index, or null for a singleton agent
+     * @param string $reason Human-readable operator-facing refusal message
+     */
+    public function deliverProtectedModeRefused(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+        if ($workerInfo === null) {
+            Logger::warning("Protected mode: the refusal relay reached nobody - initiator {$agentId} is on no worker");
+
+            return;
+        }
+
+        $workerClient = $this->findWorkerClientById($this->agentManager->calculateWorkerId(
+            $workerInfo->workerIndex,
+            $workerInfo->isMonopolistic,
+        ));
+        if ($workerClient === null) {
+            Logger::warning("Protected mode: the refusal relay reached nobody"
+                . " - the worker hosting initiator {$agentId} has no live link");
+
+            return;
+        }
+
+        $workerClient->sendProtectedModeRefused($agentType, $agentIndex, $reason);
     }
 
     /**

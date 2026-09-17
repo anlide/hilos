@@ -120,6 +120,16 @@ interface ProtectedModeExecutor
     public function reenterActive(): void;
 
     /**
+     * Closes this node back from the verification window for a new operation: rebinds the initiator, writes phase active and stops agents again.
+     *
+     * @param ?string $initiatorAcceptKey Accept key of the new initiator connection
+     * @param ?string $initiatorSessionTokenHash Hash of the new initiator session token
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void;
+
+    /**
      * Releases this node: writes phase inactive locally and asks for the agents that were stopped.
      *
      * Ends at the request, as {@see enterVerifying()} does: the lift frame goes out from

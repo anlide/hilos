@@ -119,6 +119,42 @@ final class ProtectedModeTestDriverTest extends TestCase
         $this->assertRefused($this->singleReply(), 'become ready');
     }
 
+    public function testEnterInsideVerificationWindowIsAcceptedAndAnswersWhenReady(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+        $agent = new DriverTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => 'restore']));
+
+        $this->assertSame(
+            SignalTypeConstants::PROTECTED_MODE_ENABLE,
+            $this->nextProtectedModeRequest(),
+            'Entering under verifying window asks the daemon for the freeze.',
+        );
+
+        $agent->onProtectedModeReady();
+
+        $reply = $this->singleReply();
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+    }
+
+    public function testEnterRefusedAnswersImmediatelyWithReason(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
+        $agent = new DriverTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => 'restore']));
+        $this->nextProtectedModeRequest();
+
+        $agent->onProtectedModeRefused('Another operation is already running on this node');
+
+        $this->assertRefused($this->singleReply(), 'Another operation is already running on this node');
+    }
+
     public function testLeaveFromAnAgentThatIsNotTheInitiatorIsRefused(): void
     {
         // Authorization is by initiator identity exactly as in production; there is no forced

@@ -30,7 +30,7 @@ use JsonException;
  * in depth rather than a state a freeze can normally reach.
  *
  * {@see notifyInitiatorReady()} relays the leader's ready to the initiator agent by addressing the
- * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
+ * worker hosting it through {@see ProtectedModeInitiatorRelay}, reading the initiator identity back from
  * the runtime row this node wrote on entry. On entry it stops this node's own agents through
  * {@see ProtectedModeAgentFreezer}, leaving the initiator agent running; on exit ({@see enterInactive()})
  * the same freezer brings back exactly the agents it stopped. The freezer does both one agent per
@@ -277,6 +277,26 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
+        $this->performReenterActive($view);
+    }
+
+    /**
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $view->actions->rebindInitiator($initiatorAcceptKey, $initiatorSessionTokenHash);
+        $this->performReenterActive($view);
+    }
+
+    private function performReenterActive(ProtectedModeRuntime $view): void
+    {
         // Stop the agents the verification window brought back, naming the same initiator the row
         // still records - it is the one identity that keeps working through the freeze. A row that
         // names nobody would stop the initiator along with everything else, leaving no agent able
@@ -391,7 +411,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
-        Hilos::$cluster?->protectedModeReadyRelay()?->deliverProtectedModeReady(
+        Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeReady(
             $view->initiatorAgentType,
             $view->initiatorAgentIndex === null ? null : (string)$view->initiatorAgentIndex,
         );

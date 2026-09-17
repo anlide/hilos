@@ -167,6 +167,22 @@ trait ProtectedModeTestDriverTrait
     }
 
     /**
+     * Answers a pending enter when the freeze was refused by the daemon or leader.
+     *
+     * @param string $reason Human-readable operator-facing refusal reason
+     */
+    public function onProtectedModeRefused(string $reason): void
+    {
+        if ($this->protectedModeTestCorrelationId === null || $this->protectedModeTestAwaitedPhase !== '') {
+            return;
+        }
+
+        $correlationId = $this->protectedModeTestCorrelationId;
+        $this->clearProtectedModeTest();
+        $this->refuseProtectedModeTest($correlationId, $reason);
+    }
+
+    /**
      * Photographs the verifier circle under the test freeze, exactly as a restore does.
      *
      * Same read and same failure stance the restore takes: a circle that cannot be read leaves the
@@ -238,7 +254,10 @@ trait ProtectedModeTestDriverTrait
      */
     private function enterProtectedModeForTest(CommandRequestDTO $data, ProtectedModeRuntime $freeze): void
     {
-        if ($freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+        if (
+            $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE
+            && $freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING
+        ) {
             $this->refuseProtectedModeTest(
                 $data->correlationId,
                 "protected mode is already {$freeze->phase} for '{$freeze->operation}'",

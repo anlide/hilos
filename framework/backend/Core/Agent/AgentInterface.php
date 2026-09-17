@@ -102,6 +102,18 @@ interface AgentInterface
     public function onProtectedModeReady(): void;
 
     /**
+     * Called on the initiator agent when its protected operation request is refused.
+     *
+     * Delivered on the initiator node after {@see AbstractAgent::requestProtectedModeEnable()}
+     * when the node or cluster cannot grant the requested freeze or re-entry.
+     *
+     * @param string $reason Human-readable operator-facing refusal message
+     * @throws HilosException Whatever the concrete agent's refusal handling raises
+     * @throws InvalidArgumentException Whatever the concrete agent's refusal handling raises from SPL
+     */
+    public function onProtectedModeRefused(string $reason): void;
+
+    /**
      * Called on the announcing agent once the node has finished re-reading a replaced database.
      *
      * Delivered on the announcing node after {@see AbstractAgent::requestDbReHydrate()} and every

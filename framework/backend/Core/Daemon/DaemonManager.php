@@ -123,7 +123,7 @@ use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
-use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
@@ -710,9 +710,9 @@ abstract class DaemonManager extends BaseManager implements
             Hilos::$cluster?->registerAgentSignalSink($workerServer);
         }
         // Expose the worker server as the relay the protected-mode executor uses to hand the
-        // leader's ready to the worker hosting the initiator agent on this node.
-        if ($workerServer instanceof ProtectedModeReadyRelay) {
-            Hilos::$cluster?->registerProtectedModeReadyRelay($workerServer);
+        // leader's ready or refusal to the worker hosting the initiator agent on this node.
+        if ($workerServer instanceof ProtectedModeInitiatorRelay) {
+            Hilos::$cluster?->registerProtectedModeInitiatorRelay($workerServer);
         }
         // Expose the worker server as the port the protected-mode executor uses to stop this
         // node's agents (leaving the initiator running) while the freeze holds.

@@ -28,7 +28,7 @@ use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeLeadership;
 use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
-use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 
@@ -93,8 +93,8 @@ final class ClusterContext
     /** @var ?ProtectedModeLeadership Leader-side hooks of the freeze, registered by the peer transport at start; null off-cluster. */
     private ?ProtectedModeLeadership $protectedModeLeadership = null;
 
-    /** @var ?ProtectedModeReadyRelay Local relay of the leader's ready to the initiator agent, registered by the daemon at start. */
-    private ?ProtectedModeReadyRelay $protectedModeReadyRelay = null;
+    /** @var ?ProtectedModeInitiatorRelay Local relay of the leader's ready/refusal to the initiator agent, registered by the daemon at start. */
+    private ?ProtectedModeInitiatorRelay $protectedModeInitiatorRelay = null;
 
     /** @var ?ProtectedModeAgentFreezer Local port that stops this node's agents during the freeze, registered by the daemon at start. */
     private ?ProtectedModeAgentFreezer $protectedModeAgentFreezer = null;
@@ -525,28 +525,28 @@ final class ClusterContext
      * The daemon registers its worker server here at start so the protected-mode executor can
      * address the worker hosting the initiator agent. Symmetric to {@see registerAgentSignalSink()}.
      *
-     * @param ProtectedModeReadyRelay $relay Local ready relay for the initiator agent
+     * @param ProtectedModeInitiatorRelay $relay Local initiator relay for the initiator agent
      */
-    public function registerProtectedModeReadyRelay(ProtectedModeReadyRelay $relay): void
+    public function registerProtectedModeInitiatorRelay(ProtectedModeInitiatorRelay $relay): void
     {
-        $this->protectedModeReadyRelay = $relay;
+        $this->protectedModeInitiatorRelay = $relay;
     }
 
     /**
-     * Returns the registered protected-mode ready relay, or null when none is set.
+     * Returns the registered protected-mode initiator relay, or null when none is set.
      *
-     * @return ?ProtectedModeReadyRelay Local ready relay, or null
+     * @return ?ProtectedModeInitiatorRelay Local initiator relay, or null
      */
-    public function protectedModeReadyRelay(): ?ProtectedModeReadyRelay
+    public function protectedModeInitiatorRelay(): ?ProtectedModeInitiatorRelay
     {
-        return $this->protectedModeReadyRelay;
+        return $this->protectedModeInitiatorRelay;
     }
 
     /**
      * Registers the local port used to stop this node's agents while protected mode holds.
      *
      * The daemon registers its worker server here at start so the protected-mode executor can
-     * stop every hosted agent except the initiator. Symmetric to {@see registerProtectedModeReadyRelay()}.
+     * stop every hosted agent except the initiator. Symmetric to {@see registerProtectedModeInitiatorRelay()}.
      *
      * @param ProtectedModeAgentFreezer $freezer Local agent-freezer for the protected-mode freeze
      */

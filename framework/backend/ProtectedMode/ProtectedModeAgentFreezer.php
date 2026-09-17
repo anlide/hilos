@@ -13,7 +13,7 @@ use Hilos\Cluster\Placement\PlacementExecutor;
  * enters the freeze, {@see DaemonProtectedModeExecutor::enterActivating()} hands the initiator's
  * agent identity to this seam so the daemon can stop every agent it hosts except the one driving
  * the destructive operation. The worker server implements it by reusing its per-agent stop path,
- * mirroring how {@see ProtectedModeReadyRelay} and {@see PlacementExecutor}
+ * mirroring how {@see ProtectedModeInitiatorRelay} and {@see PlacementExecutor}
  * expose the worker server to the peer transport.
  *
  * Its mirror, {@see resumeAgentsForProtectedMode()}, brings those same agents back when the freeze

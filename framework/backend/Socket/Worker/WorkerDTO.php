@@ -17,6 +17,7 @@ use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
+use Hilos\Socket\Worker\DTO\ProtectedModeRefusedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
@@ -116,6 +117,7 @@ abstract class WorkerDTO extends BaseDTO
             AgentStartDTO::MESSAGE_TYPE => AgentStartDTO::fromArray($data),
             AgentStopDTO::MESSAGE_TYPE => AgentStopDTO::fromArray($data),
             ProtectedModeReadyDTO::MESSAGE_TYPE => ProtectedModeReadyDTO::fromArray($data),
+            ProtectedModeRefusedDTO::MESSAGE_TYPE => ProtectedModeRefusedDTO::fromArray($data),
             WorkerDbSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerDbSyncCreatedMessageDTO::fromArray($data),
             WorkerDbSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerDbSyncUpdatedMessageDTO::fromArray($data),
             WorkerDbSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerDbSyncDeletedMessageDTO::fromArray($data),

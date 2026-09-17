@@ -86,6 +86,7 @@ use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
+use Hilos\Socket\Worker\DTO\ProtectedModeRefusedDTO;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -535,6 +536,15 @@ abstract class WorkerManager extends BaseManager
                 }
                 $this->setCurrentAgentId($data->agentId);
                 $this->handleProtectedModeReady($data);
+                break;
+
+            case WorkerConstants::MESSAGE_PROTECTED_MODE_REFUSED:
+                if (!$data instanceof ProtectedModeRefusedDTO) {
+                    Logger::error("handleProtectedModeRefused - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->setCurrentAgentId($data->agentId);
+                $this->handleProtectedModeRefused($data);
                 break;
 
             case WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE:
@@ -998,6 +1008,30 @@ abstract class WorkerManager extends BaseManager
         }
 
         $agent->onProtectedModeReady();
+    }
+
+    /**
+     * Relays the leader's protected-mode refusal to the addressed initiator agent on this worker.
+     *
+     * A no-op when the agent is not (or no longer) hosted here, mirroring {@see handleProtectedModeReady()}.
+     *
+     * @param ProtectedModeRefusedDTO $data Refusal relay naming the initiator agent and reason
+     */
+    private function handleProtectedModeRefused(ProtectedModeRefusedDTO $data): void
+    {
+        if ($data->agentId === '') {
+            return;
+        }
+
+        $agent = $this->agentManager->getAgent($data->agentId);
+        if ($agent === null) {
+            Logger::warning("Protected mode: the refusal relay for {$data->agentId} arrived,"
+                . ' but this worker no longer hosts it');
+
+            return;
+        }
+
+        $agent->onProtectedModeRefused($data->reason);
     }
 
     /**
@@ -2378,6 +2412,7 @@ abstract class WorkerManager extends BaseManager
             || $data instanceof AgentStopDTO
             || $data instanceof DaemonAgentMessageDTO
             || $data instanceof ProtectedModeReadyDTO
+            || $data instanceof ProtectedModeRefusedDTO
         ) {
             $agentId = $data->agentId;
         }

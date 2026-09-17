@@ -53,6 +53,9 @@ final class WorkerConstants
     /** @var string Protected-mode ready relay (daemon -> initiator worker): cluster quiesced, proceed */
     public const string MESSAGE_PROTECTED_MODE_READY = 'protected_mode_ready';
 
+    /** @var string Protected-mode refused relay (daemon -> initiator worker): freeze refused, cancel */
+    public const string MESSAGE_PROTECTED_MODE_REFUSED = 'protected_mode_refused';
+
     /** @var string Agent message signal (worker -> daemon) */
     public const string MESSAGE_AGENT_MESSAGE = 'agent_message';
 

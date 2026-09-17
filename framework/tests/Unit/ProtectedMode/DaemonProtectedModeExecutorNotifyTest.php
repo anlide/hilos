@@ -12,6 +12,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
+use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -399,6 +400,49 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         );
     }
 
+    public function testReenteringActiveForNewOperationRebindsInitiatorAndAnnouncesState(): void
+    {
+        $this->executor->enterActivating($this->freeze(), 'accept-old', 'session-hash-old');
+        $this->executor->enterActive();
+        $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
+        $this->notifier->frames = [];
+
+        $this->executor->reenterActiveForNewOperation('accept-new', 'session-hash-new');
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $row?->phase);
+        $this->assertSame('accept-new', $row?->initiatorAcceptKey);
+        $this->assertSame('session-hash-new', $row?->initiatorSessionTokenHash);
+        $this->assertSame('backup', $row?->initiatorAgentType);
+        $this->assertSame(2, $row?->initiatorAgentIndex);
+        $this->assertSame([], $row?->passHashes);
+        $this->assertSame([], $row?->admittedSessionTokenHashes);
+
+        $this->assertCount(1, $this->notifier->frames);
+        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
+        $this->assertTrue($state->active);
+        $this->assertFalse($state->acceptsPass);
+        $this->assertFalse($state->passIssued);
+        $this->assertNull($excludedKey);
+        $this->assertNull($excludedSession);
+    }
+
+    public function testNotifyInitiatorReadyDeliversToRelay(): void
+    {
+        $relay = new RecordingInitiatorRelay();
+        Hilos::$cluster?->registerProtectedModeInitiatorRelay($relay);
+
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+
+        $this->executor->notifyInitiatorReady();
+
+        $this->assertSame([
+            ['agentType' => 'backup', 'agentIndex' => '2'],
+        ], $relay->readyCalls);
+    }
+
     /**
      * @return ProtectedModeQuiesceData Freeze descriptor of a single-node restore
      */
@@ -456,5 +500,34 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
     public function reassessPagesOfSession(string $sessionTokenHash): void
     {
         $this->reassessedSessions[] = $sessionTokenHash;
+    }
+}
+
+/**
+ * Recording fake of the initiator relay port: captures ready and refusal notices.
+ */
+final class RecordingInitiatorRelay implements ProtectedModeInitiatorRelay
+{
+    /** @var list<array{agentType: string, agentIndex: ?string}> */
+    public array $readyCalls = [];
+
+    /** @var list<array{agentType: string, agentIndex: ?string, reason: string}> */
+    public array $refusedCalls = [];
+
+    public function deliverProtectedModeReady(string $agentType, ?string $agentIndex): void
+    {
+        $this->readyCalls[] = [
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+        ];
+    }
+
+    public function deliverProtectedModeRefused(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $this->refusedCalls[] = [
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+            'reason' => $reason,
+        ];
     }
 }

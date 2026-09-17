@@ -154,6 +154,23 @@ final class ProtectedModeRuntimeActions extends RtActions
     }
 
     /**
+     * Rebinds the initiator connection to a new browser session when starting a new operation.
+     *
+     * @param ?string $initiatorAcceptKey Accept key of the new initiator connection
+     * @param ?string $initiatorSessionTokenHash Hash of the new initiator session token
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function rebindInitiator(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->initiatorAcceptKey = $initiatorAcceptKey;
+        $this->state->initiatorSessionTokenHash = $initiatorSessionTokenHash;
+        $this->sync();
+    }
+
+    /**
      * Opens the verification window: the operation is over, but the mode is not lifted yet.
      *
      * The operation and the whole initiator identity stay on the row - the initiator still

@@ -34,6 +34,7 @@ use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
@@ -325,6 +326,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerConnectionsDeltaDTO => $this->onConnectionsDelta($frame),
             $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
             $frame instanceof PeerProtectedModeReadyDTO => $this->onProtectedModeReady($frame),
+            $frame instanceof PeerProtectedModeRefusedDTO => $this->onProtectedModeRefused($frame),
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
             $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
@@ -735,6 +737,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode ready');
         $this->server->onProtectedModeReadyReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode refused notice to the server for the initiator to act on.
+     *
+     * @param PeerProtectedModeRefusedDTO $frame Incoming protected-mode refused frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeRefused(PeerProtectedModeRefusedDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode refused');
+        $this->server->onProtectedModeRefusedReceived($this, $frame);
     }
 
     /**

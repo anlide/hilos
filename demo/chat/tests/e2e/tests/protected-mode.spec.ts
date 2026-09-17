@@ -498,6 +498,34 @@ test('closing the window puts the admitted verifier back behind the stub', async
   await secondTab.close()
 })
 
+test('a repeat enter under the verification window re-enters active and voids existing passes', async ({
+  page,
+}) => {
+  // HIL-909: initiating a second operation while the verification window of the
+  // first is still open must re-enter active directly without reopening the system
+  // or thawing agents, voiding minted passes and putting verifiers back behind the stub.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+  const pass = await mintProtectedModePass()
+
+  await gotoMaintenance(page, ADMIN_URL)
+  await presentCode(page, pass)
+  await expect(page.getByTestId('maintenance')).toBeHidden()
+
+  expect(await enterProtectedMode(OPERATION)).toBe('active')
+
+  const refrozen = await inspectProtectedMode()
+  expect(refrozen.phase).toBe('active')
+  expect(refrozen.operation).toBe(OPERATION)
+  expect(refrozen.passCount).toBe(0)
+  expect(refrozen.agentStartGateClosed).toBe(true)
+  expect(refrozen.stoppedAgents.length).toBeGreaterThan(0)
+
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+  await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
+  await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
+})
+
 test('a code from a closed window opens no later one', async ({
   page,
   context,

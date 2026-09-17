@@ -930,6 +930,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Default implementation - no action when a protected operation request is refused.
+     *
+     * The initiator agent overrides this to handle refusal of its protected operation.
+     *
+     * @param string $reason Human-readable operator-facing refusal message
+     * @throws HilosException Whatever the concrete agent's refusal handling raises
+     * @throws InvalidArgumentException Whatever the concrete agent's refusal handling raises from SPL
+     */
+    public function onProtectedModeRefused(string $reason): void
+    {
+        // Default: do nothing
+    }
+
+    /**
      * Default implementation - no action when the node has finished re-reading a replaced database.
      *
      * The announcing agent overrides this to finish whatever it was doing around the swap: the

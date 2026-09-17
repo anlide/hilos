@@ -15,6 +15,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -94,6 +95,12 @@ final class ClusterProtectedMode implements
 
     /** @var bool True once this node has relayed the current freeze's ready to its initiator agent */
     private bool $readyRelayed = false;
+
+    /** @var ?string Initiator agent type that requested enable from this node, cleared on verdict */
+    private ?string $pendingInitiatorAgentType = null;
+
+    /** @var ?int Initiator agent index that requested enable from this node, cleared on verdict */
+    private ?int $pendingInitiatorAgentIndex = null;
 
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
@@ -184,6 +191,11 @@ final class ClusterProtectedMode implements
         $leaderNodeId = $this->mesh->leaderNodeId();
         if ($leaderNodeId === null) {
             Logger::warning("Protected mode: dropping enable request on '{$this->selfNodeId}' — no leader is known");
+            Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeRefused(
+                $data->initiatorAgentType,
+                $data->initiatorAgentIndex === null ? null : (string)$data->initiatorAgentIndex,
+                ProtectedModeRefusalCopy::NO_LEADER,
+            );
             return;
         }
 
@@ -191,6 +203,8 @@ final class ClusterProtectedMode implements
         // rather than repeating an old one. Re-arming matters when the freeze already stands: the
         // leader sends no second quiesce then, and that is the other place the guard is cleared.
         $this->readyRelayed = false;
+        $this->pendingInitiatorAgentType = $data->initiatorAgentType;
+        $this->pendingInitiatorAgentIndex = $data->initiatorAgentIndex;
 
         $this->mesh->sendEnable($leaderNodeId, $data);
     }
@@ -378,6 +392,7 @@ final class ClusterProtectedMode implements
     {
         if (!$this->isLeader) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — node '{$this->selfNodeId}' is not the leader");
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::NO_LEADER);
             return;
         }
         // A nameless initiator is a single-node payload that reached a cluster: the leader would
@@ -385,6 +400,7 @@ final class ClusterProtectedMode implements
         // so the freeze is refused instead of entered and never lifted.
         if ($data->initiatorNodeId === null) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — the request names no initiator node");
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
             return;
         }
         if ($this->activeFreeze !== null) {
@@ -399,6 +415,7 @@ final class ClusterProtectedMode implements
                 "Protected mode: cannot enter for '{$data->operation}' requested by agent "
                 . "'{$data->initiatorAgentType}' — node '{$this->selfNodeId}' holds no protected mode runtime state"
             );
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::NO_RUNTIME_ROW);
             return;
         }
 
@@ -563,6 +580,9 @@ final class ClusterProtectedMode implements
      */
     public function onReady(string $fromNodeId): void
     {
+        $this->pendingInitiatorAgentType = null;
+        $this->pendingInitiatorAgentIndex = null;
+
         if ($this->freezingLeaderId === null || $fromNodeId !== $this->freezingLeaderId) {
             Logger::warning("Protected mode: dropping ready from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen by it");
             return;
@@ -573,6 +593,32 @@ final class ClusterProtectedMode implements
 
         $this->readyRelayed = true;
         $this->executor->notifyInitiatorReady();
+    }
+
+    /**
+     * Relays the leader's refusal to this node's initiator agent.
+     *
+     * @param string $fromNodeId Node id of the leader that refused the freeze
+     * @param string $reason Human-readable operator-facing refusal reason
+     */
+    public function onRefused(string $fromNodeId, string $reason): void
+    {
+        $agentType = $this->pendingInitiatorAgentType ?? $this->runtimeView()?->initiatorAgentType;
+        $agentIndex = $this->pendingInitiatorAgentIndex ?? $this->runtimeView()?->initiatorAgentIndex;
+
+        $this->pendingInitiatorAgentType = null;
+        $this->pendingInitiatorAgentIndex = null;
+
+        if ($agentType === null) {
+            Logger::warning("Protected mode: refusal ('{$reason}') arrived from '{$fromNodeId}' but no initiator identity is recorded");
+            return;
+        }
+
+        Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeRefused(
+            $agentType,
+            $agentIndex === null ? null : (string)$agentIndex,
+            $reason,
+        );
     }
 
     /**
@@ -587,6 +633,9 @@ final class ClusterProtectedMode implements
      */
     public function onLift(string $fromNodeId): void
     {
+        $this->pendingInitiatorAgentType = null;
+        $this->pendingInitiatorAgentIndex = null;
+
         if ($this->freezingLeaderId === null) {
             Logger::warning("Protected mode: dropping lift from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen");
             return;
@@ -751,19 +800,56 @@ final class ClusterProtectedMode implements
         ProtectedModeQuiesceData $freeze,
         ProtectedModeEnableSignalData $data,
     ): void {
-        if (
-            !$this->active
-            || $data->initiatorNodeId !== $freeze->initiatorNodeId
-            || $data->initiatorAgentType !== $freeze->initiatorAgentType
-            || $data->initiatorAgentIndex !== $freeze->initiatorAgentIndex
-            || !$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE)
-        ) {
+        if (!$this->active) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
                 . " — a '{$freeze->operation}' freeze is already in flight");
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
             return;
         }
 
-        $this->signalInitiatorReady($freeze);
+        if (
+            $data->initiatorNodeId !== $freeze->initiatorNodeId
+            || $data->initiatorAgentType !== $freeze->initiatorAgentType
+            || $data->initiatorAgentIndex !== $freeze->initiatorAgentIndex
+        ) {
+            Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
+                . " — a '{$freeze->operation}' freeze is already in flight");
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::FOREIGN_FREEZE);
+            return;
+        }
+
+        if ($this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE)) {
+            $this->signalInitiatorReady($freeze);
+            return;
+        }
+
+        if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+            $this->executor->reenterActiveForNewOperation($data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
+            $this->mesh->broadcastRefreeze();
+            $this->signalInitiatorReady($freeze);
+            return;
+        }
+
+        Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
+            . " — a '{$freeze->operation}' freeze is already in flight");
+        $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
+    }
+
+    private function signalInitiatorRefused(
+        string $fromNodeId,
+        ProtectedModeEnableSignalData $data,
+        string $reason,
+    ): void {
+        if ($fromNodeId === $this->selfNodeId) {
+            Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeRefused(
+                $data->initiatorAgentType,
+                $data->initiatorAgentIndex === null ? null : (string)$data->initiatorAgentIndex,
+                $reason,
+            );
+            return;
+        }
+
+        $this->mesh->sendRefused($fromNodeId, $reason);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
@@ -13,7 +14,9 @@ use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
+use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeMesh;
+use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -44,16 +47,22 @@ final class ClusterProtectedModeTest extends TestCase
 
     private ClusterProtectedMode $coordinator;
 
+    private FakeClusterInitiatorRelay $relay;
+
     protected function setUp(): void
     {
         $this->mesh = new FakeProtectedModeMesh();
         $this->executor = new FakeProtectedModeExecutor();
         $this->coordinator = new ClusterProtectedMode(self::SELF, $this->mesh, $this->executor);
+        $this->relay = new FakeClusterInitiatorRelay();
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerProtectedModeInitiatorRelay($this->relay);
         $this->mount();
     }
 
     protected function tearDown(): void
     {
+        Hilos::$cluster = null;
         Hilos::$rt = null;
 
         parent::tearDown();
@@ -202,7 +211,9 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-b', $this->enableData());
 
         $this->assertSame([], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::NO_LEADER],
+        ], $this->mesh->calls);
     }
 
     public function testLeaderIgnoresAConcurrentSecondEnable(): void
@@ -216,7 +227,9 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-c', $this->enableData());
 
         $this->assertSame([], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-c', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+        ], $this->mesh->calls);
     }
 
     public function testLeaderTellsItsInitiatorReadyAgainWhenTheFreezeAlreadyStands(): void
@@ -253,7 +266,9 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-c', $this->enableDataFrom('node-c'));
 
         $this->assertSame([], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-c', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
+        ], $this->mesh->calls);
     }
 
     public function testLeaderRefusesASecondAgentOnTheInitiatorNodeUnderAFreezeThatStands(): void
@@ -282,7 +297,94 @@ final class ClusterProtectedModeTest extends TestCase
         ));
 
         $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
+        ], $this->mesh->calls);
+    }
+
+    public function testLeaderReentersActiveAndSignalsReadyWhenEnableArrivesUnderVerifyingWindow(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $secondEnable = new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-second',
+            initiatorSessionTokenHash: 'session-second',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+            initiatorNodeId: 'node-b',
+        );
+        $this->coordinator->onEnable('node-b', $secondEnable);
+
+        $this->assertSame(['reenterActiveForNewOperation'], $this->executor->calls);
+        $this->assertSame('accept-second', $this->executor->reenteredAcceptKey);
+        $this->assertSame('session-second', $this->executor->reenteredSessionTokenHash);
+        $this->assertSame([
+            ['broadcastRefreeze', null],
+            ['sendReady', 'node-b'],
+        ], $this->mesh->calls);
+    }
+
+    public function testLeaderRefusesEnableUnderVerifyingWindowFromDifferentInitiatorNode(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-c', $this->enableDataFrom('node-c'));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-c', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
+        ], $this->mesh->calls);
+    }
+
+    public function testFollowerRequestEnableWithoutKnownLeaderDeliversRefusalLocally(): void
+    {
+        $this->mesh->leader = null;
+
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+
         $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([
+            [
+                'agentType' => 'backup',
+                'agentIndex' => '0',
+                'reason' => ProtectedModeRefusalCopy::NO_LEADER,
+            ],
+        ], $this->relay->refusedCalls);
+    }
+
+    public function testFollowerInitiatorNodeRelaysRefusedFromLeaderToLocalRelay(): void
+    {
+        $this->mesh->leader = 'node-x';
+
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+        $this->assertSame([['sendEnable', 'node-x']], $this->mesh->calls);
+
+        $this->coordinator->onRefused('node-x', ProtectedModeRefusalCopy::FOREIGN_FREEZE);
+
+        $this->assertSame([
+            [
+                'agentType' => 'backup',
+                'agentIndex' => '0',
+                'reason' => ProtectedModeRefusalCopy::FOREIGN_FREEZE,
+            ],
+        ], $this->relay->refusedCalls);
     }
 
     public function testInitiatorNodeRelaysReadyAgainWhenItsAgentAsksForAnotherFreeze(): void
@@ -653,7 +755,9 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-b', $this->enableDataFrom(null));
 
         $this->assertSame([], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::ANOTHER_OPERATION],
+        ], $this->mesh->calls);
     }
 
     public function testLeaderWithoutRuntimeStateRefusesToEnter(): void
@@ -667,7 +771,9 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-b', $this->enableData());
 
         $this->assertSame([], $this->executor->calls);
-        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::NO_RUNTIME_ROW],
+        ], $this->mesh->calls);
     }
 
     public function testARefusedEnterLeavesNoFreezeBehind(): void
@@ -676,6 +782,10 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onBecameLeader();
         Hilos::$rt = null;
         $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::NO_RUNTIME_ROW],
+        ], $this->mesh->calls);
+        $this->mesh->calls = [];
 
         $this->mount();
         $this->coordinator->onEnable('node-b', $this->enableData());
@@ -986,6 +1096,11 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
         $this->calls[] = ['sendReady', $initiatorNodeId];
     }
 
+    public function sendRefused(string $initiatorNodeId, string $reason): void
+    {
+        $this->calls[] = ['sendRefused', $initiatorNodeId, $reason];
+    }
+
     public function broadcastLift(): void
     {
         $this->calls[] = ['broadcastLift', null];
@@ -1086,6 +1201,19 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
         $this->calls[] = 'reenterActive';
     }
 
+    /** @var ?string Accept key passed to the most recent reenterActiveForNewOperation call */
+    public ?string $reenteredAcceptKey = null;
+
+    /** @var ?string Session token hash passed to the most recent reenterActiveForNewOperation call */
+    public ?string $reenteredSessionTokenHash = null;
+
+    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
+    {
+        $this->calls[] = 'reenterActiveForNewOperation';
+        $this->reenteredAcceptKey = $initiatorAcceptKey;
+        $this->reenteredSessionTokenHash = $initiatorSessionTokenHash;
+    }
+
     public function enterInactive(): void
     {
         $this->calls[] = 'enterInactive';
@@ -1099,5 +1227,34 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function notifyInitiatorReady(): void
     {
         $this->calls[] = 'notifyInitiatorReady';
+    }
+}
+
+/**
+ * Recording fake of the initiator relay port: captures ready and refusal notices.
+ */
+final class FakeClusterInitiatorRelay implements ProtectedModeInitiatorRelay
+{
+    /** @var list<array{agentType: string, agentIndex: ?string}> */
+    public array $readyCalls = [];
+
+    /** @var list<array{agentType: string, agentIndex: ?string, reason: string}> */
+    public array $refusedCalls = [];
+
+    public function deliverProtectedModeReady(string $agentType, ?string $agentIndex): void
+    {
+        $this->readyCalls[] = [
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+        ];
+    }
+
+    public function deliverProtectedModeRefused(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $this->refusedCalls[] = [
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+            'reason' => $reason,
+        ];
     }
 }

@@ -64,6 +64,14 @@ interface ProtectedModeMesh
     public function sendReady(string $initiatorNodeId): void;
 
     /**
+     * Signals the initiator node that the freeze was refused and cannot be entered.
+     *
+     * @param string $initiatorNodeId Node id that hosts the initiator agent
+     * @param string $reason Human-readable operator-facing refusal reason
+     */
+    public function sendRefused(string $initiatorNodeId, string $reason): void;
+
+    /**
      * Broadcasts the release order to every follower master.
      */
     public function broadcastLift(): void;

@@ -13,6 +13,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -84,6 +85,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
                 "Protected mode: cannot enter for '{$data->operation}' requested by agent "
                 . "'{$data->initiatorAgentType}' — this process holds no protected mode runtime state"
             );
+            $this->deliverRefusal($data, ProtectedModeRefusalCopy::NO_RUNTIME_ROW);
             return;
         }
 
@@ -284,10 +286,14 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * deliberately leaves the node frozen on active: the next operation therefore finds nothing
      * left to enter, and a plain refusal left its initiator waiting for a ready that could never
      * come. So the initiator the row records is told ready once more - the node is quiesced, which
-     * is all a ready ever asserted - while any other agent, and any phase that is not a settled
-     * freeze, is dropped exactly as before. Re-entering is not the alternative:
-     * {@see ProtectedModeExecutor::enterActivating()} re-rolls the stopped-agent roster the
-     * release resumes against, which is what the repeat was refused for in the first place.
+     * is all a ready ever asserted.
+     *
+     * An enable arriving from inside the verification window re-enters active for the new operation
+     * without reopening the application: the new initiator browser session is rebound, existing
+     * passes are voided, agents are stopped, and the initiator is told ready.
+     *
+     * Any other phase, or an enable naming another initiator agent, is refused immediately with an
+     * operator-facing reason so the caller does not wait out the 60-second freeze timeout.
      *
      * The operation named on the row is left alone; a request naming another one says so in the
      * log, because the freeze it would rename is the one every locked-out client is already
@@ -301,24 +307,55 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         ProtectedModeEnableSignalData $data,
     ): void {
         $view = $this->runtimeView();
-        if (
-            $view === null
-            || $view->phase !== StateProtectedModeRuntime::PHASE_ACTIVE
-            || $view->initiatorAgentType !== $data->initiatorAgentType
-            || $view->initiatorAgentIndex !== $data->initiatorAgentIndex
-        ) {
+        if ($view === null) {
             Logger::warning("Protected mode: dropping enable — a '{$freeze->operation}' freeze is already in flight");
+            $this->deliverRefusal($data, ProtectedModeRefusalCopy::NO_RUNTIME_ROW);
             return;
         }
 
-        if ($data->operation !== $freeze->operation) {
-            Logger::warning(
-                "Protected mode: enable for '{$data->operation}' arrived under the standing "
-                . "'{$freeze->operation}' freeze — the stub keeps naming the operation it was entered for"
-            );
+        if (
+            $view->initiatorAgentType !== $data->initiatorAgentType
+            || $view->initiatorAgentIndex !== $data->initiatorAgentIndex
+        ) {
+            Logger::warning("Protected mode: dropping enable — a '{$freeze->operation}' freeze is already in flight");
+            $this->deliverRefusal($data, ProtectedModeRefusalCopy::FOREIGN_FREEZE);
+            return;
         }
 
-        $this->executor->notifyInitiatorReady();
+        if ($view->phase === StateProtectedModeRuntime::PHASE_ACTIVE) {
+            if ($data->operation !== $freeze->operation) {
+                Logger::warning(
+                    "Protected mode: enable for '{$data->operation}' arrived under the standing "
+                    . "'{$freeze->operation}' freeze — the stub keeps naming the operation it was entered for"
+                );
+            }
+            $this->executor->notifyInitiatorReady();
+            return;
+        }
+
+        if ($view->phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
+            if ($data->operation !== $freeze->operation) {
+                Logger::warning(
+                    "Protected mode: enable for '{$data->operation}' arrived under the standing "
+                    . "'{$freeze->operation}' freeze — the stub keeps naming the operation it was entered for"
+                );
+            }
+            $this->executor->reenterActiveForNewOperation($data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
+            $this->executor->notifyInitiatorReady();
+            return;
+        }
+
+        Logger::warning("Protected mode: dropping enable — a '{$freeze->operation}' freeze is already in flight");
+        $this->deliverRefusal($data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
+    }
+
+    private function deliverRefusal(ProtectedModeEnableSignalData $data, string $reason): void
+    {
+        Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeRefused(
+            $data->initiatorAgentType,
+            $data->initiatorAgentIndex === null ? null : (string)$data->initiatorAgentIndex,
+            $reason,
+        );
     }
 
     /**
