@@ -474,7 +474,7 @@ final class StandaloneProtectedModeTest extends TestCase
     public function testWithoutAMountedRuntimeRowTheModeNeitherEntersNorReportsReady(): void
     {
         // Fail-closed: the initiator waits for ready before it destroys anything, so refusing to
-        // enter keeps it waiting instead of letting it run over a live system.
+        // enter ends that wait with a reason instead of letting it run over a live system.
         Hilos::$rt = null;
         $this->relay->refusedCalls = [];
 

@@ -173,8 +173,9 @@ final class ClusterProtectedMode implements
      *
      * When this node is itself the leader the request is handled locally through {@see onEnable()};
      * otherwise it rides the peer channel to whichever node currently holds leadership. A request
-     * raised while no leader is known is dropped: this path does not queue or retry, and a node
-     * that ends up frozen with nobody driving it is reported by {@see ProtectedModeWatchdog}.
+     * raised while no leader is known is refused back to the initiator with that reason (HIL-909):
+     * this path does not queue or retry, and a node that ends up frozen with nobody driving it is
+     * reported by {@see ProtectedModeWatchdog}.
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -780,6 +781,11 @@ final class ClusterProtectedMode implements
      * quiesce round is not replayed - the followers are still frozen, and re-ordering it would
      * re-roll the stopped-agent roster each of them resumes against - so what the initiator gets
      * is the ready the settled freeze already earns it.
+     *
+     * An enable that arrives while the verification window is open closes it back for the new
+     * operation (HIL-909): the freeze is re-entered under the initiator the enable names, the
+     * followers are told to refreeze, and the initiator is answered. Any other asker is refused
+     * with a stated reason ({@see ProtectedModeRefusalCopy}) instead of being left to its timeout.
      *
      * Authorized by initiator node id AND by the agent identity the freeze records, which is one
      * check more than this class asks anywhere else. The node id keeps a second node from freezing

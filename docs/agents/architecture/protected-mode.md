@@ -92,11 +92,13 @@ Two properties are worth keeping when this code is touched:
   when it is back to inactive, close when it reads active again. That is what
   makes the reply a verdict and lets a test act on the next line instead of
   polling.
-- **The pre-checks exist because the core answers nobody.** A repeat enable, a
-  disable with no freeze and a disable from the wrong agent are all
-  log-and-return paths. Reading the row first turns each into a stated reason
-  rather than a mute timeout. The agent's wait window is deliberately the
-  innermost of three, so the informative refusal is the one that fires first.
+- **The pre-checks exist because the core answers nobody.** A disable with no
+  freeze and a disable from the wrong agent are log-and-return paths. Reading
+  the row first turns each into a stated reason rather than a mute timeout. A
+  repeat enable no longer needs it: since HIL-909 the core answers it itself,
+  with ready or with a refusal that names its reason. The agent's wait window is
+  deliberately the innermost of three, so the informative refusal is the one
+  that fires first.
 - **Three windows, but two chains.** The nesting is agent inside caller inside
   channel, and the middle link is a different program depending on who is driving:
   a PHP CLI process for an operator, the Playwright e2e client for the test path —
@@ -249,8 +251,9 @@ Four properties generalize to whatever destructive operation comes next:
 
 A node that cannot freeze refuses loudly; it never stands inert while reporting
 success. The initiator waits for ready before it destroys anything, so a refusal
-leaves the system safely waiting, whereas a silent no-op that still produced
-ready would run the operation over live nodes.
+— which reaches it with its reason since HIL-909 — ends that wait with nothing
+destroyed, whereas a silent no-op that still produced ready would run the
+operation over live nodes.
 
 - `StandaloneProtectedMode::requestEnable()` refuses before it records the freeze.
 - `ClusterProtectedMode::onEnable()` (leader) refuses **above** `activeFreeze`,

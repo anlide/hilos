@@ -35,10 +35,11 @@ use Hilos\Utils\Logger;
  * Two guards mirror the cluster's for the same reasons. A repeat enable is never re-run, because
  * re-entering the freeze re-rolls the stopped-agent roster the release resumes against and would
  * strand agents; the initiator of a freeze that already stands is answered ready instead of
- * dropped ({@see answerFreezeAlreadyHeld()}). A release is honored only for the agent recorded as the
- * initiator: on one node the cluster's node-id check compares a node against itself and authorizes
- * nothing, so the agent identity is the only thing left that distinguishes the initiator from any
- * other agent that might resume the system mid-restore.
+ * dropped, and anyone else is refused with a reason ({@see answerFreezeAlreadyHeld()}, HIL-909).
+ * A release is honored only for the agent recorded as the initiator: on one node the cluster's
+ * node-id check compares a node against itself and authorizes nothing, so the agent identity is
+ * the only thing left that distinguishes the initiator from any other agent that might resume the
+ * system mid-restore.
  *
  * The verification window adds three more requests - open it, mint a pass into it, close back out
  * of it - and they authorize by that same recorded agent identity. Each also refuses from the wrong
@@ -47,8 +48,9 @@ use Hilos\Utils\Logger;
  * operator's back.
  *
  * Entering without a mounted runtime row is refused loudly instead of silently doing nothing: the
- * initiator waits for ready before it starts destroying anything, so a refusal keeps it waiting
- * safely, while a silent no-op that still reported ready would run a restore over a live system.
+ * initiator waits for ready before it starts destroying anything, so a refusal - delivered to it
+ * with its reason since HIL-909 - ends that wait with nothing destroyed, while a silent no-op that
+ * still reported ready would run a restore over a live system.
  */
 final class StandaloneProtectedMode implements ProtectedModeSwitch
 {

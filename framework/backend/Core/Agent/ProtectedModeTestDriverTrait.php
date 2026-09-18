@@ -49,10 +49,11 @@ use Throwable;
  * verifying, open when it is back to inactive. That is what lets a test act on the next line
  * instead of polling.
  *
- * **Why the pre-checks exist at all.** The core drops a repeat enable, an unauthorized disable
- * and a disable with no freeze by logging a warning and replying to nobody. Without checking
- * the row first, those cases would reach the caller as a mute timeout instead of a reason, and
- * the timeout is the least informative thing a test can be told.
+ * **Why the pre-checks exist at all.** The core drops an unauthorized disable and a disable with
+ * no freeze by logging a warning and replying to nobody. Without checking the row first, those
+ * cases would reach the caller as a mute timeout instead of a reason, and the timeout is the
+ * least informative thing a test can be told. A repeat enable is the core's to answer since
+ * HIL-909: with ready, or with a refusal that names its reason.
  *
  * **There is deliberately no production-environment refusal here.** The CLI half of this pair
  * refuses on a production-like env ({@see TestOnlyCommand}), but the command socket
