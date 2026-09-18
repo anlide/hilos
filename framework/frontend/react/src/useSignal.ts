@@ -13,6 +13,10 @@ import type { ReadonlySignal } from '@hilos/core'
  * mount and releases the subscription on unmount or when `source` changes.
  * `renderToStaticMarkup` uses the server snapshot reader while `createRoot`
  * uses the browser reader; both deliberately read the value `source` holds.
+ * That is safe because nothing is hydrated: a prerendered page is replaced by
+ * a fresh `createRoot` mount, not reconciled by `hydrateRoot`, so there is no
+ * server markup for a client value to disagree with. An app that moves to
+ * `hydrateRoot` has to revisit this.
  *
  * @param source The core signal to mirror.
  */
