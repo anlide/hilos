@@ -901,16 +901,18 @@ test('gives the code back to a tab that returns to an address another tab of the
 
   // Tab A holds the address and sends the one code. Taking a hold broadcasts
   // nothing to the other tabs of the session: hilos_auth_converge only fires on
-  // cancel, confirmed code, created account, or expiry
-  // (AbstractSessionsLibraryAgent.php:2079, :2140, :2013, :3466), so tab B
+  // cancel, confirmed code, created account, or expiry (cancelRegistration(),
+  // grantRegistrationToSession(), convergeRegistration() and
+  // rollBackRegistrationWaiters() in AbstractSessionsLibraryAgent.php), so tab B
   // remains un-moved on its terms screen.
   await submitRegistration(page, email)
   const code = await readRegisterCode(email)
 
   // Tab B goes back to the identifier field. Returning from terms invokes
-  // backToIdentifier(), re-asking the lookup without advancing the step
-  // (authFlow.ts:1958, screenKeyOf :1101). Because the address was held while B
-  // was away, the lookup answers pending — rendering the held_identifier screen.
+  // backToIdentifier() in authFlow.ts, which re-asks the lookup without
+  // advancing the step, and screenKeyOf() draws the screen its answer names.
+  // Because the address was held while B was away, the lookup answers pending —
+  // rendering the held_identifier screen.
   await second.getByTestId('auth-restart').click()
   await expect(second.getByTestId('auth-heading')).toHaveText('You already have a code')
   await expect(second.getByTestId('auth-identifier')).toHaveValue(email)
