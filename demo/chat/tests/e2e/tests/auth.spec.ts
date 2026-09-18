@@ -699,6 +699,69 @@ test('frees the address when the way out is pressed, and starts over on it', asy
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
+test('gives the code back to a tab that returns to an address another tab of the browser just held', async ({
+  page,
+  context,
+}) => {
+  // A held address is reached via two tabs because every exit from the code
+  // screen frees the address (HIL-829), which took away the old single-tab way
+  // back. The screen itself is kept: when tab B returns to a field whose address
+  // tab A just held, it is told its browser already holds a code.
+  const email = uniqueEmail()
+
+  // Tab A opens first so the session already exists when tab B arrives.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // Tab B opens the surface on the landing modal, standing on an empty field.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+
+  // Tab B must step off the field onto the terms screen BEFORE tab A holds the
+  // address: typing an address that is ALREADY held immediately moves the
+  // machine to the code step (applyDetection, HIL-651), bypassing held_identifier.
+  // Continuing to terms is a purely local transition and sends nothing.
+  await typeInto(second.getByTestId('auth-identifier'), email)
+  await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
+  await clickSubmit(second.getByTestId('auth-submit'))
+  await expect(second.getByTestId('auth-heading')).toHaveText('Terms and privacy')
+
+  // Tab A holds the address and sends the one code. Taking a hold broadcasts
+  // nothing to the other tabs of the session: hilos_auth_converge only fires on
+  // cancel, confirmed code, created account, or expiry
+  // (AbstractSessionsLibraryAgent.php:2079, :2140, :2013, :3466), so tab B
+  // remains un-moved on its terms screen.
+  await submitRegistration(page, email)
+  const code = await readRegisterCode(email)
+
+  // Tab B goes back to the identifier field. Returning from terms invokes
+  // backToIdentifier(), re-asking the lookup without advancing the step
+  // (authFlow.ts:1958, screenKeyOf :1101). Because the address was held while B
+  // was away, the lookup answers pending — rendering the held_identifier screen.
+  await second.getByTestId('auth-restart').click()
+  await expect(second.getByTestId('auth-heading')).toHaveText('You already have a code')
+  await expect(second.getByTestId('auth-identifier')).toHaveValue(email)
+  await expect(second.getByTestId('auth-password')).toHaveCount(0)
+  await expect(second.getByTestId('auth-resume-code')).toHaveText('Enter the code')
+
+  // The way back to the code screen sends nothing and requests no second code:
+  // it resumes the held registration locally.
+  await clickSubmit(second.getByTestId('auth-resume-code'))
+  await expect(second.getByTestId('auth-code')).toBeVisible()
+  await expect(second.getByTestId('auth-heading')).toHaveText('Confirm your email')
+
+  // The code from the FIRST letter carries tab B through to completion.
+  await submitRegistrationCode(second, code)
+  await submitFirstPassword(second, PASSWORD)
+  await continueFromDone(second)
+  await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+
+  // Exactly one letter for both tabs: no second code was mailed.
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
 test('carries a proved registration to its password screen, in every tab, and leaves nothing behind if it is dropped', async ({
   page,
   context,
