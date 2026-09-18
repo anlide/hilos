@@ -187,6 +187,12 @@ services:
       - TELEGRAM_GATEWAY_ENDPOINT_URL=https://stand-gateway:18000/telegram
       - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
       - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosChat
+      # Local model (HIL-925): the stand's own model, which answers exactly what a
+      # spec dictated. Only the channel prefix is given - the local model client
+      # appends its completion path itself - and https is what makes it speak TLS.
+      # The per-role key and not the global LLM_LOCAL_URL: the bot and the context
+      # analyzer read the global one, and this address must not move them too.
+      - CHAT_MODERATION_URL=https://stand-gateway:18000/model
       # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
       # daemon verifies it the way it verifies a provider in production: the trust comes
       # from the environment, not from a switch in the client. OpenSSL reads this file

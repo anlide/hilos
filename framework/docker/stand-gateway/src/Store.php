@@ -8,9 +8,9 @@ namespace Hilos\StandGateway;
  * Store - the stand gateway's state, which has to survive between requests.
  *
  * Which numbers are declared absent from Telegram, how a provider route answers the calls
- * a spec declared a behavior for, and the world of the OAuth emulator - which accounts
- * exist at a provider, and which codes and tokens it has handed out - live in one JSON
- * file under an exclusive lock. That is the whole of the storage design, and it is enough:
+ * a spec declared a behavior for, the world of the OAuth emulator - which accounts exist
+ * at a provider, and which codes and tokens it has handed out - and what the local model
+ * answers next live in one JSON file under an exclusive lock. That is the whole of the storage design, and it is enough:
  * one runner, a few writes per suite. A resident keeps no store of its own.
  *
  * The file was forced by PHP's built-in server, which re-entered the script for every
@@ -38,6 +38,7 @@ final class Store
         'oauthAccounts' => [],
         'oauthCodes' => [],
         'oauthTokens' => [],
+        'answers' => [],
     ];
 
     /**
@@ -124,6 +125,85 @@ final class Store
         });
 
         return $taken === null ? null : Behavior::fromArray($taken);
+    }
+
+    /**
+     * Puts a dictated model answer at the end of the queue of one key.
+     *
+     * A queue for the same reason a behavior has one: one dictation answers one call, and three
+     * dictations on one key answer three calls in the order they were made - which is how a spec
+     * writes "first a refusal, then a permission". The route is not part of the key, because the
+     * model has one.
+     *
+     * @param string $key String the answer is keyed by, looked for in the prompt of a call
+     * @param string $response Text the model answers with
+     */
+    public static function pushAnswer(string $key, string $response): void
+    {
+        self::mutate(static function (array $state) use ($key, $response): array {
+            $state['answers'][$key][] = $response;
+
+            return $state;
+        });
+    }
+
+    /**
+     * Takes the model answer dictated next for one key.
+     *
+     * A key nothing is dictated for is answered off the shared lock and does not rewrite the file.
+     * A taken answer is gone, and an emptied queue is removed with it.
+     *
+     * @param string $key String the answer is keyed by
+     * @return ?string Text to answer the call with, null when none is dictated
+     */
+    public static function takeAnswer(string $key): ?string
+    {
+        if (!isset(self::read()['answers'][$key])) {
+            return null;
+        }
+
+        $taken = null;
+        self::mutate(static function (array $state) use ($key, &$taken): array {
+            if (!isset($state['answers'][$key])) {
+                return $state;
+            }
+
+            $taken = array_shift($state['answers'][$key]);
+            if ($state['answers'][$key] === []) {
+                unset($state['answers'][$key]);
+            }
+
+            return $state;
+        });
+
+        return $taken;
+    }
+
+    /**
+     * The first announced key a prompt contains.
+     *
+     * Looked for among the keys of dictated answers first and then among the keys of behaviors
+     * declared for the route, each in the order its queue was opened; the first key the
+     * prompt contains as a substring wins. The answers go first because a dictated answer is the
+     * case this search exists for; the behaviors are searched at all so a spec that wants the route
+     * to fail - a 500, a delay, a cut - does not also have to dictate a text it never expects.
+     *
+     * @param string $path Provider route whose behaviors are searched too
+     * @param string $prompt Prompt of the call
+     * @return ?string First announced key the prompt contains, null when it contains none
+     */
+    public static function keyAnnouncedIn(string $path, string $prompt): ?string
+    {
+        $state = self::read();
+        $keys = [...array_keys($state['answers']), ...array_keys($state['behaviors'][$path] ?? [])];
+
+        foreach ($keys as $key) {
+            if (str_contains($prompt, (string)$key)) {
+                return (string)$key;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -262,7 +342,7 @@ final class Store
     }
 
     /**
-     * Forgets every declared number, every declared behavior, and the whole world of the OAuth emulator.
+     * Forgets every declared number, every declared behavior, the whole world of the OAuth emulator, and every dictated model answer.
      */
     public static function reset(): void
     {
@@ -275,7 +355,8 @@ final class Store
      *     behaviors: array<string, array<string, list<array{status: ?int, delayMs: int, cut: bool, holdMs: int}>>>,
      *     oauthAccounts: array<string, array<string, array{subject: string, login: string, name: ?string, email: ?string}>>,
      *     oauthCodes: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
-     *     oauthTokens: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>
+     *     oauthTokens: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
+     *     answers: array<string, list<string>>
      * } Current state
      */
     private static function read(): array

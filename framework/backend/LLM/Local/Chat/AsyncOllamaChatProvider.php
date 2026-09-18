@@ -29,11 +29,23 @@ use Hilos\Socket\SocketException;
  * Uses Ollama /api/generate (completion style) over AsyncHttpClient.
  * Call startGenerate(), then tick() in event loop until hasResult().
  *
+ * A base URL with the https scheme is reached over TLS: a local model may stand behind a TLS
+ * proxy, and the test stand's model is exactly that case (HIL-925).
+ *
  * @implements AsyncChatLLMInterface
  */
 class AsyncOllamaChatProvider implements AsyncChatLLMInterface
 {
     private const string ENDPOINT = '/api/generate';
+
+    /** Scheme of a base URL the model is reached at over TLS. */
+    private const string SCHEME_TLS = 'https';
+
+    /** Port of a plain base URL that names none: the one Ollama listens on. */
+    private const int DEFAULT_PORT = 11434;
+
+    /** Port of a TLS base URL that names none. */
+    private const int DEFAULT_TLS_PORT = 443;
 
     /** @var AsyncHttpClient Async HTTP client for Ollama API */
     private AsyncHttpClient $httpClient;
@@ -49,30 +61,31 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
      */
     public function __construct(string $baseUrl, ?string $defaultModel = null)
     {
-        [$host, $port, $path] = $this->parseUrl($baseUrl);
-        $this->httpClient = new AsyncHttpClient($host, $port, $path);
+        [$host, $port, $path, $useTls] = $this->parseUrl($baseUrl);
+        $this->httpClient = new AsyncHttpClient($host, $port, $path, useTls: $useTls);
         $this->defaultModel = $defaultModel;
     }
 
     /**
-     * Parses base URL into host, port and path.
+     * Parses base URL into host, port, path and whether the connection is encrypted.
      *
      * @param string $url Base URL of Ollama (e.g. http://127.0.0.1:11434)
-     * @return array{0: string, 1: int, 2: string} [host, port, path]
+     * @return array{0: string, 1: int, 2: string, 3: bool} [host, port, path, useTls]
      */
     private function parseUrl(string $url): array
     {
         $url = rtrim($url, '/');
         $parsed = parse_url($url);
+        $useTls = ($parsed['scheme'] ?? null) === self::SCHEME_TLS;
         $host = $parsed['host'] ?? '127.0.0.1';
-        $port = $parsed['port'] ?? 11434;
+        $port = $parsed['port'] ?? ($useTls ? self::DEFAULT_TLS_PORT : self::DEFAULT_PORT);
         // external-boundary: parse_url reads a configured URL, which usually carries no path at all
         $path = ($parsed['path'] ?? '') ?: self::ENDPOINT;
         if ($path !== self::ENDPOINT && !str_ends_with($path, 'api/generate')) {
             $path = rtrim($path, '/') . self::ENDPOINT;
         }
 
-        return [$host, $port, $path];
+        return [$host, $port, $path, $useTls];
     }
 
     /**

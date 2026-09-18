@@ -34,6 +34,9 @@ use Socket;
  * person is the one half of a resident that cannot live in this house at all, and lives in the
  * spec's own set instead.
  *
+ * Not every resident delivers anything either. {@see ModelRoutes} is an interlocutor: the daemon
+ * asks it and a spec dictated what it answers, so nothing it is told is forwarded to the mailbox.
+ *
  * The gateway speaks real TLS and does it through the framework's own server (HIL-921):
  * the daemon verifies the peer on the stand exactly as it does in production, and the
  * encrypted read that behaves differently from a bare one (HIL-732) is the read the
@@ -64,7 +67,7 @@ final class StandGatewayTlsServer extends AbstractTlsServer
     {
         parent::__construct($host, $port, $certificateFile);
 
-        $this->residents = [new TelegramRoutes(), new SmsRoutes(), new OAuthRoutes()];
+        $this->residents = [new TelegramRoutes(), new SmsRoutes(), new OAuthRoutes(), new ModelRoutes()];
     }
 
     /**

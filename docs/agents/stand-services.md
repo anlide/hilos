@@ -58,9 +58,10 @@ here would be a dependency to keep current for no gain — so a class the gatewa
 uses must not need a package.
 
 A resident is a **route prefix**. `SmsRoutes::CHANNEL` is `sms`,
-`TelegramRoutes::CHANNEL` is `telegram`, `OAuthRoutes::CHANNEL` is `oauth`, and
-every route of the resident hangs under `/<channel>/…`, registered by an exact
-method and path through `src/GatewayRoutes.php` — the routes of ONE connection.
+`TelegramRoutes::CHANNEL` is `telegram`, `OAuthRoutes::CHANNEL` is `oauth`,
+`ModelRoutes::CHANNEL` is `model`, and every route of the resident hangs under
+`/<channel>/…`, registered by an exact method and path through
+`src/GatewayRoutes.php` — the routes of ONE connection.
 The gateway builds them for every connection it accepts
 (`StandGatewayTlsServer::onCreateClient()`), with a router of their own, and
 every resident registers on them: a behavior a spec
@@ -92,7 +93,11 @@ Two things about the house are deliberate and easy to "fix" by mistake:
   `POST /test/behavior`, which dictates how a provider route answers. They are
   about the gateway, not about any resident — the behavior levers work the same
   on every provider route, so they are the house's — and a resident does not add
-  to them.
+  to them. What a resident has to be told lives under its own prefix instead:
+  the local model's answer is dictated at `POST /model/test/answer`, beside the
+  model's provider route and not beside the house's handles, because what the
+  model SAYS is that resident's business while how any answer LEAVES is the
+  house's.
 
 ## The Halves of a Resident's Routes
 
@@ -106,13 +111,16 @@ three when the participant is a browser:
   what `framework/backend/Telegram/TelegramGatewayClient.php` posts. Each route
   names its **key** — the value of the call the spec coined itself, which a
   declared behavior is scoped to: `phone_number` for both Telegram routes, `to`
-  for `POST /sms/send`;
+  for `POST /sms/send`. The local model's `POST /model/api/generate`, what
+  `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` posts, is the
+  one route keyed differently, below;
 - the **test half** — what the spec calls, under `/<channel>/test/…`, registered
   with `GatewayRoutes::test()`. For Telegram that is
   `POST /telegram/test/reachable`, the one thing a spec cannot arrange any other
   way: a number nobody put on Telegram. For OAuth it is
   `POST /oauth/test/account`, which declares the world of the provider: which
-  accounts exist over there;
+  accounts exist over there. For the local model it is
+  `POST /model/test/answer`, which dictates the text the model answers with;
 - the **page half** — what a BROWSER opens in the course of the product's work,
   registered with `GatewayRoutes::page()` (HIL-923). For OAuth that is
   `GET /oauth/<profile>/authorize` and the `POST` the form on it makes. It names
@@ -130,17 +138,42 @@ sample for the first two halves, side by side; `src/OAuthRoutes.php` is the
 sample for a resident that has all three. SMS has no test half, and that is
 not an omission: there is nothing an SMS spec has to arrange up front.
 
+**On the model, the two kinds of arrangement split cleanly.** The resident's
+test half dictates the CONTENT of the answer — the raw text the model says, not a
+parsed verdict, because what a demo reads out of that text is the demo's business
+(`src/ModelRoutes.php`, class docblock). The house's levers dictate its FORM — a
+status, a delay, a cut, a hold ([Behavior Handles](#behavior-handles)). One
+dictation answers one call and dictations for one key queue, exactly as behaviors
+do; a call nobody dictated an answer for is refused with
+`503 {"ok":false,"error":"ANSWER_NOT_DICTATED"}` — a model on the stand says
+what it was told and nothing else, and for the product that refusal reads as a
+model that is not answering (the owner's decision, 17.09.2026).
+
+**The model's key is a substring of the prompt, and that is the one departure
+from "the key is a value of the call".** No field of a model call carries a value
+the spec knows in advance: the product builds `prompt` from its own template
+(`demo/chat/backend/Agents/ModeratorAgent.php`,
+`buildMessageModerationMessages()`), and `model` is the same for every call —
+keying by it would let a neighboring worker spend the answer. What the spec does
+know is the string it put into the conversation itself — the text of a message,
+a new name — and the prompt carries it verbatim, so the resident looks for it
+there: the first announced key the prompt contains wins, the dictated answers'
+keys first and the route's behaviors' keys after them (`Store::keyAnnouncedIn()`).
+A key therefore has to be unique AND must not be a part of another spec's text.
+
 The halves differ in whom they trust. The provider half checks what the real
 service checks — the Telegram gateway refuses a call without a bearer token,
 because a daemon that forgot its credentials has to fail on the stand rather than
 in production; the SMS gateway checks nothing, because the generic provider's
-default auth mode is `none` and a token here would guard nothing. The test half
-carries no credentials at all: it is called by a spec, not by the product. The
-page half checks what the real service would check of the request that brought
-the browser there — the OAuth consent screen refuses an authorization request
-with no client, a callback address that is not absolute, or a response type no
-provider answers, and refuses it with a PAGE rather than a redirect, because a
-junk callback address is nowhere to redirect to.
+default auth mode is `none` and a token here would guard nothing; the local model
+checks nothing either, because a local model has no token and one checked here
+would check what production does not have. The test half carries no credentials
+at all: it is called by a spec, not by the product. The page half checks what the
+real service would check of the request that brought the browser there — the
+OAuth consent screen refuses an authorization request with no client, a callback
+address that is not absolute, or a response type no provider answers, and
+refuses it with a PAGE rather than a redirect, because a junk callback address is
+nowhere to redirect to.
 
 **Behavior is steered through the emulator's own HTTP handles, never through
 the daemon's command channel.** A spec already holds an HTTP client —
@@ -172,7 +205,12 @@ result; or the browser.
    moderated, the name that was changed. The local model
    (`framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php`) and the
    external one (`framework/backend/LLM/External/Chat/AsyncOpenAIChatProvider.php`)
-   are this kind; the first has its leaf (HIL-925).
+   are this kind. The local model has moved in (HIL-925): prefix `model`, the
+   completion protocol (`POST /model/api/generate`, answered in Ollama's
+   envelope, of which the product reads only `response`), and the answer is
+   dictated by the spec (`POST /model/test/answer`). The external one speaks a
+   different protocol in the same role, and would move in as a second set of
+   routes of the same resident; it has no leaf.
 3. **A redirect through the browser.** The participant is not the daemon but the
    browser: it leaves for the emulator's page and comes back on the callback
    with a code, and the daemon then exchanges that code for a token over HTTP.
@@ -246,10 +284,10 @@ keep it.
 ## State: One File Under a Lock, Wiped by a Handle
 
 Whatever a spec arranges up front — which numbers are declared absent from
-Telegram, the queues of declared behaviors, and the world of the OAuth provider:
-which accounts exist at it, and the codes and tokens it has handed out — lives in
-one JSON file under an exclusive lock,
-`/tmp/stand-gateway-state.json` (`src/Store.php`, `PATH`). That is the whole
+Telegram, the queues of declared behaviors, the world of the OAuth provider:
+which accounts exist at it, and the codes and tokens it has handed out, and the
+queues of the local model's dictated answers — lives in one JSON file under an
+exclusive lock, `/tmp/stand-gateway-state.json` (`src/Store.php`, `PATH`). That is the whole
 storage design, and it is enough: one runner, a few writes per suite.
 
 The file was forced by PHP's built-in server, which re-entered the script for
@@ -265,11 +303,12 @@ docblock). What arrived is deliberately not in the file either — it left as a
 letter — so the store holds only the arrangement.
 
 **Wiping is a handle**: `POST /test/reset` forgets everything — declared
-behaviors and the provider's world with it (`Store::reset()`). It is a whole-store
-wipe, so it is for a spec that genuinely needs a clean slate and not for ordinary
-isolation: everything the store holds is keyed by the value a spec coined (a
-number, an account id), and a unique value per test isolates it already. Calling
-reset under parallel workers would clear state a neighboring spec is still using
+behaviors, the provider's world and the model's dictated answers with it
+(`Store::reset()`). It is a whole-store wipe, so it is for a spec that genuinely
+needs a clean slate and not for ordinary isolation: everything the store holds is
+keyed by the value a spec coined (a number, an account id, the string a model's
+prompt carries), and a unique value per test isolates it already. Calling reset
+under parallel workers would clear state a neighboring spec is still using
 (`helpers/telegram.ts`, `resetTelegram()`).
 
 The rule for the next resident: **its state goes into the same file, under the
@@ -298,11 +337,12 @@ and why the stand cannot take that regression over until it speaks TLS itself.
 
 The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
-`docker/docker-compose.{local,dev,test}.yml`). `stand-gateway` is a network
-alias the gateway service carries in every stack, and it is also the name its
-certificate is issued for: the daemon checks the name of the peer it reaches, so
-the service name, which differs from stack to stack, cannot be the address. One
-name means one certificate, and a new demo does not reissue it.
+`docker/docker-compose.{local,dev,test}.yml`; `CHAT_MODERATION_URL` on the chat
+test stack). `stand-gateway` is a network alias the gateway service carries in
+every stack, and it is also the name its certificate is issued for: the daemon
+checks the name of the peer it reaches, so the service name, which differs from
+stack to stack, cannot be the address. One name means one certificate, and a new
+demo does not reissue it.
 
 The certificate is fixed and lives in the repository
 (`framework/docker/stand-gateway/tls/`: `server.pem` is what the gateway
@@ -407,6 +447,16 @@ gives RED five times out of five. A peer that hangs up promptly hides the very
 bug a peer that lingers exposes, so "hold the connection" is what makes a whole
 class of read-loop defects testable at all.
 
+The levers work on the local model's `POST /model/api/generate` like on any other
+provider route, keyed by the same string its dictated answer is (see
+[the halves](#the-halves-of-a-residents-routes)). Two consequences are the
+spec's to know, and they are written into `dictateModelAnswer()`'s TSDoc rather
+than changed in the house: a dictated status and a dictated answer on one key do
+not combine — a refused call never reaches the resident, so the text would be left
+behind for the next call — and a key announced ONLY by a behavior is gone once
+the behavior is taken, so a delay with no dictated text is an undictated call and
+answers 503 after that delay.
+
 The handles are the house's, not one resident's: a status or a hold is dictated
 the same way for every provider half, so a spec learns one arrangement and the
 failed-provider scenarios (HIL-926) are written once. The declaration is
@@ -430,11 +480,12 @@ and name it before writing.
 2. **Every half in the one `register(GatewayRoutes $routes)`**: the provider half
    under `/<channel>/…` through `provider()`, naming the key of each route, and the
    test half under `/<channel>/test/…` through `test()`. No test half when there is
-   nothing to arrange up front, as with SMS. A resident a BROWSER visits registers
-   its screens through `page()` instead — no key, no levers, and no declaration can
-   name such a path.
+   nothing to arrange up front, as with SMS. For an interlocutor the test half is
+   where the spec dictates the answer (`POST /model/test/answer`). A resident a
+   BROWSER visits registers its screens through `page()` instead — no key, no
+   levers, and no declaration can name such a path.
 3. **One entry in the `$residents` list of `StandGatewayTlsServer`'s
-   constructor** — `new <Channel>Routes()` beside the two that are there.
+   constructor** — `new <Channel>Routes()` beside the ones that are there.
 4. **The class in namespace `Hilos\StandGateway`, one class per file, named as
    the file.** `bin/serve.php` loads classes by name from `src/`, so there is no
    list of files to add to — and a class from outside `src/` and the framework
@@ -450,13 +501,21 @@ and name it before writing.
 6. **A daemon environment variable that swaps the production address for the
    emulator's** — the way `SMS_ENDPOINT_URL` and `TELEGRAM_GATEWAY_ENDPOINT_URL`
    do. The switch is one address in the daemon's configuration, not a DNS trick
-   and not a code path that knows it is on a stand.
+   and not a code path that knows it is on a stand. Where the product reads the
+   address per role, the role's key is the one to set: the local model is
+   `CHAT_MODERATION_URL=https://stand-gateway:18000/model` on the chat test stack,
+   not the global `LLM_LOCAL_URL`, which the bot and the context analyzer fall back
+   to as well — a global address would move them onto the emulator silently. The
+   address keeps `https://`, and a client that could not speak TLS is taught to
+   (the local model's was, in HIL-925), because the gateway will not speak plain.
 7. **A spec helper** beside `demo/chat/tests/e2e/helpers/sms.ts` and
    `telegram.ts` (and their twins under `demo/polls/tests/e2e/helpers/`): for a
    message channel, a `waitFor<Channel>…()` that reads the letter by recipient,
-   and one function per test handle. The behavior levers are not a test handle
-   of the resident: a spec dictates them through `helpers/gateway.ts`, and the
-   resident brings no helper of its own for them.
+   and one function per test handle; for an interlocutor, the one function that
+   dictates the answer (`dictateModelAnswer()` in `helpers/model.ts`). The
+   behavior levers are not a test handle of the resident: a spec dictates them
+   through `helpers/gateway.ts`, and the resident brings no helper of its own for
+   them.
    **A resident of the third kind brings TWO helpers, and they are not to be
    merged**: the world of the provider (`helpers/oauth.ts`) and the person acting
    at its window (`helpers/oauth-user.ts`). The first is arrangement, the second
@@ -516,7 +575,7 @@ The eight directions, and where each stands. This table is also the epic's map:
 | Telegram codes — `framework/backend/Auth/CodeChannel/TelegramCodeChannel.php` through `Telegram/TelegramGatewayClient.php` | the stand gateway, `/telegram` | — | closed |
 | OAuth — `framework/backend/Auth/OAuth/HttpOAuthProvider.php` | the emulator, `/oauth/<profile>`; the stub `StubOAuthProvider.php` still under the demos, sunset | the demos on the emulator, the stub gone | HIL-923 closed it; the demos switch in HIL-924 |
 | Code delivery — `framework/backend/Auth/Verification/LogVerificationDeliverer.php` | writes the code to the log, sunset | delivery through the stand | no leaf yet; leaves with whatever touches it |
-| Local model — `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` | nothing | an emulated model | HIL-925 |
+| Local model — `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` | the stand gateway, `/model`; chat moderation still on the in-process `demo/chat/backend/Agents/TestModerationChatClient.php` | moderation on the emulator, the stub gone | HIL-925 closed the channel; moderation moves in HIL-927 |
 | External model — `framework/backend/LLM/External/Chat/AsyncOpenAIChatProvider.php` | nothing | an emulated model | no leaf yet |
 | Web Push — `framework/backend/Push/WebPushRequestFactory.php`, `Push/Delivery/PushEndpointSend.php` | nothing | does not settle by address substitution | a separate interview of HIL-918, [below](#what-the-house-cannot-house-yet) |
 
