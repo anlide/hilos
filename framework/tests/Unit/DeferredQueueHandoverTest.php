@@ -213,6 +213,29 @@ final class DeferredQueueHandoverTest extends TestCase
         );
     }
 
+    public function testSessionsQueueHasNoOwnerAfterOfferingIsGivenUp(): void
+    {
+        DeferredQueueHandoverUnreceivedTestHilos::initBrowser();
+        DeferredSessionCarryoverQueue::defer([self::session('token-a')]);
+        $handover = new DeferredQueueHandover($this->sink);
+
+        ob_start();
+        $handover->tick(self::START);
+        ob_end_clean();
+
+        self::assertTrue($handover->sessionsQueueHasNoOwner());
+    }
+
+    public function testSessionsQueueHasAnOwnerWhileItIsBeingOffered(): void
+    {
+        DeferredSessionCarryoverQueue::defer([self::session('token-a')]);
+        $handover = new DeferredQueueHandover($this->sink);
+
+        $handover->tick(self::START);
+
+        self::assertFalse($handover->sessionsQueueHasNoOwner());
+    }
+
     public function testABatchNobodyAnswersIsComplainedAboutOnce(): void
     {
         DeferredNotificationQueue::defer(self::draft(7));

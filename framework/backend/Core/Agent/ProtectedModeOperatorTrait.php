@@ -150,6 +150,7 @@ trait ProtectedModeOperatorTrait
      * Accepts one operator command, refusing outright anything the core would drop silently.
      *
      * @param CommandRequestDTO $data Command request routed to this agent
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
      */
     protected function handleProtectedModeOperatorCommand(CommandRequestDTO $data): void
     {
@@ -270,6 +271,17 @@ trait ProtectedModeOperatorTrait
     }
 
     /**
+     * Asks for the freeze to lift. A carrier that owes restored logins may hold the request
+     * and must send it later itself; the default sends it now.
+     *
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    protected function requestProtectedModeRelease(): void
+    {
+        $this->requestProtectedModeDisable();
+    }
+
+    /**
      * The refusal a pass that has not landed in time gets, which is not the same as one that failed.
      *
      * A mint travels agent -> worker -> daemon and is written to the row there, so a wait that runs
@@ -334,12 +346,13 @@ trait ProtectedModeOperatorTrait
      * must not be told to reach the verification window first.
      *
      * @param CommandRequestDTO $data Open request
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
      */
     private function openProtectedModeForOperator(CommandRequestDTO $data): void
     {
         $this->armProtectedModeOperator($data->correlationId, StateProtectedModeRuntime::PHASE_INACTIVE);
 
-        $this->requestProtectedModeDisable();
+        $this->requestProtectedModeRelease();
     }
 
     /**

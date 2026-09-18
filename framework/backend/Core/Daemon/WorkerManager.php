@@ -134,8 +134,6 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDeferredDTO;
-use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDoneDTO;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -144,8 +142,6 @@ use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
-use Hilos\Auth\Session\DTO\SessionCarryOverDeferredSignalData;
-use Hilos\Auth\Session\DTO\SessionCarryOverDoneSignalData;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -3284,28 +3280,6 @@ abstract class WorkerManager extends BaseManager
                     $this->daemonClient->send(new WorkerProtectedModeRefreezeDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode refreeze carries invalid data: ' . get_class($signal->data));
-                }
-                continue;
-            }
-
-            // The two halves of the restored-login debt take the same road, and for the same
-            // reason: what they report to is the freeze the master owns, and the agent that ran
-            // the restore can reach it only through its own daemon (HIL-771). Both halves are that
-            // agent's: the library's receipt comes back to it, so the debt is paid to the master
-            // that took it on even when the library runs on another node (HIL-846).
-            if ($signalType === SignalTypeConstants::SESSION_CARRY_OVER_DEFERRED) {
-                if ($signal->data instanceof SessionCarryOverDeferredSignalData) {
-                    $this->daemonClient->send(new WorkerSessionCarryOverDeferredDTO($signal->data));
-                } else {
-                    Logger::error('dispatchQueuedSignalsToDaemon - deferred session carry-over carries invalid data: ' . get_class($signal->data));
-                }
-                continue;
-            }
-            if ($signalType === SignalTypeConstants::SESSION_CARRY_OVER_DONE) {
-                if ($signal->data instanceof SessionCarryOverDoneSignalData) {
-                    $this->daemonClient->send(new WorkerSessionCarryOverDoneDTO($signal->data));
-                } else {
-                    Logger::error('dispatchQueuedSignalsToDaemon - session carry-over result carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

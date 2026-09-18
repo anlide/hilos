@@ -11,6 +11,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
@@ -224,6 +225,34 @@ final class ProtectedModeOperatorTest extends TestCase
         $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextExitRequest());
         $agent->onTick();
         $this->assertSame([], $this->replies(), 'Still frozen, so there is nothing to report yet.');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
+        $agent->onTick();
+
+        $reply = $this->singleReply();
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_INACTIVE,
+            $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+    }
+
+    public function testOpenHeldByTheCarrierAnswersOnlyOnceTheReleaseGoesOut(): void
+    {
+        // The carrier holds the lift the way BackupAgent does when restored logins are still owed.
+        // The operator is still answered by the row reaching inactive - only later, still inside
+        // the command-channel window.
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent = new HoldingOperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_OPEN));
+
+        $this->assertNull($this->nextExitRequest(), 'A carrier that holds the lift must queue no disable yet.');
+        $agent->onTick();
+        $this->assertSame([], $this->replies(), 'Still frozen, so there is nothing to report yet.');
+
+        $agent->letReleaseGo();
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextExitRequest());
 
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
         $agent->onTick();
@@ -540,6 +569,7 @@ final class OperatorTestAgent extends AbstractAgent
 
     /**
      * @param CommandRequestDTO $data Command request routed to this agent
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
      */
     public function handle(CommandRequestDTO $data): void
     {
@@ -561,6 +591,71 @@ final class OperatorTestAgent extends AbstractAgent
     public function ageProtectedModeOperatorWait(): void
     {
         $this->protectedModeOperatorSince -= CommandChannelWindows::AGENT_WAIT_SECONDS + 1.0;
+    }
+
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * Operator carrier that parks the lift, as BackupAgent does when restored logins are still owed.
+ */
+final class HoldingOperatorTestAgent extends AbstractAgent
+{
+    use ProtectedModeOperatorTrait;
+
+    /** @var string Agent type identifier */
+    public const string AGENT_TYPE = 'operator-test-initiator';
+
+    /** @var bool True while the lift is parked */
+    private bool $releaseHeld = true;
+
+    /**
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    public function __construct(?string $agentIndex = null)
+    {
+        $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * @param CommandRequestDTO $data Command request routed to this agent
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    public function handle(CommandRequestDTO $data): void
+    {
+        $this->handleProtectedModeOperatorCommand($data);
+    }
+
+    public function onTick(): void
+    {
+        $this->tickProtectedModeOperator();
+    }
+
+    /**
+     * Lets the parked lift go, as the sessions receipt does on the real carrier.
+     *
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    public function letReleaseGo(): void
+    {
+        $this->releaseHeld = false;
+        $this->requestProtectedModeRelease();
+    }
+
+    /**
+     * Parks the lift until {@see letReleaseGo()} is called.
+     *
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    protected function requestProtectedModeRelease(): void
+    {
+        if ($this->releaseHeld) {
+            return;
+        }
+
+        $this->requestProtectedModeDisable();
     }
 
     public function onStop(): void

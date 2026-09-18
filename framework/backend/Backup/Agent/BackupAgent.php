@@ -10,8 +10,6 @@ use DateTimeZone;
 use Exception;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
-use Hilos\Auth\Session\DTO\SessionCarryOverDoneSignalData;
-use Hilos\Auth\Session\DTO\SessionCarryOverDeferredSignalData;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
@@ -60,13 +58,13 @@ use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
+use Hilos\Backup\RestoreReleaseGate;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\DirectoryWatchTrait;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -92,8 +90,6 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Process;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -493,10 +489,27 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     private ?DeferredQueueHandover $deferredQueueHandover = null;
 
     /**
+     * Holds the freeze-lift while restored logins are still owed (HIL-969).
+     *
+     * Built in the constructor, not on start: a restore is not refused when backups are disabled,
+     * and the wait is owed either way - and it can be asked before the first start. A `new` default
+     * on the field itself is not an initializer this language accepts.
+     */
+    private RestoreReleaseGate $restoreReleaseGate;
+
+    /**
      * Cluster node this agent runs on, learned on start; null on an installation without clustering.
      * Storage is a local directory, so every index row a scan here writes lies on this node's disk.
      */
     private ?string $nodeId = null;
+
+    /**
+     * Builds the freeze-lift gate before start: a restore is admitted even when backups are off.
+     */
+    public function __construct()
+    {
+        $this->restoreReleaseGate = new RestoreReleaseGate();
+    }
 
     /**
      * Takes storage under watch, rebuilds the runtime backup index, and loads the schedule.
@@ -566,12 +579,14 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      *
      * The deferred restore queues are offered last (HIL-846). Their order against the rest does not
      * matter: the holder throttles itself to a pass a second, and a batch a restore left on this
-     * tick is simply offered on the next pass.
+     * tick is simply offered on the next pass. A freeze-lift parked for those logins is asked in
+     * the same iteration as the operator command, before the queues: the receipt that pays the
+     * debt already lets go from the signal handler, and this pass is the one that expires the wait.
      *
      * @throws ProcessException When the running child cannot be polled, read or terminated
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws HilosException Whatever finishing a restore that ended on this tick raises
-     * @throws InvalidArgumentException When the failure notice to the initiator or a hand-over frame cannot be named
+     * @throws InvalidArgumentException When the failure notice to the initiator, a hand-over frame, or the parked freeze-lift cannot be named
      */
     public function onTick(): void
     {
@@ -584,6 +599,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
 
         $this->tickProtectedModeOperator();
+        $this->releaseProtectedModeIfDue();
         if ($this->directoryRescanDue()) {
             $this->refreshHistory();
         }
@@ -1210,7 +1226,36 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
 
         $this->logAgentInfo("Reopening the system on request from {$data->acceptKey}");
+        $this->requestProtectedModeRelease();
+    }
+
+    /**
+     * Parks the freeze-lift while restored logins are still owed and their owner can still answer.
+     *
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    protected function requestProtectedModeRelease(): void
+    {
+        if ($this->restoreReleaseGate->holdRelease(
+            microtime(true),
+            !($this->deferredQueueHandover?->sessionsQueueHasNoOwner() ?? false),
+        )) {
+            return;
+        }
+
         $this->requestProtectedModeDisable();
+    }
+
+    /**
+     * Sends a parked freeze-lift once the restored logins have been answered for, or the wait has run out.
+     *
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    private function releaseProtectedModeIfDue(): void
+    {
+        if ($this->restoreReleaseGate->releaseDue(microtime(true))) {
+            $this->requestProtectedModeDisable();
+        }
     }
 
     /**
@@ -1293,6 +1338,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $this->pendingRestoreInitiatorIdentities = $this->captureInitiatorIdentities($initiatorUserId);
         $this->restoreView()?->actions->markRunning($id, $scope, $this->restoreEstimate($id, $scope));
         $this->reportRestoreProgress();
+        $this->restoreReleaseGate->forgetSessionsOwed();
         if ($initiator === null) {
             // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
             // has no connection to keep alive on its behalf and no session to recognize either.
@@ -1420,8 +1466,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * the same release `protected-mode:open` asks for ({@see handleReopenRequest()}).
      *
      * The two receipts are not page actions: a library answers for a batch of what a restore left
-     * (HIL-846), the holder closes that batch, and the session receipt is passed on to this node's
-     * master as the end of the carry-over ({@see reportCarriedOverSessions()}).
+     * (HIL-846), the holder closes that batch, and the session receipt pays the freeze-lift debt
+     * this agent is holding ({@see RestoreReleaseGate}).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -1431,7 +1477,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
-     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
+     * @throws InvalidArgumentException When the failure notice to the initiator or the parked freeze-lift cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -1481,7 +1527,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 }
 
                 $this->deferredQueueHandover?->onSessionsCarried($data->data);
-                $this->reportCarriedOverSessions($data->data->carried, $data->data->dropped, $data->data->kept);
+                $this->restoreReleaseGate->noteSessionsCarriedOver(
+                    $data->data->carried,
+                    $data->data->dropped,
+                    $data->data->kept,
+                );
+                $this->releaseProtectedModeIfDue();
 
                 return;
 
@@ -3675,7 +3726,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
 
     /**
      * Leaves the sessions photographed before the swap for the library that owns them (HIL-479,
-     * HIL-771).
+     * HIL-969).
      *
      * This step used to WRITE those rows, from this agent, in this worker. The sessions table has
      * an owner now ({@see AbstractSessionsLibraryAgent}), and a restore is the one moment that
@@ -3685,6 +3736,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * its own tick ({@see DeferredQueueHandover}, HIL-846) until the library answers - which on this
      * path it can once the verification window, opened by the request that immediately follows
      * this call, has started it again.
+     *
+     * The number queued is the freeze-lift debt ({@see RestoreReleaseGate}): this agent waits for
+     * the library's receipt before asking for the lift, instead of telling the master to hold a
+     * reload frame. The wait lives here because the debt and the receipt already do.
      *
      * The re-hydrate announcement used to live here and has moved up to the finalizer (HIL-436):
      * it belongs to the swap, not to the sessions, so it has to happen on the failed branch too -
@@ -3709,70 +3764,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
 
         $this->logAgentInfo("Restore left {$deferred} session(s) for the sessions library");
-        $this->reportDeferredSessions($deferred);
-    }
-
-    /**
-     * Tells this node's master that the logins just queued are owed, so the lift waits for them.
-     *
-     * The frame exists because the master cannot find this out for itself: the queue is a file
-     * this agent writes and hands over, and a master that read it would be doing file I/O on its
-     * own loop to answer a question the writer already knows the answer to. Sent from the node that
-     * ran the restore and nowhere else - every other node lifts with no wait at all.
-     *
-     * Contained like everything else on this path: the restore has succeeded, and a report that
-     * could not be queued costs a reload the browsers may have to repeat, not the operation.
-     *
-     * @param int $sessions Logins left in the deferred queue, zero when nothing was queued
-     */
-    private function reportDeferredSessions(int $sessions): void
-    {
-        if ($sessions === 0) {
-            return;
-        }
-
-        try {
-            Hilos::$sr?->queueSignal(
-                signalSource: $this->getAgentSignalSource(),
-                signalType: new SignalType(SignalTypeConstants::SESSION_CARRY_OVER_DEFERRED),
-                signalName: new SignalName(SignalTypeConstants::SESSION_CARRY_OVER_DEFERRED),
-                signalData: new SessionCarryOverDeferredSignalData($sessions),
-            );
-        } catch (InvalidArgumentException $e) {
-            $this->logAgentError('Deferred sessions could not be reported: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Tells this node's master that the logins a restore left have been dealt with.
-     *
-     * The answer to the debt {@see reportDeferredSessions()} took on: until it arrives, the master
-     * holds back the frame that tells every browser the freeze has lifted, because that frame means
-     * "reload" and a reload arriving before these rows exist signs their owners out. Sent on the
-     * sessions library's receipt for a batch (HIL-846), and sent from here rather than by the
-     * library because the master holding the lift is the one on this node - in a cluster the library
-     * may answer from another. A receipt arriving twice for one batch says "done" twice, which the
-     * master survives: a debt already paid is simply paid again.
-     *
-     * Contained like the report of the debt: the carry-over has happened, and a report that could
-     * not be queued costs the browsers the lift's timeout, not their logins.
-     *
-     * @param int $carried Logins written into the restored database
-     * @param int $dropped Logins that will not survive the restore
-     * @param int $kept Logins that came back inside the archive
-     */
-    private function reportCarriedOverSessions(int $carried, int $dropped, int $kept): void
-    {
-        try {
-            Hilos::$sr?->queueSignal(
-                signalSource: $this->getAgentSignalSource(),
-                signalType: new SignalType(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
-                signalName: new SignalName(SignalTypeConstants::SESSION_CARRY_OVER_DONE),
-                signalData: new SessionCarryOverDoneSignalData($carried, $dropped, $kept),
-            );
-        } catch (InvalidArgumentException $e) {
-            $this->logAgentError('Carried-over sessions could not be reported: ' . $e->getMessage());
-        }
+        $this->restoreReleaseGate->noteSessionsDeferred($deferred);
     }
 
     /**

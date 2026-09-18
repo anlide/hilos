@@ -61,7 +61,7 @@ final class DeferredQueueHandover
 
     /**
      * @var float Seconds a batch may wait for its receipt before the wait is worth a line. An ordinary
-     *     hand-over is answered well inside the ten seconds a lift waits for the logins, so a minute
+     *     hand-over is answered well inside {@see RestoreReleaseGate::SESSIONS_WAIT_SECONDS}, so a minute
      *     unanswered means the owner is not answering at all rather than answering slowly.
      */
     private const float HELD_BATCH_COMPLAINT_SECONDS = 60.0;
@@ -134,6 +134,20 @@ final class DeferredQueueHandover
     public function onNoticesSent(DeferredNoticesSentSignalData $receipt): void
     {
         DeferredNotificationQueue::release($receipt->batch);
+    }
+
+    /**
+     * Whether this project has nobody to receive the sessions queue.
+     *
+     * Distinct from an owner that is merely unreachable: that one is retried on the next pass.
+     * A queue marked here has no receiver in the topology, so waiting for its receipt would wait
+     * for an answer that cannot arrive.
+     *
+     * @return bool True when offering this queue has already been given up
+     */
+    public function sessionsQueueHasNoOwner(): bool
+    {
+        return isset($this->unreceived[DeferredRestoreQueue::Sessions->name]);
     }
 
     /**

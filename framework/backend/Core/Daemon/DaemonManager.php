@@ -122,7 +122,6 @@ use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
-use Hilos\ProtectedMode\ProtectedModeLiftAnnouncer;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
@@ -431,16 +430,6 @@ abstract class DaemonManager extends BaseManager implements
     private ProtectedModeWatchdog $protectedModeWatchdog;
 
     /**
-     * @var ProtectedModeLiftAnnouncer Holder of the lift frame while a restore's logins are owed (HIL-771).
-     *
-     * Built with the manager for the same reason the watchdog is: the debt it waits on is taken on
-     * inside a freeze, while the frame it holds goes out from the loop below, and the two have to
-     * be the same object across the whole transition. Inert on a node no restore ran on - the lift
-     * asks it and is told to go ahead.
-     */
-    private ProtectedModeLiftAnnouncer $protectedModeLiftAnnouncer;
-
-    /**
      * @var ProtectedModeEntryGate Door a freeze request knocks on, held while the roster settles (HIL-1000).
      *
      * Built with the manager because the thing it waits on - a start this node asked for and has
@@ -473,7 +462,6 @@ abstract class DaemonManager extends BaseManager implements
         // reads, and the daemon is born when the master process is, not when it finishes binding.
         $this->daemonStatus = new DaemonStatus();
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
-        $this->protectedModeLiftAnnouncer = new ProtectedModeLiftAnnouncer();
         $this->protectedModeEntryGate = new ProtectedModeEntryGate();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
@@ -726,10 +714,6 @@ abstract class DaemonManager extends BaseManager implements
         // connections through: the WebSocket server it broadcasts over is ours, not the
         // worker server's.
         Hilos::$cluster?->registerProtectedModeClientNotifier($this);
-        // And expose the announcer that may hold the lift frame back, so both executors - the
-        // single-node one built below and the clustered one the peer transport builds - hold the
-        // same one (HIL-771).
-        Hilos::$cluster?->registerProtectedModeLiftAnnouncer($this->protectedModeLiftAnnouncer);
         // And the door a freeze request knocks on, for the same reason: the roster it asks about is
         // this node's, whichever switch ends up entering the freeze behind it (HIL-1000).
         Hilos::$cluster?->registerProtectedModeEntryGate($this->protectedModeEntryGate);
@@ -839,11 +823,6 @@ abstract class DaemonManager extends BaseManager implements
                 // produce one alert per node. It never lifts anything (HIL-482).
                 $this->protectedModeWatchdog->tick(time());
             }
-
-            // Let go of a lift frame whose wait for the restored logins has run out. Outside the
-            // leader gate, unlike the watchdog above: every node announces its OWN lift to its own
-            // browsers, so a follower holding one has to be able to release it (HIL-771).
-            $this->protectedModeLiftAnnouncer->tick(time());
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of

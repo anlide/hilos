@@ -52,8 +52,6 @@ use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDeferredDTO;
-use Hilos\Socket\Worker\DTO\WorkerSessionCarryOverDoneDTO;
 use Hilos\Utils\Logger;
 
 /**
@@ -146,8 +144,6 @@ abstract class WorkerDTO extends BaseDTO
             WorkerProtectedModePassDTO::MESSAGE_TYPE => WorkerProtectedModePassDTO::fromArray($data),
             WorkerProtectedModeCircleDTO::MESSAGE_TYPE => WorkerProtectedModeCircleDTO::fromArray($data),
             WorkerProtectedModeRefreezeDTO::MESSAGE_TYPE => WorkerProtectedModeRefreezeDTO::fromArray($data),
-            WorkerSessionCarryOverDeferredDTO::MESSAGE_TYPE => WorkerSessionCarryOverDeferredDTO::fromArray($data),
-            WorkerSessionCarryOverDoneDTO::MESSAGE_TYPE => WorkerSessionCarryOverDoneDTO::fromArray($data),
             default => throw new UnknownWorkerMessageTypeException($type),
         };
     }
