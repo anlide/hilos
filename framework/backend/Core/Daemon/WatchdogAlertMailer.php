@@ -267,13 +267,13 @@ final class WatchdogAlertMailer
      * The last non-empty line is the innermost thing that went wrong; everything above it is
      * the stack that led there, which stays in the log where it belongs.
      *
-     * @param string $errorLogTail Tail of the daemon error log
+     * @param string $outputTail Tail of what the daemon printed, quoted from all of its streams
      * @return string A single trimmed line, cut to {@see REASON_MAX_LENGTH} characters
      */
-    private static function shortReason(string $errorLogTail): string
+    private static function shortReason(string $outputTail): string
     {
         $reason = '';
-        foreach (explode("\n", $errorLogTail) as $line) {
+        foreach (explode("\n", $outputTail) as $line) {
             if (trim($line) !== '') {
                 $reason = trim($line);
             }
