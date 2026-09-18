@@ -11,6 +11,22 @@ import { postToGateway } from './gateway'
 // answer and checks what the product did with it.
 
 /**
+ * Coin a key no other test's prompt can contain.
+ *
+ * Every key has the same length, so two different keys are never a substring of
+ * one another — which is what the gateway matches a prompt by.
+ *
+ * @returns A fresh key.
+ */
+export function modelKey(): string {
+  const spread = Math.floor(Math.random() * 36 ** 8)
+    .toString(36)
+    .padStart(8, '0')
+
+  return `model-${Date.now()}-${spread}`
+}
+
+/**
  * Dictate the text the model answers with on the next call that mentions a key.
  *
  * The key is a unique string the spec itself puts into the conversation — the

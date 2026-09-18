@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test'
 
 import { dictateGatewayBehavior, STAND_GATEWAY_URL } from '../helpers/gateway'
-import { dictateModelAnswer } from '../helpers/model'
+import { dictateModelAnswer, modelKey } from '../helpers/model'
 
 // The stand's local model, proved on the gateway itself (HIL-925). The gateway has
-// no unit suite of its own, and until the product's scenarios move onto this
-// channel nothing else calls it; this file is where the channel is held to its
-// contract — a dictated text reaches the answer, once per call, queued, scoped to
-// its key, and a call nobody dictated for is refused.
+// no unit suite of its own. Since HIL-927 chat moderation calls the channel too
+// (message-moderation.spec.ts), but through the product; this file is where the
+// channel itself is held to its contract — a dictated text reaches the answer,
+// once per call, queued, scoped to its key, and a call nobody dictated for is
+// refused.
 //
 // No browser: the product is not involved. The provider route is called with the
 // body the daemon's local model provider posts, and each test coins its own key,
@@ -24,22 +25,6 @@ const ANSWER = '/model/test/answer'
 interface ModelAnswer {
   status: number
   body: Record<string, unknown>
-}
-
-/**
- * Coin a key no other test's prompt can contain.
- *
- * Every key has the same length, so two different keys are never a substring of
- * one another — which is what the gateway matches a prompt by.
- *
- * @returns A fresh key.
- */
-function modelKey(): string {
-  const spread = Math.floor(Math.random() * 36 ** 8)
-    .toString(36)
-    .padStart(8, '0')
-
-  return `model-${Date.now()}-${spread}`
 }
 
 /**

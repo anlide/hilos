@@ -1,7 +1,15 @@
 import { test, expect } from '@playwright/test'
 
-import { isSessionCookie, SESSION_COOKIE_PREFIX, signUp } from '../helpers/session'
+import {
+  clickSubmit,
+  isSessionCookie,
+  SESSION_COOKIE_PREFIX,
+  signUp,
+  typeInto,
+} from '../helpers/session'
 import { gotoPage } from '../helpers/page'
+import { modelKey } from '../helpers/model'
+import { dictateModerationVerdict } from '../helpers/moderation'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
 // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
@@ -180,8 +188,15 @@ test('sends a message action and starts the re-send lockout', async ({
   // the same live connection.
   await signUp(page)
 
-  await page.getByTestId('message-input').fill('hello hilos')
-  await page.getByTestId('message-send').click()
+  // The stand's model answers only what a spec dictated, so the permission is
+  // ordered up front under a key the text carries; with none the text would come
+  // back into the field as "Moderation unavailable" and the input never empty.
+  const key = modelKey()
+  const text = `hello hilos ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+
+  await typeInto(page.getByTestId('message-input'), text)
+  await clickSubmit(page.getByTestId('message-send'))
 
   await expect
     .poll(() =>
@@ -196,7 +211,7 @@ test('sends a message action and starts the re-send lockout', async ({
           return (
             message.type === 'action' &&
             message.action === 'message' &&
-            message.data?.content === 'hello hilos'
+            message.data?.content === text
           )
         } catch {
           return false
@@ -219,10 +234,14 @@ test('renders a sent message in the event stream after moderation', async ({
 }) => {
   await signUp(page)
 
-  await page.getByTestId('message-input').fill('hello from e2e')
-  await page.getByTestId('message-send').click()
+  const key = modelKey()
+  const text = `hello from e2e ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+
+  await typeInto(page.getByTestId('message-input'), text)
+  await clickSubmit(page.getByTestId('message-send'))
 
   await expect(
-    page.getByTestId('event-text').filter({ hasText: 'hello from e2e' }),
+    page.getByTestId('event-text').filter({ hasText: text }),
   ).toBeVisible()
 })

@@ -515,7 +515,13 @@ and name it before writing.
    address per role, the role's key is the one to set: the local model is
    `CHAT_MODERATION_URL=https://stand-gateway:18000/model` on the chat test stack,
    not the global `LLM_LOCAL_URL`, which the bot and the context analyzer fall back
-   to as well — a global address would move them onto the emulator silently. Where
+   to as well — a global address would move them onto the emulator silently. An
+   address the environment gives one role reaches that role's agent only if the
+   project's settings layer, finding its own URL setting empty, falls back to the
+   profile env resolved rather than to the global address. Chat's does since
+   HIL-927 (`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`);
+   before it the stand's address was lost on the way, silently — check that layer
+   before trusting a per-role address in a new project. Where
    the product builds its addresses from a recipe rather than reading one whole,
    the variable is a BASE and the emulator's paths are what hang off it:
    `OAUTH_ENDPOINT_URL=https://stand-gateway:18000/oauth` redirects the OAuth
@@ -528,7 +534,14 @@ and name it before writing.
    `telegram.ts` (and their twins under `demo/polls/tests/e2e/helpers/`): for a
    message channel, a `waitFor<Channel>…()` that reads the letter by recipient,
    and one function per test handle; for an interlocutor, the one function that
-   dictates the answer (`dictateModelAnswer()` in `helpers/model.ts`). The
+   dictates the answer (`dictateModelAnswer()` in `helpers/model.ts`), with the
+   key coined by `modelKey()` of the same helper. A demo whose product PARSES the
+   answer wraps the answer's shape in a helper of its own — chat's is
+   `dictateModerationVerdict()` in `helpers/moderation.ts` — because the gateway
+   hands back raw text and belongs to no demo. The price is paid by every spec:
+   each chat spec that sends a message or renames a user from the profile
+   dictates a verdict BEFORE the action, and one that does not reads "Moderation
+   unavailable" instead of the outcome it was written for. The
    behavior levers are not a test handle of the resident: a spec dictates them
    through `helpers/gateway.ts`, and the resident brings no helper of its own for
    them.
@@ -591,7 +604,7 @@ The eight directions, and where each stands. This table is also the epic's map:
 | Telegram codes — `framework/backend/Auth/CodeChannel/TelegramCodeChannel.php` through `Telegram/TelegramGatewayClient.php` | the stand gateway, `/telegram` | — | closed |
 | OAuth — `framework/backend/Auth/OAuth/HttpOAuthProvider.php` | the emulator, `/oauth/<profile>`; the three demos sign in through it | — | closed (HIL-923, HIL-924) |
 | Code delivery — `framework/backend/Auth/Verification/LogVerificationDeliverer.php` | writes the code to the log, sunset | delivery through the stand | no leaf yet; leaves with whatever touches it |
-| Local model — `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` | the stand gateway, `/model`; chat moderation still on the in-process `demo/chat/backend/Agents/TestModerationChatClient.php` | moderation on the emulator, the stub gone | HIL-925 closed the channel; moderation moves in HIL-927 |
+| Local model — `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` | the stand gateway, `/model`; chat moderation asks it | — | closed (HIL-925 the channel, HIL-927 moderation) |
 | External model — `framework/backend/LLM/External/Chat/AsyncOpenAIChatProvider.php` | nothing | an emulated model | no leaf yet |
 | Web Push — `framework/backend/Push/WebPushRequestFactory.php`, `Push/Delivery/PushEndpointSend.php` | nothing | does not settle by address substitution | a separate interview of HIL-918, [below](#what-the-house-cannot-house-yet) |
 

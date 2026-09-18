@@ -2,6 +2,8 @@ import { test, expect, type Locator } from '@playwright/test'
 
 import { PASSWORD, signUp, uniqueEmail } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
+import { modelKey } from '../helpers/model'
+import { dictateModerationVerdict } from '../helpers/moderation'
 import { declareOAuthAccount } from '../helpers/oauth'
 import { signInAs } from '../helpers/oauth-user'
 
@@ -17,8 +19,10 @@ async function typeInto(field: Locator, value: string): Promise<void> {
 // (AUTHENTICATED page guard), so each test establishes a user first; an anonymous
 // visitor gets the sign-in surface in place instead (covered by auth.spec.ts).
 // Success is state-driven — the committed name arrives over the self-connection
-// data and closes the modal; the test moderation client always approves, so a
-// reject path is covered by the backend integration test, not here.
+// data and closes the modal. A rename is moderated by the stand's model, so each
+// one first dictates a permitting verdict under a key the new name carries
+// (helpers/moderation.ts). A refused name has no drawn state in the rename modal
+// and stays with the backend integration test ProfileRenameModerationTest.
 
 test('the navbar links the current user to the profile page', async ({
   page,
@@ -47,14 +51,18 @@ test('renames the current user through the edit modal', async ({ page }) => {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
 
+  const key = modelKey()
+  const newName = `Renamed ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+
   await page.getByTestId('profile-edit').click()
-  await page.getByTestId('profile-name-input').fill('Renamed Person')
+  await typeInto(page.getByTestId('profile-name-input'), newName)
   await page.getByTestId('profile-rename-save').click()
 
   // The backend moderates (approved) and renames; the committed name lands over
   // the self-connection data, which closes the modal and updates the card.
   await expect(page.getByTestId('modal')).toBeHidden()
-  await expect(page.getByTestId('profile-name')).toHaveText('Renamed Person')
+  await expect(page.getByTestId('profile-name')).toHaveText(newName)
 })
 
 // HIL-401, un-quarantined by HIL-633. The link used to navigate the document off
@@ -140,11 +148,16 @@ test('surfaces a conflict when the name changes in another tab', async ({
   await tabB.getByTestId('profile-edit').click()
   await tabB.getByTestId('profile-name-input').fill('Tab B Name')
 
-  // Tab A renames the same user.
+  // Tab A renames the same user. Only its name goes to moderation — tab B never
+  // submits — so only its name carries a key and a dictated permission.
+  const key = modelKey()
+  const tabAName = `Tab A ${key}`
+  await dictateModerationVerdict(key, true, 'ok')
+
   await tabA.getByTestId('profile-edit').click()
-  await tabA.getByTestId('profile-name-input').fill('Tab A Name')
+  await typeInto(tabA.getByTestId('profile-name-input'), tabAName)
   await tabA.getByTestId('profile-rename-save').click()
-  await expect(tabA.getByTestId('profile-name')).toHaveText('Tab A Name')
+  await expect(tabA.getByTestId('profile-name')).toHaveText(tabAName)
 
   // Tab B's open modal sees the incoming change and flags a conflict.
   await expect(tabB.getByTestId('conflict-badge')).toBeVisible()

@@ -1,4 +1,8 @@
+import { expect, type Locator, type Page } from '@playwright/test'
+
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
+import { gotoPage } from './page'
+import { signUp } from './session'
 
 // The daemon command channel — the same socket the CLI test:notification:emit
 // command speaks. The Playwright runner has no PHP, so the e2e emits over the
@@ -64,4 +68,49 @@ export async function emitNotification(
     notificationId: Number(reply.notificationId),
     queuedChannels: (reply.queuedChannels as string[] | undefined) ?? [],
   }
+}
+
+/**
+ * Sign up and land on a page whose socket has already joined the recipient's
+ * notification group.
+ *
+ * The join is the one ordering a spec that waits for a notification depends on: a
+ * `notification_created` signal fans to the group, so an emit that overtook the
+ * join would be delivered to nobody and the row would never appear. On a cold load
+ * bootHilos binds the notification scope BEFORE the page scope and holds the page
+ * subscribe until the handshake answers, so the group join is written to the
+ * socket ahead of the page subscribe — which makes the page reporting `ready`
+ * proof that the daemon has already processed the join. Signing up first and
+ * reloading is therefore not a detour: it is what turns the join into something
+ * the spec can wait for.
+ *
+ * @param page Page starting anonymous.
+ * @returns The registered account's durable user id.
+ */
+export async function signUpJoined(page: Page): Promise<number> {
+  const { userId } = await signUp(page)
+  await gotoPage(page, '/')
+
+  return userId
+}
+
+/**
+ * Open the bell's dropdown so its rows are on screen.
+ *
+ * @param page The page whose bell is opened.
+ */
+export async function openBell(page: Page): Promise<void> {
+  await page.getByTestId('hilos-notification-toggle').click()
+  await expect(page.getByTestId('hilos-notification-menu')).toBeVisible()
+}
+
+/**
+ * The unread badge. Its label carries a visually-hidden suffix — unread is never
+ * signalled by color alone — so a count is matched at the front of the text.
+ *
+ * @param page The page whose bell is read.
+ * @returns The badge locator.
+ */
+export function unreadBadge(page: Page): Locator {
+  return page.getByTestId('hilos-notification-badge')
 }

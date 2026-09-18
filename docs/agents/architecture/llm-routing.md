@@ -146,10 +146,17 @@ The three chat agents move onto profiles. Their per-agent provider branches
 collapse to a single `chatClientFor('chat.bot' | 'chat.moderation' |
 'chat.analyzer')` call. The `CHAT_*_PROVIDER/URL/MODEL/TIMEOUT` env + settings
 keys become the override source for those three profiles' fields — no behaviour
-change for the demo, one abstraction instead of three copies. `ModeratorAgent`'s
-`APP_ENV==='test'` swap to `TestModerationChatClient` stays a test seam layered
-above the router (the router resolves a profile; the test still injects a fake
-client), so profiles do not leak test concerns.
+change for the demo, one abstraction instead of three copies. `ModeratorAgent`
+has no test swap: on the test stand the `chat.moderation` profile resolves to the
+model emulator (see `docs/agents/stand-services.md`), so a test rides the same
+router and the same client production does, and a refusal is something a run can
+see. What carries the stand's address there is the resolution rule above taken
+literally — "absent an override, the env default stands": an EMPTY URL setting is
+an absent override, so the local address the env profile resolved stands, the
+role's `CHAT_*_URL` and then `LLM_LOCAL_URL`
+(`demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php`). A profile env
+resolved as external lends no address to a role the settings keep local; such a
+role falls back to `LLM_LOCAL_URL`.
 
 ## Scope boundary — TS agent-host is out
 

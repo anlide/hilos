@@ -13,7 +13,14 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
-import { emitNotification } from '../helpers/notifications'
+import { modelKey } from '../helpers/model'
+import { dictateModerationVerdict } from '../helpers/moderation'
+import {
+  emitNotification,
+  openBell,
+  signUpJoined,
+  unreadBadge,
+} from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
 import { login, signUp, signUpWithVerifiedEmail } from '../helpers/session'
 
@@ -36,52 +43,13 @@ import { login, signUp, signUpWithVerifiedEmail } from '../helpers/session'
 // result from both ends: the delivery journal, which is the node's own account
 // of the send, and the stand's mail interceptor, which is the independent one.
 
-/**
- * Sign up and land on a page whose socket has already joined the recipient's
- * notification group.
- *
- * The join is the one ordering this suite depends on: a `notification_created`
- * signal fans to the group, so an emit that overtook the join would be delivered
- * to nobody and the row would never appear. On a cold load bootHilos binds the
- * notification scope BEFORE the page scope and holds the page subscribe until the
- * handshake answers, so the group join is written to the socket ahead of the page
- * subscribe — which makes the page reporting `ready` proof that the daemon has
- * already processed the join. Signing up first and reloading is therefore not a
- * detour: it is what turns the join into something the spec can wait for.
- *
- * @param page Page starting anonymous.
- * @returns The registered account's durable user id.
- */
-async function signUpJoined(page: Page): Promise<number> {
-  const { userId } = await signUp(page)
-  await gotoPage(page, '/')
-
-  return userId
-}
-
-/** Open the bell's dropdown so its rows are on screen. */
-async function openBell(page: Page): Promise<void> {
-  await page.getByTestId('hilos-notification-toggle').click()
-  await expect(page.getByTestId('hilos-notification-menu')).toBeVisible()
-}
-
-/**
- * The unread badge. Its label carries a visually-hidden suffix — unread is never
- * signalled by color alone — so a count is matched at the front of the text.
- *
- * @param page The page whose bell is read.
- */
-function badge(page: Page): Locator {
-  return page.getByTestId('hilos-notification-badge')
-}
-
 test('the seeded recipient sees the bounded menu and full unread badge', async ({
   page,
 }) => {
   await gotoPage(page, '/profile')
   await login(page, 'seed-001@example.test')
 
-  await expect(badge(page)).toHaveText(/^22\b/)
+  await expect(unreadBadge(page)).toHaveText(/^22\b/)
 
   await openBell(page)
   const menu = page.getByTestId('hilos-notification-menu')
@@ -212,7 +180,7 @@ test('an emitted notification reaches the bell as an unread row', async ({
 
   // The badge is fed by the live signal, so it turns without the menu ever
   // being opened.
-  await expect(badge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
 
   await openBell(page)
   const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
@@ -228,7 +196,7 @@ test('marking a row read clears the badge', async ({ page }) => {
     type: 'e2e_mark_read',
     title: 'One to read',
   })
-  await expect(badge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
 
   await openBell(page)
   await page
@@ -238,7 +206,7 @@ test('marking a row read clears the badge', async ({ page }) => {
   // The store never turns read optimistically: it turns when the server fans the
   // read signal back, so the badge going and the row's own mark-read control
   // going are both proof the round trip landed.
-  await expect(badge(page)).toHaveCount(0)
+  await expect(unreadBadge(page)).toHaveCount(0)
   await expect(
     page.getByTestId(`hilos-notification-mark-read-${notificationId}`),
   ).toHaveCount(0)
@@ -257,12 +225,12 @@ test('mark-all read clears a badge carrying several', async ({ page }) => {
     type: 'e2e_mark_all',
     title: 'Second',
   })
-  await expect(badge(page)).toHaveText(/^2\b/)
+  await expect(unreadBadge(page)).toHaveText(/^2\b/)
 
   await openBell(page)
   await page.getByTestId('hilos-notification-mark-all').click()
 
-  await expect(badge(page)).toHaveCount(0)
+  await expect(unreadBadge(page)).toHaveCount(0)
   await expect(
     page.getByTestId(`hilos-notification-mark-read-${first.notificationId}`),
   ).toHaveCount(0)
@@ -292,8 +260,8 @@ test('a read in one tab reaches the other tab of the same user', async ({
     type: 'e2e_across_tabs',
     title: 'Seen from both tabs',
   })
-  await expect(badge(page)).toHaveText(/^1\b/)
-  await expect(badge(tabB)).toHaveText(/^1\b/)
+  await expect(unreadBadge(page)).toHaveText(/^1\b/)
+  await expect(unreadBadge(tabB)).toHaveText(/^1\b/)
 
   await openBell(page)
   await openBell(tabB)
@@ -303,7 +271,7 @@ test('a read in one tab reaches the other tab of the same user', async ({
 
   // The read is fanned to every connection of the recipient, so tab B settles
   // without asking for anything.
-  await expect(badge(tabB)).toHaveCount(0)
+  await expect(unreadBadge(tabB)).toHaveCount(0)
   await expect(
     tabB.getByTestId(`hilos-notification-mark-read-${notificationId}`),
   ).toHaveCount(0)
@@ -510,15 +478,20 @@ test('a mention reaches the named user in another window', async ({
   const author = await signUp(page)
 
   // The recipient signs in and joins its notification group BEFORE the message is
-  // published, so the mention arrives over the live signal (see signUpJoined for
-  // why a cold load is what makes the join waitable).
+  // published, so the mention arrives over the live signal (see signUpJoined in
+  // helpers/notifications.ts for why a cold load is what makes the join waitable).
   const recipient = await openSecondPerson(browser)
   const { name: recipientName } = await signUp(recipient)
   await gotoPage(recipient, '/')
 
+  // The message is moderated by the stand's model, which answers only what a spec
+  // dictated: the key rides in the text, and the permission is ordered up front.
+  const key = modelKey()
+  await dictateModerationVerdict(key, true, 'ok')
+
   await typeInto(
     page.getByTestId('message-input'),
-    `@${recipientName} could you look at this?`,
+    `@${recipientName} could you look at this? ${key}`,
   )
   await clickSubmit(page.getByTestId('message-send'))
 
@@ -528,7 +501,7 @@ test('a mention reaches the named user in another window', async ({
   await expect(
     page.getByTestId('event-text').filter({ hasText: recipientName }),
   ).toBeVisible()
-  await expect(badge(recipient)).toHaveText(/^1\b/)
+  await expect(unreadBadge(recipient)).toHaveText(/^1\b/)
 
   // The product emit never hands the id out, so the row is found by its own
   // title rather than by hilos-notification-item-<id>.

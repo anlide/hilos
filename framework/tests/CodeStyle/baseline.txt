@@ -5,7 +5,7 @@
 THROWS-PROPAGATION demo/chat/backend/AI/Agent/ChatAiAgentFactory.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Agents/BotAgent.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Agents/Hilos/DemoHilosGuardianAgent.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Agents/ModeratorAgent.php 2 # HIL-449
+THROWS-PROPAGATION demo/chat/backend/Agents/ModeratorAgent.php 1 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Auth/ChatOAuthConfig.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Core/Socket/Client/FrontendHtmlClient.php 2 # HIL-449
 THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/ChatWebSocketServer.php 1 # HIL-449
