@@ -66,9 +66,9 @@ export interface HilosLogsRotationsPageProps {
   context: HilosLogRotationsContext
 }
 
-// The rule line leads to the general settings screen: the log settings page does
-// not exist in the registry yet (HIL-391 adds it and re-points this link).
-const SETTINGS_HREF = HILOS_PAGE_ROUTES[HilosPages.SETTINGS] ?? '/'
+// The rule line leads to the Logs section's own settings screen, where the
+// values this bar reports are set.
+const LOG_SETTINGS_HREF = HILOS_PAGE_ROUTES[HilosPages.LOGS_SETTINGS]
 
 // The retention badge: a batch on its way is in motion and not in trouble, a
 // recommendation is a warning and not a fault, a taken batch is settled, and a kept
@@ -328,7 +328,7 @@ export function HilosLogsRotationsPage({
           </div>
         </div>
         <HilosLink
-          to={SETTINGS_HREF}
+          to={LOG_SETTINGS_HREF}
           className="btn btn-sm btn-outline-secondary text-nowrap"
           data-id="hilos-rotation-settings"
         >

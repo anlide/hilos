@@ -122,7 +122,7 @@ const RETENTION_CLASS: Record<string, string> = {
           </div>
         </div>
         <a
-          [hilosLink]="settingsHref"
+          [hilosLink]="logSettingsHref"
           class="btn btn-sm btn-outline-secondary text-nowrap"
           data-id="hilos-rotation-settings"
         >
@@ -473,10 +473,10 @@ export class HilosLogsRotationsPage {
   protected readonly formatState = formatRotationState
   protected readonly formatWeight = formatRotationWeight
 
-  // The rule line leads to the general settings screen: the log settings page does
-  // not exist in the registry yet (HIL-391 adds it and re-points this link).
-  protected readonly settingsHref =
-    HILOS_PAGE_ROUTES[HilosPages.SETTINGS] ?? '/'
+  // The rule line leads to the Logs section's own settings screen, where the
+  // values this bar reports are set.
+  protected readonly logSettingsHref =
+    HILOS_PAGE_ROUTES[HilosPages.LOGS_SETTINGS]
 
   protected readonly rotations = computed(() =>
     createHilosLogRotationsTable(this.context()),

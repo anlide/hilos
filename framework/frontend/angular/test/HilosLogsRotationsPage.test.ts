@@ -301,6 +301,15 @@ function screenText(fixture: ComponentFixture<HilosLogsRotationsPage>): string {
 }
 
 describe('HilosLogsRotationsPage', () => {
+  it("points the Log settings button at the section's own settings screen", () => {
+    const { connection } = makeConnection()
+    const fixture = mountPage(connection)
+
+    expect(byId(fixture, 'hilos-rotation-settings')?.getAttribute('href')).toBe(
+      '/hilos/logs/settings',
+    )
+  })
+
   /**
    * The confirmation is not the end of the batch, and the modal that asks for it
    * has to say so: a promise that nothing will be touched would read as though the

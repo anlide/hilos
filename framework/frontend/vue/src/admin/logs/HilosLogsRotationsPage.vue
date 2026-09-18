@@ -276,9 +276,9 @@ async function submitUndo(): Promise<void> {
   }
 }
 
-// The rule line leads to the general settings screen: the log settings page does
-// not exist in the registry yet (HIL-391 adds it and re-points this link).
-const settingsHref = HILOS_PAGE_ROUTES[HilosPages.SETTINGS] ?? '/'
+// The rule line leads to the Logs section's own settings screen, where the
+// values this bar reports are set.
+const logSettingsHref = HILOS_PAGE_ROUTES[HilosPages.LOGS_SETTINGS]
 
 const legendOpen = ref(false)
 </script>
@@ -312,7 +312,7 @@ const legendOpen = ref(false)
         </div>
       </div>
       <HilosLink
-        :to="settingsHref"
+        :to="logSettingsHref"
         class="btn btn-sm btn-outline-secondary text-nowrap"
         data-id="hilos-rotation-settings"
       >

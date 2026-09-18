@@ -312,6 +312,15 @@ describe('HilosLogsRotationsPage', () => {
     )
   })
 
+  it("points the Log settings button at the section's own settings screen", () => {
+    const { connection } = makeConnection()
+    const container = mountPage(connection)
+
+    expect(
+      byId(container, 'hilos-rotation-settings')?.getAttribute('href'),
+    ).toBe('/hilos/logs/settings')
+  })
+
   /**
    * Below `lg` the node and weight columns are hidden and their values move into a
    * sub-line under the batch name. The single-node installation is the case that
