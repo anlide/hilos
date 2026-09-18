@@ -17,12 +17,14 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
  * worker-sent agent signal only ever lands on another worker, never on the leader daemon. The
  * {@see PeerServer} unwraps each arriving envelope and calls the method for
  * its kind here, so this seam receives the domain payload and never the wire frame: enable carries
- * the {@see ProtectedModeEnableSignalData} contract fields, while ready and disable are bare
- * signals (the frame itself is the whole message) and carry only the originating node id.
+ * the {@see ProtectedModeEnableSignalData} contract fields, ready and disable are bare signals (the
+ * frame itself is the whole message) and carry only the originating node id, and refused carries
+ * the reason the leader gives (HIL-909).
  *
- * The initiator↔leader half (enable/ready/disable) is mirrored by the cluster-wide half the leader
- * drives against its followers: quiesce carries the {@see ProtectedModeQuiesceData} freeze
- * descriptor, quiesced is the follower's bare readiness report, and lift is the bare release.
+ * The initiator↔leader half (enable/ready/refused/disable) is mirrored by the cluster-wide half
+ * the leader drives against its followers: quiesce carries the {@see ProtectedModeQuiesceData}
+ * freeze descriptor, quiesced is the follower's bare readiness report, and lift is the bare
+ * release.
  *
  * The transport slice wires the routing to this interface; the leader orchestration slice supplies
  * the implementation and registers it with {@see PeerServer::registerProtectedMode()}.
@@ -51,6 +53,17 @@ interface ProtectedModeCoordinator
      * @param string $fromNodeId Node id of the leader that confirmed the freeze
      */
     public function onReady(string $fromNodeId): void;
+
+    /**
+     * Handles the leader's refusal to freeze for this node's initiator (HIL-909).
+     *
+     * Arrives on the initiator's node; the refusal is relayed to the initiator agent, which stops
+     * waiting for a ready that is not coming and reports the reason.
+     *
+     * @param string $fromNodeId Node id of the leader that refused the freeze
+     * @param string $reason Human-readable operator-facing refusal reason
+     */
+    public function onRefused(string $fromNodeId, string $reason): void;
 
     /**
      * Handles an initiator's request to lift the freeze once its operation has finished.
