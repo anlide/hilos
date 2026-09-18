@@ -175,6 +175,17 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
 const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
 
 /**
+ * How long the provider keeps the connection open after its answer in the HIL-732
+ * scenario. The number is the one HIL-732 was measured with — a TLS peer that hung up at
+ * once gave green on the broken client five times out of five, one that held for 50 ms
+ * gave red five out of five — and HIL-929 measured that the stand keeps the signature at
+ * the same number. It stays far below the agent's request deadline (AbstractOAuthAgent
+ * DEFAULT_HTTP_TIMEOUT_MS, 5 s): a hold that outlasts the deadline is another defect and
+ * another scenario (HIL-1043).
+ */
+const PROVIDER_HOLD_MS = 50
+
+/**
  * Start a sign-in with a provider from the gated profile and see the person through
  * the consent screen, the way the HIL-281 test does: the wait for the provider's window
  * starts BEFORE the click, because the click opens it synchronously.
@@ -320,6 +331,39 @@ test('returns quietly to the field when the person closes the provider window', 
   await expect(page.getByTestId('auth-error')).toHaveCount(0)
   await expect(page.getByTestId('auth-notice')).toHaveCount(0)
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
+})
+
+// The regression of HIL-732, and the reason it lives on the stand. On TLS a socket is
+// announced readable as soon as protocol bytes arrive, while the decrypted bytes of the
+// answer are not there yet, so an empty read means "no data yet" and never "the peer is
+// done" (framework/backend/API/AsyncHttpClient.php, processReceiving(), the comment above
+// the buffer append). A client that takes the empty read for the end parses an empty
+// buffer and the agent refuses the sign-in. A peer that hangs up at once hides the
+// defect and a peer that lingers exposes it, hence the hold — on both calls the agent
+// makes, the code exchange and the userinfo read, since each answer is a window of its
+// own. Measured by HIL-929 with that reading put back into the client: red 10 runs out
+// of 10, each with "empty response buffer" in the OAuth agent's log, against green 10
+// out of 10 on the healthy client. With no hold the same mutation was red 6 runs out of
+// 10 in one measurement and 9 out of 10 in the next: the hold is what makes the red
+// certain. This scenario replaced the only fork of the unit suite
+// (serveTlsResponseInChild() in framework/tests/Unit/AsyncHttpClientTest.php at
+// c32457783).
+test('signs in when the provider keeps the connection open after its answer (HIL-732)', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+  await dictateGatewayBehavior('/oauth/google/token', account.subject, {
+    holdMs: PROVIDER_HOLD_MS,
+  })
+  await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
+    holdMs: PROVIDER_HOLD_MS,
+  })
+
+  await signInThroughProvider(page, account)
+
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
 })
 
 test('answers a wrong password inline, and an unknown address with the registration path', async ({

@@ -397,11 +397,11 @@ ticket for the entries that are genuinely foreign.
   immediate `exit()` at the end of the child's branch; not one assertion on the
   child's path — a red one there does not fail the test, it carries the child to
   the end of the run and prints a second PHPUnit report; and the wait in
-  `finally`, through `pcntl_waitpid()`. The suite's only carrier of the form is
-  `framework/tests/Unit/AsyncHttpClientTest.php:443` (`serveTlsResponseInChild()`;
-  the `exit` at `:494`, the wait at `:155`). HIL-929 intends to retire that
-  regression test once an e2e through the emulator covers it — the reference
-  shows the form and promises nothing about the file.
+  `finally`, through `pcntl_waitpid()`. The suite carries no fork today: its only
+  one, the regression of HIL-732, left with HIL-929 once a scenario on the stand
+  turned red on the defect every time. History keeps the form —
+  `serveTlsResponseInChild()` in `framework/tests/Unit/AsyncHttpClientTest.php`
+  as of `c32457783` (`:441`; the `exit` at `:494`, the wait at `:155`).
 
   Two samples, and what picks between them. `framework/tests/Unit/OrphanReaperTest.php`
   (HIL-450) is the sample of **structure**: real children through the

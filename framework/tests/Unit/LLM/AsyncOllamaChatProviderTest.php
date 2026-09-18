@@ -16,10 +16,12 @@ use PHPUnit\Framework\TestCase;
  * Tests that the scheme of the local model's address decides whether the connection is encrypted.
  *
  * Both cases talk to one plain HTTP peer on purpose. The subject is the choice the provider makes
- * from its address, not the work of TLS itself - a real TLS peer is already held by
- * {@see AsyncHttpClientTest::testHttpsRequestOverRealTlsServer()} - and a plain peer shows the
- * choice both ways: an http address still reaches it, an https address cannot finish a handshake
- * with it (HIL-925).
+ * from its address, not the work of TLS itself. That work is held elsewhere: the answer of a real
+ * TLS peer by the chat stand, where every sign-in through a provider reaches the stand gateway over
+ * TLS (the HIL-732 scenario in demo/chat/tests/e2e/tests/auth.spec.ts), and the refusal of an
+ * untrusted one by {@see AsyncHttpClientTest::testTlsHandshakeRejectsUntrustedCertificate()}. A plain
+ * peer shows the choice both ways: an http address still reaches it, an https address cannot finish
+ * a handshake with it (HIL-925).
  */
 final class AsyncOllamaChatProviderTest extends TestCase
 {

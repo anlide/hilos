@@ -24,10 +24,12 @@ with a canned code, and no exchange ever happened.
 
 The cost of that is on record. Twelve closed OAuth leaves (HIL-281 … HIL-732)
 were verified over that stub. The one defect found in that layer, HIL-732, was
-found on a live provider and not by any test, and its regression is the only
-fork in the unit suite — `serveTlsResponseInChild()` in
+found on a live provider and not by any test, and its regression had to be the
+only fork in the unit suite — `serveTlsResponseInChild()` in
 `framework/tests/Unit/AsyncHttpClientTest.php` — because nothing on the stand
-could play the peer.
+could play the peer. Since HIL-929 it is a scenario of the stand — `signs in
+when the provider keeps the connection open after its answer (HIL-732)` in
+`demo/chat/tests/e2e/tests/auth.spec.ts` — and the fork is gone.
 
 An emulator is the other thing: a separate process the product reaches over the
 same transport it uses in production. The daemon really builds the request,
@@ -336,8 +338,10 @@ means "no data yet", never "the peer is done"
 above the buffer append). Over plain HTTP that window does not exist at all. An
 emulator reached over `http://` therefore makes the one known defect of this
 layer invisible: the instrument of observation removes the thing observed. That
-is why the fork in `AsyncHttpClientTest` plays a TLS peer and not a plain one,
-and why the stand cannot take that regression over until it speaks TLS itself.
+is why the regression of HIL-732 could leave the unit suite only once the stand
+spoke TLS itself: the scenario `signs in when the provider keeps the connection
+open after its answer (HIL-732)` in `demo/chat/tests/e2e/tests/auth.spec.ts`
+turns red on the defect ten runs out of ten (HIL-929).
 
 The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
@@ -457,7 +461,16 @@ closes the connection right after its answer gives a GREEN test on broken code
 five times out of five; the same counterpart holding the connection for 50 ms
 gives RED five times out of five. A peer that hangs up promptly hides the very
 bug a peer that lingers exposes, so "hold the connection" is what makes a whole
-class of read-loop defects testable at all.
+class of read-loop defects testable at all. A test holds that number now: `signs
+in when the provider keeps the connection open after its answer (HIL-732)` in
+`demo/chat/tests/e2e/tests/auth.spec.ts` holds both calls of one sign-in for
+50 ms. HIL-929 measured it on the stand against a client with the defect put
+back: red ten runs out of ten, each with `empty response buffer` in the OAuth
+agent's log, and green ten out of ten on the healthy client. With no hold the
+same broken client was red six runs out of ten in one measurement and nine out
+of ten in the next: on the stand a peer that hangs up at once no longer hides
+the defect every time, but a test against it is red by chance — the hold is what
+makes the red certain.
 
 The levers work on the local model's `POST /model/api/generate` like on any other
 provider route, keyed by the same string its dictated answer is (see

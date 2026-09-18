@@ -159,37 +159,6 @@ final class AsyncHttpClientTest extends TestCase
     }
 
     /**
-     * The response of a real TLS peer is parsed: an empty read is not the end of it.
-     *
-     * The peer runs in a forked child on purpose. A server sharing this process can only take its
-     * turn between the client's ticks, and by then the decrypted bytes are already waiting - the
-     * false empty read this test is about needs a peer that answers while the client is reading.
-     */
-    public function testHttpsRequestOverRealTlsServer(): void
-    {
-        [$certificateFile, $bundleFile] = $this->issueSelfSignedCertificate();
-        [$server, $port] = $this->createTlsServer($bundleFile);
-        $child = $this->serveTlsResponseInChild($server, $this->response(200, 'granted'));
-
-        try {
-            $client = new TrustingAsyncHttpClient('127.0.0.1', $port, '/token', true);
-            $client->caFile = $certificateFile;
-            $client->startNewRequest(microtime(true) * 1000);
-
-            $deadline = microtime(true) + 5.0;
-            while (!$client->hasResult() && microtime(true) < $deadline) {
-                $client->tick(microtime(true) * 1000);
-                usleep(1000);
-            }
-
-            $this->assertTrue($client->hasResult(), 'Async HTTP client did not finish within timeout');
-            $this->assertSame('granted', $client->consumeResult()->body);
-        } finally {
-            pcntl_waitpid($child, $status);
-        }
-    }
-
-    /**
      * A certificate whose name does not match the verified peer name is refused.
      */
     public function testTlsHandshakeRejectsCertificateNameMismatch(): void
@@ -462,69 +431,6 @@ final class AsyncHttpClientTest extends TestCase
         }
 
         $this->assertTrue($client->hasResult(), 'Async HTTP client did not finish within timeout');
-    }
-
-    /**
-     * Serves one TLS response from a forked child, so the peer answers while the client reads.
-     *
-     * @param resource $server Server socket, closed in this process and owned by the child
-     * @param string $response Raw HTTP response to send once the request arrives
-     * @return int Pid of the child serving the response
-     */
-    private function serveTlsResponseInChild($server, string $response): int
-    {
-        $child = pcntl_fork();
-        $this->assertNotSame(-1, $child, 'TLS peer could not be forked');
-
-        if ($child !== 0) {
-            fclose($server);
-
-            return $child;
-        }
-
-        $connection = null;
-        $secured = false;
-        $deadline = microtime(true) + 10.0;
-        $requestBuffer = '';
-
-        while (microtime(true) < $deadline) {
-            if ($connection === null) {
-                $accepted = stream_socket_accept($server, 0);
-                if (is_resource($accepted)) {
-                    $connection = $accepted;
-                    stream_set_blocking($connection, false);
-                }
-            }
-
-            if (is_resource($connection) && !$secured) {
-                // warning-suppressed: the int|bool result decides below, and a handshake this peer
-                // cannot finish ends the child rather than the test
-                $enabled = @stream_socket_enable_crypto($connection, true, STREAM_CRYPTO_METHOD_TLS_SERVER);
-                if ($enabled === true) {
-                    $secured = true;
-                } elseif ($enabled === false) {
-                    break;
-                }
-            }
-
-            if ($secured) {
-                $chunk = fread($connection, 8192);
-                if (is_string($chunk) && $chunk !== '') {
-                    $requestBuffer .= $chunk;
-                }
-
-                if (str_contains($requestBuffer, HttpConstants::HTTP_DELIMITER)) {
-                    fwrite($connection, $response);
-                    usleep(50000);
-                    fclose($connection);
-                    break;
-                }
-            }
-
-            usleep(1000);
-        }
-
-        exit(0);
     }
 
     /**
