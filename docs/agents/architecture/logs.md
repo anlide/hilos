@@ -52,13 +52,13 @@ text — `[stamp] [WARNING] text`, the form `Logger` writes when it shows the le
 keeps the bare `[stamp] text` of every error stream (HIL-868).
 
 A line written through `Logger::logAgent*()` by code that runs IN the master (the
-protected-mode watchdog, its alert notifier, the lift announcer, the agent
-manager's stop-hook rescue) is filed straight into `agent-<id>.log` and its
-`.error.log` twin by the same `Logger` call (`AgentLogStream`, HIL-1017), because
-the master has no reader over its own output; the marker is for the pipe alone,
-and it never appears in a file. Two of these ids belong to no live agent —
-`protected-mode-watchdog` and `protected-mode-lift` — and that is deliberate: the
-reader classifies a stream by its filename prefix and asks no registry of agents.
+protected-mode watchdog, its alert notifier, the agent manager's stop-hook
+rescue) is filed straight into `agent-<id>.log` and its `.error.log` twin by the
+same `Logger` call (`AgentLogStream`, HIL-1017), because the master has no reader
+over its own output; the marker is for the pipe alone, and it never appears in a
+file. One of these ids belongs to no live agent — `protected-mode-watchdog` —
+and that is deliberate: the reader classifies a stream by its filename prefix and
+asks no registry of agents.
 Such a line no longer reaches `daemon.log` or `daemon-error.log`, which is where
 an operator would have grepped for it until this leaf.
 

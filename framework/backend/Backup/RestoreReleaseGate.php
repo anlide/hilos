@@ -22,10 +22,11 @@ use Hilos\Utils\Logger;
  * ({@see noteSessionsCarriedOver()}) once the library has answered for them. A node that ran no
  * restore takes on no debt and lifts with no delay at all.
  *
- * **The wait is bounded and it never blocks.** The request is parked and let go from the agent's
- * own tick - by the answer when it comes, by {@see SESSIONS_WAIT_SECONDS} when it does not. A
- * deadline that passes still lifts: a node held shut over an answer that is not coming is worse
- * than a browser that has to sign in again, and the log line says which of the two happened.
+ * **The wait is bounded and it never blocks.** The request is parked and let go by the agent
+ * itself - on the answer when it comes, on its own tick after {@see SESSIONS_WAIT_SECONDS} when it
+ * does not. A deadline that passes still lifts: a node held shut over an answer that is not coming
+ * is worse than a browser that has to sign in again, and the log line says which of the two
+ * happened.
  *
  * **A debt nobody will answer is not waited for.** {@see holdRelease()} parks only when an owner
  * in this project can still receive the batch; otherwise the caller sends the lift at once.

@@ -84,9 +84,9 @@ final class DeferredSessionCarryoverQueueTest extends TestCase
     }
 
     /**
-     * What the count is for: the restore reports it to its master, which holds the lift for those
-     * logins. Zero on a snapshot that queued nothing, so a debt nobody can pay is never taken on
-     * and no lift is held for it (HIL-771).
+     * What the count is for: the backup agent that ran the restore holds the lift for those logins.
+     * Zero on a snapshot that queued nothing, so a debt nobody can pay is never taken on and no
+     * lift is held for it (HIL-771, HIL-969).
      */
     public function testTheQueueSaysHowManyLoginsItActuallyTook(): void
     {

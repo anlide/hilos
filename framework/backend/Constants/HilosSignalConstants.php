@@ -1207,9 +1207,9 @@ final class HilosSignalConstants
      * The receipt for {@see self::HILOS_SESSION_CARRYOVER_HANDOVER}. It means "I have it", not
      * "all of it worked": a login that could not be re-created is lost on purpose and counted,
      * and holding the batch over it would only offer it again forever. On it the holder removes
-     * exactly that batch's file and tells its own master the carry-over is done - the master that
-     * holds the reload frame, which in a cluster is not necessarily the library's. Carried by
-     * {@see DeferredSessionsCarriedSignalData}.
+     * exactly that batch's file and lets go of the freeze-lift it parked until these logins were
+     * back - the wait lives with the backup agent that ran the restore, not with any master
+     * (RestoreReleaseGate, HIL-969). Carried by {@see DeferredSessionsCarriedSignalData}.
      */
     public const string BACKUP_AGENT_SESSIONS_CARRIED = 'backup_agent_sessions_carried';
 

@@ -410,9 +410,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * logged and counted, and the batch is answered all the same.
      *
      * The answer goes back on every branch and means "the batch is mine now", not "every login came
-     * back": the holder removes the batch and tells its own master the carry-over is done - the
-     * master that may be holding the "the freeze lifted, reload" frame back until it hears so. A
-     * batch offered twice is survived by construction, because a token that already holds a row is
+     * back": the holder removes the batch and lets go of the freeze-lift it parked until it heard
+     * so - the backup agent that ran the restore holds the lift, not a master (HIL-969). A batch
+     * offered twice is survived by construction, because a token that already holds a row is
      * neither carried nor lost.
      *
      * @param DeferredSessionCarryoverHandoverSignalData $handover The batch and the id its receipt names
@@ -425,9 +425,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         } catch (Throwable $e) {
             $this->logAgentError('Deferred session carry-over failed: ' . $e->getMessage());
             // Answered all the same, with nothing carried: unanswered, the batch would be offered
-            // forever, and the master holding the lift is waiting to hear whether anything more is
-            // coming - after this catch the answer is no. Nothing was kept either - a pass that broke
-            // on a row never reached the branch that leaves one untouched.
+            // forever, and the backup agent holding the lift is waiting to hear whether anything
+            // more is coming - after this catch the answer is no. Nothing was kept either - a pass
+            // that broke on a row never reached the branch that leaves one untouched.
             $this->sendToAgent(
                 HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED,
                 new DeferredSessionsCarriedSignalData($handover->batch, 0, count($handover->sessions), 0),

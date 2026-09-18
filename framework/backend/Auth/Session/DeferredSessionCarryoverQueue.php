@@ -72,11 +72,11 @@ final class DeferredSessionCarryoverQueue
      * already succeeded is not undone, and the freeze is not held, because the logins could not be
      * written down. What goes wrong is logged and swallowed.
      *
-     * The count it returns is what the caller owes: a restore reports it to its own master so the
-     * lift of the freeze waits for these logins to be back before it tells the browsers to reload
-     * (HIL-771). Zero on every path that queued nothing - an empty snapshot, an installation with
-     * no backup directory, a write that failed - because a debt nobody can pay would hold the lift
-     * for its whole timeout and say the wrong thing in the log.
+     * The count it returns is what the caller owes: the backup agent that ran the restore holds the
+     * lift of the freeze on it until these logins are back, before the browsers are told to reload
+     * (HIL-771, HIL-969). Zero on every path that queued nothing - an empty snapshot, an
+     * installation with no backup directory, a write that failed - because a debt nobody can pay
+     * would hold the lift for its whole timeout and say the wrong thing in the log.
      *
      * @param list<SessionCarryover> $snapshot Sessions captured before the database was replaced
      * @return int Sessions actually left in the queue

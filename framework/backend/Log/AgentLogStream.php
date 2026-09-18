@@ -13,8 +13,7 @@ use Hilos\Utils\Logger;
  *
  * An agent-format line reaches its stream from two places: the master's pipe reader filing a
  * worker's output ({@see WorkerServer}), and the master's own {@see Logger} filing lines
- * written by master-side code (protected-mode watchdog, alert notifier, lift announcer,
- * agent manager).
+ * written by master-side code (protected-mode watchdog, alert notifier, agent manager).
  *
  * Composing the stream name and shaping the line (putting the level after the timestamp on the main
  * stream, bare timestamp on the error twin) from two separate places would allow them to drift
