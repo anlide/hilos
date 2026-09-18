@@ -89,27 +89,33 @@ import { HilosModal } from '../HilosModal.js'
         }
       </div>
 
-      <!-- The shape HilosActionError draws a server refusal in, written here
-      because that component takes a TrackedAction and there is none. Pressing
-      Subscribe again re-states the same sentence rather than stacking a second
-      plate. -->
-      @if (refused()) {
+      <div class="position-relative" data-id="hilos-about-refusal-slot">
         <div
-          class="alert alert-danger d-flex align-items-center gap-2 py-2"
-          data-id="hilos-about-refusal"
+          class="alert alert-secondary small py-2 mb-0 invisible"
+          aria-hidden="true"
+          data-id="hilos-about-refusal-idle"
         >
-          <i
-            class="bi bi-exclamation-circle flex-shrink-0"
-            aria-hidden="true"
-          ></i>
-          <span class="flex-grow-1">{{ refusal }}</span>
+          <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+          {{ refusal }}
         </div>
-      }
-
-      <div class="alert alert-secondary small py-2 mb-0">
-        <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-        A subscription unlocks nothing: every feature is open to everyone
-        anyway.
+        @if (refused()) {
+          <div
+            class="alert alert-secondary small py-2 mb-0 position-absolute top-0 start-0 w-100"
+            data-id="hilos-about-refusal"
+          >
+            <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+            {{ refusal }}
+          </div>
+        } @else {
+          <div
+            class="alert alert-secondary small py-2 mb-0 position-absolute top-0 start-0 w-100"
+            data-id="hilos-about-note"
+          >
+            <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+            A subscription unlocks nothing: every feature is open to everyone
+            anyway.
+          </div>
+        }
       </div>
 
       <ng-template #modalActions let-requestClose="requestClose">

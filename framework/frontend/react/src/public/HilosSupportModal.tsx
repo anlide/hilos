@@ -145,26 +145,33 @@ export function HilosSupportModal({ open, onClose }: HilosSupportModalProps) {
         ))}
       </div>
 
-      {/* The shape HilosActionError draws a server refusal in, written here
-          because that component takes a TrackedAction and there is none.
-          Pressing Subscribe again re-states the same sentence rather than
-          stacking a second plate. */}
-      {refused ? (
+      <div className="position-relative" data-id="hilos-about-refusal-slot">
         <div
-          className="alert alert-danger d-flex align-items-center gap-2 py-2"
-          data-id="hilos-about-refusal"
+          className="alert alert-secondary small py-2 mb-0 invisible"
+          aria-hidden="true"
+          data-id="hilos-about-refusal-idle"
         >
-          <i
-            className="bi bi-exclamation-circle flex-shrink-0"
-            aria-hidden="true"
-          />
-          <span className="flex-grow-1">{HILOS_SUPPORT_REFUSAL}</span>
+          <i className="bi bi-info-circle me-1" aria-hidden="true" />
+          {HILOS_SUPPORT_REFUSAL}
         </div>
-      ) : null}
-
-      <div className="alert alert-secondary small py-2 mb-0">
-        <i className="bi bi-info-circle me-1" aria-hidden="true" />A
-        subscription unlocks nothing: every feature is open to everyone anyway.
+        {refused ? (
+          <div
+            className="alert alert-secondary small py-2 mb-0 position-absolute top-0 start-0 w-100"
+            data-id="hilos-about-refusal"
+          >
+            <i className="bi bi-info-circle me-1" aria-hidden="true" />
+            {HILOS_SUPPORT_REFUSAL}
+          </div>
+        ) : (
+          <div
+            className="alert alert-secondary small py-2 mb-0 position-absolute top-0 start-0 w-100"
+            data-id="hilos-about-note"
+          >
+            <i className="bi bi-info-circle me-1" aria-hidden="true" />A
+            subscription unlocks nothing: every feature is open to everyone
+            anyway.
+          </div>
+        )}
       </div>
     </HilosModal>
   )

@@ -23,12 +23,24 @@ test('a tier can be chosen and Subscribe answers with the honest refusal', async
   await coffee.click()
   await expect(coffee).toHaveAttribute('aria-pressed', 'true')
 
+  const slot = page.getByTestId('hilos-about-refusal-slot')
+  await expect(slot).toBeVisible()
+  const slotBefore = await slot.boundingBox()
+  const coffeeBefore = await coffee.boundingBox()
+  expect(slotBefore).not.toBeNull()
+  expect(coffeeBefore).not.toBeNull()
+
   await page.getByTestId('hilos-about-subscribe').click()
 
   const refusal = page.getByTestId('hilos-about-refusal')
   await expect(refusal).toBeVisible()
   await expect(refusal).toContainText('The payment system is not built yet.')
   await expect(refusal).toContainText('no subscription was created')
+
+  const slotAfter = await slot.boundingBox()
+  const coffeeAfter = await coffee.boundingBox()
+  expect(slotAfter?.height).toBe(slotBefore?.height)
+  expect(coffeeAfter?.y).toBe(coffeeBefore?.y)
 
   // The plate shows and the region speaks: the sentence also reaches the live
   // region that stood in the dialog before there was anything to announce.

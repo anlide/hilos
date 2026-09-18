@@ -124,4 +124,56 @@ describe('HilosSupportModal', () => {
     expect(refusals()).toHaveLength(0)
     expect(tier('beer').getAttribute('aria-pressed')).toBe('true')
   })
+
+  it('keeps the invisible refusal twin standing in both resting and refused states', () => {
+    mountOpen()
+
+    expect(
+      document.querySelectorAll('[data-id="hilos-about-refusal-idle"]'),
+    ).toHaveLength(1)
+
+    subscribe()
+
+    expect(
+      document.querySelectorAll('[data-id="hilos-about-refusal-idle"]'),
+    ).toHaveLength(1)
+  })
+
+  it('shows the explanation note at rest and hides it when refused', () => {
+    mountOpen()
+
+    expect(
+      document.querySelectorAll('[data-id="hilos-about-note"]'),
+    ).toHaveLength(1)
+    expect(
+      document.querySelector('[data-id="hilos-about-note"]')?.textContent,
+    ).toContain('A subscription unlocks nothing')
+    expect(refusals()).toHaveLength(0)
+
+    subscribe()
+
+    expect(
+      document.querySelectorAll('[data-id="hilos-about-note"]'),
+    ).toHaveLength(0)
+    expect(refusals()).toHaveLength(1)
+  })
+
+  it('marks the idle twin aria-hidden while the visible plate carries no role', () => {
+    mountOpen()
+
+    const idleTwin = document.querySelector(
+      '[data-id="hilos-about-refusal-idle"]',
+    )
+    expect(idleTwin).not.toBeNull()
+    expect(idleTwin?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleTwin?.classList.contains('invisible')).toBe(true)
+
+    subscribe()
+
+    const activeRefusal = document.querySelector(
+      '[data-id="hilos-about-refusal"]',
+    )
+    expect(activeRefusal).not.toBeNull()
+    expect(activeRefusal?.getAttribute('role')).toBeNull()
+  })
 })
