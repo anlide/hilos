@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  *
  * Pins the daemon as a cluster-leader-pinned monopolistic singleton under the
  * framework OAuth agent type — the network-drive orchestration itself is exercised
- * offline at e2e through the stub provider (mirrors the backup agent's e2e coverage).
+ * at e2e against the stand's OAuth emulator (mirrors the backup agent's e2e coverage).
  */
 final class OAuthAgentPlacementTest extends TestCase
 {

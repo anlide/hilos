@@ -16,8 +16,8 @@ use Hilos\Auth\OAuth\HttpOAuthProvider;
  * endpoints may be different hosts, and a client is one-request-per-instance), the
  * two-step stage cursor, and the op's absolute deadline.
  *
- * Offline providers never produce an exchange: they resolve the code in-process, so
- * only {@see HttpOAuthProvider} exchanges live here.
+ * Every login goes through one: since the in-process stub was removed (HIL-924) every
+ * provider is an {@see HttpOAuthProvider} and resolves the code over the network.
  */
 final class OAuthExchange
 {

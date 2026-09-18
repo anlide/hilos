@@ -43,7 +43,7 @@ import { waitForTelegramCode } from '../helpers/telegram'
 // be proved here. This file is that proof, so every method the stand can deliver
 // is walked and not just the five the activation needs: phone codes over SMS and
 // over Telegram, the sign-in link and the code that comes with it, and both OAuth
-// providers through the offline stub.
+// providers through the stand's OAuth emulator.
 //
 // What the SDK proves, though, is a SCREEN and not a delivery method (HIL-774):
 // SMS and Telegram draw the same code screen, GitHub and Google the same return,
