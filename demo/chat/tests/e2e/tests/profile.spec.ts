@@ -21,8 +21,8 @@ async function typeInto(field: Locator, value: string): Promise<void> {
 // Success is state-driven — the committed name arrives over the self-connection
 // data and closes the modal. A rename is moderated by the stand's model, so each
 // one first dictates a permitting verdict under a key the new name carries
-// (helpers/moderation.ts). A refused name has no drawn state in the rename modal
-// and stays with the backend integration test ProfileRenameModerationTest.
+// (helpers/moderation.ts). A refused name and an unanswering model are proved by
+// rename-moderation.spec.ts.
 
 test('the navbar links the current user to the profile page', async ({
   page,
