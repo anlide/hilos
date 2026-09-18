@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { createSSRApp, h } from 'vue'
-import { renderToString } from '@vue/server-renderer'
+import { renderToString } from 'vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 
 import HilosModal from './HilosModal.vue'
