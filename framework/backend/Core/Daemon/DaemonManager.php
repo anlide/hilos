@@ -4112,9 +4112,15 @@ abstract class DaemonManager extends BaseManager implements
      * Contained is not the same as unreported (HIL-436): the outcome is the daemon's own answer to
      * the barrier it just opened, so a master that could not re-read keeps the node closed instead
      * of quietly counting itself as ready.
+     *
+     * The master's analytics collector forgets the replaced database before anything else and
+     * whatever the re-read's outcome (HIL-910). A follower node gets here too, from the same signal
+     * queued off the mesh.
      */
     private function applyReHydrateContained(): void
     {
+        Hilos::$ac?->forgetReplacedDatabase();
+
         $round = $this->agentManagerDaemon->currentReHydrateRound();
 
         try {

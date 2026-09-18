@@ -26,10 +26,7 @@ abstract class AnalyticsSchemaIntegrationTestCase extends FrameworkIntegrationTe
     {
         parent::setUp();
 
-        $this->dropAnalyticsSchema();
-        foreach ($this->analyticsSchemaStatements() as $statement) {
-            Database::sql($statement);
-        }
+        $this->rebuildAnalyticsSchema();
     }
 
     /**
@@ -40,6 +37,22 @@ abstract class AnalyticsSchemaIntegrationTestCase extends FrameworkIntegrationTe
         $this->dropAnalyticsSchema();
 
         parent::tearDown();
+    }
+
+    /**
+     * Drops the stub tables and builds them again, empty.
+     *
+     * This is what a restore does to these tables, so a case can replace the database
+     * under a collector halfway through (HIL-910).
+     *
+     * @throws DatabaseException When a drop or a create fails
+     */
+    protected function rebuildAnalyticsSchema(): void
+    {
+        $this->dropAnalyticsSchema();
+        foreach ($this->analyticsSchemaStatements() as $statement) {
+            Database::sql($statement);
+        }
     }
 
     /**

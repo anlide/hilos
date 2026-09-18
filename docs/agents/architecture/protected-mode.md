@@ -247,6 +247,23 @@ Four properties generalize to whatever destructive operation comes next:
   affected see a login screen; the alternative is a node left frozen over a
   detail of the recovery.
 
+**A writer the roster walk does not stop owes the freeze two things (HIL-910).**
+The freeze stops agents; anything that writes the database from outside every
+roster — a per-process singleton, a pool half that lives on its own — goes on
+writing through the operation unless it answers the freeze itself. It owes
+silence while this node's phase is `active`, the one phase in which the initiator
+may replace the database, and at the swap it owes forgetting every id of the
+replaced database, before its process answers the re-hydrate round. A cached id
+that the restored database lacks fails on a foreign key, which is the lucky case;
+one that the restored database gives to another value files facts under the
+wrong name with no error at all. The analytics collector is the worked example:
+`AnalyticsCollector::runSafely()` answers nothing while the phase is `active`,
+`forgetReplacedDatabase()` is called first in `WorkerManager::handleDbReHydrateMessage()`
+and `DaemonManager::applyReHydrateContained()` — on the failed re-read too — and
+what the process owns (its worker and agent sessions) is opened again at resume.
+The re-read after a peer link does not forget: the database there is the same one.
+The durable half of the mail pool is the second writer of this kind, HIL-1060.
+
 ## Entry Is Fail-Closed In Both Branches
 
 A node that cannot freeze refuses loudly; it never stands inert while reporting
@@ -624,10 +641,14 @@ Refuse loudly and before any trace of entry, as above.
   mount (`ProtectedModeRuntimeMountTest`), the master-side snapshot
   (`ProtectedModeSnapshotTest`), the agent driver
   (`ProtectedModeTestDriverTest`), the four verdicts and the alarm's repetition
-  (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`) and the freeze left
-  on disk (`ProtectedModeFreezeStoreTest`).
+  (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`), the freeze left
+  on disk (`ProtectedModeFreezeStoreTest`), and the analytics collector told to
+  forget by the round answer and not by the peer-link re-read
+  (`WorkerManagerDbReHydrateAckTest`, `DaemonManagerDbReHydrateBarrierTest`).
 - `composer run test:framework:integration` — covers the carry-over across a real
-  database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`).
+  database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`)
+  and the analytics collector held by the freeze and forgetting the swapped
+  schema (`AnalyticsDatabaseSwapIntegrationTest`).
 - `demo/chat` e2e `protected-mode.spec.ts` — drives the mode from a browser:
   enter, the live window showing the stub with the operation the caller named,
   leave, the window working again. It freezes the whole node, so its teardown

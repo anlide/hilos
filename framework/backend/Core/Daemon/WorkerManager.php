@@ -1116,10 +1116,16 @@ abstract class WorkerManager extends BaseManager
      * in front of it. Two announcements in a row therefore get two answers, each carrying its
      * own number, and it is the daemon that decides which of them still counts.
      *
+     * The analytics collector forgets the replaced database first, outside the try, because the
+     * database was replaced whether or not the re-read succeeds (HIL-910); the barrier then admits
+     * verifiers only once every collector of the node has let go of the old ids.
+     *
      * @param WorkerDbReHydrateMessageDTO $dto Announcement carrying the round to answer under
      */
     private function handleDbReHydrateMessage(WorkerDbReHydrateMessageDTO $dto): void
     {
+        Hilos::$ac?->forgetReplacedDatabase();
+
         try {
             DbSyncApplicator::applyReHydrate();
             $this->daemonClient->send(new WorkerDbReHydratedDTO(round: $dto->round, ok: true));
@@ -1140,6 +1146,9 @@ abstract class WorkerManager extends BaseManager
      * failure is only logged for the same reason it is there — a worker that dies because one
      * query failed costs its node the agents and connections it was holding, while the rows it
      * kept are caught at their first collision by the generation fallback.
+     *
+     * The analytics collector is not told to forget here (HIL-910): its ids still name rows of
+     * the same database, and forgetting them would open a second row for every live session.
      */
     private function handleDbReReadMessage(): void
     {

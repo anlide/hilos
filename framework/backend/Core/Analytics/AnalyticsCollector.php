@@ -7,6 +7,8 @@ namespace Hilos\Core\Analytics;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Database;
+use Hilos\Hilos;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -18,9 +20,17 @@ use Throwable;
  * row-oriented ORM does not serve well: dictionary tables deduplicated by SHA-1
  * hash via `INSERT IGNORE`, and event rows accumulated in memory then written in
  * batched multi-row inserts on a timer or size threshold. Failures are
- * contained - any error disables the collector for the rest of the process
- * instead of propagating into application code, so the public methods never
- * throw.
+ * contained - any error disables the collector until the process restarts or
+ * the database is replaced, instead of propagating into application code, so
+ * the public methods never throw.
+ *
+ * The collector lives in every process and is in no agent roster, so the
+ * protected-mode freeze cannot stop it; it answers the freeze itself (HIL-910).
+ * While this node's freeze is active it records and writes nothing. At the
+ * swap announcement it forgets every id of the replaced database
+ * ({@see self::forgetReplacedDatabase()}), and once the freeze lets the system
+ * back it re-opens only what the process owns - its worker session and the
+ * sessions of the agents alive on it.
  *
  * Insert buffers are intentionally array-shaped (raw DB rows keyed by column
  * name); internal session caches use typed value objects instead of arrays.
@@ -94,6 +104,18 @@ final class AnalyticsCollector
 
     /** @var ?int Active user action ID for signal correlation */
     private ?int $activeUserActionId = null;
+
+    /** @var ?int Index of the worker this process is, kept through a database swap; null when no worker session is live */
+    private ?int $liveWorkerIndex = null;
+
+    /** @var bool Whether the live worker runs monopolistic agents */
+    private bool $liveWorkerMonopolistic = false;
+
+    /** @var array<string, AgentId> Agents alive in this process, keyed by {@see self::buildAgentKey()}, kept through a swap */
+    private array $liveAgents = [];
+
+    /** @var array<string, int> Agent key to the moment in milliseconds the agent stopped while the freeze held the collector */
+    private array $heldAgentStops = [];
 
     /**
      * Initializes the flush timer baseline.
@@ -520,24 +542,30 @@ final class AnalyticsCollector
      */
     public function openWorkerSession(int $workerIndex, bool $isMonopolistic): ?int
     {
-        return $this->runSafely(function () use ($workerIndex, $isMonopolistic): ?int {
-            Database::sql(
-                'INSERT INTO `hilos_analytics_worker_session`
-                    (`worker_index`, `is_monopolistic`, `started_ts`, `stopped_ts`)
-                 VALUES (?, ?, ?, NULL)',
-                [$workerIndex, $isMonopolistic ? 1 : 0, $this->nowTs()],
-            );
+        // Known before the gate, so a worker that starts while the freeze holds still gets its row at resume.
+        $this->liveWorkerIndex = $workerIndex;
+        $this->liveWorkerMonopolistic = $isMonopolistic;
 
-            $this->workerSessionId = Database::lastInsertId();
+        return $this->runSafely(function (): ?int {
+            // The resume that runs ahead of this callback has already opened the row when none was open.
+            if ($this->workerSessionId === null) {
+                $this->insertWorkerSessionRow();
+            }
+
             return $this->workerSessionId;
         });
     }
 
     /**
      * Marks the active worker session stopped; no-op when none is open.
+     *
+     * A worker that shuts down while the freeze holds the collector leaves its row open.
      */
     public function closeWorkerSession(): void
     {
+        $this->liveWorkerIndex = null;
+        $this->liveWorkerMonopolistic = false;
+
         $this->runSafely(function (): void {
             if ($this->workerSessionId === null) {
                 return;
@@ -553,28 +581,30 @@ final class AnalyticsCollector
     /**
      * Opens an agent session under the active worker session and caches it.
      *
+     * The agent is remembered as alive before the gate, so an agent that starts while the
+     * freeze holds the collector gets its row at resume.
+     *
      * @param string $agentType Agent type identifier; empty yields null
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
-     * @return ?int Agent session id, or null when there is no worker session or collection is disabled
+     * @return ?int Agent session id, or null when there is no worker session, the freeze holds the collector,
+     *     or collection is disabled
      */
     public function openAgentSession(string $agentType, ?string $agentIndex): ?int
     {
-        if ($agentType === '' || $this->workerSessionId === null) {
+        if ($agentType === '') {
             return null;
         }
 
-        return $this->runSafely(function () use ($agentType, $agentIndex): ?int {
-            Database::sql(
-                'INSERT INTO `hilos_analytics_agent_session`
-                    (`worker_session_id`, `agent_type`, `agent_index`, `started_ts`, `stopped_ts`)
-                 VALUES (?, ?, ?, ?, NULL)',
-                [$this->workerSessionId, $agentType, $agentIndex, $this->nowTs()],
-            );
+        $key = $this->buildAgentKey($agentType, $agentIndex);
+        $this->liveAgents[$key] = new AgentId($agentType, $agentIndex);
 
-            $id = Database::lastInsertId();
-            $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] = $id;
+        return $this->runSafely(function () use ($key): ?int {
+            if ($this->workerSessionId === null) {
+                return null;
+            }
 
-            return $id;
+            // The resume that runs ahead of this callback has already opened the row under a live worker session.
+            return $this->agentSessions[$key] ?? $this->insertAgentSessionRow($this->liveAgents[$key]);
         });
     }
 
@@ -590,8 +620,20 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->runSafely(function () use ($agentType, $agentIndex): void {
-            $key = $this->buildAgentKey($agentType, $agentIndex);
+        $key = $this->buildAgentKey($agentType, $agentIndex);
+        unset($this->liveAgents[$key]);
+
+        if ($this->isHeld()) {
+            // The stop is a true fact of the database under the freeze: stamped with its own moment at resume,
+            // forgotten with the row when a swap comes first.
+            if (isset($this->agentSessions[$key])) {
+                $this->heldAgentStops[$key] = $this->nowTs();
+            }
+
+            return;
+        }
+
+        $this->runSafely(function () use ($key): void {
             $agentSessionId = $this->agentSessions[$key] ?? null;
             if ($agentSessionId === null) {
                 return;
@@ -1031,16 +1073,17 @@ final class AnalyticsCollector
 
     /**
      * Flushes buffered rows when the flush interval has elapsed.
+     *
+     * Runs under the gate even when nothing is due, so recording owed after a freeze is
+     * paid on the first tick.
      */
     public function tick(): void
     {
-        if (!$this->enabled) {
-            return;
-        }
-
-        if (($this->nowTs() - $this->lastFlushTs) >= self::FLUSH_INTERVAL_MS) {
-            $this->flush();
-        }
+        $this->runSafely(function (): void {
+            if (($this->nowTs() - $this->lastFlushTs) >= self::FLUSH_INTERVAL_MS) {
+                $this->flush();
+            }
+        });
     }
 
     /**
@@ -1070,6 +1113,53 @@ final class AnalyticsCollector
         $this->flush();
         $this->activeApiRequestId = null;
         $this->activeUserActionId = null;
+    }
+
+    /**
+     * Forgets every id of the database the collector wrote into, because that database was replaced.
+     *
+     * Called by each process at its answer to the re-hydrate round a protected operation
+     * announces after it swapped the database. The ids go because a row of the restored
+     * database may take a number the cache still holds for another value: a stale id then
+     * files facts under the wrong name with no error at all, and the foreign-key failure that
+     * switched the collector off on 05.09 was the lucky variant of the same thing. The buffer
+     * goes with them, since its rows reference those ids.
+     *
+     * What is alive in the process - the worker and its agents - is kept: they lived through
+     * the swap and are opened anew in the restored database at resume. Connections and pages
+     * are not: the lift reloads every browser, which then connects anew.
+     *
+     * The swap is a fresh start, as a restart would be, so a collector switched off by an
+     * error is switched back on. Memory only; cannot fail.
+     */
+    public function forgetReplacedDatabase(): void
+    {
+        $this->userAgentIds = [];
+        $this->acceptLanguageIds = [];
+        $this->pageIds = [];
+        $this->pageParamsIds = [];
+        $this->actionNameIds = [];
+        $this->signalNameIds = [];
+        $this->cronNameIds = [];
+        $this->payloadIds = [];
+        $this->browserSessions = [];
+        $this->wsConnections = [];
+        $this->pageSessions = [];
+        $this->agentSessions = [];
+        $this->heldAgentStops = [];
+        foreach (array_keys($this->buffers) as $table) {
+            $this->buffers[$table] = [];
+        }
+
+        $this->workerSessionId = null;
+        $this->activeApiRequestId = null;
+        $this->activeUserActionId = null;
+        $this->lastFlushTs = $this->nowTs();
+
+        if (!$this->enabled) {
+            $this->enabled = true;
+            Logger::info('Analytics collector back on: the database under it was replaced');
+        }
     }
 
     /**
@@ -1398,11 +1488,98 @@ final class AnalyticsCollector
     }
 
     /**
+     * Whether this node's protected-mode freeze holds the collector.
+     *
+     * Only the active phase does: it is the one in which the initiator may replace the
+     * database. Before it the database is still the old one, and after it the swap has
+     * already been answered. No freeze row mounted means nothing holds.
+     *
+     * @return bool True while the freeze is in its active phase
+     */
+    private function isHeld(): bool
+    {
+        return Hilos::$rt?->hilosProtectedModeRuntime?->phase === ProtectedModeRuntime::PHASE_ACTIVE;
+    }
+
+    /**
+     * Pays what the freeze left owed, once it no longer holds the collector.
+     *
+     * Stamps the agent stops remembered under the freeze, then opens a row for the live
+     * worker when it has none, then for every live agent that has none under it. Writes
+     * through the private insert helpers only - the public open methods would enter
+     * {@see self::runSafely()} again.
+     */
+    private function resumeOwedRecording(): void
+    {
+        foreach ($this->heldAgentStops as $key => $stoppedTs) {
+            $agentSessionId = $this->agentSessions[$key] ?? null;
+            if ($agentSessionId !== null) {
+                Database::sql(
+                    'UPDATE `hilos_analytics_agent_session` SET `stopped_ts` = ? WHERE `id` = ?',
+                    [$stoppedTs, $agentSessionId],
+                );
+            }
+
+            unset($this->heldAgentStops[$key], $this->agentSessions[$key]);
+        }
+
+        if ($this->liveWorkerIndex !== null && $this->workerSessionId === null) {
+            $this->insertWorkerSessionRow();
+        }
+
+        if ($this->workerSessionId === null) {
+            return;
+        }
+
+        foreach (array_diff_key($this->liveAgents, $this->agentSessions) as $agent) {
+            $this->insertAgentSessionRow($agent);
+        }
+    }
+
+    /**
+     * Inserts the worker session row of the live worker and stores it as the active one.
+     */
+    private function insertWorkerSessionRow(): void
+    {
+        Database::sql(
+            'INSERT INTO `hilos_analytics_worker_session`
+                (`worker_index`, `is_monopolistic`, `started_ts`, `stopped_ts`)
+             VALUES (?, ?, ?, NULL)',
+            [$this->liveWorkerIndex, $this->liveWorkerMonopolistic ? 1 : 0, $this->nowTs()],
+        );
+
+        $this->workerSessionId = Database::lastInsertId();
+    }
+
+    /**
+     * Inserts an agent session row under the active worker session and caches it.
+     *
+     * @param AgentId $agent Agent the row is opened for
+     * @return int Agent session id
+     */
+    private function insertAgentSessionRow(AgentId $agent): int
+    {
+        Database::sql(
+            'INSERT INTO `hilos_analytics_agent_session`
+                (`worker_session_id`, `agent_type`, `agent_index`, `started_ts`, `stopped_ts`)
+             VALUES (?, ?, ?, ?, NULL)',
+            [$this->workerSessionId, $agent->type, $agent->index, $this->nowTs()],
+        );
+
+        $id = Database::lastInsertId();
+        $this->agentSessions[$this->buildAgentKey($agent->type, $agent->index)] = $id;
+
+        return $id;
+    }
+
+    /**
      * Runs a collector operation, containing any failure.
      *
-     * Returns the default immediately when the collector is disabled. On any
-     * throwable, disables the collector for the rest of the process, logs the
-     * error, and returns the default instead of propagating.
+     * Returns the default immediately when the collector is disabled or while the
+     * freeze holds it, touching nothing. Otherwise pays what a past freeze left owed,
+     * then runs the operation. On any throwable, disables the collector until the
+     * process restarts or the database is replaced, logs the error, and returns the
+     * default instead of propagating.
      *
      * @param callable $callback Operation to run
      * @param mixed $default Value returned when disabled or on failure
@@ -1410,15 +1587,17 @@ final class AnalyticsCollector
      */
     private function runSafely(callable $callback, mixed $default = null): mixed
     {
-        if (!$this->enabled) {
+        if (!$this->enabled || $this->isHeld()) {
             return $default;
         }
 
         try {
+            $this->resumeOwedRecording();
             return $callback();
         } catch (Throwable $throwable) {
             $this->enabled = false;
-            Logger::error('Analytics collector disabled: ' . $throwable->getMessage());
+            Logger::error('Analytics collector disabled until this process restarts or the database is replaced: '
+                . $throwable->getMessage());
             return $default;
         }
     }

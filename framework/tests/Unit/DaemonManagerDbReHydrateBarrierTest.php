@@ -17,6 +17,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -63,6 +64,9 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     /** Round another node was already waiting under when it told this one about a swap. */
     private const int ANNOUNCER_ROUND = 11;
 
+    /** User action id the master's analytics collector holds from before the swap. */
+    private const int CAPTURED_USER_ACTION_ID = 42;
+
     /** @var ?EnvAccessor Env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
 
@@ -79,6 +83,7 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     protected function tearDown(): void
     {
         Hilos::$sr = null;
+        Hilos::$ac = null;
         Hilos::$env = $this->previousEnv;
         putenv(EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT->name);
 
@@ -92,6 +97,30 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
         $daemon->announce(self::INITIATOR);
 
         $this->assertSame([self::INITIATOR], $daemon->workerServer->announcedTo());
+    }
+
+    public function testTheDaemonsOwnAnswerMakesItsCollectorForgetTheReplacedDatabase(): void
+    {
+        // HIL-910: the master's collector holds ids of the database that is gone, like any worker's.
+        Hilos::$ac = new AnalyticsCollector();
+        Hilos::$ac->startUserActionCapture(self::CAPTURED_USER_ACTION_ID);
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+
+        $daemon->announce(self::INITIATOR);
+
+        $this->assertSame([], Hilos::$ac->captureSignalMeta());
+    }
+
+    public function testAFollowerToldOverTheMeshForgetsToo(): void
+    {
+        // The nodes share one database, so a swap announced elsewhere replaced this node's too.
+        Hilos::$ac = new AnalyticsCollector();
+        Hilos::$ac->startUserActionCapture(self::CAPTURED_USER_ACTION_ID);
+        $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
+
+        $daemon->announceFromNode('node-a', self::ANNOUNCER_ROUND);
+
+        $this->assertSame([], Hilos::$ac->captureSignalMeta());
     }
 
     public function testNothingIsReportedWhileAWorkerStillOwesAnAnswer(): void
