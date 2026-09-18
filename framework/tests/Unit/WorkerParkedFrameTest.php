@@ -18,6 +18,7 @@ use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -96,6 +97,26 @@ final class WorkerParkedFrameTest extends TestCase
             $this->manager->agent(WorkerParkedFrameTestReader::AGENT_TYPE),
             'The start waits for its state: nothing is created before it lands.',
         );
+    }
+
+    /**
+     * An agent's own signal carries no connection, and while another consumer waits it has no page
+     * to wait behind: it goes straight to its agent. It used to die on the way with a TypeError,
+     * which a worker raised by the monopolistic pool's growth met on its very first frame (HIL-998).
+     */
+    public function testAnAgentSignalWithNoConnectionIsHandledWhileAStartIsParked(): void
+    {
+        $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestAgent::AGENT_TYPE));
+        $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestReader::AGENT_TYPE));
+
+        $this->manager->handleDaemonMessage(new DaemonAgentMessageDTO(WorkerParkedFrameTestAgent::AGENT_TYPE, new SignalDTO(
+            new SignalSource(SignalSource::AGENT, WorkerParkedFrameTestReader::AGENT_TYPE),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName('handoff'),
+            new AgentSignalData(new SystemSignalDTO('handoff')),
+        )));
+
+        $this->assertSame(['handoff'], $this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE)?->agentSignals);
     }
 
     public function testAFrameForTheWaitingAgentIsHeldBehindItsStartAndReleasedInArrivalOrder(): void
@@ -426,6 +447,9 @@ class WorkerParkedFrameTestAgent extends AbstractAgent
     /** @var list<string> Accept keys of the connections it was told closed */
     public array $closedConnections = [];
 
+    /** @var list<string> Names of the agent signals it was handed, in order */
+    public array $agentSignals = [];
+
     public function onSignalSystem(SignalDataInterface $data, string $source, string $name): void
     {
         $this->heard[] = $name;
@@ -439,6 +463,16 @@ class WorkerParkedFrameTestAgent extends AbstractAgent
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
         $this->closedConnections[] = $data->acceptKey;
+    }
+
+    /**
+     * @param AgentSignalData $data Signal data; unused here
+     * @param string $sender Sender in full; unused here
+     * @param string $name Signal name the agent records
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        $this->agentSignals[] = $name;
     }
 
     public function onStop(): void

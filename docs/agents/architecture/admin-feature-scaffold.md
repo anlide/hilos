@@ -91,11 +91,6 @@ The framework owns everything mechanical. Generate, in any order:
    all three declare the library under `requiredSharedAgents`, so a project holding
    any of them needs this entry, and a project holding all three still needs only
    the one.
-   The library is monopolistic, so raise `WORKER_MIN_MONOPOLISTIC` by one in the
-   stack's compose when this entry is the project's first claim on it. The pool
-   does not grow on demand: one short and the agent's first start throws
-   `NoSuitableWorkerException` and kills the daemon
-   ([new-project/README.md](../../new-project/README.md), *Worker pool*).
 7. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
    `@hilos/{vue,react,angular}` `admin/settings/HilosSettingsPage`, through a thin
    project wrapper that binds the `HilosSettingsContext` (`{ scopes, actions }`

@@ -391,6 +391,16 @@ final class PlacementViewTestExecutor implements PlacementExecutor
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return ?int Worker id a placement lands on; this fake never waits for a worker
+     */
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
+    {
+        return 1;
+    }
+
+    /**
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
      */
     public function revokePlacement(string $agentType, ?string $agentIndex): void
     {

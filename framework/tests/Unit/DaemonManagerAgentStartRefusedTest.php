@@ -104,6 +104,43 @@ final class DaemonManagerAgentStartRefusedTest extends TestCase
         $this->assertSame('This page is temporarily unavailable. Please try again.', $error->message);
     }
 
+    /**
+     * A monopolistic agent waiting for a worker raised for it is a start under way, not a refusal
+     * (HIL-998): the page's frame is held, and when the wait ends without a worker it is answered in
+     * the words of a start refused on this node - at that moment, not at the hold's own deadline.
+     */
+    public function testAPageWaitingOnAnAgentThatWaitsForAWorkerIsHeldAndAnsweredWhenTheWaitFails(): void
+    {
+        $manager = new AgentStartRefusedTestManager();
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName(AgentStartRefusedTestRouter::AWAITING_PAGE),
+            new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, AgentStartRefusedTestRouter::AWAITING_PAGE),
+        );
+
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertSame([], $manager->deliveredTo());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        $manager->workerServer->awaitingAgentIds = [];
+        $manager->getAgentManagerDaemon()->reportAgentStartFailed(
+            AgentStartRefusedTestRouter::AWAITING_AGENT,
+            'no monopolistic worker came up',
+        );
+
+        $frames = $manager->pageErrorFrames();
+        $this->assertCount(1, $frames);
+        $error = $frames[0]->data;
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        $this->assertSame(AgentStartRefusedTestRouter::AWAITING_PAGE, $error->page);
+        $this->assertSame(HttpConstants::HTTP_SERVICE_UNAVAILABLE, $error->httpCode);
+        $this->assertSame('agent_unavailable', $error->errorCode);
+        $this->assertSame([], $manager->deliveredTo());
+    }
+
     public function testAnOperatorWaitingOnTheRefusedAgentIsAnsweredByName(): void
     {
         $manager = new AgentStartRefusedTestManager();
@@ -309,6 +346,10 @@ final class AgentStartRefusedTestRouter extends SignalRouter
 
     public const string HEALTHY_AGENT = 'start_refused_healthy_agent';
 
+    public const string AWAITING_AGENT = 'start_awaiting_worker_agent';
+
+    public const string AWAITING_PAGE = 'awaiting_room';
+
     public const string REFUSED_PAGE = 'refused_room';
 
     public const string REFUSED_COMMAND = 'protected-mode:open';
@@ -351,6 +392,7 @@ final class AgentStartRefusedTestRouter extends SignalRouter
         return match ($signal->signalName->getName()) {
             self::REFUSED_PAGE, self::REFUSED_COMMAND, self::REFUSED_PUSH => [new AgentDestination(self::REFUSED_AGENT)],
             self::LOST_PUSH => [new AgentDestination(self::LOST_AGENT)],
+            self::AWAITING_PAGE => [new AgentDestination(self::AWAITING_AGENT)],
             self::SHARED_PUSH => [new AgentDestination(self::REFUSED_AGENT), new AgentDestination(self::HEALTHY_AGENT)],
             default => [],
         };
@@ -360,15 +402,17 @@ final class AgentStartRefusedTestRouter extends SignalRouter
 final class AgentStartRefusedTestAgentManagerDaemon extends AgentManagerDaemon
 {
     /**
-     * Every agent but the refused one counts as up: the lost one was up and went, and the healthy
-     * one is simply delivered to, while the refused one is started by its first frame (HIL-629).
+     * Every agent but the refused and the awaiting one counts as up: the lost one was up and went,
+     * and the healthy one is simply delivered to, while those two are started by their first frame
+     * (HIL-629).
      *
      * @param string $agentId Agent the drain asks about
      * @return bool Whether the agent counts as up
      */
     public function isAgentStarted(string $agentId): bool
     {
-        return $agentId !== AgentStartRefusedTestRouter::REFUSED_AGENT;
+        return $agentId !== AgentStartRefusedTestRouter::REFUSED_AGENT
+            && $agentId !== AgentStartRefusedTestRouter::AWAITING_AGENT;
     }
 
     /**
@@ -411,7 +455,8 @@ final class AgentStartRefusedTestCommandServer extends CommandServer
 
 /**
  * A worker server that refuses the two agents the cases name - one for want of a worker, one
- * lost after its start - and records every handoff it does take.
+ * lost after its start - keeps a third waiting for a worker raised for it, and records every
+ * handoff it does take.
  */
 final class AgentStartRefusedTestWorkerServer extends WorkerServer
 {
@@ -420,6 +465,9 @@ final class AgentStartRefusedTestWorkerServer extends WorkerServer
 
     /** @var bool Whether the project's singleton hook fails the way an unguarded agent start would */
     public bool $singletonHookFails = false;
+
+    /** @var list<string> Agents that wait for a monopolistic worker raised for them (HIL-998) */
+    public array $awaitingAgentIds = [AgentStartRefusedTestRouter::AWAITING_AGENT];
 
     public function __construct()
     {
@@ -435,6 +483,15 @@ final class AgentStartRefusedTestWorkerServer extends WorkerServer
         if ($agentType === AgentStartRefusedTestRouter::REFUSED_AGENT) {
             throw new NoSuitableWorkerException(WorkerConstants::TYPE_MONOPOLISTIC, true);
         }
+    }
+
+    /**
+     * @param string $agentId Agent the master asks about
+     * @return bool Whether the case has that agent waiting for a worker
+     */
+    public function isAgentAwaitingWorker(string $agentId): bool
+    {
+        return in_array($agentId, $this->awaitingAgentIds, true);
     }
 
     /**

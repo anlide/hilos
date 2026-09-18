@@ -50,15 +50,29 @@ interface PlacementExecutor
     /**
      * Launches an agent of the given type on this node and returns its worker id.
      *
+     * A monopolistic agent that found no free worker is accepted rather than refused: a worker is
+     * being raised for it, and the answer is null until it is seated (HIL-998). The caller learns
+     * the worker from {@see placedWorkerId()} once there is one.
+     *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return int Worker id the agent was placed on (negative = monopolistic, positive = regular)
+     * @return ?int Worker id the agent was placed on (negative = monopolistic, positive = regular), or
+     *     null while the agent waits for a worker raised for it
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws NoSuitableWorkerException When no suitable worker is available to host it
-     * @throws AgentNotLinkedToWorkerException When the agent did not link to a worker
+     * @throws AgentNotLinkedToWorkerException When the agent neither linked to a worker nor waits for one
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): int;
+    public function executePlacement(string $agentType, ?string $agentIndex): ?int;
+
+    /**
+     * Returns the worker an agent accepted by {@see executePlacement()} was seated on.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return ?int Worker id once the agent is seated, null while it is still waiting for a worker
+     */
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int;
 
     /**
      * Stops a placed agent on this node; a no-op when it is not running.

@@ -85,6 +85,17 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var int Default placement-ack timeout in ms when none is configured */
     private const int DEFAULT_PLACEMENT_ACK_TIMEOUT_MS = 16000;
 
+    /**
+     * @var float Seconds a placement accepted without a worker waits for one before it is answered
+     *     failed (HIL-998): the agent's own wait plus a second, so the answer meets the agent's
+     *     verdict rather than racing it - the same arithmetic the master's frame hold uses. Well
+     *     inside {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS}, so the leader never gives up first.
+     */
+    private const float DEFERRED_PLACEMENT_WAIT_SEC = AgentConstants::START_DEADLINE_SECONDS + 1.0;
+
+    /** @var string Reason a deferred placement is answered failed with when no worker came up */
+    private const string DEFERRED_PLACEMENT_FAILED_REASON = 'no monopolistic worker came up within the start deadline';
+
     /** @var float Seconds one agent's placement ask silences the next one for */
     private const float PLACEMENT_ASK_INTERVAL_SEC = 5.0;
 
@@ -155,6 +166,16 @@ final class ClusterPlacement implements WorkerPlacement
 
     /** @var array<string, float> Deadline (microtime) an agent's placement counts as already asked for until */
     private array $placementAsks = [];
+
+    /**
+     * Placements this node accepted while the agent waits for a monopolistic worker raised for it
+     * (HIL-998), keyed by agent id. The answer is owed once the agent is seated or the wait is
+     * over: to the placing leader when `nodeId` names one, and to nobody but this node's own view
+     * when it is null - a placement the leader made on itself.
+     *
+     * @var array<string, array{nodeId: ?string, agentType: string, agentIndex: ?string, deadline: float}>
+     */
+    private array $deferredPlacementAnswers = [];
 
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
@@ -488,6 +509,12 @@ final class ClusterPlacement implements WorkerPlacement
      * failure is caught and reported rather than propagated, so a bad placement never
      * tears down the daemon loop.
      *
+     * A placement accepted while a monopolistic worker is raised for the agent is answered later,
+     * by {@see answerDeferredPlacements()}, and nothing is sent now (HIL-998): refusing a node a
+     * second away from ready would send the agent looking elsewhere, and the leader already waits
+     * {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS} for the answer, with the record in
+     * {@see PlacementState::Placing} read as ordinary travel time.
+     *
      * @param string $fromNodeId Id of the leader node that requested the placement
      * @param PeerPlaceAgentDTO $frame Received place-agent frame
      */
@@ -504,6 +531,25 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        if ($workerId === null) {
+            $this->deferPlacementAnswer($fromNodeId, $agentType, $agentIndex);
+
+            return;
+        }
+
+        $this->answerPlacementStarted($fromNodeId, $agentType, $agentIndex, $workerId);
+    }
+
+    /**
+     * Records this node as hosting a placed agent and tells the leader that placed it.
+     *
+     * @param string $fromNodeId Id of the leader node that requested the placement
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param int $workerId Worker the agent landed on
+     */
+    private function answerPlacementStarted(string $fromNodeId, string $agentType, ?string $agentIndex, int $workerId): void
+    {
         $this->hosted[$this->agentId($agentType, $agentIndex)] = new PlacementRecord(
             $agentType,
             $agentIndex,
@@ -516,6 +562,69 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Remembers a placement accepted while the agent waits for a worker raised for it (HIL-998).
+     *
+     * @param ?string $fromNodeId Leader owed the answer, or null for a placement the leader made on itself
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    private function deferPlacementAnswer(?string $fromNodeId, string $agentType, ?string $agentIndex): void
+    {
+        $this->deferredPlacementAnswers[$this->agentId($agentType, $agentIndex)] = [
+            'nodeId' => $fromNodeId,
+            'agentType' => $agentType,
+            'agentIndex' => $agentIndex,
+            'deadline' => microtime(true) + self::DEFERRED_PLACEMENT_WAIT_SEC,
+        ];
+    }
+
+    /**
+     * Answers the placements accepted while their agent waited for a worker, once there is an
+     * answer to give (HIL-998).
+     *
+     * Seated - the agent is hosted here and the placement is started; the wait is over without a
+     * worker - the placement failed, with the reason the agent gave up for. A placement the leader
+     * made on itself has nobody to wire the answer to and only finishes its record.
+     *
+     * @param float $now Current microtime
+     */
+    private function answerDeferredPlacements(float $now): void
+    {
+        foreach ($this->deferredPlacementAnswers as $agentId => $deferred) {
+            ['nodeId' => $nodeId, 'agentType' => $agentType, 'agentIndex' => $agentIndex] = $deferred;
+            $workerId = $this->executor->placedWorkerId($agentType, $agentIndex);
+            if ($workerId === null && $now < $deferred['deadline']) {
+                continue;
+            }
+
+            unset($this->deferredPlacementAnswers[$agentId]);
+
+            if ($workerId !== null) {
+                if ($nodeId !== null) {
+                    $this->answerPlacementStarted($nodeId, $agentType, $agentIndex, $workerId);
+                    continue;
+                }
+
+                $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
+                $this->hosted[$agentId] = $record;
+                $this->registry->put($record);
+                continue;
+            }
+
+            Logger::warning("Placement of '{$agentId}' failed: " . self::DEFERRED_PLACEMENT_FAILED_REASON);
+            if ($nodeId !== null) {
+                $this->mesh->sendToNode(
+                    $nodeId,
+                    PeerAgentStatusDTO::failed($agentType, $agentIndex, self::DEFERRED_PLACEMENT_FAILED_REASON),
+                );
+                continue;
+            }
+
+            $this->registry->put(new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Failed));
+        }
+    }
+
+    /**
      * Node side: stops a leader-requested agent locally and confirms with a stopped status.
      *
      * @param string $fromNodeId Id of the leader node that requested the stop
@@ -523,8 +632,10 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function onStopAgent(string $fromNodeId, PeerStopAgentDTO $frame): void
     {
+        $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
         $this->executor->revokePlacement($frame->agentType, $frame->agentIndex);
-        unset($this->hosted[$this->agentId($frame->agentType, $frame->agentIndex)]);
+        // A stop answers a placement still waiting for its worker too: `stopped` below is its answer
+        unset($this->hosted[$agentId], $this->deferredPlacementAnswers[$agentId]);
         $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::stopped($frame->agentType, $frame->agentIndex));
     }
 
@@ -820,6 +931,8 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function tick(float $now): void
     {
+        $this->answerDeferredPlacements($now);
+
         foreach ($this->failoverDeadlines as $agentId => ['nodeId' => $lostNodeId, 'deadline' => $deadline]) {
             if ($now >= $deadline) {
                 unset($this->failoverDeadlines[$agentId]);
@@ -1388,10 +1501,18 @@ final class ClusterPlacement implements WorkerPlacement
         $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
 
         try {
-            $this->executor->executePlacement($agentType, $agentIndex);
+            $workerId = $this->executor->executePlacement($agentType, $agentIndex);
         } catch (AgentDaemonCreationFailedException | NoSuitableWorkerException | AgentNotLinkedToWorkerException $e) {
             $this->registry->put($record->withState(PlacementState::Failed));
             throw $e;
+        }
+
+        // Accepted while a worker is raised for it (HIL-998): placing until the answer is known
+        if ($workerId === null) {
+            $this->registry->put($record->withState(PlacementState::Placing));
+            $this->deferPlacementAnswer(null, $agentType, $agentIndex);
+
+            return;
         }
 
         $this->hosted[$record->agentId()] = $record;

@@ -136,6 +136,12 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private array $rtClaimRefused = [];
 
+    /**
+     * @var array<string, AwaitingWorkerAgent> Agents whose monopolistic worker is being raised, keyed by
+     *     agent id, in the order they asked (HIL-998)
+     */
+    private array $agentsAwaitingWorker = [];
+
     /** @var float Interval between worker processes tick checks in seconds */
     private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
 
@@ -492,6 +498,10 @@ abstract class WorkerServer extends AbstractServer implements
         // One step of the protected-mode roster walk, every pass. Above the throttle below, which
         // is for worker processes: a walk that took it would move one agent a second (HIL-1012).
         $this->advanceProtectedModeRoster();
+
+        // Seat or give up the agents waiting for a monopolistic worker, every pass and for the same
+        // reason: under the throttle a worker that registered would wait up to a second for its agent.
+        $this->advanceAgentsAwaitingWorker();
 
         // Tick worker processes and related checks (check status, read output, handle graceful shutdown)
         // In normal operation, check once per second to reduce system call overhead.
@@ -851,6 +861,10 @@ abstract class WorkerServer extends AbstractServer implements
      * Starts missing workers one at a time (not more than one per tick).
      * Process startup takes about a second, so we start one and wait for next tick.
      *
+     * For monopolistic workers the minimum is a warm-up, not a ceiling: the pool grows past it
+     * one worker per agent that finds none free ({@see orderMonopolisticWorkerFor()}, HIL-998), so
+     * the minimum only decides how many agents come up without that wait.
+     *
      * @throws CouldNotStartException If worker cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      */
@@ -863,7 +877,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         $types = [
             WorkerConstants::TYPE_REGULAR => [self::LIMIT_MIN => $this->minRegular, self::LIMIT_MAX => $this->maxRegular],
-            WorkerConstants::TYPE_MONOPOLISTIC => [self::LIMIT_MIN => $this->minMonopolistic, self::LIMIT_MAX => PHP_INT_MAX]
+            WorkerConstants::TYPE_MONOPOLISTIC => [self::LIMIT_MIN => $this->minMonopolistic]
         ];
 
         foreach ($types as $type => $limits) {
@@ -893,11 +907,14 @@ abstract class WorkerServer extends AbstractServer implements
      * Uses next available index (reused from stopped workers if available, otherwise next sequential).
      * All workers share the same index space regardless of type.
      *
+     * Protected rather than private so a test can stand in for the process launch and still drive
+     * the pool growth that orders it ({@see orderMonopolisticWorkerFor()}).
+     *
      * @param bool $isMonopolistic True if monopolistic worker
      * @throws CouldNotStartException If worker cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      */
-    private function startWorker(bool $isMonopolistic): void
+    protected function startWorker(bool $isMonopolistic): void
     {
         $type = $isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
 
@@ -964,7 +981,9 @@ abstract class WorkerServer extends AbstractServer implements
      * (HIL-629), and {@see sendSignalToAgent()} is reached only once it has.
      *
      * A start refused quietly - the freeze, or a gate that keeps the agent off this node - leaves
-     * no linked record behind, and that is how the caller tells it from a start under way.
+     * no linked record behind, and that is how the caller tells it from a start under way. A
+     * monopolistic agent that found no free worker is a start under way without a link: it waits
+     * for a worker raised for it, and {@see isAgentAwaitingWorker()} says so (HIL-998).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -1028,6 +1047,12 @@ abstract class WorkerServer extends AbstractServer implements
             }
         }
 
+        // A worker is already on order for this agent: its start is under way, and a second frame
+        // addressed to it neither orders another nor counts as a refusal (HIL-998)
+        if (isset($this->agentsAwaitingWorker[$agentId])) {
+            return;
+        }
+
         // Protected-mode freeze gate: while the node is frozen only the initiator agent may
         // start, so an inbound signal cannot revive an agent the freeze just stopped. It sits
         // here, above the temporary record, because a freeze refuses everyone alike - unlike the
@@ -1087,9 +1112,24 @@ abstract class WorkerServer extends AbstractServer implements
             $preferredWorkerId,
         );
 
-        // No suitable worker: roll the temporary record back the way the two gates above do, so
-        // the refusal leaves no agent behind that nobody was ever asked to run (HIL-999)
+        // No suitable worker: a monopolistic agent orders one and waits for it, keeping the
+        // temporary record - it is an agent somebody asked to run (HIL-998). Anything else rolls
+        // the record back the way the two gates above do, so the refusal leaves no agent behind
+        // that nobody was ever asked to run (HIL-999)
         if ($workerClient === null) {
+            if ($this->mayGrowMonopolisticPoolFor($agentDaemon, $agentIndex)) {
+                try {
+                    $this->orderMonopolisticWorkerFor($agentId, $agentType, $agentIndex, $placedByLeader);
+
+                    return;
+                } catch (CouldNotStartException | FailedToSetNonBlockingException $e) {
+                    // A launch that fails now will fail on a retry too: refused like a shortage
+                    Logger::error("Monopolistic pool: worker for agent {$agentId} could not be launched: {$e->getMessage()}");
+                }
+            } elseif ($agentDaemon->requiresMonopolisticProcess() && $agentIndex !== null) {
+                Logger::error("Agent {$agentId} is monopolistic and indexed: the pool does not grow one worker per instance");
+            }
+
             if (!$agentExisted) {
                 $this->agentManager->removeAgent($agentId);
             }
@@ -1109,6 +1149,190 @@ abstract class WorkerServer extends AbstractServer implements
         // the agent coming up is the only one entitled to strike out the connection rows left
         // behind by tabs that closed while it was down (HIL-664).
         $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? []);
+    }
+
+    /**
+     * Whether an agent that found no free worker may have one raised for it (HIL-998).
+     *
+     * Every reason is a named one. The regular pool keeps its own maximum and its own load
+     * logic, so only a monopolistic agent grows the pool. A node on its way out gains nothing
+     * from a process it is about to kill. And a per-instance agent does not grow it: the pool
+     * would then follow the number of entities rather than the agent types the node hosts, and
+     * that is the one bound growth has. The rule sits here and not in the topology validator,
+     * because monopolistic-ness is declared by the daemon instance, which the validator never
+     * builds.
+     *
+     * An agent already waiting never gets this far - {@see startAgentInternal()} returns for it
+     * before the worker pick.
+     *
+     * @param AgentDaemonInterface $agentDaemon Daemon of the agent that found no worker
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return bool True when a worker may be ordered for the agent
+     */
+    private function mayGrowMonopolisticPoolFor(AgentDaemonInterface $agentDaemon, ?string $agentIndex): bool
+    {
+        return $agentDaemon->requiresMonopolisticProcess()
+            && !$this->preparingShutdown
+            && $agentIndex === null;
+    }
+
+    /**
+     * Raises one monopolistic worker for an agent and records the agent as waiting for it (HIL-998).
+     *
+     * At once and off the tick: the one-worker-a-second pace of {@see ensureMinWorkers()} is the
+     * warm-up's, and a bootstrap that addresses a dozen monopolistic agents at once would see the
+     * back of that queue miss the master's hold on their frames. The agent gives up one second
+     * before that hold does ({@see AgentConstants::START_DEADLINE_SECONDS}), so a held frame meets
+     * a verdict rather than an empty wait. The worker is not the agent's: whichever waiting agent
+     * is first when a free monopolistic worker exists takes it ({@see advanceAgentsAwaitingWorker()}).
+     *
+     * @param string $agentId Agent that found no worker
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param bool $placedByLeader Whether the start carried the placement sanction
+     * @throws CouldNotStartException If the worker process cannot be launched
+     * @throws FailedToSetNonBlockingException If the worker's pipes cannot be made non-blocking
+     */
+    private function orderMonopolisticWorkerFor(
+        string $agentId,
+        string $agentType,
+        ?string $agentIndex,
+        bool $placedByLeader,
+    ): void {
+        $this->startWorker(true);
+
+        $this->agentsAwaitingWorker[$agentId] = new AwaitingWorkerAgent(
+            $agentId,
+            $agentType,
+            $agentIndex,
+            $placedByLeader,
+            microtime(true) + AgentConstants::START_DEADLINE_SECONDS,
+        );
+
+        Logger::info("Monopolistic pool: worker ordered for agent {$agentId}");
+    }
+
+    /**
+     * Seats the agents waiting for a monopolistic worker, and gives up the ones whose wait is over
+     * (HIL-998).
+     *
+     * Asks the worker pick rather than listening for a registration: one question covers a worker
+     * that just registered and one an agent just left, and the pick admits a monopolistic worker
+     * only with no agent on it, so one worker takes one agent and the next one in line finds none.
+     * Waiting agents are taken in the order they asked.
+     *
+     * Every failure is one agent's and is contained here, the way the roster walk beside it
+     * contains its own: this runs on the master's every pass.
+     *
+     * Protected rather than private so a pass can be taken without the rest of {@see onTick()},
+     * whose worker-process half needs a server built from a worker environment.
+     */
+    protected function advanceAgentsAwaitingWorker(): void
+    {
+        if ($this->agentsAwaitingWorker === []) {
+            return;
+        }
+
+        $now = microtime(true);
+        foreach ($this->agentsAwaitingWorker as $agentId => $awaiting) {
+            if ($this->selectWorkerForAgent(true) !== null) {
+                unset($this->agentsAwaitingWorker[$agentId]);
+                $this->seatAwaitingAgent($awaiting);
+                continue;
+            }
+
+            if ($awaiting->deadline <= $now) {
+                unset($this->agentsAwaitingWorker[$agentId]);
+                Logger::error("Agent {$agentId} waited " . AgentConstants::START_DEADLINE_SECONDS
+                    . 's for a monopolistic worker and did not get one');
+                $this->refuseAwaitingAgent($agentId, new NoSuitableWorkerException(WorkerConstants::TYPE_MONOPOLISTIC, true));
+            }
+        }
+    }
+
+    /**
+     * Starts a waiting agent now that a free monopolistic worker exists (HIL-998).
+     *
+     * Through the ordinary start, so every gate it passed when it asked is asked again: a node
+     * that lost leadership or an RT claim in the meantime keeps the agent off it as it would have
+     * then. A start that ends without a worker link was refused quietly by one of those gates, and
+     * the record the wait kept is taken away with it.
+     *
+     * @param AwaitingWorkerAgent $awaiting Agent to seat
+     */
+    private function seatAwaitingAgent(AwaitingWorkerAgent $awaiting): void
+    {
+        try {
+            $this->startAgentInternal($awaiting->agentType, $awaiting->agentIndex, $awaiting->placedByLeader);
+        } catch (Throwable $e) {
+            Logger::error("Monopolistic pool: agent {$awaiting->agentId} could not be seated: {$e->getMessage()}");
+            $this->refuseAwaitingAgent($awaiting->agentId, $e);
+
+            return;
+        }
+
+        $agentDaemon = $this->agentManager->getAgent($awaiting->agentId);
+        if ($agentDaemon === null || !$agentDaemon->hasWorkerClient()) {
+            $this->forgetUnlinkedRecord($awaiting->agentId);
+
+            return;
+        }
+
+        Logger::info("Monopolistic pool: agent {$awaiting->agentId} seated on worker #{$agentDaemon->getWorkerClient()->getWorkerIndex()}");
+    }
+
+    /**
+     * Ends a wait that produced no agent: the record goes, and the asker and the project are told
+     * (HIL-998).
+     *
+     * The same answer a start refused for want of a worker gets (HIL-999), and at once: reported
+     * as a start that failed, which drops the record and answers the frames the master holds for
+     * the agent in the words of a start refused on this node, plus one
+     * {@see MasterFailureUnit::AGENT_START} card for the project.
+     *
+     * @param string $agentId Agent whose wait ended without a worker
+     * @param Throwable $failure What the start was refused with
+     */
+    private function refuseAwaitingAgent(string $agentId, Throwable $failure): void
+    {
+        try {
+            $this->agentManager->reportAgentStartFailed($agentId, $failure->getMessage());
+        } catch (InvalidArgumentException $e) {
+            // The record is gone before the sink is told; an answer that cannot be named leaves the
+            // held frame to its own deadline, which answers it then
+            Logger::error("Monopolistic pool: refusal of agent {$agentId} could not be answered: {$e->getMessage()}");
+        }
+        $this->reportContainedFailure(new ContainedFailure(MasterFailureUnit::AGENT_START, $agentId, $failure));
+    }
+
+    /**
+     * Takes away the record of an agent that is linked to no worker, and leaves a linked one alone.
+     *
+     * The record a wait keeps is the temporary one {@see startAgentInternal()} writes, the only kind
+     * of record that is linked to no worker, so this is the rollback HIL-999 does for a refused
+     * start, taken later.
+     *
+     * @param string $agentId Agent whose record may go
+     */
+    private function forgetUnlinkedRecord(string $agentId): void
+    {
+        if ($this->agentManager->getAgent($agentId)?->hasWorkerClient() === false) {
+            $this->agentManager->removeAgent($agentId);
+        }
+    }
+
+    /**
+     * Whether an agent is waiting for a monopolistic worker raised for it (HIL-998).
+     *
+     * A start under way like one whose worker has not reported yet: the master holds frames
+     * addressed to it instead of delivering them, and a freeze counts it as still starting.
+     *
+     * @param string $agentId Agent id
+     * @return bool True while the agent waits for its worker
+     */
+    public function isAgentAwaitingWorker(string $agentId): bool
+    {
+        return isset($this->agentsAwaitingWorker[$agentId]);
     }
 
     /**
@@ -1460,7 +1684,8 @@ abstract class WorkerServer extends AbstractServer implements
      * Stop agent and remove from manager
      *
      * Sends agent_stop signal to worker and removes agent from agent manager.
-     * No-op if agent is not running.
+     * No-op if agent is not running. An agent still waiting for a worker raised for it has none
+     * to be stopped on: the stop takes it out of the wait, and its record with it (HIL-998).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
@@ -1468,6 +1693,13 @@ abstract class WorkerServer extends AbstractServer implements
     protected function stopAgent(string $agentType, ?string $agentIndex = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
+
+        if (isset($this->agentsAwaitingWorker[$agentId])) {
+            unset($this->agentsAwaitingWorker[$agentId]);
+            $this->forgetUnlinkedRecord($agentId);
+
+            return;
+        }
 
         $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
         if ($workerInfo === null) {
@@ -1637,6 +1869,19 @@ abstract class WorkerServer extends AbstractServer implements
         $this->protectedModeStoppedAgents = $this->protectedModeResumeQueue ?? [];
         $this->protectedModeResumeQueue = null;
 
+        // An agent waiting for a worker raised for it has no worker to be stopped on: it leaves the
+        // wait, and its record goes with it. It is not remembered for the lift - it never ran here -
+        // and comes up the ordinary way the next time it is addressed (HIL-998).
+        foreach (array_keys($this->agentsAwaitingWorker) as $agentId) {
+            if ($agentId === $initiatorAgentId) {
+                continue;
+            }
+
+            unset($this->agentsAwaitingWorker[$agentId]);
+            $this->forgetUnlinkedRecord($agentId);
+            Logger::info("Monopolistic pool: agent {$agentId} left its wait for a worker, protected mode holds the node");
+        }
+
         $this->protectedModeStopQueue = [];
         foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
             if ($agentId === $initiatorAgentId) {
@@ -1666,22 +1911,31 @@ abstract class WorkerServer extends AbstractServer implements
      * once its worker has reported it. Everything between those two moments is a start in flight,
      * and a freeze entered on top of one costs the node that agent.
      *
-     * An agent LINKED TO NO WORKER is not one of those moments, and this is the whole reason the
-     * link is asked about here. A start that found no free worker used to throw and leave its
-     * record behind ({@see startAgentInternal()}); it rolls the record back now (HIL-999), and the
-     * link check stays as the guard for any path that can still leave an unlinked record: the
-     * node then holds an agent nobody was ever asked to run, and no report about it will ever
-     * arrive. Counted as a start in flight, such a record made every freeze from then on wait
-     * out the entry gate's whole deadline and go in on top of it: measured in run 0232, nine
-     * holds of five seconds each, always on the same three agents, and exactly the three whose
-     * start reports the run was short of.
+     * So is an agent WAITING FOR A WORKER raised for it ({@see isAgentAwaitingWorker()}, HIL-998):
+     * its record is linked to no worker yet, but somebody asked for it and the wait ends by a
+     * deadline, seated or refused.
      *
-     * @return list<string> Ids of agents whose start was asked of a worker and not reported yet
+     * Any other agent linked to no worker is not a start in flight, and this is why the link is
+     * asked about here. A start that found no free worker used to throw and leave its record
+     * behind ({@see startAgentInternal()}); it rolls the record back now (HIL-999), and a waiting
+     * agent's record is taken away when its wait ends, so the link check stays as the guard for
+     * any path that can still leave an unlinked record: the node then holds an agent nobody was
+     * ever asked to run, and no report about it will ever arrive. Counted as a start in flight,
+     * such a record made every freeze from then on wait out the entry gate's whole deadline and
+     * go in on top of it: measured in run 0232, nine holds of five seconds each, always on the
+     * same three agents, and exactly the three whose start reports the run was short of.
+     *
+     * @return list<string> Ids of agents whose start was asked for and not reported yet
      */
     public function agentsStillStarting(): array
     {
         $starting = [];
         foreach ($this->agentManager->getAgents() as $agentId => $agentDaemon) {
+            if ($this->isAgentAwaitingWorker($agentId)) {
+                $starting[] = $agentId;
+                continue;
+            }
+
             if (!$agentDaemon->hasWorkerClient() || $this->agentManager->isAgentStarted($agentId)) {
                 continue;
             }
@@ -1928,22 +2182,50 @@ abstract class WorkerServer extends AbstractServer implements
      * is the one entry that carries the placement sanction, so it is also the only way a
      * {@see AgentPlacement::POLICY} agent comes up on a node that is not the leader.
      *
+     * A monopolistic agent that found no free worker is accepted and answered with null: it waits
+     * for a worker raised for it, and {@see placedWorkerId()} names the worker once it is seated
+     * (HIL-998).
+     *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return int Worker id the agent was placed on (negative = monopolistic, positive = regular)
+     * @return ?int Worker id the agent was placed on (negative = monopolistic, positive = regular), or
+     *     null while the agent waits for a worker raised for it
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
      * @throws NoSuitableWorkerException If no suitable worker is available to host it
-     * @throws AgentNotLinkedToWorkerException If the agent did not link to a worker
+     * @throws AgentNotLinkedToWorkerException If the agent neither linked to a worker nor waits for one
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): int
+    public function executePlacement(string $agentType, ?string $agentIndex): ?int
     {
         $this->startAgentInternal($agentType, $agentIndex, true);
 
         $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $workerId = $this->placedWorkerId($agentType, $agentIndex);
+        if ($workerId === null && !$this->isAgentAwaitingWorker($agentId)) {
+            throw new AgentNotLinkedToWorkerException($agentId);
+        }
 
-        return $this->agentManager->getAgentWorkerId($agentId)
-            ?? throw new AgentNotLinkedToWorkerException($agentId);
+        return $workerId;
+    }
+
+    /**
+     * Returns the worker a placed agent was seated on ({@see PlacementExecutor}).
+     *
+     * Read off the link, not the roster's worker id: a waiting agent's record carries the
+     * placeholder index until it is seated, and that is not a worker.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return ?int Worker id once the agent is seated, null while it is still waiting for a worker
+     */
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
+    {
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        if ($this->agentManager->getAgent($agentId)?->hasWorkerClient() !== true) {
+            return null;
+        }
+
+        return $this->agentManager->getAgentWorkerId($agentId);
     }
 
     /**

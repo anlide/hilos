@@ -5518,12 +5518,14 @@ abstract class DaemonManager extends BaseManager implements
             // An agent that has not reported its start is started here, as being addressed always
             // started it, and the frame waits in the master for the report instead of being written
             // behind the start: a start that fails inside the worker takes with it every frame
-            // written after it (HIL-629). Held only while a start is under way - a start the freeze
-            // or a placement gate refuses quietly leaves no linked record, and the frame goes on to
-            // the delivery below, which answers it the way it always has.
+            // written after it (HIL-629). Held only while a start is under way - linked to a worker
+            // that has not reported, or waiting for a monopolistic worker raised for it (HIL-998). A
+            // start the freeze or a placement gate refuses quietly is neither, and the frame goes on
+            // to the delivery below, which answers it the way it always has.
             if (!$this->agentManagerDaemon->isAgentStarted($agentId)) {
                 $workerServer->ensureAgentUp($agentType, $agentIndex);
-                if ($this->agentManagerDaemon->getAgent($agentId)?->hasWorkerClient() === true) {
+                if ($this->agentManagerDaemon->getAgent($agentId)?->hasWorkerClient() === true
+                    || $workerServer->isAgentAwaitingWorker($agentId)) {
                     $this->parkUntilAgentUp($signal, $agentId);
 
                     return AgentDeliveryOutcome::Held;

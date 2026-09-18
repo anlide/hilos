@@ -160,21 +160,6 @@ services:
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-tasks}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
-      # One worker per monopolistic singleton, plus two spare. The count is read off
-      # the registry rather than guessed: every entry of this demo's AGENTS whose
-      # daemon answers true to requiresMonopolisticProcess(), twelve of them today -
-      # the eleventh is the settings library that owns the settings collection
-      # (HIL-946), the twelfth the backup agent (HIL-911). The pinned number is that
-      # floor doubled (docs/new-project/README.md says why). The pool never grows on
-      # demand, so one short and the first agent that finds no free worker throws
-      # NoSuitableWorkerException at the moment of its start and takes the daemon
-      # down with it; the two spare buy the next
-      # feature activation a working stack instead of a crash loop. The pooled
-      # delivery channels (mail, SMS), the log aggregator and the node-scoped
-      # throttle agent are NOT among them - they run on regular workers. The
-      # framework default gives two, but the demos prescribe it here (like chat) so
-      # the pool is explicit and not at the mercy of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-28}
       # Mail goes to the stack's own interceptor, whose UI is published above. The
       # transport is pinned rather than auto-selected: a stack that loses the
       # catcher should fail loudly, not fall back to writing .eml files nobody opens.

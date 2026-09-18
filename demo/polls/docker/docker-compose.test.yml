@@ -150,19 +150,6 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
-      # One worker per monopolistic singleton, plus two spare. The count is read off
-      # the registry rather than guessed: every entry of this demo's AGENTS whose
-      # daemon answers true to requiresMonopolisticProcess(), eleven of them today -
-      # the eleventh is the settings library that owns the settings collection
-      # (HIL-946). The pool never grows on demand, so one short and the first agent
-      # that finds no free worker throws NoSuitableWorkerException at the moment of
-      # its start and takes the daemon down with it; the two spare buy the next
-      # feature activation a working stack instead of a crash loop. The pooled
-      # delivery channels (mail, SMS), the log aggregator and the node-scoped
-      # throttle agent are NOT among them - they run on regular workers. The
-      # framework default gives two, but the demos prescribe it here (like chat) so
-      # the pool is explicit and not at the mercy of env drift.
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-26}
       # Mail: the transport is pinned to the stand's own interceptor rather than
       # auto-selected, so a stand that loses the relay fails loudly instead of
       # quietly writing .eml files into the work tree that nobody reads. A sender

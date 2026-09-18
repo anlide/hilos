@@ -2424,7 +2424,15 @@ abstract class WorkerManager extends BaseManager
             return null;
         }
 
-        $pageConsumer = SourceConsumer::page($data->signal->data->getAcceptKey());
+        // The interface lets a signal carry no connection at all - an agent's own signal such as
+        // the OAuth handoff does not - and such a signal has no page to wait behind (HIL-998: it
+        // used to die here with a TypeError on a worker whose sources were still arriving)
+        $acceptKey = $data->signal->data->getAcceptKey();
+        if ($acceptKey === null) {
+            return null;
+        }
+
+        $pageConsumer = SourceConsumer::page($acceptKey);
 
         return isset($this->parkedSources[$pageConsumer]) ? $pageConsumer : null;
     }

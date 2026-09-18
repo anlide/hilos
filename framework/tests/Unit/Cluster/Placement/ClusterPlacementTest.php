@@ -144,6 +144,100 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame(5, $frame->workerId);
     }
 
+    /**
+     * A placement accepted while a monopolistic worker is raised for the agent is answered once the
+     * agent is seated, with the worker it landed on, and only then (HIL-998).
+     */
+    public function testNodeDefersTheStartedReplyUntilTheWaitingAgentIsSeated(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
+        $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
+
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->tick(microtime(true));
+
+        $this->assertSame([], $mesh->sent, 'Nothing is answered while the agent waits for its worker');
+
+        $executor->seatedWorkerId = -7;
+        $placement->tick(microtime(true));
+        $placement->tick(microtime(true));
+
+        $this->assertCount(1, $mesh->sent);
+        [$nodeId, $frame] = $mesh->sent[0];
+        $this->assertSame('leader', $nodeId);
+        $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
+        $this->assertSame(PlacementState::Started, $frame->state);
+        $this->assertSame(-7, $frame->workerId);
+    }
+
+    public function testADeferredPlacementWhoseWaitRunsOutIsAnsweredFailedOnce(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
+        $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
+
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->tick(microtime(true) + 60.0);
+        $placement->tick(microtime(true) + 60.0);
+
+        $this->assertCount(1, $mesh->sent);
+        $frame = $mesh->sent[0][1];
+        $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
+        $this->assertSame(PlacementState::Failed, $frame->state);
+        $this->assertNotNull($frame->error);
+    }
+
+    public function testAStopAnswersADeferredPlacementAndNothingFollowsIt(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
+        $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
+
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', null));
+        $placement->tick(microtime(true) + 60.0);
+
+        $this->assertCount(1, $mesh->sent);
+        $frame = $mesh->sent[0][1];
+        $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
+        $this->assertSame(PlacementState::Stopped, $frame->state);
+    }
+
+    public function testALocalPlacementWaitingForAWorkerIsPlacingUntilSeated(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
+        $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
+
+        $placement->placeAgentOnNode('chat', null, self::SELF);
+
+        $this->assertSame(PlacementState::Placing, $placement->registry()->get('chat')?->state);
+
+        $executor->seatedWorkerId = -3;
+        $placement->tick(microtime(true));
+
+        $this->assertSame(PlacementState::Started, $placement->registry()->get('chat')?->state);
+        $this->assertSame([], $mesh->sent, 'A local placement sends no frame');
+    }
+
+    public function testALocalPlacementWhoseWaitRunsOutIsFailed(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
+        $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
+
+        $placement->placeAgentOnNode('chat', null, self::SELF);
+        $placement->tick(microtime(true) + 60.0);
+
+        $this->assertSame(PlacementState::Failed, $placement->registry()->get('chat')?->state);
+    }
+
     public function testNodeRepliesFailedWhenExecutionThrows(): void
     {
         $mesh = new FakePlacementMesh([], linked: ['leader']);
@@ -1047,6 +1141,12 @@ final class FakePlacementExecutor implements PlacementExecutor
     /** @var ?Throwable Exception the next executePlacement() should throw, or null to succeed */
     public ?Throwable $failWith = null;
 
+    /** @var bool Whether a placement is accepted while a worker is raised for the agent (HIL-998) */
+    public bool $waitsForWorker = false;
+
+    /** @var ?int Worker a waiting agent was seated on, or null while it still waits */
+    public ?int $seatedWorkerId = null;
+
     /** @var ResourceProfile Resource profile every agent type reports */
     private readonly ResourceProfile $profile;
 
@@ -1073,7 +1173,7 @@ final class FakePlacementExecutor implements PlacementExecutor
         return $this->profile;
     }
 
-    public function executePlacement(string $agentType, ?string $agentIndex): int
+    public function executePlacement(string $agentType, ?string $agentIndex): ?int
     {
         if ($this->failWith !== null) {
             throw $this->failWith;
@@ -1081,7 +1181,12 @@ final class FakePlacementExecutor implements PlacementExecutor
 
         $this->executed[] = [$agentType, $agentIndex];
 
-        return $this->workerId;
+        return $this->waitsForWorker ? null : $this->workerId;
+    }
+
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
+    {
+        return $this->waitsForWorker ? $this->seatedWorkerId : $this->workerId;
     }
 
     public function revokePlacement(string $agentType, ?string $agentIndex): void

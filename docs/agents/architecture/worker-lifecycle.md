@@ -1,6 +1,9 @@
 # Worker Lifecycle
 
 Workers are forked by `WorkerServer` on demand. Two types exist: **regular** and **monopolistic**.
+A warm-up of each is started ahead of time (`WORKER_MIN_REGULAR`, `WORKER_MIN_MONOPOLISTIC`, one
+worker a second); past it, regular workers scale up to `WORKER_MAX_REGULAR` and monopolistic ones
+are raised one per agent that finds none free.
 
 ## Startup
 
@@ -57,6 +60,14 @@ monopolistic agent.
 
 - **Regular**: handles WebSocket/page signals, multiple instances possible
 - **Monopolistic**: single instance per cluster, handles shared state (DB truth source, context)
+
+A monopolistic worker holds exactly one agent. `WORKER_MIN_MONOPOLISTIC` is a warm-up, not a
+ceiling: an agent that finds no free monopolistic worker has one raised for it at once and waits in
+the master's register until it registers, with the frames addressed to it held meanwhile; a wait
+past `AgentConstants::START_DEADLINE_SECONDS` is refused like any start refused on the node
+(HIL-998). A monopolistic agent may not be per-instance — a start with an index is refused rather
+than grown for, so the pool follows agent types, never entities. The pool does not shrink: a
+worker lives until the node stops, and a freed one goes to the next agent that needs one.
 
 Set via `$isMonopolistic` property in `WorkerManager` subclass.
 

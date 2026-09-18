@@ -453,11 +453,28 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function handleAgentStartFailed(WorkerAgentStartFailedDTO $dto): void
     {
-        $this->removeAgent($dto->agentId);
-
         Logger::warning("Agent '{$dto->agentId}' did not start: {$dto->reason}");
 
-        $this->agentStartSink?->onAgentStartFailed($dto->agentId, $dto->reason);
+        $this->reportAgentStartFailed($dto->agentId, $dto->reason);
+    }
+
+    /**
+     * Forgets an agent whose start on this node ended without it, and tells the start sink.
+     *
+     * The worker's report of a failed start comes here, and so does the master's own verdict on an
+     * agent that waited for a monopolistic worker and got none (HIL-998): both are a start that
+     * will not finish, and the frames held for it are owed the same answer at once rather than at
+     * the hold's deadline.
+     *
+     * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
+     * @param string $reason Why the start did not finish
+     * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
+     */
+    public function reportAgentStartFailed(string $agentId, string $reason): void
+    {
+        $this->removeAgent($agentId);
+
+        $this->agentStartSink?->onAgentStartFailed($agentId, $reason);
     }
 
     /**

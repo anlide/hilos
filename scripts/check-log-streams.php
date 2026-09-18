@@ -90,7 +90,11 @@ const LOG_STREAMS_CONTAINER_LOG_DIR = '/var/log/hilos';
 /** The demo's CLI, run inside a container of the stand. */
 const LOG_STREAMS_CLI = 'php backend/Bootstrap/cli.php';
 
-/** The variable the stand pins its monopolistic pool by; readiness means the pool is full. */
+/**
+ * The variable a stand may pin its monopolistic warm-up by; readiness means the warm-up is up.
+ * Unpinned - the demos stopped pinning it when the pool began to grow on demand (HIL-998) - there
+ * is no number to wait for, and an answering daemon is ready.
+ */
 const LOG_STREAMS_MONOPOLISTIC_MIN_VAR = 'WORKER_MIN_MONOPOLISTIC';
 
 /**
@@ -672,22 +676,28 @@ function removeProbe(): void
 // ------------------------------------------------------------------ the daemon
 
 /**
- * Wait until the daemon answers over its command socket with its monopolistic pool full.
+ * Wait until the daemon answers over its command socket with its monopolistic warm-up up.
  *
  * Asked through `daemon:status` inside the daemon's own container, where the daemon addresses
- * itself; the pool size is read off the container's environment rather than spelled here, so the
- * stand's own number is the one waited for.
+ * itself; the warm-up is read off the container's environment rather than spelled here, so the
+ * stand's own number is the one waited for. A stand that pins none is waited for until it answers:
+ * the pool grows under the agents that ask for it (HIL-998), so it has no size to be full at.
  *
  * @param string $container The daemon container.
  * @return string|null What went wrong, or null once the daemon is ready.
  */
 function waitDaemonReady(string $container): ?string
 {
+    // printenv answers a variable that is not set with an empty output and a failing exit
     $pool = containerExec($container, 'printenv ' . LOG_STREAMS_MONOPOLISTIC_MIN_VAR);
-    if (!$pool['ok'] || preg_match('/^\d+$/', trim($pool['output'])) !== 1) {
+    $pinned = trim($pool['output']);
+    if (!$pool['ok'] && $pinned !== '') {
         return LOG_STREAMS_MONOPOLISTIC_MIN_VAR . ' could not be read from the container: ' . $pool['note'] . "\n" . $pool['output'];
     }
-    $wanted = (int)trim($pool['output']);
+    if ($pinned !== '' && preg_match('/^\d+$/', $pinned) !== 1) {
+        return LOG_STREAMS_MONOPOLISTIC_MIN_VAR . ' in the container is not a number: ' . $pinned;
+    }
+    $wanted = $pinned === '' ? 0 : (int)$pinned;
 
     $deadline = microtime(true) + LOG_STREAMS_READY_DEADLINE_SECONDS;
     $last = '';

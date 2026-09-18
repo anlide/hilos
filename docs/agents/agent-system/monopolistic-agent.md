@@ -1,6 +1,9 @@
 # Monopolistic Agent
 
 A **monopolistic agent** runs in a dedicated worker process — one instance for the entire cluster.
+It is never per-instance: a monopolistic agent started with an index is refused, because the node
+raises one worker per monopolistic agent that finds none free and must not raise one per entity
+(HIL-998, [../architecture/worker-lifecycle.md](../architecture/worker-lifecycle.md)).
 
 ## When to use
 

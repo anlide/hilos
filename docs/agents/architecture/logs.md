@@ -90,12 +90,12 @@ LogStoreAgent::AGENT_TYPE => [
 proxy asks for a monopolistic worker, because a directory walk is blocking file
 I/O and a node needs exactly one reader of its own directory
 ([../agent-system/monopolistic-agent.md](../agent-system/monopolistic-agent.md)).
-That worker is taken for the life of the node, so a project activating the
-feature has to leave room for it in its monopolistic pool minimum — HIL-753 found
-that out by an e2e run in which every page sat in `loading` because the fifteenth
-monopolistic agent had no worker to go to. The carrier below is a second such
-agent on the same node, so the feature costs **two** monopolistic workers, not
-one.
+That worker is taken for the life of the node — HIL-753 found out what that costs
+by an e2e run in which every page sat in `loading` because the fifteenth
+monopolistic agent had no worker to go to. The pool now grows under an agent that
+finds none free (HIL-998), so the project no longer leaves room for it by hand, but
+the cost stays: the carrier below is a second such agent on the same node, so the
+feature costs **two** monopolistic workers, not one.
 
 What the owner holds is a `NodeLogIndex` in its own memory, rebuilt by walks:
 

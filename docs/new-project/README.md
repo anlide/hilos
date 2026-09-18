@@ -170,41 +170,34 @@ The price of that single rule, named here so it is read rather than discovered:
 on a running stack, editing `.env` no longer changes anything for a variable the
 compose file sets. Change it where the stack sets it, or unset it there.
 
-Monopolistic sizing is load-bearing: each monopolistic agent claims its own
-monopolistic worker (one holding zero agents), and there is no on-demand spawn —
-a subscription that finds no free monopolistic worker crashes the daemon. So
-`WORKER_MIN_MONOPOLISTIC` must cover every monopolistic agent that can be live at
-once. A project that mounts the SDK application shell (`HilosLayout`) gains a
-second monopolistic agent for free: the shell's gear subscribes the Hilos
-dashboard, owned by the monopolistic `hilos_index` agent (a concrete
-`AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
-demo/tasks). The app agent plus the dashboard therefore needs
-`WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
-it in compose regardless, so the pool is explicit: polls uses 26 on every stack,
-tasks 28 since it carries backup too, chat 38 for its larger agent roster. The floor each number is built
-on is one worker per monopolistic agent of that demo's `AGENTS` registry plus two
-spare, read off the registry — every entry whose daemon answers true to
-`requiresMonopolisticProcess()` — rather than estimated; the pinned number is that
-floor doubled.
+The monopolistic minimum is a warm-up, not a ceiling. Each monopolistic agent
+claims its own monopolistic worker (one holding zero agents); an agent that finds
+none free orders one on the spot and waits for it to register, and the frames
+addressed to it are held by the master meanwhile (HIL-998). A wait that runs past
+`AgentConstants::START_DEADLINE_SECONDS` is refused the way any start refused on
+this node is — a page gets its subscription error, the project one
+`AGENT_START` card — and the daemon keeps running (HIL-999). So
+`WORKER_MIN_MONOPOLISTIC` only decides how many agents come up without that wait
+of a second or two; zero is a working value, and the catalog default of 2 covers
+an app agent plus the Hilos dashboard of the SDK application shell. The demos do
+not pin it: the warm-up is paid on every node start, one worker a second, and a
+number that grows with the agent roster is exactly what a new feature used to
+have to remember. The cluster stand pins it per role — 1 on the workers, 0 on the
+masters — because there it says what a node is for, not how big a pool is.
 
-The doubling is headroom, not a second rule, and it is there because the floor is
-exactly as tight as a floor can be: a protected-mode freeze stops the whole roster
-and the lift starts it again, and the worker each agent lands on is picked afresh
-among those holding zero agents. At the floor that re-deal has no slack, so a start
-report still in flight from the freeze before is enough to leave an agent with
-nowhere to go — and an agent with nowhere to go takes the daemon down with it. Until
-the pool grows on demand (HIL-998) and a refused placement stops being fatal
-(HIL-999), the cheap answer is to give the re-deal room.
+The pool grows by one bound: **a monopolistic agent may not be per-instance.** A
+start of a monopolistic agent with an index is refused rather than given a worker
+of its own, so the pool follows the monopolistic agent TYPES a node hosts and never
+the number of entities. The rule sits at the growth site, not in the topology
+validator, because monopolistic-ness is declared by the daemon instance, which the
+validator never builds. The pool does not shrink either: a worker lives until the
+node stops, and a freed one is handed to the next agent that needs one.
 
-Every framework feature a project activates can raise that floor, and the logs
-feature is one of them: it requires TWO monopolistic agents — `hilos_log_store`,
-which owns the directory (HIL-753), and `hilos_log_carrier`, which moves rotated
-batches into the archive (HIL-870) — so activating it costs two more monopolistic
-workers. Settings costs one: `hilos_settings_library`, the single writer of the
-settings collection every screen of the section now asks (HIL-946). The symptom
-of forgetting is not a warning but a crash loop —
-`NoSuitableWorkerException` in the daemon loop, and every page stuck at
-`data-state="loading"` because no daemon is left to answer the subscription.
+Every framework feature a project activates still costs workers — the logs feature
+runs two monopolistic agents, `hilos_log_store`, which owns the directory
+(HIL-753), and `hilos_log_carrier`, which moves rotated batches into the archive
+(HIL-870); settings runs one, `hilos_settings_library` (HIL-946) — but the cost is
+paid by the pool growing, not by an env line the project has to remember.
 
 ## Composer script lifecycle
 
