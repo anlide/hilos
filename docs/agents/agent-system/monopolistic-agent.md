@@ -14,12 +14,18 @@ raises one worker per monopolistic agent that finds none free and must not raise
 
 ## How to set up
 
-In `WorkerManager` subclass, set `$isMonopolistic = true` for the worker that hosts the agent.
-The `WorkerServer` will ensure only one monopolistic worker is spawned.
+The agent's daemon proxy declares it: `requiresMonopolisticProcess()` returns `true`. The node
+seats the agent in a monopolistic worker of its own and raises one when none is free
+([../architecture/worker-lifecycle.md](../architecture/worker-lifecycle.md)); nothing is sized by
+hand for it.
 
 ```php
-class MyMonopolisticWorkerManager extends WorkerManager {
-    protected bool $isMonopolistic = true;
+final class MyAgentDaemon extends AbstractAgentDaemon
+{
+    public function requiresMonopolisticProcess(): bool
+    {
+        return true;
+    }
 }
 ```
 

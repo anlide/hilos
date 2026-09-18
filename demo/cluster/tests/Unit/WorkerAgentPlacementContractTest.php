@@ -39,8 +39,8 @@ final class WorkerAgentPlacementContractTest extends TestCase
 
     public function testAgentSharesTheNodeRegularWorkers(): void
     {
-        // Monopolistic workers are pre-forked, which would cap how much of the fleet a
-        // node can take — and on failover it must take all of it.
+        // The monopolistic pool never grows a worker for an indexed instance (HIL-998), and a
+        // fleet member is one — on failover a node must take all of the fleet.
         $this->assertFalse($this->daemon->requiresMonopolisticProcess());
     }
 

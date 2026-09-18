@@ -40,9 +40,9 @@ final class WorkerAgentDaemon extends AbstractAgentDaemon
     /**
      * A fleet member owns nothing exclusive, so it shares the node's regular workers.
      *
-     * Monopolistic workers are pre-forked rather than spawned per placement, which would
-     * cap a node at however many it forked at boot — and after a failover a node must take
-     * the whole fleet at once.
+     * A monopolistic worker holds one agent, and the pool grows one per agent type, never
+     * one for an indexed instance (HIL-998). A fleet member carries an index, and after a
+     * failover a node must take the whole fleet at once.
      *
      * @return bool False: run in a shared regular worker
      */

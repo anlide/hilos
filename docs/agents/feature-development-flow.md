@@ -119,7 +119,8 @@ loop:
   Spike: one headless pass. (Not built yet.)
 - **Scaffold skill** (`scaffold-hilos-project`) — separate, over
   `docs/new-project/README.md`, step-by-step and visible in the main context
-  (includes the worker-pool lesson: counts live in compose env, `MIN_MONOPOLISTIC >= 2`).
+  (includes the worker-pool lesson: the monopolistic pool grows on demand, and
+  `WORKER_MIN_MONOPOLISTIC` is only a warm-up).
   (Not built yet.)
 - **Admin scaffold skill** (`hilos-admin-scaffold`) — built; activates or builds
   one admin feature (settings / hilos-users / roles / a project table) layer by
