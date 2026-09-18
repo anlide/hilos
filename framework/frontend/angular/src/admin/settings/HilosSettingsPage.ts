@@ -41,6 +41,7 @@ import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
@@ -68,6 +69,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosTableCell,
     HilosViewportTable,
     HilosModal,
     HilosActionError,
@@ -79,55 +81,55 @@ function inputStep(type: string | undefined): 'any' | undefined {
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="settings().controller">
-        <ng-template #row let-row>
-          <td>
-            <code>{{ row.key }}</code>
-          </td>
-          <td style="max-width: 18rem">
+        <ng-template hilosTableCell="key" let-row>
+          <code>{{ row.key }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="value" let-row>
+          <div style="max-width: 18rem">
             <hilos-setting-value-cell
               [value]="row.value"
               [type]="row.type"
               [valueSource]="row.valueSource"
               [defaultReferenceKey]="row.defaultReferenceKey"
             />
-          </td>
-          <td class="text-end">
-            <div class="d-flex gap-1 justify-content-end">
+          </div>
+        </ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          <div class="d-flex gap-1 justify-content-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              [title]="
+                hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
+              "
+              [attr.aria-label]="
+                hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
+              "
+              [attr.data-id]="'hilos-settings-edit-' + row.key"
+              (click)="openEdit(row)"
+            >
+              <i
+                [class]="
+                  hasCustom(row) || isOrphan(row)
+                    ? 'bi bi-pencil'
+                    : 'bi bi-plus-lg'
+                "
+                aria-hidden="true"
+              ></i>
+            </button>
+            @if (isOrphan(row)) {
               <button
                 type="button"
-                class="btn btn-sm btn-outline-primary"
-                [title]="
-                  hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
-                "
-                [attr.aria-label]="
-                  hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
-                "
-                [attr.data-id]="'hilos-settings-edit-' + row.key"
-                (click)="openEdit(row)"
+                class="btn btn-sm btn-outline-danger"
+                title="Delete orphan setting"
+                aria-label="Delete orphan setting"
+                [attr.data-id]="'hilos-settings-delete-' + row.key"
+                (click)="openDelete(row)"
               >
-                <i
-                  [class]="
-                    hasCustom(row) || isOrphan(row)
-                      ? 'bi bi-pencil'
-                      : 'bi bi-plus-lg'
-                  "
-                  aria-hidden="true"
-                ></i>
+                <i class="bi bi-trash" aria-hidden="true"></i>
               </button>
-              @if (isOrphan(row)) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  title="Delete orphan setting"
-                  aria-label="Delete orphan setting"
-                  [attr.data-id]="'hilos-settings-delete-' + row.key"
-                  (click)="openDelete(row)"
-                >
-                  <i class="bi bi-trash" aria-hidden="true"></i>
-                </button>
-              }
-            </div>
-          </td>
+            }
+          </div>
         </ng-template>
       </hilos-viewport-table>
 

@@ -10,7 +10,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  USER_ONLINE_SESSION_COUNT_FIELD,
+  USER_PRESENCE_FIELD,
   createHilosImpersonate,
   createHilosUsersTable,
 } from '@hilos/core'
@@ -87,24 +90,24 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
     <HilosAdminPage page={HilosPages.USERS}>
       <HilosViewportTable
         controller={users.controller}
-        row={(row) => (
-          <>
-            <td className="text-body-secondary">{row.id}</td>
-            <td className="fw-medium">{row.name}</td>
-            <td>
-              <span
-                className={`badge ${
-                  row.presence === 'online'
-                    ? 'text-bg-success'
-                    : 'text-bg-secondary'
-                }`}
-              >
-                {row.presence}
-              </span>
-            </td>
-            <td className="text-end">{row.onlineSessionCount}</td>
-            <td>{row.lastActivity ?? '—'}</td>
-            <td className="text-end">
+        cells={{
+          id: (row) => row.id,
+          name: (row) => row.name,
+          [USER_PRESENCE_FIELD]: (row) => (
+            <span
+              className={`badge ${
+                row.presence === 'online'
+                  ? 'text-bg-success'
+                  : 'text-bg-secondary'
+              }`}
+            >
+              {row.presence}
+            </span>
+          ),
+          [USER_ONLINE_SESSION_COUNT_FIELD]: (row) => row.onlineSessionCount,
+          lastActivity: (row) => row.lastActivity ?? '—',
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <>
               {row.id === currentUid ? null : (
                 <button
                   type="button"
@@ -118,9 +121,9 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
                 </button>
               )}
               {rowActions?.(row)}
-            </td>
-          </>
-        )}
+            </>
+          ),
+        }}
       />
 
       <HilosModal

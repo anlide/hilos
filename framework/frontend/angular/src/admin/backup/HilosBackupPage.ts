@@ -78,6 +78,7 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
@@ -100,6 +101,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosTableCell,
     HilosViewportTable,
     HilosLongText,
     HilosModal,
@@ -275,11 +277,13 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         <ng-template #tableProgress let-progress>{{
           formatBackupRunCaption(progress)
         }}</ng-template>
-        <ng-template #row let-row>
-          <td
-            class="text-nowrap"
-            [class.text-body-secondary]="isOutOfReach(row)"
-          >
+        <!-- An archive another node holds stays in the list, muted cell by
+        cell: the row and its cells belong to the table, so the mark is worn by a
+        wrapper this page draws inside each cell. The controls take none: a button
+        carries its own color, and a wrapper around them would fold the controls a
+        card stacks full width into a single item. -->
+        <ng-template hilosTableCell="createdAt" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">
             {{ row.createdAt || '—' }}
             @if (isOutOfReach(row)) {
               <span
@@ -289,26 +293,30 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
                 >{{ row.holderNode }}</span
               ><span class="visually-hidden">{{ formatOutOfReach(row) }}</span>
             }
-          </td>
-          <td [class.text-body-secondary]="isOutOfReach(row)">
-            {{ row.env || '—' }}
-          </td>
-          <td [class.text-body-secondary]="isOutOfReach(row)">
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="env" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">{{
+            row.env || '—'
+          }}</span>
+        </ng-template>
+        <ng-template hilosTableCell="scope" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">
             <code>{{ row.scope || '—' }}</code>
-          </td>
-          <td class="text-end" [class.text-body-secondary]="isOutOfReach(row)">
-            {{ formatSize(row) }}
-          </td>
-          <td
-            class="text-nowrap"
-            [class.text-body-secondary]="isOutOfReach(row)"
-          >
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="sizeBytes" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">{{
+            formatSize(row)
+          }}</span>
+        </ng-template>
+        <ng-template hilosTableCell="checksumState" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">
             <span [class]="checksumClass(row)">{{ formatChecksum(row) }}</span>
-          </td>
-          <td
-            class="text-nowrap"
-            [class.text-body-secondary]="isOutOfReach(row)"
-          >
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="shipState" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">
             <span [class]="shippingClass(row)">{{ formatShipping(row) }}</span>
             @if (isShipFailed(row) && row.shipError) {
               <button
@@ -322,11 +330,15 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
                 <i class="bi bi-question-circle" aria-hidden="true"></i>
               </button>
             }
-          </td>
-          <td class="text-end" [class.text-body-secondary]="isOutOfReach(row)">
-            {{ formatDuration(row) }}
-          </td>
-          <td
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="durationSeconds" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">{{
+            formatDuration(row)
+          }}</span>
+        </ng-template>
+        <ng-template hilosTableCell="status" let-row>
+          <div
             style="min-width: 10rem"
             [class.text-body-secondary]="isOutOfReach(row)"
           >
@@ -335,11 +347,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             } @else {
               <span class="badge text-bg-danger">{{ row.status }}</span>
             }
-          </td>
-          <td
-            class="text-nowrap"
-            [class.text-body-secondary]="isOutOfReach(row)"
-          >
+          </div>
+        </ng-template>
+        <ng-template hilosTableCell="restoreOutcome" let-row>
+          <span [class.text-body-secondary]="isOutOfReach(row)">
             @if (hasRestoreOutcome(row)) {
               <button
                 type="button"
@@ -374,11 +385,10 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             } @else {
               <span class="text-body-secondary">—</span>
             }
-          </td>
-          <td
-            class="text-center"
-            [class.text-body-secondary]="isOutOfReach(row)"
-          >
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="keep" let-row>
+          <div [class.text-body-secondary]="isOutOfReach(row)">
             @if (isKeepable(row)) {
               <div class="form-check form-switch d-inline-block m-0">
                 <input
@@ -400,74 +410,71 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             } @else {
               <span class="text-body-secondary">—</span>
             }
-          </td>
-          <td class="text-end" [class.text-body-secondary]="isOutOfReach(row)">
-            @if (hasFailureDetail(row)) {
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary me-1"
-                title="Show failure reason"
-                aria-label="Show failure reason"
-                [attr.data-id]="'hilos-backup-details-' + row.id"
-                (click)="openDetails(row)"
-              >
-                <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
-              </button>
-            }
-            @if (offersRestore(row)) {
-              @if (restoreGate().uiEnabled) {
-                @if (restoreBlockedReason(row) !== null) {
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary me-1"
-                    title="Why this backup cannot be restored"
-                    aria-label="Why this backup cannot be restored"
-                    [attr.data-id]="'hilos-backup-blocked-why-' + row.id"
-                    (click)="openBlocked(row)"
-                  >
-                    <i class="bi bi-question-circle" aria-hidden="true"></i>
-                  </button>
-                }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-warning me-1"
-                  [disabled]="restoreBlockedReason(row) !== null"
-                  title="Restore this backup"
-                  aria-label="Restore this backup"
-                  [attr.data-id]="'hilos-backup-restore-' + row.id"
-                  (click)="openRestore(row)"
-                >
-                  <i
-                    class="bi bi-arrow-counterclockwise"
-                    aria-hidden="true"
-                  ></i>
-                </button>
-              } @else {
+          </div>
+        </ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          @if (hasFailureDetail(row)) {
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary me-1"
+              title="Show failure reason"
+              aria-label="Show failure reason"
+              [attr.data-id]="'hilos-backup-details-' + row.id"
+              (click)="openDetails(row)"
+            >
+              <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+            </button>
+          }
+          @if (offersRestore(row)) {
+            @if (restoreGate().uiEnabled) {
+              @if (restoreBlockedReason(row) !== null) {
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-secondary me-1"
-                  title="How to restore this backup"
-                  aria-label="How to restore this backup"
-                  [attr.data-id]="'hilos-backup-restore-cli-' + row.id"
-                  (click)="openCli(row)"
+                  title="Why this backup cannot be restored"
+                  aria-label="Why this backup cannot be restored"
+                  [attr.data-id]="'hilos-backup-blocked-why-' + row.id"
+                  (click)="openBlocked(row)"
                 >
-                  <i class="bi bi-terminal" aria-hidden="true"></i>
+                  <i class="bi bi-question-circle" aria-hidden="true"></i>
                 </button>
               }
-            }
-            @if (isDeletable(row)) {
               <button
                 type="button"
-                class="btn btn-sm btn-outline-danger"
-                title="Delete backup"
-                aria-label="Delete backup"
-                [attr.data-id]="'hilos-backup-delete-' + row.id"
-                (click)="openDelete(row)"
+                class="btn btn-sm btn-outline-warning me-1"
+                [disabled]="restoreBlockedReason(row) !== null"
+                title="Restore this backup"
+                aria-label="Restore this backup"
+                [attr.data-id]="'hilos-backup-restore-' + row.id"
+                (click)="openRestore(row)"
               >
-                <i class="bi bi-trash" aria-hidden="true"></i>
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary me-1"
+                title="How to restore this backup"
+                aria-label="How to restore this backup"
+                [attr.data-id]="'hilos-backup-restore-cli-' + row.id"
+                (click)="openCli(row)"
+              >
+                <i class="bi bi-terminal" aria-hidden="true"></i>
               </button>
             }
-          </td>
+          }
+          @if (isDeletable(row)) {
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              title="Delete backup"
+              aria-label="Delete backup"
+              [attr.data-id]="'hilos-backup-delete-' + row.id"
+              (click)="openDelete(row)"
+            >
+              <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
+          }
         </ng-template>
       </hilos-viewport-table>
 

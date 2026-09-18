@@ -22,9 +22,20 @@ import {
   HILOS_BACKUP_CIRCLE_COPY,
   HILOS_BACKUP_REOPEN_COPY,
   HILOS_BACKUP_SCOPES,
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  BACKUP_CHECKSUM_STATE_FIELD,
   BACKUP_CIRCLE_IDENTIFIER_FIELD,
   BACKUP_CIRCLE_ONLINE_FIELD,
+  BACKUP_CREATED_AT_FIELD,
+  BACKUP_DURATION_SECONDS_FIELD,
+  BACKUP_ENV_FIELD,
+  BACKUP_KEEP_FIELD,
+  BACKUP_RESTORE_OUTCOME_FIELD,
+  BACKUP_SCOPE_FIELD,
+  BACKUP_SHIP_STATE_FIELD,
+  BACKUP_SIZE_BYTES_FIELD,
+  BACKUP_STATUS_FIELD,
   backupMigrationBehind,
   backupMigrationNotes,
   backupProgressPercent,
@@ -149,23 +160,16 @@ function statusCell(row: HilosBackupRow) {
 }
 
 /**
- * A backup cell's classes, muted when another node holds the archive. The row element
- * belongs to the table, so the mark is worn by the cells this page draws inside it.
+ * The class that mutes an archive another node holds. It stays in the list, muted cell
+ * by cell: the row and its cells belong to the table, so the mark is worn by a wrapper
+ * this page draws inside each cell. The controls take none: a button carries its own
+ * color, and a wrapper around them would fold the controls a card stacks full width
+ * into a single item.
  *
  * @param row The backup row the cell belongs to.
- * @param base The cell's own classes, or undefined when it has none.
  */
-function backupCellClass(
-  row: HilosBackupRow,
-  base: string | undefined,
-): string | undefined {
-  if (!isBackupOutOfReach(row)) {
-    return base
-  }
-
-  return base === undefined
-    ? 'text-body-secondary'
-    : `${base} text-body-secondary`
+function outOfReachClass(row: HilosBackupRow): string | undefined {
+  return isBackupOutOfReach(row) ? 'text-body-secondary' : undefined
 }
 
 /**
@@ -641,9 +645,9 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
       <HilosViewportTable
         controller={backups.controller}
         tableProgress={(progress) => formatBackupRunCaption(progress)}
-        row={(row) => (
-          <>
-            <td className={backupCellClass(row, 'text-nowrap')}>
+        cells={{
+          [BACKUP_CREATED_AT_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               {row.createdAt || '—'}
               {isBackupOutOfReach(row) ? (
                 <>
@@ -660,17 +664,23 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                   </span>
                 </>
               ) : null}
-            </td>
-            <td className={backupCellClass(row, undefined)}>
-              {row.env || '—'}
-            </td>
-            <td className={backupCellClass(row, undefined)}>
+            </span>
+          ),
+          [BACKUP_ENV_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>{row.env || '—'}</span>
+          ),
+          [BACKUP_SCOPE_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               <code>{row.scope || '—'}</code>
-            </td>
-            <td className={backupCellClass(row, 'text-end')}>
+            </span>
+          ),
+          [BACKUP_SIZE_BYTES_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               {formatBackupSize(row)}
-            </td>
-            <td className={backupCellClass(row, 'text-nowrap')}>
+            </span>
+          ),
+          [BACKUP_CHECKSUM_STATE_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               <span
                 className={
                   isBackupChecksumMismatch(row)
@@ -680,8 +690,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               >
                 {formatBackupChecksum(row)}
               </span>
-            </td>
-            <td className={backupCellClass(row, 'text-nowrap')}>
+            </span>
+          ),
+          [BACKUP_SHIP_STATE_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               <span
                 className={
                   isBackupShipFailed(row)
@@ -703,17 +715,20 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                   <i className="bi bi-question-circle" aria-hidden="true" />
                 </button>
               ) : null}
-            </td>
-            <td className={backupCellClass(row, 'text-end')}>
+            </span>
+          ),
+          [BACKUP_DURATION_SECONDS_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               {formatBackupDuration(row)}
-            </td>
-            <td
-              className={backupCellClass(row, undefined)}
-              style={{ minWidth: '10rem' }}
-            >
+            </span>
+          ),
+          [BACKUP_STATUS_FIELD]: (row) => (
+            <div className={outOfReachClass(row)} style={{ minWidth: '10rem' }}>
               {statusCell(row)}
-            </td>
-            <td className={backupCellClass(row, 'text-nowrap')}>
+            </div>
+          ),
+          [BACKUP_RESTORE_OUTCOME_FIELD]: (row) => (
+            <span className={outOfReachClass(row)}>
               {hasRestoreOutcome(row) ? (
                 <button
                   type="button"
@@ -753,8 +768,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               ) : (
                 <span className="text-body-secondary">—</span>
               )}
-            </td>
-            <td className={backupCellClass(row, 'text-center')}>
+            </span>
+          ),
+          [BACKUP_KEEP_FIELD]: (row) => (
+            <div className={outOfReachClass(row)}>
               {isBackupKeepable(row) ? (
                 <div className="form-check form-switch d-inline-block m-0">
                   <input
@@ -776,8 +793,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               ) : (
                 <span className="text-body-secondary">—</span>
               )}
-            </td>
-            <td className={backupCellClass(row, 'text-end')}>
+            </div>
+          ),
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <>
               {hasBackupFailureDetail(row) ? (
                 <button
                   type="button"
@@ -844,9 +863,9 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                   <i className="bi bi-trash" aria-hidden="true" />
                 </button>
               ) : null}
-            </td>
-          </>
-        )}
+            </>
+          ),
+        }}
       />
 
       <HilosModal

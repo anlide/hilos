@@ -920,11 +920,9 @@ export class TableViewportController<R> implements TableWindowSink {
   /**
    * The frame state a view renders the bar and the footer from: what the page
    * declared, and the parts that follow from the window. A table that declared
-   * no frame still has one to read — `declaration` is then null.
-   *
-   * SCAFFOLD: read by the bar and the footer, which are HIL-801 (Vue) and
-   * HIL-810 (React, Angular); its `card` is read by the card a row projects to on
-   * a narrow screen, which is HIL-806 (Vue) and HIL-815 (React, Angular).
+   * no frame still has one to read — `declaration` is then null. Every view reads
+   * it for the bar and the footer, and reads its `card` for the card a row
+   * projects to on a narrow screen.
    */
   get frame(): HilosTableFrameState {
     return this.frameState

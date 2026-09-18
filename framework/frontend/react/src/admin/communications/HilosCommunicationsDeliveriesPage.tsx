@@ -14,6 +14,15 @@
 // (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
+  DELIVERY_ATTEMPTS_FIELD,
+  DELIVERY_CHANNEL_FIELD,
+  DELIVERY_CREATED_AT_FIELD,
+  DELIVERY_DELIVERED_AT_FIELD,
+  DELIVERY_LAST_ERROR_FIELD,
+  DELIVERY_NOTIFICATION_TITLE_FIELD,
+  DELIVERY_STATUS_FIELD,
+  DELIVERY_USER_LABEL_FIELD,
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
   createHilosDeliveriesActions,
@@ -133,42 +142,41 @@ export function HilosCommunicationsDeliveriesPage({
 
       <HilosViewportTable
         controller={deliveries.controller}
-        row={(row) => (
-          <>
-            <td className="text-nowrap">{row.createdAt || '—'}</td>
-            <td>
-              <code>{row.channel || '—'}</code>
-            </td>
-            <td>
-              <span className={`badge ${statusClass(row.status)}`}>
-                {row.status || '—'}
-              </span>
-            </td>
-            <td className="text-end">{row.attempts}</td>
-            <td className="text-nowrap">{row.deliveredAt || '—'}</td>
-            <td>{recipientLabel(row)}</td>
-            <td>
+        cells={{
+          [DELIVERY_CREATED_AT_FIELD]: (row) => row.createdAt || '—',
+          [DELIVERY_CHANNEL_FIELD]: (row) => <code>{row.channel || '—'}</code>,
+          [DELIVERY_STATUS_FIELD]: (row) => (
+            <span className={`badge ${statusClass(row.status)}`}>
+              {row.status || '—'}
+            </span>
+          ),
+          [DELIVERY_ATTEMPTS_FIELD]: (row) => row.attempts,
+          [DELIVERY_DELIVERED_AT_FIELD]: (row) => row.deliveredAt || '—',
+          [DELIVERY_USER_LABEL_FIELD]: (row) => recipientLabel(row),
+          [DELIVERY_NOTIFICATION_TITLE_FIELD]: (row) => (
+            <>
               <div className="fw-semibold">{row.notificationTitle || '—'}</div>
               <code className="small text-body-secondary">
                 {row.notificationType}
               </code>
-            </td>
-            <td className="text-body-secondary">{row.lastError || '—'}</td>
-            <td className="text-end">
-              {isDeliveryRetryable(row) ? (
-                <LoadingButton
-                  className="btn-outline-primary btn-sm"
-                  loading={retryAction.busy && retryPendingId === row.rowKey}
-                  disabled={retryAction.busy}
-                  data-id={`hilos-delivery-retry-${row.rowKey}`}
-                  onClick={() => void retry(row)}
-                >
-                  Retry
-                </LoadingButton>
-              ) : null}
-            </td>
-          </>
-        )}
+            </>
+          ),
+          [DELIVERY_LAST_ERROR_FIELD]: (row) => (
+            <span className="text-body-secondary">{row.lastError || '—'}</span>
+          ),
+          [HILOS_TABLE_ACTIONS_KEY]: (row) =>
+            isDeliveryRetryable(row) ? (
+              <LoadingButton
+                className="btn-outline-primary btn-sm"
+                loading={retryAction.busy && retryPendingId === row.rowKey}
+                disabled={retryAction.busy}
+                data-id={`hilos-delivery-retry-${row.rowKey}`}
+                onClick={() => void retry(row)}
+              >
+                Retry
+              </LoadingButton>
+            ) : null,
+        }}
       />
     </HilosAdminPage>
   )

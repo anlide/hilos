@@ -158,10 +158,10 @@ accumulated before the break is gone — the window that arrives outranks it.
 > numbers in the footer and the place of a column in a composite order on its
 > header, and the one room of live messages above the rows with the row tint and
 > the waiting marks beside it, the bar of work under a row and the project's
-> places next to running work. What was built on top of them since — cards, row
-> detail, the worded empty states, and the marks of a quiet source on cells and
-> headers — is drawn by Vue alone until its own parity leaf (HIL-815 to
-> HIL-818).
+> places next to running work, and the cards a declared table becomes on a narrow
+> screen. What was built on top of them since — row detail, the worded empty
+> states, and the marks of a quiet source on cells and headers — is drawn by Vue
+> alone until its own parity leaf (HIL-816 to HIL-818).
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
 > the verifier circle on the backups page still hand their view columns, a label
@@ -253,8 +253,8 @@ header, the column order, and sorting never read it.
 The layout is derived once, with the rest of the frame, and read off
 `frame.card` — it follows from the declaration alone, which does not change over
 the life of a table, so it is not wrapped in a signal and null exactly when
-`declaration` is. Drawing the card is a view's job — Vue draws it, React and
-Angular are HIL-815 — and what follows is what drawing it means.
+`declaration` is. Drawing the card is a view's job, all three views draw it, and
+what follows is what drawing it means.
 
 **Which branch is seen is a matter of Bootstrap's visibility utilities, not of
 JavaScript.** The table carries `d-none d-md-block` and the cards `d-md-none`, so
@@ -304,7 +304,20 @@ as an empty field. A column may carry `cellClass` for the classes its `<td>`
 needs, e.g. `text-end` under a numeric header; the card does not read it, a line
 of a description list not being a cell of a table.
 
-**A table drawing its frame from props keeps the `#row` slot and gets no cards.**
+The contract is one in all three views — one piece of content per column, keyed
+by the column, content only — and only the way a view takes a piece of content
+is its own (multiframework-core.md, the slot seam). Vue takes a named slot per
+column, `#cell-<key>`. React takes a map of renderers by column key, the prop
+`cells`, `{ name: (row, rowKey) => … }`: every place this view hands to the page
+is already a function prop. Angular takes one `ng-template` per column marked with
+the `hilosTableCell` directive and the column's key,
+`<ng-template hilosTableCell="name" let-row let-rowKey="rowKey">`, collected
+through `contentChildren` — a template looked up by a static name (`#row`) cannot
+carry a key known only at run time. "The page filled nothing" reads in each view
+as the absence it is: no slot, no key in the map, no marked template.
+
+**A table drawing its frame from props keeps the whole-row slot and gets no
+cards** (`#row` in Vue and Angular, the `row` prop in React).
 There is nothing to address a cell by in that epoch, so there is nothing to build
 a card out of, and such a table keeps its horizontal scroll at every width until
 its page moves onto the declaration.
@@ -1031,7 +1044,8 @@ an address does not:
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
 | the counts beside a filter's options | `framework/backend/Core/Table/TableFacetTally.php`, `framework/backend/Core/Browser/Context/BrowserContext.php` (`sendTableFacetCounts`), `framework/backend/Core/Page/PageSignalRouter.php` (`recountFacets`) |
 | the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
-| the card, the cell slots and the two branches as they are drawn | `framework/frontend/vue/src/HilosViewportTable.vue` |
+| the card, the cell slots and the two branches as they are drawn | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
+| the mark an Angular page puts on the template of one column's cell | `framework/frontend/angular/src/HilosTableCell.ts` |
 | the words a quiet source is marked with, and the columns it froze | `framework/frontend/core/src/table/tableStaleness.ts` |
 | the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | the progress bars a table reports | `framework/frontend/core/src/table/tableProgress.ts` |

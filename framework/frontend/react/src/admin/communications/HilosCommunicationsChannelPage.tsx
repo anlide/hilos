@@ -16,6 +16,7 @@
 // (rules-and-violations.md section E). Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
   createHilosChannelFields,
@@ -202,58 +203,56 @@ export function HilosCommunicationsChannelPage({
 
       <HilosViewportTable
         controller={fields.controller}
-        row={(row) => (
-          <>
-            <td>
+        cells={{
+          field: (row) => (
+            <>
               <div className="fw-semibold">{row.label}</div>
               <code className="small text-body-secondary">{row.field}</code>
-            </td>
-            <td>
-              {row.secret ? (
-                <span className="text-body-secondary fst-italic">
-                  {row.valueSource === 'env' ? 'Set in env' : 'Not set'}
-                </span>
-              ) : (
-                <span>{displayValue(row)}</span>
-              )}
-            </td>
-            <td>
-              <span className="badge text-bg-secondary-subtle text-secondary-emphasis">
-                {SOURCE_LABEL[row.valueSource] ?? row.valueSource}
+            </>
+          ),
+          value: (row) =>
+            row.secret ? (
+              <span className="text-body-secondary fst-italic">
+                {row.valueSource === 'env' ? 'Set in env' : 'Not set'}
               </span>
-            </td>
-            <td className="text-end">
-              {row.editable ? (
-                <div className="d-flex gap-1 justify-content-end">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary"
-                    title="Edit"
-                    aria-label="Edit"
-                    data-id={`hilos-channel-field-edit-${row.field}`}
-                    onClick={() => openEdit(row)}
-                  >
-                    <i className="bi bi-pencil" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-secondary"
-                    title="Reset to env/default"
-                    aria-label="Reset to env/default"
-                    disabled={row.valueSource !== 'settings' || reset.busy}
-                    data-id={`hilos-channel-field-reset-${row.field}`}
-                    onClick={() => resetField(row)}
-                  >
-                    <i
-                      className="bi bi-arrow-counterclockwise"
-                      aria-hidden="true"
-                    />
-                  </button>
-                </div>
-              ) : null}
-            </td>
-          </>
-        )}
+            ) : (
+              <span>{displayValue(row)}</span>
+            ),
+          valueSource: (row) => (
+            <span className="badge text-bg-secondary-subtle text-secondary-emphasis">
+              {SOURCE_LABEL[row.valueSource] ?? row.valueSource}
+            </span>
+          ),
+          [HILOS_TABLE_ACTIONS_KEY]: (row) =>
+            row.editable ? (
+              <div className="d-flex gap-1 justify-content-end">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  title="Edit"
+                  aria-label="Edit"
+                  data-id={`hilos-channel-field-edit-${row.field}`}
+                  onClick={() => openEdit(row)}
+                >
+                  <i className="bi bi-pencil" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  title="Reset to env/default"
+                  aria-label="Reset to env/default"
+                  disabled={row.valueSource !== 'settings' || reset.busy}
+                  data-id={`hilos-channel-field-reset-${row.field}`}
+                  onClick={() => resetField(row)}
+                >
+                  <i
+                    className="bi bi-arrow-counterclockwise"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+            ) : null,
+        }}
       />
 
       <HilosModal

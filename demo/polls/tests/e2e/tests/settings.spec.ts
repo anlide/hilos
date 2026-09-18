@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
+  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -10,6 +11,8 @@ import { gotoPage } from '../helpers/page'
 // Hilos settings admin e2e for the polls demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
 // makes /hilos/settings render the framework settings table over the live socket.
+// The table is a declared one, so it stands in the document twice — rows for a wide
+// screen, cards for a narrow one.
 // Catalog placeholder rows show without any DB override, search filters the client
 // viewport, and a custom value is set on a catalog key from its own row
 // (add-by-key) then reset — both round-trip through the backend and re-render with
@@ -80,4 +83,41 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)
+})
+
+test('a narrow window draws the settings as cards and never scrolls sideways', async ({
+  page,
+}) => {
+  // HIL-815 acceptance, the Angular twin of the chat case (HIL-806). A
+  // declared table is a table on a wide screen and a list of cards on a narrow
+  // one; both are mounted, and Bootstrap's display utilities show exactly one of
+  // them. What a phone must never get is the wide table squeezed into a sideways
+  // scroll — the thing the cards exist to replace.
+  //
+  // The grant runs at the usual width: it is not what is under test. The page
+  // itself is opened narrow, the way a phone opens it.
+  await grantAdminToSelf(page)
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+  await gotoPage(page, '/hilos/settings')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+
+  // The first page carries this catalog key without a search (the case above
+  // asserts it), so the record is on screen in one branch or the other; which
+  // branch is the whole question.
+  const key = 'example_string'
+  const cards = page.getByTestId('hilos-table-cards')
+  const card = cards.getByTestId(`hilos-table-card-${key}`)
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+
+  await expect(card).toBeVisible()
+  await expect(row).toBeHidden()
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
+
+  // Back on a wide screen it is the table again, and the cards are gone from sight:
+  // both branches were drawn from the same window, so the row is there to show.
+  await page.setViewportSize(desktop)
+  await expect(row).toBeVisible()
+  await expect(cards).toBeHidden()
 })

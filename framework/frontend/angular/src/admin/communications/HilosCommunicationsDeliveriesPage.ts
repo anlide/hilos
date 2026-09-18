@@ -31,6 +31,7 @@ import {
 import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
@@ -48,7 +49,7 @@ const STATUS_CLASS: Record<string, string> = {
 @Component({
   selector: 'hilos-communications-deliveries-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosViewportTable, LoadingButton],
+  imports: [HilosAdminPage, HilosTableCell, HilosViewportTable, LoadingButton],
   template: `
     <hilos-admin-page [page]="page">
       <!-- The channel the route opened the journal on is the table's preset, not a
@@ -66,40 +67,48 @@ const STATUS_CLASS: Record<string, string> = {
       }
 
       <hilos-viewport-table [controller]="deliveries().controller">
-        <ng-template #row let-row>
-          <td class="text-nowrap">{{ row.createdAt || '—' }}</td>
-          <td>
-            <code>{{ row.channel || '—' }}</code>
-          </td>
-          <td>
-            <span class="badge" [class]="statusClass(row.status)">{{
-              row.status || '—'
-            }}</span>
-          </td>
-          <td class="text-end">{{ row.attempts }}</td>
-          <td class="text-nowrap">{{ row.deliveredAt || '—' }}</td>
-          <td>{{ recipientLabel(row) }}</td>
-          <td>
-            <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
-            <code class="small text-body-secondary">{{
-              row.notificationType
-            }}</code>
-          </td>
-          <td class="text-body-secondary">{{ row.lastError || '—' }}</td>
-          <td class="text-end">
-            @if (isRetryable(row)) {
-              <button
-                hilosLoadingButton
-                class="btn-outline-primary btn-sm"
-                [loading]="retry.busy() && retryPendingId() === row.rowKey"
-                [disabled]="retry.busy()"
-                [attr.data-id]="'hilos-delivery-retry-' + row.rowKey"
-                (click)="doRetry(row)"
-              >
-                Retry
-              </button>
-            }
-          </td>
+        <ng-template hilosTableCell="createdAt" let-row>{{
+          row.createdAt || '—'
+        }}</ng-template>
+        <ng-template hilosTableCell="channel" let-row>
+          <code>{{ row.channel || '—' }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="status" let-row>
+          <span class="badge" [class]="statusClass(row.status)">{{
+            row.status || '—'
+          }}</span>
+        </ng-template>
+        <ng-template hilosTableCell="attempts" let-row>{{
+          row.attempts
+        }}</ng-template>
+        <ng-template hilosTableCell="deliveredAt" let-row>{{
+          row.deliveredAt || '—'
+        }}</ng-template>
+        <ng-template hilosTableCell="userLabel" let-row>{{
+          recipientLabel(row)
+        }}</ng-template>
+        <ng-template hilosTableCell="notificationTitle" let-row>
+          <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
+          <code class="small text-body-secondary">{{
+            row.notificationType
+          }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="lastError" let-row>
+          <span class="text-body-secondary">{{ row.lastError || '—' }}</span>
+        </ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          @if (isRetryable(row)) {
+            <button
+              hilosLoadingButton
+              class="btn-outline-primary btn-sm"
+              [loading]="retry.busy() && retryPendingId() === row.rowKey"
+              [disabled]="retry.busy()"
+              [attr.data-id]="'hilos-delivery-retry-' + row.rowKey"
+              (click)="doRetry(row)"
+            >
+              Retry
+            </button>
+          }
         </ng-template>
       </hilos-viewport-table>
     </hilos-admin-page>

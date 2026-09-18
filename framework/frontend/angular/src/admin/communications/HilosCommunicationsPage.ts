@@ -29,6 +29,7 @@ import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
@@ -36,57 +37,54 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 @Component({
   selector: 'hilos-communications-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosViewportTable, HilosLink],
+  imports: [HilosAdminPage, HilosTableCell, HilosViewportTable, HilosLink],
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="channels().controller">
-        <ng-template #row let-row>
-          <td>
-            <div class="fw-semibold">{{ row.label }}</div>
-            <code class="small text-body-secondary">{{ row.channel }}</code>
-          </td>
-          <td>
-            <div class="form-check form-switch mb-0">
-              <input
-                [id]="'hilos-channel-enabled-' + row.channel"
-                type="checkbox"
-                class="form-check-input"
-                role="switch"
-                [checked]="row.enabled"
-                [disabled]="toggle.busy()"
-                [attr.aria-label]="'Enable ' + row.label"
-                [attr.data-id]="'hilos-channel-enabled-' + row.channel"
-                (change)="onToggle(row, $event)"
-              />
-            </div>
-          </td>
-          <td>
-            @if (row.configured) {
-              <span class="badge text-bg-success-subtle text-success-emphasis">
-                Configured
-              </span>
-            } @else {
-              <span
-                class="badge text-bg-warning-subtle text-warning-emphasis"
-                [attr.title]="row.missingFields + ' field(s) not set'"
-              >
-                {{ row.missingFields }} missing
-              </span>
-            }
-          </td>
-          <td>
-            <code class="small">{{ row.driver ?? '—' }}</code>
-          </td>
-          <td class="text-end">
-            <a
-              hilosLink
-              [hilosLink]="channelPath(row)"
-              class="btn btn-sm btn-outline-primary"
-              [attr.data-id]="'hilos-channel-configure-' + row.channel"
+        <ng-template hilosTableCell="channel" let-row>
+          <div class="fw-semibold">{{ row.label }}</div>
+          <code class="small text-body-secondary">{{ row.channel }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="enabled" let-row>
+          <div class="form-check form-switch mb-0">
+            <input
+              type="checkbox"
+              class="form-check-input"
+              role="switch"
+              [checked]="row.enabled"
+              [disabled]="toggle.busy()"
+              [attr.aria-label]="'Enable ' + row.label"
+              [attr.data-id]="'hilos-channel-enabled-' + row.channel"
+              (change)="onToggle(row, $event)"
+            />
+          </div>
+        </ng-template>
+        <ng-template hilosTableCell="configured" let-row>
+          @if (row.configured) {
+            <span class="badge text-bg-success-subtle text-success-emphasis">
+              Configured
+            </span>
+          } @else {
+            <span
+              class="badge text-bg-warning-subtle text-warning-emphasis"
+              [attr.title]="row.missingFields + ' field(s) not set'"
             >
-              Configure
-            </a>
-          </td>
+              {{ row.missingFields }} missing
+            </span>
+          }
+        </ng-template>
+        <ng-template hilosTableCell="driver" let-row>
+          <code class="small">{{ row.driver ?? '—' }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          <a
+            hilosLink
+            [hilosLink]="channelPath(row)"
+            class="btn btn-sm btn-outline-primary"
+            [attr.data-id]="'hilos-channel-configure-' + row.channel"
+          >
+            Configure
+          </a>
         </ng-template>
       </hilos-viewport-table>
     </hilos-admin-page>

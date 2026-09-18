@@ -29,6 +29,7 @@ import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
@@ -47,6 +48,7 @@ export interface UsersRowActionsContext {
     HilosActionError,
     HilosAdminPage,
     HilosModal,
+    HilosTableCell,
     HilosViewportTable,
     LoadingButton,
     NgTemplateOutlet,
@@ -54,42 +56,44 @@ export interface UsersRowActionsContext {
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="users().controller">
-        <ng-template #row let-row>
-          <td class="text-body-secondary">{{ row.id }}</td>
-          <td class="fw-medium">{{ row.name }}</td>
-          <td>
-            <span
-              [class]="
-                'badge ' +
-                (row.presence === 'online'
-                  ? 'text-bg-success'
-                  : 'text-bg-secondary')
-              "
-              >{{ row.presence }}</span
+        <ng-template hilosTableCell="id" let-row>{{ row.id }}</ng-template>
+        <ng-template hilosTableCell="name" let-row>{{ row.name }}</ng-template>
+        <ng-template hilosTableCell="presence" let-row>
+          <span
+            [class]="
+              'badge ' +
+              (row.presence === 'online'
+                ? 'text-bg-success'
+                : 'text-bg-secondary')
+            "
+            >{{ row.presence }}</span
+          >
+        </ng-template>
+        <ng-template hilosTableCell="onlineSessionCount" let-row>{{
+          row.onlineSessionCount
+        }}</ng-template>
+        <ng-template hilosTableCell="lastActivity" let-row>{{
+          row.lastActivity ?? '—'
+        }}</ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          @if (row.id !== currentUserId()) {
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary me-2"
+              title="Impersonate"
+              aria-label="Impersonate"
+              [attr.data-id]="'hilos-users-impersonate-' + row.id"
+              (click)="openImpersonate(row)"
             >
-          </td>
-          <td class="text-end">{{ row.onlineSessionCount }}</td>
-          <td>{{ row.lastActivity ?? '—' }}</td>
-          <td class="text-end">
-            @if (row.id !== currentUserId()) {
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary me-2"
-                title="Impersonate"
-                aria-label="Impersonate"
-                [attr.data-id]="'hilos-users-impersonate-' + row.id"
-                (click)="openImpersonate(row)"
-              >
-                <i class="bi bi-person-badge" aria-hidden="true"></i>
-              </button>
-            }
-            @if (rowActions(); as tpl) {
-              <ng-container
-                [ngTemplateOutlet]="tpl"
-                [ngTemplateOutletContext]="{ $implicit: row }"
-              />
-            }
-          </td>
+              <i class="bi bi-person-badge" aria-hidden="true"></i>
+            </button>
+          }
+          @if (rowActions(); as tpl) {
+            <ng-container
+              [ngTemplateOutlet]="tpl"
+              [ngTemplateOutletContext]="{ $implicit: row }"
+            />
+          }
         </ng-template>
       </hilos-viewport-table>
 

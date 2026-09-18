@@ -4,8 +4,10 @@
 // arrive as pending and are resolved with the Apply button. A removed row
 // renders as a placeholder in its slot — the layout never collapses. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
-// pending, and Apply. Body cells come from an
-// `<ng-template #row let-row let-rowKey="rowKey">`, plus one framework-owned cell at
+// pending, and Apply. Body cells come from the page — one
+// `<ng-template hilosTableCell="<column key>">` per declared column for a table whose
+// page declared a frame, the whole row through `<ng-template #row let-row
+// let-rowKey="rowKey">` for one whose page did not — plus one framework-owned cell at
 // the end of the row carrying what waits on that row; the placeholder, header,
 // paging, and the one room of live messages above the rows stay framework-owned.
 // The controller arrives via
@@ -18,13 +20,16 @@
 // still take. A table whose page declared bulk operations also carries the
 // framework's checkbox column, on whichever edge the installation provided — one
 // choice for the whole application rather than an input of this table
-// (mockups/components/table section 6). Bootstrap classes only.
+// (mockups/components/table section 6). Below the md breakpoint a declared table is
+// a list of cards instead, built from the same declared columns and filled by the
+// same marked templates (mockups/components/table section 9). Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   contentChild,
+  contentChildren,
   effect,
   inject,
   input,
@@ -37,6 +42,7 @@ import {
   subscribeSignal,
 } from '@hilos/core'
 import type {
+  HilosTableCard,
   HilosTableColumn,
   HilosTableProgress as HilosTableProgressState,
   HilosTableSelectionHeader,
@@ -48,6 +54,8 @@ import type {
 } from '@hilos/core'
 
 import { HilosTableBar } from './HilosTableBar.js'
+import { HilosTableCell } from './HilosTableCell.js'
+import type { HilosTableCellContext } from './HilosTableCell.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
@@ -140,7 +148,16 @@ export interface BulkUntouchedContext {
         [tableProgressAction]="tableProgressAction()"
       />
 
-      <div class="table-responsive">
+      <!-- A DECLARED table is a table on a wide screen and a list of cards on a
+      narrow one, so its scroll wrapper goes with the table itself: there is
+      nothing left to scroll sideways once the columns became lines of a card. A
+      table still drawn from inputs has no cards to fall back on and keeps the
+      wrapper at every width, scrollbar and all. -->
+      <div
+        class="table-responsive"
+        [class.d-none]="declaration() !== null"
+        [class.d-md-block]="declaration() !== null"
+      >
         <table
           class="table table-striped table-hover align-middle mb-0"
           [attr.aria-labelledby]="declaration() ? nameId() : null"
@@ -256,9 +273,31 @@ export interface BulkUntouchedContext {
                   >
                     {{ placeholderText() }}
                   </td>
-                } @else {
+                } @else if (declaration()) {
+                  <!-- What stands where a row's values do, one shape per epoch of
+                  the frame. A DECLARED table hands the page one template per
+                  column and writes the cell around it: that is what makes a cell
+                  addressable by column at all. The cell stands even where the page
+                  marked no template, or the row comes out narrower than its header
+                  (Flow F3). -->
+                  @for (column of frameColumns(); track column.key) {
+                    <td [class]="column.cellClass ?? ''">
+                      @if (cellTemplate(column.key); as cell) {
+                        <ng-container
+                          [ngTemplateOutlet]="cell"
+                          [ngTemplateOutletContext]="{
+                            $implicit: view.row,
+                            rowKey: view.rowKey,
+                          }"
+                        />
+                      }
+                    </td>
+                  }
+                } @else if (row(); as rowTemplate) {
+                  <!-- A table still drawing its frame from inputs has no column to
+                  address a cell by, so it keeps handing over the whole row. -->
                   <ng-container
-                    [ngTemplateOutlet]="row()"
+                    [ngTemplateOutlet]="rowTemplate"
                     [ngTemplateOutletContext]="{
                       $implicit: view.row,
                       rowKey: view.rowKey,
@@ -347,29 +386,217 @@ export interface BulkUntouchedContext {
                   [attr.colspan]="bodyColspan()"
                   class="text-center text-muted py-4"
                 >
-                  @if (!loaded()) {
-                    <span
-                      class="d-inline-flex align-items-center gap-2"
-                      role="status"
-                      data-id="hilos-table-loading"
-                    >
-                      <span
-                        class="spinner-border spinner-border-sm"
-                        aria-hidden="true"
-                      ></span>
-                      {{ loadingText() }}
-                    </span>
-                  } @else if (empty(); as emptyTemplate) {
-                    <ng-container [ngTemplateOutlet]="emptyTemplate" />
-                  } @else {
-                    {{ emptyWords() }}
-                  }
+                  <ng-container [ngTemplateOutlet]="stateWords" />
                 </td>
               </tr>
             }
           </tbody>
         </table>
       </div>
+
+      <!-- The same rows as cards, the shape a table takes on a narrow screen: the
+      framework builds each card out of the very columns the page declared, so no
+      project writes a second markup for its table (mockup section 9). Both
+      branches stand in the document at once and Bootstrap's visibility utilities
+      show exactly one of them — there is no width at which both are seen, and
+      crossing the boundary re-renders nothing (Flow F11). The price is that a
+      row's data-id is in the document twice, which is why a test on a narrow
+      screen aims at a row THROUGH this container (table-subscription.md, the
+      registry of selectors). The cards are a list and carry the accessible name
+      of the table itself: the same name rather than a second one, and never both
+      at once — the branch that is hidden leaves the accessibility tree with its
+      display (Flow F9). The list holds the cards and nothing else; what the table
+      says in words when it has no rows stands BESIDE it, a sentence not being an
+      item of a list. -->
+      @if (card(); as layout) {
+        <div class="d-md-none" data-id="hilos-table-cards">
+          @if (rows().length > 0) {
+            <div role="list" [attr.aria-labelledby]="nameId()">
+              @for (view of rows(); track view.rowKey) {
+                <div
+                  class="card mb-2"
+                  [class]="cardClass(view)"
+                  role="listitem"
+                  [attr.data-id]="'hilos-table-card-' + view.rowKey"
+                >
+                  <!-- A removed row keeps its place as a card of one line,
+                  exactly as it keeps it as a row of one cell: the set never
+                  closes up under the reader (Flow F4). -->
+                  @if (view.placeholder) {
+                    <div
+                      class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
+                      data-id="hilos-table-placeholder"
+                    >
+                      {{ placeholderText() }}
+                    </div>
+                  } @else {
+                    <div class="card-body py-2 px-3">
+                      <div class="d-flex align-items-start gap-2 mb-1">
+                        <!-- The mark sits on the edge the installation chose, the
+                        same edge it sits on in the row: one product disagreeing
+                        with itself between its table and its card is the very
+                        thing that choice forbids. -->
+                        @if (selectionEnabled() && selectionEdge === 'start') {
+                          <input
+                            class="form-check-input mt-1"
+                            type="checkbox"
+                            aria-label="Select row"
+                            [attr.data-id]="'hilos-table-select-' + view.rowKey"
+                            [checked]="view.selected"
+                            (change)="onSelectRow(view.rowKey, $event)"
+                          />
+                        }
+                        @if (cellFor(layout.title); as title) {
+                          <span class="fw-medium">
+                            <ng-container
+                              [ngTemplateOutlet]="title"
+                              [ngTemplateOutletContext]="{
+                                $implicit: view.row,
+                                rowKey: view.rowKey,
+                              }"
+                            />
+                          </span>
+                        }
+                        <!-- The right of the head, in one group: what the PAGE
+                        says about the row first, then what the FRAMEWORK says
+                        about it. The page's badge is not pushed out by a
+                        framework mark — on a wide screen the two stand in two
+                        different cells, and a card is a second projection of the
+                        same columns rather than a smaller set of facts (Flow
+                        F6). -->
+                        <span class="ms-auto d-flex align-items-center gap-1">
+                          @if (cellFor(layout.badge); as badge) {
+                            <ng-container
+                              [ngTemplateOutlet]="badge"
+                              [ngTemplateOutletContext]="{
+                                $implicit: view.row,
+                                rowKey: view.rowKey,
+                              }"
+                            />
+                          }
+                          @if (view.pending === 'move') {
+                            <span
+                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              [attr.data-id]="
+                                'hilos-table-pending-move-' + view.rowKey
+                              "
+                            >
+                              <i
+                                class="bi bi-arrows-move"
+                                aria-hidden="true"
+                              ></i>
+                              Will move
+                            </span>
+                          } @else if (view.pending === 'remove') {
+                            <span
+                              class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              [attr.data-id]="
+                                'hilos-table-pending-remove-' + view.rowKey
+                              "
+                            >
+                              <i
+                                class="bi bi-box-arrow-right"
+                                aria-hidden="true"
+                              ></i>
+                              Will leave
+                            </span>
+                          }
+                          @if (selectionEnabled() && selectionEdge === 'end') {
+                            <input
+                              class="form-check-input mt-1"
+                              type="checkbox"
+                              aria-label="Select row"
+                              [attr.data-id]="
+                                'hilos-table-select-' + view.rowKey
+                              "
+                              [checked]="view.selected"
+                              (change)="onSelectRow(view.rowKey, $event)"
+                            />
+                          }
+                        </span>
+                      </div>
+
+                      <!-- What a column becomes on a narrow screen is a pair of a
+                      label and a value, and a description list is the one markup
+                      that says so to a screen reader (Flow F10). -->
+                      @if (cardFields().length > 0) {
+                        <dl class="row mb-2 small g-0">
+                          @for (field of cardFields(); track field.column.key) {
+                            <dt class="col-5 fw-normal text-body-secondary">
+                              {{ field.column.label }}
+                            </dt>
+                            <dd class="col-7 mb-0">
+                              <ng-container
+                                [ngTemplateOutlet]="field.template"
+                                [ngTemplateOutletContext]="{
+                                  $implicit: view.row,
+                                  rowKey: view.rowKey,
+                                }"
+                              />
+                            </dd>
+                          }
+                        </dl>
+                      }
+
+                      <!-- The controls of the row, full width at the foot of the
+                      card. Which of them comes first is the markup the page hands
+                      over, and the framework neither reorders them nor takes one
+                      away (Flow F2). -->
+                      @if (cellFor(layout.actions); as actions) {
+                        <div class="d-grid gap-2">
+                          <ng-container
+                            [ngTemplateOutlet]="actions"
+                            [ngTemplateOutletContext]="{
+                              $implicit: view.row,
+                              rowKey: view.rowKey,
+                            }"
+                          />
+                        </div>
+                      }
+
+                      <!-- Work running over this one record, at the very bottom of
+                      the card and across its whole width: which columns a bar
+                      stretches under says nothing here, a card having no columns
+                      standing in a row (Flow F7). -->
+                      @if (rowBar(view.rowKey); as bar) {
+                        <div
+                          class="mt-2"
+                          [attr.data-id]="
+                            'hilos-table-progress-row-' + view.rowKey
+                          "
+                        >
+                          @if (rowProgress(); as caption) {
+                            <div class="small text-body-secondary mb-1">
+                              <ng-container
+                                [ngTemplateOutlet]="caption"
+                                [ngTemplateOutletContext]="{
+                                  $implicit: bar,
+                                  rowKey: view.rowKey,
+                                }"
+                              />
+                            </div>
+                          }
+                          <hilos-table-progress
+                            [progress]="bar"
+                            label="Work on this row"
+                          />
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          } @else {
+            <!-- The two states a table says in words live inside the table in
+            the wide branch, so a narrow screen would hide them along with it and
+            the phone would be left with a blank space (Flow F12). -->
+            <div class="text-center text-muted py-4">
+              <ng-container [ngTemplateOutlet]="stateWords" />
+            </div>
+          }
+        </div>
+      }
 
       @if (declaration()) {
         <hilos-table-footer [controller]="controller()" />
@@ -415,6 +642,29 @@ export interface BulkUntouchedContext {
           </div>
         </div>
       }
+
+      <!-- What stands where the rows would while there are none: a spinner until
+      the first window arrives, and the empty words after it. Stamped by both
+      branches, so a narrow screen says the same as a wide one. -->
+      <ng-template #stateWords>
+        @if (!loaded()) {
+          <span
+            class="d-inline-flex align-items-center gap-2"
+            role="status"
+            data-id="hilos-table-loading"
+          >
+            <span
+              class="spinner-border spinner-border-sm"
+              aria-hidden="true"
+            ></span>
+            {{ loadingText() }}
+          </span>
+        } @else if (empty(); as emptyTemplate) {
+          <ng-container [ngTemplateOutlet]="emptyTemplate" />
+        } @else {
+          {{ emptyWords() }}
+        }
+      </ng-template>
     </div>
   `,
 })
@@ -446,8 +696,29 @@ export class HilosViewportTable<R> {
    */
   readonly dataId = input('hilos-viewport-table')
 
+  /**
+   * The cells of one row of a table whose page declared no frame:
+   * `<ng-template #row let-row let-rowKey="rowKey">` filling the row with `<td>`s. A
+   * declared table takes the marked cell templates instead and is not handed this.
+   */
   protected readonly row =
-    contentChild.required<TemplateRef<ViewportTableRowContext<R>>>('row')
+    contentChild<TemplateRef<ViewportTableRowContext<R>>>('row')
+  /**
+   * The content of the cells of a declared table, one `<ng-template
+   * hilosTableCell="<column key>">` per column. Collected through descendants,
+   * because a page may wrap a template in an `@if` of its own.
+   */
+  protected readonly cells = contentChildren(HilosTableCell, {
+    descendants: true,
+  })
+  // The marked templates by the key of their column — what a cell of a row and a
+  // place of a card read to find their content.
+  private readonly cellTemplates = computed(
+    () =>
+      new Map(
+        this.cells().map((cell) => [cell.hilosTableCell(), cell.template]),
+      ),
+  )
   protected readonly empty = contentChild<TemplateRef<unknown>>('empty')
   /**
    * The human name of one row a bulk run left untouched, for the report of the run:
@@ -490,6 +761,27 @@ export class HilosViewportTable<R> {
   protected readonly frameColumns = computed<readonly HilosTableColumn[]>(
     () => this.declaration()?.columns ?? this.columns(),
   )
+  // Which declared column takes which place of the card a row is drawn as on a
+  // narrow screen — the head, the badge beside it, the labelled lines, the
+  // controls. The core derived it from the declaration (tableCard.ts) and the view
+  // has no arithmetic of its own about it; like the declaration it follows from, it
+  // is a constant over the life of a table and null exactly when that is.
+  protected readonly card = computed<HilosTableCard | null>(
+    () => this.controller().frame.card,
+  )
+  // The labelled lines of a card, each with the template that fills it: the fields
+  // of the layout the page actually marked a template for. A card leaves out the
+  // place of a column the page drew nothing into — a label with nothing under it
+  // reads as a value lost rather than as an empty field (Flow F3).
+  protected readonly cardFields = computed(() => {
+    const templates = this.cellTemplates()
+
+    return (this.card()?.fields ?? []).flatMap((column) => {
+      const template = templates.get(column.key)
+
+      return template === undefined ? [] : [{ column, template }]
+    })
+  })
   // The marks, and the one sign that this table has them: a page that declared bulk
   // operations. There is no second sign — a table drawing its frame from inputs has
   // no declaration, so `enabled` is already false for it (Flow F14).
@@ -660,6 +952,37 @@ export class HilosViewportTable<R> {
   // name one of the two as the whole answer.
   protected sortComponent(key: string): TableSort | undefined {
     return this.order()?.find((component) => component.field === key)
+  }
+
+  // The template that fills one place of a card, or undefined where the layout has no
+  // column for the place or the page marked no template for it. A place the page
+  // drew nothing into is not drawn in the card at all — the row is the other way
+  // round, its cell always stands, and that is the one place the two branches part
+  // company (Flow F3).
+  protected cellFor(
+    column: HilosTableColumn | null,
+  ): TemplateRef<HilosTableCellContext<unknown>> | undefined {
+    return column === null ? undefined : this.cellTemplate(column.key)
+  }
+
+  // A card's tint, resolved in the order the row's is: amber while a change waits
+  // on the record, green for the couple of seconds after a value landed, and
+  // nothing otherwise. It is worn as a border rather than a fill — Bootstrap's
+  // contextual row classes are built for the cells of a table (Flow F5).
+  protected cardClass(view: TableViewportRow<R>): string {
+    if (view.pending !== null) {
+      return 'border-warning'
+    }
+
+    return view.highlighted ? 'border-success' : ''
+  }
+
+  // The template the page marked for one column's cell, or undefined where it marked
+  // none.
+  protected cellTemplate(
+    key: string,
+  ): TemplateRef<HilosTableCellContext<unknown>> | undefined {
+    return this.cellTemplates().get(key)
   }
 
   // The bar running over one row, or undefined when none is. Read out of the map

@@ -38,6 +38,7 @@ import type {
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
@@ -71,6 +72,7 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
     HilosAdminPage,
     HilosModal,
     HilosActionError,
+    HilosTableCell,
     HilosViewportTable,
     LoadingButton,
   ],
@@ -93,57 +95,50 @@ const SOURCE_LABEL: Record<ChannelValueSource, string> = {
       </div>
 
       <hilos-viewport-table [controller]="fields().controller">
-        <ng-template #row let-row>
-          <td>
-            <div class="fw-semibold">{{ row.label }}</div>
-            <code class="small text-body-secondary">{{ row.field }}</code>
-          </td>
-          <td>
-            @if (row.secret) {
-              <span class="text-body-secondary fst-italic">
-                {{ row.valueSource === 'env' ? 'Set in env' : 'Not set' }}
-              </span>
-            } @else {
-              <span>{{ displayValue(row) }}</span>
-            }
-          </td>
-          <td>
-            <span
-              class="badge text-bg-secondary-subtle text-secondary-emphasis"
-            >
-              {{ sourceLabel(row) }}
+        <ng-template hilosTableCell="field" let-row>
+          <div class="fw-semibold">{{ row.label }}</div>
+          <code class="small text-body-secondary">{{ row.field }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="value" let-row>
+          @if (row.secret) {
+            <span class="text-body-secondary fst-italic">
+              {{ row.valueSource === 'env' ? 'Set in env' : 'Not set' }}
             </span>
-          </td>
-          <td class="text-end">
-            @if (row.editable) {
-              <div class="d-flex gap-1 justify-content-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-primary"
-                  title="Edit"
-                  aria-label="Edit"
-                  [attr.data-id]="'hilos-channel-field-edit-' + row.field"
-                  (click)="openEdit(row)"
-                >
-                  <i class="bi bi-pencil" aria-hidden="true"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary"
-                  title="Reset to env/default"
-                  aria-label="Reset to env/default"
-                  [disabled]="row.valueSource !== 'settings' || reset.busy()"
-                  [attr.data-id]="'hilos-channel-field-reset-' + row.field"
-                  (click)="resetField(row)"
-                >
-                  <i
-                    class="bi bi-arrow-counterclockwise"
-                    aria-hidden="true"
-                  ></i>
-                </button>
-              </div>
-            }
-          </td>
+          } @else {
+            <span>{{ displayValue(row) }}</span>
+          }
+        </ng-template>
+        <ng-template hilosTableCell="valueSource" let-row>
+          <span class="badge text-bg-secondary-subtle text-secondary-emphasis">
+            {{ sourceLabel(row) }}
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          @if (row.editable) {
+            <div class="d-flex gap-1 justify-content-end">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                title="Edit"
+                aria-label="Edit"
+                [attr.data-id]="'hilos-channel-field-edit-' + row.field"
+                (click)="openEdit(row)"
+              >
+                <i class="bi bi-pencil" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                title="Reset to env/default"
+                aria-label="Reset to env/default"
+                [disabled]="row.valueSource !== 'settings' || reset.busy()"
+                [attr.data-id]="'hilos-channel-field-reset-' + row.field"
+                (click)="resetField(row)"
+              >
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+              </button>
+            </div>
+          }
         </ng-template>
       </hilos-viewport-table>
 

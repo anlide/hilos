@@ -14,7 +14,10 @@
 // Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  SETTING_KEY_FIELD,
+  SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
   hasCustomValue,
@@ -222,62 +225,60 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     <HilosAdminPage page={HilosPages.SETTINGS}>
       <HilosViewportTable
         controller={settings.controller}
-        row={(row) => (
-          <>
-            <td>
-              <code>{row.key}</code>
-            </td>
-            <td style={{ maxWidth: '18rem' }}>
+        cells={{
+          [SETTING_KEY_FIELD]: (row) => <code>{row.key}</code>,
+          [SETTING_VALUE_FIELD]: (row) => (
+            <div style={{ maxWidth: '18rem' }}>
               <HilosSettingValueCell
                 value={row.value}
                 type={row.type}
                 valueSource={row.valueSource}
                 defaultReferenceKey={row.defaultReferenceKey}
               />
-            </td>
-            <td className="text-end">
-              <div className="d-flex gap-1 justify-content-end">
+            </div>
+          ),
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <div className="d-flex gap-1 justify-content-end">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary"
+                title={
+                  hasCustomValue(row) || isOrphanSetting(row)
+                    ? 'Edit'
+                    : 'Set custom value'
+                }
+                aria-label={
+                  hasCustomValue(row) || isOrphanSetting(row)
+                    ? 'Edit'
+                    : 'Set custom value'
+                }
+                data-id={`hilos-settings-edit-${row.key}`}
+                onClick={() => openEdit(row)}
+              >
+                <i
+                  className={
+                    hasCustomValue(row) || isOrphanSetting(row)
+                      ? 'bi bi-pencil'
+                      : 'bi bi-plus-lg'
+                  }
+                  aria-hidden="true"
+                />
+              </button>
+              {isOrphanSetting(row) ? (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-primary"
-                  title={
-                    hasCustomValue(row) || isOrphanSetting(row)
-                      ? 'Edit'
-                      : 'Set custom value'
-                  }
-                  aria-label={
-                    hasCustomValue(row) || isOrphanSetting(row)
-                      ? 'Edit'
-                      : 'Set custom value'
-                  }
-                  data-id={`hilos-settings-edit-${row.key}`}
-                  onClick={() => openEdit(row)}
+                  className="btn btn-sm btn-outline-danger"
+                  title="Delete orphan setting"
+                  aria-label="Delete orphan setting"
+                  data-id={`hilos-settings-delete-${row.key}`}
+                  onClick={() => openDelete(row)}
                 >
-                  <i
-                    className={
-                      hasCustomValue(row) || isOrphanSetting(row)
-                        ? 'bi bi-pencil'
-                        : 'bi bi-plus-lg'
-                    }
-                    aria-hidden="true"
-                  />
+                  <i className="bi bi-trash" aria-hidden="true" />
                 </button>
-                {isOrphanSetting(row) ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-danger"
-                    title="Delete orphan setting"
-                    aria-label="Delete orphan setting"
-                    data-id={`hilos-settings-delete-${row.key}`}
-                    onClick={() => openDelete(row)}
-                  >
-                    <i className="bi bi-trash" aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
-            </td>
-          </>
-        )}
+              ) : null}
+            </div>
+          ),
+        }}
       />
 
       <HilosModal

@@ -4,10 +4,11 @@
 // arrive as pending and are resolved with the Apply button. A removed row
 // renders as a placeholder in its slot — the layout never collapses. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
-// pending, and Apply. Body cells come from the `row` render prop, plus one
-// framework-owned cell at the end of the row carrying what waits on that row; the
-// placeholder, header, paging, and the one room of live messages above the rows
-// stay framework-owned.
+// pending, and Apply. Body cells come from the page — one renderer per declared
+// column (`cells`) for a table whose page declared a frame, the whole row (`row`)
+// for one whose page did not — plus one framework-owned cell at the end of the row
+// carrying what waits on that row; the placeholder, header, paging, and the one room
+// of live messages above the rows stay framework-owned.
 // (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
 // frame draws the bar and the footer from that declaration instead
 // (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
@@ -16,7 +17,9 @@
 // still take. A table whose page declared bulk operations also carries the
 // framework's checkbox column, on whichever edge the installation provided — one
 // choice for the whole application rather than a prop of this table
-// (mockups/components/table section 6). Bootstrap classes only.
+// (mockups/components/table section 6). Below the md breakpoint a declared table is
+// a list of cards instead, built from the same declared columns and filled by the
+// same cell renderers (mockups/components/table section 9). Bootstrap classes only.
 import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -24,6 +27,7 @@ import {
   hilosTableSortPositionLabel,
 } from '@hilos/core'
 import type {
+  HilosTableCard,
   HilosTableColumn,
   // Aliased because the component drawing one of these carries the same name.
   HilosTableProgress as TableProgressBar,
@@ -50,8 +54,18 @@ export interface HilosViewportTableProps<R> {
    * and is not handed these.
    */
   columns?: HilosTableColumn[]
-  /** Render the cells of one row; the returned `<td>`s fill the row. */
-  row: (row: R, rowKey: string) => ReactNode
+  /**
+   * The content of one cell of a declared table, by the key of its column — the
+   * content only, the framework writes the `<td>` around it and reads its class off
+   * the column. A column this has no renderer for still gets its cell in the row.
+   */
+  cells?: Partial<Record<string, (row: R, rowKey: string) => ReactNode>>
+  /**
+   * Render the cells of one row of a table whose page declared no frame; the
+   * returned `<td>`s fill the row. A declared table takes `cells` instead and is not
+   * handed this.
+   */
+  row?: (row: R, rowKey: string) => ReactNode
   /** Accessible name for the table, rendered as a visually-hidden caption. */
   label?: string
   /** Show the search box above the table. */
@@ -97,11 +111,12 @@ type ProgressCell = { span: number; covered: boolean }
 /**
  * The framework-owned table chrome over a headless {@link TableViewportController}.
  *
- * @param props The controller, columns, row renderer, label / search / empty / placeholder config, and the project's places beside running work.
+ * @param props The controller, columns, cell or row renderers, label / search / empty / placeholder config, and the project's places beside running work.
  */
 export function HilosViewportTable<R>({
   controller,
   columns = [],
+  cells,
   row,
   label,
   searchable = false,
@@ -145,6 +160,12 @@ export function HilosViewportTable<R>({
   // spanning the whole row count this one list, so they cannot disagree on its width.
   const frameColumns: readonly HilosTableColumn[] =
     declaration?.columns ?? columns
+  // Which declared column takes which place of the card a row is drawn as on a
+  // narrow screen — the head, the badge beside it, the labelled lines, the
+  // controls. The core derived it from the declaration (tableCard.ts) and the view
+  // has no arithmetic of its own about it; like the declaration it follows from, it
+  // is a constant over the life of a table and null exactly when that is.
+  const card = controller.frame.card
   // The row-state cell stands while anything waits. Header cell and body cell read
   // this ONE condition, so the two cannot drift apart into a row wider than its header.
   const markColumn = pendingCount > 0
@@ -171,6 +192,21 @@ export function HilosViewportTable<R>({
   // framework's own "Nothing found" under a search belong to an empty state this view
   // does not draw yet.
   const emptyWords = declaration?.empty?.title ?? emptyText
+  // What stands where the rows would while there are none: a spinner until the first
+  // window arrives, and the empty words after it. Drawn by both branches, so a narrow
+  // screen says the same as a wide one.
+  const stateWords = !loaded ? (
+    <span
+      className="d-inline-flex align-items-center gap-2"
+      role="status"
+      data-id="hilos-table-loading"
+    >
+      <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+      {loadingText}
+    </span>
+  ) : (
+    (empty ?? emptyWords)
+  )
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
   const paginated = pageCount === null || pageCount > 1
@@ -226,6 +262,150 @@ export function HilosViewportTable<R>({
   // exists to cut (tableProgress.ts): the bar outlives the window the row sits in.
   function rowBar(rowKey: string): TableProgressBar | undefined {
     return rowProgressBars.get(rowKey)
+  }
+
+  // The cells of one row of a declared table: one per declared column, the content
+  // from the page's renderer for that column and the class from the column itself.
+  // The cell stands even where the page gave no renderer: a row one cell short is a
+  // row narrower than its header (Flow F3).
+  function declaredCells(record: R, rowKey: string): ReactNode {
+    return frameColumns.map((column) => (
+      <td key={column.key} className={column.cellClass}>
+        {cells?.[column.key]?.(record, rowKey)}
+      </td>
+    ))
+  }
+
+  // Whether the page draws anything into a column's cell. A card leaves out the
+  // place of a column the page gave no renderer for: a label with nothing under it
+  // reads as a value lost rather than as an empty field, and on a phone it spends a
+  // line of the screen saying that (Flow F3). The row is the other way round — its
+  // cell always stands, or the row comes out narrower than its header — and that is
+  // the one place the two branches part company.
+  function hasCell(
+    column: HilosTableColumn | null,
+  ): column is HilosTableColumn {
+    return column !== null && cells?.[column.key] !== undefined
+  }
+
+  // A card's tint, resolved in the order the row's is: amber while a change waits
+  // on the record, green for the couple of seconds after a value landed, and
+  // nothing otherwise. It is worn as a border rather than a fill — Bootstrap's
+  // contextual row classes are built for the cells of a table (Flow F5).
+  function cardClass(view: TableViewportRow<R>): string | undefined {
+    if (view.pending !== null) {
+      return 'border-warning'
+    }
+
+    return view.highlighted ? 'border-success' : undefined
+  }
+
+  // The body of the card of one live row, in the order the mockup stacks it: the
+  // head, the labelled lines, the controls, and the bar of the work running over
+  // the record (Flow F1).
+  function cardBody(
+    layout: HilosTableCard,
+    view: TableViewportRow<R>,
+    record: R,
+  ): ReactNode {
+    const rowKey = view.rowKey
+    // The mark sits on the edge the installation chose, the same edge it sits on
+    // in the row: one product disagreeing with itself between its table and its
+    // card is the very thing that choice forbids.
+    const selectBox = selectionEnabled ? (
+      <input
+        className="form-check-input mt-1"
+        type="checkbox"
+        aria-label="Select row"
+        data-id={`hilos-table-select-${rowKey}`}
+        checked={view.selected}
+        onChange={(event) => controller.selectRow(rowKey, event.target.checked)}
+      />
+    ) : null
+    const fields = layout.fields.filter(hasCell)
+    const bar = rowBar(rowKey)
+
+    return (
+      <div className="card-body py-2 px-3">
+        <div className="d-flex align-items-start gap-2 mb-1">
+          {selectionEdge === 'start' ? selectBox : null}
+          {hasCell(layout.title) ? (
+            <span className="fw-medium">
+              {cells?.[layout.title.key]?.(record, rowKey)}
+            </span>
+          ) : null}
+          {/* The right of the head, in one group: what the PAGE says about the
+              row first, then what the FRAMEWORK says about it. The page's badge
+              is not pushed out by a framework mark — on a wide screen the two
+              stand in two different cells, and a card is a second projection of
+              the same columns rather than a smaller set of facts (Flow F6). */}
+          <span className="ms-auto d-flex align-items-center gap-1">
+            {hasCell(layout.badge)
+              ? cells?.[layout.badge.key]?.(record, rowKey)
+              : null}
+            {view.pending === 'move' ? (
+              <span
+                className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                data-id={`hilos-table-pending-move-${rowKey}`}
+              >
+                <i className="bi bi-arrows-move" aria-hidden="true" /> Will move
+              </span>
+            ) : null}
+            {view.pending === 'remove' ? (
+              <span
+                className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                data-id={`hilos-table-pending-remove-${rowKey}`}
+              >
+                <i className="bi bi-box-arrow-right" aria-hidden="true" /> Will
+                leave
+              </span>
+            ) : null}
+            {selectionEdge === 'end' ? selectBox : null}
+          </span>
+        </div>
+
+        {/* What a column becomes on a narrow screen is a pair of a label and a
+            value, and a description list is the one markup that says so to a
+            screen reader (Flow F10). */}
+        {fields.length > 0 ? (
+          <dl className="row mb-2 small g-0">
+            {fields.map((field) => (
+              <Fragment key={field.key}>
+                <dt className="col-5 fw-normal text-body-secondary">
+                  {field.label}
+                </dt>
+                <dd className="col-7 mb-0">
+                  {cells?.[field.key]?.(record, rowKey)}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        ) : null}
+
+        {/* The controls of the row, full width at the foot of the card. Which of
+            them comes first is the markup the page hands over, and the framework
+            neither reorders them nor takes one away (Flow F2). */}
+        {hasCell(layout.actions) ? (
+          <div className="d-grid gap-2">
+            {cells?.[layout.actions.key]?.(record, rowKey)}
+          </div>
+        ) : null}
+
+        {/* Work running over this one record, at the very bottom of the card and
+            across its whole width: which columns a bar stretches under says
+            nothing here, a card having no columns standing in a row (Flow F7). */}
+        {bar !== undefined ? (
+          <div className="mt-2" data-id={`hilos-table-progress-row-${rowKey}`}>
+            {rowProgress !== undefined ? (
+              <div className="small text-body-secondary mb-1">
+                {rowProgress(bar, rowKey)}
+              </div>
+            ) : null}
+            <HilosTableProgress progress={bar} label="Work on this row" />
+          </div>
+        ) : null}
+      </div>
+    )
   }
 
   // A row's tint, resolved in the order the mockup resolves it (section 4): amber
@@ -341,7 +521,18 @@ export function HilosViewportTable<R>({
         tableProgressAction={tableProgressAction}
       />
 
-      <div className="table-responsive">
+      {/* A DECLARED table is a table on a wide screen and a list of cards on a
+          narrow one, so its scroll wrapper goes with the table itself: there is
+          nothing left to scroll sideways once the columns became lines of a card.
+          A table still drawn from props has no cards to fall back on and keeps
+          the wrapper at every width, scrollbar and all. */}
+      <div
+        className={
+          declaration
+            ? 'table-responsive d-none d-md-block'
+            : 'table-responsive'
+        }
+      >
         <table
           className="table table-striped table-hover align-middle mb-0"
           aria-labelledby={declaration ? nameId : undefined}
@@ -436,7 +627,13 @@ export function HilosViewportTable<R>({
                   >
                     {selectionEdge === 'start' ? selectRowCell : null}
                     {/* A placeholder row carries a null row; the null check also
-                      narrows the type for the render prop. */}
+                      narrows the type for the renderers. What stands where a row's
+                      values do takes one shape per epoch of the frame. A DECLARED
+                      table hands the page one renderer per column and writes the
+                      cell around it: that is what makes a cell addressable by
+                      column at all. A table still drawing its frame from props has
+                      no column to address a cell by, so it keeps handing over the
+                      whole row. */}
                     {view.placeholder || view.row === null ? (
                       <td
                         colSpan={bodyColspan}
@@ -445,8 +642,10 @@ export function HilosViewportTable<R>({
                       >
                         {placeholderText}
                       </td>
+                    ) : declaration ? (
+                      declaredCells(view.row, view.rowKey)
                     ) : (
-                      row(view.row, view.rowKey)
+                      row?.(view.row, view.rowKey)
                     )}
                     {markColumn && !view.placeholder && view.row !== null ? (
                       <td className="text-end text-nowrap">
@@ -518,27 +717,69 @@ export function HilosViewportTable<R>({
                   colSpan={bodyColspan}
                   className="text-center text-muted py-4"
                 >
-                  {!loaded ? (
-                    <span
-                      className="d-inline-flex align-items-center gap-2"
-                      role="status"
-                      data-id="hilos-table-loading"
-                    >
-                      <span
-                        className="spinner-border spinner-border-sm"
-                        aria-hidden="true"
-                      />
-                      {loadingText}
-                    </span>
-                  ) : (
-                    (empty ?? emptyWords)
-                  )}
+                  {stateWords}
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
+
+      {/* The same rows as cards, the shape a table takes on a narrow screen: the
+          framework builds each card out of the very columns the page declared, so
+          no project writes a second markup for its table (mockup section 9). Both
+          branches stand in the document at once and Bootstrap's visibility
+          utilities show exactly one of them — there is no width at which both are
+          seen, and crossing the boundary re-renders nothing (Flow F11). The price
+          is that a row's data-id is in the document twice, which is why a test on
+          a narrow screen aims at a row THROUGH this container
+          (table-subscription.md, the registry of selectors). The cards are a list
+          and carry the accessible name of the table itself: the same name rather
+          than a second one, and never both at once — the branch that is hidden
+          leaves the accessibility tree with its display (Flow F9). The list holds
+          the cards and nothing else; what the table says in words when it has no
+          rows stands BESIDE it, a sentence not being an item of a list. */}
+      {card !== null ? (
+        <div className="d-md-none" data-id="hilos-table-cards">
+          {rows.length > 0 ? (
+            <div role="list" aria-labelledby={nameId}>
+              {rows.map((view) => {
+                const tint = cardClass(view)
+
+                return (
+                  <div
+                    key={view.rowKey}
+                    className={
+                      tint === undefined ? 'card mb-2' : `card mb-2 ${tint}`
+                    }
+                    role="listitem"
+                    data-id={`hilos-table-card-${view.rowKey}`}
+                  >
+                    {/* A removed row keeps its place as a card of one line,
+                        exactly as it keeps it as a row of one cell: the set
+                        never closes up under the reader (Flow F4). */}
+                    {view.placeholder || view.row === null ? (
+                      <div
+                        className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
+                        data-id="hilos-table-placeholder"
+                      >
+                        {placeholderText}
+                      </div>
+                    ) : (
+                      cardBody(card, view, view.row)
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            // The two states a table says in words live inside the table in the
+            // wide branch, so a narrow screen would hide them along with it and
+            // the phone would be left with a blank space (Flow F12).
+            <div className="text-center text-muted py-4">{stateWords}</div>
+          )}
+        </div>
+      ) : null}
 
       {declaration ? <HilosTableFooter controller={controller} /> : null}
 

@@ -6,6 +6,7 @@ import {
   openSettingEdit,
   setCustomSetting,
   shownByTestId,
+  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -208,18 +209,7 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
 
   // Nothing reaches sideways: neither the shell's own scrolling container, which is
   // where the admin page lives (HilosLayout), nor the document around it.
-  const sidewaysOverflow = (): Promise<number[]> =>
-    page.evaluate(() => {
-      const main = document.getElementById('hilos-main-content')
-      if (main === null) {
-        throw new Error('the shell drew no main container to measure')
-      }
-
-      return [main, document.documentElement].map(
-        (element) => element.scrollWidth - element.clientWidth,
-      )
-    })
-  expect(await sidewaysOverflow()).toEqual([0, 0])
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
 
   // Back on a wide screen it is the table again, and the cards are gone from sight:
   // both branches were drawn from the same window, so the row is there to show.

@@ -79,6 +79,7 @@ export {
   type ViewportTableRowContext,
   type ViewportTableRowProgressContext,
 } from './HilosViewportTable.js'
+export { HilosTableCell, type HilosTableCellContext } from './HilosTableCell.js'
 export {
   HilosDropdown,
   type DropdownToggleContext,

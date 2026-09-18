@@ -2,8 +2,10 @@
 // The first group draws a table whose page declared no frame: the numbers a
 // composite order puts on its headers (HIL-811), its rows' tint, the mark column,
 // and the room of live messages above the rows (HIL-803, HIL-812). The
-// next ones take the branch on a declared frame (HIL-801, HIL-810). The host fills
-// the `#row` template, which a component created directly could not be handed. The
+// next ones take the branch on a declared frame (HIL-801, HIL-810), whose cells the
+// host fills one marked template per column (HIL-815); a table on no frame still
+// takes the `#row` template — either of which a component created directly could not
+// be handed. The
 // admin-page group stands the table inside the admin shell, the way the framework's
 // admin pages draw it, where a table declaring no title is named by the page heading.
 import { Component } from '@angular/core'
@@ -22,6 +24,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
+import { HilosTableCell } from '../src/HilosTableCell.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import {
@@ -51,7 +54,7 @@ const FRAME: HilosTableFrame = {
 /** A host drawing a table that also passes the props of the older branch. */
 @Component({
   selector: 'test-viewport-table-host',
-  imports: [HilosViewportTable],
+  imports: [HilosTableCell, HilosViewportTable],
   template: `
     <hilos-viewport-table
       [controller]="controller"
@@ -59,9 +62,7 @@ const FRAME: HilosTableFrame = {
       label="Users"
       [searchable]="true"
     >
-      <ng-template #row let-row>
-        <td>{{ row.name }}</td>
-      </ng-template>
+      <ng-template hilosTableCell="name" let-row>{{ row.name }}</ng-template>
     </hilos-viewport-table>
   `,
 })
@@ -151,17 +152,15 @@ class MarkedTableHost {
 
 /**
  * A page drawing a declared table inside the admin shell, the way the framework's
- * admin pages do: the table is handed its controller and its row, and nothing else.
+ * admin pages do: the table is handed its controller and its cells, and nothing else.
  */
 @Component({
   selector: 'test-admin-page-table-host',
-  imports: [HilosAdminPage, HilosViewportTable],
+  imports: [HilosAdminPage, HilosTableCell, HilosViewportTable],
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="controller">
-        <ng-template #row let-row>
-          <td>{{ row.name }}</td>
-        </ng-template>
+        <ng-template hilosTableCell="name" let-row>{{ row.name }}</ng-template>
       </hilos-viewport-table>
     </hilos-admin-page>
   `,
@@ -169,6 +168,111 @@ class MarkedTableHost {
 class AdminPageTableHost {
   controller!: TableViewportController<Row>
   page = HilosPages.I18N_LANGUAGE
+}
+
+// Two columns, one of them aligned the way a numeric column is: what the page used
+// to write onto its own `<td>` and now declares once.
+const CELL_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name' },
+  {
+    key: 'size',
+    label: 'Size',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+  },
+]
+
+/** A host filling each declared column's cell from a template marked with its key. */
+@Component({
+  selector: 'test-cells-table-host',
+  imports: [HilosTableCell, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name" let-row>
+        <span class="named">{{ row.name }}</span>
+      </ng-template>
+      <!-- A page may wrap a template in a block of its own; the table still finds it. -->
+      @if (withSize) {
+        <ng-template hilosTableCell="size">
+          <span class="sized">1.2 GB</span>
+        </ng-template>
+      }
+    </hilos-viewport-table>
+  `,
+})
+class CellsTableHost {
+  controller!: TableViewportController<Row>
+  withSize = true
+}
+
+/**
+ * A host whose table is declared while the page still passes a column list of the
+ * props epoch, and fills only the column that list does not name.
+ */
+@Component({
+  selector: 'test-stale-columns-table-host',
+  imports: [HilosTableCell, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller" [columns]="columns">
+      <ng-template hilosTableCell="size">
+        <span class="sized">1.2 GB</span>
+      </ng-template>
+    </hilos-viewport-table>
+  `,
+})
+class StaleColumnsTableHost {
+  controller!: TableViewportController<Row>
+  columns: HilosTableColumn[] = [{ key: 'name', label: 'Name' }]
+}
+
+// One column of each place a card has, plus one the page keeps out of it: the whole
+// projection read back through the markup the view writes.
+const CARD_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'kind', label: 'Kind', cellClass: 'text-end' },
+  { key: 'state', label: 'State', card: 'badge' },
+  { key: 'secret', label: 'Secret', card: 'hidden' },
+  { key: 'actions', label: '' },
+]
+
+/**
+ * A host filling every place of a card; `full` off leaves the name alone, and
+ * `withEmpty` hands the table the page's own empty words.
+ */
+@Component({
+  selector: 'test-cards-table-host',
+  imports: [HilosTableCell, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name" let-row>
+        <span class="named">{{ row.name }}</span>
+      </ng-template>
+      @if (full) {
+        <ng-template hilosTableCell="kind">
+          <span class="kind">full</span>
+        </ng-template>
+        <ng-template hilosTableCell="state">
+          <span class="state-badge">ready</span>
+        </ng-template>
+        <ng-template hilosTableCell="secret">
+          <span class="secret">1.2 GB</span>
+        </ng-template>
+        <ng-template hilosTableCell="actions">
+          <button type="button" class="restore">Restore</button>
+        </ng-template>
+      }
+      @if (withEmpty) {
+        <ng-template #empty>
+          <span class="none-yet">No backups yet</span>
+        </ng-template>
+      }
+    </hilos-viewport-table>
+  `,
+})
+class CardsTableHost {
+  controller!: TableViewportController<Row>
+  full = true
+  withEmpty = false
 }
 
 /** The identity a leaf answers with: its heading, and nothing below it. */
@@ -639,6 +743,491 @@ describe('HilosViewportTable on an admin page', () => {
     expect(query(fixture, 'tbody')?.textContent?.trim()).toBe(
       'No languages yet.',
     )
+  })
+})
+
+describe('HilosViewportTable drawing the cells of a declared table', () => {
+  const CELL_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CELL_COLUMNS,
+  }
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function mountCells(withSize = true): ComponentFixture<CellsTableHost> {
+    const controller = makeController(CELL_FRAME)
+    window(controller)
+    const fixture = TestBed.createComponent(CellsTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.componentInstance.withSize = withSize
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function rowCells(fixture: ComponentFixture<unknown>): HTMLElement[] {
+    return Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
+        '[data-id="hilos-table-row-a"] td',
+      ),
+    )
+  }
+
+  it('draws one cell per declared column and fills it from its own template', () => {
+    const fixture = mountCells()
+
+    const cells = rowCells(fixture)
+    expect(cells).toHaveLength(CELL_COLUMNS.length)
+    expect(cells[0]?.querySelector('.named')?.textContent).toBe('Alice')
+    // Found although the page wrapped it in a block of its own.
+    expect(cells[1]?.querySelector('.sized')?.textContent).toBe('1.2 GB')
+  })
+
+  it('puts the declared cell class on the body cell and nowhere else', () => {
+    const fixture = mountCells()
+
+    const cells = rowCells(fixture)
+    expect(cells[0]?.classList.contains('text-end')).toBe(false)
+    expect(cells[1]?.classList.contains('text-end')).toBe(true)
+  })
+
+  it('leaves the cell standing where the page marked no template', () => {
+    const fixture = mountCells(false)
+
+    const cells = rowCells(fixture)
+    expect(cells).toHaveLength(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('thead th')
+        .length,
+    )
+    expect(cells[1]?.textContent?.trim()).toBe('')
+  })
+
+  it('reads the columns off the declaration rather than off the prop', () => {
+    const controller = makeController(CELL_FRAME)
+    window(controller)
+    const fixture = TestBed.createComponent(StaleColumnsTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    const root = fixture.nativeElement as HTMLElement
+    expect(root.querySelectorAll('thead th')).toHaveLength(CELL_COLUMNS.length)
+    expect(root.querySelector('thead')?.textContent).toContain('Size')
+    expect(root.querySelector('.sized')).not.toBeNull()
+  })
+
+  it('keeps handing the whole row over while the page passes columns as a prop', () => {
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+    })
+    window(controller)
+    const fixture = TestBed.createComponent(PlainTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    expect(
+      query(fixture, '[data-id="hilos-table-row-a"] td.cell')?.textContent,
+    ).toBe('Alice')
+  })
+})
+
+describe('HilosViewportTable drawing a row as a card', () => {
+  /** The sender of the declared operation, which this block never presses. */
+  function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+    throw new Error('the declaration is only read here')
+  }
+
+  const CARD_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CARD_COLUMNS,
+  }
+
+  /** The same table on a page that also declared an operation over marked rows. */
+  const BULK_CARD_FRAME: HilosTableFrame = {
+    ...CARD_FRAME,
+    bulkActions: [
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    ],
+  }
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function mountCards(
+    controller: TableViewportController<Row>,
+    options: {
+      edge?: HilosTableSelectionEdge
+      full?: boolean
+      withEmpty?: boolean
+    } = {},
+  ): ComponentFixture<CardsTableHost> {
+    if (options.edge !== undefined) {
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: HILOS_TABLE_SELECTION_EDGE, useValue: options.edge },
+        ],
+      })
+    }
+    const fixture = TestBed.createComponent(CardsTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.componentInstance.full = options.full ?? true
+    fixture.componentInstance.withEmpty = options.withEmpty ?? false
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function root(fixture: ComponentFixture<unknown>): HTMLElement {
+    return fixture.nativeElement as HTMLElement
+  }
+
+  function cardOf(
+    fixture: ComponentFixture<unknown>,
+    rowKey: string,
+  ): HTMLElement {
+    return query(
+      fixture,
+      `[data-id="hilos-table-card-${rowKey}"]`,
+    ) as HTMLElement
+  }
+
+  it('stands the cards beside the table and shows exactly one of the two', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller)
+
+    const cards = query(fixture, '[data-id="hilos-table-cards"]') as HTMLElement
+    expect(cards.classList.contains('d-md-none')).toBe(true)
+    expect(
+      cards.querySelectorAll('[data-id^="hilos-table-card-"]'),
+    ).toHaveLength(2)
+
+    const wide = query(fixture, '.table-responsive') as HTMLElement
+    expect(wide.classList.contains('d-none')).toBe(true)
+    expect(wide.classList.contains('d-md-block')).toBe(true)
+    // Nothing to scroll sideways once the columns became lines of a card.
+    expect(cards.querySelectorAll('.table-responsive')).toHaveLength(0)
+  })
+
+  it('draws no cards and keeps the table at every width without a declaration', () => {
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+    })
+    window(controller)
+    const fixture = TestBed.createComponent(PlainTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    expect(query(fixture, '[data-id="hilos-table-cards"]')).toBeNull()
+    expect(
+      query(fixture, '.table-responsive')?.classList.contains('d-none'),
+    ).toBe(false)
+  })
+
+  it('lays the card out the way the core projected it', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller)
+    const card = cardOf(fixture, 'a')
+
+    expect(card.querySelector('.named')?.textContent).toBe('Alice')
+    // The title and the badge are drawn bare; only fields carry a label.
+    expect(card.textContent).not.toContain('Name')
+    expect(card.querySelector('.state-badge')).not.toBeNull()
+    expect(card.textContent).not.toContain('State')
+    expect(
+      Array.from(card.querySelectorAll('dt')).map((label) =>
+        label.textContent?.trim(),
+      ),
+    ).toEqual(['Kind'])
+    expect(card.querySelector('dd .kind')).not.toBeNull()
+    expect(card.querySelector('.d-grid .restore')).not.toBeNull()
+    // A column the page kept out of the card is nowhere in it, though it still
+    // stands in the row.
+    expect(card.querySelector('.secret')).toBeNull()
+    expect(
+      query(fixture, '[data-id="hilos-table-row-a"] .secret'),
+    ).not.toBeNull()
+  })
+
+  it('fills a cell of the row and a line of the card from one template', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller)
+
+    expect(query(fixture, '[data-id="hilos-table-row-a"] .kind')).not.toBeNull()
+    expect(cardOf(fixture, 'a').querySelector('.kind')).not.toBeNull()
+  })
+
+  it('leaves out the card line of a column the page marked no template for', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller, { full: false })
+
+    // The row keeps every cell, or it comes out narrower than its header; the
+    // card keeps no label with nothing under it.
+    expect(
+      root(fixture).querySelectorAll('[data-id="hilos-table-row-a"] td'),
+    ).toHaveLength(CARD_COLUMNS.length)
+    expect(cardOf(fixture, 'a').querySelectorAll('dt')).toHaveLength(0)
+    expect(cardOf(fixture, 'a').querySelector('.d-grid')).toBeNull()
+  })
+
+  it('puts the declared cell class on the row cell and not on the card line', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller)
+
+    const cells = root(fixture).querySelectorAll(
+      '[data-id="hilos-table-row-a"] td',
+    )
+    expect(cells[1]?.classList.contains('text-end')).toBe(true)
+    expect(
+      cardOf(fixture, 'a').querySelector('dd')?.classList.contains('text-end'),
+    ).toBe(false)
+  })
+
+  it('keeps a removed row as a card of one line, in its place', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const fixture = mountCards(controller)
+
+    const card = cardOf(fixture, 'a')
+    expect(
+      card
+        .querySelector('[data-id="hilos-table-placeholder"]')
+        ?.textContent?.trim(),
+    ).toBe('Removed')
+    expect(card.querySelectorAll('dt')).toHaveLength(0)
+    expect(card.querySelector('.restore')).toBeNull()
+    expect(
+      root(fixture).querySelectorAll('[data-id^="hilos-table-card-"]'),
+    ).toHaveLength(2)
+  })
+
+  it('tints a card amber while a change waits and green after one landed', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    const fixture = mountCards(controller)
+
+    expect(cardOf(fixture, 'a').classList.contains('border-warning')).toBe(true)
+    expect(cardOf(fixture, 'a').classList.contains('card')).toBe(true)
+    expect(cardOf(fixture, 'b').classList.contains('border-success')).toBe(true)
+  })
+
+  it('lets the waiting outrank the highlight on a card that is both', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alexandra' } },
+    })
+    const fixture = mountCards(controller)
+    const card = cardOf(fixture, 'a')
+
+    expect(card.classList.contains('border-warning')).toBe(true)
+    expect(card.classList.contains('border-success')).toBe(false)
+  })
+
+  it('stands the framework marks beside the page badge, not instead of it', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    const fixture = mountCards(controller)
+
+    const group = cardOf(fixture, 'a').querySelector('.ms-auto')
+    expect(group?.querySelector('.state-badge')).not.toBeNull()
+    expect(
+      group?.querySelector('[data-id="hilos-table-pending-move-a"]'),
+    ).not.toBeNull()
+  })
+
+  it('puts the bar of a running job at the foot of the card', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'pack-a',
+      rowKey: 'a',
+      current: 34,
+      total: 110,
+    })
+    const fixture = mountCards(controller)
+
+    const card = cardOf(fixture, 'a')
+    const bar = card.querySelector('[data-id="hilos-table-progress-row-a"]')
+    expect(bar).not.toBeNull()
+    expect(bar?.querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(card.querySelector('.card-body')?.lastElementChild).toBe(bar)
+
+    // A row shown as a placeholder gets no bar, on a card as in a row.
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    fixture.detectChanges()
+
+    expect(
+      cardOf(fixture, 'a').querySelector(
+        '[data-id="hilos-table-progress-row-a"]',
+      ),
+    ).toBeNull()
+  })
+
+  it('says loading and then the page own empty words in both branches', () => {
+    const controller = makeController(CARD_FRAME)
+    const fixture = mountCards(controller, { withEmpty: true })
+
+    expect(
+      root(fixture).querySelectorAll('[data-id="hilos-table-loading"]'),
+    ).toHaveLength(2)
+
+    controller.ingestWindow([], 0, true, null, null, 10)
+    fixture.detectChanges()
+
+    expect(
+      root(fixture).querySelectorAll('[data-id="hilos-table-loading"]'),
+    ).toHaveLength(0)
+    expect(root(fixture).querySelectorAll('.none-yet')).toHaveLength(2)
+  })
+
+  it('names the list of cards with the heading the table is named by', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller)
+
+    const list = query(
+      fixture,
+      '[data-id="hilos-table-cards"] [role="list"]',
+    ) as HTMLElement
+    const titleId = query(fixture, '[data-id="hilos-table-title"]')?.id
+    expect(list.getAttribute('aria-labelledby')).toBe(titleId)
+    expect(query(fixture, 'table')?.getAttribute('aria-labelledby')).toBe(
+      titleId,
+    )
+    expect(cardOf(fixture, 'a').getAttribute('role')).toBe('listitem')
+    // The list owns cards and nothing else.
+    expect(list.children).toHaveLength(2)
+  })
+
+  it('keeps the words of an empty table beside the list and not inside it', () => {
+    const controller = makeController(CARD_FRAME)
+    const fixture = mountCards(controller)
+
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-cards"] [role="list"] [data-id="hilos-table-loading"]',
+      ),
+    ).toBeNull()
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-loading"]',
+      ),
+    ).not.toBeNull()
+
+    controller.ingestWindow([], 0, true, null, null, 10)
+    fixture.detectChanges()
+
+    expect(
+      query(fixture, '[data-id="hilos-table-cards"] [role="list"]'),
+    ).toBeNull()
+  })
+
+  it('carries the row mark in the head of the card, on the edge the app chose', () => {
+    const controller = makeController(BULK_CARD_FRAME)
+    window(controller)
+    const left = mountCards(controller)
+
+    const box = cardOf(left, 'a').querySelector<HTMLInputElement>(
+      '[data-id="hilos-table-select-a"]',
+    )
+    expect(box).not.toBeNull()
+    // On the left edge the mark stands before the title, not in the group of
+    // marks pushed to the right.
+    expect(cardOf(left, 'a').querySelector('.ms-auto input')).toBeNull()
+
+    // The card box tells the core the state it is now in, as the row box does.
+    box?.click()
+    expect(controller.selection.count.get()).toBe(1)
+    left.destroy()
+    TestBed.resetTestingModule()
+
+    const right = mountCards(controller, { edge: 'end' })
+    expect(
+      cardOf(right, 'a')
+        .querySelector('.ms-auto input')
+        ?.getAttribute('data-id'),
+    ).toBe('hilos-table-select-a')
+  })
+
+  it('gives a card shown as a placeholder no mark to make', () => {
+    const controller = makeController(BULK_CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const fixture = mountCards(controller)
+
+    expect(
+      cardOf(fixture, 'a').querySelector('[data-id="hilos-table-select-a"]'),
+    ).toBeNull()
+    expect(
+      cardOf(fixture, 'b').querySelector('[data-id="hilos-table-select-b"]'),
+    ).not.toBeNull()
   })
 })
 

@@ -14,6 +14,8 @@
 import { useEffect, useMemo } from 'react'
 import {
   CHANNEL_ENABLED_FIELD,
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosChannelRowKey,
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
@@ -79,55 +81,53 @@ export function HilosCommunicationsPage({
     <HilosAdminPage page={HilosPages.COMMUNICATIONS}>
       <HilosViewportTable
         controller={channels.controller}
-        row={(row) => (
-          <>
-            <td>
+        cells={{
+          [HilosChannelRowKey.channel]: (row) => (
+            <>
               <div className="fw-semibold">{row.label}</div>
               <code className="small text-body-secondary">{row.channel}</code>
-            </td>
-            <td>
-              <div className="form-check form-switch mb-0">
-                <input
-                  id={`hilos-channel-enabled-${row.channel}`}
-                  type="checkbox"
-                  className="form-check-input"
-                  role="switch"
-                  checked={row.enabled}
-                  disabled={toggle.busy}
-                  aria-label={`Enable ${row.label}`}
-                  data-id={`hilos-channel-enabled-${row.channel}`}
-                  onChange={(event) => toggleEnabled(row, event.target.checked)}
-                />
-              </div>
-            </td>
-            <td>
-              {row.configured ? (
-                <span className="badge text-bg-success-subtle text-success-emphasis">
-                  Configured
-                </span>
-              ) : (
-                <span
-                  className="badge text-bg-warning-subtle text-warning-emphasis"
-                  title={`${row.missingFields} field(s) not set`}
-                >
-                  {row.missingFields} missing
-                </span>
-              )}
-            </td>
-            <td>
-              <code className="small">{row.driver ?? '—'}</code>
-            </td>
-            <td className="text-end">
-              <HilosLink
-                to={channelPath(row)}
-                className="btn btn-sm btn-outline-primary"
-                data-id={`hilos-channel-configure-${row.channel}`}
+            </>
+          ),
+          [HilosChannelRowKey.enabled]: (row) => (
+            <div className="form-check form-switch mb-0">
+              <input
+                type="checkbox"
+                className="form-check-input"
+                role="switch"
+                checked={row.enabled}
+                disabled={toggle.busy}
+                aria-label={`Enable ${row.label}`}
+                data-id={`hilos-channel-enabled-${row.channel}`}
+                onChange={(event) => toggleEnabled(row, event.target.checked)}
+              />
+            </div>
+          ),
+          [HilosChannelRowKey.configured]: (row) =>
+            row.configured ? (
+              <span className="badge text-bg-success-subtle text-success-emphasis">
+                Configured
+              </span>
+            ) : (
+              <span
+                className="badge text-bg-warning-subtle text-warning-emphasis"
+                title={`${row.missingFields} field(s) not set`}
               >
-                Configure
-              </HilosLink>
-            </td>
-          </>
-        )}
+                {row.missingFields} missing
+              </span>
+            ),
+          [HilosChannelRowKey.driver]: (row) => (
+            <code className="small">{row.driver ?? '—'}</code>
+          ),
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <HilosLink
+              to={channelPath(row)}
+              className="btn btn-sm btn-outline-primary"
+              data-id={`hilos-channel-configure-${row.channel}`}
+            >
+              Configure
+            </HilosLink>
+          ),
+        }}
       />
     </HilosAdminPage>
   )

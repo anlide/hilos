@@ -183,4 +183,26 @@ describe('HilosUsersPage', () => {
     expect(container.querySelector('[data-id="open-1"]')).not.toBeNull()
     expect(container.querySelector('[data-id="open-2"]')).not.toBeNull()
   })
+
+  it('draws a cell under every declared column, aligned the way the column says', () => {
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={twoUsers()} />
+      </HilosRouterContext.Provider>,
+    )
+    const cells = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-id="hilos-table-row-1"] td',
+      ),
+    )
+
+    // The page writes the content only; the cell and its class come from the
+    // declaration, so the count of sessions stays right-aligned without the page
+    // saying so.
+    expect(cells).toHaveLength(container.querySelectorAll('thead th').length)
+    expect(cells[1]?.textContent).toBe('Alice')
+    expect(cells[1]?.classList.contains('fw-medium')).toBe(true)
+    expect(cells[3]?.textContent).toBe('2')
+    expect(cells[3]?.classList.contains('text-end')).toBe(true)
+  })
 })

@@ -514,7 +514,7 @@ describe('HilosViewportTable with a declared frame', () => {
         columns={COLUMNS}
         label="Users"
         searchable
-        row={(r) => <td className="cell">{r.name}</td>}
+        cells={{ name: (r) => <span className="cell">{r.name}</span> }}
       />,
     )
   }
@@ -540,7 +540,7 @@ describe('HilosViewportTable with a declared frame', () => {
     const { container } = render(
       <HilosViewportTable
         controller={controller}
-        row={(r) => <td className="cell">{r.name}</td>}
+        cells={{ name: (r) => <span className="cell">{r.name}</span> }}
       />,
     )
 
@@ -601,6 +601,534 @@ describe('HilosViewportTable with a declared frame', () => {
   })
 })
 
+describe('HilosViewportTable drawing the cells of a declared table', () => {
+  afterEach(cleanup)
+
+  // Two columns, one of them aligned the way a numeric column is: what the page
+  // used to write onto its own `<td>` and now declares once.
+  const CELL_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name' },
+    {
+      key: 'size',
+      label: 'Size',
+      headerClass: 'text-end',
+      cellClass: 'text-end',
+    },
+  ]
+  const CELL_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CELL_COLUMNS,
+  }
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function renderCells(controller: TableViewportController<Row>) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        cells={{
+          name: (r) => <span className="named">{r.name}</span>,
+          size: () => <span className="sized">1.2 GB</span>,
+        }}
+      />,
+    )
+  }
+
+  function rowCells(container: HTMLElement): HTMLElement[] {
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-id="hilos-table-row-a"] td',
+      ),
+    )
+  }
+
+  it('draws one cell per declared column and fills it from its own renderer', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const { container } = renderCells(controller)
+
+    const cells = rowCells(container)
+    expect(cells).toHaveLength(CELL_COLUMNS.length)
+    expect(cells[0]?.querySelector('.named')?.textContent).toBe('Alice')
+    expect(cells[1]?.querySelector('.sized')?.textContent).toBe('1.2 GB')
+  })
+
+  it('puts the declared cell class on the body cell and nowhere else', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const { container } = renderCells(controller)
+
+    const cells = rowCells(container)
+    expect(cells[0]?.classList.contains('text-end')).toBe(false)
+    expect(cells[1]?.classList.contains('text-end')).toBe(true)
+  })
+
+  it('leaves the cell standing where the page gave no renderer', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        cells={{ name: (r) => r.name }}
+      />,
+    )
+
+    const cells = rowCells(container)
+    expect(cells).toHaveLength(container.querySelectorAll('thead th').length)
+    expect(cells[1]?.textContent).toBe('')
+  })
+
+  it('reads the columns off the declaration rather than off the prop', () => {
+    const { controller } = makeController(CELL_FRAME)
+    window(controller)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        // A prop left behind from the props epoch: the declared table ignores it,
+        // so its row and its header cannot be assembled from two different lists.
+        columns={[{ key: 'name', label: 'Name' }]}
+        cells={{ size: () => <span className="sized">1.2 GB</span> }}
+      />,
+    )
+
+    expect(container.querySelectorAll('thead th')).toHaveLength(
+      CELL_COLUMNS.length,
+    )
+    expect(container.querySelector('thead')?.textContent).toContain('Size')
+    expect(container.querySelector('.sized')).not.toBeNull()
+  })
+
+  it('keeps handing the whole row over while the page passes columns as a prop', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderTable(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-row-a"] td.cell')
+        ?.textContent,
+    ).toBe('Alice')
+  })
+})
+
+describe('HilosViewportTable drawing a row as a card', () => {
+  afterEach(cleanup)
+
+  /** The sender of the declared operation, which this block never presses. */
+  function neverRun(): ActionHandle<HilosTableBulkAccepted> {
+    throw new Error('the declaration is only read here')
+  }
+
+  // One column of each place a card has, plus one the page keeps out of it: the
+  // whole projection read back through the markup the view writes.
+  const CARD_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name' },
+    { key: 'kind', label: 'Kind', cellClass: 'text-end' },
+    { key: 'state', label: 'State', card: 'badge' },
+    { key: 'secret', label: 'Secret', card: 'hidden' },
+    { key: 'actions', label: '' },
+  ]
+  const CARD_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: CARD_COLUMNS,
+  }
+
+  /** The same table on a page that also declared an operation over marked rows. */
+  const BULK_CARD_FRAME: HilosTableFrame = {
+    ...CARD_FRAME,
+    bulkActions: [
+      { key: 'delete', label: 'Delete', danger: true, run: neverRun },
+    ],
+  }
+
+  const CARD_CELLS = {
+    name: (r: Row) => <span className="named">{r.name}</span>,
+    kind: () => <span className="kind">full</span>,
+    state: () => <span className="state-badge">ready</span>,
+    secret: () => <span className="secret">1.2 GB</span>,
+    actions: () => (
+      <button type="button" className="restore">
+        Restore
+      </button>
+    ),
+  }
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function renderCards(
+    controller: TableViewportController<Row>,
+    edge?: HilosTableSelectionEdge,
+  ) {
+    const table = (
+      <HilosViewportTable controller={controller} cells={CARD_CELLS} />
+    )
+
+    return render(
+      edge === undefined ? (
+        table
+      ) : (
+        <HilosTableSelectionEdgeContext.Provider value={edge}>
+          {table}
+        </HilosTableSelectionEdgeContext.Provider>
+      ),
+    )
+  }
+
+  function cardOf(container: HTMLElement, rowKey: string): HTMLElement {
+    return container.querySelector<HTMLElement>(
+      `[data-id="hilos-table-card-${rowKey}"]`,
+    ) as HTMLElement
+  }
+
+  it('stands the cards beside the table and shows exactly one of the two', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const { container } = renderCards(controller)
+
+    const cards = container.querySelector(
+      '[data-id="hilos-table-cards"]',
+    ) as HTMLElement
+    expect(cards.classList.contains('d-md-none')).toBe(true)
+    expect(
+      cards.querySelectorAll('[data-id^="hilos-table-card-"]'),
+    ).toHaveLength(2)
+
+    const wide = container.querySelector('.table-responsive') as HTMLElement
+    expect(wide.classList.contains('d-none')).toBe(true)
+    expect(wide.classList.contains('d-md-block')).toBe(true)
+    // Nothing to scroll sideways once the columns became lines of a card.
+    expect(cards.querySelectorAll('.table-responsive')).toHaveLength(0)
+  })
+
+  it('draws no cards and keeps the table at every width without a declaration', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderTable(controller)
+
+    expect(container.querySelector('[data-id="hilos-table-cards"]')).toBeNull()
+    expect(
+      container
+        .querySelector('.table-responsive')
+        ?.classList.contains('d-none'),
+    ).toBe(false)
+  })
+
+  it('lays the card out the way the core projected it', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const { container } = renderCards(controller)
+    const card = cardOf(container, 'a')
+
+    expect(card.querySelector('.named')?.textContent).toBe('Alice')
+    // The title and the badge are drawn bare; only fields carry a label.
+    expect(card.textContent).not.toContain('Name')
+    expect(card.querySelector('.state-badge')).not.toBeNull()
+    expect(card.textContent).not.toContain('State')
+    expect(
+      Array.from(card.querySelectorAll('dt')).map((label) => label.textContent),
+    ).toEqual(['Kind'])
+    expect(card.querySelector('dd .kind')).not.toBeNull()
+    expect(card.querySelector('.d-grid .restore')).not.toBeNull()
+    // A column the page kept out of the card is nowhere in it, though it still
+    // stands in the row.
+    expect(card.querySelector('.secret')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-row-a"] .secret'),
+    ).not.toBeNull()
+  })
+
+  it('fills a cell of the row and a line of the card from one renderer', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const { container } = renderCards(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-row-a"] .kind'),
+    ).not.toBeNull()
+    expect(cardOf(container, 'a').querySelector('.kind')).not.toBeNull()
+  })
+
+  it('leaves out the card line of a column the page gave no renderer for', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        cells={{ name: (r) => <span className="named">{r.name}</span> }}
+      />,
+    )
+
+    // The row keeps every cell, or it comes out narrower than its header; the
+    // card keeps no label with nothing under it.
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-row-a"] td'),
+    ).toHaveLength(CARD_COLUMNS.length)
+    expect(cardOf(container, 'a').querySelectorAll('dt')).toHaveLength(0)
+    expect(cardOf(container, 'a').querySelector('.d-grid')).toBeNull()
+  })
+
+  it('puts the declared cell class on the row cell and not on the card line', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const { container } = renderCards(controller)
+
+    const cells = container.querySelectorAll('[data-id="hilos-table-row-a"] td')
+    expect(cells[1]?.classList.contains('text-end')).toBe(true)
+    expect(
+      cardOf(container, 'a')
+        .querySelector('dd')
+        ?.classList.contains('text-end'),
+    ).toBe(false)
+  })
+
+  it('keeps a removed row as a card of one line, in its place', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const { container } = renderCards(controller)
+
+    const card = cardOf(container, 'a')
+    expect(
+      card.querySelector('[data-id="hilos-table-placeholder"]')?.textContent,
+    ).toBe('Removed')
+    expect(card.querySelectorAll('dt')).toHaveLength(0)
+    expect(card.querySelector('.restore')).toBeNull()
+    expect(
+      container.querySelectorAll('[data-id^="hilos-table-card-"]'),
+    ).toHaveLength(2)
+  })
+
+  it('tints a card amber while a change waits and green after one landed', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bobby' } },
+    })
+    const { container } = renderCards(controller)
+
+    expect(cardOf(container, 'a').classList.contains('border-warning')).toBe(
+      true,
+    )
+    expect(cardOf(container, 'b').classList.contains('border-success')).toBe(
+      true,
+    )
+  })
+
+  it('lets the waiting outrank the highlight on a card that is both', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alexandra' } },
+    })
+    const { container } = renderCards(controller)
+    const card = cardOf(container, 'a')
+
+    expect(card.classList.contains('border-warning')).toBe(true)
+    expect(card.classList.contains('border-success')).toBe(false)
+  })
+
+  it('stands the framework marks beside the page badge, not instead of it', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Alicia' } },
+    })
+    const { container } = renderCards(controller)
+
+    const group = cardOf(container, 'a').querySelector('.ms-auto')
+    expect(group?.querySelector('.state-badge')).not.toBeNull()
+    expect(
+      group?.querySelector('[data-id="hilos-table-pending-move-a"]'),
+    ).not.toBeNull()
+  })
+
+  it('puts the bar of a running job at the foot of the card', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'pack-a',
+      rowKey: 'a',
+      current: 34,
+      total: 110,
+    })
+    const { container } = renderCards(controller)
+
+    const card = cardOf(container, 'a')
+    const bar = card.querySelector('[data-id="hilos-table-progress-row-a"]')
+    expect(bar).not.toBeNull()
+    expect(bar?.querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(card.querySelector('.card-body')?.lastElementChild).toBe(bar)
+
+    // A row shown as a placeholder gets no bar, on a card as in a row.
+    act(() => {
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+      })
+      controller.apply()
+    })
+
+    expect(
+      cardOf(container, 'a').querySelector(
+        '[data-id="hilos-table-progress-row-a"]',
+      ),
+    ).toBeNull()
+  })
+
+  it('says loading and then the page own empty words in both branches', () => {
+    const { controller } = makeController(CARD_FRAME)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        cells={CARD_CELLS}
+        empty={<span className="none-yet">No backups yet</span>}
+      />,
+    )
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-loading"]'),
+    ).toHaveLength(2)
+
+    act(() => controller.ingestWindow([], 0, true, null, null, 10))
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-loading"]'),
+    ).toHaveLength(0)
+    expect(container.querySelectorAll('.none-yet')).toHaveLength(2)
+  })
+
+  it('names the list of cards with the heading the table is named by', () => {
+    const { controller } = makeController(CARD_FRAME)
+    window(controller)
+    const { container } = renderCards(controller)
+
+    const list = container.querySelector(
+      '[data-id="hilos-table-cards"] [role="list"]',
+    ) as HTMLElement
+    const titleId = container.querySelector('[data-id="hilos-table-title"]')?.id
+    expect(list.getAttribute('aria-labelledby')).toBe(titleId)
+    expect(
+      container.querySelector('table')?.getAttribute('aria-labelledby'),
+    ).toBe(titleId)
+    expect(cardOf(container, 'a').getAttribute('role')).toBe('listitem')
+    // The list owns cards and nothing else.
+    expect(list.children).toHaveLength(2)
+  })
+
+  it('keeps the words of an empty table beside the list and not inside it', () => {
+    const { controller } = makeController(CARD_FRAME)
+    const { container } = renderCards(controller)
+
+    expect(
+      container.querySelector(
+        '[data-id="hilos-table-cards"] [role="list"] [data-id="hilos-table-loading"]',
+      ),
+    ).toBeNull()
+    expect(
+      container.querySelector(
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-loading"]',
+      ),
+    ).not.toBeNull()
+
+    act(() => controller.ingestWindow([], 0, true, null, null, 10))
+
+    expect(
+      container.querySelector('[data-id="hilos-table-cards"] [role="list"]'),
+    ).toBeNull()
+  })
+
+  it('carries the row mark in the head of the card, on the edge the app chose', () => {
+    const { controller } = makeController(BULK_CARD_FRAME)
+    window(controller)
+    const left = renderCards(controller)
+
+    const box = cardOf(left.container, 'a').querySelector<HTMLInputElement>(
+      '[data-id="hilos-table-select-a"]',
+    )
+    expect(box).not.toBeNull()
+    // On the left edge the mark stands before the title, not in the group of
+    // marks pushed to the right.
+    expect(
+      cardOf(left.container, 'a').querySelector('.ms-auto input'),
+    ).toBeNull()
+
+    // The card box tells the core the state it is now in, as the row box does.
+    fireEvent.click(box as HTMLElement)
+    expect(controller.selection.count.get()).toBe(1)
+    expect(box?.checked).toBe(true)
+    left.unmount()
+
+    const right = renderCards(controller, 'end')
+    expect(
+      cardOf(right.container, 'a')
+        .querySelector('.ms-auto input')
+        ?.getAttribute('data-id'),
+    ).toBe('hilos-table-select-a')
+  })
+
+  it('gives a card shown as a placeholder no mark to make', () => {
+    const { controller } = makeController(BULK_CARD_FRAME)
+    window(controller)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    const { container } = renderCards(controller)
+
+    expect(
+      cardOf(container, 'a').querySelector('[data-id="hilos-table-select-a"]'),
+    ).toBeNull()
+    expect(
+      cardOf(container, 'b').querySelector('[data-id="hilos-table-select-b"]'),
+    ).not.toBeNull()
+  })
+})
+
 describe('HilosViewportTable with a selection column', () => {
   afterEach(cleanup)
 
@@ -632,8 +1160,7 @@ describe('HilosViewportTable with a selection column', () => {
     const table = (
       <HilosViewportTable
         controller={controller}
-        columns={COLUMNS}
-        row={(r) => <td className="cell">{r.name}</td>}
+        cells={{ name: (r) => <span className="cell">{r.name}</span> }}
       />
     )
 

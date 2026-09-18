@@ -206,6 +206,34 @@ describe('HilosSettingsPage', () => {
     expect(root.textContent).toContain('site_name')
   })
 
+  it('draws a cell under every declared column, aligned the way the column says', () => {
+    const { context } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    const cells = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        '[data-id="hilos-table-row-site_name"] td',
+      ),
+    )
+
+    // The page writes the content only; the cell and its class come from the
+    // declaration, so the row's controls stay right-aligned without the page
+    // saying so.
+    expect(cells).toHaveLength(root.querySelectorAll('thead th').length)
+    expect(cells[0]?.querySelector('code')?.textContent).toBe('site_name')
+    expect(
+      cells[2]?.querySelector('[data-id="hilos-settings-edit-site_name"]'),
+    ).not.toBeNull()
+    expect(cells[2]?.classList.contains('text-end')).toBe(true)
+  })
+
   it('reloads a pristine edit when the live row changes elsewhere', () => {
     const { context, pushUpdate } = seededContext([
       slot({
