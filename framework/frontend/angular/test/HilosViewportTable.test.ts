@@ -1,6 +1,7 @@
 // The Angular view under the case names the Vue view and the React port run for it.
-// The first group draws a table whose page declared no frame: its rows' tint, the
-// mark column, and the room of live messages above the rows (HIL-803, HIL-812). The
+// The first group draws a table whose page declared no frame: the numbers a
+// composite order puts on its headers (HIL-811), its rows' tint, the mark column,
+// and the room of live messages above the rows (HIL-803, HIL-812). The
 // next ones take the branch on a declared frame (HIL-801, HIL-810). The host fills
 // the `#row` template, which a component created directly could not be handed. The
 // admin-page group stands the table inside the admin shell, the way the framework's
@@ -34,6 +35,11 @@ interface Row {
 
 const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
+]
+
+const TWO_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name', sortable: true },
+  { key: 'id', label: 'Id', sortable: true },
 ]
 
 const FRAME: HilosTableFrame = {
@@ -253,9 +259,11 @@ describe('HilosViewportTable', () => {
 
   function mountTable(
     controller: TableViewportController<Row>,
+    columns: HilosTableColumn[] = COLUMNS,
   ): ComponentFixture<PlainTableHost> {
     const fixture = TestBed.createComponent(PlainTableHost)
     fixture.componentInstance.controller = controller
+    fixture.componentInstance.columns = columns
     fixture.detectChanges()
 
     return fixture
@@ -269,6 +277,35 @@ describe('HilosViewportTable', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll(selector),
     )
   }
+
+  it('numbers the columns of a composite order and says the place in words', () => {
+    const { controller } = makePlainController()
+    controller.setOrder([
+      { field: 'name', direction: 'desc' },
+      { field: 'id', direction: 'asc' },
+    ])
+    const fixture = mountTable(controller, TWO_COLUMNS)
+
+    expect(all(fixture, 'th sup').map((mark) => mark.textContent)).toEqual([
+      '1',
+      '2',
+    ])
+    // aria-sort names a direction and cannot say "second by importance", so the
+    // place is spoken beside the number instead.
+    expect(
+      all(fixture, 'th .visually-hidden').map((said) =>
+        said.textContent?.trim(),
+      ),
+    ).toEqual(['Sort column 1 of 2', 'Sort column 2 of 2'])
+  })
+
+  it('numbers nothing under an order of one column, where the arrow says it all', () => {
+    const { controller } = makePlainController()
+    controller.setSort('name')
+    const fixture = mountTable(controller, TWO_COLUMNS)
+
+    expect(all(fixture, 'th sup')).toHaveLength(0)
+  })
 
   it('highlights a row whose new value landed in place, with no waiting mark', () => {
     const { controller } = makePlainController()

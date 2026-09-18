@@ -19,6 +19,10 @@
 // (mockups/components/table section 6). Bootstrap classes only.
 import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
+import {
+  hilosTableOrderPosition,
+  hilosTableSortPositionLabel,
+} from '@hilos/core'
 import type {
   HilosTableColumn,
   // Aliased because the component drawing one of these carries the same name.
@@ -247,6 +251,14 @@ export function HilosViewportTable<R>({
     return component.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
   }
 
+  // The place a column takes in a composite order — null under an order of one
+  // column, where the arrow already says everything. The arithmetic is the core's:
+  // a view that counted the places itself would be a second answer to the question
+  // the menu answers (tableSortOrder.ts).
+  function sortPosition(key: string): number | null {
+    return hilosTableOrderPosition(order, key)
+  }
+
   // A sortable header reports its current sort state to assistive tech through
   // aria-sort: a sortable-but-unsorted column reports 'none', the active column
   // its direction, and a non-sortable column nothing at all.
@@ -364,6 +376,19 @@ export function HilosViewportTable<R>({
                         className={`bi ${sortIcon(column.key)}`}
                         aria-hidden="true"
                       />
+                      {sortPosition(column.key) !== null ? (
+                        <>
+                          <sup aria-hidden="true">
+                            {sortPosition(column.key)}
+                          </sup>
+                          <span className="visually-hidden">
+                            {hilosTableSortPositionLabel(
+                              sortPosition(column.key)!,
+                              order!.length,
+                            )}
+                          </span>
+                        </>
+                      ) : null}
                     </button>
                   ) : (
                     column.label

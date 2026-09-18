@@ -3,9 +3,7 @@
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
 SHELL-PARITY framework/frontend/vue/src/HilosActionError.vue 2 # HIL-597
-SHELL-PARITY framework/frontend/vue/src/HilosTableBar.vue 3 # HIL-783
 SHELL-PARITY framework/frontend/vue/src/HilosTableEmptyState.vue 7 # HIL-783
-SHELL-PARITY framework/frontend/vue/src/HilosTableFooter.vue 2 # HIL-783
 SHELL-PARITY framework/frontend/vue/src/HilosViewportTable.vue 12 # HIL-783
 SHELL-PARITY framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 6 # HIL-597
 SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.vue 2 # HIL-597

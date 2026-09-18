@@ -18,26 +18,39 @@ import {
   signal,
 } from '@angular/core'
 import type { TemplateRef, WritableSignal } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
+import {
+  HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_ORDER_COPY,
+  TABLE_STALENESS_COPY,
+  subscribeSignal,
+} from '@hilos/core'
 import type {
   HilosTableBulkReport,
   HilosTableFilterView,
+  HilosTableOrderView,
   HilosTableProgress,
   HilosTableSelectionTarget,
   ReadonlySignal,
   TableViewportController,
 } from '@hilos/core'
 
+import { HilosDropdown } from './HilosDropdown.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosTableFilterControl } from './HilosTableFilterControl.js'
 import { HilosTableSelection } from './HilosTableSelection.js'
 import type { BulkUntouchedContext } from './HilosViewportTable.js'
+import type { HilosDropdownOption } from './hilosDropdownOption.js'
 
 /** The declared strip above a table. */
 @Component({
   selector: 'hilos-table-bar',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosModal, HilosTableFilterControl, HilosTableSelection],
+  imports: [
+    HilosDropdown,
+    HilosModal,
+    HilosTableFilterControl,
+    HilosTableSelection,
+  ],
   template: `
     <div>
       <!-- No declared title, no heading: the page heading above names the table
@@ -60,7 +73,10 @@ import type { BulkUntouchedContext } from './HilosViewportTable.js'
 
       @if (
         !selectionPanel() &&
-        (searchBox() || filters().length > 0 || mainAction())
+        (searchBox() ||
+          filters().length > 0 ||
+          mainAction() ||
+          orders().length > 0)
       ) {
         <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
           @if (searchBox()) {
@@ -123,6 +139,61 @@ import type { BulkUntouchedContext } from './HilosViewportTable.js'
                 (click)="controller().resetFilters()"
               ></button>
             </span>
+          }
+
+          <!-- Outside the row that leaves the bar below md: the menu is the only
+          way to change the order on a narrow screen, where the header of a column
+          is out of reach, so hiding it behind the Filters button would remove
+          it. -->
+          @if (orders().length > 0) {
+            <div class="w-auto" data-id="hilos-table-order">
+              <hilos-dropdown
+                [options]="orderOptions()"
+                [value]="activeOrderKey()"
+                [menuAriaLabel]="orderMenuLabel"
+                (valueChange)="onOrder($event)"
+              >
+                <ng-template #toggle>
+                  <span class="text-truncate"
+                    >{{ orderMenuLabel }}: {{ orderLabel() }}</span
+                  >
+                </ng-template>
+                <ng-template
+                  #option
+                  let-option
+                  let-selected="selected"
+                  let-select="select"
+                >
+                  <button
+                    type="button"
+                    class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+                    [class.active]="selected"
+                    role="option"
+                    [attr.aria-selected]="selected"
+                    [attr.data-id]="'hilos-table-order-' + option.value"
+                    (click)="select()"
+                  >
+                    <span class="text-truncate">{{ option.label }}</span>
+                    @if (staleOrderKeys().has(option.value)) {
+                      <i
+                        class="bi bi-snow"
+                        [attr.data-id]="
+                          'hilos-table-order-stale-' + option.value
+                        "
+                        aria-hidden="true"
+                      ></i>
+                      <span class="visually-hidden">{{ sortWarning }}</span>
+                    }
+                    @if (selected) {
+                      <i
+                        class="bi bi-check2 flex-shrink-0"
+                        aria-hidden="true"
+                      ></i>
+                    }
+                  </button>
+                </ng-template>
+              </hilos-dropdown>
+            </div>
           }
 
           <!-- The button says only its word: the number of filters holding a
@@ -233,6 +304,13 @@ export class HilosTableBar<R> {
   protected readonly search = signal('')
   protected readonly filters = signal<readonly HilosTableFilterView[]>([])
   protected readonly activeFilterCount = signal(0)
+  protected readonly orders = signal<readonly HilosTableOrderView[]>([])
+  protected readonly orderLabel = signal('')
+
+  // The template reads no module imports, so the two words the menu takes from the
+  // core are handed to it as fields.
+  protected readonly orderMenuLabel = TABLE_ORDER_COPY.menu
+  protected readonly sortWarning = TABLE_STALENESS_COPY.sortWarning
 
   // The badge counts the declared filters holding a value; the search box is not
   // one of them and has its own field (tableFrame.ts, activeFilterCount).
@@ -240,6 +318,26 @@ export class HilosTableBar<R> {
     this.activeFilterCount() === 1
       ? '1 filter'
       : `${this.activeFilterCount()} filters`,
+  )
+
+  protected readonly orderOptions = computed<HilosDropdownOption<string>[]>(
+    () => this.orders().map(({ key, label }) => ({ value: key, label })),
+  )
+
+  protected readonly staleOrderKeys = computed(
+    () =>
+      new Set(
+        this.orders()
+          .filter((view) => view.stale)
+          .map((view) => view.key),
+      ),
+  )
+
+  // Null while the window runs in an order the menu does not offer — one that came
+  // from a click on a header. Saying so is the truth about how the rows lie;
+  // lighting up the nearest item instead would not be (tableFrame.ts, orderLabel).
+  protected readonly activeOrderKey = computed(
+    () => this.orders().find((view) => view.active)?.key ?? null,
   )
 
   // Narrow screens put the filters in a modal rather than an offcanvas of the
@@ -306,6 +404,8 @@ export class HilosTableBar<R> {
         bind(controller.search, this.search),
         bind(controller.frame.filters, this.filters),
         bind(controller.frame.activeFilterCount, this.activeFilterCount),
+        bind(controller.frame.orders, this.orders),
+        bind(controller.frame.orderLabel, this.orderLabel),
         bind(controller.selection.target, this.selectionTarget),
         bind(controller.progress.bulk, this.bulkProgress),
         bind(controller.bulk.report, this.bulkReport),
@@ -324,6 +424,26 @@ export class HilosTableBar<R> {
     return view.filter.kind === 'date_range'
       ? view.filter.fromKey
       : view.filter.key
+  }
+
+  // The primitive's model is nullable, but a pick always carries a key: null only
+  // ever flows in, as the value of a window no item stands for.
+  protected onOrder(key: string | null): void {
+    if (key === null || key === this.activeOrderKey()) {
+      // The window already runs in it, and asking for it again would cost a frame
+      // from the server for a pick that changes nothing.
+      return
+    }
+    const controller = this.controller()
+    if (key === HILOS_TABLE_OPENING_ORDER_KEY) {
+      controller.resetOrder()
+
+      return
+    }
+    const declared = controller.orders.find((order) => order.key === key)
+    if (declared) {
+      controller.setOrder(declared.components)
+    }
   }
 
   protected onSearchInput(event: Event): void {

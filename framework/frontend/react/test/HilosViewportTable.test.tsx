@@ -24,6 +24,11 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
 ]
 
+const TWO_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name', sortable: true },
+  { key: 'id', label: 'Id', sortable: true },
+]
+
 function makeController(frame?: HilosTableFrame): {
   controller: TableViewportController<Row>
   sent: TableViewportDescriptor[]
@@ -38,11 +43,14 @@ function makeController(frame?: HilosTableFrame): {
   return { controller, sent }
 }
 
-function renderTable(controller: TableViewportController<Row>) {
+function renderTable(
+  controller: TableViewportController<Row>,
+  columns: HilosTableColumn[] = COLUMNS,
+) {
   return render(
     <HilosViewportTable
       controller={controller}
-      columns={COLUMNS}
+      columns={columns}
       row={(r) => <td className="cell">{r.name}</td>}
     />,
   )
@@ -83,6 +91,38 @@ describe('HilosViewportTable', () => {
     expect(sent.at(-1)).toMatchObject({
       sort: [{ field: 'name', direction: 'asc' }],
     })
+  })
+
+  it('numbers the columns of a composite order and says the place in words', () => {
+    const { controller } = makeController()
+    controller.setOrder([
+      { field: 'name', direction: 'desc' },
+      { field: 'id', direction: 'asc' },
+    ])
+    const { container } = renderTable(controller, TWO_COLUMNS)
+
+    expect(
+      Array.from(
+        container.querySelectorAll('th sup'),
+        (mark) => mark.textContent,
+      ),
+    ).toEqual(['1', '2'])
+    // aria-sort names a direction and cannot say "second by importance", so the
+    // place is spoken beside the number instead.
+    expect(
+      Array.from(
+        container.querySelectorAll('th .visually-hidden'),
+        (said) => said.textContent,
+      ),
+    ).toEqual(['Sort column 1 of 2', 'Sort column 2 of 2'])
+  })
+
+  it('numbers nothing under an order of one column, where the arrow says it all', () => {
+    const { controller } = makeController()
+    controller.setSort('name')
+    const { container } = renderTable(controller, TWO_COLUMNS)
+
+    expect(container.querySelectorAll('th sup')).toHaveLength(0)
   })
 
   it('shows the apply button with the pending count and applies in place', () => {

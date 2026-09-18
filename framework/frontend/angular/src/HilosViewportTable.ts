@@ -31,7 +31,11 @@ import {
   signal,
 } from '@angular/core'
 import type { TemplateRef, WritableSignal } from '@angular/core'
-import { subscribeSignal } from '@hilos/core'
+import {
+  hilosTableOrderPosition,
+  hilosTableSortPositionLabel,
+  subscribeSignal,
+} from '@hilos/core'
 import type {
   HilosTableColumn,
   HilosTableProgress as HilosTableProgressState,
@@ -186,6 +190,12 @@ export interface BulkUntouchedContext {
                         [class]="'bi ' + sortIcon(column.key)"
                         aria-hidden="true"
                       ></i>
+                      @if (sortPosition(column.key); as place) {
+                        <sup aria-hidden="true">{{ place }}</sup>
+                        <span class="visually-hidden">{{
+                          sortPositionLabel(place)
+                        }}</span>
+                      }
                     </button>
                   } @else {
                     {{ column.label }}
@@ -666,6 +676,18 @@ export class HilosViewportTable<R> {
     }
 
     return component.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
+  }
+
+  // The place a column takes in a composite order — null under an order of one
+  // column, where the arrow already says everything. The arithmetic is the core's:
+  // a view that counted the places itself would be a second answer to the question
+  // the menu answers (tableSortOrder.ts).
+  protected sortPosition(key: string): number | null {
+    return hilosTableOrderPosition(this.order(), key)
+  }
+
+  protected sortPositionLabel(place: number): string {
+    return hilosTableSortPositionLabel(place, this.order()?.length ?? 0)
   }
 
   // A sortable header reports its current sort state to assistive tech through

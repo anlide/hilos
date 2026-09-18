@@ -1,6 +1,6 @@
 // The Angular port of vue/src/HilosTableFooter.test.ts, under the same case names
 // the Vue reference and the React port run, for the layer the Angular footer
-// draws: the range, the count, and the two steps. Every case mounts a host that
+// draws: the range, the count, and the pager. Every case mounts a host that
 // binds the controller input.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
@@ -82,6 +82,15 @@ function byId(
   )
 }
 
+function pageNumbers(fixture: ComponentFixture<unknown>): string[] {
+  return Array.from(
+    (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '[data-id^="hilos-table-page-"]',
+    ),
+    (page) => page.textContent?.trim() ?? '',
+  )
+}
+
 describe('HilosTableFooter', () => {
   it('prints the range on screen and an exact total', () => {
     const { controller } = makeController()
@@ -137,6 +146,79 @@ describe('HilosTableFooter', () => {
     expect(
       (byId(fixture, 'hilos-table-next') as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+
+  it('offers page numbers exactly while the count is exact', () => {
+    const { controller } = makeController()
+    ingestPage(controller, 128) // 7 pages of 20
+    const fixture = mountFooter(controller)
+
+    expect(pageNumbers(fixture)).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+  })
+
+  it('offers no page numbers while the count stands at its ceiling', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(20), 500, false, null, null, 20)
+    const fixture = mountFooter(controller)
+
+    expect(pageNumbers(fixture)).toEqual([])
+    expect(byId(fixture, 'hilos-table-prev')?.textContent?.trim()).toBe(
+      'Previous',
+    )
+    expect(byId(fixture, 'hilos-table-next')?.textContent?.trim()).toBe('Next')
+  })
+
+  it('jumps to the page whose number was pressed', () => {
+    const { controller, sent } = makeController()
+    ingestPage(controller, 128)
+    const fixture = mountFooter(controller)
+
+    byId(fixture, 'hilos-table-page-4')?.click()
+
+    expect(sent.at(-1)).toMatchObject({ pageIndex: 3, anchor: null })
+  })
+
+  it('states the page the reader stands on rather than offering it again', () => {
+    const { controller } = makeController()
+    ingestPage(controller, 128)
+    const fixture = mountFooter(controller)
+    const current = byId(fixture, 'hilos-table-page-1') as HTMLButtonElement
+
+    expect(current.disabled).toBe(true)
+    expect(current.getAttribute('aria-current')).toBe('page')
+  })
+
+  it('passes over the pages between the ends when there are too many to draw', () => {
+    const { controller } = makeController()
+    // 400 rows of 20 make 20 pages — more than the pager has room for.
+    ingestPage(controller, 400)
+    const fixture = mountFooter(controller)
+
+    controller.setPage(9) // the tenth page, with ends far on either side
+    fixture.detectChanges()
+
+    const numbers = pageNumbers(fixture)
+    expect(numbers.length).toBeLessThanOrEqual(5)
+    expect(numbers.at(0)).toBe('1')
+    expect(numbers.at(-1)).toBe('20')
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '[aria-hidden="true"].disabled',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('leaves the steps their words only where no numbers stand beside them', () => {
+    const { controller } = makeController()
+    ingestPage(controller, 128)
+    const fixture = mountFooter(controller)
+    const previous = byId(fixture, 'hilos-table-prev') as HTMLElement
+
+    expect(previous.textContent?.trim()).toBe('')
+    expect(previous.getAttribute('aria-label')).toBe('Previous page')
+    expect(byId(fixture, 'hilos-table-next')?.getAttribute('aria-label')).toBe(
+      'Next page',
+    )
   })
 
   it('steps the window on and back through the controller', () => {

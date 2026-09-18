@@ -1,18 +1,24 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { TableViewportController } from '@hilos/core'
+import {
+  HILOS_TABLE_OPENING_ORDER_KEY,
+  TableViewportController,
+} from '@hilos/core'
 import type {
   ActionHandle,
   HilosTableBulkAccepted,
+  HilosTableColumn,
   HilosTableFrame,
+  HilosTableSortOrder,
+  TableSortOrder,
   TableViewportDescriptor,
 } from '@hilos/core'
 
 import { HilosTableBar } from '../src/HilosTableBar.js'
 
 // The React port of vue/src/HilosTableBar.test.ts, under the same case names,
-// for the layer the React bar draws: title, search, filters, badge, main action,
-// and the filters modal. The modal portals to <body>, so every query reads the
+// for the layer the React bar draws: title, search, filters, badge, the order menu,
+// main action, and the filters modal. The modal portals to <body>, so every query reads the
 // document rather than the render.
 
 const COLUMNS = [{ key: 'name', label: 'Name' }]
@@ -29,6 +35,7 @@ function byId(id: string): HTMLElement | null {
 function makeController(
   frame: HilosTableFrame,
   initialFilter?: Record<string, unknown>,
+  declaredOrders?: readonly HilosTableSortOrder[],
 ): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
@@ -39,9 +46,68 @@ function makeController(
     sendViewport: (descriptor) => sent.push(descriptor),
     initialFilter,
     frame,
+    declaredOrders,
   })
 
   return { controller, sent }
+}
+
+// The two columns a composite order runs by, and the orders the table declares
+// over them — the shape the "Order" menu is drawn from.
+const ORDERED_COLUMNS: readonly HilosTableColumn[] = [
+  { key: 'channel', label: 'Kind', sortable: true },
+  { key: 'createdAt', label: 'Date', sortable: true },
+]
+
+const DECLARED_ORDERS: readonly HilosTableSortOrder[] = [
+  {
+    key: 'by_channel',
+    components: [
+      { field: 'channel', direction: 'asc' },
+      { field: 'createdAt', direction: 'desc' },
+    ],
+  },
+  {
+    key: 'by_date_up',
+    components: [
+      { field: 'createdAt', direction: 'asc' },
+      { field: 'channel', direction: 'asc' },
+    ],
+  },
+]
+
+const OPENING_ORDER: TableSortOrder = [
+  { field: 'createdAt', direction: 'desc' },
+]
+
+/**
+ * A table that declares composite orders and has opened in one of its own — the
+ * order only the first window can tell it, the way a page's answer does.
+ */
+function makeOrdered(
+  columns: readonly HilosTableColumn[] = ORDERED_COLUMNS,
+  declaredOrders: readonly HilosTableSortOrder[] = DECLARED_ORDERS,
+): {
+  controller: TableViewportController<unknown>
+  sent: TableViewportDescriptor[]
+} {
+  const made = makeController(
+    { title: 'Deliveries', columns },
+    undefined,
+    declaredOrders,
+  )
+  made.controller.ingestSubscriptionWindow(
+    [],
+    0,
+    true,
+    null,
+    null,
+    20,
+    OPENING_ORDER,
+    [],
+  )
+
+  return made
 }
 
 const FILTERED: HilosTableFrame = {
@@ -56,6 +122,16 @@ const FILTERED: HilosTableFrame = {
 
 function renderBar(controller: TableViewportController<unknown>) {
   return render(<HilosTableBar controller={controller} titleId="table-title" />)
+}
+
+// Every item of the order menu — its snowflakes, which carry the same prefix, left
+// out.
+function orderItems(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-id^="hilos-table-order-"]:not([data-id^="hilos-table-order-stale-"])',
+    ),
+  )
 }
 
 function type(id: string, value: string): void {
@@ -268,6 +344,182 @@ describe('HilosTableBar', () => {
 
     expect(byId('hilos-table-filters-open')).toBeNull()
     expect(byId('modal')).toBeNull()
+  })
+
+  it('draws no order menu at all for a table that declared no composite order', () => {
+    const { controller } = makeController({
+      title: 'Backups',
+      search: {},
+      columns: COLUMNS,
+    })
+    renderBar(controller)
+
+    expect(byId('hilos-table-order')).toBeNull()
+  })
+
+  it('offers the way home first and every declared order after it', () => {
+    const { controller } = makeOrdered()
+    renderBar(controller)
+
+    expect(orderItems().map((item) => item.textContent)).toEqual([
+      'Date ↓',
+      'Kind ↑, then Date ↓',
+      'Date ↑, then Kind ↑',
+    ])
+    expect(
+      byId(`hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}`),
+    ).not.toBeNull()
+  })
+
+  it('names the order the window runs in on the face of the button', () => {
+    const { controller } = makeOrdered()
+    renderBar(controller)
+
+    expect(byId('hilos-dropdown-toggle')?.textContent).toBe('Order: Date ↓')
+
+    fireEvent.click(byId('hilos-table-order-by_channel') as HTMLElement)
+
+    expect(byId('hilos-dropdown-toggle')?.textContent).toBe(
+      'Order: Kind ↑, then Date ↓',
+    )
+  })
+
+  it('takes a declared order whole rather than a column of it', () => {
+    const { controller, sent } = makeOrdered()
+    renderBar(controller)
+
+    fireEvent.click(byId('hilos-table-order-by_channel') as HTMLElement)
+
+    expect(sent.at(-1)).toMatchObject({
+      sort: [
+        { field: 'channel', direction: 'asc' },
+        { field: 'createdAt', direction: 'desc' },
+      ],
+    })
+  })
+
+  it('comes home through the first item, whatever order the window left in', () => {
+    const { controller, sent } = makeOrdered()
+    renderBar(controller)
+
+    fireEvent.click(byId('hilos-table-order-by_channel') as HTMLElement)
+    fireEvent.click(
+      byId(`hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}`) as HTMLElement,
+    )
+
+    expect(sent.at(-1)).toMatchObject({ sort: OPENING_ORDER })
+  })
+
+  it('asks for nothing when the item picked is the one already running', () => {
+    const { controller, sent } = makeOrdered()
+    renderBar(controller)
+
+    fireEvent.click(
+      byId(`hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}`) as HTMLElement,
+    )
+
+    expect(sent).toEqual([])
+  })
+
+  it('marks no item at all once a header click has left an order of one column', () => {
+    const { controller } = makeOrdered()
+    renderBar(controller)
+
+    act(() => controller.setSort('channel'))
+
+    expect(
+      orderItems().filter((item) => item.classList.contains('active')),
+    ).toEqual([])
+    expect(byId('hilos-dropdown-toggle')?.textContent).toBe('Order: Kind ↑')
+  })
+
+  it('marks an order running over a column of a frozen source and leaves it pickable', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+      { key: 'state', label: 'State', sortable: true },
+    ]
+    const orders: readonly HilosTableSortOrder[] = [
+      {
+        key: 'by_channel',
+        components: [
+          { field: 'channel', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+      {
+        key: 'by_state',
+        components: [
+          { field: 'state', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+    ]
+    const { controller, sent } = makeOrdered(sourcedColumns, orders)
+    controller.ingestWindow(
+      [{ rowKey: '1', slots: {}, staleSources: ['channels'] }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    renderBar(controller)
+
+    const staleMark = byId('hilos-table-order-stale-by_channel')
+    expect(staleMark).not.toBeNull()
+    expect(staleMark?.classList.contains('bi-snow')).toBe(true)
+    expect(byId('hilos-table-order-by_channel')?.textContent).toContain(
+      'Sorting by this column may be wrong',
+    )
+
+    expect(byId('hilos-table-order-stale-by_state')).toBeNull()
+
+    fireEvent.click(byId('hilos-table-order-by_channel') as HTMLElement)
+    expect(sent.at(-1)).toMatchObject({
+      sort: [
+        { field: 'channel', direction: 'asc' },
+        { field: 'createdAt', direction: 'desc' },
+      ],
+    })
+  })
+
+  it('marks no order when the set of frozen sources is empty', () => {
+    const sourcedColumns: readonly HilosTableColumn[] = [
+      { key: 'channel', label: 'Kind', sortable: true, source: 'channels' },
+      { key: 'createdAt', label: 'Date', sortable: true },
+      { key: 'state', label: 'State', sortable: true },
+    ]
+    const orders: readonly HilosTableSortOrder[] = [
+      {
+        key: 'by_channel',
+        components: [
+          { field: 'channel', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+      {
+        key: 'by_state',
+        components: [
+          { field: 'state', direction: 'asc' },
+          { field: 'createdAt', direction: 'desc' },
+        ],
+      },
+    ]
+    const { controller } = makeOrdered(sourcedColumns, orders)
+    controller.ingestWindow(
+      [{ rowKey: '1', slots: {}, staleSources: [] }],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    renderBar(controller)
+
+    expect(
+      document.querySelectorAll('[data-id^="hilos-table-order-stale-"]'),
+    ).toHaveLength(0)
   })
 
   it('draws no main action when the table declares none', () => {

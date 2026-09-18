@@ -11,11 +11,18 @@
 // (vue/src/HilosTableBar.vue), under the same names and words.
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import {
+  HILOS_TABLE_OPENING_ORDER_KEY,
+  TABLE_ORDER_COPY,
+  TABLE_STALENESS_COPY,
+} from '@hilos/core'
 import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
 
+import { HilosDropdown } from './HilosDropdown.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosTableFilterControl } from './HilosTableFilterControl.js'
 import { HilosTableSelection } from './HilosTableSelection.js'
+import type { HilosDropdownOption } from './hilosDropdown.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosTableBar}. */
@@ -70,6 +77,8 @@ export function HilosTableBar<R>({
   const search = useSignal(controller.search)
   const filters = useSignal(controller.frame.filters)
   const activeFilterCount = useSignal(controller.frame.activeFilterCount)
+  const orders = useSignal(controller.frame.orders)
+  const orderLabel = useSignal(controller.frame.orderLabel)
 
   // A table has marks exactly when its page declared bulk operations, and that never
   // changes over its life — so the panel is MOUNTED on that sign and only shows itself
@@ -111,6 +120,36 @@ export function HilosTableBar<R>({
   const filterCountLabel =
     activeFilterCount === 1 ? '1 filter' : `${activeFilterCount} filters`
 
+  const orderOptions: HilosDropdownOption<string>[] = orders.map(
+    ({ key, label }) => ({ value: key, label }),
+  )
+
+  const staleOrderKeys = new Set(
+    orders.filter((view) => view.stale).map((view) => view.key),
+  )
+
+  // Null while the window runs in an order the menu does not offer — one that came
+  // from a click on a header. Saying so is the truth about how the rows lie;
+  // lighting up the nearest item instead would not be (tableFrame.ts, orderLabel).
+  const activeOrderKey = orders.find((view) => view.active)?.key ?? null
+
+  function onOrder(key: string): void {
+    if (key === activeOrderKey) {
+      // The window already runs in it, and asking for it again would cost a frame
+      // from the server for a pick that changes nothing.
+      return
+    }
+    if (key === HILOS_TABLE_OPENING_ORDER_KEY) {
+      controller.resetOrder()
+
+      return
+    }
+    const declared = controller.orders.find((order) => order.key === key)
+    if (declared) {
+      controller.setOrder(declared.components)
+    }
+  }
+
   return (
     <div>
       {/* No declared title, no heading: the page heading above names the table
@@ -131,7 +170,8 @@ export function HilosTableBar<R>({
         </div>
       ) : null}
 
-      {!selectionPanel && (searchBox || filters.length > 0 || mainAction) ? (
+      {!selectionPanel &&
+      (searchBox || filters.length > 0 || mainAction || orders.length > 0) ? (
         <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
           {searchBox ? (
             <div className="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0">
@@ -192,6 +232,58 @@ export function HilosTableBar<R>({
                 onClick={() => controller.resetFilters()}
               />
             </span>
+          ) : null}
+
+          {/* Outside the row that leaves the bar below md: the menu is the only
+              way to change the order on a narrow screen, where the header of a
+              column is out of reach, so hiding it behind the Filters button would
+              remove it. */}
+          {orders.length > 0 ? (
+            <div className="w-auto" data-id="hilos-table-order">
+              <HilosDropdown
+                value={activeOrderKey}
+                options={orderOptions}
+                menuAriaLabel={TABLE_ORDER_COPY.menu}
+                onChange={onOrder}
+                toggle={() => (
+                  <span className="text-truncate">
+                    {TABLE_ORDER_COPY.menu}: {orderLabel}
+                  </span>
+                )}
+                option={({ option, selected, select }) => (
+                  <button
+                    type="button"
+                    className={`dropdown-item d-flex align-items-center justify-content-between gap-2${
+                      selected ? ' active' : ''
+                    }`}
+                    role="option"
+                    aria-selected={selected}
+                    data-id={`hilos-table-order-${option.value}`}
+                    onClick={select}
+                  >
+                    <span className="text-truncate">{option.label}</span>
+                    {staleOrderKeys.has(option.value) ? (
+                      <>
+                        <i
+                          className="bi bi-snow"
+                          data-id={`hilos-table-order-stale-${option.value}`}
+                          aria-hidden="true"
+                        />
+                        <span className="visually-hidden">
+                          {TABLE_STALENESS_COPY.sortWarning}
+                        </span>
+                      </>
+                    ) : null}
+                    {selected ? (
+                      <i
+                        className="bi bi-check2 flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </button>
+                )}
+              />
+            </div>
           ) : null}
 
           {/* The button says only its word: the number of filters holding a

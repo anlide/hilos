@@ -45,7 +45,7 @@ const countLabel = computed(() => {
 })
 
 // The pager's slots: the first page, the last one, and the current page with its
-// two neighbours — the places a reader can reach in one step. Two held numbers
+// two neighbors — the places a reader can reach in one step. Two held numbers
 // with a single page between them keep that page rather than an ellipsis
 // standing in for it, which would take the same room and offer less.
 const pages = computed<readonly PagerSlot[]>(() => {

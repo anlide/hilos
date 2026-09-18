@@ -154,12 +154,14 @@ accumulated before the break is gone — the window that arrives outranks it.
 ## What the page declares
 
 > **The declaration below is drawn by all three views.** Vue, React, and Angular
-> render the bar and the footer from it, and the one room of live messages above
-> the rows with the row tint and the waiting marks beside it, the bar of work
-> under a row and the project's places next to running work. What was built on
-> top of them since — the order menu and page numbers, cards, row detail, the
-> worded empty states, and the marks of a quiet source on cells and headers — is
-> drawn by Vue alone until its own parity leaf (HIL-811 to HIL-818).
+> render the bar and the footer from it, with the order menu in the bar, the page
+> numbers in the footer and the place of a column in a composite order on its
+> header, and the one room of live messages above the rows with the row tint and
+> the waiting marks beside it, the bar of work under a row and the project's
+> places next to running work. What was built on top of them since — cards, row
+> detail, the worded empty states, and the marks of a quiet source on cells and
+> headers — is drawn by Vue alone until its own parity leaf (HIL-815 to
+> HIL-818).
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
 > the verifier circle on the backups page still hand their view columns, a label
