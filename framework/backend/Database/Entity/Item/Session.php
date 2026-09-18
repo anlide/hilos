@@ -20,7 +20,8 @@ use Hilos\Database\PhpType;
  *
  * When `impersonator_user_id` is set, an admin is acting as another user through
  * this session (HIL-166): `user_id` is the impersonation target and the marker
- * holds the admin to restore on stop.
+ * holds the admin to restore on stop. An anonymous row never carries the marker: the
+ * sign-out lowers it together with `user_id` (HIL-1061).
  *
  * The `pending_registration_*` pair is the durable memory of a registration this
  * browser started and has not finished (HIL-612): the address whose code it is

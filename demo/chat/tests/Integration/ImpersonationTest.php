@@ -12,8 +12,10 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -337,6 +339,54 @@ final class ImpersonationTest extends IntegrationTestCase
             $this->assertSame($adminId, $response->selfId);
             $this->assertNull($response->impersonatorId);
             $this->assertNull($response->impersonatorName);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * A sign-out inside a takeover shows the next person on that browser no strip (HIL-1061).
+     *
+     * The next sign-in is the grant frame, not {@see IntegrationTestCase::authenticateSession()}:
+     * that helper sends a rebind naming no marker and would clear it by itself.
+     *
+     * @throws HilosException When setup, the sign-out or the grant fails
+     */
+    public function testASignOutInsideATakeoverShowsTheNextPersonNoStrip(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $this->authenticatedAdminSession($agent, 'signout-ak', $token);
+        $targetId = $this->registerUser();
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
+        $this->drainSignals();
+
+        try {
+            $this->runAction($agent, 'signout-ak', LogoutActionDTO::fromArray([]));
+
+            $afterSignOut = $this->lastHandshakeResponseFor('signout-ak');
+            $this->assertNotNull($afterSignOut);
+            $this->assertNull($afterSignOut->selfId);
+            $this->assertNull($afterSignOut->impersonatorId);
+
+            $nextId = $this->registerUser();
+            $library = $this->sessionsLibrary();
+            $this->underAgent($library, static fn () => $library->onSignalAgent(
+                new AgentSignalData(data: new AuthSessionGrantSignalData(
+                    sessionToken: $token,
+                    userId: $nextId,
+                    acceptKey: 'signout-ak',
+                )),
+                '',
+                HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
+            ));
+            $this->deliverLibraryFrames($agent);
+
+            $afterSignIn = $this->lastHandshakeResponseFor('signout-ak');
+            $this->assertNotNull($afterSignIn);
+            $this->assertSame($nextId, $afterSignIn->selfId);
+            $this->assertNull($afterSignIn->impersonatorId);
+            $this->assertNull($afterSignIn->impersonatorName);
         } finally {
             Hilos::$rt->connections->actions->clear();
         }

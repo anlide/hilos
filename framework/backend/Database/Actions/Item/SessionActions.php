@@ -103,6 +103,12 @@ final class SessionActions extends DbActions
      * drop of the other sessions - and one write cannot be split between them or forgotten by
      * a fifth one written later.
      *
+     * The impersonation marker goes with the person too, in the same write (HIL-1061). A
+     * sign-out keeps the token, so a marker left on the row would hand whoever uses that
+     * browser next the administrator behind it: the next sign-in carries the row's marker
+     * across the token rotation ({@see rotateTokenAndBindUser()}, unchanged), and Stop reads
+     * nothing but the marker. After this write an anonymous row never carries one.
+     *
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
      * @throws HilosException On database error
      */
@@ -116,6 +122,7 @@ final class SessionActions extends DbActions
 
         $this->object->userId = null;
         $this->object->pendingAck = null;
+        $this->object->impersonatorUserId = null;
         $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
         $this->object->sync();
     }
@@ -125,7 +132,8 @@ final class SessionActions extends DbActions
      *
      * The user rebind itself is done through the session host's authenticateSession
      * seam; this writes only the marker that remembers the admin behind the takeover.
-     * Pass the admin id when starting an impersonation, or null when stopping.
+     * Pass the admin id when starting an impersonation, or null when stopping. A sign-out
+     * does not come here - {@see unbindUser()} lowers the marker with the person.
      *
      * @param ?int $impersonatorUserId Admin id to record, or null to clear the marker
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)

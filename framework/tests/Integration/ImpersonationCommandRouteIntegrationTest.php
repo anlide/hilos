@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -75,6 +78,9 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
 
     /** User the acting session asks to act as. */
     private const int TARGET_USER_ID = 9;
+
+    /** User who signs in on the same browser after a takeover was signed out of. */
+    private const int NEXT_USER_ID = 11;
 
     /** Accept key standing in for the browser that submitted an action. */
     private const string ACCEPT_KEY = 'accept-1';
@@ -400,6 +406,162 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
 
         self::assertSame([self::ADMIN_USER_ID, null], self::soleSessionIds());
         self::assertSame([], $this->drainReplies());
+    }
+
+    /**
+     * A sign-out inside a takeover takes the marker with the person (HIL-1061).
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the action fails
+     */
+    public function testASignOutInsideATakeoverTakesTheMarkerAway(): void
+    {
+        self::seedSession(self::TOKEN, self::TARGET_USER_ID, self::ADMIN_USER_ID);
+        $this->mountLiveConnection();
+        $agent = new ImpersonationRouteTestAgent();
+
+        $agent->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::HILOS_LOGOUT,
+            LogoutActionDTO::fromArray([]),
+        );
+
+        self::assertSame([null, null], self::soleSessionIds());
+    }
+
+    /**
+     * The next real sign-in on that browser carries no marker (HIL-1061).
+     *
+     * Driven by the grant frame, not a rebind: a rebind names its own marker and would
+     * hide the defect. The grant rotates the token, so the row is read by being the
+     * only one, not by the token that went in.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the sign-out or the grant fails
+     */
+    public function testTheNextSignInOnThatBrowserCarriesNoMarker(): void
+    {
+        self::seedSession(self::TOKEN, self::TARGET_USER_ID, self::ADMIN_USER_ID);
+        $this->mountLiveConnection();
+        $agent = new ImpersonationRouteTestAgent();
+
+        $agent->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::HILOS_LOGOUT,
+            LogoutActionDTO::fromArray([]),
+        );
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new AuthSessionGrantSignalData(
+                sessionToken: self::TOKEN,
+                userId: self::NEXT_USER_ID,
+                acceptKey: self::ACCEPT_KEY,
+            )),
+            '',
+            HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
+        );
+
+        self::assertSame([self::NEXT_USER_ID, null], self::soleSessionIds());
+    }
+
+    /**
+     * Stop from a session with nobody in it is refused and writes nothing (HIL-1061).
+     *
+     * The row is the leftover the old code left: a marker on an anonymous session.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     */
+    public function testABrowserStopFromASessionWithNobodyInItIsRefused(): void
+    {
+        self::seedSession(self::TOKEN, null, self::ADMIN_USER_ID);
+        $this->mountLiveConnection();
+        $agent = new ImpersonationRouteTestAgent();
+
+        try {
+            $agent->onAgentAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::HILOS_IMPERSONATE_STOP,
+                new ImpersonateStopActionDTO(),
+            );
+            self::fail('a stop from a session with nobody in it should have been refused');
+        } catch (ValidationException $e) {
+            self::assertStringContainsString('not impersonating', $e->getMessage());
+        }
+
+        self::assertSame([null, self::ADMIN_USER_ID], self::soleSessionIds());
+    }
+
+    /**
+     * A command stop on a session with nobody in it answers as an error reply (HIL-1061).
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     */
+    public function testACommandStopOnASessionWithNobodyInItIsRefused(): void
+    {
+        self::seedSession(self::TOKEN, null, self::ADMIN_USER_ID);
+        $agent = new ImpersonationRouteTestAgent();
+
+        $this->sendStop($agent, self::TOKEN);
+
+        $reply = $this->consumeReply();
+        self::assertFalse($reply->isOk());
+        self::assertStringContainsString(
+            'not impersonating',
+            (string)$reply->payload[CommandConstants::FIELD_MESSAGE],
+        );
+        self::assertSame([null, self::ADMIN_USER_ID], self::soleSessionIds());
+    }
+
+    /**
+     * A sign-out frame that still names an administrator lowers the marker (HIL-1061).
+     *
+     * The shape killUserSessions() sent before this leaf: signed out, not un-impersonated.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the frame fails
+     */
+    public function testASignOutFrameNamingAnAdministratorLowersTheMarker(): void
+    {
+        self::seedSession(self::TOKEN, self::TARGET_USER_ID, self::ADMIN_USER_ID);
+        $agent = new ImpersonationRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new SessionRebindSignalData(
+                sessionToken: self::TOKEN,
+                userId: null,
+                impersonatorUserId: self::ADMIN_USER_ID,
+            )),
+            '',
+            HilosSignalConstants::HILOS_SESSION_REBIND,
+        );
+
+        self::assertSame([null, null], self::soleSessionIds());
+    }
+
+    /**
+     * A sign-out frame never plants a marker on a guest (HIL-1061).
+     *
+     * Signing out an already anonymous session is a no-op; writing the marker the frame
+     * names would leave a guest holding the administrator's way back.
+     *
+     * @throws DatabaseException When the seed or the read-back fails
+     * @throws HilosException When the frame fails
+     */
+    public function testASignOutFrameNeverPlantsAMarkerOnAGuest(): void
+    {
+        self::seedSession(self::TOKEN, null);
+        $agent = new ImpersonationRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new SessionRebindSignalData(
+                sessionToken: self::TOKEN,
+                userId: null,
+                impersonatorUserId: self::ADMIN_USER_ID,
+            )),
+            '',
+            HilosSignalConstants::HILOS_SESSION_REBIND,
+        );
+
+        self::assertSame([null, null], self::soleSessionIds());
     }
 
     /**

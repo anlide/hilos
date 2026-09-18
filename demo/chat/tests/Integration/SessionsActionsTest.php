@@ -95,6 +95,26 @@ final class SessionsActionsTest extends IntegrationTestCase
     }
 
     /**
+     * unbindUser takes the impersonator marker away with the person (HIL-1061).
+     *
+     * @throws HilosException On database error
+     */
+    public function testUnbindUserTakesTheImpersonatorMarkerAway(): void
+    {
+        $targetId = (int) Hilos::$db->users->actions->createWithName('Target')->id;
+        $adminId = (int) Hilos::$db->users->actions->createWithName('Admin')->id;
+        $token = RandomHelper::hex(16);
+        Hilos::$db->sessions->actions->createAnonymous($token);
+
+        Hilos::$db->sessions->findByToken($token)?->actions->bindUser($targetId);
+        Hilos::$db->sessions->findByToken($token)?->actions->setImpersonator($adminId);
+        Hilos::$db->sessions->findByToken($token)?->actions->unbindUser();
+
+        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->impersonatorUserId);
+    }
+
+    /**
      * expireByToken ages a stored session's expiry into the past and returns it; an
      * unknown token yields null.
      *

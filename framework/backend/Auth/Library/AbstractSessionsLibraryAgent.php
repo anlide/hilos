@@ -271,9 +271,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * {@see HilosSignalConstants::HILOS_IMPERSONATE_STOP} is the one that has to argue the
      * second half, and argues it plainly - while a takeover is on, the effective user is the
-     * non-admin target, so no admin page is guaranteed to be under the control. Its start
-     * left in HIL-824 for failing the FIRST half: only an administrator may take a person
-     * over, which is more than "you have a session". It now stands on
+     * non-admin target, so no admin page is guaranteed to be under the control. What keeps a
+     * guest from pressing it is not a right but the session's own state - a session with
+     * nobody signed in is inside no takeover, and the core refuses it as such (HIL-1061).
+     * Its start left in HIL-824 for failing the FIRST half: only an administrator may take a
+     * person over, which is more than "you have a session". It now stands on
      * {@see AbstractHilosUsersPage} and the write comes back here on
      * {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}. The seam
      * {@see self::assertImpersonationAllowed()} stays either way: the command line is a second
@@ -1729,6 +1731,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * rather than restating a sentence about an account this session no longer has - which
      * is what used to leave a logged-out tab holding a panel it could not answer.
      *
+     * This is where a takeover ends when its person leaves (HIL-1061): the marker is
+     * lowered inside {@see SessionActions::unbindUser()} with the person, and the end is
+     * logged as Stop logs it, with nobody restored. A sign-out keeps the token, and a
+     * marker left behind would let whoever uses that browser next press Stop into the
+     * administrator's account.
+     *
      * @param string $sessionToken Session cookie token to revert to anonymous
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
@@ -1745,7 +1753,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
+        $impersonatorId = $session->impersonatorUserId;
+        $vacatedUserId = $session->userId;
         $session->actions->unbindUser();
+        if ($impersonatorId !== null) {
+            $this->logAgentInfo('impersonate_stop ' . json_encode([
+                'event' => 'impersonate_stop',
+                'admin' => $impersonatorId,
+                'restoredUser' => null,
+                'vacatedUser' => $vacatedUserId,
+                'session' => $session->id,
+            ]));
+        }
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $sessionToken,
@@ -2693,9 +2712,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * frame below reads it - a marker set afterwards would announce the takeover one frame
      * late, and a marker cleared afterwards would announce it one frame too long.
      *
-     * The marker is written only when it actually changes: a sign-out that names the same
-     * administrator is not asking for a write, and a session row re-synced for nothing
-     * would fan out to every reader of it.
+     * The marker is written only on a bind, and only when it actually changes. A sign-out
+     * lowers it with the person inside {@see SessionActions::unbindUser()} (HIL-1061), so
+     * whatever marker a sign-out frame names is not written - and must not be, because
+     * signing out an already anonymous session is a no-op that would never lower it; a row
+     * re-synced for nothing would fan out to every reader of it.
      *
      * The operator is answered from HERE and not by the project that asked, which is the
      * point of carrying a correlation id at all: after the split nobody else can see what
@@ -2716,7 +2737,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        if ($session->impersonatorUserId !== $frame->impersonatorUserId) {
+        if ($frame->userId !== null && $session->impersonatorUserId !== $frame->impersonatorUserId) {
             $session->actions->setImpersonator($frame->impersonatorUserId);
         }
 
@@ -3128,7 +3149,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * No seam and no project field: the administrator to go back to is on the session's own
      * marker, so nobody has to be asked whether this is allowed. Ending a takeover is
-     * allowed to whoever is inside it, exactly as signing out is.
+     * allowed to whoever is inside it, exactly as signing out is. A session with nobody
+     * signed in is inside no takeover, whatever its row says, and is refused as one
+     * (HIL-1061). No sign-out leaves a marker behind any more, but this lock does not rest
+     * on every writer keeping that promise, and a row the old code left - a marker on an
+     * anonymous session - would otherwise hand a guest the administrator's account through
+     * this door.
      *
      * @param string $sessionToken Session cookie token of the impersonating session
      * @param ?string $initiatorAcceptKey Accept key of the requesting connection, or null for the CLI path
@@ -3149,7 +3175,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $impersonatorId = $session->impersonatorUserId;
-        if ($impersonatorId === null) {
+        if ($impersonatorId === null || $session->userId === null) {
             throw new ValidationException('Session is not impersonating');
         }
 
@@ -3371,8 +3397,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * signalled, because since HIL-729 the merge already runs in the process that owns them.
      * The loser is deactivated by the tombstone, so re-authentication is impossible.
      *
-     * The impersonation marker is carried through unchanged rather than named null: a session
-     * someone was impersonating through is being signed out, not un-impersonated.
+     * The marker is not named - the sign-out lowers it with the person (HIL-1061). It used
+     * to be carried through as "signed out, not un-impersonated", which left the
+     * administrator's way back on a session nobody was in.
      *
      * Runs outside the merge transaction: the transfer is already durable, and nothing here
      * may participate in the rollback path.
@@ -3388,7 +3415,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $this->rebindSession(new SessionRebindSignalData(
                 sessionToken: $session->token,
                 userId: null,
-                impersonatorUserId: $session->impersonatorUserId,
             ));
         }
     }
