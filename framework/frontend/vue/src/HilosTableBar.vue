@@ -105,10 +105,9 @@ function filterKey(view: HilosTableFilterView): string {
 
 // A table has marks exactly when its page declared bulk operations, and that never
 // changes over its life — so the panel is MOUNTED on that sign and only shows itself
-// on the three below. What it carries is a dialog, and a dialog owns the page's
-// scroll lock; one that came and went with what the server sends would pass that
-// lock around on nobody's behalf. The filters dialog below is gated the same way and
-// for the same reason.
+// on the three below. What it carries is a dialog, and only an open dialog holds
+// the page's scroll lock (HIL-985), so mounting it on the sign costs markup and
+// nothing more. The filters dialog below is gated the same way.
 const selectionEnabled = props.controller.selection.enabled
 
 const selectionTarget = useSignal(props.controller.selection.target)
@@ -316,9 +315,8 @@ function onSearchInput(event: Event): void {
     </HilosTableSelection>
 
     <!-- Under the same condition as the button that opens it: a table with no
-    filters has nothing to show here, and a closed HilosModal is not free —
-    mounting one releases the background scroll lock, which is not this table's
-    to release. -->
+    filters has nothing to show here, and a dialog no button can reach is markup
+    for nobody. -->
     <HilosModal
       v-if="filters.length > 0"
       v-model="filtersOpen"

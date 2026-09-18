@@ -324,8 +324,8 @@ export function HilosTableBar<R>({
       ) : null}
 
       {/* Under the same condition as the button that opens it: a table with no
-          filters has nothing to show here, and a dialog no button can reach
-          would be one more owner of the page's scroll lock for nobody. */}
+          filters has nothing to show here, and a dialog no button can reach is
+          markup for nobody. */}
       {filters.length > 0 ? (
         <HilosModal
           open={filtersOpen}
