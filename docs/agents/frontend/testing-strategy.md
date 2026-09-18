@@ -84,10 +84,12 @@ full vitest projects all the same — both are listed in
 The environment comes from the package config, not from the file: `vue` runs
 happy-dom, `react` and `angular` run jsdom, and every other package runs with
 no browser at all (`framework/frontend/core/vitest.config.ts` sets no
-environment). A `core` test that does need a DOM declares it on its own first
-line, `// @vitest-environment happy-dom` — two files do so today,
-`framework/frontend/core/test/auth/oauthTrip.test.ts` and
-`framework/frontend/core/test/auth/passkeyCeremony.test.ts`.
+environment). A test that needs another environment declares it on its own
+first line: a `core` test that needs a DOM says `// @vitest-environment
+happy-dom` (`framework/frontend/core/test/auth/oauthTrip.test.ts` is one), and a
+view-package test that renders on the server says `// @vitest-environment node`
+(`framework/frontend/vue/src/serverRender.test.ts`,
+`framework/frontend/react/test/serverRender.test.tsx`).
 
 Browser APIs are stubbed in place rather than mocked as modules: `vi.spyOn` for
 functions (`framework/frontend/core/test/auth/oauthTrip.test.ts:187`) and
