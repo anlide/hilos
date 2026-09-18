@@ -1,17 +1,75 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+// The Angular port of react/test/HilosFormError.test.tsx and
+// vue/src/HilosFormError.test.ts, under the same case names: the base refusal
+// row, and what an action's refusal switches on in it.
+import { Component, signal } from '@angular/core'
+import { TestBed, type ComponentFixture } from '@angular/core/testing'
+import { describe, expect, it } from 'vitest'
 
 import { HilosFormError } from '../src/HilosFormError.js'
 
-// The detail panel is a HilosModal, which portals to <body>: assertions about it
-// query the document, not the render.
-afterEach(() => {
-  cleanup()
-  document.body.classList.remove('modal-open')
+/** A host that drives every input of the row through signals. */
+@Component({
+  selector: 'test-form-error-host',
+  imports: [HilosFormError],
+  template: `
+    <hilos-form-error
+      [message]="message()"
+      dataId="e"
+      [errorType]="errorType()"
+      [errorDetail]="errorDetail()"
+      [copyText]="copyText()"
+      [announce]="announce()"
+    />
+  `,
 })
+class FormErrorHost {
+  readonly message = signal<string | null>(null)
+  readonly errorType = signal<string | null>(null)
+  readonly errorDetail = signal<string | null>(null)
+  readonly copyText = signal('')
+  readonly announce = signal(false)
+}
+
+/** What a test sets on the host before the first render. */
+interface HostInputs {
+  message?: string | null
+  errorType?: string | null
+  errorDetail?: string | null
+  copyText?: string
+  announce?: boolean
+}
+
+/**
+ * Mount the host with the given inputs and render it once.
+ *
+ * @param inputs The inputs to set before the first render.
+ * @returns The mounted fixture.
+ */
+function mountRow(inputs: HostInputs = {}): ComponentFixture<FormErrorHost> {
+  const fixture = TestBed.createComponent(FormErrorHost)
+  const host = fixture.componentInstance
+  host.message.set(inputs.message ?? null)
+  host.errorType.set(inputs.errorType ?? null)
+  host.errorDetail.set(inputs.errorDetail ?? null)
+  host.copyText.set(inputs.copyText ?? '')
+  host.announce.set(inputs.announce ?? false)
+  fixture.detectChanges()
+
+  return fixture
+}
 
 function byId(id: string): HTMLElement | null {
   return document.querySelector(`[data-id="${id}"]`)
+}
+
+/**
+ * Open the details panel from the row's button.
+ *
+ * @param fixture The mounted host.
+ */
+function openDetails(fixture: ComponentFixture<FormErrorHost>): void {
+  byId('e-details')?.click()
+  fixture.detectChanges()
 }
 
 /** Put a clipboard in the document, or take it away — plain http has none. */
@@ -24,20 +82,20 @@ function setClipboard(clipboard: Clipboard | undefined): void {
 
 describe('HilosFormError', () => {
   it('keeps the slot and draws no row while there is no refusal', () => {
-    render(<HilosFormError message={null} dataId="auth-error" />)
+    mountRow()
 
-    const slot = byId('auth-error-slot')
+    const slot = byId('e-slot')
     expect(slot).not.toBeNull()
     // No role anywhere on what is seen: the surface's own live region does the
     // announcing, and a second role would say the sentence twice.
     expect(slot?.getAttribute('role')).toBeNull()
-    expect(byId('auth-error')).toBeNull()
+    expect(byId('e')).toBeNull()
   })
 
   it('holds the room with a hidden twin of the whole row', () => {
-    render(<HilosFormError message={null} dataId="auth-error" />)
+    mountRow()
 
-    const idle = byId('auth-error-idle')
+    const idle = byId('e-idle')
     expect(idle).not.toBeNull()
     expect(idle?.getAttribute('aria-hidden')).toBe('true')
     expect(idle?.classList.contains('invisible')).toBe(true)
@@ -51,88 +109,83 @@ describe('HilosFormError', () => {
   })
 
   it('treats an empty message exactly as no message', () => {
-    render(<HilosFormError message="" dataId="auth-error" />)
+    mountRow({ message: '' })
 
-    expect(byId('auth-error-idle')).not.toBeNull()
-    expect(byId('auth-error')).toBeNull()
+    expect(byId('e-idle')).not.toBeNull()
+    expect(byId('e')).toBeNull()
   })
 
   it('draws the refusal in one truncated line and carries no role', () => {
-    render(<HilosFormError message="Incorrect password" dataId="auth-error" />)
+    mountRow({ message: 'Incorrect password' })
 
-    const row = byId('auth-error')
+    const row = byId('e')
     expect(row).not.toBeNull()
     expect(row?.getAttribute('role')).toBeNull()
-    expect(byId('auth-error-idle')).toBeNull()
+    expect(byId('e-idle')).toBeNull()
     const text = row?.querySelector('span.flex-grow-1')
     expect(text?.textContent).toBe('Incorrect password')
     expect(text?.classList.contains('text-truncate')).toBe(true)
   })
 
   it('opens the whole sentence from the details button', () => {
-    render(<HilosFormError message="A very long refusal" dataId="auth-error" />)
+    const fixture = mountRow({ message: 'A very long refusal' })
 
-    const details = byId('auth-error-details')
+    const details = byId('e-details')
     expect(details).not.toBeNull()
     expect(details?.getAttribute('aria-label')).toBe('Show error details')
-    fireEvent.click(details as HTMLElement)
+    openDetails(fixture)
 
-    expect(byId('auth-error-full')?.textContent).toBe('A very long refusal')
+    expect(byId('e-full')?.textContent?.trim()).toBe('A very long refusal')
   })
 
   it('closes the panel when the refusal is cleared', () => {
-    const view = render(
-      <HilosFormError message="A very long refusal" dataId="auth-error" />,
-    )
-    fireEvent.click(byId('auth-error-details') as HTMLElement)
-    expect(byId('auth-error-full')).not.toBeNull()
+    const fixture = mountRow({ message: 'A very long refusal' })
+    openDetails(fixture)
+    expect(byId('e-full')).not.toBeNull()
 
     // The form re-arms on the next attempt, and a panel left open would be
     // showing the previous refusal's text.
-    view.rerender(<HilosFormError message={null} dataId="auth-error" />)
-    expect(byId('auth-error-full')).toBeNull()
+    fixture.componentInstance.message.set(null)
+    fixture.detectChanges()
+    expect(byId('e-full')).toBeNull()
   })
 
   it('makes the slot a live region only when asked, and never the row', () => {
-    const quiet = render(<HilosFormError message="Refused" dataId="quiet" />)
-    expect(byId('quiet-slot')?.getAttribute('role')).toBeNull()
-    expect(byId('quiet-slot')?.getAttribute('aria-live')).toBeNull()
-    quiet.unmount()
+    const quiet = mountRow({ message: 'Refused' })
+    expect(byId('e-slot')?.getAttribute('role')).toBeNull()
+    expect(byId('e-slot')?.getAttribute('aria-live')).toBeNull()
+    quiet.destroy()
 
-    render(<HilosFormError message="Refused" dataId="loud" announce />)
-    expect(byId('loud-slot')?.getAttribute('role')).toBe('alert')
-    expect(byId('loud-slot')?.getAttribute('aria-live')).toBe('assertive')
+    mountRow({ message: 'Refused', announce: true })
+    expect(byId('e-slot')?.getAttribute('role')).toBe('alert')
+    expect(byId('e-slot')?.getAttribute('aria-live')).toBe('assertive')
     // The region is the slot; a role on the row too would say it twice.
-    expect(byId('loud')?.getAttribute('role')).toBeNull()
+    expect(byId('e')?.getAttribute('role')).toBeNull()
   })
 
   it('draws the class name inside the details button, and only there', () => {
-    const typed = render(
-      <HilosFormError message="Refused" dataId="e" errorType="PDOException" />,
-    )
+    const typed = mountRow({ message: 'Refused', errorType: 'PDOException' })
     const type = document.querySelector(
       '[data-id="e-details"] [data-id="e-type"]',
     )
     expect(type?.textContent).toBe('PDOException')
-    typed.unmount()
+    typed.destroy()
 
-    const plain = render(<HilosFormError message="Refused" dataId="e" />)
+    const plain = mountRow({ message: 'Refused' })
     expect(byId('e-type')).toBeNull()
-    plain.unmount()
+    plain.destroy()
 
     // The twin holds the room of the bare icon, not of a name.
-    render(
-      <HilosFormError message={null} dataId="e" errorType="PDOException" />,
-    )
+    mountRow({ errorType: 'PDOException' })
     expect(byId('e-type')).toBeNull()
   })
 
   it('gives the details button and its twin the same classes', () => {
-    const shown = render(<HilosFormError message="Refused" dataId="e" />)
+    const shown = mountRow({ message: 'Refused' })
     const button = byId('e-details')?.className
-    shown.unmount()
+    shown.destroy()
 
-    render(<HilosFormError message={null} dataId="e" />)
+    mountRow()
     const twin = document.querySelector('[data-id="e-idle"] span.btn')
     expect(twin?.className).toBe(button)
     expect(twin?.classList.contains('btn-link')).toBe(true)
@@ -140,15 +193,12 @@ describe('HilosFormError', () => {
   })
 
   it('shows the original text under its class name in the panel', () => {
-    render(
-      <HilosFormError
-        message="Could not save"
-        dataId="e"
-        errorType="PDOException"
-        errorDetail="SQLSTATE[23000]"
-      />,
-    )
-    fireEvent.click(byId('e-details') as HTMLElement)
+    const fixture = mountRow({
+      message: 'Could not save',
+      errorType: 'PDOException',
+      errorDetail: 'SQLSTATE[23000]',
+    })
+    openDetails(fixture)
 
     expect(document.querySelector('.modal-title')?.textContent).toBe(
       'Error details',
@@ -158,8 +208,8 @@ describe('HilosFormError', () => {
   })
 
   it('draws no original-text block without one', () => {
-    render(<HilosFormError message="Refused" dataId="e" />)
-    fireEvent.click(byId('e-details') as HTMLElement)
+    const fixture = mountRow({ message: 'Refused' })
+    openDetails(fixture)
 
     expect(byId('e-full')).not.toBeNull()
     expect(byId('e-close')).not.toBeNull()
@@ -170,13 +220,13 @@ describe('HilosFormError', () => {
     // Copy stands only where there is a clipboard to write to.
     const realClipboard = navigator.clipboard
     setClipboard({ writeText: async () => {} } as unknown as Clipboard)
-    const bare = render(<HilosFormError message="Refused" dataId="e" />)
-    fireEvent.click(byId('e-details') as HTMLElement)
+    const bare = mountRow({ message: 'Refused' })
+    openDetails(bare)
     expect(byId('modal-copy')).toBeNull()
-    bare.unmount()
+    bare.destroy()
 
-    render(<HilosFormError message="Refused" dataId="e" copyText="Refused" />)
-    fireEvent.click(byId('e-details') as HTMLElement)
+    const copied = mountRow({ message: 'Refused', copyText: 'Refused' })
+    openDetails(copied)
     expect(byId('modal-copy')).not.toBeNull()
     setClipboard(realClipboard)
   })

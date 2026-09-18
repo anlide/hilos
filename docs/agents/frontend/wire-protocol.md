@@ -233,9 +233,10 @@ owner of the action is an `AbstractPage` whose `ACCESS_LEVEL` is
 `PageAccessLevel::ADMIN` — which the router has already proved before the handler
 ran — the `action_error` frame carries two more optional fields beside the
 generic reason: `errorType`, the failure's class name without its namespace, and
-`errorDetail`, its original message. The SDK's `HilosActionError` draws them as a
-badge and a copyable detail panel, so an operator can carry the real text into a
-ticket. Three limits are part of the rule:
+`errorDetail`, its original message. The SDK's `HilosActionError` draws the
+class name as text beside the icon of the row's details button, and the original
+message in the details panel under the caption "Exception", with Copy, so an
+operator can carry the real text into a ticket. Three limits are part of the rule:
 
 - they ride **only** on that admin frame; for any other caller the frame is byte
   for byte what it was before they existed;

@@ -299,8 +299,10 @@ Topic documents are referenced by filename; several are still being authored.
   anything to say and is exactly one line tall:
   the text is truncated, and the whole of it lives behind a button that stands
   at every refusal. It is drawn by the SDK component `HilosFormError` (Vue,
-  React, Angular) — do not hand-write another copy. The row carries no role of
-  its own; the surface announces from its own permanent live region. See
+  React, Angular) — do not hand-write another copy. The refusal of a tracked
+  action is drawn by `HilosActionError`, which is built on the same row; do not
+  start a third copy of the refusal row either. The row carries no role of its
+  own; the surface announces from its own permanent live region. See
   [accessibility.md](accessibility.md).
 - **A disabled control explains itself with visible content, never with a
   title.** A disabled element gets no mouse events, so its title never shows,

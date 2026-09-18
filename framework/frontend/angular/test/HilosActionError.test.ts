@@ -1,18 +1,18 @@
+// The Angular port of react/test/HilosActionError.test.tsx and
+// vue/src/HilosActionError.test.ts, under the same case names: the adapter that
+// draws a tracked action's refusal on the form refusal row.
+import { Component, signal, type WritableSignal } from '@angular/core'
+import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { ActionError } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
 import { HilosActionError } from '../src/HilosActionError.js'
-import type { TrackedAction } from '../src/useTrackedAction.js'
+import type { HilosTrackedAction } from '../src/hilosTrackedAction.js'
 
-// The detail modal portals to <body>, so assertions query the document.
-afterEach(() => {
-  cleanup()
-  document.body.classList.remove('modal-open')
-})
-
-function byId(id: string): HTMLElement | null {
-  return document.querySelector(`[data-id="${id}"]`)
+/** The state of a tracked action, with the two fields a test drives by hand. */
+interface FakeAction extends HilosTrackedAction {
+  readonly error: WritableSignal<string | null>
+  readonly failure: WritableSignal<ActionError | null>
 }
 
 /**
@@ -20,24 +20,61 @@ function byId(id: string): HTMLElement | null {
  *
  * @param error The failure message, or null for an action that has not failed.
  * @param failure The failure itself, or null when what was thrown was not one.
+ * @returns The fake action.
  */
 function fakeAction(
   error: string | null,
   failure: ActionError | null = null,
-): TrackedAction {
+): FakeAction {
   return {
-    loading: false,
-    busy: false,
-    error,
-    failure,
+    loading: signal(false),
+    busy: signal(false),
+    error: signal(error),
+    failure: signal(failure),
     run: async () => false,
     clearError: () => {},
   }
 }
 
+/** A host that hands the component an action and a suppressed flag. */
+@Component({
+  selector: 'test-action-error-host',
+  imports: [HilosActionError],
+  template: `
+    <hilos-action-error [action]="action" [suppressed]="suppressed()" />
+  `,
+})
+class ActionErrorHost {
+  action: FakeAction = fakeAction(null)
+  readonly suppressed = signal(false)
+}
+
+/**
+ * Mount the host with an action and render it once.
+ *
+ * @param action The tracked action to draw.
+ * @param suppressed Whether the action is answering elsewhere.
+ * @returns The mounted fixture.
+ */
+function mountError(
+  action: FakeAction,
+  suppressed = false,
+): ComponentFixture<ActionErrorHost> {
+  const fixture = TestBed.createComponent(ActionErrorHost)
+  fixture.componentInstance.action = action
+  fixture.componentInstance.suppressed.set(suppressed)
+  fixture.detectChanges()
+
+  return fixture
+}
+
+function byId(id: string): HTMLElement | null {
+  return document.querySelector(`[data-id="${id}"]`)
+}
+
 describe('HilosActionError', () => {
   it('draws the slot and no plate while nothing has failed', () => {
-    render(<HilosActionError action={fakeAction(null)} />)
+    mountError(fakeAction(null))
     const slot = byId('hilos-action-error-slot')
     expect(slot).not.toBeNull()
     expect(slot?.getAttribute('role')).toBe('alert')
@@ -46,7 +83,7 @@ describe('HilosActionError', () => {
   })
 
   it('holds the room with an invisible twin while nothing has failed', () => {
-    render(<HilosActionError action={fakeAction(null)} />)
+    mountError(fakeAction(null))
     const twin = document.querySelector(
       '[data-id="hilos-action-error-slot"] [data-id="hilos-action-error-idle"]',
     )
@@ -57,11 +94,7 @@ describe('HilosActionError', () => {
   })
 
   it('draws the refusal on one line, and says it only once', () => {
-    render(
-      <HilosActionError
-        action={fakeAction('Value must be an integer of 0 or more')}
-      />,
-    )
+    mountError(fakeAction('Value must be an integer of 0 or more'))
     const plate = byId('hilos-action-error')
     expect(plate).not.toBeNull()
     expect(plate?.textContent).toContain(
@@ -74,7 +107,7 @@ describe('HilosActionError', () => {
   })
 
   it('keeps the room and drops the voice when suppressed', () => {
-    render(<HilosActionError action={fakeAction('Not applied')} suppressed />)
+    mountError(fakeAction('Not applied'), true)
     expect(byId('hilos-action-error-slot')).not.toBeNull()
     expect(byId('hilos-action-error-idle')).not.toBeNull()
     expect(byId('hilos-action-error')).toBeNull()
@@ -83,28 +116,24 @@ describe('HilosActionError', () => {
   it('offers the details button on every refusal, named for a reader', () => {
     // Nothing was held back here — no type, no original text — and the button
     // is still the way to the whole of a truncated sentence.
-    const { unmount } = render(
-      <HilosActionError action={fakeAction('Something went wrong')} />,
-    )
+    const plain = mountError(fakeAction('Something went wrong'))
     const button = byId('hilos-action-error-details')
     expect(button).not.toBeNull()
     expect(button?.getAttribute('aria-label')).toBe('Show error details')
     expect(byId('hilos-action-error-type')).toBeNull()
-    unmount()
+    plain.destroy()
 
-    render(
-      <HilosActionError
-        action={fakeAction(
+    mountError(
+      fakeAction(
+        'Something went wrong',
+        new ActionError(
+          'settings::apply',
+          'fail',
           'Something went wrong',
-          new ActionError(
-            'settings::apply',
-            'fail',
-            'Something went wrong',
-            'RuntimeException',
-            'SQLSTATE[HY000]: lock wait timeout',
-          ),
-        )}
-      />,
+          'RuntimeException',
+          'SQLSTATE[HY000]: lock wait timeout',
+        ),
+      ),
     )
     const type = document.querySelector(
       '[data-id="hilos-action-error-details"] [data-id="hilos-action-error-type"]',
@@ -115,24 +144,25 @@ describe('HilosActionError', () => {
 
   it('opens the panel on the message and closes it when the message goes', () => {
     const message = 'The connection dropped before it answered'
-    const { rerender } = render(
-      <HilosActionError action={fakeAction(message)} />,
-    )
+    const action = fakeAction(message)
+    const fixture = mountError(action)
 
-    fireEvent.click(byId('hilos-action-error-details') as HTMLElement)
+    byId('hilos-action-error-details')?.click()
+    fixture.detectChanges()
     expect(byId('hilos-action-error-full')?.textContent).toContain(message)
 
     // Nothing was thrown as an ActionError, so the failure is null — the old
     // guard watched that and would have closed the panel in the same frame.
-    rerender(<HilosActionError action={fakeAction(message)} />)
+    fixture.detectChanges()
     expect(byId('hilos-action-error-full')).not.toBeNull()
 
-    rerender(<HilosActionError action={fakeAction(null)} />)
+    action.error.set(null)
+    fixture.detectChanges()
     expect(byId('hilos-action-error-full')).toBeNull()
   })
 
   it('draws the compact row of the form refusal, not a plate of its own', () => {
-    render(<HilosActionError action={fakeAction('Not applied')} />)
+    mountError(fakeAction('Not applied'))
     const row = byId('hilos-action-error')
     expect(row?.classList.contains('small')).toBe(true)
     expect(row?.classList.contains('py-1')).toBe(true)
@@ -142,20 +172,19 @@ describe('HilosActionError', () => {
   })
 
   it('closes an open panel when the action turns suppressed', () => {
-    const message = 'Not applied'
-    const { rerender } = render(
-      <HilosActionError action={fakeAction(message)} />,
-    )
-    fireEvent.click(byId('hilos-action-error-details') as HTMLElement)
+    const fixture = mountError(fakeAction('Not applied'))
+    byId('hilos-action-error-details')?.click()
+    fixture.detectChanges()
     expect(byId('hilos-action-error-full')).not.toBeNull()
 
-    rerender(<HilosActionError action={fakeAction(message)} suppressed />)
+    fixture.componentInstance.suppressed.set(true)
+    fixture.detectChanges()
     expect(byId('hilos-action-error-full')).toBeNull()
     expect(byId('hilos-action-error-idle')).not.toBeNull()
   })
 
   it('treats an empty message as no refusal', () => {
-    render(<HilosActionError action={fakeAction('')} />)
+    mountError(fakeAction(''))
     expect(byId('hilos-action-error-idle')).not.toBeNull()
     expect(byId('hilos-action-error')).toBeNull()
   })

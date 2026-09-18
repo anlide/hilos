@@ -10,6 +10,14 @@ afterEach(() => {
   document.body.classList.remove('modal-open')
 })
 
+/** Put a clipboard in the document, or take it away — plain http has none. */
+function setClipboard(clipboard: Clipboard | undefined): void {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+}
+
 describe('HilosFormError', () => {
   it('keeps the slot and draws no row while there is no refusal', () => {
     const wrapper = mount(HilosFormError, {
@@ -72,11 +80,11 @@ describe('HilosFormError', () => {
 
     const details = wrapper.find('[data-id="auth-error-details"]')
     expect(details.exists()).toBe(true)
-    expect(details.attributes('aria-label')).toBe('Show the full message')
+    expect(details.attributes('aria-label')).toBe('Show error details')
     await details.trigger('click')
 
     const full = document.querySelector('[data-id="auth-error-full"]')
-    expect(full?.textContent).toBe('A very long refusal')
+    expect(full?.textContent?.trim()).toBe('A very long refusal')
   })
 
   it('closes the panel when the refusal is cleared', async () => {
@@ -90,5 +98,111 @@ describe('HilosFormError', () => {
     // showing the previous refusal's text.
     await wrapper.setProps({ message: null })
     expect(document.querySelector('[data-id="auth-error-full"]')).toBeNull()
+  })
+
+  it('makes the slot a live region only when asked, and never the row', () => {
+    const quiet = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'auth-error' },
+    })
+    const quietSlot = quiet.find('[data-id="auth-error-slot"]')
+    expect(quietSlot.attributes('role')).toBeUndefined()
+    expect(quietSlot.attributes('aria-live')).toBeUndefined()
+
+    const loud = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'auth-error', announce: true },
+    })
+    const loudSlot = loud.find('[data-id="auth-error-slot"]')
+    expect(loudSlot.attributes('role')).toBe('alert')
+    expect(loudSlot.attributes('aria-live')).toBe('assertive')
+    // The region is the slot; a role on the row too would say it twice.
+    expect(
+      loud.find('[data-id="auth-error"]').attributes('role'),
+    ).toBeUndefined()
+  })
+
+  it('draws the class name inside the details button, and only there', () => {
+    const typed = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'e', errorType: 'PDOException' },
+    })
+    const type = typed.find('[data-id="e-details"] [data-id="e-type"]')
+    expect(type.exists()).toBe(true)
+    expect(type.text()).toBe('PDOException')
+
+    const plain = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'e' },
+    })
+    expect(plain.find('[data-id="e-type"]').exists()).toBe(false)
+
+    // The twin holds the room of the bare icon, not of a name.
+    const idle = mount(HilosFormError, {
+      props: { message: null, dataId: 'e', errorType: 'PDOException' },
+    })
+    expect(idle.find('[data-id="e-type"]').exists()).toBe(false)
+  })
+
+  it('gives the details button and its twin the same classes', () => {
+    const shown = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'e' },
+    })
+    const idle = mount(HilosFormError, {
+      props: { message: null, dataId: 'e' },
+    })
+
+    const button = shown.find('[data-id="e-details"]').classes()
+    const twin = idle.find('[data-id="e-idle"] span.btn').classes()
+    expect(button).toEqual(twin)
+    expect(button).toContain('btn-link')
+    expect(button).toContain('text-decoration-none')
+  })
+
+  it('shows the original text under its class name in the panel', async () => {
+    const wrapper = mount(HilosFormError, {
+      props: {
+        message: 'Could not save',
+        dataId: 'e',
+        errorType: 'PDOException',
+        errorDetail: 'SQLSTATE[23000]',
+      },
+    })
+    await wrapper.find('[data-id="e-details"]').trigger('click')
+
+    expect(document.querySelector('.modal-title')?.textContent).toContain(
+      'Error details',
+    )
+    expect(document.querySelector('[data-id="e-close"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="e-detail"]')?.textContent).toBe(
+      'PDOException\nSQLSTATE[23000]',
+    )
+  })
+
+  it('draws no original-text block without one', async () => {
+    const wrapper = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'e' },
+    })
+    await wrapper.find('[data-id="e-details"]').trigger('click')
+
+    expect(document.querySelector('[data-id="e-full"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="e-close"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="e-detail"]')).toBeNull()
+  })
+
+  it('offers Copy only when given something to copy', async () => {
+    // Copy stands only where there is a clipboard to write to.
+    const realClipboard = navigator.clipboard
+    setClipboard({ writeText: async () => {} } as unknown as Clipboard)
+    const bare = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'e' },
+    })
+    await bare.find('[data-id="e-details"]').trigger('click')
+    expect(document.querySelector('[data-id="modal-copy"]')).toBeNull()
+    bare.unmount()
+    document.body.innerHTML = ''
+
+    const copied = mount(HilosFormError, {
+      props: { message: 'Refused', dataId: 'e', copyText: 'Refused' },
+    })
+    await copied.find('[data-id="e-details"]').trigger('click')
+    expect(document.querySelector('[data-id="modal-copy"]')).not.toBeNull()
+    setClipboard(realClipboard)
   })
 })

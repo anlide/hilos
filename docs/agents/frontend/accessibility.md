@@ -180,7 +180,7 @@ The rules to apply when building a view or an SDK component:
   (`demo/chat/frontend/src/views/Profile/Profile.vue`), the user-rename dialog
   (`framework/frontend/vue/src/admin/users/HilosUserPage.vue`) and the refusal
   of a tracked action (`framework/frontend/vue/src/HilosActionError.vue`),
-  whose region is the slot the plate stands in — the plate itself carries no
+  whose region is the slot the row stands in — the row itself carries no
   role, and the room stays taken by an invisible twin while there is nothing to
   announce.
 - **The room belongs to the block, the voice to the surface.** A form's refusal
@@ -189,6 +189,9 @@ The rules to apply when building a view or an SDK component:
   the surface, or inside the dialog when the dialog is `aria-modal` and the page
   under it is not there to be read. A region living inside a form that swaps its
   steps would die with its step, which is the very illness a live region cures.
+  The row's `announce` input makes its own slot the region, and it is set only
+  where the surface under the row is never swapped — that is `HilosActionError`;
+  a form keeps its voice on the surface.
 - **A timed notice is readable or it does not exist (2.2.1 Timing Adjustable).**
   A toast that expires before it is read is nothing to a screen-reader user, so
   the toast stack lives 20 seconds — an error does not expire until dismissed —

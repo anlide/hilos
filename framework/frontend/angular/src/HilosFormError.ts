@@ -10,10 +10,17 @@
 // every refusal and is always the same width — a button that came and went would
 // change the row from refusal to refusal, and a truncated text would have
 // nowhere to open. Truncation is visual only, so the node's text stays whole.
-// The row carries no role at all: what a screen reader hears is the surface's
-// own permanent live region, kept apart from the sight of it (accessibility.md)
-// — a live region living inside a form that swaps its steps would die with its
-// step.
+// This row is the one refusal row of the SDK: HilosActionError draws a tracked
+// action's refusal by mounting it, and what that needs beyond a form's sentence
+// — the class name beside the details icon, the original text under an
+// "Exception" caption, the Copy button, a live region on the slot — lives here
+// as inputs that are off by default, one behavior rather than a second copy of
+// the row.
+// The row carries no role at all. A form's voice is the surface's own permanent
+// live region, kept apart from the sight of it (accessibility.md) — a live
+// region living inside a form that swaps its steps would die with its step;
+// only a surface that stays put under the row makes the slot itself the region
+// (`announce`).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,15 +30,20 @@ import {
   signal,
 } from '@angular/core'
 
+import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
 
 /** A form's refusal, drawn in room that is held whether or not there is one. */
 @Component({
   selector: 'hilos-form-error',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosModal],
+  imports: [HilosLongText, HilosModal],
   template: `
-    <div [attr.data-id]="dataId() + '-slot'">
+    <div
+      [attr.data-id]="dataId() + '-slot'"
+      [attr.role]="announce() ? 'alert' : null"
+      [attr.aria-live]="announce() ? 'assertive' : null"
+    >
       @if (shown(); as message) {
         <div [class]="rowClass" [attr.data-id]="dataId()">
           <i
@@ -41,13 +53,20 @@ import { HilosModal } from './HilosModal.js'
           <span class="flex-grow-1 text-truncate">{{ message }}</span>
           <button
             type="button"
-            class="btn btn-link btn-sm p-0 lh-1 flex-shrink-0"
-            aria-label="Show the full message"
-            title="Show the full message"
+            [class]="detailsClass"
+            aria-label="Show error details"
+            title="Show error details"
             [attr.data-id]="dataId() + '-details'"
             (click)="detailOpen.set(true)"
           >
             <i class="bi bi-info-circle" aria-hidden="true"></i>
+            @if (errorType(); as type) {
+              <span
+                class="d-none d-sm-inline ms-1"
+                [attr.data-id]="dataId() + '-type'"
+                >{{ type }}</span
+              >
+            }
           </button>
         </div>
       } @else {
@@ -62,7 +81,7 @@ import { HilosModal } from './HilosModal.js'
           ></i>
           <span class="flex-grow-1 text-truncate">&nbsp;</span>
           <!-- A span, not a button: the twin holds room, it does not take focus. -->
-          <span class="btn btn-link btn-sm p-0 lh-1 flex-shrink-0">
+          <span [class]="detailsClass">
             <i class="bi bi-info-circle" aria-hidden="true"></i>
           </span>
         </div>
@@ -73,9 +92,36 @@ import { HilosModal } from './HilosModal.js'
       [open]="detailOpen()"
       (openChange)="detailOpen.set($event)"
       title="Error details"
+      [copyText]="copyText()"
       initialFocus="dialog"
     >
-      <p class="mb-0" [attr.data-id]="dataId() + '-full'">{{ shown() }}</p>
+      <div class="d-flex flex-column gap-3">
+        <hilos-long-text
+          kind="prose"
+          [text]="shown() ?? ''"
+          [dataId]="dataId() + '-full'"
+        />
+        @if (hasDetail()) {
+          <div>
+            <div class="small text-body-secondary mb-1">Exception</div>
+            <hilos-long-text
+              kind="output"
+              [text]="detailText()"
+              [dataId]="dataId() + '-detail'"
+            />
+          </div>
+        }
+      </div>
+      <ng-template #modalActions let-requestClose="requestClose">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          [attr.data-id]="dataId() + '-close'"
+          (click)="requestClose()"
+        >
+          Close
+        </button>
+      </ng-template>
     </hilos-modal>
   `,
 })
@@ -86,12 +132,35 @@ export class HilosFormError {
   /** The data-id of the visible row; the slot and the idle twin derive theirs from it. */
   readonly dataId = input.required<string>()
 
+  /** Short class name of what failed; drawn beside the details icon and above the original text. */
+  readonly errorType = input<string | null>(null)
+
+  /** The failure's original text; when not empty, the details panel shows it under "Exception". */
+  readonly errorDetail = input<string | null>(null)
+
+  /** What the details panel's Copy button copies; empty means no Copy button. */
+  readonly copyText = input('')
+
+  /**
+   * Make the slot itself the live region (role=alert, aria-live=assertive).
+   * Only for a surface that does not change under the row, such as an admin
+   * modal; a form that swaps its steps leaves it off and keeps its voice on the
+   * surface, because a region inside a step would die with the step
+   * (accessibility.md, "The room belongs to the block, the voice to the
+   * surface").
+   */
+  readonly announce = input(false)
+
   /**
    * The row and its idle twin, to the character — only `invisible` differs. The
    * room equals the true height of the row exactly while the markup matches.
    */
   protected readonly rowClass =
     'alert alert-danger small py-1 px-2 my-2 d-flex align-items-center gap-2'
+
+  /** The details button and the inert copy of it the twin holds the room for. */
+  protected readonly detailsClass =
+    'btn btn-link btn-sm p-0 lh-1 flex-shrink-0 text-decoration-none text-nowrap'
 
   protected readonly detailOpen = signal(false)
 
@@ -102,6 +171,21 @@ export class HilosFormError {
   protected readonly shown = computed(() =>
     (this.message() ?? '') === '' ? null : this.message(),
   )
+
+  /** An original text that was not sent is not a shorter block but no block. */
+  protected readonly hasDetail = computed(
+    () => (this.errorDetail() ?? '') !== '',
+  )
+
+  /**
+   * The class name heads the original text, so what is read — and copied —
+   * names what failed.
+   */
+  protected readonly detailText = computed(() => {
+    const type = this.errorType()
+    const detail = this.errorDetail() ?? ''
+    return type ? `${type}\n${detail}` : detail
+  })
 
   constructor() {
     // A cleared refusal takes the panel with it: the form re-arms on the next

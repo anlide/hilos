@@ -136,17 +136,57 @@ describe('HilosActionError', () => {
     await wrapper
       .find('[data-id="hilos-action-error-details"]')
       .trigger('click')
-    expect(byId('hilos-action-error-message')?.textContent).toContain(
+    expect(byId('hilos-action-error-full')?.textContent).toContain(
       'The connection dropped before it answered',
     )
 
     // Nothing was thrown as an ActionError, so the failure is null — the old
     // guard watched that and would have closed the panel in the same frame.
     await flushPromises()
-    expect(byId('hilos-action-error-message')).not.toBeNull()
+    expect(byId('hilos-action-error-full')).not.toBeNull()
 
     action.error.value = null
     await flushPromises()
-    expect(byId('hilos-action-error-message')).toBeNull()
+    expect(byId('hilos-action-error-full')).toBeNull()
+  })
+
+  it('draws the compact row of the form refusal, not a plate of its own', () => {
+    const wrapper = mount(HilosActionError, {
+      props: { action: fakeAction('Not applied') },
+    })
+    const row = wrapper.find('[data-id="hilos-action-error"]')
+    expect(row.classes()).toContain('small')
+    expect(row.classes()).toContain('py-1')
+    expect(
+      wrapper.find('[data-id="hilos-action-error-details"]').classes(),
+    ).toContain('btn-link')
+    expect(wrapper.find('.rounded-pill').exists()).toBe(false)
+  })
+
+  it('closes an open panel when the action turns suppressed', async () => {
+    const wrapper = mount(HilosActionError, {
+      props: { action: fakeAction('Not applied') },
+    })
+    await wrapper
+      .find('[data-id="hilos-action-error-details"]')
+      .trigger('click')
+    expect(byId('hilos-action-error-full')).not.toBeNull()
+
+    await wrapper.setProps({ suppressed: true })
+    await flushPromises()
+    expect(byId('hilos-action-error-full')).toBeNull()
+    expect(wrapper.find('[data-id="hilos-action-error-idle"]').exists()).toBe(
+      true,
+    )
+  })
+
+  it('treats an empty message as no refusal', () => {
+    const wrapper = mount(HilosActionError, {
+      props: { action: fakeAction('') },
+    })
+    expect(wrapper.find('[data-id="hilos-action-error-idle"]').exists()).toBe(
+      true,
+    )
+    expect(wrapper.find('[data-id="hilos-action-error"]').exists()).toBe(false)
   })
 })
