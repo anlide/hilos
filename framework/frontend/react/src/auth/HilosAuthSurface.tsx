@@ -405,8 +405,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const reportedStep = useSignal(pendingAuthStep)
   const codeDelivery = useSignal(codeDeliverySignal)
   // Whether THIS panel was raised by the mark. A handshake that says the session
-  // owes nothing lowers only that panel, never the initiator's: they stand on
-  // done from the action reply before the frame carrying the mark arrives
+  // owes nothing lowers a panel only when the mark raised it: the initiator
+  // stands on done from the action reply before the frame carrying the mark
+  // arrives, and until that frame lands its panel is not the mark's to take
   // (HIL-955). A ref, not state — the screen does not draw it.
   const panelRaisedByAck = useRef(false)
 
@@ -851,8 +852,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // finished nothing (another window of the same session). The gate opens the
   // surface for it; this is what draws the right panel.
   //
-  // The mark going empty is answered here too, and on the TRANSITION rather than
-  // on the state: the initiator's machine stands on `done` from the server's
+  // The mark going empty is answered here too — as the fallback: the dismissal
+  // arrives as a handshake response, and the listener on that frame usually
+  // lowers the panel before this runs (HIL-955). It answers on the TRANSITION
+  // rather than on the state: the initiator's machine stands on `done` from the server's
   // reply before the frame carrying the mark arrives, and this effect also runs
   // on mount — either way a tab reacting to "the mark is empty" would take its
   // own panel away. The step is read from the machine rather than from `state`

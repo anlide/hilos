@@ -277,9 +277,10 @@ const expiresAt = useSignal(auth.expiresAt)
 const resumable = useSignal(sessionPendingAuthStep(context.scopes))
 const ack = useSignal(sessionPendingAck(context.scopes))
 // Whether THIS panel was raised by the mark. A handshake that says the session
-// owes nothing lowers only that panel, never the initiator's: they stand on
-// done from the action reply before the frame carrying the mark arrives
-// (HIL-955). Not a signal — the screen does not draw it.
+// owes nothing lowers a panel only when the mark raised it: the initiator stands
+// on done from the action reply before the frame carrying the mark arrives, and
+// until that frame lands its panel is not the mark's to take (HIL-955). Not a
+// signal — the screen does not draw it.
 let panelRaisedByAck = false
 // What this installation can send a one-time code to, read the same way and for
 // the same reason (HIL-830): the browser half cannot know the backend's mail and
@@ -953,7 +954,9 @@ watch(pending, (busy) => {
 // nothing (another window of the same session). The gate opens the surface for
 // it; this is what draws the right panel.
 //
-// The mark going empty is answered here too, and on the TRANSITION rather than on
+// The mark going empty is answered here too — as the fallback: the dismissal
+// arrives as a handshake response, and the listener on that frame usually lowers
+// the panel before this runs (HIL-955). It answers on the TRANSITION rather than on
 // the state: the initiator's machine stands on `done` from the server's reply
 // before the frame carrying the mark arrives, so a tab reacting to "the mark is
 // empty" would take its own panel away too early. And only from `done`: the tab
