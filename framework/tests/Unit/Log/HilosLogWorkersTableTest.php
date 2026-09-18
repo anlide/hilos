@@ -189,6 +189,30 @@ final class HilosLogWorkersTableTest extends TestCase
         $this->assertSame(['node-2', 'node-2'], array_map(static fn($row): ?string => $row->node, $rows));
     }
 
+    public function testAStreamOfTheFilteredSetIsInIt(): void
+    {
+        $this->picture(
+            $this->node('node-1', [$this->summary('worker-0.log')]),
+            $this->node('node-2', [$this->summary('worker-0.log'), $this->summary('worker-1.log')]),
+        );
+
+        $query = new TableQueryDTO(filter: [HilosLogWorkersTable::FILTER_NODE => 'node-2']);
+
+        $this->assertTrue(new HilosLogWorkersTable()->containsRow('node-2:worker-1.log', $query));
+    }
+
+    public function testAStreamTheFilterLeavesOutIsNotInTheSet(): void
+    {
+        $this->picture(
+            $this->node('node-1', [$this->summary('worker-0.log')]),
+            $this->node('node-2', [$this->summary('worker-0.log'), $this->summary('worker-1.log')]),
+        );
+
+        $query = new TableQueryDTO(filter: [HilosLogWorkersTable::FILTER_NODE => 'node-2']);
+
+        $this->assertFalse(new HilosLogWorkersTable()->containsRow('node-1:worker-0.log', $query));
+    }
+
     /**
      * The panel offers two buttons, so only one value narrows; anything else is "all", the way an
      * unknown state reads on the rotation history.

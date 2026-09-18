@@ -192,6 +192,24 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
     }
 
     /**
+     * Answers whether one batch row is in the set a window of this table shows.
+     *
+     * The set is built the way {@see query()} builds it - the cluster picture narrowed by this history's filters - and searched the
+     * same way, so the answer cannot drift from the window. It is neither sorted nor cut into a
+     * window: a yes or no about one row needs neither.
+     *
+     * @param string|int $rowKey Row key to look for
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
+     * @return ?bool Whether the row is in the set; this table always knows
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        return $this->containsRowInMemory($this->narrow($this->collectRows(), $query), $rowKey, $query);
+    }
+
+    /**
      * Declares the history's sortable columns, which here are the row payload keys themselves.
      *
      * The rows are ordered in PHP by {@see InMemoryTableFilter}, where a field name is an array

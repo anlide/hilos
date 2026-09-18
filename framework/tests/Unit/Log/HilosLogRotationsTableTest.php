@@ -347,6 +347,30 @@ final class HilosLogRotationsTableTest extends TestCase
         $this->assertSame(['node-2', 'node-2'], array_map(static fn($row): ?string => $row->node, $rows));
     }
 
+    public function testABatchOfTheFilteredSetIsInIt(): void
+    {
+        $this->picture(
+            $this->node('node-1', [self::NOW - self::DAY]),
+            $this->node('node-2', [self::NOW - self::DAY, self::NOW]),
+        );
+
+        $query = new TableQueryDTO(filter: [HilosLogRotationsTable::FILTER_NODE => 'node-2']);
+
+        $this->assertTrue(new HilosLogRotationsTable()->containsRow('node-2:' . self::NOW, $query));
+    }
+
+    public function testABatchTheFilterLeavesOutIsNotInTheSet(): void
+    {
+        $this->picture(
+            $this->node('node-1', [self::NOW - self::DAY]),
+            $this->node('node-2', [self::NOW - self::DAY, self::NOW]),
+        );
+
+        $query = new TableQueryDTO(filter: [HilosLogRotationsTable::FILTER_NODE => 'node-2']);
+
+        $this->assertFalse(new HilosLogRotationsTable()->containsRow('node-1:' . (self::NOW - self::DAY), $query));
+    }
+
     public function testTheStateFilterNarrowsToWhatIsRecommendedForCarryingOff(): void
     {
         $this->picture($this->node(

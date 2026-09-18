@@ -172,6 +172,39 @@ final class HilosLogKeysTableTest extends TestCase
         $this->assertSame(['node-2', 'node-2'], array_map(static fn($row): ?string => $row->node, $rows));
     }
 
+    /**
+     * The answer about one row is the window's own set: narrowed by the filter, then searched.
+     */
+    public function testAStreamOfTheFilteredAndSearchedSetIsInIt(): void
+    {
+        $this->picture(
+            $this->node('node-1', [$this->summary('worker-0.log'), $this->summary('worker-1.log')]),
+            $this->node('node-2', [$this->summary('worker-0.log'), $this->summary('worker-1.log')]),
+        );
+        $table = new HilosLogKeysTable();
+
+        $query = $table->scopeSearch(new TableQueryDTO(search: 'worker-1', filter: [HilosLogKeysTable::FILTER_NODE => 'node-2']));
+
+        $this->assertTrue($table->containsRow('node-2:worker-1.log', $query));
+    }
+
+    /**
+     * A stream the filter leaves out and one the search leaves out are both outside the set.
+     */
+    public function testAStreamOutsideTheFilterOrTheSearchIsNotInTheSet(): void
+    {
+        $this->picture(
+            $this->node('node-1', [$this->summary('worker-0.log'), $this->summary('worker-1.log')]),
+            $this->node('node-2', [$this->summary('worker-0.log'), $this->summary('worker-1.log')]),
+        );
+        $table = new HilosLogKeysTable();
+
+        $query = $table->scopeSearch(new TableQueryDTO(search: 'worker-1', filter: [HilosLogKeysTable::FILTER_NODE => 'node-2']));
+
+        $this->assertFalse($table->containsRow('node-1:worker-1.log', $query));
+        $this->assertFalse($table->containsRow('node-2:worker-0.log', $query));
+    }
+
     public function testTheClassFilterNarrowsToOneKindOfStream(): void
     {
         $this->picture($this->node('node-1', [

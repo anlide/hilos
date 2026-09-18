@@ -20,8 +20,9 @@ use Hilos\Core\Table\TableRowPlacement;
  * announced twice is counted once, and the strip a person reads is a number rather than a list.
  *
  * The counts travel with it, because an announcement is also a count: the arithmetic is the one
- * the append carries, legitimate for the same reason - a window that is announced to has no
- * filter map, so a create is one more row in its set. Addressed per accept key.
+ * the append carries, legitimate for the same reason - a window that is announced to either has
+ * no filter map or has been told by the row source that the row is in its set, so a create is
+ * one more row in its set. Addressed per accept key.
  *
  * The page count travels only while the total is exact, as it does for
  * {@see TableViewportCountDTO}: past {@see TableConstants::COUNT_CEILING} the total is the

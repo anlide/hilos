@@ -29,6 +29,8 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
+use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
@@ -160,6 +162,28 @@ final class TableBulkActionIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame(self::ROW_COUNT, $this->report()->touched);
         $this->assertSame([], $this->remainingIds(self::ROW_COUNT));
         $this->assertCount(self::ROW_COUNT, array_unique($page->judged));
+    }
+
+    /**
+     * @throws DatabaseException When a scratch query fails
+     * @throws InvalidFormatException When the report frame is malformed
+     * @throws PageNotFoundException When the fixture page cannot be resolved
+     * @throws TableBulkRunBusyException When the run is refused, which this case does not expect
+     */
+    public function testARunUnderASearchAsksAboutEachRowAgainstTheSearchedSet(): void
+    {
+        [$router, $page] = $this->openLine();
+
+        // "row-2" and "row-20" to "row-25".
+        $reply = $this->startRun($page, null, [TableConstants::FILTER_KEY_SEARCH => 'row-2']);
+        $this->assertSame(7, $reply->total);
+        $this->drive($router);
+
+        // Each row is asked about before it is handed out, and against the set the term searched:
+        // a term that reached the table without the fields it runs over would be refused there,
+        // and the refusal would leave the tick that drives every run of this worker.
+        $this->assertSame(7, $this->report()->touched);
+        $this->assertSame([1, 3, 4], $this->remainingIds(3));
     }
 
     /**
@@ -416,19 +440,22 @@ final class BulkIntegrationTable extends TableDefinition implements ViewportTabl
     }
 
     /**
-     * Answers whether one row is still in the table.
+     * Answers whether one row is still in the set, the way a table served from the database does.
+     *
+     * The question goes to the same object collection the window is read from, so the search the
+     * query carries narrows the answer exactly as it narrows the window - and a term that reaches
+     * it without the fields it runs over is refused, as it would be on a real table.
      *
      * @param string|int $rowKey Row key to place against the set
-     * @param TableQueryDTO $query Window query describing the set (the whole table here)
-     * @return ?bool Whether the row is still there
+     * @param TableQueryDTO $query Window query describing the set, its search scoped
+     * @return ?bool Whether the row is still in the set
      * @throws DatabaseException When the query fails
+     * @throws TableSearchNotSupportedException When a term arrives without the fields it runs over
+     * @throws TableSearchFieldUnknownException When a declared field names no column of the entity
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
-        return Database::sql(
-            'SELECT `id` FROM `' . BulkIntegrationEntity::_table . '` WHERE `id` = ?',
-            [(int)$rowKey],
-        )->rows() !== [];
+        return BulkIntegrationObjects::initEmpty()->containsRow($query, $rowKey);
     }
 
     /**
@@ -454,6 +481,16 @@ final class BulkIntegrationTable extends TableDefinition implements ViewportTabl
             'rowKey' => (string)$row->getRowKey(),
             'sources' => [self::SLOT => $row->toArray()],
         ];
+    }
+
+    /**
+     * Declares the one field a condition's term searches: the label every scratch row carries.
+     *
+     * @return array<string, string> Searched field mapped to its column
+     */
+    protected function searchableFields(): array
+    {
+        return [BulkIntegrationEntity::label => BulkIntegrationEntity::label];
     }
 
     /**

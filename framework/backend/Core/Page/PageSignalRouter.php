@@ -56,6 +56,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableBulkActionNotOfferedException;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
@@ -1244,6 +1245,7 @@ class PageSignalRouter
      *
      * @throws FramePopOrderException When the execution frame is unwound out of order
      * @throws InvalidArgumentException When a frame of a run cannot be named
+     * @throws TableSearchNotSupportedException When a run's condition carries a term and its table declares no searchable fields
      */
     public function advanceBulkRuns(): void
     {
@@ -1296,6 +1298,7 @@ class PageSignalRouter
      *
      * @param TableBulkRun $run Run to feed
      * @throws InvalidArgumentException When a frame of the run cannot be named
+     * @throws TableSearchNotSupportedException When the condition carries a term and the table declares no searchable fields
      */
     private function handOutBulkRows(TableBulkRun $run): void
     {
@@ -1497,15 +1500,20 @@ class PageSignalRouter
      * table that answers null has not said no - it has said it cannot tell - and the row goes
      * to the page, which is the one that can.
      *
+     * The search is scoped by the table the way every window of it is, because the question
+     * runs over the same fields the window was searched by: a term that reached the table
+     * without them would be refused, and the refusal would leave the tick that drives every run.
+     *
      * @param TableBulkRun $run Run whose target describes the set
-     * @return TableQueryDTO Query describing the set a row is placed against
+     * @return TableQueryDTO Query describing the set a row is placed against, its search scoped
+     * @throws TableSearchNotSupportedException When the condition carries a term and the table declares no searchable fields
      */
     private function bulkMembershipQuery(TableBulkRun $run): TableQueryDTO
     {
-        return new TableQueryDTO(
+        return $run->table->scopeSearch(new TableQueryDTO(
             search: $this->bulkSearchTerm($run),
             filter: $run->filter ?? [],
-        );
+        ));
     }
 
     /**

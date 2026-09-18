@@ -481,6 +481,34 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Answers whether one row is in the set a table holding its rows in memory would window.
+     *
+     * The rows come in narrowed by the table's own filters, the way the table hands them to
+     * {@see self::filterInMemory()}, and the search is the same one that method runs, with the
+     * declared fields held against the set the same way. What is left out is the sort and the
+     * window: a yes or no about one row needs neither, and on the road that asks it - every foreign
+     * write, every filtered window - they would cost more than the answer.
+     *
+     * @param list<array<string, mixed>> $rows Rows of the set, already narrowed by the table's own filters
+     * @param string|int $rowKey Row key to look for
+     * @param TableQueryDTO $query Window query whose search describes the set
+     * @return bool Whether a row with that key is in the set
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     */
+    protected function containsRowInMemory(array $rows, string|int $rowKey, TableQueryDTO $query): bool
+    {
+        $keyField = $this->getRowClass()::keyField();
+
+        $this->holdSearchFields($rows, $query);
+
+        return array_any(
+            InMemoryTableFilter::searched($rows, $query),
+            static fn(array $row): bool => isset($row[$keyField]) && (string) $row[$keyField] === (string) $rowKey,
+        );
+    }
+
+    /**
      * Holds the fields a search runs over against the rows it is about to run over.
      *
      * Nothing is checked when no term arrived, because an unsearched window is not the place to
@@ -608,9 +636,13 @@ abstract class TableDefinition implements ArrayAccess
      * as before. A table that can answer overrides this — most of them by handing the question
      * to {@see containsRowInDbCollection()}.
      *
-     * A table whose rows are already in PHP memory has no reason to override it either. Its
-     * count costs a walk over an array the table is holding, so there is nothing to save, and a
-     * second way of asking the same question would only be a second place to get it wrong.
+     * A table whose rows are already in PHP memory answers too, through
+     * {@see containsRowInMemory()} over the same narrowed rows it windows. What the answer buys
+     * there is not a cheaper count but word of a new row: a window with a filter or a search has
+     * its arriving rows placed only once the set is known to hold them, so a table that cannot
+     * say leaves such a window with a count and no announcement. The count gets cheaper on the
+     * way - "cannot say" makes it re-read the whole window, sort and slice included, on every
+     * foreign write.
      *
      * @param string|int $rowKey Row key to place against the set
      * @param TableQueryDTO $query Window query whose search and filters describe the set

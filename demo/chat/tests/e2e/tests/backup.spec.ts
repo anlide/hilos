@@ -587,18 +587,19 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
 // That row is staged by a neighbor rather than by a trap. A second tab deletes one
 // archive while this tab still holds it on screen behind its pending gate; this tab marks
 // it anyway, and by the time the run reaches it the index no longer holds it. The
-// framework does not answer for it: the backup table cannot say whether a row is still in
-// its set (containsRow() answers "unknown"), so every marked row goes to the storage
-// agent, and the agent's own look finds nothing to delete - the report carries the
-// agent's sentence. The ordering is not a race: the other tab's delete is the index write,
-// the "will leave" badge here is the delta that write sent, and nothing is marked before
-// the badge is on screen.
+// framework answers for it before the storage agent is asked: the backup table says
+// whether a row is still in its set (containsRow(), HIL-997), so the vanished archive is
+// never handed to the agent, and the report carries the framework's own sentence. The
+// ordering is not a race: the other tab's delete is the index write, the "will leave"
+// badge here is the delta that write sent, and nothing is marked before the badge is on
+// screen.
 //
-// The agent's other reasons are not staged, because none of them can be without a race or
-// a second node: "being taken right now" names a run in flight, and a run has no row to
-// mark (HIL-820); "out of reach" needs a node this one cannot reach; "could not be
-// deleted" needs a delete that throws, and a missing or locked archive file is unlinked
-// in silence (BackupPruner::deleteStored).
+// The agent's own reasons are not staged, because none of them can be without a race or
+// a second node: "already gone" is now answered by the framework first; "being taken
+// right now" names a run in flight, and a run has no row to mark (HIL-820); "out of
+// reach" needs a node this one cannot reach; "could not be deleted" needs a delete that
+// throws, and a missing or locked archive file is unlinked in silence
+// (BackupPruner::deleteStored).
 test('deletes marked backups in bulk and names the one that was gone before its turn', async ({
   context,
 }) => {
@@ -658,7 +659,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   await expect(report).toBeVisible({ timeout: 30_000 })
   await expect(report).toContainText(/Changed 1 rows?, 1 untouched/)
   await expect(report).toContainText(goneFirst)
-  await expect(report).toContainText('The copy was already gone')
+  await expect(report).toContainText('The row was gone by the time its turn came')
   await expect(report).not.toContainText(deletedInBulk)
 
   // The bar stood while the run went, and a run that reported has taken it down.

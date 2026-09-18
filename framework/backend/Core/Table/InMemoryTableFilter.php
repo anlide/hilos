@@ -56,15 +56,7 @@ final class InMemoryTableFilter
      */
     public static function apply(array $rows, TableQueryDTO $query, string $keyField): TableSnapshotDTO
     {
-        $search = TableSearchTerm::normalize($query->search);
-        if ($search !== null && $query->searchableFields !== []) {
-            $needle = mb_strtolower($search);
-            $fields = array_keys($query->searchableFields);
-            $rows = array_values(array_filter(
-                $rows,
-                static fn(array $row): bool => self::matchesSearch($row, $fields, $needle),
-            ));
-        }
+        $rows = self::searched($rows, $query);
 
         $order = $query->sort;
         if ($order !== null) {
@@ -83,6 +75,34 @@ final class InMemoryTableFilter
             firstAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[0], $anchorFields),
             lastAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[count($window) - 1], $anchorFields),
         );
+    }
+
+    /**
+     * Keeps the rows that answer the query's search, in the order they came in.
+     *
+     * This is the search of {@see self::apply()} and nothing past it - no sort, no window - so a
+     * question about the set alone, such as whether one row is in it, costs what the set costs and
+     * not what a page of it does. A query with no search term, or one over no declared field,
+     * keeps every row.
+     *
+     * @param list<array<string, mixed>> $rows Rows to search
+     * @param TableQueryDTO $query Query whose search term and declared fields describe the search
+     * @return list<array<string, mixed>> Rows that answer the search
+     */
+    public static function searched(array $rows, TableQueryDTO $query): array
+    {
+        $search = TableSearchTerm::normalize($query->search);
+        if ($search === null || $query->searchableFields === []) {
+            return $rows;
+        }
+
+        $needle = mb_strtolower($search);
+        $fields = array_keys($query->searchableFields);
+
+        return array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => self::matchesSearch($row, $fields, $needle),
+        ));
     }
 
     /**

@@ -762,6 +762,20 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertSame(['b1', 'b3'], $keys);
     }
 
+    public function testAnArchiveOfTheFilteredSetIsInIt(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $this->assertTrue($table->containsRow('b3', new TableQueryDTO(filter: [HilosBackupHistoryTable::FILTER_SCOPE => 'full'])));
+    }
+
+    public function testAnArchiveTheFilterLeavesOutIsNotInTheSet(): void
+    {
+        $table = $this->table(histories: $this->threeArchives());
+
+        $this->assertFalse($table->containsRow('b2', new TableQueryDTO(filter: [HilosBackupHistoryTable::FILTER_SCOPE => 'full'])));
+    }
+
     public function testThePeriodKeepsBothOfItsDaysWhole(): void
     {
         $table = $this->table(histories: $this->threeArchives());

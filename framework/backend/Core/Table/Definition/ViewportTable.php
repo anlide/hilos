@@ -96,6 +96,10 @@ interface ViewportTable
      * all the count needs — a row that joined the set moves it by one, a row that left moves
      * it by one the other way.
      *
+     * The same answer decides whether a created row reaches a window with a filter or a search
+     * as anything but a count: its place against that window's boundaries is read only once the
+     * set is known to hold it, so a table that cannot say leaves such a window unannounced to.
+     *
      * The question goes to the row source rather than being answered from the filter map in
      * PHP, because two descriptions of one condition drift apart silently, and the drift shows
      * up as a counter nobody can explain.

@@ -151,6 +151,24 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
     }
 
     /**
+     * Answers whether one worker row is in the set a window of this table shows.
+     *
+     * The set is built the way {@see query()} builds it - the cluster picture narrowed by this list's filters - and searched the
+     * same way, so the answer cannot drift from the window. It is neither sorted nor cut into a
+     * window: a yes or no about one row needs neither.
+     *
+     * @param string|int $rowKey Row key to look for
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
+     * @return ?bool Whether the row is in the set; this table always knows
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        return $this->containsRowInMemory($this->narrow($this->collectRows(), $query), $rowKey, $query);
+    }
+
+    /**
      * Declares the stream list's sortable columns and the payload key each one orders by.
      *
      * All four order by themselves, so the map is an identity one and the ordering handed to

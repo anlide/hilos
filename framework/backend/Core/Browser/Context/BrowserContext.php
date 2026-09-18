@@ -2278,10 +2278,14 @@ abstract class BrowserContext
      * it. Failing that, it falls through to the same arrival road as everyone else, and both
      * dangers that once kept it out are gone — a succeeded placed insert ends the judging with
      * its own return, so the row cannot be sent twice, and a row outside the author's filter is
-     * turned back by the classifier itself, a window with a filter map being one whose place
-     * cannot be read. What reaches the author that way is an announcement rather than a row: the
-     * one thing the failure of its own road means, with no filter in play, is that its row landed
-     * on another page.
+     * turned back by the classifier itself, which reads the place in a window with a filter map
+     * only after the source has said the row is in that window's set. What reaches the author
+     * that way is word of a row in its set that landed on another page, or nothing at all when
+     * the row falls outside the set it is looking at.
+     *
+     * Whether the row is in the window's set is asked of the table once per change and only when
+     * someone reads it: the classifier of an arriving row, the count, and the classifier of an
+     * edit share one answer.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
@@ -2336,10 +2340,6 @@ abstract class BrowserContext
             }
         }
 
-        if ($this->tryEmitViewportArrival($table, $viewport, $mutation, $acceptKey, $page, $browserKey)) {
-            return;
-        }
-
         // The count and the classifier ask the table the same question about the same row. It is
         // asked once, and only when one of them needs it; the flag is load-bearing, because a
         // refusal answers null and without it the second reader would put the failed question again.
@@ -2353,6 +2353,10 @@ abstract class BrowserContext
 
             return $inSet;
         };
+
+        if ($this->tryEmitViewportArrival($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership)) {
+            return;
+        }
 
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
 
@@ -2555,6 +2559,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
      * @return bool Whether the row was sent or announced (and no further signal is needed)
      * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
      */
@@ -2565,6 +2570,7 @@ abstract class BrowserContext
         string $acceptKey,
         string $page,
         string $browserKey,
+        Closure $membership,
     ): bool {
         if ($mutation->type !== TableMutationType::Create || $mutation->row === null) {
             return false;
@@ -2573,7 +2579,7 @@ abstract class BrowserContext
             return false;
         }
         $query = $this->viewportQuery($viewport);
-        $placement = $this->viewportPlacement($table, $viewport, $mutation, $query);
+        $placement = $this->viewportPlacement($table, $viewport, $mutation, $query, $membership);
         if ($placement === TableRowPlacement::Tail) {
             $this->emitViewportAppend($table, $viewport, $mutation, $query, $acceptKey, $page, $browserKey);
 
@@ -2652,10 +2658,11 @@ abstract class BrowserContext
      * foreign create in every window of every connection, and it makes no request of the source.
      *
      * The count arithmetic is the append's, and it is legitimate for the append's reason: a
-     * window with a filter map never reaches this road, the classifier answering it "cannot say",
-     * so with no filter one create is one more row in the set. A window whose count stopped at
-     * its ceiling is announced to all the same - the early return the count path takes on an
-     * inexact total is no model here, that one being about a number where this is about a row.
+     * window with a filter map reaches this road only once the source has said the row is in its
+     * set, and a window with none holds every row, so either way one create is one more row in
+     * the set. A window whose count stopped at its ceiling is announced to all the same - the
+     * early return the count path takes on an inexact total is no model here, that one being
+     * about a number where this is about a row.
      *
      * @param TableViewportSubscription $viewport Connection's window; its total is updated in place
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
@@ -2698,15 +2705,22 @@ abstract class BrowserContext
      * The place is read off the two boundaries the window was served with, in the order that
      * window asked for, and the table does the comparing because the boundaries are written in
      * its own names ({@see ViewportTable::placeRowAgainst()}). Nothing here asks the row source
-     * for anything: this runs once per window per foreign write, and every window of every
+     * where the row goes: this runs once per window per foreign write, and every window of every
      * connection watching the table runs it.
      *
-     * Two windows are refused before any comparison, and both mean "the place cannot be read",
-     * not "the row is elsewhere". A window with a filter map — a search, or a table's own
-     * filters — is judged by whether the row is in its SET, and that question belongs to the
-     * source rather than to the order; the count path already asks it. A window that asked for
-     * no order is held in the row source's own sequence, and no comparison of field values
-     * reproduces that.
+     * A window with a filter map — a search, or a table's own filters — is first a question of
+     * whether the row is in its SET, and that question belongs to the source rather than to the
+     * order. It is read from the answer the count shares, and only for such a window: one with
+     * no filter holds every row and asks nothing. Once the source says yes, the boundaries are
+     * the window's own and the comparison is as sound as anywhere; until then a row that is not
+     * in the set would be placed against rows that are.
+     *
+     * Two refusals remain, and both mean "the place cannot be read", not "the row is elsewhere".
+     * A window that asked for no order is held in the row source's own sequence, and no
+     * comparison of field values reproduces that; it is refused before the source is asked. A
+     * window with a filter map whose table cannot say, or whose table was refused the question,
+     * has no set to place the row in. A no - the row is outside the set - returns null too, for
+     * another reason: there is no place to read, and the count path then leaves the window as it is.
      *
      * A zero from the comparison reads as "not above this boundary". The order is total, the
      * row key settling it (HIL-786), so a new row cannot sit exactly where a live one sits: a
@@ -2716,6 +2730,7 @@ abstract class BrowserContext
      * @param TableViewportSubscription $viewport Connection's window
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param TableQueryDTO $query Query this window was served by
+     * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
      * @return ?TableRowPlacement Where the row lands, or null when the window cannot say
      */
     private function viewportPlacement(
@@ -2723,9 +2738,13 @@ abstract class BrowserContext
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
         TableQueryDTO $query,
+        Closure $membership,
     ): ?TableRowPlacement {
         $row = $mutation->row;
-        if ($row === null || $viewport->filter !== [] || $query->sort === null) {
+        if ($row === null || $query->sort === null) {
+            return null;
+        }
+        if ($viewport->filter !== [] && $membership() !== true) {
             return null;
         }
 

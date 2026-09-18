@@ -224,6 +224,39 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     }
 
     /**
+     * With nothing narrowing the journal, the one delivery is the whole condition.
+     */
+    public function testAMembershipQuestionOverTheWholeJournalAsksOnlyForTheKey(): void
+    {
+        $table = $this->table();
+
+        self::assertTrue($table->containsRow(42, new TableQueryDTO()));
+        self::assertSame([[' WHERE nd.id = ?', [42]]], $table->lookedUpWheres);
+    }
+
+    /**
+     * The set is written by the window's own condition, and the key is added to it last.
+     */
+    public function testAMembershipQuestionAddsTheKeyToTheWindowsOwnCondition(): void
+    {
+        $table = $this->table();
+
+        $table->containsRow('42', new TableQueryDTO(filter: [
+            HilosNotificationDeliveriesTable::FILTER_CHANNEL => 'email',
+            HilosNotificationDeliveriesTable::FILTER_STATUS => 'failed',
+            HilosNotificationDeliveriesTable::FILTER_FROM => '2026-07-01 00:00:00',
+        ]));
+
+        self::assertSame(
+            [[
+                ' WHERE nd.channel = ? AND nd.status = ? AND nd.created_at >= ? AND nd.id = ?',
+                ['email', 'failed', '2026-07-01 00:00:00', '42'],
+            ]],
+            $table->lookedUpWheres,
+        );
+    }
+
+    /**
      * Runs a requested order through the table's own map, the way getPage() does before the query.
      *
      * @param HilosNotificationDeliveriesTable $table Table whose map decides
@@ -244,7 +277,8 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
      * Builds a table subclass that exposes the protected SQL builders for testing.
      *
      * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy:
-     *     callable, exposedSortableFields: callable, exposedRowFromSql: callable, countedWheres: list<array{0: string, 1: list<mixed>}>}
+     *     callable, exposedSortableFields: callable, exposedRowFromSql: callable, countedWheres: list<array{0: string, 1: list<mixed>}>,
+     *     lookedUpWheres: list<array{0: string, 1: list<mixed>}>}
      *     Table with exposed builders
      */
     private function table(): HilosNotificationDeliveriesTable
@@ -252,6 +286,9 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         return new class extends HilosNotificationDeliveriesTable {
             /** @var list<array{0: string, 1: list<mixed>}> WHERE clauses of the sets the journal was asked to count */
             public array $countedWheres = [];
+
+            /** @var list<array{0: string, 1: list<mixed>}> WHERE clauses one delivery was looked up under */
+            public array $lookedUpWheres = [];
 
             /**
              * Records the condition a set is counted under instead of running it.
@@ -264,6 +301,20 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
                 $this->countedWheres[] = $this->buildWhere($query);
 
                 return new TableFacetCountDTO(0, true);
+            }
+
+            /**
+             * Records the condition a delivery is looked up under instead of running it.
+             *
+             * @param string $where The ` WHERE ...` clause of the set with the key condition in it
+             * @param list<mixed> $params Parameters bound to the placeholders of the clause, in order
+             * @return bool Answer standing in for the database's
+             */
+            protected function existsInSet(string $where, array $params): bool
+            {
+                $this->lookedUpWheres[] = [$where, $params];
+
+                return true;
             }
 
             /**

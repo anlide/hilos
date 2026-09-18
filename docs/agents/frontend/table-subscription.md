@@ -485,6 +485,15 @@ never; for an oldest-first list it is almost always the tail. The edge of the
 list is beside the point — what is computed is the place in the current order,
 which is why the order has to be total.
 
+A window with a search or a filter is judged the same way, but only after the
+row source has said the row is in its set (`containsRow`, the same question the
+count asks — see *What moves the count while the window sits there*). Placing a
+row that is not in the set against the rows that are would invent a place, so
+the set is settled first and the order second; a row outside the set reaches
+that window as nothing at all. A window that asked for no order, and a filtered
+window whose table cannot answer the question, cannot read a place: the row
+reaches them as the count only.
+
 ## Announcing what the window cannot show
 
 What the window cannot admit is announced rather than dropped, and the
@@ -558,7 +567,10 @@ A live change moves the count only when it can be settled by a question about
 **one row** — never by counting the set again, which is the pass this whole
 section exists to avoid. The question is `containsRow`, and it is asked of the
 row source rather than answered from the filter map: two descriptions of one
-condition drift apart silently.
+condition drift apart silently. The same answer decides more than the number: a
+created row in a filtered window is placed, and so appended or announced, only
+when the source says it belongs to the set (see *Where an arriving row lands*).
+The question is put once per change, whichever of the two needs it first.
 
 - **A created row** — one the set did not hold a moment ago. It adds one if it
   belongs to the set, and moves nothing if it does not.

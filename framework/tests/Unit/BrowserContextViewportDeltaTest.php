@@ -944,7 +944,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
-    public function testAWindowWithATableFilterTakesNoRowOfItsOwn(): void
+    public function testAWindowWhoseTableWillNotAnswerTakesNoRowOfItsOwn(): void
     {
         $viewport = new TableViewportSubscription(
             tableKey: ViewportDeltaUnitTable::TABLE,
@@ -961,11 +961,136 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
         $context->flushToSignalRouter();
 
-        // A filter the table resolves itself, not a search: whether the row is in this set at
-        // all is the source's question, and the place in the order does not answer it.
+        // A filter the table resolves itself, and a table that cannot say whether the row is in
+        // this set at all: the place in the order does not answer that, so the window keeps the
+        // count the whole-set re-query gives it and nothing more.
         $this->assertSame(2, $this->nextCount()->totalCount);
         $this->assertFalse($viewport->hasRow('beta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowIsAnnouncedARowThatJoinedItsSet(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_DESC),
+        );
+        $viewport->recordWindow(self::windowOf(['gamma', 'beta']), 2, true, self::anchorAt('gamma'), self::anchorAt('beta'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The source says the row is in this window's set, so the window's own boundaries place
+        // it as they would anywhere: above the first page, where putting it in would shift
+        // every row shown and saying nothing would leave the window drifting from its set.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Above, $announce->placement);
+        $this->assertSame('zeta', $announce->rowKey);
+        $this->assertSame(3, $announce->totalCount);
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertTrue($viewport->hasRow('gamma'));
+        $this->assertTrue($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowIsToldNothingAboutARowOutsideItsSet(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_DESC),
+        );
+        $viewport->recordWindow(self::windowOf(['gamma', 'beta']), 2, true, self::anchorAt('gamma'), self::anchorAt('beta'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+            inSet: false,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The row sorts above the window, but it is not in the set the window shows: there is
+        // no place to announce and no row to count, so the window hears nothing at all.
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertSame(2, $viewport->totalCount());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowTakesARowThatBelongsAtItsTail(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, self::anchorAt('alpha'), self::anchorAt('alpha'));
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        // Once the row is known to be in the set, every place the classifier reads is open to
+        // this window, the free slot at its tail included: the row arrives there on its own.
+        $append = $this->nextAppend();
+        $this->assertSame(2, $append->totalCount);
+        $this->assertSame(1, $append->pageCount);
+        $this->assertTrue($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowAsksTheSetOncePerCreate(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            limit: 2,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            pageIndex: 0,
+        );
+        $viewport->recordWindow(self::windowOf(['alpha', 'gamma']), 2, true, self::anchorAt('alpha'), self::anchorAt('gamma'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The row falls below a full window, so both the classifier and the count need to know
+        // whether it is in the set - and the table is asked once, the count reading the answer
+        // the classifier already took.
+        $this->assertSame(3, $this->nextCount()->totalCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $table = Hilos::$table?->get(ViewportDeltaUnitTable::TABLE);
+        $this->assertInstanceOf(ViewportDeltaUnitTable::class, $table);
+        $this->assertSame(1, $table->setQuestions);
     }
 
     public function testTheFirstRowOfASetArrivesInAnEmptyWindow(): void
@@ -1043,8 +1168,9 @@ final class BrowserContextViewportDeltaTest extends TestCase
 
         // The author's own road ends where its row lands on a page it is not looking at. The ban
         // on a second road was there to keep a row from being sent twice and to keep a row out of
-        // a filter that excludes it; an announcement sends no row, and no filtered window is ever
-        // announced to, so the author is told the same thing everyone else is.
+        // a filter that excludes it; an announcement sends no row, and a filtered window is
+        // announced to only once the source says the row is in its set, so the author is told
+        // the same thing everyone else is.
         $announce = $this->nextAnnounce();
         $this->assertSame(TableRowPlacement::Above, $announce->placement);
         $this->assertSame('beta', $announce->rowKey);
@@ -1083,6 +1209,86 @@ final class BrowserContextViewportDeltaTest extends TestCase
         // The count path goes silent past the ceiling because one more row makes "at least 500"
         // no truer. This one is not about the number: a row the window is not showing exists
         // whatever the pager can say, so the word goes out with the ceiling and no page count.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Above, $announce->placement);
+        $this->assertSame(TableConstants::COUNT_CEILING, $announce->totalCount);
+        $this->assertFalse($announce->totalExact);
+        $this->assertNull($announce->pageCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTheAuthorOfARowOnAnotherPageOfAFilteredSetIsToldAboutIt(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            limit: 2,
+            pageIndex: 1,
+        );
+        $viewport->recordWindow(self::windowOf(['gamma', 'zeta']), 3, true, self::anchorAt('gamma'), self::anchorAt('zeta'));
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('alpha', 'Alpha'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'beta',
+            ['key' => 'beta', 'label' => 'Beta'],
+            'ak-1',
+            'req-1',
+        ));
+        $context->flushToSignalRouter();
+
+        // The author's row is in the set it filtered, only on the page before the one it is
+        // looking at: its own road finds no slot, and the general one tells it what it tells
+        // every other window of that set.
+        $announce = $this->nextAnnounce();
+        $this->assertSame(TableRowPlacement::Above, $announce->placement);
+        $this->assertSame('beta', $announce->rowKey);
+        $this->assertSame(4, $announce->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFilteredWindowWithAnInexactCountIsStillAnnouncedTo(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            filter: ['status' => 'failed'],
+            sort: self::byKey(TableConstants::ORDER_DESC),
+            limit: 10,
+        );
+        $viewport->recordWindow(
+            self::windowOf(['gamma', 'beta']),
+            TableConstants::COUNT_CEILING,
+            false,
+            self::anchorAt('gamma'),
+            self::anchorAt('beta'),
+        );
+        $context = $this->bootWithViewport(
+            [
+                new ViewportDeltaUnitRow('gamma', 'Gamma'),
+                new ViewportDeltaUnitRow('beta', 'Beta'),
+                new ViewportDeltaUnitRow('zeta', 'Zeta'),
+            ],
+            $viewport,
+            inSet: true,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
+        // The count path of such a window leaves before it ever asks the set, so until now it
+        // heard nothing on a create. The classifier asks for itself, and the word goes out with
+        // the ceiling and no page count.
         $announce = $this->nextAnnounce();
         $this->assertSame(TableRowPlacement::Above, $announce->placement);
         $this->assertSame(TableConstants::COUNT_CEILING, $announce->totalCount);

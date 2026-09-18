@@ -181,6 +181,32 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * Answers whether one delivery is in the set a window of the journal shows.
+     *
+     * The set is written by the same {@see buildWhere()} a window is served by - channel, status,
+     * period and search - and the one delivery is added to it as a key condition, the way a keyset
+     * is added to a window. A table narrowing its set in its own SQL cannot hand the question to
+     * the ORM helper, which would answer about a wider set than the window shows; this is that
+     * table, so it asks its own join.
+     *
+     * @param string|int $rowKey Delivery id to look for
+     * @param TableQueryDTO $query Window query whose search and filters describe the set, its search scoped
+     * @return ?bool Whether the delivery is in the set; this table always knows
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When the lookup query fails
+     */
+    public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
+    {
+        [$where, $params] = $this->buildWhere($query);
+        $condition = 'nd.' . EntityNotificationDelivery::id . ' = ?';
+        $where = $where === '' ? " WHERE {$condition}" : "{$where} AND {$condition}";
+        $params[] = $rowKey;
+
+        return $this->existsInSet($where, $params);
+    }
+
+    /**
      * Declares the journal's sortable columns, qualified with the delivery alias of its own SQL.
      *
      * @return array<string, string> Wire row fields mapped to the columns they order by
@@ -299,6 +325,24 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         [$where, $params] = $this->buildWhere($query);
 
         return TableFacetTally::cappedSqlCount(self::JOIN, $where, $params);
+    }
+
+    /**
+     * Looks one row of the journal up under a condition, reading no more than the first match.
+     *
+     * The one place the membership question reaches the database, kept apart for the reason
+     * {@see countSet()} is: a test replaces it and reads the condition the table wrote.
+     *
+     * @param string $where The ` WHERE ...` clause of the set with the key condition in it
+     * @param list<mixed> $params Parameters bound to the placeholders of the clause, in order
+     * @return bool Whether a row answers the condition
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When the lookup query fails
+     */
+    protected function existsInSet(string $where, array $params): bool
+    {
+        return Database::sql('SELECT 1 FROM ' . self::JOIN . $where . ' LIMIT 1', $params)->firstRow() !== null;
     }
 
     /**
