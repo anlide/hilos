@@ -32,7 +32,9 @@ use Hilos\Hilos;
  * and the older entry goes as the fresh one arrives (HIL-913). A move and a genuine double start
  * cannot be told apart from the frames — the report says what an agent owns, never which
  * incarnation of it is speaking — so this map does not try: the double start is placement's to
- * catch, and it is caught by the registry re-check a firing deadline makes (HIL-719). Carrying
+ * catch, and it is caught by the registry re-check a firing deadline makes (HIL-719) and, for a
+ * copy left on a node that stayed linked, by that node checking the leader's placement view
+ * against what it hosts (HIL-976). Carrying
  * the fact that a node came back as a NEW process on the handshake is separate work again
  * (proposal P-222).
  *

@@ -68,7 +68,9 @@ use Throwable;
  * `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover grace, so the old copy stops
  * before the leader starts a new one). On rejoin a node reports what it still hosts
  * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
- * stopping anything already re-placed elsewhere. The wait for a placement to be acknowledged is
+ * stopping anything already re-placed elsewhere. A node that hosts an agent the published view
+ * gives to another node reports the same snapshot at once, without waiting for a relink
+ * ({@see reportAgentsPlacedElsewhere()}, HIL-976). The wait for a placement to be acknowledged is
  * bounded by the same kind of timer (HIL-930): after `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` the
  * leader ASKS the node what it hosts ({@see sweepPlacementAcks()}) rather than re-placing the
  * agent blind, and a status arriving from a node the record no longer names is refused instead
@@ -721,8 +723,11 @@ final class ClusterPlacement implements WorkerPlacement
      * Leader side: folds a node's hosted-agent report into the placement view, reconciling
      * against the leader-owned truth.
      *
-     * Two callers land here: a fresh leader's rebuild broadcast ({@see onBecameLeader()}) and
-     * a node's rejoin report ({@see onPeerHandshaked()}). The frame is a COMPLETE snapshot of
+     * Four sources land here: the answers to a fresh leader's rebuild broadcast
+     * ({@see onBecameLeader()}), a node's rejoin report ({@see onPeerHandshaked()}), a node's
+     * answer to the ack-timeout query ({@see sweepPlacementAcks()}, HIL-930), and a node's report
+     * on a view that gives one of its agents elsewhere ({@see reportAgentsPlacedElsewhere()},
+     * HIL-976). The frame is a COMPLETE snapshot of
      * what the reporting node hosts, so it is read in both directions. For each agent it NAMES
      * the leader is the arbiter — if it already tracks that agent on a different node (it was
      * re-placed there while this node was gone, or another node hosts it), the reporting node is
@@ -784,6 +789,13 @@ final class ClusterPlacement implements WorkerPlacement
      * alive, and it self-corrects: a fresh leader clears its registry and reseeds it on winning
      * the term, so its own first publish follows within a tick.
      *
+     * A taken view is then checked against what this node hosts (HIL-976): a view that gives one
+     * of its agents to ANOTHER node makes it report its complete hosted set to the leader
+     * ({@see reportAgentsPlacedElsewhere()}). It reports rather than stops, because the view may
+     * be older than the registry, and the one who holds the fresh registry is the one to judge.
+     * An agent the view does not name at all is no cause: a fresh leader publishes before the
+     * reports have come in, and an agent that runs nowhere is never in the view.
+     *
      * @param string $fromNodeId Id of the node the view arrived from
      * @param PeerPlacementViewDTO $frame Received placement-view frame
      */
@@ -813,6 +825,48 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->placementView = $view;
+        $this->reportAgentsPlacedElsewhere($fromNodeId);
+    }
+
+    /**
+     * Node side: reports what this node hosts when the leader's view gives one of its agents to
+     * another node (HIL-976).
+     *
+     * The leader's registry moved an agent this node still runs, and nobody told this node to
+     * stop it: two live copies write the same collection, and since HIL-913 the RT owner guard
+     * reads the shared agent id as a move rather than a conflict. The node does not judge — the
+     * view may be older than the registry it was drawn from — it hands the leader the same
+     * report it sends on a new link, and {@see onPlacementReport()} stops whichever copy the
+     * registry does not name.
+     *
+     * The snapshot is COMPLETE, never just the disputed agents: the leader reads a report in
+     * both directions, and {@see reconcileMissingAgents()} would re-place every started agent
+     * of this node the frame left out. Repeats are not remembered: the view is published only on
+     * change and the stop removes the agent from the hosted set, so the disagreement lives for
+     * one exchange; the one repeat — a relinking node, whose handshake report and view both
+     * speak — costs the leader a second stop, which is a no-op on a stopped agent.
+     *
+     * @param string $leaderNodeId Id of the leader whose view was just taken
+     */
+    private function reportAgentsPlacedElsewhere(string $leaderNodeId): void
+    {
+        $placedElsewhere = false;
+        foreach (array_keys($this->hosted) as $agentId) {
+            $viewNodeId = $this->placementView[$agentId] ?? null;
+            if ($viewNodeId === null || $viewNodeId === $this->selfNodeId) {
+                continue;
+            }
+
+            Logger::info(
+                "Placement view of leader '{$leaderNodeId}' puts '{$agentId}' on node '{$viewNodeId}' while this node hosts it;"
+                . ' reporting what this node hosts',
+            );
+            $placedElsewhere = true;
+        }
+
+        if ($placedElsewhere) {
+            $this->mesh->sendToNode($leaderNodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+        }
     }
 
     /**

@@ -6,9 +6,11 @@ namespace Hilos\Tests\Unit\Cluster\Placement;
 
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
+use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
@@ -249,6 +251,109 @@ final class ClusterPlacementViewTest extends TestCase
     }
 
     /**
+     * A node hosting an agent the leader's view gives to another node says so at once (HIL-976):
+     * one report to the leader, without waiting for a relink or an ack timeout.
+     */
+    public function testANodeReportsAnAgentTheViewPlacesElsewhere(): void
+    {
+        $mesh = new PlacementViewTestMesh();
+        $placement = $this->hosting($mesh, ['render', '9']);
+
+        $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
+
+        $reports = $this->reports($mesh);
+        $this->assertCount(1, $reports, 'One report per view');
+        $this->assertSame('leader', $reports[0][0], 'The report goes to the leader whose view it was');
+        $this->assertSame(['render:9'], $this->reportedAgentIds($reports[0][1]));
+    }
+
+    /**
+     * The report is the node's COMPLETE hosted set, not just the disputed agent: the leader reads
+     * a report in both directions and would re-place every agent of this node the frame left out.
+     */
+    public function testTheReportNamesEveryHostedAgentNotJustTheDisputedOne(): void
+    {
+        $mesh = new PlacementViewTestMesh();
+        $placement = $this->hosting($mesh, ['render', '9'], ['chat', null]);
+
+        $placement->onPlacementView('leader', $this->view([
+            'node-b' => [['render', '9']],
+            self::SELF => [['chat', null]],
+        ]));
+
+        $reports = $this->reports($mesh);
+        $this->assertCount(1, $reports);
+        $this->assertSame(['render:9', 'chat'], $this->reportedAgentIds($reports[0][1]));
+    }
+
+    /**
+     * Three views give no cause: one naming this node, one not naming the agent at all (a fresh
+     * leader publishes before the reports are in), and one relayed by a node that is not its
+     * leader, which is dropped before it is taken.
+     */
+    public function testAViewThatGivesNoAgentElsewhereStartsNoReport(): void
+    {
+        $mesh = new PlacementViewTestMesh();
+        $placement = $this->hosting($mesh, ['render', '9']);
+
+        $placement->onPlacementView('leader', $this->view([self::SELF => [['render', '9']]]));
+        $placement->onPlacementView('leader', $this->view(['node-b' => [['chat', null]]]));
+        $placement->onPlacementView('node-c', $this->view(['node-b' => [['render', '9']]]));
+
+        $this->assertSame([], $this->reports($mesh));
+    }
+
+    /**
+     * End to end: the node's report reaches a leader that placed the agent on node-b, the leader
+     * tells this node to stop its copy, and once the node has done so the same view is quiet.
+     */
+    public function testTheLeaderStopsTheCopyTheNodeReported(): void
+    {
+        $leaderMesh = new PlacementViewTestMesh();
+        $leader = new ClusterPlacement('leader', $leaderMesh, new PlacementViewTestExecutor());
+        $leader->onBecameLeader();
+        $leader->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        $mesh = new PlacementViewTestMesh();
+        $placement = $this->hosting($mesh, ['render', '9']);
+
+        $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
+        $leader->onPlacementReport(self::SELF, $this->reports($mesh)[0][1]);
+
+        $this->assertCount(1, $leaderMesh->sent);
+        [$nodeId, $stop] = $leaderMesh->sent[0];
+        $this->assertSame(self::SELF, $nodeId);
+        $this->assertInstanceOf(PeerStopAgentDTO::class, $stop, 'The reported copy is told to stop');
+        $this->assertSame('node-b', $leader->registry()->get('render:9')?->nodeId, 'The leader-owned placement is unchanged');
+
+        $placement->onStopAgent('leader', $stop);
+        $mesh->sent = [];
+        $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
+
+        $this->assertSame([], $this->reports($mesh), 'A stopped copy is no longer reported');
+    }
+
+    /**
+     * A view one hop older than the registry does not cost the rightful copy: the leader, whose
+     * registry puts the agent on this node, takes the report as the agent started here.
+     */
+    public function testAStaleViewDoesNotStopARightfullyPlacedAgent(): void
+    {
+        $leaderMesh = new PlacementViewTestMesh();
+        $leader = new ClusterPlacement('leader', $leaderMesh, new PlacementViewTestExecutor());
+        $leader->onBecameLeader();
+        $leader->onAgentStatus(self::SELF, PeerAgentStatusDTO::started('render', '9', 1));
+        $mesh = new PlacementViewTestMesh();
+        $placement = $this->hosting($mesh, ['render', '9']);
+
+        $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
+        $leader->onPlacementReport(self::SELF, $this->reports($mesh)[0][1]);
+
+        $stops = array_filter($leaderMesh->sent, static fn(array $sent): bool => $sent[1] instanceof PeerStopAgentDTO);
+        $this->assertSame([], $stops, 'No stop for the copy the registry names');
+        $this->assertSame(self::SELF, $leader->registry()->get('render:9')?->nodeId);
+    }
+
+    /**
      * Builds a coordinator on a node that has never taken a term.
      *
      * @return ClusterPlacement Placement coordinator with an empty registry
@@ -256,6 +361,51 @@ final class ClusterPlacementViewTest extends TestCase
     private function follower(): ClusterPlacement
     {
         return new ClusterPlacement(self::SELF, new PlacementViewTestMesh(), new PlacementViewTestExecutor());
+    }
+
+    /**
+     * Builds a coordinator on a node the leader has placed the given agents on, with the frames
+     * those placements answered cleared from its mesh.
+     *
+     * @param PlacementViewTestMesh $mesh Mesh the coordinator sends through
+     * @param array{0: string, 1: ?string} ...$agents Agent type and index per hosted agent
+     * @return ClusterPlacement Placement coordinator hosting the agents
+     */
+    private function hosting(PlacementViewTestMesh $mesh, array ...$agents): ClusterPlacement
+    {
+        $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
+        foreach ($agents as [$agentType, $agentIndex]) {
+            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO($agentType, $agentIndex));
+        }
+        $mesh->sent = [];
+
+        return $placement;
+    }
+
+    /**
+     * @param PlacementViewTestMesh $mesh Mesh the coordinator sent through
+     * @return list<array{0: string, 1: PeerPlacementReportDTO}> Every report sent so far, as [nodeId, frame]
+     */
+    private function reports(PlacementViewTestMesh $mesh): array
+    {
+        return array_values(array_filter(
+            $mesh->sent,
+            static fn(array $sent): bool => $sent[1] instanceof PeerPlacementReportDTO,
+        ));
+    }
+
+    /**
+     * @param PeerPlacementReportDTO $report Report frame
+     * @return list<string> Agent ids the report names, in order
+     */
+    private function reportedAgentIds(PeerPlacementReportDTO $report): array
+    {
+        return array_map(
+            static fn(PeerPlacedAgentEntry $entry): string => $entry->agentIndex === null
+                ? $entry->agentType
+                : "{$entry->agentType}:{$entry->agentIndex}",
+            $report->agents,
+        );
     }
 
     /**

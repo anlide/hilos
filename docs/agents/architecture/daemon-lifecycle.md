@@ -544,7 +544,11 @@ onto one node.
   names — which that re-check against the registry is what stops (HIL-719). The HIL-696 guard
   does not: since HIL-913 a claim whose agent id matches the holder reads as the agent having
   MOVED, the older incarnation is evicted from the leader's map, and a report from a node that
-  has left the mesh is not folded at all. That reading is for placed agents only. An agent
+  has left the mesh is not folded at all. A second copy of a PLACED agent on a node that stayed
+  linked is named by placement itself (HIL-976): a node that takes a `peer_placement_view`
+  giving one of its agents to another node sends `peer_placement_report` at once, and the
+  leader answers `peer_stop_agent` with the "already placed on" line. That reading is for
+  placed agents only. An agent
   declared `AgentScope::NODE` is never placed, so it never moves; the leader keeps the entry of
   every node holding it, and a second whole owner of what it owns is still refused for good.
 - **Placement-ack timeout (leader, HIL-930).** A record left `Placing` waits for a status that
@@ -571,7 +575,8 @@ onto one node.
   grace, so the old copy of a truth source is stopped before the leader starts a new one.
   On rejoin the node reports what it still hosts (`PeerPlacementReportDTO`) and the leader
   reconciles against its view in both directions. The report is a COMPLETE snapshot and goes
-  out on every new link, empty set included. For what it NAMES, leader = truth: a
+  out on every new link, empty set included, and again whenever the leader's published view
+  gives an agent this node hosts to another node (HIL-976). For what it NAMES, leader = truth: a
   `peer_stop_agent` goes back for anything already re-placed elsewhere, so a returning node
   never resurrects a moved agent. For what it does NOT name, the node is truth: an agent the
   leader still tracks `Started` there is running nowhere, so the record is forgotten and the
