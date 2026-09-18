@@ -29,6 +29,11 @@ use Socket;
  * behavior is played out on the connection that carries the call, and each connection
  * routes through its own {@see GatewayRoutes} bound to its own client.
  *
+ * Not every resident is called by the daemon. {@see OAuthRoutes} is opened by a BROWSER, which
+ * the product sends to the provider for real, and answers a page a person acts on there; that
+ * person is the one half of a resident that cannot live in this house at all, and lives in the
+ * spec's own set instead.
+ *
  * The gateway speaks real TLS and does it through the framework's own server (HIL-921):
  * the daemon verifies the peer on the stand exactly as it does in production, and the
  * encrypted read that behaves differently from a bare one (HIL-732) is the read the
@@ -59,7 +64,7 @@ final class StandGatewayTlsServer extends AbstractTlsServer
     {
         parent::__construct($host, $port, $certificateFile);
 
-        $this->residents = [new TelegramRoutes(), new SmsRoutes()];
+        $this->residents = [new TelegramRoutes(), new SmsRoutes(), new OAuthRoutes()];
     }
 
     /**

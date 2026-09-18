@@ -20,7 +20,8 @@ use Hilos\Constants\HttpConstants;
  * Every route is wrapped in the one decoding the gateway does: the core hands a route the
  * body as a raw string, and a handler here takes fields. A provider route additionally names
  * which value of its call a declaration is keyed by - only the resident knows which value of
- * its call a spec coined.
+ * its call a spec coined. A third kind, {@see page()}, is opened by a browser rather than
+ * called by the product or by a spec, and carries neither a key nor a lever.
  */
 final class GatewayRoutes
 {
@@ -50,6 +51,24 @@ final class GatewayRoutes
      * @param callable(array<string, mixed>, array<string, string>): array<string, mixed> $handler Gateway handler
      */
     public function test(string $method, string $path, callable $handler): void
+    {
+        $this->router->addRoute($method, $path, self::handler($handler));
+    }
+
+    /**
+     * Registers a route a BROWSER opens in the course of the product's work.
+     *
+     * The third kind of half, and it is neither of the other two. Not a provider route: the call
+     * carries no value a spec coined, so there is nothing to key a declaration by - which also
+     * means no levers, and a declaration naming this path is refused as `PATH_NOT_PROVIDER`. Not a
+     * test route either: a spec does not call it, a person's browser does, arriving at the address
+     * the product sent it to.
+     *
+     * @param string $method HTTP method
+     * @param string $path Route path
+     * @param callable(array<string, mixed>, array<string, string>): array<string, mixed> $handler Gateway handler
+     */
+    public function page(string $method, string $path, callable $handler): void
     {
         $this->router->addRoute($method, $path, self::handler($handler));
     }

@@ -45,10 +45,13 @@ function reportFixture(name: string): string[] {
 
 it('reports exactly the navigations the bad fixture seeds', () => {
   expect(reportFixture('badE2eGoto.ts')).toEqual([
-    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:14${REASON}`,
-    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:22${REASON}`,
-    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:23${REASON}`,
-    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:28${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:25${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:33${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:34${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:39${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:44${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:45${REASON}`,
+    `E2E-PAGE-GOTO ${FIXTURES}/badE2eGoto.ts:46${REASON}`,
   ])
 })
 
@@ -63,4 +66,33 @@ it('lets the wrapper owner call goto, since it owns the wrappers', () => {
       'await page.goto(path)\n',
     ),
   ).toEqual([])
+})
+
+it('reads the stand base from the gateway helper beside the file as well', () => {
+  expect(
+    checkSource(
+      'demo/chat/tests/e2e/helpers/oauth-user.ts',
+      "import { STAND_GATEWAY_URL as BASE } from './gateway'\n" +
+        'await page.goto(`${BASE}/oauth/github/authorize`)\n',
+    ),
+  ).toEqual([])
+})
+
+it('does not take a same-named constant from anywhere else for the stand base', () => {
+  const spec = 'demo/chat/tests/e2e/tests/lookAlike.spec.ts'
+
+  expect(
+    checkSource(
+      spec,
+      "const STAND_GATEWAY_URL = '/hilos'\n" +
+        'await page.goto(`${STAND_GATEWAY_URL}/settings`)\n',
+    ),
+  ).toEqual([`E2E-PAGE-GOTO ${spec}:2${REASON}`])
+  expect(
+    checkSource(
+      spec,
+      "import { STAND_GATEWAY_URL } from '../helpers/product'\n" +
+        'await page.goto(`${STAND_GATEWAY_URL}/settings`)\n',
+    ),
+  ).toEqual([`E2E-PAGE-GOTO ${spec}:2${REASON}`])
 })

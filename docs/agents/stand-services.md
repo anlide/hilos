@@ -4,11 +4,12 @@ Read this before a spec needs an external service on the stand — adding a
 channel or an emulator, choosing between a stub and an emulator, or looking for
 where a caught message lands. The house is `framework/docker/stand-gateway`
 (HIL-492, HIL-653); this page is the rule for living in it, written for the
-author of the next resident rather than as a description of the two that live
-there today. What a particular future resident looks like — an OAuth provider, a
-model — is that leaf's own design (HIL-923, HIL-925); this page says only what
-the house guarantees and what a resident owes it. How to run the suites is
-[testing.md](testing.md), not here.
+author of the next resident rather than as a description of the three that live
+there today. What a particular future resident looks like — a model — is that
+leaf's own design (HIL-925); this page says only what the house guarantees and
+what a resident owes it. The OAuth provider has moved in (HIL-923), and what it
+taught the house is written into the rules below rather than described here. How
+to run the suites is [testing.md](testing.md), not here.
 
 ## Why a Stand Emulates Rather Than Stubs
 
@@ -57,11 +58,12 @@ here would be a dependency to keep current for no gain — so a class the gatewa
 uses must not need a package.
 
 A resident is a **route prefix**. `SmsRoutes::CHANNEL` is `sms`,
-`TelegramRoutes::CHANNEL` is `telegram`, and every route of the resident hangs
-under `/<channel>/…`, registered by an exact method and path through
-`src/GatewayRoutes.php` — the routes of ONE connection. The gateway builds them
-for every connection it accepts (`StandGatewayTlsServer::onCreateClient()`), with
-a router of their own, and every resident registers on them: a behavior a spec
+`TelegramRoutes::CHANNEL` is `telegram`, `OAuthRoutes::CHANNEL` is `oauth`, and
+every route of the resident hangs under `/<channel>/…`, registered by an exact
+method and path through `src/GatewayRoutes.php` — the routes of ONE connection.
+The gateway builds them for every connection it accepts
+(`StandGatewayTlsServer::onCreateClient()`), with a router of their own, and
+every resident registers on them: a behavior a spec
 dictated is played out on the connection that carries the call
 ([Behavior Handles](#behavior-handles)), so a route has to know which connection
 that is, and it knows from the routes it was registered through. The core hands a
@@ -92,10 +94,11 @@ Two things about the house are deliberate and easy to "fix" by mistake:
   on every provider route, so they are the house's — and a resident does not add
   to them.
 
-## Two Halves of a Resident's Routes
+## The Halves of a Resident's Routes
 
-A resident's routes come in two halves, and they are registered side by side in
-the one `register()` of its routes class:
+A resident's routes come in halves, registered side by side in the one
+`register()` of its routes class. Two of them for a resident the daemon calls,
+three when the participant is a browser:
 
 - the **provider half** — what the product calls, registered with
   `GatewayRoutes::provider()`. For Telegram that is
@@ -107,18 +110,37 @@ the one `register()` of its routes class:
 - the **test half** — what the spec calls, under `/<channel>/test/…`, registered
   with `GatewayRoutes::test()`. For Telegram that is
   `POST /telegram/test/reachable`, the one thing a spec cannot arrange any other
-  way: a number nobody put on Telegram.
+  way: a number nobody put on Telegram. For OAuth it is
+  `POST /oauth/test/account`, which declares the world of the provider: which
+  accounts exist over there;
+- the **page half** — what a BROWSER opens in the course of the product's work,
+  registered with `GatewayRoutes::page()` (HIL-923). For OAuth that is
+  `GET /oauth/<profile>/authorize` and the `POST` the form on it makes. It names
+  no key and carries no lever, and neither is an omission: the call carries no
+  value a spec coined, so there is nothing to scope a declaration to, and a
+  declaration naming such a path is refused as `PATH_NOT_PROVIDER`. Nor is it a
+  test route, because a spec does not call it — a person's browser arrives there,
+  sent by the product. A spec that opens the screen itself, in the product's
+  place, navigates with Playwright's `goto` on an address written from
+  `STAND_GATEWAY_URL` — the one `goto` that `E2E-PAGE-GOTO` lets past `gotoPage`
+  ([testing-strategy.md](frontend/testing-strategy.md#opening-a-page--gotopage-never-goto)).
 
 `framework/docker/stand-gateway/src/TelegramRoutes.php`, `register()`, is the
-sample, with the two halves side by side. SMS has no test half, and that is
+sample for the first two halves, side by side; `src/OAuthRoutes.php` is the
+sample for a resident that has all three. SMS has no test half, and that is
 not an omission: there is nothing an SMS spec has to arrange up front.
 
-The two halves differ in whom they trust. The provider half checks what the real
+The halves differ in whom they trust. The provider half checks what the real
 service checks — the Telegram gateway refuses a call without a bearer token,
 because a daemon that forgot its credentials has to fail on the stand rather than
 in production; the SMS gateway checks nothing, because the generic provider's
 default auth mode is `none` and a token here would guard nothing. The test half
-carries no credentials at all: it is called by a spec, not by the product.
+carries no credentials at all: it is called by a spec, not by the product. The
+page half checks what the real service would check of the request that brought
+the browser there — the OAuth consent screen refuses an authorization request
+with no client, a callback address that is not absolute, or a response type no
+provider answers, and refuses it with a PAGE rather than a redirect, because a
+junk callback address is nowhere to redirect to.
 
 **Behavior is steered through the emulator's own HTTP handles, never through
 the daemon's command channel.** A spec already holds an HTTP client —
@@ -155,8 +177,26 @@ result; or the browser.
    browser: it leaves for the emulator's page and comes back on the callback
    with a code, and the daemon then exchanges that code for a token over HTTP.
    There is nothing to catch and nothing to forward; what is proved is the round
-   trip itself and the exchange behind it. OAuth is this kind (HIL-923, and the
-   demos' switch to it in HIL-924).
+   trip itself and the exchange behind it. OAuth is this kind and has moved in
+   (HIL-923; the demos switch to it in HIL-924).
+
+**The third kind has TWO entities, and they do not live in one process.** The
+provider is a resident of the house (`src/OAuthRoutes.php`, with every difference
+between the providers it plays in `src/OAuthProfile.php`). The PERSON at its
+window is a set in the spec's own folder
+(`demo/chat/tests/e2e/helpers/oauth-user.ts`), and a spec is what gives the
+orders — wait for the window, pick this account, confirm, refuse, walk away. The
+world that person acts in is declared through the provider's test half from
+beside them (`demo/chat/tests/e2e/helpers/oauth.ts`).
+
+The split is forced rather than tasteful: waiting for a window to open, pressing
+a button in it and closing it can only be done by whoever is IN the browser, and
+the house has no hands there. A server-side half of the person could drive the
+screen only through a script on the page, and then the button would be pressed by
+the page rather than by a person — the one thing an emulator of this kind exists
+not to fake. The two stay apart in the spec's set for the same reason (the
+owner's decision, 17.09.2026): merging the provider's world and the person back
+into one file loses the distinction the kind is built on.
 
 Name the kind before designing the resident. A leaf that copies the message
 channel's formula for OAuth designs a letter that never exists — exactly the
@@ -206,8 +246,9 @@ keep it.
 ## State: One File Under a Lock, Wiped by a Handle
 
 Whatever a spec arranges up front — which numbers are declared absent from
-Telegram, and the queues of declared behaviors — lives in one JSON file under an
-exclusive lock,
+Telegram, the queues of declared behaviors, and the world of the OAuth provider:
+which accounts exist at it, and the codes and tokens it has handed out — lives in
+one JSON file under an exclusive lock,
 `/tmp/stand-gateway-state.json` (`src/Store.php`, `PATH`). That is the whole
 storage design, and it is enough: one runner, a few writes per suite.
 
@@ -223,12 +264,13 @@ exactly the class of flake a stand exists to remove (`Store.php`, class
 docblock). What arrived is deliberately not in the file either — it left as a
 letter — so the store holds only the arrangement.
 
-**Wiping is a handle**: `POST /test/reset` forgets everything, declared behaviors
-included (`Store::reset()`). It is a whole-store wipe, so it is for a spec that
-genuinely needs a clean slate and not for ordinary isolation: everything the store
-holds is keyed by the value a spec coined (a number), and a unique value per test
-isolates it already. Calling reset under parallel workers would clear state a
-neighboring spec is still using (`helpers/telegram.ts`, `resetTelegram()`).
+**Wiping is a handle**: `POST /test/reset` forgets everything — declared
+behaviors and the provider's world with it (`Store::reset()`). It is a whole-store
+wipe, so it is for a spec that genuinely needs a clean slate and not for ordinary
+isolation: everything the store holds is keyed by the value a spec coined (a
+number, an account id), and a unique value per test isolates it already. Calling
+reset under parallel workers would clear state a neighboring spec is still using
+(`helpers/telegram.ts`, `resetTelegram()`).
 
 The rule for the next resident: **its state goes into the same file, under the
 same lock, and is gone on the same reset.** A resident does not open a store of
@@ -385,10 +427,12 @@ and name it before writing.
    and `src/TelegramRoutes.php`, with a public `CHANNEL` constant. The constant is
    the route prefix and, for a message channel, the mail domain a caught message
    is read under.
-2. **Both halves in the one `register(GatewayRoutes $routes)`**: the provider half
+2. **Every half in the one `register(GatewayRoutes $routes)`**: the provider half
    under `/<channel>/…` through `provider()`, naming the key of each route, and the
    test half under `/<channel>/test/…` through `test()`. No test half when there is
-   nothing to arrange up front, as with SMS.
+   nothing to arrange up front, as with SMS. A resident a BROWSER visits registers
+   its screens through `page()` instead — no key, no levers, and no declaration can
+   name such a path.
 3. **One entry in the `$residents` list of `StandGatewayTlsServer`'s
    constructor** — `new <Channel>Routes()` beside the two that are there.
 4. **The class in namespace `Hilos\StandGateway`, one class per file, named as
@@ -413,6 +457,11 @@ and name it before writing.
    and one function per test handle. The behavior levers are not a test handle
    of the resident: a spec dictates them through `helpers/gateway.ts`, and the
    resident brings no helper of its own for them.
+   **A resident of the third kind brings TWO helpers, and they are not to be
+   merged**: the world of the provider (`helpers/oauth.ts`) and the person acting
+   at its window (`helpers/oauth-user.ts`). The first is arrangement, the second
+   is somebody the spec gives orders to, and one file holding both would read as
+   an emulator that presses its own buttons.
 
 What a resident does NOT bring:
 
@@ -465,7 +514,7 @@ The eight directions, and where each stands. This table is also the epic's map:
 | Mail — `framework/backend/Mail/SmtpMailTransport.php` | Mailpit, real SMTP | — | closed |
 | SMS — `framework/backend/Sms/HttpSmsProvider.php`, driven by `GenericHttpSmsProvider.php` and its descriptor's defaults | the stand gateway, `/sms/send` | — | closed |
 | Telegram codes — `framework/backend/Auth/CodeChannel/TelegramCodeChannel.php` through `Telegram/TelegramGatewayClient.php` | the stand gateway, `/telegram` | — | closed |
-| OAuth — `framework/backend/Auth/OAuth/HttpOAuthProvider.php` | the stub `StubOAuthProvider.php`, sunset | an emulated provider | HIL-923; the demos switch in HIL-924 |
+| OAuth — `framework/backend/Auth/OAuth/HttpOAuthProvider.php` | the emulator, `/oauth/<profile>`; the stub `StubOAuthProvider.php` still under the demos, sunset | the demos on the emulator, the stub gone | HIL-923 closed it; the demos switch in HIL-924 |
 | Code delivery — `framework/backend/Auth/Verification/LogVerificationDeliverer.php` | writes the code to the log, sunset | delivery through the stand | no leaf yet; leaves with whatever touches it |
 | Local model — `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` | nothing | an emulated model | HIL-925 |
 | External model — `framework/backend/LLM/External/Chat/AsyncOpenAIChatProvider.php` | nothing | an emulated model | no leaf yet |

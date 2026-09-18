@@ -10,9 +10,17 @@
 // wrappers wait on the routed outlet's own state instead, so there is nothing
 // left to guess.
 //
+// One address is let through: a screen of a stand resident, which a spec opens
+// in the provider's place — an OAuth consent screen (HIL-923). The gateway serves
+// it, no subscription stands behind it, and a wrapper would wait for an answer
+// that never comes. The exemption is read off the address, not off the file: the
+// argument of the call has to be written from the `STAND_GATEWAY_URL` the file
+// imports from its demo's gateway helper, so the same spec opening a product page
+// is still reported.
+//
 // The rule has no PHP half: the specs it governs are TypeScript only.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { join, posix, relative, sep } from 'node:path'
 
 import ts from 'typescript'
 
@@ -37,6 +45,16 @@ const DEMO_E2E_ROOT = 'tests/e2e'
  */
 const WRAPPER_OWNER = 'helpers/page.ts'
 
+/** The export holding the stand gateway's base address. */
+const STAND_BASE_EXPORT = 'STAND_GATEWAY_URL'
+
+/**
+ * The module that exports the stand's base, without an extension. Held as a
+ * path suffix for the same reason as the wrapper owner: each demo carries its
+ * own copy of the helper.
+ */
+const STAND_BASE_OWNER = 'helpers/gateway'
+
 /** Extension of the files this checker reads. */
 const SOURCE_EXTENSION = '.ts'
 
@@ -44,7 +62,8 @@ const SOURCE_EXTENSION = '.ts'
 const SKIPPED_DIRECTORY = 'node_modules'
 
 /**
- * Reports every direct `goto` call this file makes, in source order.
+ * Reports every direct `goto` call this file makes, in source order, except one
+ * whose address is written from the stand's base.
  *
  * @param relativePath Path of the file from the repository root, as it appears in the report
  * @param source Contents of the file
@@ -61,13 +80,15 @@ export function checkSource(relativePath: string, source: string): string[] {
     ts.ScriptTarget.Latest,
     true,
   )
+  const standBase = standBaseName(sourceFile, relativePath)
   const lines: string[] = []
 
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === FORBIDDEN_METHOD
+      node.expression.name.text === FORBIDDEN_METHOD &&
+      !isWrittenFrom(node.arguments[0], standBase)
     ) {
       lines.push(report(sourceFile, relativePath, node))
     }
@@ -95,6 +116,86 @@ export function checkRepository(repositoryRoot: string): string[] {
   }
 
   return lines
+}
+
+/**
+ * @param sourceFile Parsed file whose imports are read
+ * @param relativePath Path of the file from the repository root, which its relative imports resolve against
+ * @returns The local name the file gives the stand's base, or null when it does not import it
+ */
+function standBaseName(
+  sourceFile: ts.SourceFile,
+  relativePath: string,
+): string | null {
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !isStandBaseOwner(relativePath, statement.moduleSpecifier.text)
+    ) {
+      continue
+    }
+    const bindings = statement.importClause?.namedBindings
+    if (bindings === undefined || !ts.isNamedImports(bindings)) {
+      continue
+    }
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === STAND_BASE_EXPORT) {
+        return element.name.text
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * @param relativePath Path of the importing file from the repository root
+ * @param specifier The module an import names, as written
+ * @returns Whether the specifier resolves to the demo's gateway helper
+ */
+function isStandBaseOwner(relativePath: string, specifier: string): boolean {
+  if (!specifier.startsWith('.')) {
+    return false
+  }
+  const target = posix.parse(posix.join(posix.dirname(relativePath), specifier))
+  const resolved = posix.join(target.dir, target.name)
+
+  return (
+    resolved === STAND_BASE_OWNER || resolved.endsWith(`/${STAND_BASE_OWNER}`)
+  )
+}
+
+/**
+ * Whether an address opens with the base: the base itself, a template whose
+ * first piece it is, or a concatenation whose leftmost term it is. Nothing else
+ * counts — neither the base further into the address nor one behind a call.
+ *
+ * @param address The expression a `goto` was handed, if any
+ * @param base Local name of the stand's base, or null when the file has none
+ * @returns Whether the address is written from the base
+ */
+function isWrittenFrom(
+  address: ts.Expression | undefined,
+  base: string | null,
+): boolean {
+  if (address === undefined || base === null) {
+    return false
+  }
+  if (ts.isTemplateExpression(address)) {
+    return (
+      address.head.text === '' &&
+      isWrittenFrom(address.templateSpans[0].expression, base)
+    )
+  }
+  if (
+    ts.isBinaryExpression(address) &&
+    address.operatorToken.kind === ts.SyntaxKind.PlusToken
+  ) {
+    return isWrittenFrom(address.left, base)
+  }
+
+  return ts.isIdentifier(address) && address.text === base
 }
 
 /**

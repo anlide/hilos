@@ -202,6 +202,18 @@ argument only when the spec is about which answer came. **Never call Playwright'
 (`framework/frontend/codestyle/e2eGoto.ts`) reports every direct call outside the
 `helpers/page.ts` that owns the wrappers.
 
+One address is not a page of the product, and `goto` is right for it: the screen of
+a stand resident, which a spec opens in the provider's place — the OAuth consent
+screen (HIL-923, [stand-services.md](../stand-services.md)). The gateway serves it,
+no subscription stands behind it, and `gotoPage` would wait for an answer that never
+comes. The checker lets such a call through when its address is **written from
+`STAND_GATEWAY_URL`** imported from the demo's `helpers/gateway` — the base itself,
+a template opening with it, or a concatenation starting with it — and only then. It
+reads the address and not the file: the base hidden behind a function call, placed
+further into the address, or declared by the spec itself is reported like any other
+`goto`, so a spec that opens a stand screen and a product page is still held to the
+rule for the second one.
+
 `goto` waits for the document and nothing else. The page behind it is a live
 subscription, and its answer — the payload, or a refusal the gate raises — comes
 one round trip later; until it lands the routed outlet holds the page back. A
