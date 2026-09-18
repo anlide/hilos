@@ -177,8 +177,11 @@ hang), the protected-mode drive family `test:protected-mode:enter` / `:leave` / 
 and the close move are the agent's)
 and the account and session family `admin:grant` / `:revoke` / `:create`,
 `impersonate:start` / `:stop` and `account:merge` (same reason as `test:notification:emit`:
-every row they cause is written where the account lives). Everything else keeps the full
-connect plus `Hilos::init()`.
+every row they cause is written where the account lives), and the cluster TLS family
+`cluster:tls:ca` / `:issue` / `:trust` (they need no database at all: they issue the
+certificates of a cluster that may not exist yet, print PEM and nothing else, and are run
+exactly where there is no installation to connect to — HIL-1034). Everything else keeps the
+full connect plus `Hilos::init()`.
 
 Because the whole registry is now constructed *before* the connect, a command constructor
 must not touch the database or Hilos state. Do that work in `execute()`.

@@ -15,6 +15,7 @@ use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Socket\Transport\PlainSocketTransport;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -86,8 +87,9 @@ final class PeerServerMembershipTest extends TestCase
         Hilos::$cluster->registerMembershipObserver($observer);
 
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
         // A completed handshake with a new peer is a join.
         $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));

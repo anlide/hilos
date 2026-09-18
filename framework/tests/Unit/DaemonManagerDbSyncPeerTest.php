@@ -32,6 +32,7 @@ use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -372,6 +373,7 @@ final class DbSyncPeerTestManager extends DaemonManager
             0,
             NodeIdentity::of('node-a', NodeRole::Master, []),
             [],
+            PeerTestTls::unread(),
         );
         $this->registerServer($this->peerServer);
 

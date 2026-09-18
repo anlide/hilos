@@ -181,6 +181,8 @@ final class MalformedInputMarkerRule implements CodeStyleRule
             'ClusterException',
             'PlacementCapabilityException',
         ],
+        'a certificate is refused on the operator\'s command line while it is issued, where nothing arrives'
+        . ' from another node or a browser' => ['ClusterCertificateException'],
     ];
 
     /**

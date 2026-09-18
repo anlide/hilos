@@ -66,6 +66,7 @@ use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\RtClaimMesh;
 use Hilos\Cluster\RtSyncMesh;
 use Hilos\Cluster\SourceInterestMesh;
+use Hilos\Cluster\Tls\ClusterTlsConfig;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -94,8 +95,9 @@ use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\ClientInterface;
-use Hilos\Socket\Server\AbstractServer;
+use Hilos\Socket\Server\AbstractTlsServer;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Transport\TlsSocketTransport;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
@@ -122,9 +124,12 @@ use Throwable;
  * {@see ConsensusMesh} — turning the master registry into a liveness view and the
  * live links into an outbound channel. A slave keeps no coordinator.
  *
- * @extends AbstractServer<PeerLink>
+ * Every link, accepted or dialed, is mutual TLS verified against the cluster's authorities, and
+ * the name in the peer's certificate binds the hello/welcome handshake (HIL-1034).
+ *
+ * @extends AbstractTlsServer<PeerLink>
  */
-final class PeerServer extends AbstractServer implements
+final class PeerServer extends AbstractTlsServer implements
     LocalNodeAnnouncer,
     ConsensusMesh,
     PlacementMesh,
@@ -147,6 +152,9 @@ final class PeerServer extends AbstractServer implements
 
     /** @var list<PeerAddress> Seed peers to dial on join */
     private array $seeds;
+
+    /** @var ClusterTlsConfig This node's certificate and the authorities it trusts, for both sides of a link */
+    private ClusterTlsConfig $tls;
 
     /** @var ConnectionPolicy Decides which known peers to dial a direct link to */
     private ConnectionPolicy $connectionPolicy;
@@ -202,14 +210,22 @@ final class PeerServer extends AbstractServer implements
      * @param int $port Port to bind the peer listener
      * @param NodeIdentity $localIdentity Local node identity to announce to peers
      * @param list<PeerAddress> $seeds Seed peers to dial on join (empty for a bootstrap node)
+     * @param ClusterTlsConfig $tls This node's certificate and the authorities a peer certificate must be signed by
      * @param ?ConnectionPolicy $connectionPolicy Policy choosing which known peers to dial; full mesh when null
      */
-    public function __construct(string $host, int $port, NodeIdentity $localIdentity, array $seeds, ?ConnectionPolicy $connectionPolicy = null)
-    {
-        parent::__construct($host, $port);
+    public function __construct(
+        string $host,
+        int $port,
+        NodeIdentity $localIdentity,
+        array $seeds,
+        ClusterTlsConfig $tls,
+        ?ConnectionPolicy $connectionPolicy = null,
+    ) {
+        parent::__construct($host, $port, $tls->certificateFile, $tls->trustFile);
 
         $this->localIdentity = $localIdentity;
         $this->seeds = $seeds;
+        $this->tls = $tls;
         $this->connectionPolicy = $connectionPolicy ?? new FullMeshConnectionPolicy();
         $this->nodeReaderMap = new SourceReaderMap();
     }
@@ -279,7 +295,7 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
-     * Creates the accepting side of an inbound peer link.
+     * Creates the accepting side of an inbound peer link, over TLS that demands the peer's certificate.
      *
      * @param resource $socket Accepted peer socket
      * @return ClientInterface Peer link awaiting a hello
@@ -287,7 +303,7 @@ final class PeerServer extends AbstractServer implements
      */
     protected function onCreateClient($socket): ClientInterface
     {
-        return new PeerLink($socket, $this, $this->localIdentity, dialer: false);
+        return new PeerLink($socket, $this, $this->localIdentity, dialer: false, transport: $this->createTransport($socket));
     }
 
     /**
@@ -521,6 +537,15 @@ final class PeerServer extends AbstractServer implements
             if (in_array($dial->link, $this->clients, true) && !$dial->link->shouldClose()) {
                 return;
             }
+            // TLS came up and the peer closed before its welcome: the refusal is in its log, not
+            // here (TLS 1.3 tells it only to the accepting side). Once per series to this target.
+            if ($dial->link->closedUnwelcomed() && !$dial->unwelcomedReported) {
+                Logger::warning(
+                    "Peer {$dial->address->host}:{$dial->address->port} closed the link before welcoming this node;"
+                    . " that node's log names the refusal",
+                );
+                $dial->unwelcomedReported = true;
+            }
             $dial->link = null;
             $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
         }
@@ -642,7 +667,13 @@ final class PeerServer extends AbstractServer implements
         socket_set_nonblock($socket);
 
         try {
-            $link = new PeerLink($socket, $this, $this->localIdentity, dialer: true);
+            $link = new PeerLink(
+                $socket,
+                $this,
+                $this->localIdentity,
+                dialer: true,
+                transport: TlsSocketTransport::dialing($socket, $this->tls->certificateFile, $this->tls->trustFile),
+            );
         } catch (EnvException $e) {
             Logger::error("Failed to open dialed peer link: {$e->getMessage()}");
             socket_close($socket);
@@ -771,6 +802,9 @@ final class PeerServer extends AbstractServer implements
         $dial = $this->dialForLink($link);
         if ($dial !== null) {
             $dial->remoteNodeId = $nodeId;
+            // The target took this node's handshake to the end: a series of closes before
+            // welcome, if one was running, is over.
+            $dial->unwelcomedReported = false;
         }
     }
 

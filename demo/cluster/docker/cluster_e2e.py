@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 16-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the 17-scenario assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
@@ -48,6 +48,8 @@ Plus scenarios beyond that matrix:
  15 db interest addressing     a db fact hops only to the nodes that read its collection (HIL-750)
  16 recreated node leaves      a data-plane container replaced faster than the failover grace
     no phantom fleet           leaves the leader naming no node that runs nothing (HIL-719)
+ 17 foreign certificate        a node certified by an authority the cluster does not trust is
+    refused                    refused on both ends of every link and admitted by nobody (HIL-1034)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -65,6 +67,13 @@ CLUSTER = str(HERE / "cluster")
 MASTERS = ["m1", "m2", "m3"]
 SLAVES = ["s1", "s2"]
 ALL_NODES = MASTERS + SLAVES
+
+# The stranger of scenario 17: cluster-x1, up only under the compose profile `intruder`, whose
+# certificate is signed by an authority the cluster does not trust (HIL-1034).
+STRANGER = "x1"
+STRANGER_IP = "10.185.0.16"
+# What either end of a refused TLS handshake writes, through the containment of a failing client.
+TLS_REFUSAL_LINE = "Socket TLS handshake failed"
 
 WORKER_AGENT_TYPE = "worker"
 # Fleet size the leader keeps placed; mirrors ClusterDaemonManager::WORKER_FLEET_SIZE.
@@ -1336,6 +1345,41 @@ def scenario_16_recreated_node_leaves_no_phantom_fleet():
             f"whole fleet runs again ({hosts}) and every node the leader names writes its rows")
 
 
+def scenario_17_foreign_certificate_refused():
+    """A node certified by an authority the cluster does not trust is admitted by nobody (HIL-1034).
+
+    Every link between nodes is mutual TLS against the cluster's own authority. The stranger
+    passes its own start-up check - it trusts the authority that signed it - and dials every
+    node it is seeded with. What is asserted is the fact, not a timer: the refusal is named in
+    the log on BOTH ends. The stranger names it because it does not trust the certificate each
+    node presents; the node it dialed names it with the stranger's address, because in TLS 1.3
+    the accepting side is the one that learns a dialer was refused. Then nobody may list the
+    stranger, and the five still form one cluster under one leader.
+    """
+    wait_converge(ALL_NODES)
+    offsets = {n: node_log_size(n) for n in ("m1", STRANGER)}
+    print(f"    starting {STRANGER}, certified by an authority the cluster does not trust")
+    ctl("intruder", "up")
+    try:
+        def refused_on_both_ends(_views):
+            return (f"{TLS_REFUSAL_LINE}: {STRANGER_IP}" in node_log("m1", offsets["m1"])
+                    and TLS_REFUSAL_LINE in node_log(STRANGER, offsets[STRANGER]))
+
+        views = wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
+                           f"a refused TLS handshake named in the logs of m1 and {STRANGER}")
+
+        for node in ALL_NODES:
+            listed = [n for n in (views.get(node) or {}).get("nodes", []) if n.get("nodeId") == STRANGER]
+            assert listed == [], f"{node} lists the stranger {STRANGER}: {listed}"
+        assert not node_online(views, STRANGER), f"the leader lists {STRANGER} online"
+        assert converged(ALL_NODES)(views), \
+            f"the five no longer form one cluster under one leader: {summarize(views)}"
+    finally:
+        ctl("intruder", "down")
+
+    return f"{STRANGER} refused on both ends of the link; nobody lists it; the five still converge"
+
+
 # Numbered by when they were written, ORDERED by what they need. The three RT scenarios run
 # right after placement, while the fleet the leader just placed is still alive: they are the
 # only ones that need running agents rather than a converged topology. That order was once
@@ -1367,6 +1411,7 @@ SCENARIOS = [
     ("11 cross-node db fact", scenario_11_cross_node_db_fact),
     ("15 db interest addressing", scenario_15_db_interest_addressing),
     ("16 recreated node leaves no phantom fleet", scenario_16_recreated_node_leaves_no_phantom_fleet),
+    ("17 foreign certificate refused", scenario_17_foreign_certificate_refused),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

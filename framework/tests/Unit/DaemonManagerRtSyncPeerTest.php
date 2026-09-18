@@ -45,6 +45,7 @@ use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
@@ -2150,6 +2151,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
             0,
             NodeIdentity::of(DaemonManagerRtSyncPeerTest::LOCAL_NODE, NodeRole::Master, []),
             [],
+            PeerTestTls::unread(),
         );
         $this->registerServer($this->peerServer);
     }

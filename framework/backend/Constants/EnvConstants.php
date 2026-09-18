@@ -587,6 +587,29 @@ enum EnvConstants
      */
     case CLUSTER_PLACEMENT_ACK_TIMEOUT_MS;
 
+    /**
+     * @var string Path of the PEM file holding this node's certificate followed by its private
+     * key. The certificate's common name (CN) must equal CLUSTER_NODE_ID, it must be signed by
+     * an authority in CLUSTER_TLS_CA_FILE for both server and client use, and it must not have
+     * expired - a node checks all of this at start, before its peer port opens, and refuses to
+     * start naming the first check that failed; under 30 days to expiry it starts and warns.
+     * Every link between nodes is mutual TLS, and a neighbour is accepted only when its
+     * certificate names exactly the node id it introduced itself with. Issued with
+     * `cluster:tls:issue <nodeId> <authorityFile>`; replacing it means a new file and a restart
+     * of this node. Required when CLUSTER_ENABLED is true (HIL-1034).
+     */
+    case CLUSTER_TLS_CERT_FILE;
+
+    /**
+     * @var string Path of the PEM file holding the certificates of the authorities this node
+     * trusts - the cluster's own authority, without its key, as printed by
+     * `cluster:tls:trust <authorityFile>`. It may list several certificates one after another:
+     * while the authority is being replaced it carries the old one and the new one, nodes restart
+     * one at a time, and the old one is removed last. The authority's key never goes to a node.
+     * Required when CLUSTER_ENABLED is true (HIL-1034).
+     */
+    case CLUSTER_TLS_CA_FILE;
+
     // ── WebAuthn / passkey (HIL-284) ─────────────────────────────────────────
 
     /**

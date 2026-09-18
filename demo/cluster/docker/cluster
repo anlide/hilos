@@ -26,7 +26,9 @@
 #   cluster partition <node>   disconnect a node from the cluster network
 #   cluster heal <node>        reconnect a node to the cluster network (static IP)
 #   cluster logs <node>        follow a node's container logs
-#   cluster scenarios          run the full 14-scenario matrix (drives cluster_e2e.py)
+#   cluster intruder up|down   start / remove cluster-x1, a node certified by an authority the
+#                              cluster does not trust (HIL-1034, scenario 17)
+#   cluster scenarios          run the full 17-scenario matrix (drives cluster_e2e.py)
 
 set -euo pipefail
 
@@ -59,7 +61,9 @@ ensure_env() {
 cmd_up() {
   ensure_env
   echo "cluster: building images..."
-  dc build
+  # The intruder's image too, so scenario 17 starts it from a finished image rather than
+  # building one in the middle of the matrix.
+  dc --profile intruder build
   # Clear any freeze the last run left on a node, from INSIDE a container: data/logs/<node> is
   # owned by root (the daemons run as root in their containers) and unlink asks permission of the
   # DIRECTORY, so an rm from the host cannot reach it. On the up rather than on the teardown for
@@ -275,6 +279,17 @@ cmd_scenarios() {
   python3 "$here/cluster_e2e.py"
 }
 
+# The stranger of scenario 17 (HIL-1034): up on its own, without touching the running cluster
+# or re-running the schema step under it; down removes the container outright, so the next
+# matrix starts without it. Not a valid_node: kill/start/recreate have nothing to do with it.
+cmd_intruder() {
+  case "${1:-}" in
+    up)   dc --profile intruder up -d --no-deps cluster-x1 ;;
+    down) dc --profile intruder rm -sf cluster-x1 ;;
+    *)    die "usage: cluster intruder {up|down}" ;;
+  esac
+}
+
 case "${1:-}" in
   up)        shift; cmd_up "$@" ;;
   down)      shift; cmd_down "$@" ;;
@@ -292,6 +307,7 @@ case "${1:-}" in
   partition) shift; cmd_partition "$@" ;;
   heal)      shift; cmd_heal "$@" ;;
   logs)      shift; cmd_logs "$@" ;;
+  intruder)  shift; cmd_intruder "$@" ;;
   scenarios) shift; cmd_scenarios ;;
-  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|container-id|partition|heal|logs|scenarios} [args]" ;;
+  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|container-id|partition|heal|logs|intruder|scenarios} [args]" ;;
 esac

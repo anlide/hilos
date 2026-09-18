@@ -22,6 +22,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Socket\Transport\PlainSocketTransport;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -305,7 +306,7 @@ final class PeerServerClientDeliveryTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), []);
+        return new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', NodeRole::Master, []), [], PeerTestTls::unread());
     }
 
     /**
@@ -314,11 +315,14 @@ final class PeerServerClientDeliveryTest extends TestCase
      */
     private function makeLink(PeerServer $server): PeerLink
     {
+        $socket = $this->makeSocket();
+
         return new PeerLink(
-            $this->makeSocket(),
+            $socket,
             $server,
             NodeIdentity::of('node-a', NodeRole::Master, []),
             dialer: false,
+            transport: new PlainSocketTransport($socket),
         );
     }
 

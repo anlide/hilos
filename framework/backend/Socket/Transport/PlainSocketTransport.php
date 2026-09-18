@@ -106,4 +106,14 @@ final class PlainSocketTransport implements SocketTransportInterface
     {
         return true;
     }
+
+    /**
+     * A bare socket vouches for nobody: whoever is on the other end says who it is, and nothing checks it.
+     *
+     * @return ?string Always null
+     */
+    public function verifiedPeerName(): ?string
+    {
+        return null;
+    }
 }

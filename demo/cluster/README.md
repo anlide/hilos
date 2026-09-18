@@ -30,6 +30,12 @@ agents whose only job is to keep their workers busy.
   a scenario asks for it with `test:cluster:agent:place`. It writes nothing.
 - **Assertion surface:** the read-only `test:cluster:inspect` command (HIL-325),
   run per node from the `cluster-cli` container.
+- **Peer TLS:** every link between nodes is mutual TLS against the stand's own
+  authority, and each node presents a certificate carrying its node id (HIL-1034).
+  The files live in `docker/tls/` — see [TLS fixtures](#tls-fixtures). A sixth
+  node, `x1` (`cluster-x1`, compose profile `intruder`), is certified by an
+  authority the cluster does not trust; `cluster intruder up|down` drives it, and
+  only scenario 17 uses it.
 
 ## Running
 
@@ -38,7 +44,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 16-scenario matrix
+demo/cluster/docker/cluster scenarios          # the 17-scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -72,6 +78,9 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 16. recreated node leaves no phantom fleet — a data-plane container replaced faster
    than the failover grace comes back hosting nothing and says so, the fleet ends up
    running again, and the leader names no node that runs none of it (HIL-719)
+17. foreign certificate refused — a node certified by an authority the cluster does
+   not trust is refused on both ends of the link, named in the log of both, and
+   listed by nobody, while the five still converge (HIL-1034)
 
 They run in the order the driver lists them, which is not the order they are
 numbered: the three RT scenarios go right after placement, while the fleet the
@@ -100,3 +109,44 @@ the run honest without falsely passing:
   number of times (`CLUSTER_E2E_RETRIES`, default 1) after re-converging the
   mesh. A hard invariant assertion (wrong leader, bad placement) never retries
   and fails immediately.
+
+## TLS fixtures
+
+`docker/tls/` holds the certificates of this stand, and they are **stand fixtures
+only**: the authority behind them signs nothing else, and its key is not in the
+repository. Nothing here is a template for a real cluster — issue your own.
+
+| File | What it is | Used by |
+|---|---|---|
+| `ca.pem` | the stand authority's certificate, no key | `CLUSTER_TLS_CA_FILE` of the five nodes |
+| `m1.pem` … `s2.pem` | a node certificate (CN = node id) followed by its key | `CLUSTER_TLS_CERT_FILE` of that node |
+| `x1.pem` | node `x1`, signed by a *foreign* authority | the intruder of scenario 17 |
+| `intruder-ca.pem` | that foreign authority's certificate | `x1`'s trust file, so `x1` passes its own start-up check |
+
+Reissuing means a new set in full: the old authority's key is gone, so no single
+file can be replaced alone. The framework's own commands print PEM to stdout, and
+the host shell writes the files, so they come out owned by you rather than root.
+Keep both authority files (`cluster-ca.pem`, `foreign-ca.pem`) outside the
+repository and delete them when done:
+
+```bash
+cli() {  # one framework CLI command in a throwaway container, no network needed
+  docker run --rm --network none --user "$(id -u):$(id -g)" \
+    -v "$PWD/demo/cluster":/app:ro -v "$PWD/composer.json":/hilos/composer.json:ro \
+    -v "$PWD/composer.lock":/hilos/composer.lock:ro -v "$PWD/framework":/hilos/framework:ro \
+    -v /tmp/cluster-ca:/ca:ro -w /app -e APP_ENV=dev \
+    hilos-cluster-cluster-cli:latest php backend/Bootstrap/cli.php "$@"
+}
+mkdir -p /tmp/cluster-ca && t=demo/cluster/docker/tls
+cli cluster:tls:ca > /tmp/cluster-ca/cluster-ca.pem
+cli cluster:tls:trust /ca/cluster-ca.pem > $t/ca.pem
+for n in m1 m2 m3 s1 s2; do cli cluster:tls:issue $n /ca/cluster-ca.pem > $t/$n.pem; done
+# the intruder: a second, foreign authority
+cli cluster:tls:ca > /tmp/cluster-ca/foreign-ca.pem
+cli cluster:tls:trust /ca/foreign-ca.pem > $t/intruder-ca.pem
+cli cluster:tls:issue x1 /ca/foreign-ca.pem > $t/x1.pem
+rm -r /tmp/cluster-ca
+```
+
+The node certificates are valid for ten years (the authority's lifetime); a node
+warns in its log from 30 days before the end.

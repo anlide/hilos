@@ -166,7 +166,13 @@ final class PeerAnnounceEchoTest extends TestCase
     private function makeHandshakedLink(PeerServer $server, string $nodeId): array
     {
         [$near, $far] = $this->makeSocketPair();
-        $link = new PeerLink($near, $server, $this->localIdentity(), dialer: true);
+        $link = new PeerLink(
+            $near,
+            $server,
+            $this->localIdentity(),
+            dialer: true,
+            transport: new NamedPeerTestTransport($near, $nodeId),
+        );
 
         $clients = new ReflectionProperty($server, 'clients');
         $clients->setValue($server, [...$clients->getValue($server), $link]);
@@ -210,7 +216,7 @@ final class PeerAnnounceEchoTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), []);
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
     }
 
     /**

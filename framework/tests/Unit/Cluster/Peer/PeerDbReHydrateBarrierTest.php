@@ -208,7 +208,7 @@ final class PeerDbReHydrateBarrierTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), []);
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
     }
 
     /**
@@ -225,7 +225,13 @@ final class PeerDbReHydrateBarrierTest extends TestCase
         socket_set_nonblock($pair[0]);
         $this->sockets = [...$this->sockets, $pair[0], $pair[1]];
 
-        $link = new PeerLink($pair[0], $server, $this->localIdentity(), dialer: true);
+        $link = new PeerLink(
+            $pair[0],
+            $server,
+            $this->localIdentity(),
+            dialer: true,
+            transport: new NamedPeerTestTransport($pair[0], $nodeId),
+        );
         socket_write($pair[1], new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [])->toJson() . "\n");
         $link->read();
 

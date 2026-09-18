@@ -10,12 +10,11 @@ use Throwable;
 /**
  * Exception thrown when a TLS handshake over a socket fails and the caller must be told why.
  *
- * An accepted connection whose handshake is refused is closed without a word, and needs no
- * exception; this names the refusal where somebody waits for the connection to come up.
- *
- * SCAFFOLD: not thrown yet — the server side of TLS (HIL-921) has nobody waiting on a refused
- * handshake; the first caller is the dialing side of the socket transport, where a node waits
- * for its link to come up (HIL-1034).
+ * Thrown by a transport that verifies its peer - the dialing side, and the accepting side given
+ * a trust file - where everyone refused was meant to be one of us, and the operator must see
+ * either the misconfigured node or the stranger. The message reads
+ * "Socket TLS handshake failed: <ip:port>: <OpenSSL's reason>". A public port verifies nobody,
+ * and its refused handshake closes without a word and without this exception.
  */
 class SocketTlsHandshakeException extends SocketException
 {

@@ -65,6 +65,11 @@ x-node-env: &node-env
   CLUSTER_LINK_TIMEOUT_MS: "6000"
   CLUSTER_FAILOVER_GRACE_MS: "6000"
   CLUSTER_SLAVE_WORK_GRACE_MS: "4000"
+  # Every link between nodes is mutual TLS (HIL-1034): each node trusts the stand's authority
+  # and presents its own certificate, set per node below as CLUSTER_TLS_CERT_FILE. The files in
+  # docker/tls/ are stand fixtures issued by the framework's cluster:tls:* commands; how to
+  # reissue them is in demo/cluster/README.md.
+  CLUSTER_TLS_CA_FILE: /app/docker/tls/ca.pem
   WORKER_MIN_REGULAR: "1"
   WORKER_MAX_REGULAR: "1"
   WORKER_MIN_MONOPOLISTIC: "1"
@@ -149,6 +154,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m1
+      CLUSTER_TLS_CERT_FILE: /app/docker/tls/m1.pem
       CLUSTER_NODE_ROLE: master
       # Empty on purpose, and the emptiness is this stand's choice, not a framework rule: the
       # framework gates placement on what a node DECLARES, never on its role (HIL-445). With no
@@ -177,6 +183,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m2
+      CLUSTER_TLS_CERT_FILE: /app/docker/tls/m2.pem
       CLUSTER_NODE_ROLE: master
       # Empty for the same reason m1's is; see the comment there.
       CLUSTER_NODE_CAPABILITIES: ""
@@ -199,6 +206,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m3
+      CLUSTER_TLS_CERT_FILE: /app/docker/tls/m3.pem
       CLUSTER_NODE_ROLE: master
       # Empty for the same reason m1's is; see the comment there.
       CLUSTER_NODE_CAPABILITIES: ""
@@ -221,6 +229,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s1
+      CLUSTER_TLS_CERT_FILE: /app/docker/tls/s1.pem
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: "worker"
       CLUSTER_PEER_ADVERTISE: "10.185.0.14:8095"
@@ -246,6 +255,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s2
+      CLUSTER_TLS_CERT_FILE: /app/docker/tls/s2.pem
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: "worker"
       CLUSTER_PEER_ADVERTISE: "10.185.0.15:8095"
@@ -262,6 +272,35 @@ services:
     networks:
       cluster-net:
         ipv4_address: 10.185.0.15
+
+  # A stranger on the cluster network (HIL-1034): a node whose certificate is signed by an
+  # authority the cluster does not trust. It passes its own start-up check - its trust file is
+  # that other authority - and dials every node, and every link is refused on both ends:
+  # scenario 17 asserts that nobody admits it. Profile `intruder`, so it never comes up with
+  # the cluster; `cluster intruder up|down` drives it. Not in CLUSTER_MASTER_SET.
+  cluster-x1:
+    <<: *node-base
+    container_name: cluster-x1
+    profiles:
+      - intruder
+    environment:
+      <<: *node-env
+      CLUSTER_NODE_ID: x1
+      CLUSTER_TLS_CERT_FILE: /app/docker/tls/x1.pem
+      CLUSTER_TLS_CA_FILE: /app/docker/tls/intruder-ca.pem
+      CLUSTER_NODE_ROLE: slave
+      CLUSTER_NODE_CAPABILITIES: ""
+      CLUSTER_PEER_ADVERTISE: "10.185.0.16:8095"
+      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs/x1:/var/log/hilos
+    networks:
+      cluster-net:
+        ipv4_address: 10.185.0.16
 
   # Long-lived CLI container the harness `docker exec`s for test:cluster:inspect,
   # and the one-shot runner for composer/phpunit (profile cli, so it never joins a

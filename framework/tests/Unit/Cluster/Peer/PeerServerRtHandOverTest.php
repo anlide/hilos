@@ -33,6 +33,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Transport\PlainSocketTransport;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -102,8 +103,9 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
         $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
 
@@ -120,8 +122,9 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
         $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
 
@@ -140,7 +143,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
@@ -160,7 +163,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
@@ -180,7 +183,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -204,7 +207,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -236,7 +239,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
@@ -259,7 +262,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
         $server->onLinkClosed($link);
@@ -279,8 +282,9 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
         $server->onHandshakeComplete($link, NodeIdentity::of('node-b', NodeRole::Master, []));
 
@@ -296,8 +300,9 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
         $remote = NodeIdentity::of('node-b', NodeRole::Master, []);
 
         $server->onHandshakeComplete($link, $remote);
@@ -323,7 +328,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -357,7 +362,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -387,7 +392,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -418,7 +423,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -446,7 +451,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
         $this->handshake($link, $far);
@@ -472,8 +477,9 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
         $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
 
@@ -491,8 +497,9 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
-        $link = new PeerLink($this->makeSocket(), $server, $local, dialer: false);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
+        $socket = $this->makeSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
         $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
         $sink->handedOverTo = [];
@@ -515,7 +522,7 @@ final class PeerServerRtHandOverTest extends TestCase
     {
         $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         $server->announceSourceInterest(['unitRows'], []);
 
         [$link, $far] = $this->makeLinkedPair($server, $local);
@@ -628,7 +635,12 @@ final class PeerServerRtHandOverTest extends TestCase
         socket_set_nonblock($far);
         $this->pair = $pair;
 
-        return [new PeerLink($near, $server, $local, dialer: false), $far];
+        // Every pair is handshaked as node-b ({@see handshake()}), so that is the name its
+        // transport vouches for.
+        return [
+            new PeerLink($near, $server, $local, dialer: false, transport: new NamedPeerTestTransport($near, 'node-b')),
+            $far,
+        ];
     }
 
     /**

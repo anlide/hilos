@@ -8,6 +8,7 @@ use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Peer\PeerAddress;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Tls\ClusterTlsConfig;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
@@ -35,19 +36,26 @@ final class PeerModule implements DaemonModule
     /**
      * Builds the peer transport server from the CLUSTER_* env and registers it.
      *
+     * The node's TLS files are checked first ({@see ClusterTlsConfig::fromEnv()}).
+     *
      * @param DaemonManager $daemon Daemon to register the peer server on
      * @param DaemonContext $context Resolved path context (unused; peer wiring is env-driven)
      * @throws ClusterDisabledException When cluster mode is disabled
-     * @throws ClusterConfigurationException When enabled but node config is missing or invalid
+     * @throws ClusterConfigurationException When enabled but node config or its TLS files are missing or invalid
      * @throws EnvException When a cluster env value cannot be read
      */
     public function register(DaemonManager $daemon, DaemonContext $context): void
     {
+        // Checked before the peer port opens: a node whose files cannot carry the channel does
+        // not start, and says why.
+        $tls = ClusterTlsConfig::fromEnv(Hilos::$cluster->identity());
+
         $peerServer = new PeerServer(
             Hilos::$env[EnvConstants::CLUSTER_PEER_HOST]->string(),
             Hilos::$env[EnvConstants::CLUSTER_PEER_PORT]->int(),
             Hilos::$cluster->identity(),
             PeerAddress::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]->string()),
+            $tls,
             Hilos::$cluster->connectionPolicy(),
         );
         $daemon->registerServer($peerServer);

@@ -245,7 +245,7 @@ final class TlsSocketTransportTest extends TestCase
         $this->assertInstanceOf(Socket::class, $accepted, 'the listener did not accept the peer');
         $this->assertTrue(socket_set_nonblock($accepted));
 
-        $transport = new TlsSocketTransport($accepted, $bundleFile);
+        $transport = TlsSocketTransport::accepting($accepted, $bundleFile);
 
         return [new TlsSocketTransportTestClient($accepted, $transport), $transport, $peer];
     }

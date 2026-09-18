@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Exception;
 
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\EnvConstants;
+
 /**
  * Thrown when cluster mode is enabled but the node-identity configuration is
  * incomplete or invalid. There is no silent fallback: a misconfigured node
@@ -20,6 +23,70 @@ class ClusterConfigurationException extends ClusterException
     public static function missingField(string $envName): self
     {
         return new self("Cluster is enabled but required node config '{$envName}' is empty");
+    }
+
+    /**
+     * Builds an exception for a TLS file that cannot be read, or holds no certificate.
+     *
+     * @param string $envName Environment variable that names the file
+     * @param string $path Path the variable names
+     * @return self Configuration exception
+     */
+    public static function tlsFileUnreadable(string $envName, string $path): self
+    {
+        return new self("{$envName} names '{$path}', which cannot be read as PEM");
+    }
+
+    /**
+     * Builds an exception for a node certificate whose file carries no private key that fits it.
+     *
+     * @param string $path Path of the node certificate file
+     * @return self Configuration exception
+     */
+    public static function tlsKeyMismatch(string $path): self
+    {
+        return new self("The certificate in '{$path}' has no matching private key beside it");
+    }
+
+    /**
+     * Builds an exception for a node certificate issued to another node.
+     *
+     * The name in the certificate is what every neighbour checks this node's handshake against,
+     * so a node presenting another name would be refused by all of them.
+     *
+     * @param ?string $certificateName Common name the certificate carries, null when it carries none
+     * @param string $nodeId CLUSTER_NODE_ID of this node
+     * @return self Configuration exception
+     */
+    public static function tlsNameMismatch(?string $certificateName, string $nodeId): self
+    {
+        $named = $certificateName === null ? 'no node' : "'{$certificateName}'";
+
+        return new self("The node certificate names {$named}, but CLUSTER_NODE_ID is '{$nodeId}'");
+    }
+
+    /**
+     * Builds an exception for a node certificate past its end date.
+     *
+     * @param string $date Date the certificate expired on, Y-m-d
+     * @return self Configuration exception
+     */
+    public static function tlsExpired(string $date): self
+    {
+        return new self("The node certificate expired on {$date}; issue a new one with " . CliCommands::CLUSTER_TLS_ISSUE);
+    }
+
+    /**
+     * Builds an exception for a node certificate no trusted authority vouches for on both sides of a link.
+     *
+     * @return self Configuration exception
+     */
+    public static function tlsNotTrusted(): self
+    {
+        return new self(
+            'The node certificate is not signed for both server and client use by an authority in '
+            . EnvConstants::CLUSTER_TLS_CA_FILE->name,
+        );
     }
 
     /**

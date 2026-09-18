@@ -35,6 +35,15 @@ final class CliCommands
     /** @var string Command: Reload cluster config and re-announce the local node */
     public const string CLUSTER_RELOAD = 'cluster:reload';
 
+    /** @var string Command: Issue a cluster certificate authority, printed as certificate then key */
+    public const string CLUSTER_TLS_CA = 'cluster:tls:ca';
+
+    /** @var string Command: Issue a node certificate signed by the cluster authority, printed as certificate then key */
+    public const string CLUSTER_TLS_ISSUE = 'cluster:tls:issue';
+
+    /** @var string Command: Print the cluster authority's certificate without its key, the trust file of every node */
+    public const string CLUSTER_TLS_TRUST = 'cluster:tls:trust';
+
     /** @var string Command: Inspect the daemon's cluster/consensus/placement state (test-only) */
     public const string CLUSTER_TEST_INSPECT = 'test:cluster:inspect';
 

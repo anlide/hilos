@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Socket\Transport\PlainSocketTransport;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -69,7 +70,7 @@ final class PeerServerAddressChurnTest extends TestCase
     public function testReconcileRepointsDialWhenPeerReAdvertisesAChangedAddress(): void
     {
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
-        $server = new PeerServer('127.0.0.1', 0, $local, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread());
         $registry = Hilos::$cluster->registry();
         $now = microtime(true);
 
@@ -91,7 +92,8 @@ final class PeerServerAddressChurnTest extends TestCase
         $dial->connecting = true;
         $dial->connectStartedAt = $now;
         $dial->nextAttemptAt = $now + 5.0;
-        $link = new PeerLink($this->newSocket(), $server, $local, dialer: true);
+        $socket = $this->newSocket();
+        $link = new PeerLink($socket, $server, $local, dialer: true, transport: new PlainSocketTransport($socket));
         $dial->link = $link;
 
         // The peer restarts on a new port; the same node re-handshakes with a changed address.

@@ -125,7 +125,10 @@ wire, by the latch in `AbstractCommandChannelTestCommand::sendCommand()`.
 database that is still coming up), `db:migration:status`, `db:schema:status` and
 `llm:ping` (they answer about an installation whose daemon did NOT start, which is when
 the answer is wanted), `backup:verify` (hashing gigabytes must not run inside the
-monopolistic backup agent's loop).
+monopolistic backup agent's loop), `cluster:tls:ca`, `cluster:tls:issue` and
+`cluster:tls:trust` (they issue key material for a node that may not run yet and print it;
+nothing the installation owns is read or written, and where the file goes is the operator's
+to decide — one reason, declared once on `ClusterTlsCaCommand::EXECUTION_REASON`, HIL-1034).
 
 **`cli-offline-write`** — `db:migration:up` / `:down` / `:retry`, `db:seed:apply`,
 `test:db:reset`, `test:user:seed`, `test:verification:expire`, `test:session:expire`,

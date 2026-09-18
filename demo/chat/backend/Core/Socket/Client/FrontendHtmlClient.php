@@ -9,6 +9,7 @@ use Demo\Chat\Core\Frontend\HtmlResolver;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -51,6 +52,8 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
      *
      * Parses request, resolves path via HtmlResolver, gets HTML from cache,
      * builds response with status and headers.
+     *
+     * @throws HilosException When the response cannot be written to the socket
      */
     protected function processReadBuffer(): void
     {

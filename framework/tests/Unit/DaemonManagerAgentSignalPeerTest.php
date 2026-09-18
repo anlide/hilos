@@ -32,6 +32,7 @@ use Hilos\HilosException;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Tests\Unit\Cluster\Peer\PeerSignalDTOTest;
+use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -183,6 +184,7 @@ final class DaemonManagerAgentSignalPeerTest extends TestCase
             0,
             NodeIdentity::of('node-a', NodeRole::Master, []),
             [],
+            PeerTestTls::unread(),
         ));
 
         return $manager;

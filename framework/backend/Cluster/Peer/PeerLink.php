@@ -62,6 +62,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\Utils\Logger;
 
 /**
@@ -74,6 +75,12 @@ use Hilos\Utils\Logger;
  * frames; the registry updates and the fan-out to other peers are owned by the
  * {@see PeerServer}. A malformed frame or a rejected handshake closes the link
  * rather than propagating out of the daemon loop.
+ *
+ * The link speaks over a transport that vouches for the name in the peer's certificate
+ * (HIL-1034), and the node id a hello or a welcome introduces must be exactly that name:
+ * otherwise the handshake is refused before the link remembers the peer or tells the server
+ * about it. What the frames carry after the handshake is not checked against it - a holder of a
+ * valid node certificate is a member of the cluster.
  */
 final class PeerLink extends AbstractClient
 {
@@ -92,6 +99,25 @@ final class PeerLink extends AbstractClient
     /** @var ?NodeIdentity Remote node identity, known once the handshake completes */
     private ?NodeIdentity $remoteIdentity = null;
 
+    /** @var SocketTransportInterface Transport this link was created with, asked for the peer's certificate name */
+    private SocketTransportInterface $transport;
+
+    /**
+     * @var bool Whether this dialing link accepted a welcome.
+     *
+     * Not the same question as {@see $remoteIdentity}: a link that lost the duplicate collapse is
+     * cleared of its identity after it was welcomed, and must not read as closed before welcome.
+     */
+    private bool $welcomed = false;
+
+    /**
+     * @var bool Whether this side dropped the link on its own - after a silence timeout, or on a frame it refused.
+     *
+     * A dialed link this side dropped before a welcome was not closed by the peer, and the peer's
+     * log names no refusal for it.
+     */
+    private bool $droppedHere = false;
+
     /** @var float Seconds of silence before a keepalive ping is sent */
     private float $keepaliveIntervalSec;
 
@@ -109,12 +135,15 @@ final class PeerLink extends AbstractClient
      * @param PeerServer $server Owning peer server for membership fan-out
      * @param NodeIdentity $localIdentity Local node identity to announce
      * @param bool $dialer True for the dialing side, false for the accepting side
+     * @param SocketTransportInterface $transport Transport over the socket; the peer channel has no default, and a
+     *                                            transport that vouches for nobody makes every handshake refused
      * @throws EnvException When the socket read buffer or keepalive env values are missing or invalid
      */
-    public function __construct($socket, PeerServer $server, NodeIdentity $localIdentity, bool $dialer)
+    public function __construct($socket, PeerServer $server, NodeIdentity $localIdentity, bool $dialer, SocketTransportInterface $transport)
     {
-        parent::__construct($socket);
+        parent::__construct($socket, $transport);
 
+        $this->transport = $transport;
         $this->server = $server;
         $this->localIdentity = $localIdentity;
         $this->dialer = $dialer;
@@ -189,6 +218,23 @@ final class PeerLink extends AbstractClient
     }
 
     /**
+     * Reports whether the peer closed this dialed link after TLS came up but before it welcomed us.
+     *
+     * In TLS 1.3 a refusal of the dialer's certificate is known only to the accepting side: the
+     * dialer finishes its own handshake and then finds the connection closed. So a dialed link
+     * that the peer took down with TLS done and no welcome is, almost always, a refusal the peer's
+     * log names - the server says so once per series of such closes. A link this side dropped
+     * itself - timed out in silence, or refused a frame, the welcome included - is not one of them.
+     *
+     * @return bool True for a dialing link whose TLS handshake completed, that never accepted a
+     *              welcome, and that this side did not drop on its own
+     */
+    public function closedUnwelcomed(): bool
+    {
+        return $this->dialer && !$this->welcomed && !$this->droppedHere && !$this->transport->needsHandshake();
+    }
+
+    /**
      * Silently drops this link after it lost the duplicate-link tie-break.
      *
      * The peer is still reachable over the surviving link, so this must not look
@@ -236,6 +282,7 @@ final class PeerLink extends AbstractClient
                 $this->handleFrame(PeerDTO::fromWire($message));
             } catch (PeerTransportException $e) {
                 Logger::warning("Peer link dropped: {$e->getMessage()}");
+                $this->droppedHere = true;
                 $this->markShouldClose();
                 return;
             }
@@ -261,6 +308,7 @@ final class PeerLink extends AbstractClient
         if ($silentFor >= $this->linkTimeoutSec) {
             Logger::warning("Peer link timed out after {$silentFor}s of silence"
                 . ($this->remoteIdentity !== null ? " to {$this->remoteIdentity->nodeId}" : ' (handshake never completed)'));
+            $this->droppedHere = true;
             $this->markShouldClose();
             return;
         }
@@ -347,7 +395,8 @@ final class PeerLink extends AbstractClient
      * Accepting side: records the remote identity and answers with a welcome.
      *
      * @param PeerHelloDTO $hello Incoming hello frame
-     * @throws PeerTransportException When a hello arrives on the dialing side or the version is incompatible
+     * @throws PeerTransportException When a hello arrives on the dialing side, the version is incompatible,
+     *                                or the node id is not the name the peer's certificate carries
      */
     private function onHello(PeerHelloDTO $hello): void
     {
@@ -356,6 +405,7 @@ final class PeerLink extends AbstractClient
         }
 
         $this->requireCompatible($hello);
+        $this->requireCertifiedAs($hello->nodeId);
 
         $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities, $hello->address);
         $this->remoteIdentity = $remote;
@@ -374,7 +424,8 @@ final class PeerLink extends AbstractClient
      * Dialing side: records the remote identity from the welcome reply.
      *
      * @param PeerWelcomeDTO $welcome Incoming welcome frame
-     * @throws PeerTransportException When a welcome arrives on the accepting side or the version is incompatible
+     * @throws PeerTransportException When a welcome arrives on the accepting side, the version is incompatible,
+     *                                or the node id is not the name the peer's certificate carries
      */
     private function onWelcome(PeerWelcomeDTO $welcome): void
     {
@@ -383,6 +434,9 @@ final class PeerLink extends AbstractClient
         }
 
         $this->requireCompatible($welcome);
+        $this->requireCertifiedAs($welcome->nodeId);
+        // Set before the server hears of it: the duplicate collapse there may discard this very link.
+        $this->welcomed = true;
 
         $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities, $welcome->address);
         $this->remoteIdentity = $remote;
@@ -907,6 +961,32 @@ final class PeerLink extends AbstractClient
         if (!PeerProtocol::isCompatible($frame->protocolVersion)) {
             throw new PeerTransportException(
                 "Incompatible peer protocol version {$frame->protocolVersion}, expected " . PeerProtocol::VERSION,
+            );
+        }
+    }
+
+    /**
+     * Rejects a handshake frame whose node id is not the name the peer's certificate carries.
+     *
+     * The transport has checked the certificate's chain; this checks that the certificate is the
+     * introduced node's own. A transport that vouches for nobody fails it too - the peer channel
+     * has no plain mode.
+     *
+     * @param string $nodeId Node id the handshake frame introduces
+     * @throws PeerTransportException When the transport vouches for no name, or for another one
+     */
+    private function requireCertifiedAs(string $nodeId): void
+    {
+        $certificateName = $this->transport->verifiedPeerName();
+        if ($certificateName === null) {
+            throw new PeerTransportException(
+                "Peer handshake names node '{$nodeId}' but the connection vouches for no certificate name",
+            );
+        }
+
+        if ($certificateName !== $nodeId) {
+            throw new PeerTransportException(
+                "Peer handshake names node '{$nodeId}' but its certificate names '{$certificateName}'",
             );
         }
     }

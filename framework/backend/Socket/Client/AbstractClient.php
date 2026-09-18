@@ -9,6 +9,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Socket\Transport\PlainSocketTransport;
@@ -76,7 +77,11 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /**
      * Read data from client socket.
      *
+     * While a handshake still stands before the first application byte, a read only moves it on.
+     *
      * @throws SocketException If socket read fails
+     * @throws SocketTlsHandshakeException When a transport that verifies its peer refuses the handshake
+     *                                     (a SocketException, contained like any other failed read)
      * @throws HilosException When buffered wire input refuses to become a DTO
      * @throws RandomException When the secure random source refuses a handshake secret
      */
@@ -118,7 +123,11 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /**
      * Write buffered data to socket.
      *
+     * While a handshake still stands before the first application byte, a write only moves it on.
+     *
      * @throws SocketException If socket write fails
+     * @throws SocketTlsHandshakeException When a transport that verifies its peer refuses the handshake
+     *                                     (a SocketException, contained like any other failed write)
      * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function write(): void
@@ -339,6 +348,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      *
      * A refused peer gets no answer at all: a side that did not agree on encryption could not
      * read one.
+     *
+     * @throws SocketTlsHandshakeException When a transport that verifies its peer names the refusal
      */
     private function advanceHandshake(): void
     {

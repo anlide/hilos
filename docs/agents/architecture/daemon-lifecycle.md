@@ -359,6 +359,102 @@ Servers are handed the seam (`ContainedFailureSink`) at registration, through
 `ServerInterface` rather than by type: a server left without it would contain its
 failures in silence, and silence is indistinguishable from a node that has none.
 
+## Peer channel trust (HIL-1034)
+
+Every link between two nodes is **mutual TLS** on the framework's own transport, and
+there is no plain mode: the peer port is internal to the cluster, and a network that
+encrypts the wire (a docker bridge, Tailscale) still cannot tell a node from any other
+process on it — one behavior instead of a flag, as the incoming half already decided
+(`AbstractTlsServer`, "There is no plain mode").
+
+**What it defends against.** A *stranger*: a process on the same network without a
+certificate of the cluster's authority. Before this, any process that reached the peer
+port could introduce itself as any node — a master of `CLUSTER_MASTER_SET` included —
+vote, and receive every RT and DB sync frame; the hello/welcome frames carry only
+self-declared fields and no secret. A holder of a valid node certificate is a member:
+names inside frames after the handshake (a `voterId` in a vote, nodes in a roster or an
+announce) are **not** checked against the link's name.
+
+**Trust.** One authority per cluster, one certificate per node, and the certificate's
+common name (CN) is the node id. A neighbour is accepted only when its certificate is
+signed by an authority of the trust file **and** names exactly the node id its hello
+(accepting side) or welcome (dialing side) introduces. The name is checked by
+`PeerLink` (`requireCertifiedAs()`), not by OpenSSL (`verify_peer_name` is off): a seed
+is dialed by address, before anyone knows the name behind it, and one place of the check
+serves both sides. The check stands before the link remembers the peer or tells the
+server about it; a mismatch drops the link through the same branch as an incompatible
+protocol version (`Peer link dropped: …`), and the registry is not touched. Addresses are
+not a basis for trust (they churn, HIL-343), and neither are pinned fingerprints (the
+membership is not known in advance, HIL-346). The role is not in the certificate: who may
+be a master is still `CLUSTER_MASTER_SET`, by name.
+
+**Two environment values**, both required when `CLUSTER_ENABLED` is true:
+
+| Value | Holds |
+|---|---|
+| `CLUSTER_TLS_CERT_FILE` | this node's certificate followed by its private key, one PEM |
+| `CLUSTER_TLS_CA_FILE` | the certificates of the authorities the node trusts; several one after another while the authority is replaced |
+
+**The start refuses.** `ClusterTlsConfig::fromEnv()` runs in `PeerModule` before the
+peer port opens, and the first check that fails stops the start with its reason
+(`ClusterConfigurationException`): a value is empty; a file does not read as PEM; the node
+file has no private key that fits its certificate; the CN is not `CLUSTER_NODE_ID`; the
+certificate has expired; no authority of the trust file signed it for **both** server and
+client use (a node accepts and dials). Expiry is checked before the chain on purpose — the
+chain of an expired certificate fails too and would name the wrong reason. Under 30 days
+to the end the node starts and warns: `Cluster TLS certificate of node '<id>' expires on
+<date>; issue a new one with cluster:tls:issue`. A node that started and quietly stayed out
+of the cluster would be worse than one that did not start and said why.
+
+**Who names a refused handshake, and why both ends.** A transport given a trust file names
+every refusal as `SocketTlsHandshakeException` —
+`Socket TLS handshake failed: <ip:port>: <OpenSSL's reason>` — which leaves the client's
+read and takes the ordinary road of a failing connection: the rate-limited WARNING of
+`ClientReadFailureLog`, the contained-failure card to the project, the link dropped. The
+dialing side retries on its usual five seconds. In TLS 1.3 a refusal of the **dialer's**
+certificate is known only to the accepting side: the dialer finishes its own handshake and
+then finds the connection closed. So the accepting node always names it, the dialer names
+it when the reason is its own (it does not trust the acceptor), and a dialer whose link the
+peer closed after TLS and before any welcome writes one line per series to that target —
+`Peer <host>:<port> closed the link before welcoming this node; that node's log names the
+refusal` — and the next only after a handshake with that target has been taken to its end.
+A link the dialer dropped itself before the welcome — a silence timeout, a frame it refused,
+the welcome included — says so in its own line and is not blamed on the peer.
+A refusal on the peer port means a misconfigured node or a stranger; the operator must see
+either. A public port (a TLS server with no trust file, such as the stand gateway) asks no
+client for a certificate and closes a refused handshake without a word, as before.
+
+**Issuing — three framework commands**, all printing PEM to stdout and nothing else,
+database-free and run in the CLI process (`cli-read`): they touch nothing the installation
+owns, and where a file goes is the operator's decision.
+
+```
+cluster:tls:ca                       > cluster-ca.pem   authority: certificate + key, stays with the operator
+cluster:tls:trust cluster-ca.pem     > ca.pem           the certificate alone - on every node
+cluster:tls:issue m1 cluster-ca.pem  > m1.pem           node m1's certificate + key - on node m1 only
+```
+
+Keys are EC prime256v1, signatures sha256, serials from the secure random source. The
+authority lives ten years; a node certificate lives ten years or what is left of the
+authority, whichever is shorter. Every authority carries the same name, `Hilos cluster CA`,
+so a certificate names its signer by key identifier (`subjectKeyIdentifier` on both,
+`authorityKeyIdentifier` on a node): without it OpenSSL takes the first authority of that
+name in a trust file as the signer, and a file holding two would refuse every node of the
+second.
+
+**Replacing.** A node certificate: issue a new one and restart that node. The authority: the
+trust file carries the old and the new authority one after the other (in either order),
+nodes restart one at a time; their certificates are reissued by the new authority, again one restart at a time; then
+the old authority leaves the trust file. There is **no revocation list**: a leaked node file
+is closed by replacing the authority. There is no hot reload of the files either, and no
+session resumption — links are few (N−1 per node) and long-lived, and a restart re-reads
+everything, as it does for the role and the seeds.
+
+**Rolling out** is one step: a node of the old code and a node of the new simply do not link.
+`PeerProtocol::VERSION` did not move — no frame changed. The stand `demo/cluster` carries its
+own fixtures and a node of a foreign authority, `x1`, which scenario 17 shows refused on both
+ends and listed by nobody (`demo/cluster/README.md`).
+
 ## Consensus coordinator (HIL-339)
 
 A clustered **master** runs a self-written, raft-like coordinator
@@ -537,7 +633,12 @@ onto one node.
 - **Failover re-placement (leader).** `onNodeLeft` arms a failover for each placed agent the
   lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs
   the `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node
-  (capability gate only). A node back before its grace cancels its own failover. The deadline
+  (capability gate only). A node back before its grace cancels its own failover — and "back"
+  is a handshake with it as well as the registry reporting its return: when gossip puts the
+  node online a moment before the leader's own link to it completes, the registry takes the
+  handshake for no change and reports nothing, so `ClusterPlacement::onPeerHandshaked()`
+  calls the failover off itself and logs `Failover of <n> agent(s) on '<node>' called off`
+  (HIL-1034; a slave's self-fence against its placing leader the same way). The deadline
   carries the node whose loss armed it, and firing it re-places only an agent the registry
   still puts there: inside one grace period the fleet's own supervisor may restart the agent
   on a neighbour, and a deadline outliving that move would start a second copy on the node it

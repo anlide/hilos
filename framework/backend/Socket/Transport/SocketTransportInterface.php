@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Transport;
 
 use Hilos\Socket\Client\AbstractClient;
+use Hilos\Socket\Exception\SocketTlsHandshakeException;
 
 /**
  * The bytes-on-the-wire half of an accepted connection, under the client that reads them.
@@ -14,7 +15,8 @@ use Hilos\Socket\Client\AbstractClient;
  * client is created, and nothing above this seam knows which. Two questions have different
  * answers per transport, and {@see AbstractClient} asks them here instead of guessing:
  * whether an empty read ended the connection, and whether a handshake still stands between
- * the socket and the first application byte.
+ * the socket and the first application byte. A third belongs to whoever reads the peer's name:
+ * whether the transport vouches for who is on the other end.
  */
 interface SocketTransportInterface
 {
@@ -57,6 +59,15 @@ interface SocketTransportInterface
      * Moves the handshake one non-blocking step.
      *
      * @return int|bool True once finished, 0 while it needs another turn, false when the peer was refused
+     * @throws SocketTlsHandshakeException When a transport that verifies its peer names the refused handshake
      */
     public function advanceHandshake(): int|bool;
+
+    /**
+     * Name in the certificate of the peer, which the transport checked against its trust file.
+     *
+     * @return ?string Name of the verified peer; null while the handshake is under way, and always
+     *                 null on a transport that vouches for nobody
+     */
+    public function verifiedPeerName(): ?string;
 }

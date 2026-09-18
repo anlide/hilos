@@ -957,6 +957,23 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function noteNodeOnline(string $nodeId, float $now): void
     {
+        $this->callOffLossOf($nodeId);
+
+        if ($this->isLeader) {
+            $this->retryUnplaced();
+        }
+    }
+
+    /**
+     * Calls off what the loss of a node armed here, now that the node is back.
+     *
+     * Node side, the self-fence armed against the placing leader; leader side, the failover of
+     * every agent the node hosts. Both are left alone when nothing was armed.
+     *
+     * @param string $nodeId Node id that is back
+     */
+    private function callOffLossOf(string $nodeId): void
+    {
         if ($nodeId === $this->placingLeaderId) {
             if ($this->selfFenceDeadline !== null) {
                 Logger::info("Self-fence disarmed: placing leader '{$nodeId}' is back before the grace elapsed");
@@ -968,13 +985,17 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        $calledOff = 0;
         foreach ($this->registry->all() as $record) {
-            if ($record->nodeId === $nodeId) {
+            if ($record->nodeId === $nodeId && isset($this->failoverDeadlines[$record->agentId()])) {
                 unset($this->failoverDeadlines[$record->agentId()]);
+                $calledOff++;
             }
         }
 
-        $this->retryUnplaced();
+        if ($calledOff > 0) {
+            Logger::info("Failover of {$calledOff} agent(s) on '{$nodeId}' called off: the node is back before the grace elapsed");
+        }
     }
 
     /**
@@ -1087,10 +1108,19 @@ final class ClusterPlacement implements WorkerPlacement
      * thing the per-tick publish cannot do for it: the publish speaks only on CHANGE, so a node
      * that linked into a quiet cluster would learn nothing until something moved.
      *
+     * Both sides first call off what the peer's loss armed here - the self-fence, the failover
+     * ({@see noteNodeOnline()} does the same on a return the registry reports). A handshake is
+     * this node seeing the peer alive with its own eyes, and it can be the only sign of the
+     * return: when gossip put the peer back online a moment before the handshake completed, the
+     * registry takes the handshake for no change and reports nothing, and a failover armed by the
+     * link that dropped would move a live node's agents (HIL-1034).
+     *
      * @param string $nodeId Node id of the peer that just handshaked
      */
     public function onPeerHandshaked(string $nodeId): void
     {
+        $this->callOffLossOf($nodeId);
+
         if ($this->isLeader) {
             $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents()));
         }

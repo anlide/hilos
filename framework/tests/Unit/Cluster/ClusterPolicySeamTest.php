@@ -17,6 +17,7 @@ use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Cluster\Tls\ClusterCertificateIssuer;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -52,6 +53,9 @@ final class ClusterPolicySeamTest extends TestCase
     /** @var ?RtContext Previous runtime overlay to restore after the test */
     private ?RtContext $previousRt = null;
 
+    /** @var list<string> TLS files of the node, issued for each test and removed after it */
+    private array $tlsFiles = [];
+
     protected function setUp(): void
     {
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
@@ -76,6 +80,12 @@ final class ClusterPolicySeamTest extends TestCase
         putenv('CLUSTER_FAILOVER_GRACE_MS=8000');
         putenv('CLUSTER_SLAVE_WORK_GRACE_MS=4000');
 
+        // The module checks the node's TLS files before it builds the server (HIL-1034), so the
+        // node gets real ones, issued the way an operator would.
+        $authorityPem = ClusterCertificateIssuer::issueAuthority();
+        putenv('CLUSTER_TLS_CERT_FILE=' . $this->writeTlsFile(ClusterCertificateIssuer::issueNode('node-a', $authorityPem)));
+        putenv('CLUSTER_TLS_CA_FILE=' . $this->writeTlsFile(ClusterCertificateIssuer::trustOf($authorityPem)));
+
         Hilos::$cluster = new ClusterContext();
     }
 
@@ -97,8 +107,16 @@ final class ClusterPolicySeamTest extends TestCase
             'CLUSTER_SEEDS',
             'CLUSTER_FAILOVER_GRACE_MS',
             'CLUSTER_SLAVE_WORK_GRACE_MS',
+            'CLUSTER_TLS_CERT_FILE',
+            'CLUSTER_TLS_CA_FILE',
         ] as $key) {
             putenv($key);
+        }
+
+        foreach ($this->tlsFiles as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
         }
     }
 
@@ -186,6 +204,22 @@ final class ClusterPolicySeamTest extends TestCase
         $this->assertInstanceOf(PeerServer::class, $server);
 
         return $server;
+    }
+
+    /**
+     * Writes one TLS file of the node for the duration of the test.
+     *
+     * @param string $pem PEM the issuer printed
+     * @return string Path of the written file
+     */
+    private function writeTlsFile(string $pem): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'hilos-policy-seam-tls');
+        $this->assertIsString($file);
+        $this->tlsFiles[] = $file;
+        $this->assertNotFalse(file_put_contents($file, $pem));
+
+        return $file;
     }
 
     /**

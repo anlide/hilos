@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\PeerProtocol;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Socket\Transport\PlainSocketTransport;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -79,7 +80,14 @@ final class PeerLinkKeepaliveTest extends TestCase
     public function testAStalledHalfOpenHandshakeTimesOut(): void
     {
         putenv('CLUSTER_LINK_TIMEOUT_MS=0');
-        $link = new PeerLink($this->makeSocket(), $this->makeServer(), $this->localIdentity(), dialer: false);
+        $socket = $this->makeSocket();
+        $link = new PeerLink(
+            $socket,
+            $this->makeServer(),
+            $this->localIdentity(),
+            dialer: false,
+            transport: new PlainSocketTransport($socket),
+        );
 
         // Nothing was ever heard on this accepting link, so the timeout closes it.
         $link->onTick();
@@ -119,7 +127,13 @@ final class PeerLinkKeepaliveTest extends TestCase
     {
         [$near, $far] = $this->makeSocketPair();
         $this->far = $far;
-        $link = new PeerLink($near, $this->makeServer(), $this->localIdentity(), dialer: true);
+        $link = new PeerLink(
+            $near,
+            $this->makeServer(),
+            $this->localIdentity(),
+            dialer: true,
+            transport: new NamedPeerTestTransport($near, 'node-b'),
+        );
 
         $welcome = new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-b', NodeRole::Master, []);
         socket_write($far, $welcome->toJson() . "\n");
@@ -150,7 +164,7 @@ final class PeerLinkKeepaliveTest extends TestCase
      */
     private function makeServer(): PeerServer
     {
-        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), []);
+        return new PeerServer('127.0.0.1', 0, $this->localIdentity(), [], PeerTestTls::unread());
     }
 
     /**
