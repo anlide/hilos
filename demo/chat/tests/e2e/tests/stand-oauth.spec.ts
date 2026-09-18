@@ -5,6 +5,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { dictateGatewayBehavior, STAND_GATEWAY_URL } from '../helpers/gateway'
 import {
   declareOAuthAccount,
+  orderExpiredCode,
   type StandOAuthAccount,
   type StandOAuthProfile,
 } from '../helpers/oauth'
@@ -14,6 +15,8 @@ import { chooseAccount, confirmConsent, denyConsent } from '../helpers/oauth-use
 // product takes no part here: what is proved is that the emulator behaves like the thing it
 // stands in for — a screen that refuses a request no provider would honor, a code good once,
 // a token bound to its profile, and two providers that say the same refusal in two languages.
+// The expired code a spec orders (HIL-926) is held to the same contract: refused in each
+// provider's own form, and one order spent by one code.
 //
 // The browser IS involved, because the consent screen is only reachable through one: the spec
 // opens the screen itself with an authorization request of its own making, and reads the code
@@ -290,6 +293,25 @@ async function declare(
   return { status: response.status, error: payload.error }
 }
 
+/**
+ * Order an expired code without failing on a refusal, so a spec can assert it.
+ *
+ * @param order The order as the gateway reads it.
+ * @returns The status and the refusal code, if any.
+ */
+async function orderExpired(
+  order: Record<string, unknown>,
+): Promise<{ status: number; error: string | undefined }> {
+  const response = await fetch(`${STAND_GATEWAY_URL}/oauth/test/expired-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(order),
+  })
+  const payload = (await response.json()) as { error?: string }
+
+  return { status: response.status, error: payload.error }
+}
+
 test('signs a person in as the GitHub account a spec declared', async ({
   page,
 }) => {
@@ -373,6 +395,29 @@ test('spends an authorization code exactly once', async ({ page }) => {
   const googleAgain = await exchange('google', { code: googleCode })
   expect(googleAgain.status).toBe(400)
   expect(payloadOf(googleAgain)).toMatchObject({ error: 'invalid_grant' })
+})
+
+test('issues an expired code once when a spec ordered one', async ({ page }) => {
+  // The code is refused by the exchange's ordinary check of its lifetime, so each provider
+  // says it in its own form — the same two forms a code spent twice gets above.
+  const refusals: [StandOAuthProfile, number, string][] = [
+    ['github', 200, 'bad_verification_code'],
+    ['google', 400, 'invalid_grant'],
+  ]
+
+  for (const [profile, status, error] of refusals) {
+    const account = await declareOAuthAccount(profile)
+    await orderExpiredCode(account)
+
+    const expired = await exchange(profile, {
+      code: await codeFor(page, account),
+    })
+    expect(expired.status, profile).toBe(status)
+    expect(payloadOf(expired), profile).toMatchObject({ error })
+
+    // One order is one code: the next code of the same account is an ordinary one.
+    await tokenFor(profile, await codeFor(page, account))
+  }
 })
 
 test('refuses an exchange that does not match the consent it quotes', async ({
@@ -481,6 +526,24 @@ test('refuses an account declaration it cannot honor', async () => {
 
   for (const [declaration, error] of refusals) {
     expect(await declare(declaration), JSON.stringify(declaration)).toEqual({
+      status: 400,
+      error,
+    })
+  }
+})
+
+test('refuses an expired-code order it cannot honor', async () => {
+  const subject = (await declareOAuthAccount('github')).subject
+  // The order and shape of an account declaration's refusals; a login is a field of the
+  // account, not of an order.
+  const refusals: [Record<string, unknown>, string][] = [
+    [{ profile: 'github', subject, login: 'ada' }, 'FIELD_UNKNOWN'],
+    [{ profile: 'gitlab', subject }, 'PROFILE_UNKNOWN'],
+    [{ profile: 'github', subject: 'ada' }, 'SUBJECT_REQUIRED'],
+  ]
+
+  for (const [order, error] of refusals) {
+    expect(await orderExpired(order), JSON.stringify(order)).toEqual({
       status: 400,
       error,
     })

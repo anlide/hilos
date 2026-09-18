@@ -652,6 +652,22 @@ export interface AuthFlow {
    */
   cancelMethod(): void
   /**
+   * End a parked ceremony with a REFUSAL: everything {@link cancelMethod} does —
+   * the ceremony is ended, pending released, the flow back at the identifier
+   * field and the lookup asked again — and the field is left showing
+   * `{ message, code: null }`. It serves whoever learns the ceremony's outcome
+   * not from its own reply but later (the trip to a provider, HIL-633): a refusal
+   * of the same click BEFORE the trip starts already lands on the refusal line
+   * through the ceremony's outcome, and this brings both paths to one place.
+   *
+   * Wherever {@link cancelMethod} is a no-op (nothing parked and no send from the
+   * terms screen), this is one too and sets no refusal. The text comes from the
+   * caller: the machine still invents none (see {@link AuthFlowError}).
+   *
+   * @param message The human-facing refusal to leave on the field.
+   */
+  failMethod(message: string): void
+  /**
    * Apply an EXTERNAL flow transition (a ceremony's redirect landing, a
    * cross-tab converge) with the same merge as a backend `next`: clears the
    * shown error, never touches the form. Every step must survive being rebuilt
@@ -1698,6 +1714,51 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     flow.set({ ...flow.get(), step: 'code_expired' })
   }
 
+  /**
+   * End a running ceremony and return to the identifier field — the one body
+   * behind {@link AuthFlow.cancelMethod} and {@link AuthFlow.failMethod}, which
+   * differ only in what the field shows afterwards.
+   *
+   * @param refusal The refusal to leave on the field, or `null` for a quiet return.
+   */
+  function endMethod(refusal: AuthFlowError | null): void {
+    const state = flow.get()
+    // A cancel reaches every screen that WAITS on a ceremony, not just the
+    // external park: a registration sends from the terms screen (HIL-417), and
+    // a send nobody can take back would leave the rule "a canceled REGISTER
+    // applies no late success" (HIL-418) without a single path to reach it. An
+    // `external` step with no ceremony left (a reload, a converge landing)
+    // still returns to the field, exactly as it did when the step alone
+    // decided; a ceremony merely ORPHANED elsewhere (an identifier edit) stays
+    // orphaned rather than becoming a cancel whose late success would apply.
+    const sending = state.step === 'consent' && ceremony !== null
+    if (state.step !== 'external' && !sending) {
+      return
+    }
+    // Abort FIRST: cancelling has to end the ceremony itself, so the device
+    // dialog closes and a late finger cannot sign anything. Orphaning the
+    // outcome alone (what this used to do) left the OS prompt up.
+    if (ceremony !== null) {
+      ceremony.controller.abort()
+      ceremony.canceled = { at: Date.now(), intent: state.intent }
+    }
+    // The abandoned ceremony may never settle (a closed OAuth popup), so the
+    // cancel itself releases pending and orphans the ceremony's outcome —
+    // otherwise every control would stay dead behind the pending guard.
+    dispatchSeq += 1
+    pending.set(false)
+    flow.set({
+      ...state,
+      step: 'identifier',
+      methodKey: null,
+      sendProgress: null,
+    })
+    // Whatever the parked step showed goes, and the refusal, if any, is set on
+    // the step it belongs to; the lookup below never touches it.
+    error.set(refusal)
+    refreshDetect()
+  }
+
   return {
     flow,
     form,
@@ -2028,39 +2089,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       flow.set({ ...flow.get(), sendProgress: progress })
     },
     cancelMethod(): void {
-      const state = flow.get()
-      // A cancel reaches every screen that WAITS on a ceremony, not just the
-      // external park: a registration sends from the terms screen (HIL-417), and
-      // a send nobody can take back would leave the rule "a canceled REGISTER
-      // applies no late success" (HIL-418) without a single path to reach it. An
-      // `external` step with no ceremony left (a reload, a converge landing)
-      // still returns to the field, exactly as it did when the step alone
-      // decided; a ceremony merely ORPHANED elsewhere (an identifier edit) stays
-      // orphaned rather than becoming a cancel whose late success would apply.
-      const sending = state.step === 'consent' && ceremony !== null
-      if (state.step !== 'external' && !sending) {
-        return
-      }
-      // Abort FIRST: cancelling has to end the ceremony itself, so the device
-      // dialog closes and a late finger cannot sign anything. Orphaning the
-      // outcome alone (what this used to do) left the OS prompt up.
-      if (ceremony !== null) {
-        ceremony.controller.abort()
-        ceremony.canceled = { at: Date.now(), intent: state.intent }
-      }
-      // The abandoned ceremony may never settle (a closed OAuth popup), so the
-      // cancel itself releases pending and orphans the ceremony's outcome —
-      // otherwise every control would stay dead behind the pending guard.
-      dispatchSeq += 1
-      pending.set(false)
-      error.set(null)
-      flow.set({
-        ...state,
-        step: 'identifier',
-        methodKey: null,
-        sendProgress: null,
-      })
-      refreshDetect()
+      endMethod(null)
+    },
+    failMethod(message: string): void {
+      endMethod({ message, code: null })
     },
     applyExternal(next: Partial<AuthFlowState>): void {
       // The converge entry: an external transition lands with the same merge as

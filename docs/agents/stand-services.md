@@ -118,9 +118,11 @@ three when the participant is a browser:
 - the **test half** — what the spec calls, under `/<channel>/test/…`, registered
   with `GatewayRoutes::test()`. For Telegram that is
   `POST /telegram/test/reachable`, the one thing a spec cannot arrange any other
-  way: a number nobody put on Telegram. For OAuth it is
-  `POST /oauth/test/account`, which declares the world of the provider: which
-  accounts exist over there. For the local model it is
+  way: a number nobody put on Telegram. For OAuth there are two:
+  `POST /oauth/test/account`, which declares the world of the provider — which
+  accounts exist over there — and `POST /oauth/test/expired-code`, which orders
+  that an account's next code is born expired, one order being one code
+  (HIL-926). For the local model it is
   `POST /model/test/answer`, which dictates the text the model answers with;
 - the **page half** — what a BROWSER opens in the course of the product's work,
   registered with `GatewayRoutes::page()` (HIL-923). For OAuth that is
@@ -469,7 +471,10 @@ answers 503 after that delay.
 
 The handles are the house's, not one resident's: a status or a hold is dictated
 the same way for every provider half, so a spec learns one arrangement and the
-failed-provider scenarios (HIL-926) are written once. The declaration is
+failed-provider scenarios are written once: they live in
+`demo/chat/tests/e2e/tests/auth.spec.ts` (HIL-926) — a status, a delay and a cut
+from the house, and beside them the order for an expired code, which no lever
+gives because a provider refuses a code in a form of its own. The declaration is
 `src/Behavior.php`, the queues live in `Store`, `GatewayRoutes::provider()` takes
 the declaration on the call, and `src/StandGatewayHttpClient.php` plays the delay,
 the cut and the hold out on the connection. A spec dictates through

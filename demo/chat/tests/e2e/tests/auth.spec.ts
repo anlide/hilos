@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import { setAdmin } from '../helpers/adminGrant'
 import {
@@ -28,8 +28,18 @@ import {
 import { expectPageRefused, gotoAuthReturn, gotoPage } from '../helpers/page'
 import { uniquePhone, waitForSmsCode } from '../helpers/sms'
 import { dictateGatewayBehavior } from '../helpers/gateway'
-import { declareOAuthAccount } from '../helpers/oauth'
-import { signInAs } from '../helpers/oauth-user'
+import {
+  declareOAuthAccount,
+  orderExpiredCode,
+  type StandOAuthAccount,
+  type StandOAuthProfile,
+} from '../helpers/oauth'
+import {
+  abandonConsent,
+  denyConsent,
+  signInAs,
+  waitForProviderWindow,
+} from '../helpers/oauth-user'
 import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
@@ -159,6 +169,157 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+})
+
+/** What a sign-in the provider failed says, whichever way it failed (oauthLogin.ts). */
+const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
+
+/**
+ * Start a sign-in with a provider from the gated profile and see the person through
+ * the consent screen, the way the HIL-281 test does: the wait for the provider's window
+ * starts BEFORE the click, because the click opens it synchronously.
+ *
+ * @param page The product's page.
+ * @param account The account the person picks and confirms.
+ */
+async function signInThroughProvider(
+  page: Page,
+  account: StandOAuthAccount,
+): Promise<void> {
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  const signingIn = signInAs(page, account)
+  await page.getByTestId(`auth-icon-oauth-${account.profile}`).click()
+  await signingIn
+}
+
+/**
+ * The sign-in a provider failed ends as a refusal of the form (HIL-926): the sentence
+ * on the form's refusal line and not in the notice, the field and the provider's icon
+ * back so the person can try again the same way, and nobody signed in.
+ *
+ * @param page The product's page.
+ * @param profile The provider the sign-in went to.
+ * @param timeout How long the refusal may take to arrive, when not the default.
+ */
+async function expectProviderRefusal(
+  page: Page,
+  profile: StandOAuthProfile,
+  timeout?: number,
+): Promise<void> {
+  await expect(page.getByTestId('auth-error')).toHaveText(
+    OAUTH_FAILED_MESSAGE,
+    { timeout },
+  )
+  await expect(page.getByTestId('auth-notice')).toHaveCount(0)
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+  await expect(page.getByTestId(`auth-icon-oauth-${profile}`)).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+}
+
+// A provider that failed (HIL-926). The four failures are spread over both profiles and
+// both calls the OAuth agent makes — the code exchange and the userinfo read — so one run
+// walks both legs of the agent at both providers. The house's levers are keyed by the
+// account's id (the derived key of HIL-923), which is why each failure is declared
+// BEFORE the click, like the account itself. GitHub refuses a code with a 200 carrying
+// the error inside, the sneakiest form a product can be handed.
+
+test('refuses the sign-in on the form when the provider answers the exchange with a 500', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+  await dictateGatewayBehavior('/oauth/google/token', account.subject, {
+    status: 500,
+  })
+
+  await signInThroughProvider(page, account)
+
+  await expectProviderRefusal(page, 'google')
+})
+
+test('refuses the sign-in when the provider stays silent past the wait', async ({
+  page,
+}) => {
+  test.slow()
+  // The refusal comes as the agent's verdict once its own request deadline passes
+  // (AbstractOAuthAgent DEFAULT_HTTP_TIMEOUT_MS, 5 s) — and, were that one longer, its
+  // operation deadline (OAuthPendingLogin EXCHANGE_TTL_MS, 15 s) would still answer the
+  // same refusal first. It is waited for longer than the trip's own deadline in the
+  // browser (OAUTH_EXCHANGE_TIMEOUT_MS, 20 s): were the browser's clock to answer
+  // instead, the text would read "OAuth login timed out…" and this assertion would fail
+  // on the wrong sentence rather than on a timeout. The 60 s silence is not derived
+  // from any product clock — it is merely longer than all of them.
+  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+  await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
+    delayMs: 60_000,
+  })
+
+  await signInThroughProvider(page, account)
+
+  await expectProviderRefusal(page, 'google', 25_000)
+})
+
+test('refuses the sign-in when the provider cuts its answer halfway', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+  await dictateGatewayBehavior('/oauth/github/userinfo', account.subject, {
+    cut: true,
+  })
+
+  await signInThroughProvider(page, account)
+
+  await expectProviderRefusal(page, 'github')
+})
+
+test('refuses the sign-in when the provider says the code has expired', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+  await orderExpiredCode(account)
+
+  await signInThroughProvider(page, account)
+
+  await expectProviderRefusal(page, 'github')
+})
+
+test('returns quietly to the field when the person refuses at the provider', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  const providerWindow = waitForProviderWindow(page)
+  await page.getByTestId('auth-icon-oauth-github').click()
+  await denyConsent(await providerWindow)
+
+  // A decision, not a failure: back to the field with nothing to say.
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  await expect(page.getByTestId('auth-notice')).toHaveCount(0)
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+})
+
+test('returns quietly to the field when the person closes the provider window', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  const providerWindow = waitForProviderWindow(page)
+  await page.getByTestId('auth-icon-oauth-google').click()
+  await abandonConsent(await providerWindow)
+
+  // Nothing is sent when a window is closed; the trip notices by asking whether the
+  // window is still there (OAUTH_WINDOW_POLL_MS, every 500 ms), which the wait for the
+  // field covers.
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  await expect(page.getByTestId('auth-notice')).toHaveCount(0)
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
 
 test('answers a wrong password inline, and an unknown address with the registration path', async ({

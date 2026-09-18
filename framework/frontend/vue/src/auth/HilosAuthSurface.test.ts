@@ -10,6 +10,8 @@
 //
 // One more registry is mounted below, the magic-link one (HIL-606), for the screen
 // that has no equivalent anywhere else: a waiting screen that also takes a code.
+// And one with a provider (HIL-926), for where a trip that ended on the park
+// lands: the surface's half of that answer lives only here.
 import {
   ActionError,
   ActionLifecycle,
@@ -20,22 +22,30 @@ import {
   AUTH_ACTION_REQUEST_MAGIC_LINK,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
+  bindPageReady,
+  cancelOAuthTrip,
   CODE_SEND_STATE_NOT_SENT,
   createHilosAuthContext,
+  createOAuthLogin,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
   MAGIC_LINK_FLOW_METHOD,
   MAGIC_LINK_METHOD_KEY,
+  OAUTH_RESULT_SIGNAL,
+  OAUTH_RETURN_MESSAGE_TYPE,
+  oauthFlowMethod,
   PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
   SESSION_ACK_REGISTERED,
   SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_HANDSHAKE_RESPONSE,
+  SIGNAL_TYPE_PAGE_RESPONSE,
   type ActionHandle,
   type AuthGate,
   type HilosAuthContext,
   type HilosConnection,
+  type ProjectSignal,
 } from '@hilos/core'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -588,10 +598,180 @@ function reportSendProgress(state: string | null): void {
   unbind()
 }
 
+/** The provider the trip cases ride to. */
+const GITHUB_PROVIDER = 'oauth:github'
+
+/**
+ * The reason the daemon ends a sign-in exchange that failed with
+ * (`OAuthResultSignalData::REASON_LOGIN_FAILED`): a provider that answered 500,
+ * stayed silent, cut its answer or refused the code all arrive as this one.
+ */
+const OAUTH_REASON_LOGIN_FAILED = 'oauth_login_failed'
+
+/** What the trip says when a sign-in exchange failed (oauthLogin.ts). */
+const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
+
+/** One trip case's world: the context to mount with and the doors a trip comes home by. */
+interface TripWorld {
+  context: HilosAuthContext
+  /**
+   * Bring the provider's return home the way the courier in the provider window
+   * does.
+   *
+   * @param error The provider's error code, or empty for a return with a code.
+   */
+  courier(error: string): void
+  /**
+   * Deliver a project signal the way the connection would.
+   *
+   * @param type The signal type.
+   * @param data The signal payload.
+   */
+  emit(type: string, data: Record<string, unknown>): void
+  /** End any live trip and drop every binding and stub this world made. */
+  unbind(): void
+}
+
+/** The trip world the running case stood up, for the teardown to take down. */
+let activeTrip: TripWorld | null = null
+
+/**
+ * A context with the password and one provider, and core's real trip machine
+ * bound to it the way boot binds it: `window.open` hands back a window double,
+ * the courier's message listener is caught rather than fed a real MessageEvent
+ * (whose `source` has to be a real window), and the page-ready gate the exchange
+ * waits on is latched. Every action is accepted, so what ends a trip is whatever
+ * the case delivers next — the same harness as core's oauthTrip spec, cut down to
+ * the two endings the surface tells apart.
+ *
+ * @returns The world, already bound.
+ */
+function oauthTripWorld(): TripWorld {
+  const projectListeners: Array<(signal: ProjectSignal) => void> = []
+  const messageListeners: Array<(event: MessageEvent) => void> = []
+  const connection = {
+    on: (event: string, listener: (payload: never) => void) => {
+      if (event !== 'projectSignal') {
+        return () => undefined
+      }
+      const typed = listener as unknown as (signal: ProjectSignal) => void
+      projectListeners.push(typed)
+
+      return () => {
+        const index = projectListeners.indexOf(typed)
+        if (index >= 0) {
+          projectListeners.splice(index, 1)
+        }
+      }
+    },
+  } as unknown as HilosConnection
+  let dispatches = 0
+  const actions = {
+    dispatch: () => {
+      dispatches += 1
+
+      return {
+        requestId: `req-${dispatches}`,
+        loading: createSignal(false),
+        done: Promise.resolve({}),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+  const context = createHilosAuthContext({
+    connection,
+    scopes: new ScopeManager(),
+    actions,
+    methods: [
+      PASSWORD_FLOW_METHOD,
+      oauthFlowMethod(GITHUB_PROVIDER, 'Continue with GitHub'),
+    ],
+    channels: [],
+    oauthProviders: [
+      { key: GITHUB_PROVIDER, label: 'Continue with GitHub', name: 'GitHub' },
+    ],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
+
+  const providerWindow = {
+    closed: false,
+    close: (): void => {
+      providerWindow.closed = true
+    },
+    location: { replace: (): void => undefined },
+  }
+  const opening = vi
+    .spyOn(window, 'open')
+    .mockReturnValue(providerWindow as unknown as Window)
+  const realAdd = window.addEventListener.bind(window)
+  const listening = vi
+    .spyOn(window, 'addEventListener')
+    .mockImplementation(
+      (type: string, listener: unknown, options?: unknown): void => {
+        if (type === 'message') {
+          messageListeners.push(listener as (event: MessageEvent) => void)
+
+          return
+        }
+        realAdd(
+          type as keyof WindowEventMap,
+          listener as EventListener,
+          options as boolean,
+        )
+      },
+    )
+  const stopTrip = createOAuthLogin(context).bindOAuthTrip()
+  const stopReady = bindPageReady(connection)
+
+  const world: TripWorld = {
+    context,
+    courier(error) {
+      const event = {
+        data: {
+          type: OAUTH_RETURN_MESSAGE_TYPE,
+          code: error === '' ? 'code-1' : '',
+          state: error === '' ? 'state-1' : '',
+          error,
+        },
+        origin: window.location.origin,
+        source: providerWindow,
+      } as unknown as MessageEvent
+      for (const listener of [...messageListeners]) {
+        listener(event)
+      }
+    },
+    emit(type, data) {
+      const signal = {
+        kind: 'project',
+        type,
+        data,
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of [...projectListeners]) {
+        listener(signal)
+      }
+    },
+    unbind() {
+      cancelOAuthTrip()
+      stopTrip()
+      stopReady()
+      opening.mockRestore()
+      listening.mockRestore()
+    },
+  }
+  // The main window answered its page long before anybody clicked a provider.
+  world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+  activeTrip = world
+
+  return world
+}
+
 describe('HilosAuthSurface', () => {
   afterEach(() => {
     vi.useRealTimers()
     reportSendProgress(null)
+    activeTrip?.unbind()
+    activeTrip = null
   })
 
   it('assembles from a one-password registry with no icon method offered', () => {
@@ -1310,6 +1490,55 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="auth-expires-in"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="auth-code-expired"]').exists()).toBe(false)
+  })
+
+  it('answers a provider trip that failed with a refusal on the form', async () => {
+    const world = oauthTripWorld()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context: world.context },
+    })
+    await wrapper.find('[data-id="auth-icon-oauth-github"]').trigger('click')
+    await flush(wrapper)
+    // Parked on the trip: the waiting screen, not the field.
+    expect(wrapper.find('[data-id="auth-cancel"]').exists()).toBe(true)
+
+    world.courier('')
+    world.emit(OAUTH_RESULT_SIGNAL, {
+      acceptKey: 'accept-1',
+      provider: GITHUB_PROVIDER,
+      reason: OAUTH_REASON_LOGIN_FAILED,
+      email: null,
+      linkToken: null,
+    })
+    await flush(wrapper)
+
+    // The refusal of this form, on its refusal line — not news in the notice.
+    expect(wrapper.find('[data-id="auth-error"]').text()).toBe(
+      OAUTH_FAILED_MESSAGE,
+    )
+    expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-live-assertive"]').text()).toBe(
+      OAUTH_FAILED_MESSAGE,
+    )
+  })
+
+  it('returns quietly when the person ends the trip', async () => {
+    const world = oauthTripWorld()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context: world.context },
+    })
+    await wrapper.find('[data-id="auth-icon-oauth-github"]').trigger('click')
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-cancel"]').exists()).toBe(true)
+
+    // Declined at the provider: the courier brings an error and no code.
+    world.courier('access_denied')
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
   })
 
   it('refuses a registry with no method at all, at wiring time', () => {

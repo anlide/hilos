@@ -6,7 +6,8 @@
 // it lives in the framework-agnostic core; `window.open` is stubbed rather than
 // exercised, so what is tested is the machine's reaction to a window, not the
 // emulator's idea of one. The trip id deciding whose authorize URL the window
-// follows came later (HIL-707).
+// follows came later (HIL-707), and the closed window that waits for a return it
+// posted before closing later still (HIL-926).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
@@ -226,6 +227,16 @@ function tripWorld(): TripWorld {
 
     return world.opened as unknown as Window | null
   })
+  // What the machine posts to ITSELF — the notice of a closed provider window —
+  // goes the way a posted message goes: as a task of its own, to the listener
+  // caught above, from this very window.
+  vi.spyOn(window, 'postMessage').mockImplementation(
+    (message: unknown): void => {
+      setTimeout(() => {
+        world.courier(message as Record<string, unknown>, { source: window })
+      }, 0)
+    },
+  )
 
   const oauth = createOAuthLogin(context)
   const stopTrip = oauth.bindOAuthTrip()
@@ -555,8 +566,41 @@ describe('the OAuth trip machine', () => {
       opened.closed = true
     }
     await vi.advanceTimersByTimeAsync(OAUTH_WINDOW_POLL_MS)
+    // The poll saw the window closed; the verdict is the notice it posted itself,
+    // which comes as the next task (HIL-926).
+    await vi.advanceTimersToNextTimerAsync()
 
     expect(world.outcomes).toEqual([{ kind: 'canceled', message: '' }])
+  })
+
+  it('keeps a return the window posted just before it closed itself (HIL-926)', async () => {
+    // The callback page posts the return and closes its window in one task, and a
+    // poll that fell due meanwhile is served first: it finds the window closed while
+    // the return still waits in the queue. Played here with timers — the poll is the
+    // older timer, so it runs first, and the return is queued right behind it.
+    vi.useFakeTimers()
+    const world = tripWorld()
+    await reachProvider(world)
+
+    await vi.advanceTimersByTimeAsync(OAUTH_WINDOW_POLL_MS - 1)
+    setTimeout(() => {
+      world.courier({
+        type: OAUTH_RETURN_MESSAGE_TYPE,
+        code: 'code-1',
+        state: 'state-1',
+        error: '',
+      })
+    }, 1)
+    const opened = world.opened
+    if (opened !== null) {
+      opened.closed = true
+    }
+    await vi.advanceTimersByTimeAsync(1)
+    // And the poll's own notice, queued behind the return, finds the trip moved on.
+    await vi.advanceTimersToNextTimerAsync()
+
+    expect(world.outcomes).toEqual([])
+    expect(world.oauth.trip.get()?.phase).toBe('exchanging')
   })
 
   it('cancels quietly when the provider returns an error', async () => {

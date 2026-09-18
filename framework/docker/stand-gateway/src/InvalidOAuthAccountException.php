@@ -14,6 +14,9 @@ use Hilos\Core\Exception\ValidationException;
  * in `error`, and the spec helper fails on the spot with that reason. A declaration taken silently
  * would show up much later as a consent screen with nobody to pick, which reads as a product defect
  * rather than as a typo in the test.
+ *
+ * The order for an expired code, POST /oauth/test/expired-code, is refused by this same exception
+ * with the same codes (HIL-926): it names an account the same way a declaration does.
  */
 final class InvalidOAuthAccountException extends ValidationException
 {

@@ -29,8 +29,9 @@ use Random\RandomException;
  * the page rather than by a person - exactly what this leaf exists to stop pretending.
  *
  * The test half of the provider declares nothing but the provider's WORLD: which accounts exist
- * over there (a copy of /telegram/test/reachable). Nothing about a login in progress is declared,
- * so there is no race between the window opening and the arrangement being made.
+ * over there (a copy of /telegram/test/reachable), and which of them get their next code already
+ * expired (HIL-926). Nothing about a login in progress is declared, so there is no race between the
+ * window opening and the arrangement being made.
  *
  * What it deliberately does not do: refuse a call with a 500, go silent, cut its answer or hold the
  * connection. Those are the house's levers and they already work on both provider routes of this
@@ -52,6 +53,12 @@ final class OAuthRoutes implements GatewayResident
 
     /** Route a spec declares an account of a provider's world at. */
     private const string PATH_TEST_ACCOUNT = '/oauth/test/account';
+
+    /** Route a spec orders an expired code for an account at. */
+    private const string PATH_TEST_EXPIRED_CODE = '/oauth/test/expired-code';
+
+    /** Every field an order for an expired code may carry. */
+    private const array EXPIRED_CODE_FIELDS = [OAuthAccount::FIELD_PROFILE, OAuthAccount::FIELD_SUBJECT];
 
     /** Request field naming the client that asks for access. */
     private const string FIELD_CLIENT_ID = 'client_id';
@@ -154,7 +161,7 @@ final class OAuthRoutes implements GatewayResident
     private const string ID_ERROR = 'oauth-error';
 
     /**
-     * Registers the provider's four routes for every profile, and its one test route.
+     * Registers the provider's four routes for every profile, and its two test routes.
      *
      * The consent screen is registered as a page on both methods: a browser opens it and a browser
      * posts its form, so there is no value of the call a spec coined and nothing to key a
@@ -165,6 +172,10 @@ final class OAuthRoutes implements GatewayResident
      * A trap worth knowing: the key function runs BEFORE the handler, on every call of the route,
      * so it must not spend anything. That is why it peeks at the code rather than taking it, and
      * why the handler is the only place a code is spent.
+     *
+     * The second test route orders an expired code (HIL-926): still a fact about the provider's world
+     * rather than about a login in progress, so it is made before the button is pressed like any
+     * declaration.
      *
      * @param GatewayRoutes $routes Routes of the connection being accepted
      */
@@ -199,6 +210,7 @@ final class OAuthRoutes implements GatewayResident
 
         // Test side: the world of the provider, which no spec can arrange any other way.
         $routes->test(HttpConstants::METHOD_POST, self::PATH_TEST_ACCOUNT, $this->testAccount(...));
+        $routes->test(HttpConstants::METHOD_POST, self::PATH_TEST_EXPIRED_CODE, $this->testExpiredCode(...));
     }
 
     /**
@@ -232,6 +244,9 @@ final class OAuthRoutes implements GatewayResident
      * The callback address is checked again, because this call carries its own copy of it and a
      * refusing redirect goes to it too. The response type is not: it belongs to the request the
      * browser arrived with, and the form does not carry it back.
+     *
+     * A confirmation spends an order for an expired code the account has (HIL-926), and the code it
+     * issues is then born a second past its lifetime; a refusal and the refusing pages spend nothing.
      *
      * @param OAuthProfile $profile Provider being played
      * @param array<string, mixed> $fields Form fields
@@ -269,7 +284,7 @@ final class OAuthRoutes implements GatewayResident
             clientId: self::field($fields, self::FIELD_CLIENT_ID),
             redirectUri: $redirectUri,
             scope: self::field($fields, self::FIELD_SCOPE),
-            issuedAt: time(),
+            issuedAt: Store::takeExpiredOAuthCodeOrder($profile->value, $subject) ? time() - self::CODE_TTL_SECONDS - 1 : time(),
         ));
 
         return self::redirect(self::callback($redirectUri, [self::FIELD_CODE => $code], $state));
@@ -394,6 +409,49 @@ final class OAuthRoutes implements GatewayResident
                 name: self::optionalField($fields, OAuthAccount::FIELD_NAME),
                 email: self::optionalField($fields, OAuthAccount::FIELD_EMAIL),
             ));
+        } catch (InvalidOAuthAccountException $refusal) {
+            return StandGatewayTlsServer::json(['ok' => false, 'error' => $refusal->error], HttpConstants::HTTP_BAD_REQUEST);
+        }
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Test route: order the next code an account is handed to be born expired (HIL-926).
+     *
+     * An order is a fact about the provider's world, not about a login in progress, so it is made
+     * before the button is pressed and there is no race with the window. Orders pile up, one order
+     * being one code handed out by a confirmation. The code is born a second older than its
+     * lifetime, and the exchange refuses it by its ordinary check of that lifetime, in this
+     * provider's own form - GitHub a 200 with `bad_verification_code`, Google a 400 with
+     * `invalid_grant`. The house's key on the exchange still finds the account, because the code
+     * is peeked at the same as any other, so an order and a declared behavior go together.
+     *
+     * The account's existence is NOT checked: it may be declared later, before the button is
+     * pressed. The rest is checked in the order and the shape of an account declaration - an
+     * unknown key, the profile, the id - so a spec learns one way of being refused.
+     *
+     * @param array<string, mixed> $fields Request fields
+     * @return array<string, mixed> Acknowledgement, or a 400 naming the refusal
+     */
+    private function testExpiredCode(array $fields): array
+    {
+        try {
+            if (array_diff(array_keys($fields), self::EXPIRED_CODE_FIELDS) !== []) {
+                throw new InvalidOAuthAccountException(InvalidOAuthAccountException::FIELD_UNKNOWN);
+            }
+
+            $profile = OAuthProfile::tryFrom(self::field($fields, OAuthAccount::FIELD_PROFILE));
+            if ($profile === null) {
+                throw new InvalidOAuthAccountException(InvalidOAuthAccountException::PROFILE_UNKNOWN);
+            }
+
+            $subject = self::field($fields, OAuthAccount::FIELD_SUBJECT);
+            if (preg_match('/^\d+$/', $subject) !== 1) {
+                throw new InvalidOAuthAccountException(InvalidOAuthAccountException::SUBJECT_REQUIRED);
+            }
+
+            Store::orderExpiredOAuthCode($profile->value, $subject);
         } catch (InvalidOAuthAccountException $refusal) {
             return StandGatewayTlsServer::json(['ok' => false, 'error' => $refusal->error], HttpConstants::HTTP_BAD_REQUEST);
         }

@@ -1033,9 +1033,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     // Answer an OAuth trip that ended while this screen was parked on it
     // (HIL-633). Only a park is answered: a trip can also be a profile link
     // running in another page of the same tab, and that one is somebody else's
-    // wait. What comes back from a trip is news about a move nobody on this
-    // screen asked for — which is what the notice region is — while the error
-    // region stays for what the person types next.
+    // wait. A trip on the park answers the person's own click on an icon of THIS
+    // screen, so a trip that failed is a refusal of this form and lands on its
+    // refusal line (`mockups/components/form-error`, the sign-in card) — the same
+    // place a refusal of that click before the trip started lands (HIL-926). The
+    // notice region stays for news nobody on the screen asked for (a converge).
     const stopWatchingTrip = oauth.subscribeOAuthOutcome(
       (outcome: OAuthTripOutcome) => {
         if (auth.flow.get().step !== 'external') {
@@ -1046,13 +1048,15 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           // would be saying it to a screen already on its way out (HIL-422).
           return
         }
-        auth.cancelMethod()
-        if (outcome.kind === 'reauth_pending') {
-          promptToFinishLink()
+        if (outcome.kind === 'error') {
+          auth.failMethod(outcome.message)
 
           return
         }
-        setNotice(outcome.kind === 'error' ? outcome.message : null)
+        auth.cancelMethod()
+        if (outcome.kind === 'reauth_pending') {
+          promptToFinishLink()
+        }
       },
     )
 

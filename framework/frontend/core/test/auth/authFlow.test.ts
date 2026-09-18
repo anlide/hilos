@@ -14,7 +14,8 @@
 // holds on to, the submit that is muted for as long as it does, and the two
 // places that deliberately keep nothing (the return and a failed lookup).
 // HIL-973 adds the answer the icon row and a found number's channel choice now
-// ask, and the proven reply the lookup schema lets through.
+// ask, and the proven reply the lookup schema lets through. HIL-926 adds the
+// return that ends a parked ceremony with a refusal on the field (failMethod).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -1446,6 +1447,62 @@ describe('the two return points and cancelMethod', () => {
     flow.setField('password', 'secret-1')
     await flow.submit()
     expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('failMethod ends the parked ceremony with a refusal on the field (HIL-926)', async () => {
+    const aborted: string[] = []
+    const flow = setup({
+      onMethodAction: (key, _form, signal) => {
+        signal.addEventListener('abort', () => aborted.push(key))
+
+        return new Promise<AuthFlowSubmitOutcome>(() => undefined)
+      },
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    void flow.chooseMethod('passkey')
+    expect(flow.flow.get().step).toBe('external')
+    flow.failMethod('OAuth login failed. Please try again.')
+    expect(aborted).toEqual(['passkey'])
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.flow.get()).toMatchObject({
+      step: 'identifier',
+      methodKey: null,
+    })
+    expect(flow.error.get()).toEqual({
+      message: 'OAuth login failed. Please try again.',
+      code: null,
+    })
+    await settleRefresh()
+    // The lookup the return fires does not take the refusal away.
+    expect(flow.error.get()).toEqual({
+      message: 'OAuth login failed. Please try again.',
+      code: null,
+    })
+  })
+
+  it('failMethod with nothing parked changes neither the step nor the error', async () => {
+    const flow = setup({
+      onSubmit: async () => ({ ok: false, message: 'Wrong password' }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    flow.setField('password', 'secret-1')
+    await flow.submit()
+    const before = flow.flow.get()
+    flow.failMethod('OAuth login failed. Please try again.')
+    expect(flow.flow.get()).toEqual(before)
+    expect(flow.error.get()).toEqual({ message: 'Wrong password', code: null })
+  })
+
+  it('the next chosen method takes the refusal failMethod left', async () => {
+    const flow = setup({
+      onMethodAction: () => new Promise<AuthFlowSubmitOutcome>(() => undefined),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    void flow.chooseMethod('passkey')
+    flow.failMethod('OAuth login failed. Please try again.')
+    expect(flow.error.get()).not.toBeNull()
+    void flow.chooseMethod('passkey')
+    expect(flow.error.get()).toBeNull()
   })
 })
 

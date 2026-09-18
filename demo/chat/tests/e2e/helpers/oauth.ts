@@ -3,7 +3,8 @@ import { postToGateway } from './gateway'
 // stub-oauth: the world of the provider the stand emulates (HIL-923). The gateway plays
 // one OAuth provider for every profile — a consent screen a browser really opens, a code
 // really exchanged over HTTPS, a userinfo really read — and what a spec arranges here is
-// only that world: WHICH ACCOUNTS EXIST over there.
+// only that world: WHICH ACCOUNTS EXIST over there, and which of them get their next code
+// already expired (HIL-926).
 //
 // Nothing about a login in progress is declared, and that is what makes the arrangement
 // free of races: an account is a fact about the provider, so a spec may declare it at any
@@ -20,6 +21,9 @@ import { postToGateway } from './gateway'
 
 /** Test route of the provider's own half, where the world is declared. */
 const DECLARE_ACCOUNT_PATH = '/oauth/test/account'
+
+/** Test route of the provider's own half, where an expired code is ordered. */
+const EXPIRED_CODE_PATH = '/oauth/test/expired-code'
 
 /** What the emulator makes a login handle out of when a declaration named none. */
 const LOGIN_PREFIX = 'user'
@@ -102,4 +106,24 @@ export async function declareOAuthAccount(
     name: declaration.name ?? null,
     email: declaration.email ?? null,
   }
+}
+
+/**
+ * Order the next code the provider hands this account to be born expired (HIL-926).
+ *
+ * Like a declaration, the order is a fact about the provider's world and not about a login
+ * in progress, so it is made before the button on the consent screen is pressed. One order
+ * is one code: orders pile up, and each confirmation spends one. The exchange then gets the
+ * provider's own refusal of that code, in the profile's form — GitHub a 200 with
+ * `bad_verification_code` inside, Google a 400 with `invalid_grant`.
+ *
+ * @param account The declared account whose next code is to be expired.
+ */
+export async function orderExpiredCode(
+  account: StandOAuthAccount,
+): Promise<void> {
+  await postToGateway(EXPIRED_CODE_PATH, {
+    profile: account.profile,
+    subject: account.subject,
+  })
 }

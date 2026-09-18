@@ -136,6 +136,13 @@ export function oauthTripMessage(trip: OAuthTrip): string {
 export const OAUTH_RETURN_MESSAGE_TYPE = 'hilos.oauth.return'
 
 /**
+ * The `type` discriminator of the notice this window posts ITSELF when the poll
+ * finds the provider window closed — see {@link receiveWindowClosed}. Not exported:
+ * nobody but this module posts it or reads it.
+ */
+const OAUTH_WINDOW_CLOSED_MESSAGE_TYPE = 'hilos.oauth.window-closed'
+
+/**
  * What the callback window posts back to its opener. All three values are always
  * present and an empty string means "absent", so a partial message is a malformed
  * one rather than a shape to guess at. The provider is deliberately NOT here: the
@@ -632,6 +639,9 @@ function bindOAuthTrip(context: HilosAuthContext): () => void {
     },
   )
   const onMessage = (event: MessageEvent): void => {
+    if (receiveWindowClosed(event)) {
+      return
+    }
     receiveOAuthReturn(context, event)
   }
   window.addEventListener('message', onMessage)
@@ -640,7 +650,15 @@ function bindOAuthTrip(context: HilosAuthContext): () => void {
       return
     }
     if (attempt.window.closed) {
-      cancelOAuthTrip()
+      // Seen closed is not yet walked away from: the verdict queues up behind
+      // whatever the window posted before it closed (receiveWindowClosed).
+      window.postMessage(
+        {
+          type: OAUTH_WINDOW_CLOSED_MESSAGE_TYPE,
+          tripId: attempt.tripId,
+        },
+        window.location.origin,
+      )
     }
   }, OAUTH_WINDOW_POLL_MS)
 
@@ -649,6 +667,47 @@ function bindOAuthTrip(context: HilosAuthContext): () => void {
     window.removeEventListener('message', onMessage)
     clearInterval(poll)
   }
+}
+
+/**
+ * Take the poll's notice that the provider window was found closed, and end the
+ * trip as a cancellation — unless a return overtook the notice (HIL-926).
+ *
+ * The poll does not cancel on sight. The callback page posts the return and closes
+ * its window in ONE task, and a poll that fell due while that task ran — the whole
+ * app boots in that window first — is served before the posted message: it finds
+ * the window closed while the return still waits in the queue. Cancelling there
+ * dropped a code the provider really issued, and the person landed back on the
+ * field with nothing said and nobody signed in. So the verdict rides a message this
+ * window posts to itself, and the posted-message queue delivers it AFTER anything
+ * the courier posted before closing. By the time it arrives, a return has either
+ * moved the trip on to its exchange or never existed — a fact, not a grace period.
+ *
+ * @param event A received message event.
+ * @returns Whether the event was the notice, answered here and nobody else's.
+ */
+function receiveWindowClosed(event: MessageEvent): boolean {
+  const notice = event.data as { type?: unknown; tripId?: unknown } | null
+  if (
+    event.source !== window ||
+    event.origin !== window.location.origin ||
+    typeof notice !== 'object' ||
+    notice === null ||
+    notice.type !== OAUTH_WINDOW_CLOSED_MESSAGE_TYPE
+  ) {
+    return false
+  }
+  // Only the trip the notice was posted about, and only while it still stands at
+  // the provider: a return that got in first has already moved it on.
+  if (
+    attempt !== null &&
+    attempt.tripId === notice.tripId &&
+    attempt.phase === 'authorizing'
+  ) {
+    cancelOAuthTrip()
+  }
+
+  return true
 }
 
 /**

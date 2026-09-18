@@ -9,9 +9,10 @@ namespace Hilos\StandGateway;
  *
  * Which numbers are declared absent from Telegram, how a provider route answers the calls
  * a spec declared a behavior for, the world of the OAuth emulator - which accounts exist
- * at a provider, and which codes and tokens it has handed out - and what the local model
- * answers next live in one JSON file under an exclusive lock. That is the whole of the storage design, and it is enough:
- * one runner, a few writes per suite. A resident keeps no store of its own.
+ * at a provider, which codes and tokens it has handed out, and the orders for expired
+ * codes - and what the local model answers next live in one JSON file under an exclusive
+ * lock. That is the whole of the storage design, and it is enough: one runner, a few writes
+ * per suite. A resident keeps no store of its own.
  *
  * The file was forced by PHP's built-in server, which re-entered the script for every
  * request and kept nothing in memory. The gateway has been one long-lived process since
@@ -38,6 +39,7 @@ final class Store
         'oauthAccounts' => [],
         'oauthCodes' => [],
         'oauthTokens' => [],
+        'oauthExpiredCodes' => [],
         'answers' => [],
     ];
 
@@ -342,7 +344,65 @@ final class Store
     }
 
     /**
-     * Forgets every declared number, every declared behavior, the whole world of the OAuth emulator, and every dictated model answer.
+     * Orders one expired code for an account: the next code a confirmation hands it is born past its lifetime.
+     *
+     * Orders pile up, one order being one code, the way declared behaviors do: a spec that orders
+     * two gets two expired codes in a row. Nothing checks that the account exists - it may be
+     * declared later, before the button is pressed.
+     *
+     * @param string $profile Value of the {@see OAuthProfile} case the account lives at
+     * @param string $subject Id of the account at that provider
+     */
+    public static function orderExpiredOAuthCode(string $profile, string $subject): void
+    {
+        self::mutate(static function (array $state) use ($profile, $subject): array {
+            $state['oauthExpiredCodes'][$profile][$subject] = ($state['oauthExpiredCodes'][$profile][$subject] ?? 0) + 1;
+
+            return $state;
+        });
+    }
+
+    /**
+     * Spends one order for an expired code of an account, if there is one.
+     *
+     * An account nothing was ordered for is answered off the shared lock and does not rewrite the
+     * file - that is nearly every code the consent screen hands out. A spent last order is gone, and
+     * an emptied profile is removed with it.
+     *
+     * @param string $profile Value of the {@see OAuthProfile} case the account lives at
+     * @param string $subject Id of the account at that provider
+     * @return bool Whether an order was spent, that is whether the code being issued is born expired
+     */
+    public static function takeExpiredOAuthCodeOrder(string $profile, string $subject): bool
+    {
+        if (!isset(self::read()['oauthExpiredCodes'][$profile][$subject])) {
+            return false;
+        }
+
+        $taken = false;
+        self::mutate(static function (array $state) use ($profile, $subject, &$taken): array {
+            if (!isset($state['oauthExpiredCodes'][$profile][$subject])) {
+                return $state;
+            }
+
+            $taken = true;
+            $state['oauthExpiredCodes'][$profile][$subject]--;
+            if ($state['oauthExpiredCodes'][$profile][$subject] <= 0) {
+                unset($state['oauthExpiredCodes'][$profile][$subject]);
+            }
+            if ($state['oauthExpiredCodes'][$profile] === []) {
+                unset($state['oauthExpiredCodes'][$profile]);
+            }
+
+            return $state;
+        });
+
+        return $taken;
+    }
+
+    /**
+     * Forgets every declared number, every declared behavior, the whole world of the OAuth emulator and its orders for
+     * expired codes, and every dictated model answer.
      */
     public static function reset(): void
     {
@@ -356,6 +416,7 @@ final class Store
      *     oauthAccounts: array<string, array<string, array{subject: string, login: string, name: ?string, email: ?string}>>,
      *     oauthCodes: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
      *     oauthTokens: array<string, array{profile: string, subject: string, clientId: string, redirectUri: string, scope: string, issuedAt: int}>,
+     *     oauthExpiredCodes: array<string, array<string, int>>,
      *     answers: array<string, list<string>>
      * } Current state
      */
