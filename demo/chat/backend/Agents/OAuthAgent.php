@@ -26,7 +26,7 @@ use Hilos\Runtime\State\Item\OAuthPendingLogin;
 final class OAuthAgent extends AbstractOAuthAgent
 {
     /**
-     * Builds the chat provider registry (real provider when configured, offline stub otherwise).
+     * Builds the chat provider registry: a real provider for each configured client pair, none otherwise.
      *
      * @return OAuthProviderRegistry Configured providers
      */

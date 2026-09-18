@@ -1,7 +1,6 @@
-<!-- The OAuth callback relay (HIL-281, HIL-633). The provider (or the offline stub)
-brings a browser window back to this static SPA route
-(/auth/callback?code=…&state=…), and this view has exactly two jobs, depending on
-which window it is.
+<!-- The OAuth callback relay (HIL-281, HIL-633). The provider brings a browser window
+back to this static SPA route (/auth/callback?code=…&state=…), and this view has
+exactly two jobs, depending on which window it is.
 
 COURIER — the usual one. The trip opened this window, so it has an opener: hand the
 return over by postMessage and close. Nothing is dispatched from here, because the

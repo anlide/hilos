@@ -19,6 +19,7 @@ use Hilos\Socket\Exception\SocketReadException;
 use Hilos\Socket\Exception\SocketSelectException;
 use Hilos\Socket\Exception\SocketWriteException;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 
 /**
  * Asynchronous non-blocking HTTP client.
@@ -30,6 +31,18 @@ use Hilos\Socket\SocketException;
  */
 class AsyncHttpClient
 {
+    /**
+     * User-Agent every request carries unless the caller names its own.
+     *
+     * The transport sets it, not the OAuth client, because GitHub asks for it on
+     * every request to its API: without one the live api.github.com answers 403
+     * text/html "Request forbidden by administrative rules. Please make sure your
+     * request has a User-Agent header" (measured 17.09.2026, HIL-923) - sign-in
+     * through GitHub failed on the userinfo step, and the next caller of its API
+     * would fail the same way.
+     */
+    private const string USER_AGENT = 'Hilos';
+
     /** @var string Target host */
     private string $host;
 
@@ -475,6 +488,10 @@ class AsyncHttpClient
             HttpConstants::HEADER_HOST . ': ' . $this->host,
             HttpConstants::HEADER_CONNECTION . ': close',
         ];
+
+        if (HttpHeaderHelper::get($this->requestHeaders, HttpConstants::HEADER_USER_AGENT) === null) {
+            $lines[] = HttpConstants::HEADER_USER_AGENT . ': ' . self::USER_AGENT;
+        }
 
         foreach ($this->requestHeaders as $name => $value) {
             $lines[] = $name . ': ' . $value;

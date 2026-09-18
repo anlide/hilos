@@ -7,19 +7,20 @@ where a caught message lands. The house is `framework/docker/stand-gateway`
 author of the next resident rather than as a description of the three that live
 there today. What a particular future resident looks like — a model — is that
 leaf's own design (HIL-925); this page says only what the house guarantees and
-what a resident owes it. The OAuth provider has moved in (HIL-923), and what it
-taught the house is written into the rules below rather than described here. How
-to run the suites is [testing.md](testing.md), not here.
+what a resident owes it. The OAuth provider has moved in (HIL-923) and the three
+demos sign in through it (HIL-924); what it taught the house is written into the
+rules below rather than described here. How to run the suites is
+[testing.md](testing.md), not here.
 
 ## Why a Stand Emulates Rather Than Stubs
 
 An in-process stub sends no byte. It proves what the code does with an answer it
 was handed, and nothing about the road the answer travels: the request that was
 built, the socket it went out on, the envelope that came back, the moment the
-peer closed. `StubOAuthProvider` says it of itself — "No network, no sockets"
-(`framework/backend/Auth/OAuth/StubOAuthProvider.php`, class docblock): its
-authorize URL bounces the browser straight back to the SPA callback with a
-canned code, and no exchange ever happens.
+peer closed. `StubOAuthProvider`, the stub the demos signed in through until
+HIL-924 removed it, said it of itself — "No network, no sockets" (its class
+docblock): its authorize URL bounced the browser straight back to the SPA callback
+with a canned code, and no exchange ever happened.
 
 The cost of that is on record. Twelve closed OAuth leaves (HIL-281 … HIL-732)
 were verified over that stub. The one defect found in that layer, HIL-732, was
@@ -216,7 +217,7 @@ result; or the browser.
    with a code, and the daemon then exchanges that code for a token over HTTP.
    There is nothing to catch and nothing to forward; what is proved is the round
    trip itself and the exchange behind it. OAuth is this kind and has moved in
-   (HIL-923; the demos switch to it in HIL-924).
+   (HIL-923), and the three demos sign in through it (HIL-924).
 
 **The third kind has TWO entities, and they do not live in one process.** The
 provider is a resident of the house (`src/OAuthRoutes.php`, with every difference
@@ -225,7 +226,8 @@ window is a set in the spec's own folder
 (`demo/chat/tests/e2e/helpers/oauth-user.ts`), and a spec is what gives the
 orders — wait for the window, pick this account, confirm, refuse, walk away. The
 world that person acts in is declared through the provider's test half from
-beside them (`demo/chat/tests/e2e/helpers/oauth.ts`).
+beside them (`demo/chat/tests/e2e/helpers/oauth.ts`). Both files have twins in
+`demo/polls/tests/e2e/helpers/`, beside the twin of `gateway.ts` they stand on.
 
 The split is forced rather than tasteful: waiting for a window to open, pressing
 a button in it and closing it can only be done by whoever is IN the browser, and
@@ -338,11 +340,12 @@ and why the stand cannot take that regression over until it speaks TLS itself.
 The three demos reach the gateway as `https://stand-gateway:18000`
 (`SMS_ENDPOINT_URL`, `TELEGRAM_GATEWAY_ENDPOINT_URL` in each demo's
 `docker/docker-compose.{local,dev,test}.yml`; `CHAT_MODERATION_URL` on the chat
-test stack). `stand-gateway` is a network alias the gateway service carries in
-every stack, and it is also the name its certificate is issued for: the daemon
-checks the name of the peer it reaches, so the service name, which differs from
-stack to stack, cannot be the address. One name means one certificate, and a new
-demo does not reissue it.
+test stack; `OAUTH_ENDPOINT_URL` on the test stacks of all three).
+`stand-gateway` is a network alias the gateway service carries in every stack,
+and it is also the name its certificate is issued for: the daemon checks the
+name of the peer it reaches, so the service name, which differs from stack to
+stack, cannot be the address. One name means one certificate, and a new demo
+does not reissue it.
 
 The certificate is fixed and lives in the repository
 (`framework/docker/stand-gateway/tls/`: `server.pem` is what the gateway
@@ -357,6 +360,13 @@ the e2e runner, whose specs call the test half, carries
 daemon without that trust fails the handshake with a named reason
 (`AsyncHttpTlsHandshakeException`), which is exactly what a production peer
 with a foreign certificate would cause.
+
+For OAuth the BROWSER reaches the gateway too: it opens the provider's consent
+screen at `https://stand-gateway:18000/oauth/<profile>/authorize`. Its pass to the
+stand's certificate is the runner's `ignoreHTTPSErrors: true`
+(`demo/*/tests/e2e/playwright.config.ts`), not `NODE_EXTRA_CA_CERTS`, which only
+Node's own calls read. The daemon's half of the same trip — the exchange and
+userinfo — is verified like any other call, through `SSL_CERT_FILE`.
 
 The gateway listens on TLS only, and there is no switch for plain HTTP. A
 resident's routes are served over it without doing anything: the transport is
@@ -505,7 +515,13 @@ and name it before writing.
    address per role, the role's key is the one to set: the local model is
    `CHAT_MODERATION_URL=https://stand-gateway:18000/model` on the chat test stack,
    not the global `LLM_LOCAL_URL`, which the bot and the context analyzer fall back
-   to as well — a global address would move them onto the emulator silently. The
+   to as well — a global address would move them onto the emulator silently. Where
+   the product builds its addresses from a recipe rather than reading one whole,
+   the variable is a BASE and the emulator's paths are what hang off it:
+   `OAUTH_ENDPOINT_URL=https://stand-gateway:18000/oauth` redirects the OAuth
+   PRESETS (`framework/backend/Auth/OAuth/OAuthProviderPreset.php`), each of which
+   then builds `<base>/<profile>/authorize|token|userinfo`, while a provider a
+   project configures by hand keeps its own addresses. The
    address keeps `https://`, and a client that could not speak TLS is taught to
    (the local model's was, in HIL-925), because the gateway will not speak plain.
 7. **A spec helper** beside `demo/chat/tests/e2e/helpers/sms.ts` and
@@ -573,7 +589,7 @@ The eight directions, and where each stands. This table is also the epic's map:
 | Mail — `framework/backend/Mail/SmtpMailTransport.php` | Mailpit, real SMTP | — | closed |
 | SMS — `framework/backend/Sms/HttpSmsProvider.php`, driven by `GenericHttpSmsProvider.php` and its descriptor's defaults | the stand gateway, `/sms/send` | — | closed |
 | Telegram codes — `framework/backend/Auth/CodeChannel/TelegramCodeChannel.php` through `Telegram/TelegramGatewayClient.php` | the stand gateway, `/telegram` | — | closed |
-| OAuth — `framework/backend/Auth/OAuth/HttpOAuthProvider.php` | the emulator, `/oauth/<profile>`; the stub `StubOAuthProvider.php` still under the demos, sunset | the demos on the emulator, the stub gone | HIL-923 closed it; the demos switch in HIL-924 |
+| OAuth — `framework/backend/Auth/OAuth/HttpOAuthProvider.php` | the emulator, `/oauth/<profile>`; the three demos sign in through it | — | closed (HIL-923, HIL-924) |
 | Code delivery — `framework/backend/Auth/Verification/LogVerificationDeliverer.php` | writes the code to the log, sunset | delivery through the stand | no leaf yet; leaves with whatever touches it |
 | Local model — `framework/backend/LLM/Local/Chat/AsyncOllamaChatProvider.php` | the stand gateway, `/model`; chat moderation still on the in-process `demo/chat/backend/Agents/TestModerationChatClient.php` | moderation on the emulator, the stub gone | HIL-925 closed the channel; moderation moves in HIL-927 |
 | External model — `framework/backend/LLM/External/Chat/AsyncOpenAIChatProvider.php` | nothing | an emulated model | no leaf yet |

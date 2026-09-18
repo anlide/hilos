@@ -7,7 +7,7 @@ import { expect } from '@playwright/test'
 //
 // The chat and polls runners reach the gateway (STAND_GATEWAY_URL and the CA it
 // trusts are set on both), so the helper has a twin in
-// demo/polls/tests/e2e/helpers/, and the two do not drift apart.
+// demo/chat/tests/e2e/helpers/, and the two do not drift apart.
 
 /** Where the runner reaches the stand gateway. */
 export const STAND_GATEWAY_URL =

@@ -126,6 +126,39 @@ final class AsyncHttpClientTest extends TestCase
     }
 
     /**
+     * Every request names its client: GitHub's API refuses one without a User-Agent (HIL-924).
+     */
+    public function testRequestCarriesUserAgent(): void
+    {
+        $client = new ScriptedCryptoAsyncHttpClient('127.0.0.1', 443, '/user', true);
+        $client->cryptoOutcomes = [true];
+
+        $client->startNewRequest(microtime(true) * 1000);
+        $request = $this->servePairResponseUntilFinished($client, $this->response(200, 'granted'));
+
+        $this->assertContains(HttpConstants::HEADER_USER_AGENT . ': Hilos', $this->headerLines($request));
+    }
+
+    /**
+     * A caller's own User-Agent wins in any letter case, and the request carries exactly one.
+     */
+    public function testCallerUserAgentWinsWithoutDuplicate(): void
+    {
+        $client = new ScriptedCryptoAsyncHttpClient('127.0.0.1', 443, '/user', true);
+        $client->cryptoOutcomes = [true];
+        $client->setRequestOptions(headers: ['user-agent' => 'Probe/1']);
+
+        $client->startNewRequest(microtime(true) * 1000);
+        $request = $this->servePairResponseUntilFinished($client, $this->response(200, 'granted'));
+
+        $userAgentLines = array_values(array_filter(
+            $this->headerLines($request),
+            static fn (string $line): bool => stripos($line, HttpConstants::HEADER_USER_AGENT . ':') === 0,
+        ));
+        $this->assertSame(['user-agent: Probe/1'], $userAgentLines);
+    }
+
+    /**
      * The response of a real TLS peer is parsed: an empty read is not the end of it.
      *
      * The peer runs in a forked child on purpose. A server sharing this process can only take its
@@ -499,8 +532,9 @@ final class AsyncHttpClientTest extends TestCase
      *
      * @param ScriptedCryptoAsyncHttpClient $client Client under test
      * @param string $response Raw HTTP response to send once the request arrives
+     * @return string Raw request the peer received
      */
-    private function servePairResponseUntilFinished(ScriptedCryptoAsyncHttpClient $client, string $response): void
+    private function servePairResponseUntilFinished(ScriptedCryptoAsyncHttpClient $client, string $response): string
     {
         $requestBuffer = '';
         $answered = false;
@@ -526,6 +560,21 @@ final class AsyncHttpClientTest extends TestCase
         }
 
         $this->assertTrue($client->hasResult(), 'Async HTTP client did not finish within timeout');
+
+        return $requestBuffer;
+    }
+
+    /**
+     * Header lines of a raw request: the head below the request line, one entry per header.
+     *
+     * @param string $request Raw HTTP request
+     * @return list<string> Header lines as sent
+     */
+    private function headerLines(string $request): array
+    {
+        $head = explode(HttpConstants::HTTP_DELIMITER, $request, 2)[0];
+
+        return array_slice(explode(HttpConstants::HTTP_LINE_SEPARATOR, $head), 1);
     }
 
     /**

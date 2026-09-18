@@ -14,7 +14,6 @@ use Hilos\Auth\OAuth\HttpOAuthProvider;
 use Hilos\Auth\OAuth\OAuthHttpRequest;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthUserInfo;
-use Hilos\Auth\OAuth\OfflineOAuthProvider;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -33,7 +32,6 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Socket\SocketException;
-use Hilos\Utils\Logger;
 use Throwable;
 
 /**
@@ -116,26 +114,11 @@ abstract class AbstractOAuthAgent extends AbstractAgent
 
     /**
      * Resolves the project's configured OAuth providers and initializes the pending-op store.
-     *
-     * Also the one place the registry's refusals are said out loud (HIL-671). This agent
-     * builds the registry once per process, while every other caller rebuilds it per login
-     * action and per identifier detection, so it is the only caller that can name the
-     * dropped providers without writing the same line at typing speed. The level is
-     * warning, not info: refusing an offline provider on a production node is legal
-     * configuration, but in practice it is a misspelled environment variable rather than
-     * an intention, and a provider that vanished silently is an ops riddle.
      */
     public function onStart(): void
     {
         $this->providers = $this->buildProviderRegistry();
         $this->pending = OAuthPendingLogins::init();
-
-        $refused = $this->providers->refusedOfflineKeys();
-        if ($refused !== []) {
-            Logger::warning(
-                'OAuth offline providers refused on a production-like node: ' . implode(', ', $refused),
-            );
-        }
     }
 
     /**
@@ -198,7 +181,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     /**
      * Builds the provider registry from the project's OAuth provider config.
      *
-     * @return OAuthProviderRegistry Configured providers (real providers + dev stub)
+     * @return OAuthProviderRegistry Configured providers
      */
     abstract protected function buildProviderRegistry(): OAuthProviderRegistry;
 
@@ -308,7 +291,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Dispatches one op: resolve offline in-process, or open the token request for HTTP.
+     * Dispatches one op: open the token request over HTTP.
      *
      * @param OAuthPendingLogin $op Op to start
      * @param float $nowMs Current time in milliseconds
@@ -322,22 +305,8 @@ abstract class AbstractOAuthAgent extends AbstractAgent
             return;
         }
 
-        if ($provider instanceof OfflineOAuthProvider) {
-            try {
-                $info = $provider->resolve($op->code);
-            } catch (OAuthException $e) {
-                $this->failOp($op, 'offline resolve failed: ' . $e->getMessage());
-
-                return;
-            }
-
-            $this->succeedOp($op, $info);
-
-            return;
-        }
-
         if (!$provider instanceof HttpOAuthProvider) {
-            $this->failOp($op, "provider '{$op->provider}' drives neither HTTP nor offline resolution");
+            $this->failOp($op, "provider '{$op->provider}' does not drive HTTP");
 
             return;
         }

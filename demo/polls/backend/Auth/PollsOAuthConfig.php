@@ -7,7 +7,6 @@ namespace Demo\Polls\Auth;
 use Demo\Polls\Agents\OAuthAgent;
 use Demo\Polls\Constants\PollsEnvConstants;
 use Demo\Polls\Hilos;
-use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderConfig;
@@ -15,7 +14,6 @@ use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
-use Hilos\Auth\OAuth\StubOAuthProvider;
 
 /**
  * PollsOAuthConfig - the polls demo's OAuth provider wiring (HIL-634).
@@ -24,10 +22,10 @@ use Hilos\Auth\OAuth\StubOAuthProvider;
  * the flow need: the {@see OAuthService} the users library runs its provider commands on,
  * and the {@see OAuthProviderRegistry} the async {@see OAuthAgent} drives. When a
  * provider's client id + secret are configured a real {@see GenericOAuthProvider} is
- * built; otherwise the offline {@see StubOAuthProvider} is handed to the registry under
- * the same key, so dev and e2e sign in with no real round-trip. Whether that stub survives
- * is not this class's call: the registry refuses an offline provider on a production-like
- * node (HIL-671), so an unconfigured provider there is simply absent rather than open.
+ * built over the framework's preset; when either is empty the provider is left out - no
+ * icon, no sign-in - on every node alike (HIL-924). The test stand fills a fake pair and
+ * points the presets at its own provider emulator, so the e2e signs in through a real
+ * redirect and exchange.
  */
 final class PollsOAuthConfig
 {
@@ -90,7 +88,7 @@ final class PollsOAuthConfig
     }
 
     /**
-     * Builds the configured provider registry (real providers, or offline stubs).
+     * Builds the registry of the providers whose client pair is configured.
      *
      * @return OAuthProviderRegistry Providers keyed by provider key, in enabled order
      */
@@ -98,53 +96,40 @@ final class PollsOAuthConfig
     {
         $providers = [];
         foreach (self::PROVIDER_CREDENTIALS as [$preset, $clientIdKey, $clientSecretKey]) {
-            $providers[] = self::providerFor($preset, $clientIdKey, $clientSecretKey);
+            $provider = self::providerFor($preset, $clientIdKey, $clientSecretKey);
+            if ($provider !== null) {
+                $providers[] = $provider;
+            }
         }
 
         return new OAuthProviderRegistry($providers);
     }
 
     /**
-     * Resolves one provider: a real one when its credentials are set, the offline stub otherwise.
+     * Resolves one provider: a real one when its credentials are set, none otherwise.
      *
-     * The stub is offered unconditionally and dropped selectively: on a production-like
-     * node {@see OAuthProviderRegistry} refuses it, which is why this method needs to know
-     * nothing about the environment (HIL-671).
+     * An empty pair is not an error but a provider this installation does not offer, the
+     * same on every node: left out of the registry, it is gone from the icon row, from the
+     * identifier detection and from the agent at once.
      *
      * @param OAuthProviderPreset $preset Framework recipe for this provider
      * @param string $clientIdKey Env key carrying the client id
      * @param string $clientSecretKey Env key carrying the client secret
-     * @return GenericOAuthProvider|StubOAuthProvider Configured provider under the preset's key
+     * @return ?GenericOAuthProvider Configured provider under the preset's key, or null when its pair is empty
      */
     private static function providerFor(
         OAuthProviderPreset $preset,
         string $clientIdKey,
         string $clientSecretKey,
-    ): GenericOAuthProvider|StubOAuthProvider {
+    ): ?GenericOAuthProvider {
         $clientId = Hilos::$env[$clientIdKey]->string();
         $clientSecret = Hilos::$env[$clientSecretKey]->string();
         $redirectUri = Hilos::$env[PollsEnvConstants::OAUTH_REDIRECT_URI]->string();
 
         if ($clientId === '' || $clientSecret === '') {
-            return new StubOAuthProvider($preset->value, $redirectUri, self::stubCode($preset));
+            return null;
         }
 
         return new GenericOAuthProvider($preset->config($clientId, $clientSecret, $redirectUri));
-    }
-
-    /**
-     * The canned code one provider's offline stub bounces back with.
-     *
-     * Per provider and not shared: the stub derives its account from the code, so one code
-     * for both would hand them the same `<code>@stub.local` address, and signing in with
-     * the second provider in dev would always land in cross-provider account linking
-     * (HIL-282) instead of a plain sign-in.
-     *
-     * @param OAuthProviderPreset $preset Provider whose stub is being built
-     * @return string Provider name, the part of its key after the `oauth:` prefix
-     */
-    private static function stubCode(OAuthProviderPreset $preset): string
-    {
-        return str_replace(AuthMethodKey::OAUTH_PREFIX, '', $preset->value);
     }
 }

@@ -183,6 +183,18 @@ services:
       - TELEGRAM_GATEWAY_ENDPOINT_URL=https://stand-gateway:18000/telegram
       - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
       - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosTasks
+      # OAuth (HIL-924): the stand's own provider emulator, which the presets are pointed
+      # at as a base - each builds <base>/<github|google>/authorize|token|userinfo from it.
+      # https is kept, because the emulator speaks the TLS a real provider speaks (HIL-921).
+      # The pairs are fake but non-empty: an empty pair leaves that provider out, with no
+      # icon and no sign-in. The callback is absolute, because a provider, and the emulator
+      # playing one, refuses a redirect_uri without a scheme and a host.
+      - OAUTH_ENDPOINT_URL=https://stand-gateway:18000/oauth
+      - OAUTH_GITHUB_CLIENT_ID=stand-github-client
+      - OAUTH_GITHUB_CLIENT_SECRET=stand-github-secret
+      - OAUTH_GOOGLE_CLIENT_ID=stand-google-client
+      - OAUTH_GOOGLE_CLIENT_SECRET=stand-google-secret
+      - OAUTH_REDIRECT_URI=https://tasks-nginx-test/auth/callback
       # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
       # daemon verifies it the way it verifies a provider in production: the trust comes
       # from the environment, not from a switch in the client. OpenSSL reads this file

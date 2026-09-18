@@ -7,6 +7,8 @@ import {
   readPasswordResetCode,
   readRegisterCode,
 } from '../helpers/mail'
+import { declareOAuthAccount } from '../helpers/oauth'
+import { signInAs } from '../helpers/oauth-user'
 import { PAGE_REFUSED, gotoAuthReturn, gotoPage } from '../helpers/page'
 import {
   PASSWORD,
@@ -401,13 +403,18 @@ test('signs in by a phone code over every channel the demo registers', async ({
   })
 })
 
-// OAuth (HIL-281, HIL-633). The stub provider bounces its authorize URL straight
-// back to the callback, so the whole trip runs offline: the window the click
-// opened couriers the return to the page that started it and closes, and the
-// leader-pinned OAuth agent resolves the (provider, subject) to a fresh account.
-// Both providers are walked because each carries its own stub code — one shared
-// between them would hand both the same `<code>@stub.local` address, and the
-// second sign-in would land in cross-provider account linking instead.
+// OAuth (HIL-281, HIL-633, HIL-924). The stand's provider emulator plays both
+// providers: the click opens its consent screen in a window of its own, the person
+// confirms the declared account, the provider sends that window back to the
+// callback, and it couriers the code to the page that started it and closes. The
+// leader-pinned OAuth agent exchanges the code and reads userinfo over HTTPS, then
+// resolves the (provider, subject) to a fresh account. Both providers are walked,
+// each with its own declared account — an id and an address no other test holds,
+// so the second sign-in is a plain one rather than cross-provider linking by
+// address (HIL-282). GitHub's step also proves the transport names a User-Agent:
+// the emulator's GitHub refuses userinfo with 403 without one, as the live one does.
+// The wait for the provider's window starts before the click, which opens it
+// synchronously.
 
 test('signs in through every OAuth provider the demo offers', async ({
   page,
@@ -419,7 +426,10 @@ test('signs in through every OAuth provider the demo offers', async ({
     await expect(page.getByTestId('self-user-id')).toBeEmpty()
     await openSignIn(page)
 
+    const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+    const signingIn = signInAs(page, account)
     await page.getByTestId('auth-icon-oauth-github').click()
+    await signingIn
 
     // The upgrade is the whole outcome: the shell grows the signed-in region and
     // the identity line names an account this demo's users table now holds.
@@ -427,7 +437,7 @@ test('signs in through every OAuth provider the demo offers', async ({
     await expect(page.getByTestId('self-user-id')).not.toBeEmpty()
     await expect(page.getByTestId('nav-signin')).toHaveCount(0)
 
-    // Each stub carries its own account, so the second trip must start from a
+    // Each provider signs in its own account, so the second trip must start from a
     // guest — on a signed session it would prove something else.
     await logout(page)
   })
@@ -436,7 +446,10 @@ test('signs in through every OAuth provider the demo offers', async ({
     await expect(page.getByTestId('self-user-id')).toBeEmpty()
     await openSignIn(page)
 
+    const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+    const signingIn = signInAs(page, account)
     await page.getByTestId('auth-icon-oauth-google').click()
+    await signingIn
 
     await expect(page.getByTestId('nav-logout')).toBeVisible()
     await expect(page.getByTestId('self-user-id')).not.toBeEmpty()

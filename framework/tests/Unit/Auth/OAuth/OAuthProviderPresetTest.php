@@ -9,6 +9,8 @@ use Hilos\Auth\OAuth\GenericOAuthProvider;
 use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
+use Hilos\Constants\EnvConstants;
+use Hilos\Environment\Exception\EnvException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,12 +21,33 @@ use PHPUnit\Framework\TestCase;
  * endpoint, in an environment where the credentials are real. The field map and
  * the scope are pinned here for that reason, and the last test pins the thing a
  * preset must NOT do: close the door on a provider the framework never heard of.
+ *
+ * OAUTH_ENDPOINT_URL is pinned by every case (HIL-924): empty, the recipes above
+ * are the provider's own endpoints; set, the stand's emulator takes all three. The
+ * process environment is what the accessor reads first, so a case sets it there
+ * and the value the suite ran with is put back afterwards.
  */
 final class OAuthProviderPresetTest extends TestCase
 {
     private const string CLIENT_ID = 'client-123';
     private const string CLIENT_SECRET = 'secret-xyz';
     private const string REDIRECT_URI = 'https://app.example/auth/callback';
+    private const string EMULATOR_URL = 'https://stand-gateway:18000/oauth';
+
+    /** @var string|false OAUTH_ENDPOINT_URL the suite runs under, put back so this file does not decide what the next one reads */
+    private string|false $previousEndpointUrl = false;
+
+    protected function setUp(): void
+    {
+        $this->previousEndpointUrl = getenv(EnvConstants::OAUTH_ENDPOINT_URL->name);
+        self::setEndpointUrl('');
+    }
+
+    protected function tearDown(): void
+    {
+        $name = EnvConstants::OAUTH_ENDPOINT_URL->name;
+        $this->previousEndpointUrl === false ? putenv($name) : putenv($name . '=' . $this->previousEndpointUrl);
+    }
 
     /**
      * A case value is the provider key itself, in the `oauth:` form the wire and the DB store.
@@ -37,6 +60,8 @@ final class OAuthProviderPresetTest extends TestCase
 
     /**
      * Every preset builds a config under its own key - the recipe never renames the provider.
+     *
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
      */
     public function testConfigCarriesThePresetKey(): void
     {
@@ -47,6 +72,8 @@ final class OAuthProviderPresetTest extends TestCase
 
     /**
      * GitHub's recipe: the endpoints, the scope, and the `login` name field HIL-573 settled on.
+     *
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
      */
     public function testGithubRecipeIsComplete(): void
     {
@@ -63,6 +90,8 @@ final class OAuthProviderPresetTest extends TestCase
 
     /**
      * Google's recipe: the OpenID userinfo endpoint, not the `id_token` the generic client cannot verify.
+     *
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
      */
     public function testGoogleRecipeIsComplete(): void
     {
@@ -78,7 +107,51 @@ final class OAuthProviderPresetTest extends TestCase
     }
 
     /**
+     * A set OAUTH_ENDPOINT_URL takes all three endpoints of every preset, under the provider's name.
+     *
+     * The name is the emulator's profile, and nothing else of the recipe moves: the emulator
+     * plays the live provider, not a different recipe.
+     *
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
+     */
+    public function testEndpointUrlRedirectsEveryPresetEndpoint(): void
+    {
+        self::setEndpointUrl(self::EMULATOR_URL);
+
+        $github = $this->configOf(OAuthProviderPreset::GITHUB);
+        self::assertSame(self::EMULATOR_URL . '/github/authorize', $github->authorizeUrl);
+        self::assertSame(self::EMULATOR_URL . '/github/token', $github->tokenUrl);
+        self::assertSame(self::EMULATOR_URL . '/github/userinfo', $github->userInfoUrl);
+        self::assertSame('read:user user:email', $github->scope);
+        self::assertSame('login', $github->nameKey);
+
+        $google = $this->configOf(OAuthProviderPreset::GOOGLE);
+        self::assertSame(self::EMULATOR_URL . '/google/authorize', $google->authorizeUrl);
+        self::assertSame(self::EMULATOR_URL . '/google/token', $google->tokenUrl);
+        self::assertSame(self::EMULATOR_URL . '/google/userinfo', $google->userInfoUrl);
+        self::assertSame('openid email profile', $google->scope);
+        self::assertSame('sub', $google->subjectKey);
+    }
+
+    /**
+     * A trailing slash on the base is forgiven, as it is on any base URL.
+     *
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
+     */
+    public function testEndpointUrlTrailingSlashIsForgiven(): void
+    {
+        self::setEndpointUrl(self::EMULATOR_URL . '/');
+
+        $config = $this->configOf(OAuthProviderPreset::GITHUB);
+
+        self::assertSame(self::EMULATOR_URL . '/github/authorize', $config->authorizeUrl);
+        self::assertSame(self::EMULATOR_URL . '/github/userinfo', $config->userInfoUrl);
+    }
+
+    /**
      * What the project passes in reaches the config untouched, secret included.
+     *
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
      */
     public function testClientDataIsPlacedAsGiven(): void
     {
@@ -119,8 +192,19 @@ final class OAuthProviderPresetTest extends TestCase
     }
 
     /**
+     * Points OAUTH_ENDPOINT_URL at one value for the rest of the case.
+     *
+     * @param string $endpointUrl Value the preset reads; empty keeps the provider's own endpoints
+     */
+    private static function setEndpointUrl(string $endpointUrl): void
+    {
+        putenv(EnvConstants::OAUTH_ENDPOINT_URL->name . '=' . $endpointUrl);
+    }
+
+    /**
      * @param OAuthProviderPreset $preset Preset under test
      * @return OAuthProviderConfig Config filled with this test's client data
+     * @throws EnvException When OAUTH_ENDPOINT_URL cannot be read
      */
     private function configOf(OAuthProviderPreset $preset): OAuthProviderConfig
     {

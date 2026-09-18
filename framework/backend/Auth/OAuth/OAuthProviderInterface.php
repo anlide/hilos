@@ -8,11 +8,10 @@ namespace Hilos\Auth\OAuth;
  * The seam every OAuth provider implements (HIL-281).
  *
  * Splits the provider knowledge (endpoint URLs, credentials, redirect) from the
- * two ways the exchange is driven: an {@see HttpOAuthProvider} yields HTTP
- * requests the async agent replays over non-blocking sockets, while an
- * {@see OfflineOAuthProvider} resolves the code in-process for offline dev/e2e.
- * This base carries only what both share — the key and the authorize URL, both
- * produced synchronously in the start handler with no I/O.
+ * way the exchange is driven: the framework drives only an
+ * {@see HttpOAuthProvider}, which yields HTTP requests the async agent replays
+ * over non-blocking sockets. This base carries what needs no I/O — the key and
+ * the authorize URL, both produced synchronously in the start handler.
  */
 interface OAuthProviderInterface
 {

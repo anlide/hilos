@@ -22,21 +22,21 @@ final class ChatEnvConstants
 
     /**
      * Secret for signing the stateless OAuth `state` token (HMAC-bound to the
-     * session, expiring). Env-only; the dev/e2e default is non-empty so the
-     * offline stub flow works, but a real deployment must override it.
+     * session, expiring). Env-only; the dev/e2e default is non-empty so a stand
+     * signs in with no setup, but a real deployment must override it.
      */
     public const string OAUTH_STATE_SECRET = 'OAUTH_STATE_SECRET';
 
-    /** GitHub OAuth client id. Empty selects the offline stub provider (dev/e2e). */
+    /** GitHub OAuth client id. Empty leaves GitHub out - no icon, no sign-in. */
     public const string OAUTH_GITHUB_CLIENT_ID = 'OAUTH_GITHUB_CLIENT_ID';
 
-    /** GitHub OAuth client secret (env-only). Empty selects the offline stub provider. */
+    /** GitHub OAuth client secret (env-only). Empty leaves GitHub out. */
     public const string OAUTH_GITHUB_CLIENT_SECRET = 'OAUTH_GITHUB_CLIENT_SECRET';
 
-    /** Google OAuth client id. Empty selects the offline stub provider (dev/e2e). */
+    /** Google OAuth client id. Empty leaves Google out - no icon, no sign-in. */
     public const string OAUTH_GOOGLE_CLIENT_ID = 'OAUTH_GOOGLE_CLIENT_ID';
 
-    /** Google OAuth client secret (env-only). Empty selects the offline stub provider. */
+    /** Google OAuth client secret (env-only). Empty leaves Google out. */
     public const string OAUTH_GOOGLE_CLIENT_SECRET = 'OAUTH_GOOGLE_CLIENT_SECRET';
 
     /**

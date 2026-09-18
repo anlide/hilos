@@ -765,6 +765,17 @@ enum EnvConstants
     /** @var string Per-request timeout in milliseconds for the Gateway calls. Default 5000. */
     case TELEGRAM_GATEWAY_TIMEOUT_MS;
 
+    // ── OAuth provider endpoints (HIL-924) ───────────────────────────────────
+
+    /**
+     * @var string Base URL every OAuth PRESET builds its authorize/token/userinfo endpoints from, as
+     * <base>/<provider>/authorize|token|userinfo. Empty (the default) leaves each preset on the
+     * provider's own endpoints. The test stand points it at its own emulator
+     * (https://stand-gateway:18000/oauth), which is the only reason it is configurable at all; a
+     * provider a project builds by hand is not affected.
+     */
+    case OAUTH_ENDPOINT_URL;
+
     // ── Web push (HIL-199) ───────────────────────────────────────────────────
 
     /**

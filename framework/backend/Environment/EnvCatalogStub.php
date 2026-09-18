@@ -336,6 +336,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 5000,
                 emptyIsMissing: true,
             ),
+            EnvConstants::OAUTH_ENDPOINT_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_PROVIDER->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_ENDPOINT_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_FROM->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),

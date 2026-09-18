@@ -17,7 +17,7 @@
 export const AUTH_MAGIC_LINK_PATH = '/auth/magic'
 
 /**
- * Where an OAuth provider redirects back to (backend default:
- * `StubOAuthProvider` `$redirectUri`).
+ * Where an OAuth provider redirects back to (the path a project's
+ * `OAUTH_REDIRECT_URI` ends in; the demos default to `/auth/callback`).
  */
 export const AUTH_OAUTH_CALLBACK_PATH = '/auth/callback'

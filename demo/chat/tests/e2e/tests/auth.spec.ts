@@ -28,6 +28,8 @@ import {
 import { expectPageRefused, gotoAuthReturn, gotoPage } from '../helpers/page'
 import { uniquePhone, waitForSmsCode } from '../helpers/sms'
 import { dictateGatewayBehavior } from '../helpers/gateway'
+import { declareOAuthAccount } from '../helpers/oauth'
+import { signInAs } from '../helpers/oauth-user'
 import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
@@ -114,31 +116,39 @@ test('registers and signs back in through the gated profile surface, resuming it
 test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   page,
 }) => {
-  // OAuth login drives mechanism B end to end offline: the stub provider under
-  // `oauth:google` bounces its authorize URL straight back to /auth/callback, the
-  // monopolistic OAuth agent (a separate, leader-pinned process) resolves the
-  // (provider, subject) to a fresh account, and the bound session rides the
-  // current-user fan-out (HIL-161) that signs the visitor in. This is the login-path
-  // e2e that was missing while the callback handed the pending op to the agent
-  // through a never-synced runtime collection — the copy the agent read stayed empty.
+  // OAuth login drives mechanism B end to end through the stand's provider emulator
+  // (HIL-923, HIL-924): the click opens the provider's consent screen at its own
+  // address, the person picks the declared account and confirms, and the provider
+  // redirects that window back to /auth/callback with a real code. The monopolistic
+  // OAuth agent (a separate, leader-pinned process) exchanges the code for a token
+  // and reads userinfo over HTTPS, resolves the (provider, subject) to a fresh
+  // account, and the bound session rides the current-user fan-out (HIL-161) that
+  // signs the visitor in. This is the login-path e2e that was missing while the
+  // callback handed the pending op to the agent through a never-synced runtime
+  // collection — the copy the agent read stayed empty.
   //
   // Quarantined as HIL-281 while the first sign-in after a fresh daemon hung. A
   // frame for an agent still starting now waits for it in the master (HIL-629),
   // and this flow was taken off quarantine on the first run against a fresh stand.
   //
-  // Google and not GitHub: each stub derives its account from its own code, and the
-  // GitHub stub's subject is what profile.spec links to a fresh account later in the
-  // run. Signed in here first, that subject would already belong to this account and
-  // the link would be refused as already linked.
+  // The account is declared fresh — an id and an address no other test holds — so
+  // the sign-in mints a new account instead of resolving somebody else's or landing
+  // in linking by address (HIL-282).
+  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // The trip runs in a window of its own (HIL-633): the stub bounces that window
+  // The trip runs in a window of its own (HIL-633): the provider sends that window
   // back to /auth/callback, it couriers the code home and closes, and THIS page
   // does the exchange — so the sign-in lands in place, on the gated page it
-  // started from, and the address never leaves it.
+  // started from, and the address never leaves it. The wait for that window starts
+  // BEFORE the click: the click handler opens it synchronously, and a wait begun
+  // after the click would miss the event.
+  const signingIn = signInAs(page, account)
   await page.getByTestId('auth-icon-oauth-google').click()
+  await signingIn
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('auth-oauth-wait')).toHaveCount(0)

@@ -98,10 +98,10 @@ enum OAuthProfile: string
     /**
      * Whether this provider refuses a userinfo call that carried no User-Agent header.
      *
-     * GitHub does, which is not a detail: the framework sends no User-Agent at all, so a login
-     * through GitHub fails in production on exactly this step (measured 2026-09-17, fixed by
-     * HIL-924). The emulator demands the header for that reason - a stand that did not would keep
-     * answering a call the real provider refuses.
+     * GitHub does, which is not a detail: until HIL-924 the framework sent no User-Agent at all,
+     * and a login through GitHub failed in production on exactly this step (measured 2026-09-17).
+     * The emulator demands the header for that reason - a stand that did not would keep answering
+     * a call the real provider refuses, and the fix would have nothing to prove itself against.
      *
      * @return bool True when the header is mandatory
      */

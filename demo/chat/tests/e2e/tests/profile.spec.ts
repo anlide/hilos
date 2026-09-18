@@ -1,7 +1,9 @@
 import { test, expect, type Locator } from '@playwright/test'
 
-import { PASSWORD, signUp } from '../helpers/session'
+import { PASSWORD, signUp, uniqueEmail } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
+import { declareOAuthAccount } from '../helpers/oauth'
+import { signInAs } from '../helpers/oauth-user'
 
 // Type into a Vue input the way a user does — clear, then key by key — so the
 // reactivity a bare fill() can miss actually fires (see helpers/session).
@@ -67,10 +69,15 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
   page,
 }) => {
   // Link mode reuses the whole OAuth flow but attaches the identity to the
-  // already-signed-in account instead of resolving one. With no real GitHub app
-  // configured the offline stub answers under `oauth:github`: its authorize URL
-  // bounces the opened window straight back to /auth/callback, that window
-  // couriers the code home and closes, and this page does the exchange.
+  // already-signed-in account instead of resolving one. The stand's provider
+  // emulator plays GitHub (HIL-923, HIL-924): the opened window shows its consent
+  // screen, the person confirms the declared account, the provider sends the
+  // window back to /auth/callback, that window couriers the code home and closes,
+  // and this page does the exchange. The agent then reads GitHub's userinfo, which
+  // the emulator refuses with 403 when the request names no User-Agent, as the
+  // live api.github.com does — so this link also proves the transport sends one.
+  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
@@ -89,7 +96,11 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
     'oauth:github',
   )
 
+  // The wait for the provider's window starts before the click, which opens it
+  // synchronously.
+  const linking = signInAs(page, account)
   await linkButton.click()
+  await linking
 
   // The link resolves out of band (link-ok signal) on THIS page's own connection,
   // so the identities projection re-emits into the list that is already on screen

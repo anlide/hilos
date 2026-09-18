@@ -16,9 +16,10 @@ use Hilos\Environment\EnvCatalogStub;
  * The framework stub default for DB_DATABASE is an empty string, so the demo
  * overrides it with its own database name. The OAuth block is the demo's own: the
  * framework has no opinion about which providers an application signs people in
- * with. Both client pairs default to empty, which is what selects the offline stub
- * provider in dev and e2e; a deployment fills them in. Everything else - WebAuthn,
- * anti-abuse, code channels - inherits the stub.
+ * with. Both client pairs default to empty, which leaves both providers out; a
+ * deployment fills them in, and the test stand fills a fake pair aimed at its own
+ * provider emulator. Everything else - WebAuthn, anti-abuse, code channels -
+ * inherits the stub.
  */
 final class PollsEnvCatalog implements CatalogProviderInterface
 {

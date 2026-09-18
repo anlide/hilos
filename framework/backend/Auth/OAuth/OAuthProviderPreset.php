@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Auth\OAuth;
 
 use Hilos\Auth\AuthMethodKey;
+use Hilos\Constants\EnvConstants;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 
 /**
  * OAuthProviderPreset - the OAuth recipes Hilos ships (HIL-419).
@@ -23,6 +26,13 @@ use Hilos\Auth\AuthMethodKey;
  * a preset away: {@see GenericOAuthProvider} reads a userinfo JSON and verifies no
  * JWT, which is its declared boundary. Such a provider needs its own
  * implementation of {@see OAuthProviderInterface}.
+ *
+ * The endpoints of a preset are redirected by one variable, OAUTH_ENDPOINT_URL,
+ * and it is configurable for exactly one reason: the test stand runs its own
+ * provider emulator, and a suite that cannot send the sign-in to it can only test
+ * the provider path by not testing it (HIL-924). In production it is empty and
+ * every preset talks to its provider. Only the presets follow it - an
+ * {@see OAuthProviderConfig} a project builds by hand keeps its own endpoints.
  */
 enum OAuthProviderPreset: string
 {
@@ -84,24 +94,42 @@ enum OAuthProviderPreset: string
     /** Userinfo claim carrying the Google display name. */
     private const string GOOGLE_NAME_KEY = 'name';
 
+    /** Last path segment of the authorization endpoint under OAUTH_ENDPOINT_URL. */
+    private const string ENDPOINT_AUTHORIZE = 'authorize';
+
+    /** Last path segment of the token endpoint under OAUTH_ENDPOINT_URL. */
+    private const string ENDPOINT_TOKEN = 'token';
+
+    /** Last path segment of the userinfo endpoint under OAUTH_ENDPOINT_URL. */
+    private const string ENDPOINT_USERINFO = 'userinfo';
+
+    /** Separator between the path segments of a redirected endpoint. */
+    private const string PATH_SEPARATOR = '/';
+
     /**
      * Fills this preset's recipe in with the project's own client data.
+     *
+     * The endpoints are the provider's own unless OAUTH_ENDPOINT_URL names a base,
+     * in which case each one is `<base>/<provider>/authorize|token|userinfo`.
      *
      * @param string $clientId OAuth client id issued to the project
      * @param string $clientSecret OAuth client secret issued to the project (env-only)
      * @param string $redirectUri SPA callback the provider redirects back to
      * @return OAuthProviderConfig Config under this preset's key
+     * @throws EnvException When OAUTH_ENDPOINT_URL is missing, outside the catalog, or of the wrong type
      */
     public function config(string $clientId, string $clientSecret, string $redirectUri): OAuthProviderConfig
     {
+        $endpointUrl = Hilos::$env[EnvConstants::OAUTH_ENDPOINT_URL]->string();
+
         return match ($this) {
             self::GITHUB => new OAuthProviderConfig(
                 key: $this->value,
                 clientId: $clientId,
                 clientSecret: $clientSecret,
-                authorizeUrl: self::GITHUB_AUTHORIZE_URL,
-                tokenUrl: self::GITHUB_TOKEN_URL,
-                userInfoUrl: self::GITHUB_USERINFO_URL,
+                authorizeUrl: $this->endpoint($endpointUrl, self::ENDPOINT_AUTHORIZE, self::GITHUB_AUTHORIZE_URL),
+                tokenUrl: $this->endpoint($endpointUrl, self::ENDPOINT_TOKEN, self::GITHUB_TOKEN_URL),
+                userInfoUrl: $this->endpoint($endpointUrl, self::ENDPOINT_USERINFO, self::GITHUB_USERINFO_URL),
                 scope: self::GITHUB_SCOPE,
                 redirectUri: $redirectUri,
                 subjectKey: self::GITHUB_SUBJECT_KEY,
@@ -112,9 +140,9 @@ enum OAuthProviderPreset: string
                 key: $this->value,
                 clientId: $clientId,
                 clientSecret: $clientSecret,
-                authorizeUrl: self::GOOGLE_AUTHORIZE_URL,
-                tokenUrl: self::GOOGLE_TOKEN_URL,
-                userInfoUrl: self::GOOGLE_USERINFO_URL,
+                authorizeUrl: $this->endpoint($endpointUrl, self::ENDPOINT_AUTHORIZE, self::GOOGLE_AUTHORIZE_URL),
+                tokenUrl: $this->endpoint($endpointUrl, self::ENDPOINT_TOKEN, self::GOOGLE_TOKEN_URL),
+                userInfoUrl: $this->endpoint($endpointUrl, self::ENDPOINT_USERINFO, self::GOOGLE_USERINFO_URL),
                 scope: self::GOOGLE_SCOPE,
                 redirectUri: $redirectUri,
                 subjectKey: self::GOOGLE_SUBJECT_KEY,
@@ -122,5 +150,38 @@ enum OAuthProviderPreset: string
                 nameKey: self::GOOGLE_NAME_KEY,
             ),
         };
+    }
+
+    /**
+     * One endpoint of this preset: the provider's own, or its path under the redirect base.
+     *
+     * A trailing slash on the base is forgiven, as it is on any base URL.
+     *
+     * @param string $endpointUrl OAUTH_ENDPOINT_URL as read; empty keeps the provider's own endpoint
+     * @param string $segment Last path segment of the endpoint under the base
+     * @param string $providerUrl The provider's own endpoint
+     * @return string Endpoint URL the generic client calls
+     */
+    private function endpoint(string $endpointUrl, string $segment, string $providerUrl): string
+    {
+        if ($endpointUrl === '') {
+            return $providerUrl;
+        }
+
+        return rtrim($endpointUrl, self::PATH_SEPARATOR)
+            . self::PATH_SEPARATOR . $this->providerName()
+            . self::PATH_SEPARATOR . $segment;
+    }
+
+    /**
+     * The provider's name without the auth-method prefix - `github`, `google`.
+     *
+     * It is the profile name the stand's emulator serves the provider under.
+     *
+     * @return string Preset key without {@see AuthMethodKey::OAUTH_PREFIX}
+     */
+    private function providerName(): string
+    {
+        return str_replace(AuthMethodKey::OAUTH_PREFIX, '', $this->value);
     }
 }

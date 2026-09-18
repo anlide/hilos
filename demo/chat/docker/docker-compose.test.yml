@@ -193,6 +193,18 @@ services:
       # The per-role key and not the global LLM_LOCAL_URL: the bot and the context
       # analyzer read the global one, and this address must not move them too.
       - CHAT_MODERATION_URL=https://stand-gateway:18000/model
+      # OAuth (HIL-924): the stand's own provider emulator, which the presets are pointed
+      # at as a base - each builds <base>/<github|google>/authorize|token|userinfo from it.
+      # https is kept, because the emulator speaks the TLS a real provider speaks (HIL-921).
+      # The pairs are fake but non-empty: an empty pair leaves that provider out, with no
+      # icon and no sign-in. The callback is absolute, because a provider, and the emulator
+      # playing one, refuses a redirect_uri without a scheme and a host.
+      - OAUTH_ENDPOINT_URL=https://stand-gateway:18000/oauth
+      - OAUTH_GITHUB_CLIENT_ID=stand-github-client
+      - OAUTH_GITHUB_CLIENT_SECRET=stand-github-secret
+      - OAUTH_GOOGLE_CLIENT_ID=stand-google-client
+      - OAUTH_GOOGLE_CLIENT_SECRET=stand-google-secret
+      - OAUTH_REDIRECT_URI=https://chat-nginx-test/auth/callback
       # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
       # daemon verifies it the way it verifies a provider in production: the trust comes
       # from the environment, not from a switch in the client. OpenSSL reads this file
@@ -294,6 +306,16 @@ services:
       - MAIL_TRANSPORT=smtp
       - MAIL_SMTP_HOST=mailpit-test
       - SMS_ENDPOINT_URL=https://stand-gateway:18000/sms/send
+      # The same OAuth wiring as the daemon (HIL-924), for the same reason: the set of
+      # sign-in methods the identifier lookup answers with is measured on the stand's
+      # deployment. Without a pair here GitHub and Google would drop out of that set,
+      # because no in-process stub stands in for an unconfigured provider any more.
+      - OAUTH_ENDPOINT_URL=https://stand-gateway:18000/oauth
+      - OAUTH_GITHUB_CLIENT_ID=stand-github-client
+      - OAUTH_GITHUB_CLIENT_SECRET=stand-github-secret
+      - OAUTH_GOOGLE_CLIENT_ID=stand-google-client
+      - OAUTH_GOOGLE_CLIENT_SECRET=stand-google-secret
+      - OAUTH_REDIRECT_URI=https://chat-nginx-test/auth/callback
     profiles:
       - cli
     depends_on:
@@ -332,8 +354,10 @@ services:
       # both are read over MAILPIT_URL above.
       STAND_GATEWAY_URL: https://stand-gateway:18000
       # The gateway's certificate is the stand's own (HIL-921). Node adds this file to
-      # its trusted roots rather than replacing them; the browser is not involved, since
-      # only a spec's fetch reaches the gateway.
+      # its trusted roots rather than replacing them, for a spec's fetch. The browser
+      # reaches the gateway too - the provider emulator's consent screen (HIL-923,
+      # HIL-924) - and its pass to the stand's certificate is ignoreHTTPSErrors in
+      # tests/e2e/playwright.config.ts, not this file.
       NODE_EXTRA_CA_CERTS: /hilos/framework/docker/stand-gateway/tls/ca.pem
       # How far the run wants every Playwright cap stretched. Set by
       # scripts/run-test-suite.php from the lane count it resolved; the default is

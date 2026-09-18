@@ -15,7 +15,7 @@ import { postToGateway } from './gateway'
 // and only the second one takes orders from a spec.
 //
 // The chat and polls runners reach the gateway (STAND_GATEWAY_URL and the CA it trusts are
-// set on both), so this helper has a twin in demo/polls/tests/e2e/helpers/ (HIL-924), and
+// set on both), so this helper has a twin in demo/chat/tests/e2e/helpers/ (HIL-924), and
 // the two do not drift apart.
 
 /** Test route of the provider's own half, where the world is declared. */
