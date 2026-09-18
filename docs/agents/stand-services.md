@@ -4,13 +4,13 @@ Read this before a spec needs an external service on the stand — adding a
 channel or an emulator, choosing between a stub and an emulator, or looking for
 where a caught message lands. The house is `framework/docker/stand-gateway`
 (HIL-492, HIL-653); this page is the rule for living in it, written for the
-author of the next resident rather than as a description of the three that live
-there today. What a particular future resident looks like — a model — is that
-leaf's own design (HIL-925); this page says only what the house guarantees and
-what a resident owes it. The OAuth provider has moved in (HIL-923) and the three
-demos sign in through it (HIL-924); what it taught the house is written into the
-rules below rather than described here. How to run the suites is
-[testing.md](testing.md), not here.
+author of the next resident rather than as a description of the four that live
+there today: it says only what the house guarantees and what a resident owes it.
+The OAuth provider has moved in (HIL-923) and the three demos sign in through it
+(HIL-924); the local model has moved in too (HIL-925) and chat moderation asks it
+(HIL-927). What they taught the house is written into the rules below rather
+than described here. How to run the suites is [testing.md](testing.md), not
+here.
 
 ## Why a Stand Emulates Rather Than Stubs
 
