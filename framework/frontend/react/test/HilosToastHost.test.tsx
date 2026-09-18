@@ -17,9 +17,8 @@ import type { HilosToastCorner } from '../src/hilosToastCorner.js'
 // The host is the only place the hold events, the measurement reports and the
 // live-region wiring are written down, so this covers them once for the three
 // SDKs — the store's own behavior (lifetimes, holds, the height cap) is a core
-// unit test. It also carries the card's form for the Angular host, which has no
-// component test of its own: ng test is blocked upstream and the Angular SDK
-// project is a node environment without jsdom (HIL-491).
+// unit test. It also carries the card's form for the Angular host, whose own
+// component test covers only the service line (angular/test/HilosToastHost.test.ts).
 function byId(container: HTMLElement, id: string): HTMLElement | null {
   return container.querySelector(`[data-id="${id}"]`)
 }
@@ -146,6 +145,23 @@ const VISUALS: [HilosToastSeverity, string, string, string][] = [
   ['warning', 'border-warning', 'bi-exclamation-triangle-fill', 'text-warning'],
   ['info', 'border-primary', 'bi-info-circle-fill', 'text-primary'],
 ]
+
+/**
+ * Fill a stack past its budget before any host is mounted.
+ *
+ * With no height reported yet the store counts its budget in cards, and that is
+ * the only way a stack overflows in jsdom, where every box measures zero pixels.
+ * The waiting error keeps it that way once the host has measured: nothing missed
+ * comes back while an error still waits for a slot.
+ *
+ * @param store The stack to fill.
+ */
+function overfill(store: HilosToastStore): void {
+  for (const message of ['One', 'Two', 'Three', 'Four', 'Five']) {
+    store.push(message, { severity: 'info' })
+  }
+  store.push('The report could not be built', { severity: 'error' })
+}
 
 describe('HilosToastHost', () => {
   afterEach(() => {
@@ -392,6 +408,46 @@ describe('HilosToastHost', () => {
     // The cursor resting on the line counts as reading the stack, and only
     // pe-auto gives it back the pointer events .toast-container turns off.
     expect(line.className).toContain('pe-auto')
+  })
+
+  it('makes the missed piece a control and leaves the waiting one plain text', () => {
+    const store = createHilosToastStore()
+    overfill(store)
+    const { container } = renderHost(store)
+
+    const line = byId(container, 'hilos-toast-overflow') as HTMLElement
+    expect(line.querySelectorAll('button')).toHaveLength(1)
+    const control = byId(container, 'hilos-toast-missed') as HTMLElement
+    expect(control.tagName).toBe('BUTTON')
+    expect(control.textContent).toBe('1 missed')
+    expect(control.getAttribute('aria-label')).toBe('1 missed, show one')
+  })
+
+  it('asks the store for one missed notice when the control is pressed', () => {
+    const store = createHilosToastStore()
+    overfill(store)
+    const { container } = renderHost(store)
+
+    fireEvent.click(byId(container, 'hilos-toast-missed') as HTMLElement)
+
+    expect(store.toasts.get().map((toast) => toast.message)).toContain('Five')
+    expect(store.overflow.get()).toEqual({ waiting: 1, missed: 0 })
+  })
+
+  it('moves focus onto the returned card when the control disappears under the press', () => {
+    const store = createHilosToastStore()
+    overfill(store)
+    const { container } = renderHost(store)
+
+    fireEvent.click(byId(container, 'hilos-toast-missed') as HTMLElement)
+
+    expect(byId(container, 'hilos-toast-missed')).toBeNull()
+    const returned = [
+      ...container.querySelectorAll('[data-id="hilos-toast-info"]'),
+    ].find((card) => card.textContent?.includes('Five'))
+    expect(document.activeElement).toBe(
+      returned?.querySelector('[data-id="hilos-toast-close"]'),
+    )
   })
 
   it('draws no service line while everything that arrived is on screen', () => {

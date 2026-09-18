@@ -23,7 +23,8 @@
 //
 // This module owns the POLICY of the stack — how long a notice lives, when the
 // countdown runs, what happens when the corner is full, when two pushes are one
-// notice. The card itself belongs to the three hosts. The split is what keeps
+// notice. A full corner does not destroy what it could not show: it OWES it, and
+// gives it back as room frees or as soon as a person asks (HIL-908). The card itself belongs to the three hosts. The split is what keeps
 // the policy in one copy: the hosts report raw measurements (the window height,
 // each rendered card's height) and the arithmetic happens here, so "a third of
 // the screen" cannot drift apart between Vue, React and Angular.
@@ -111,7 +112,7 @@ export type HilosToastHoldReason = 'cursor' | 'focus' | 'tab'
 export interface HilosToastOverflow {
   /** Errors queued for a free slot. */
   readonly waiting: number
-  /** Notices that were dropped because the stack was full. */
+  /** Notices that did not fit and are kept until they are shown. */
   readonly missed: number
 }
 
@@ -199,8 +200,17 @@ export interface HilosToastStore {
    * @param id The id {@link push} returned.
    */
   dismiss(id: number): void
-  /** Remove every notice, drop the queue and its counts, and cancel the timers. */
+  /** Remove every notice, drop the queue and the missed notices, and cancel the timers. */
   clear(): void
+  /**
+   * Put the oldest missed notice on screen at once and return its id, or `null`
+   * when nothing is missed — a press can race with a notice coming back by itself.
+   *
+   * The card is exempt from the budget on its first measurement, and on nothing
+   * else: the budget bounds what arrives unasked, and this was asked for. It then
+   * counts down its full time like any other card, because it never had one.
+   */
+  showMissed(): number | null
   /** Attach a host to the stack; see {@link HilosToastViewer}. */
   attach(): HilosToastViewer
   /**
@@ -210,7 +220,8 @@ export interface HilosToastStore {
    * deliberately not synchronized between tabs, so a card only just seen here is
    * given the whole time to read it. A key whose count moved restarts its
    * countdown, because the server has just said the same thing again. A key that
-   * is not in the list is taken away wherever it stood, screen or waiting queue.
+   * is not in the list is taken away wherever it stood — screen, waiting queue or
+   * missed notices.
    *
    * @param toasts The whole stack the session is being shown.
    */
@@ -272,10 +283,16 @@ export function createHilosToastStore(): HilosToastStore {
   // Reported card heights, by toast id; shared by every attached viewer, which
   // is why they are keyed by the toast and not by the host.
   const heights = new Map<number, number>()
-  // Errors that did not fit, oldest first. Only errors ever wait: everything
-  // else collapses into `missed`.
+  // Errors that did not fit, oldest first. Only errors wait for a slot of their
+  // own: everything else is kept in `missedList`.
   let queued: readonly HilosToast[] = []
-  let missed = 0
+  // Notices that did not fit, oldest first: kept rather than counted, because a
+  // notice nobody saw is owed, not gone. Freed room gives them back after the
+  // waiting errors, and a person may ask for the oldest at once.
+  let missedList: readonly HilosToast[] = []
+  // Cards put up by showMissed() and not measured yet: their first measurement
+  // skips the budget, once.
+  const requested = new Set<number>()
   let viewportHeight = 0
   let anyHeightReported = false
   let sequence = 0
@@ -294,6 +311,7 @@ export function createHilosToastStore(): HilosToastStore {
   /** Publish the service line's numbers, and only when they moved. */
   function publishOverflow(): void {
     const current = overflow.get()
+    const missed = missedList.length
     if (current.waiting !== queued.length || current.missed !== missed) {
       overflow.set({ waiting: queued.length, missed })
     }
@@ -414,6 +432,7 @@ export function createHilosToastStore(): HilosToastStore {
     }
     pending.delete(id)
     heights.delete(id)
+    requested.delete(id)
     toasts.set(toasts.get().filter((toast) => toast.id !== id))
   }
 
@@ -442,24 +461,40 @@ export function createHilosToastStore(): HilosToastStore {
   }
 
   /**
-   * Put a notice that did not fit where it belongs: an error waits for a slot in
-   * arrival order, everything else becomes one more in the missed count.
+   * Insert one card into a list kept in arrival order.
+   *
+   * By id, which is arrival order: a card that comes back from a trial that did
+   * not fit lands at the head again, not behind the ones that arrived after it.
+   *
+   * @param list The list, oldest first.
+   * @param toast The card to insert.
+   */
+  function inArrivalOrder(
+    list: readonly HilosToast[],
+    toast: HilosToast,
+  ): readonly HilosToast[] {
+    const after = list.findIndex((other) => other.id > toast.id)
+
+    return after === -1
+      ? [...list, toast]
+      : [...list.slice(0, after), toast, ...list.slice(after)]
+  }
+
+  /**
+   * Put a notice that did not fit where it belongs: an error waits for a slot,
+   * everything else is kept among the missed notices; both in arrival order.
    *
    * @param toast The card being taken off the screen.
    */
   function overflowed(toast: HilosToast): void {
     take(toast.id)
+    const kept = { ...toast, measured: false }
     if (toast.severity !== 'error') {
-      missed += 1
+      missedList = inArrivalOrder(missedList, kept)
 
       return
     }
-    const waiting = { ...toast, measured: false }
-    const after = queued.findIndex((other) => other.id > waiting.id)
-    queued =
-      after === -1
-        ? [...queued, waiting]
-        : [...queued.slice(0, after), waiting, ...queued.slice(after)]
+    queued = inArrivalOrder(queued, kept)
   }
 
   /**
@@ -483,11 +518,14 @@ export function createHilosToastStore(): HilosToastStore {
     }
   }
 
-  /** Let the first waiting error into the slot that just came free. */
-  function admitNext(): void {
+  /**
+   * Let the first waiting error into the slot that just came free, and say
+   * whether there was one.
+   */
+  function admitNext(): boolean {
     const next = queued[0]
     if (next === undefined) {
-      return
+      return false
     }
     queued = queued.slice(1)
     toasts.set([...toasts.get(), next])
@@ -496,19 +534,69 @@ export function createHilosToastStore(): HilosToastStore {
     if (!anyHeightReported && !withinBudget()) {
       overflowed(next)
     }
+
+    return true
+  }
+
+  /**
+   * Give back one missed notice, if there is room for it.
+   *
+   * Room is what a host measures, not what is computed here, so a card goes in
+   * ONE at a time: it is drawn and measured, and only a card that fits calls this
+   * again (reportHeight). One that does not fit goes back to the head of the list
+   * and the round ends. Nothing comes back while an error is waiting. While no height has been reported the budget is counted
+   * in cards, and the round runs here until it is full. Both forms terminate:
+   * every step either takes room or ends the round.
+   */
+  function refill(): void {
+    // A waiting error outranks every missed notice, and it only ever comes in
+    // through a freed slot (admitNext): room found any other way waits for it.
+    if (queued.length > 0) {
+      return
+    }
+    if (anyHeightReported) {
+      const stack = toasts.get()
+      const next = missedList[0]
+      if (
+        next === undefined ||
+        !withinBudget() ||
+        stack.some((toast) => !toast.measured)
+      ) {
+        return
+      }
+      missedList = missedList.slice(1)
+      toasts.set([...stack, next])
+
+      return
+    }
+    let next = missedList[0]
+    while (next !== undefined) {
+      missedList = missedList.slice(1)
+      toasts.set([...toasts.get(), next])
+      if (!withinBudget()) {
+        overflowed(next)
+
+        return
+      }
+      next = missedList[0]
+    }
   }
 
   /**
    * Free the slot of a card that is gone and settle what follows: the next error
-   * in, and the missed count forgotten once there is nobody left to tell.
+   * in, or else a missed notice back; and the missed notices forgotten once there
+   * is nobody left to tell — which a stack with room never reaches while anything
+   * is owed, because a lone card always fits.
    *
    * @param id The toast's id.
    */
   function freeSlot(id: number): void {
     take(id)
-    admitNext()
+    if (!admitNext()) {
+      refill()
+    }
     if (toasts.get().length === 0 && queued.length === 0) {
-      missed = 0
+      missedList = []
     }
     publishOverflow()
   }
@@ -572,7 +660,8 @@ export function createHilosToastStore(): HilosToastStore {
   }
 
   /**
-   * The identical notice already known, on screen or waiting, if there is one.
+   * The identical notice already known — on screen, waiting or missed — if there
+   * is one.
    *
    * @param candidate The notice about to be pushed.
    */
@@ -583,20 +672,32 @@ export function createHilosToastStore(): HilosToastStore {
       other.source === candidate.source &&
       other.destination === candidate.destination
 
-    return toasts.get().find(same) ?? queued.find(same)
+    return toasts.get().find(same) ?? queued.find(same) ?? missedList.find(same)
+  }
+
+  /**
+   * Rewrite one card that is off screen, in whichever of the two lists holds it.
+   *
+   * @param id The toast's id.
+   * @param change The fields to overwrite.
+   */
+  function rewriteOffScreen(id: number, change: Partial<HilosToast>): void {
+    const apply = (other: HilosToast): HilosToast =>
+      other.id === id ? { ...other, ...change } : other
+    queued = queued.map(apply)
+    missedList = missedList.map(apply)
   }
 
   /**
    * Count one more repeat on a notice already known, and give it its full time
-   * back — it has only just been said again.
+   * back — it has only just been said again. A notice off screen stays where it
+   * is: a repeat brings no room.
    *
    * @param twin The card the repeat merged into.
    */
   function repeat(twin: HilosToast): void {
     if (onScreen(twin.id) === undefined) {
-      queued = queued.map((other) =>
-        other.id === twin.id ? { ...other, repeats: other.repeats + 1 } : other,
-      )
+      rewriteOffScreen(twin.id, { repeats: twin.repeats + 1 })
 
       return
     }
@@ -605,14 +706,14 @@ export function createHilosToastStore(): HilosToastStore {
   }
 
   /**
-   * The card standing for one server-side key, on screen or waiting.
+   * The card standing for one server-side key — on screen, waiting or missed.
    *
    * @param key The card's server-side key.
    */
   function bySessionKey(key: string): HilosToast | undefined {
     const same = (other: HilosToast): boolean => other.sessionKey === key
 
-    return toasts.get().find(same) ?? queued.find(same)
+    return toasts.get().find(same) ?? queued.find(same) ?? missedList.find(same)
   }
 
   /**
@@ -652,9 +753,7 @@ export function createHilosToastStore(): HilosToastStore {
    */
   function recountSession(card: HilosToast, repeats: number): void {
     if (onScreen(card.id) === undefined) {
-      queued = queued.map((other) =>
-        other.id === card.id ? { ...other, repeats } : other,
-      )
+      rewriteOffScreen(card.id, { repeats })
 
       return
     }
@@ -715,7 +814,7 @@ export function createHilosToastStore(): HilosToastStore {
     },
     syncSession(arrivals) {
       const arrived = new Set(arrivals.map((arrival) => arrival.key))
-      for (const card of [...toasts.get(), ...queued]) {
+      for (const card of [...toasts.get(), ...queued, ...missedList]) {
         const key = card.sessionKey
         if (key === null || arrived.has(key)) {
           continue
@@ -723,6 +822,7 @@ export function createHilosToastStore(): HilosToastStore {
         forgetAnswers(key)
         if (onScreen(card.id) === undefined) {
           queued = queued.filter((other) => other.id !== card.id)
+          missedList = missedList.filter((other) => other.id !== card.id)
 
           continue
         }
@@ -753,7 +853,8 @@ export function createHilosToastStore(): HilosToastStore {
       pending.clear()
       heights.clear()
       queued = []
-      missed = 0
+      missedList = []
+      requested.clear()
       // The answers go with the cards they were about: nothing is left to answer
       // for, and a key kept here would be reported about a card nobody can see.
       dismissed.clear()
@@ -767,6 +868,18 @@ export function createHilosToastStore(): HilosToastStore {
       // comes back from its owner, or from detach.
       toasts.set([])
       publishOverflow()
+    },
+    showMissed() {
+      const next = missedList[0]
+      if (next === undefined) {
+        return null
+      }
+      missedList = missedList.slice(1)
+      toasts.set([...toasts.get(), next])
+      requested.add(next.id)
+      publishOverflow()
+
+      return next.id
     },
     attach() {
       viewers += 1
@@ -804,8 +917,12 @@ export function createHilosToastStore(): HilosToastStore {
           if (drawn === undefined) {
             return
           }
-          if (withinBudget()) {
+          // A card a person asked for is judged by nothing else: the budget bounds
+          // what arrives unasked.
+          if (requested.delete(id) || withinBudget()) {
             startCountdown(drawn)
+            refill()
+            publishOverflow()
 
             return
           }

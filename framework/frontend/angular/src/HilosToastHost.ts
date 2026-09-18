@@ -236,7 +236,11 @@ function occupiedHeight(element: HTMLElement): number {
         </div>
       }
       <!-- The service line: how many errors are still queued and how many
-      notices were dropped, under the newest card. It carries no #card, so the
+      notices did not fit, under the newest card, in the canon's wording
+      (docs/agents/frontend/toasts.md). Only the missed half is a control - it
+      shows the oldest missed notice at once; queued errors arrive by themselves
+      and need no door. Its accessible name contains its visible text, so speech
+      input can name it (WCAG 2.5.3). It carries no #card, so the
       measuring effect never pairs it with a toast and it never reaches
       reportHeight() — a line that says what did not fit must not push out what
       did. It carries pe-auto because .toast-container turns pointer events off
@@ -248,8 +252,24 @@ function occupiedHeight(element: HTMLElement): number {
           class="bg-body border rounded-3 shadow-sm px-2 py-1 small text-body-secondary pe-auto"
           data-id="hilos-toast-overflow"
         >
-          <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i
-          >{{ overflowLine() }}
+          <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>
+          @if (overflow().waiting > 0) {
+            <span>{{ overflow().waiting }} more waiting</span>
+          }
+          @if (overflow().waiting > 0 && overflow().missed > 0) {
+            <span> · </span>
+          }
+          @if (overflow().missed > 0) {
+            <button
+              type="button"
+              class="btn btn-link btn-sm p-0 border-0 align-baseline text-body-secondary"
+              [attr.aria-label]="overflow().missed + ' missed, show one'"
+              data-id="hilos-toast-missed"
+              (click)="showMissed()"
+            >
+              {{ overflow().missed }} missed
+            </button>
+          }
         </div>
       }
     </div>
@@ -300,25 +320,10 @@ export class HilosToastHost {
     this.announced().filter((toast) => toast.severity !== 'error'),
   )
 
-  // What the service line under the stack says: the errors still queued and the
-  // notices that were dropped. A piece appears only when it has something to
-  // report, and the joined pieces are the canon's wording rather than this
-  // host's (docs/agents/frontend/toasts.md). The store zeroes both numbers
-  // itself once the stack empties, so the line goes away without the host doing
-  // anything.
-  protected readonly overflowLine = computed(() => {
-    const overflow = this.overflow()
-    const pieces: string[] = []
-
-    if (overflow.waiting > 0) {
-      pieces.push(`${overflow.waiting} more waiting`)
-    }
-    if (overflow.missed > 0) {
-      pieces.push(`${overflow.missed} missed`)
-    }
-
-    return pieces.join(' · ')
-  })
+  // The card the "N missed" control last put up, until the next pass that
+  // reports heights: that pass is where the card is really on screen, and where
+  // focus follows it if the press took the control away (HIL-908).
+  private returned: number | null = null
 
   // The rendered cards, in the order the `@for` laid them out — which is the
   // order of `toasts()`, because they come from the same loop. Anything the
@@ -425,6 +430,7 @@ export class HilosToastHost {
           viewer.reportHeight(toast.id, occupiedHeight(card.nativeElement))
         }
       })
+      this.followReturned(cards, stack)
       const container = this.stack()
       if (
         container !== undefined &&
@@ -523,6 +529,14 @@ export class HilosToastHost {
   }
 
   /**
+   * Ask the store for the oldest missed notice. A press that raced a notice
+   * coming back by itself gets nothing, and then nothing happens.
+   */
+  protected showMissed(): void {
+    this.returned = this.store().showMissed()
+  }
+
+  /**
    * Close the card whose link just took the reader somewhere else.
    *
    * Which clicks those are is not decided here a second time: HilosLink swallows
@@ -560,5 +574,39 @@ export class HilosToastHost {
     if (!movesWithin(event)) {
       this.setHold('focus', false)
     }
+  }
+
+  /**
+   * Put focus on the card the last press brought back, if that press also took
+   * the control away — the last missed notice leaves nothing to press again, and
+   * focus must not fall out of the stack with it. While notices are still missed
+   * the control stays and so does focus: the person is about to press again.
+   *
+   * The cards are paired with the stack BY POSITION, as the measuring pass pairs
+   * them, so the returned card is found by its place in the stack.
+   *
+   * @param cards The rendered cards, in the order of the stack.
+   * @param stack The stack those cards were rendered from.
+   */
+  private followReturned(
+    cards: readonly ElementRef<HTMLElement>[],
+    stack: readonly HilosToast[],
+  ): void {
+    const returned = this.returned
+    if (returned === null) {
+      return
+    }
+    this.returned = null
+    const card = cards[stack.findIndex((toast) => toast.id === returned)]
+    const container = this.stack()?.nativeElement
+    if (
+      card === undefined ||
+      container?.querySelector('[data-id="hilos-toast-missed"]') !== null
+    ) {
+      return
+    }
+    card.nativeElement
+      .querySelector<HTMLElement>('[data-id="hilos-toast-close"]')
+      ?.focus()
   }
 }

@@ -26,7 +26,6 @@ import { hilosToasts } from '@hilos/core'
 import type {
   HilosToast,
   HilosToastHoldReason,
-  HilosToastOverflow,
   HilosToastSeverity,
   HilosToastStore,
   HilosToastViewer,
@@ -131,29 +130,6 @@ function spoken(toast: HilosToast): string {
 }
 
 /**
- * What the service line under the stack says: the errors still queued and the
- * notices that were dropped.
- *
- * A piece appears only when it has something to report, and the joined pieces
- * are the canon's wording rather than this host's
- * (docs/agents/frontend/toasts.md).
- *
- * @param overflow What the store did not fit on the screen.
- */
-function overflowLine(overflow: HilosToastOverflow): string {
-  const pieces: string[] = []
-
-  if (overflow.waiting > 0) {
-    pieces.push(`${overflow.waiting} more waiting`)
-  }
-  if (overflow.missed > 0) {
-    pieces.push(`${overflow.missed} missed`)
-  }
-
-  return pieces.join(' · ')
-}
-
-/**
  * The application's transient notice stack.
  *
  * @param props The store to render (defaults to the shared one) and the corner
@@ -166,6 +142,10 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
   const viewer = useRef<HilosToastViewer | null>(null)
   const cards = useRef(new Map<number, HTMLDivElement>())
   const stack = useRef<HTMLDivElement | null>(null)
+  // The card the "N missed" control last put up, until the next pass that
+  // reports heights: that pass is where the card is really on screen, and where
+  // focus follows it if the press took the control away (HIL-908).
+  const returned = useRef<number | null>(null)
   // The cursor, the keyboard focus and a tab nobody is looking at are three
   // independent holds on the countdown: the host only reports them, the store
   // counts them. The ref is the source of truth for the "at most one hold of
@@ -261,6 +241,21 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
     for (const [id, element] of cards.current) {
       attached.reportHeight(id, occupiedHeight(element))
     }
+    // Focus follows the card the last press brought back only if that press
+    // also took the control away — the last missed notice leaves nothing to
+    // press again. While notices are still missed, focus stays on the control.
+    const returnedId = returned.current
+    returned.current = null
+    const returnedCard =
+      returnedId === null ? undefined : cards.current.get(returnedId)
+    if (
+      returnedCard !== undefined &&
+      stack.current?.querySelector('[data-id="hilos-toast-missed"]') === null
+    ) {
+      returnedCard
+        .querySelector<HTMLElement>('[data-id="hilos-toast-close"]')
+        ?.focus()
+    }
     if (stack.current !== null && stack.current.matches(':hover')) {
       setHold('cursor', true)
     }
@@ -286,6 +281,11 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
     if (!movesWithin(event)) {
       setHold('focus', false)
     }
+  }
+  // A press that raced a notice coming back by itself gets nothing, and then
+  // nothing happens.
+  const showMissed = (): void => {
+    returned.current = target.showMissed()
   }
   const dismiss = (id: number): void => {
     setHold('cursor', false)
@@ -455,7 +455,11 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
           </div>
         ))}
         {/* The service line: how many errors are still queued and how many
-        notices were dropped, under the newest card. It carries no ref, so it
+        notices did not fit, under the newest card, in the canon's wording
+        (docs/agents/frontend/toasts.md). Only the missed half is a control — it
+        shows the oldest missed notice at once; queued errors arrive by
+        themselves and need no door. Its accessible name contains its visible
+        text, so speech input can name it (WCAG 2.5.3). It carries no ref, so it
         never reaches reportHeight() and never counts toward the height cap — a
         line that says what did not fit must not push out what did. It carries
         `pe-auto` because `.toast-container` turns pointer events off and only
@@ -467,7 +471,19 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
             data-id="hilos-toast-overflow"
           >
             <i className="bi bi-hourglass-split me-1" aria-hidden="true"></i>
-            {overflowLine(overflow)}
+            {overflow.waiting > 0 && (
+              <span>{`${overflow.waiting} more waiting`}</span>
+            )}
+            {overflow.waiting > 0 && overflow.missed > 0 && <span> · </span>}
+            {overflow.missed > 0 && (
+              <button
+                type="button"
+                className="btn btn-link btn-sm p-0 border-0 align-baseline text-body-secondary"
+                aria-label={`${overflow.missed} missed, show one`}
+                data-id="hilos-toast-missed"
+                onClick={showMissed}
+              >{`${overflow.missed} missed`}</button>
+            )}
           </div>
         )}
       </div>

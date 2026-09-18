@@ -100,6 +100,23 @@ const VISUALS: [HilosToastSeverity, string, string, string][] = [
   ['info', 'border-primary', 'bi-info-circle-fill', 'text-primary'],
 ]
 
+/**
+ * Fill a stack past its budget before any host is mounted.
+ *
+ * With no height reported yet the store counts its budget in cards, and that is
+ * the only way a stack overflows in jsdom, where every box measures zero pixels.
+ * The waiting error keeps it that way once the host has measured: nothing missed
+ * comes back while an error still waits for a slot.
+ *
+ * @param store The stack to fill.
+ */
+function overfill(store: HilosToastStore): void {
+  for (const message of ['One', 'Two', 'Three', 'Four', 'Five']) {
+    store.push(message, { severity: 'info' })
+  }
+  store.push('The report could not be built', { severity: 'error' })
+}
+
 describe('HilosToastHost', () => {
   it('names a severity with a rail and an icon, not with a filled surface', async () => {
     const store = createHilosToastStore()
@@ -287,6 +304,56 @@ describe('HilosToastHost', () => {
     await nextTick()
     expect(wrapper.find(assertive).text()).toBe('The report could not be built')
     expect(wrapper.find(polite).text()).toBe('Backup: The export is ready')
+  })
+
+  it('makes the missed piece a control and leaves the waiting one plain text', async () => {
+    const store = createHilosToastStore()
+    overfill(store)
+    const wrapper = mountHost(store)
+    await nextTick()
+
+    const line = wrapper.find('[data-id="hilos-toast-overflow"]')
+    expect(line.text()).toBe('1 more waiting · 1 missed')
+    expect(line.findAll('button')).toHaveLength(1)
+    const control = line.find('[data-id="hilos-toast-missed"]')
+    expect(control.element.tagName).toBe('BUTTON')
+    expect(control.text()).toBe('1 missed')
+    expect(control.attributes('aria-label')).toBe('1 missed, show one')
+  })
+
+  it('asks the store for one missed notice when the control is pressed', async () => {
+    const store = createHilosToastStore()
+    overfill(store)
+    const wrapper = mountHost(store)
+    await nextTick()
+
+    await wrapper.find('[data-id="hilos-toast-missed"]').trigger('click')
+
+    expect(store.toasts.get().map((toast) => toast.message)).toContain('Five')
+    expect(store.overflow.get()).toEqual({ waiting: 1, missed: 0 })
+  })
+
+  it('moves focus onto the returned card when the control disappears under the press', async () => {
+    const store = createHilosToastStore()
+    overfill(store)
+    const wrapper = mount(HilosToastHost, {
+      props: { store },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router([]) } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    await wrapper.find('[data-id="hilos-toast-missed"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[data-id="hilos-toast-missed"]').exists()).toBe(false)
+    const returned = wrapper
+      .findAll('[data-id="hilos-toast-info"]')
+      .find((card) => card.text().includes('Five'))
+    expect(document.activeElement).toBe(
+      returned?.find('[data-id="hilos-toast-close"]').element,
+    )
   })
 
   it('keeps the live regions outside the stack container', async () => {

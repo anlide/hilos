@@ -91,9 +91,12 @@ row) — never a button inside the card.
   hand: the user must notice, read, decide and land the cursor before the card
   is gone. The card may *lead* — one click on the whole card — but it can *do*
   nothing.
-- **History.** A toast that flew away is lost, and that is intended. What may
-  be needed later must have its own record, and the toast only points at it; a
-  toast history would grow into a dump where a proper journal belongs.
+- **History.** A toast that was shown and flew away is lost, and that is
+  intended. What may be needed later must have its own record, and the toast
+  only points at it; a toast history would grow into a dump where a proper
+  journal belongs. What was never DELIVERED is not history but a debt: a notice
+  that did not fit in the corner is kept until it has been shown once (see
+  "Lifetime, pause, and what overflows") — and then it goes the same way.
 - **Connection messages.** Losing the connection is a state, not an event — it
   has the indicator in the shell's header. No sound and no vibration either.
 - **A showing before the first frame.** A notice that arrives before the app
@@ -199,19 +202,42 @@ A project may render its own stack by creating an independent store
   notices and two long ones occupy different space, and a phone and a monitor
   differ more still — the limit is measured in the unit the problem actually
   has.
-- **When space runs out, only an error has the right to wait.** Nothing old is
-  silently evicted — the new card waits for a slot, but that right belongs to
-  errors alone: a queued error takes the next slot freed by a dismissal.
-  Success, info and warning collapse into a missed count instead. The stack
-  carries one service line of the shape "N more waiting · M missed"; the line
-  does not count toward the height cap and resets once the stack empties. The
-  count is honest and expands into nothing — there is no history. The store
-  keeps both numbers and publishes them, and every host draws the line from
-  that one signal.
+- **When space runs out, nothing is destroyed — an error waits, the rest is
+  missed.** Nothing old is silently evicted: the new card waits. A queued error
+  takes the next slot freed by a dismissal or an expiry. Success, info and
+  warning that do not fit are **missed** — kept, oldest first, rather than
+  counted and forgotten, because a notice nobody saw is owed, not gone.
+  - **Freed room gives them back by itself, errors first.** Only when no error
+    is waiting does a freed slot take the oldest missed notice, one at a time:
+    the host draws and measures it, and the next follows only if the stack is
+    still within the cap. One that turns out not to fit goes back to the head
+    of the list. Left alone, the corner works through a backlog on its own,
+    each card expiring and pulling in the next.
+  - **The service line** reads "N more waiting · M missed" and does not count
+    toward the height cap; it goes away once nothing is waiting and nothing is
+    owed. The "M missed" half is a control (`hilos-toast-missed`, named
+    "M missed, show one"): a press puts the oldest missed notice on screen at
+    once, **over the cap** — the cap bounds what arrives unasked, and this was
+    asked for. "N more waiting" stays plain text: queued errors arrive by
+    themselves and need no door. When the press takes the last missed notice,
+    focus moves to that card's close button.
+  - **A returned notice gets a full, fresh countdown** — it never had one, and
+    the countdown measures reading time.
+  - **There is no staleness horizon.** A missed notice is worth showing until
+    it is shown: a clock would forget what a person never saw while they were
+    in another tab, which is exactly the loss this rule exists against.
+  - **The missed list is per window**, like the cap it comes from, and never
+    reaches the server. A session's card missed here is not answered about —
+    no countdown ran here — and when a neighbouring tab has shown it and the
+    server takes it off, the next frame takes it out of this list too.
+
+  The store keeps the queue and the missed notices and publishes their two
+  numbers, and every host draws the line from that one signal.
 - **A repeat does not multiply cards.** A push whose text *and* severity
   exactly match a visible card bumps a ×N counter on that card and restarts
   its countdown; the merge itself is in the store, the ×N badge on the card in
-  the hosts. Full-match dedup is deliberate: if the text carries an object's
+  the hosts. A twin that is waiting or missed takes the repeat as well and
+  stays where it is — a repeat brings no room. Full-match dedup is deliberate: if the text carries an object's
   name, the texts differ anyway.
   Remember the merge treats a symptom — twenty identical failures are almost
   always one dead server that twenty actions crashed against; ×20 makes it
@@ -281,10 +307,11 @@ an error waits indefinitely. See [accessibility.md](accessibility.md).
 
 ## Validation
 
-- Unit owns the clock, the pause, the cap and the merge:
-  `core/test/state/toasts.test.ts` covers the store; the host's pause events
-  and live-region wiring live in `react/test/HilosToastHost.test.tsx`. A
-  feature that pushes needs no store test of its own.
+- Unit owns the clock, the pause, the cap, the merge and the return of missed
+  notices: `core/test/state/toasts.test.ts` covers the store; the host's pause
+  events and live-region wiring live in `react/test/HilosToastHost.test.tsx`,
+  and the service line's control is covered in all three hosts. A feature that
+  pushes needs no store test of its own.
 - **Not e2e, on purpose.** The lifetime, the pause and the cap are timing, and
   asserting them through a browser would mean a spec that sits still for 20
   seconds to prove a toast is still there — slow, and flaky the moment the box

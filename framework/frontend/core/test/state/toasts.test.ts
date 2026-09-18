@@ -392,18 +392,224 @@ describe('createHilosToastStore', () => {
     expect(store.overflow.get().waiting).toBe(1)
   })
 
-  it('forgets the missed count once the stack and the queue are empty', () => {
+  it('gives the missed notice back once a slot frees, rather than forgetting it', () => {
     const store = createHilosToastStore()
     for (const message of ['first', 'second', 'third', 'fourth', 'fifth']) {
       store.push(message)
     }
     expect(store.overflow.get().missed).toBe(1)
 
-    for (const toast of store.toasts.get()) {
-      store.dismiss(toast.id)
-    }
+    store.dismiss(store.toasts.get()[0].id)
+
+    // The count reaches zero because nothing is owed any more, not because it
+    // was dropped: the notice nobody saw is on screen now.
+    expect(messages(store)).toEqual(['second', 'third', 'fourth', 'fifth'])
+    expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+  })
+
+  it('keeps a notice that did not fit and gives it back when room frees', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    const first = store.push('first')
+    store.push('second')
+    store.push('third')
+    draw(store, viewer)
+    expect(store.overflow.get()).toEqual({ waiting: 0, missed: 1 })
+
+    store.dismiss(first)
+    draw(store, viewer)
+
+    expect(messages(store)).toEqual(['second', 'third'])
+    expect(store.toasts.get()[1].measured).toBe(true)
+    expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+  })
+
+  it('gives the waiting error the freed slot before any missed notice', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    const first = store.push('first')
+    store.push('second')
+    draw(store, viewer)
+    store.push('worked', { severity: 'success' })
+    draw(store, viewer)
+    store.push('failed', { severity: 'error' })
+    draw(store, viewer)
+
+    store.dismiss(first)
+
+    expect(messages(store)).toEqual(['second', 'failed'])
+    expect(store.overflow.get()).toEqual({ waiting: 0, missed: 1 })
+  })
+
+  it('gives nothing back while an error still waits for a slot', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    store.push('second')
+    draw(store, viewer)
+    store.push('worked', { severity: 'success' })
+    draw(store, viewer)
+    store.push('failed', { severity: 'error' })
+    draw(store, viewer)
+
+    // The window grew and a new notice fits: the room it leaves is not the
+    // missed notice's to take while the error is still waiting.
+    viewer.setViewportHeight(1200)
+    store.push('third')
+    draw(store, viewer)
+
+    expect(messages(store)).toEqual(['first', 'second', 'third'])
+    expect(store.overflow.get()).toEqual({ waiting: 1, missed: 1 })
+  })
+
+  it('gives missed notices back in arrival order, oldest first', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    const first = store.push('first')
+    const second = store.push('second')
+    store.push('third')
+    store.push('fourth')
+    draw(store, viewer)
+    expect(store.overflow.get().missed).toBe(2)
+
+    store.dismiss(first)
+    expect(messages(store)).toEqual(['second', 'third'])
+
+    // The one that came back fits, so the next one is tried, does not fit and
+    // goes back to the head of the list.
+    draw(store, viewer)
+    draw(store, viewer)
+    expect(messages(store)).toEqual(['second', 'third'])
+    expect(store.overflow.get().missed).toBe(1)
+
+    store.dismiss(second)
+    expect(messages(store)).toEqual(['third', 'fourth'])
+  })
+
+  it('gives a returned notice its whole countdown, because it was never shown', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    const first = store.push('first')
+    store.push('second')
+    store.push('third')
+    draw(store, viewer)
+
+    vi.advanceTimersByTime(15_000)
+    store.dismiss(first)
+    draw(store, viewer)
+
+    vi.advanceTimersByTime(19_999)
+    expect(messages(store)).toEqual(['third'])
+    vi.advanceTimersByTime(1)
+    expect(store.toasts.get()).toEqual([])
+  })
+
+  it('shows a missed notice on request even when the corner is full', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    store.push('second')
+    const third = store.push('third')
+    draw(store, viewer)
+
+    expect(store.showMissed()).toBe(third)
+    draw(store, viewer)
+
+    expect(messages(store)).toEqual(['first', 'second', 'third'])
+    expect(store.toasts.get()[2].measured).toBe(true)
+    expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+
+    // The exemption was for that card alone: the corner is still full for what
+    // arrives unasked.
+    store.push('fourth')
+    draw(store, viewer)
+    expect(messages(store)).toEqual(['first', 'second', 'third'])
+    expect(store.overflow.get().missed).toBe(1)
+  })
+
+  it('answers a request with nothing when the missed list is already empty', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    draw(store, viewer)
+
+    expect(store.showMissed()).toBeNull()
+    expect(messages(store)).toEqual(['first'])
+  })
+
+  it('counts a repeat on a missed notice instead of holding two of them', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    store.push('second')
+    const third = store.push('third')
+    draw(store, viewer)
+
+    expect(store.push('third')).toBe(third)
+    expect(store.overflow.get().missed).toBe(1)
+
+    store.showMissed()
+    expect(store.toasts.get()[2].repeats).toBe(2)
+  })
+
+  it('does not put a missed notice up just because it was said again', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    store.push('second')
+    store.push('third')
+    draw(store, viewer)
+
+    store.push('third')
+
+    expect(messages(store)).toEqual(['first', 'second'])
+  })
+
+  it('counts a session card that did not fit once, however many frames arrive', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    store.push('second')
+    draw(store, viewer)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+    expect(store.overflow.get().missed).toBe(1)
+
+    store.syncSession([sessionToast({ key: 'k1' })])
+    store.syncSession([sessionToast({ key: 'k1' })])
+
+    expect(messages(store)).toEqual(['first', 'second'])
+    expect(store.overflow.get().missed).toBe(1)
+  })
+
+  it('takes a missed session card out when the server stops carrying it', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    const first = store.push('first')
+    store.push('second')
+    draw(store, viewer)
+    store.syncSession([sessionToast({ key: 'k1' })])
+    draw(store, viewer)
+
+    store.syncSession([])
+
+    expect(store.overflow.get().missed).toBe(0)
+    store.dismiss(first)
+    expect(messages(store)).toEqual(['second'])
+  })
+
+  it('drops the missed notices when the stack is cleared', () => {
+    const store = createHilosToastStore()
+    const viewer = watch(store)
+    store.push('first')
+    store.push('second')
+    store.push('third')
+    draw(store, viewer)
+
+    store.clear()
 
     expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+    expect(store.showMissed()).toBeNull()
   })
 
   it('counts a repeat on the first card instead of adding a second', () => {
