@@ -11,6 +11,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -189,16 +190,21 @@ abstract class DbActions
      * questions: who may write this table, and how much of it has to be in memory first. The
      * switch below is left with the second one only.
      *
+     * The operation has no default: this door is shared by actions that mint rows, edit them in
+     * bulk and delete them, and no one value is right for all of them.
+     *
+     * @param TruthSourceOperation $operation Operation the caller performs across the collection: Add for a door that
+     *     mints a row, Update for a bulk edit, Remove for a delete
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
      * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException On connection or load error
      */
-    protected function ensureCanWrite(): void
+    protected function ensureCanWrite(TruthSourceOperation $operation): void
     {
         $objectCollection = $this->objectCollection;
 
-        DbWriteGuard::guardCollectionWrite($objectCollection->getCollectionKey());
+        DbWriteGuard::guardCollectionWrite($objectCollection->getCollectionKey(), $operation);
 
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
@@ -303,7 +309,7 @@ abstract class DbActions
      */
     protected function deleteAllObjects(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         $this->objectCollection->deleteAll();
 

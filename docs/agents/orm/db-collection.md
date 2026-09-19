@@ -122,6 +122,8 @@ Hilos::$db->events->actions->add($type, $userId, $payload);
 A collection action receives the `DbCollection`, can use its `objectCollection`
 shortcut, should call `ensureCanCreate()` or `ensureCanWrite()` when mutating,
 and should keep the in-memory object collection synchronized after DB changes.
+`ensureCanWrite()` takes the operation the action performs
+(`TruthSourceOperation::Add`, `::Update` or `::Remove`) and has no default.
 
 Do not put update/delete operations for one known collection item behind a
 collection action that accepts the item's key:

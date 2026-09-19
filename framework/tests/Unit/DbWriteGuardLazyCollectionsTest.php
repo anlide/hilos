@@ -120,6 +120,41 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
         $actions->deleteAllPublic();
     }
 
+    public function testDeleteAllAsksForRemoveBeforeReachingTheTable(): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
+        // The whole table is claimed, but without the right to drop rows: the truncate stops at the door.
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Update),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("may not remove rows across the whole table");
+        $actions->deleteAllPublic();
+    }
+
+    public function testCollectionWriteDoorAsksForTheOperationItWasNamed(): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $actions->removePublic();
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("may not update");
+        $actions->writePublic();
+    }
+
     public function testManualCollectionWithNoKeyIsNotJudged(): void
     {
         $actions = $this->actionsFor(UnkeyedObjects::class, Objects::LAZY_STRATEGY_KEY);
@@ -195,13 +230,18 @@ final class GuardedDbCollection extends DbCollection
 }
 
 /**
- * Exposes the three protected doors the guard stands in.
+ * Exposes the protected doors the guard stands in, the write door once per operation it is asked with.
  */
 final class GuardedDbActions extends DbActions
 {
     public function writePublic(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+    }
+
+    public function removePublic(): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
     }
 
     public function createPublic(): void

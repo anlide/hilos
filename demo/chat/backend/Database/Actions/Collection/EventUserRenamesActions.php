@@ -10,6 +10,7 @@ use Demo\Chat\Database\Object\Collection\EventUserRenames as ObjectEventUserRena
 use Demo\Chat\Database\Object\Item\EventUserRename as ObjectEventUserRename;
 use Demo\Chat\Database\View\Collection\EventUserRenames as DbCollectionEventUserRenames;
 use Demo\Chat\Database\View\Item\EventUserRename as DbEventUserRename;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -53,7 +54,7 @@ final class EventUserRenamesActions extends DbActions
     ): DbEventUserRename
     {
         TruthSourceRegistry::checkCanCreate(ChatDbContext::eventUserRenames);
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $detail = ObjectEventUserRename::create();
         $detail->eventId = $eventId;
@@ -75,7 +76,7 @@ final class EventUserRenamesActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRenames);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRenames, TruthSourceOperation::Remove);
 
         $this->deleteAllObjects();
     }

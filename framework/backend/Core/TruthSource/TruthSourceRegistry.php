@@ -27,7 +27,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  *   TruthSourceRegistry::unregisterAgent($agent->getId());
  *
  *   // In DbActions (automatic check)
- *   TruthSourceRegistry::checkCanWrite($tableName);
+ *   TruthSourceRegistry::checkCanWrite($tableName, $operation);
  *   TruthSourceRegistry::checkCanCreate($tableName);
  */
 class TruthSourceRegistry extends AbstractTruthSourceRegistry
@@ -181,10 +181,16 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     /**
      * Check if write operation is allowed for database table
      *
+     * Three questions in order, and each fails in its own words: whether the table has a truth
+     * source at all, whether the writer covers the whole table, then whether the right it holds
+     * over the whole table allows this operation. Width is judged before the operation, as it is
+     * for one item: first whether the rows are the writer's, then whether it may do this to them.
+     *
      * @param string $collection Table name
+     * @param TruthSourceOperation $operation Operation the caller is about to perform across the whole table
      * @throws WriteNotAllowedException If write is not allowed
      */
-    public static function checkCanWrite(string $collection): void
+    public static function checkCanWrite(string $collection, TruthSourceOperation $operation): void
     {
         if (!self::hasTruthSource($collection)) {
             throw new WriteNotAllowedException(
@@ -193,23 +199,42 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (ExecutionContext::currentAgentId() === null) {
-            if (self::getTruthSourceKeys($collection)?->coversEveryKey() === true) {
+        $agentId = ExecutionContext::currentAgentId();
+        if ($agentId === null) {
+            if (self::getTruthSourceKeys($collection)?->coversEveryKey() !== true) {
+                throw new WriteNotAllowedException(
+                    "Write operation not allowed: no collection-wide truth source covers table '{$collection}'."
+                );
+            }
+
+            $covering = self::operationsCoveringEveryKey($collection);
+            if ($covering->allows($operation)) {
                 return;
             }
 
             throw new WriteNotAllowedException(
-                "Write operation not allowed: no collection-wide truth source covers table '{$collection}'."
+                "Write operation not allowed: the collection-wide truth source for table '{$collection}' has " .
+                "operations [" . $covering->asText() . "] and may not " .
+                "{$operation->value} rows across the whole table."
             );
         }
 
-        if (self::getCurrentAgentKeys($collection)?->coversEveryKey() === true) {
+        $grant = self::grantOf($collection, $agentId);
+        if ($grant === null || !$grant->keys->coversEveryKey()) {
+            throw new WriteNotAllowedException(
+                "Write operation not allowed: agent '{$agentId}' is not a collection-wide " .
+                "truth source for table '{$collection}'."
+            );
+        }
+
+        if ($grant->allows($operation)) {
             return;
         }
 
         throw new WriteNotAllowedException(
-            "Write operation not allowed: agent '" . ExecutionContext::currentAgentId() . "' is not a collection-wide " .
-            "truth source for table '{$collection}'."
+            "Write operation not allowed: agent '{$agentId}' is a collection-wide truth source for table " .
+            "'{$collection}' with operations [" . $grant->operations->asText() . "] and may not " .
+            "{$operation->value} rows across the whole table."
         );
     }
 
@@ -273,21 +298,5 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             "with operations [" . $grant->operations->asText() . "] and may not " .
             "{$operation->value} item '{$idString}'."
         );
-    }
-
-    /**
-     * Returns the current agent's registered key set for a collection.
-     *
-     * @param string $collection Collection name
-     * @return ?TruthSourceKeys Width of the current agent's claim, or null when it holds none
-     */
-    private static function getCurrentAgentKeys(string $collection): ?TruthSourceKeys
-    {
-        $agentId = ExecutionContext::currentAgentId();
-        if ($agentId === null) {
-            return null;
-        }
-
-        return self::grantOf($collection, $agentId)?->keys;
     }
 }

@@ -49,7 +49,7 @@ final class TruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(WriteNotAllowedException::class);
-        TruthSourceRegistry::checkCanWrite(self::COLLECTION);
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
     }
 
     public function testCollectionWideDbSourceCanWriteAnyItemKey(): void
@@ -57,7 +57,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWrite(self::COLLECTION);
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', TruthSourceOperation::Remove);
 
@@ -72,7 +72,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::checkCanCreate(self::COLLECTION);
 
         $this->expectException(WriteNotAllowedException::class);
-        TruthSourceRegistry::checkCanWrite(self::COLLECTION);
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
     }
 
     public function testCurrentAgentCannotUseOtherAgentCreateSource(): void
@@ -180,5 +180,76 @@ final class TruthSourceRegistryTest extends TestCase
             . "'" . self::COLLECTION . "' with operations [add, remove] and may not update item '7'."
         );
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '7', TruthSourceOperation::Update);
+    }
+
+    public function testCollectionWideAgentWithoutRemoveCannotDropRowsAcrossTheTable(): void
+    {
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT_A,
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Update),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage(
+            "with operations [add, update] and may not remove rows across the whole table"
+        );
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Remove);
+    }
+
+    public function testCollectionWideAgentWithoutUpdateCannotEditRowsAcrossTheTable(): void
+    {
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT_A,
+            TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Remove);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("may not update rows across the whole table");
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
+    }
+
+    public function testAgentlessCollectionWideWriteIsJudgedByTheUnionOfCollectionWideGrants(): void
+    {
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT_A,
+            TruthSourceOperations::of(TruthSourceOperation::Add),
+        );
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT_B,
+            TruthSourceOperations::of(TruthSourceOperation::Remove),
+        );
+
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Remove);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage(
+            "the collection-wide truth source for table '" . self::COLLECTION . "' has operations [add, remove] "
+            . "and may not update rows across the whole table."
+        );
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
+    }
+
+    public function testCollectionWideWriteJudgesWidthBeforeTheOperation(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('1'), self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("is not a collection-wide truth source");
+        TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Remove);
     }
 }

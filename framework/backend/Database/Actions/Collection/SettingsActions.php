@@ -11,6 +11,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
@@ -165,7 +166,7 @@ final class SettingsActions extends DbActions
      */
     public function deleteOrphan(string $key, array $catalog): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         if (array_key_exists($key, $catalog)) {
             throw new SettingKeyInCatalogException("Setting key '{$key}' is in catalog; orphan delete refused");

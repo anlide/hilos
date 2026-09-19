@@ -10,6 +10,7 @@ use Demo\Tasks\Database\Object\Item\UserRename as ObjectUserRename;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Demo\Tasks\Database\View\Item\UserRename as DbUserRename;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -46,7 +47,7 @@ final class UserRenamesActions extends DbActions
     public function add(int $targetUserId, string $oldName, string $newName): DbUserRename
     {
         TruthSourceRegistry::checkCanCreate(TasksDbContext::userRenames);
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $audit = ObjectUserRename::create();
         $audit->targetUserId = $targetUserId;

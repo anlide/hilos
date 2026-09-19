@@ -8,6 +8,7 @@ use Demo\Tasks\Database\Object\Collection\Guests as ObjectGuests;
 use Demo\Tasks\Database\View\Collection\Guests as DbCollectionGuests;
 use Demo\Tasks\Database\View\Item\Guest;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -58,7 +59,7 @@ final class GuestsActions extends DbActions
      */
     public function ensureForSession(string $sessionToken): Guest
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $guest = $this->objectCollection->ensureForSession(
             $sessionToken,
@@ -80,7 +81,7 @@ final class GuestsActions extends DbActions
      */
     public function deleteForSession(string $sessionToken): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         $this->objectCollection->deleteBySessionToken($sessionToken);
     }

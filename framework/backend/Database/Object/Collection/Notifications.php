@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -184,7 +185,7 @@ final class Notifications extends Objects
      * @return int Number of rows marked read
      * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the update query fails
-     * @throws WriteNotAllowedException When no truth source in this process covers the whole collection
+     * @throws WriteNotAllowedException When no truth source in this process may update rows across the whole collection
      */
     public function markAllReadForUser(int $userId): int
     {
@@ -192,7 +193,7 @@ final class Notifications extends Objects
 
         $now = TimeHelper::getSqlDateTime();
 
-        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY);
+        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY, TruthSourceOperation::Update);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($now));

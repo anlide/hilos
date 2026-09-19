@@ -14,6 +14,7 @@ use Demo\Chat\Database\View\Item\Event as DbEvent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Notification\ChatMentionNotifier;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -198,7 +199,7 @@ final class EventsActions extends DbActions
      */
     private function add(string $type): DbEvent
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $objectEvent = ObjectEvent::create();
         $objectEvent->type = $type;
@@ -220,7 +221,7 @@ final class EventsActions extends DbActions
      */
     public function deleteAll(): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
 
         Hilos::$db->eventAttachments->actions->deleteAll();
         Hilos::$db->eventMessages->actions->deleteAll();

@@ -98,8 +98,8 @@ abstract class DbActions
                 $operation,
             );
         } else {
-            // Collection write guard operates without operation axis; the named operation does not reach here.
-            DbWriteGuard::guardCollectionWrite($collectionKey);
+            // The row is not in the database yet, so an insert is the one write it can receive: the door asks for adding, whatever the caller named.
+            DbWriteGuard::guardCollectionWrite($collectionKey, TruthSourceOperation::Add);
         }
 
         switch ($objectCollection->getLazyStrategy()) {

@@ -46,15 +46,16 @@ class DbWriteGuard
      * Judges a write that names no single row - a collection-wide one.
      *
      * @param string $collection Collection key, empty for a manual collection nobody owns
-     * @throws WriteNotAllowedException When no grant in this process covers the whole collection
+     * @param TruthSourceOperation $operation Operation the caller is about to perform across the whole collection
+     * @throws WriteNotAllowedException When no grant in this process covers the whole collection with that operation
      */
-    public static function guardCollectionWrite(string $collection): void
+    public static function guardCollectionWrite(string $collection, TruthSourceOperation $operation): void
     {
         if ($collection === '') {
             return;
         }
 
-        TruthSourceRegistry::checkCanWrite($collection);
+        TruthSourceRegistry::checkCanWrite($collection, $operation);
     }
 
     /**

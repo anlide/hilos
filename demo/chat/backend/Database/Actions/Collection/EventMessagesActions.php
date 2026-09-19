@@ -12,6 +12,7 @@ use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Database\View\Collection\EventMessages as DbCollectionEventMessages;
 use Demo\Chat\Database\View\Item\EventMessage as DbEventMessage;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Object\Collection\Identities;
@@ -49,7 +50,7 @@ final class EventMessagesActions extends DbActions
     public function create(int $eventId, ?int $authorUserId, ?int $authorBotId, string $message): DbEventMessage
     {
         TruthSourceRegistry::checkCanCreate(ChatDbContext::eventMessages);
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $detail = ObjectEventMessage::create();
         $detail->eventId = $eventId;
@@ -98,7 +99,7 @@ final class EventMessagesActions extends DbActions
      */
     public function rePointAuthor(int $fromUserId, int $toUserId): int
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Update);
 
         $moved = 0;
         foreach (EventMessage::get([EventMessage::author_user_id => $fromUserId]) as $entityMessage) {
@@ -125,7 +126,7 @@ final class EventMessagesActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages, TruthSourceOperation::Remove);
 
         $this->deleteAllObjects();
     }

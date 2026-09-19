@@ -10,6 +10,7 @@ use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachme
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Database\View\Collection\EventAttachments as DbCollectionEventAttachments;
 use Demo\Chat\Database\View\Item\EventAttachment as DbEventAttachment;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -46,7 +47,7 @@ final class EventAttachmentsActions extends DbActions
     public function create(int $eventId, string $filename, string $mimeType, string $storedName): DbEventAttachment
     {
         TruthSourceRegistry::checkCanCreate(ChatDbContext::eventAttachments);
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $attachment = ObjectEventAttachment::create();
         $attachment->eventId = $eventId;
@@ -67,7 +68,7 @@ final class EventAttachmentsActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventAttachments);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventAttachments, TruthSourceOperation::Remove);
 
         $this->deleteAllObjects();
     }

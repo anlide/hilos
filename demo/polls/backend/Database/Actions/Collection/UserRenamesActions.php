@@ -10,6 +10,7 @@ use Demo\Polls\Database\Object\Item\UserRename as ObjectUserRename;
 use Demo\Polls\Database\PollsDbContext;
 use Demo\Polls\Database\View\Collection\UserRenames as DbCollectionUserRenames;
 use Demo\Polls\Database\View\Item\UserRename as DbUserRename;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -46,7 +47,7 @@ final class UserRenamesActions extends DbActions
     public function add(int $targetUserId, string $oldName, string $newName): DbUserRename
     {
         TruthSourceRegistry::checkCanCreate(PollsDbContext::userRenames);
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $audit = ObjectUserRename::create();
         $audit->targetUserId = $targetUserId;

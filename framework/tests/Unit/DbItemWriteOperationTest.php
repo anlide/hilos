@@ -108,12 +108,45 @@ final class DbItemWriteOperationTest extends TestCase
         $this->assertTrue(TruthSourceRegistry::hasTruthSource(self::COLLECTION));
     }
 
+    public function testRowNotYetStoredIsRefusedWithoutAddWhateverTheCallerNamed(): void
+    {
+        $actions = $this->actionsFor(stored: false);
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Update, TruthSourceOperation::Remove),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage('may not add rows across the whole table');
+        $actions->writePublic();
+    }
+
+    public function testRowNotYetStoredPassesOnAddAlone(): void
+    {
+        $actions = $this->actionsFor(stored: false);
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::all(),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Add),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $actions->writePublic();
+
+        $this->assertTrue(TruthSourceRegistry::hasTruthSource(self::COLLECTION));
+    }
+
     /**
      * Builds item actions on top of a fixture object and collection.
      *
+     * @param bool $stored Whether the row is already in the database; a row that is not yet has no owner of its own
      * @return ItemGuardedDbActions The item actions door, ready to be tested
      */
-    private function actionsFor(): ItemGuardedDbActions
+    private function actionsFor(bool $stored = true): ItemGuardedDbActions
     {
         $objectCollection = ItemGuardedObjects::initDB(Objects::LAZY_STRATEGY_KEY);
         $dbCollection = ItemGuardedDbCollection::init();
@@ -122,7 +155,9 @@ final class DbItemWriteOperationTest extends TestCase
 
         $entity = new ItemGuardedEntity();
         $entity->id = 1;
-        $entity->flushRelated();
+        if ($stored) {
+            $entity->flushRelated();
+        }
 
         $object = ItemGuardedObject::fromEntity($entity);
         $item = $dbCollection->createItemPublic($object);

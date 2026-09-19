@@ -10,6 +10,7 @@ use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUs
 use Demo\Chat\Database\Object\Item\EventUserRegistration as ObjectEventUserRegistration;
 use Demo\Chat\Database\View\Collection\EventUserRegistrations as DbCollectionEventUserRegistrations;
 use Demo\Chat\Database\View\Item\EventUserRegistration as DbEventUserRegistration;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -44,7 +45,7 @@ final class EventUserRegistrationsActions extends DbActions
     public function create(int $eventId, int $targetUserId): DbEventUserRegistration
     {
         TruthSourceRegistry::checkCanCreate(ChatDbContext::eventUserRegistrations);
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $detail = ObjectEventUserRegistration::create();
         $detail->eventId = $eventId;
@@ -63,7 +64,7 @@ final class EventUserRegistrationsActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRegistrations);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRegistrations, TruthSourceOperation::Remove);
 
         $this->deleteAllObjects();
     }

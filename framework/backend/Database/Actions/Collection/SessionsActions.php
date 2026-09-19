@@ -8,6 +8,7 @@ use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Session as ObjectSession;
@@ -38,7 +39,7 @@ final class SessionsActions extends DbActions
      */
     public function createAnonymous(string $token): Session
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
         SessionToken::ensureValid($token);
 
         if ($this->objectCollection->findByToken($token) !== null) {
@@ -82,7 +83,7 @@ final class SessionsActions extends DbActions
      */
     public function carryOver(string $token, int $userId, string $createdAt, ?string $expiresAt): ?Session
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
         SessionToken::ensureValid($token);
 
         if ($this->objectCollection->findByToken($token) !== null) {

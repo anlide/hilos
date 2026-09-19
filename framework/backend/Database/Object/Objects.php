@@ -28,6 +28,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Filter\ColumnFilter;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -911,11 +912,11 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      *
      * @throws DatabaseException If delete fails
      * @throws InvalidArgumentException When the cleared DB-sync signal cannot be named
-     * @throws WriteNotAllowedException When no truth source in this process covers the whole collection
+     * @throws WriteNotAllowedException When no truth source in this process may remove rows across the whole collection
      */
     public function deleteAll(): void
     {
-        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY);
+        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY, TruthSourceOperation::Remove);
 
         Database::sql("DELETE FROM `" . $this->getTableName() . "` WHERE true;");
         $this->clearInMemory();

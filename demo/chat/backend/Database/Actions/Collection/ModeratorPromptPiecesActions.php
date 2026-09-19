@@ -8,6 +8,7 @@ use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModerato
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces as DbCollectionModeratorPromptPieces;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 
@@ -30,7 +31,7 @@ final class ModeratorPromptPiecesActions extends DbActions
      */
     public function create(string $section, string $promptPiece): ModeratorPromptPiece
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWrite(TruthSourceOperation::Add);
 
         $piece = ObjectModeratorPromptPiece::create();
         $piece->section = $section;

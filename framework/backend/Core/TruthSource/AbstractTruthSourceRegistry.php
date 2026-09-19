@@ -2,8 +2,6 @@
 
 namespace Hilos\Core\TruthSource;
 
-use Exception;
-
 /**
  * Abstract Truth Source Registry.
  *
@@ -13,13 +11,14 @@ use Exception;
  * Child classes must:
  *   1. Define their own static $sources array
  *   2. Implement getSources() to return reference to their storage
- *   3. Implement checkCanWrite() with their specific exception type
+ *   3. Declare their own collection-wide write check, with their own exception type and their own
+ *      arguments - the base fixes no signature for it, because the two halves ask it differently
  *
  * Usage pattern:
  *   - Agent registers as truth source on start:
  *     Registry::register($collection, TruthSourceKeys::all(), $agentId).
  *   - WorkerManager unregisters the agent after its onStop hook: Registry::unregisterAgent($agentId).
- *   - Actions check before write: Registry::checkCanWrite($collection).
+ *   - Actions ask the registry before they write.
  *
  * One registration is a {@see TruthSourceGrant}: the rows it covers and the operations it
  * allows on them. A registration that names no operations gets every one of them, which is what
@@ -220,12 +219,26 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Check if write operation is allowed for collection.
+     * Operations allowed by the grants that cover the whole collection, whoever holds them.
      *
-     * Must be implemented by child classes to throw appropriate exception type.
+     * The union, not one grant's set: the agent-less collection-wide write is judged by the
+     * collection as a whole, exactly as its width check already is. A grant over named rows adds
+     * nothing here - it does not reach the rows a collection-wide write touches.
      *
      * @param string $collection Collection/table name
-     * @throws Exception If write is not allowed (no truth source registered)
+     * @return TruthSourceOperations Operations any collection-wide grant allows, each named once
      */
-    abstract public static function checkCanWrite(string $collection): void;
+    protected static function operationsCoveringEveryKey(string $collection): TruthSourceOperations
+    {
+        $sources = &static::getSources();
+        $operations = new TruthSourceOperations();
+        foreach ($sources[$collection] ?? [] as $grant) {
+            if (!$grant->keys->coversEveryKey()) {
+                continue;
+            }
+            $operations = $operations->merge($grant->operations);
+        }
+
+        return $operations;
+    }
 }
