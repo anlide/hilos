@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
+  shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
@@ -38,11 +39,24 @@ test('lists settings in the framework table and filters from the search box', as
   await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
   await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
 
-  // A query no key matches empties the viewport; a key query narrows it; clearing
-  // restores every row.
+  // A query no key matches empties the viewport and the table says so, naming the
+  // query and offering the reset that brings the rows back; a key query narrows it;
+  // clearing restores every row.
   const search = page.getByTestId('hilos-table-search')
   await search.fill('zzz-no-such-setting-zzz')
   await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  // The words stand in both branches of the table, so they are read off the copy
+  // on screen; that they are gone is asserted of both.
+  const noMatches = page.getByTestId('hilos-table-no-matches')
+  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+  await expect(shownByTestId(page, 'hilos-table-no-matches-terms')).toContainText(
+    '“zzz-no-such-setting-zzz”',
+  )
+  await shownByTestId(page, 'hilos-table-no-matches-reset').click()
+  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
+  await expect(noMatches).toHaveCount(0)
+  await expect(search).toHaveValue('')
   await search.fill('example_boolean')
   await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
   await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)

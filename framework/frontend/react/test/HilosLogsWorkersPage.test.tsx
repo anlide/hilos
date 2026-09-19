@@ -219,8 +219,11 @@ describe('HilosLogsWorkersPage', () => {
       },
     )
 
-    expect(byId(container, 'hilos-log-worker-empty-nomatch')).not.toBeNull()
-    expect(byId(container, 'hilos-log-worker-clear-filters')).not.toBeNull()
+    // A search that matched nothing is the table's own state since HIL-808: the framework
+    // names the query and offers the reset, and the page's words stay for an empty store.
+    expect(byId(container, 'hilos-table-no-matches')).not.toBeNull()
+    expect(byId(container, 'hilos-table-no-matches-reset')).not.toBeNull()
+    expect(byId(container, 'hilos-log-worker-empty-never')).toBeNull()
   })
 
   it('shows no node column and no node filter where nodes have no names', () => {

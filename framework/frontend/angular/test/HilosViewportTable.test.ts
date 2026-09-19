@@ -12,7 +12,7 @@
 // column (HIL-816), whose values the host marks one template per field.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosPages, TableViewportController, createSignal } from '@hilos/core'
 import type {
   ActionHandle,
@@ -308,6 +308,30 @@ function router(): HilosRouter {
     start: () => {},
     stop: () => {},
   }
+}
+
+// Two columns, the second drawn by no template, for the states of the body: a
+// skeleton row counts a cell for each of them.
+const STATE_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name', sortable: true },
+  { key: 'kind', label: 'Kind' },
+]
+
+/** A host drawing a declared table over two columns, one of them marked. */
+@Component({
+  selector: 'test-states-table-host',
+  imports: [HilosTableCell, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller" [columns]="columns">
+      <ng-template hilosTableCell="name" let-row>
+        <span class="named">{{ row.name }}</span>
+      </ng-template>
+    </hilos-viewport-table>
+  `,
+})
+class StatesTableHost {
+  controller!: TableViewportController<Row>
+  columns = STATE_COLUMNS
 }
 
 function makeController(
@@ -1991,5 +2015,177 @@ describe('HilosViewportTable expanding a row', () => {
         '[data-id="hilos-table-row-detail-b"] .reason',
       )?.textContent?.trim(),
     ).toBe('Bob b')
+  })
+})
+
+describe('HilosViewportTable drawing the states of the body', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const STATE_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    search: {},
+    columns: STATE_COLUMNS,
+    empty: { title: 'Nothing here yet' },
+  }
+
+  function makeStates(frame?: HilosTableFrame): {
+    controller: TableViewportController<Row>
+    sent: TableViewportDescriptor[]
+  } {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: (descriptor) => sent.push(descriptor),
+      frame,
+    })
+
+    return { controller, sent }
+  }
+
+  function mountStates(
+    controller: TableViewportController<Row>,
+  ): ComponentFixture<StatesTableHost> {
+    const fixture = TestBed.createComponent(StatesTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function all(
+    fixture: ComponentFixture<unknown>,
+    selector: string,
+  ): Element[] {
+    return Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(selector),
+    )
+  }
+
+  function twoRows(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      25,
+    )
+  }
+
+  it('keeps the rows through a quick change and draws a skeleton as tall as the window past the threshold', () => {
+    vi.useFakeTimers()
+    const { controller } = makeStates(STATE_FRAME)
+    twoRows(controller)
+    const fixture = mountStates(controller)
+
+    controller.setSort('name')
+    vi.advanceTimersByTime(399)
+    fixture.detectChanges()
+    expect(all(fixture, '[data-id="hilos-table-loading"]')).toHaveLength(0)
+    expect(all(fixture, '.named')).toHaveLength(4)
+
+    vi.advanceTimersByTime(1)
+    fixture.detectChanges()
+
+    // Both branches say it, each in its own shape: rows of cells in the table,
+    // one bar per card in the list.
+    const loading = all(fixture, '[data-id="hilos-table-loading"]')
+    expect(loading).toHaveLength(2)
+    expect(loading[0]?.getAttribute('aria-busy')).toBe('true')
+    const tableRows = all(
+      fixture,
+      'tbody[data-id="hilos-table-loading"] [data-id="hilos-table-skeleton-row"]',
+    )
+    expect(tableRows).toHaveLength(2)
+    // A cell for every column standing in the row, so the widths hold.
+    expect(tableRows[0]?.querySelectorAll('td')).toHaveLength(2)
+    expect(
+      all(
+        fixture,
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-skeleton-row"]',
+      ),
+    ).toHaveLength(2)
+    expect(all(fixture, '.placeholder[aria-hidden="true"]')).toHaveLength(2 * 2)
+    expect(
+      all(fixture, '[role="status"]').filter(
+        (node) => node.textContent?.trim() === 'Loading…',
+      ),
+    ).toHaveLength(2)
+    expect(all(fixture, '.named')).toHaveLength(0)
+  })
+
+  it('counts the skeleton by the window size when the window before was empty', () => {
+    vi.useFakeTimers()
+    const { controller } = makeStates(STATE_FRAME)
+    controller.ingestWindow([], 0, true, null, null, 3)
+    const fixture = mountStates(controller)
+
+    controller.setSearch('x')
+    vi.advanceTimersByTime(400)
+    fixture.detectChanges()
+
+    expect(
+      all(
+        fixture,
+        'tbody[data-id="hilos-table-loading"] [data-id="hilos-table-skeleton-row"]',
+      ),
+    ).toHaveLength(3)
+  })
+
+  it('says nothing was found in both branches and resets out of it', () => {
+    const { controller, sent } = makeStates(STATE_FRAME)
+    twoRows(controller)
+    const fixture = mountStates(controller)
+
+    controller.setSearch('night')
+    controller.ingestWindow([], 0, true, null, null, 25)
+    fixture.detectChanges()
+
+    expect(all(fixture, '[data-id="hilos-table-no-matches"]')).toHaveLength(2)
+    expect(
+      all(
+        fixture,
+        '[data-id="hilos-table-no-matches-terms"]',
+      )[1]?.textContent?.trim(),
+    ).toBe('No rows match “night”')
+    expect(all(fixture, '[data-id="hilos-table-empty"]')).toHaveLength(0)
+    ;(
+      all(fixture, '[data-id="hilos-table-no-matches-reset"]')[1] as HTMLElement
+    ).click()
+    expect(sent.at(-1)?.filter).toEqual({})
+  })
+
+  it('draws the declared empty state in both branches when nothing filters the set', () => {
+    const { controller } = makeStates(STATE_FRAME)
+    const fixture = mountStates(controller)
+
+    controller.ingestWindow([], 0, true, null, null, 25)
+    fixture.detectChanges()
+
+    expect(all(fixture, '[data-id="hilos-table-empty-title"]')).toHaveLength(2)
+    expect(all(fixture, '[data-id="hilos-table-no-matches"]')).toHaveLength(0)
+  })
+
+  it('says nothing was found on a table that still draws its frame from props', () => {
+    const { controller } = makeStates()
+    const fixture = TestBed.createComponent(ViewportTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+    controller.ingestWindow([], 0, true, null, null, 10)
+    controller.setSearch('night')
+    controller.ingestWindow([], 0, true, null, null, 10)
+    fixture.detectChanges()
+
+    expect(
+      all(
+        fixture,
+        '[data-id="hilos-table-no-matches-terms"]',
+      )[0]?.textContent?.trim(),
+    ).toBe('No rows match “night”')
   })
 })

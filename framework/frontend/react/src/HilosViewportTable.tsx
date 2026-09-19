@@ -24,7 +24,11 @@
 // the framework owns the room, the order and the labels, while the page draws every
 // value through `details`, exactly as it draws a cell (mockups/components/table
 // section 4). A card opens into its own panel, inside its own body and off an id
-// base of its own. Bootstrap classes only.
+// base of its own. The body is drawn from the state the core decides
+// (HilosTableBody): rows, a skeleton of rows while a window change is late, or one
+// of the two worded states drawn by HilosTableEmptyState — the page's own "nothing
+// here yet" and the framework's "Nothing found" (mockups/components/table section
+// 10). Bootstrap classes only.
 import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -44,6 +48,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosTableBar } from './HilosTableBar.js'
+import { HilosTableEmptyState } from './HilosTableEmptyState.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
@@ -88,9 +93,10 @@ export interface HilosViewportTableProps<R> {
   searchPlaceholder?: string
   /** Message shown when there are no rows and the page declared no empty state. */
   emptyText?: string
-  /** Message shown while the first window is still loading. */
-  loadingText?: string
-  /** Replace the empty-state cell content. */
+  /**
+   * The page's own words in the "nothing here yet" state, standing in place of
+   * emptyText when the page declared no empty state.
+   */
   empty?: ReactNode
   /** Label shown in a removed row's placeholder slot. */
   placeholderText?: string
@@ -137,7 +143,6 @@ export function HilosViewportTable<R>({
   searchable = false,
   searchPlaceholder = 'Search…',
   emptyText = 'No rows.',
-  loadingText = 'Loading…',
   empty,
   placeholderText = 'Removed',
   dataId = 'hilos-viewport-table',
@@ -155,7 +160,16 @@ export function HilosViewportTable<R>({
   const totalExact = useSignal(controller.totalExact)
   const hasNextPage = useSignal(controller.hasNextPage)
   const pendingCount = useSignal(controller.pendingCount)
-  const loaded = useSignal(controller.loaded)
+  // Which state the body is in — rows, the skeleton, or one of the two worded
+  // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
+  // view layers cannot decide it three ways, and both branches below read this one
+  // answer.
+  const body = useSignal(controller.frame.body)
+  const pageSize = useSignal(controller.pageSize)
+  // As many skeleton rows as the window had rows, so the height of the table does
+  // not jump while the next one is on its way; a window that had none — a reset out
+  // of "Nothing found" — is waiting for a full one (Flow F2).
+  const skeletonRows = rows.length > 0 ? rows.length : pageSize
   // The row bars this view draws itself. The table bar is drawn by the room of live
   // messages above the rows (HilosTableLive), and the bulk bar lives inside the
   // selection panel and is drawn by the bar above the table — anywhere else it would
@@ -194,7 +208,7 @@ export function HilosViewportTable<R>({
   // its header.
   const markColumn = pendingCount > 0 || detailFields.length > 0
   // Every cell that spans the whole row — the placeholder of a removed row, the panel
-  // a row expands into, the empty and loading states — counts the columns left
+  // a row expands into, the skeleton and the worded states — counts the columns left
   // standing in the row plus the mark column while it stands plus the checkbox column
   // while the table has marks. This is the ONE place the width is worked out, and
   // everything that spans a row reads it rather than counting again.
@@ -221,26 +235,6 @@ export function HilosViewportTable<R>({
   // take.
   const pageHeadingId = useContext(HilosPageHeadingIdContext)
   const nameId = declaration?.title ? titleId : pageHeadingId
-  // What a declared table says when it has no rows is the headline its page declared.
-  // Only the headline: the hint under it, the main action beside it, and the
-  // framework's own "Nothing found" under a search belong to an empty state this view
-  // does not draw yet.
-  const emptyWords = declaration?.empty?.title ?? emptyText
-  // What stands where the rows would while there are none: a spinner until the first
-  // window arrives, and the empty words after it. Drawn by both branches, so a narrow
-  // screen says the same as a wide one.
-  const stateWords = !loaded ? (
-    <span
-      className="d-inline-flex align-items-center gap-2"
-      role="status"
-      data-id="hilos-table-loading"
-    >
-      <span className="spinner-border spinner-border-sm" aria-hidden="true" />
-      {loadingText}
-    </span>
-  ) : (
-    (empty ?? emptyWords)
-  )
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
   const paginated = pageCount === null || pageCount > 1
@@ -727,38 +721,64 @@ export function HilosViewportTable<R>({
               {selectionEdge === 'end' ? selectPageCell : null}
             </tr>
           </thead>
-          <tbody>
-            {rows.map((view) => {
-              // A row drawn as a placeholder carries no checkbox: there is nothing
-              // to mark in the trace of a row that left, and the core would not take
-              // its key anyway (Flow F1). Its own cell spans the whole row, so the
-              // column is simply not there for it.
-              const selectRowCell =
-                selectionEnabled && !view.placeholder && view.row !== null ? (
-                  <td className="hilos-table-selection-cell">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      aria-label="Select row"
-                      data-id={`hilos-table-select-${view.rowKey}`}
-                      checked={view.selected}
-                      onChange={(event) =>
-                        controller.selectRow(view.rowKey, event.target.checked)
-                      }
-                    />
-                  </td>
-                ) : null
-              const bar = rowBar(view.rowKey)
-              const record = view.row
+          {body === 'loading' ? (
+            // The skeleton stands in a body of its own while a window is late: a
+            // cell for every column standing in the row, the framework's included,
+            // so the columns keep their widths instead of collapsing into one cell
+            // and jolting the table sideways on every change (Flow F3). The bars
+            // say nothing to a screen reader; the hidden line says it in words.
+            <tbody aria-busy="true" data-id="hilos-table-loading">
+              {Array.from({ length: skeletonRows }, (_unused, index) => (
+                <tr key={index} data-id="hilos-table-skeleton-row">
+                  {Array.from({ length: bodyColspan }, (_unusedCell, cell) => (
+                    <td key={cell} className="placeholder-glow">
+                      {index === 0 && cell === 0 ? (
+                        <span className="visually-hidden" role="status">
+                          Loading…
+                        </span>
+                      ) : null}
+                      <span className="placeholder col-12" aria-hidden="true" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          ) : (
+            <tbody>
+              {rows.map((view) => {
+                // A row drawn as a placeholder carries no checkbox: there is nothing
+                // to mark in the trace of a row that left, and the core would not take
+                // its key anyway (Flow F1). Its own cell spans the whole row, so the
+                // column is simply not there for it.
+                const selectRowCell =
+                  selectionEnabled && !view.placeholder && view.row !== null ? (
+                    <td className="hilos-table-selection-cell">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        aria-label="Select row"
+                        data-id={`hilos-table-select-${view.rowKey}`}
+                        checked={view.selected}
+                        onChange={(event) =>
+                          controller.selectRow(
+                            view.rowKey,
+                            event.target.checked,
+                          )
+                        }
+                      />
+                    </td>
+                  ) : null
+                const bar = rowBar(view.rowKey)
+                const record = view.row
 
-              return (
-                <Fragment key={view.rowKey}>
-                  <tr
-                    data-id={`hilos-table-row-${view.rowKey}`}
-                    className={rowClass(view)}
-                  >
-                    {selectionEdge === 'start' ? selectRowCell : null}
-                    {/* A placeholder row carries a null row; the null check also
+                return (
+                  <Fragment key={view.rowKey}>
+                    <tr
+                      data-id={`hilos-table-row-${view.rowKey}`}
+                      className={rowClass(view)}
+                    >
+                      {selectionEdge === 'start' ? selectRowCell : null}
+                      {/* A placeholder row carries a null row; the null check also
                       narrows the type for the renderers. What stands where a row's
                       values do takes one shape per epoch of the frame. A DECLARED
                       table hands the page one renderer per column and writes the
@@ -766,134 +786,139 @@ export function HilosViewportTable<R>({
                       column at all. A table still drawing its frame from props has
                       no column to address a cell by, so it keeps handing over the
                       whole row. */}
-                    {view.placeholder || view.row === null ? (
-                      <td
-                        colSpan={bodyColspan}
-                        className="text-center text-muted fst-italic"
-                        data-id="hilos-table-placeholder"
-                      >
-                        {placeholderText}
-                      </td>
-                    ) : declaration ? (
-                      declaredCells(view.row, view.rowKey)
-                    ) : (
-                      row?.(view.row, view.rowKey)
-                    )}
-                    {markColumn && !view.placeholder && view.row !== null ? (
-                      <td className="text-end text-nowrap">
-                        {view.pending === 'move' ? (
-                          <span
-                            className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                            data-id={`hilos-table-pending-move-${view.rowKey}`}
-                          >
-                            <i
-                              className="bi bi-arrows-move"
-                              aria-hidden="true"
-                            />{' '}
-                            Will move
-                          </span>
-                        ) : null}
-                        {view.pending === 'remove' ? (
-                          <span
-                            className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                            data-id={`hilos-table-pending-remove-${view.rowKey}`}
-                          >
-                            <i
-                              className="bi bi-box-arrow-right"
-                              aria-hidden="true"
-                            />{' '}
-                            Will leave
-                          </span>
-                        ) : null}
-                        {/* The control comes last and stands at the very edge:
+                      {view.placeholder || view.row === null ? (
+                        <td
+                          colSpan={bodyColspan}
+                          className="text-center text-muted fst-italic"
+                          data-id="hilos-table-placeholder"
+                        >
+                          {placeholderText}
+                        </td>
+                      ) : declaration ? (
+                        declaredCells(view.row, view.rowKey)
+                      ) : (
+                        row?.(view.row, view.rowKey)
+                      )}
+                      {markColumn && !view.placeholder && view.row !== null ? (
+                        <td className="text-end text-nowrap">
+                          {view.pending === 'move' ? (
+                            <span
+                              className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              data-id={`hilos-table-pending-move-${view.rowKey}`}
+                            >
+                              <i
+                                className="bi bi-arrows-move"
+                                aria-hidden="true"
+                              />{' '}
+                              Will move
+                            </span>
+                          ) : null}
+                          {view.pending === 'remove' ? (
+                            <span
+                              className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                              data-id={`hilos-table-pending-remove-${view.rowKey}`}
+                            >
+                              <i
+                                className="bi bi-box-arrow-right"
+                                aria-hidden="true"
+                              />{' '}
+                              Will leave
+                            </span>
+                          ) : null}
+                          {/* The control comes last and stands at the very edge:
                             the badge STATES something about the row, while this
                             one is the only thing in the cell the reader acts on. */}
-                        {detailFields.length > 0
-                          ? expandControl(
-                              view,
-                              detailId(view.rowKey),
-                              'btn btn-sm btn-outline-secondary ms-1',
-                            )
-                          : null}
-                      </td>
-                    ) : null}
-                    {selectionEdge === 'end' ? selectRowCell : null}
-                  </tr>
+                          {detailFields.length > 0
+                            ? expandControl(
+                                view,
+                                detailId(view.rowKey),
+                                'btn btn-sm btn-outline-secondary ms-1',
+                              )
+                            : null}
+                        </td>
+                      ) : null}
+                      {selectionEdge === 'end' ? selectRowCell : null}
+                    </tr>
 
-                  {/* Work running over this one row, drawn right under it and only
+                    {/* Work running over this one row, drawn right under it and only
                     while the row is on screen: a key absent from the window takes
                     up nothing and comes back with its row. A row drawn as a
                     placeholder gets no bar under it even if the key is still in the
                     map — the core takes a removed row's bar down at once, so that is
                     a race rather than a normal state, and the condition here is the
                     same pair that draws the placeholder above. */}
-                  {bar !== undefined &&
-                  !view.placeholder &&
-                  view.row !== null ? (
-                    <tr data-id={`hilos-table-progress-row-${view.rowKey}`}>
-                      {progressCells.map((cell, index) => (
-                        <td key={index} colSpan={cell.span} className="pt-0">
-                          {cell.covered ? (
-                            <>
-                              {rowProgress !== undefined ? (
-                                <div className="small text-body-secondary mb-1">
-                                  {rowProgress(bar, view.rowKey)}
-                                </div>
-                              ) : null}
-                              <HilosTableProgress
-                                progress={bar}
-                                label="Work on this row"
-                              />
-                            </>
-                          ) : null}
-                        </td>
-                      ))}
-                    </tr>
-                  ) : null}
+                    {bar !== undefined &&
+                    !view.placeholder &&
+                    view.row !== null ? (
+                      <tr data-id={`hilos-table-progress-row-${view.rowKey}`}>
+                        {progressCells.map((cell, index) => (
+                          <td key={index} colSpan={cell.span} className="pt-0">
+                            {cell.covered ? (
+                              <>
+                                {rowProgress !== undefined ? (
+                                  <div className="small text-body-secondary mb-1">
+                                    {rowProgress(bar, view.rowKey)}
+                                  </div>
+                                ) : null}
+                                <HilosTableProgress
+                                  progress={bar}
+                                  label="Work on this row"
+                                />
+                              </>
+                            ) : null}
+                          </td>
+                        ))}
+                      </tr>
+                    ) : null}
 
-                  {/* The panel this row expands into, drawn after the row's own
+                    {/* The panel this row expands into, drawn after the row's own
                     bar: the bar is a continuation of the row it belongs to, and
                     what the reader opened themselves comes after what is happening
                     to the record on its own. A placeholder never says it is
                     expanded; the second half of the condition says the same thing
                     to the compiler, so the fields are handed a row rather than a
                     row-or-nothing. */}
-                  {view.expanded && record !== null ? (
-                    <tr
-                      id={detailId(view.rowKey)}
-                      className="table-active"
-                      data-id={`hilos-table-row-detail-${view.rowKey}`}
+                    {view.expanded && record !== null ? (
+                      <tr
+                        id={detailId(view.rowKey)}
+                        className="table-active"
+                        data-id={`hilos-table-row-detail-${view.rowKey}`}
+                      >
+                        <td colSpan={bodyColspan} className="pt-0">
+                          <dl className="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                            {detailFields.map((field) => (
+                              <div key={field.key} className="col">
+                                <dt className="text-body-secondary fw-normal">
+                                  {field.label}
+                                </dt>
+                                <dd className="mb-0 text-break">
+                                  {detailValue(field, record, view.rowKey)}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                )
+              })}
+              {body !== 'rows' ? (
+                <tr>
+                  <td colSpan={bodyColspan}>
+                    <HilosTableEmptyState
+                      controller={controller}
+                      kind={
+                        body === 'empty_filtered' ? 'empty_filtered' : 'empty'
+                      }
                     >
-                      <td colSpan={bodyColspan} className="pt-0">
-                        <dl className="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
-                          {detailFields.map((field) => (
-                            <div key={field.key} className="col">
-                              <dt className="text-body-secondary fw-normal">
-                                {field.label}
-                              </dt>
-                              <dd className="mb-0 text-break">
-                                {detailValue(field, record, view.rowKey)}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              )
-            })}
-            {rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={bodyColspan}
-                  className="text-center text-muted py-4"
-                >
-                  {stateWords}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
+                      {empty ?? emptyText}
+                    </HilosTableEmptyState>
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          )}
         </table>
       </div>
 
@@ -913,7 +938,7 @@ export function HilosViewportTable<R>({
           rows stands BESIDE it, a sentence not being an item of a list. */}
       {card !== null ? (
         <div className="d-md-none" data-id="hilos-table-cards">
-          {rows.length > 0 ? (
+          {body === 'rows' ? (
             <div role="list" aria-labelledby={nameId}>
               {rows.map((view) => {
                 const tint = cardClass(view)
@@ -944,11 +969,36 @@ export function HilosViewportTable<R>({
                 )
               })}
             </div>
+          ) : body === 'loading' ? (
+            // The skeleton and the two states a table says in words live inside
+            // the table in the wide branch, so a narrow screen would hide them
+            // along with it and the phone would be left with a blank space where
+            // they are (Flow F12). A card of the skeleton is one bar, as the
+            // mockup draws it.
+            <div aria-busy="true" data-id="hilos-table-loading">
+              <span className="visually-hidden" role="status">
+                Loading…
+              </span>
+              {Array.from({ length: skeletonRows }, (_unused, index) => (
+                <div
+                  key={index}
+                  className="card mb-2"
+                  aria-hidden="true"
+                  data-id="hilos-table-skeleton-row"
+                >
+                  <div className="card-body py-2 px-3 placeholder-glow">
+                    <span className="placeholder col-12" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
-            // The two states a table says in words live inside the table in the
-            // wide branch, so a narrow screen would hide them along with it and
-            // the phone would be left with a blank space (Flow F12).
-            <div className="text-center text-muted py-4">{stateWords}</div>
+            <HilosTableEmptyState
+              controller={controller}
+              kind={body === 'empty_filtered' ? 'empty_filtered' : 'empty'}
+            >
+              {empty ?? emptyText}
+            </HilosTableEmptyState>
           )}
         </div>
       ) : null}

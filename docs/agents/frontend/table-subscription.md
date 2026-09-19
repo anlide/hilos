@@ -159,10 +159,10 @@ accumulated before the break is gone — the window that arrives outranks it.
 > header, and the one room of live messages above the rows with the row tint and
 > the waiting marks beside it, the bar of work under a row and the project's
 > places next to running work, the cards a declared table becomes on a narrow
-> screen, and the panel a row and a card expand into. What was built on top of
-> them since — the worded empty states and the marks of a quiet source on cells
-> and headers — is drawn by Vue alone until their own parity leaves (HIL-817,
-> HIL-818).
+> screen, the panel a row and a card expand into, and the states of the body —
+> the skeleton of a late window and the two worded empty states. What was built
+> on top of them since — the marks of a quiet source on cells and headers — is
+> drawn by Vue alone until its own parity leaf (HIL-818).
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
 > the verifier circle on the backups page still hand their view columns, a label
@@ -216,8 +216,9 @@ on a narrow screen is a fourth and has its own section below:
   `pageSize` rows when that window was empty. The state is read by every table,
   declared frame or not: "Nothing found" names the query and the active
   declared filters and resets through `resetFilters()`, while `empty` speaks
-  the declared `empty` and `mainAction`, or the page's `empty` slot where
-  nothing is declared. A page that refuses altogether is none of these — that is
+  the declared `empty` and `mainAction`, or the page's own words where nothing
+  is declared — the `empty` slot in Vue, the `empty` prop in React, the `#empty`
+  template in Angular, each falling back to `emptyText`. A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
 
 ### The card a row projects to
@@ -1068,7 +1069,7 @@ an address does not:
 | one control of one declared filter | `framework/frontend/{vue,react,angular}/src/HilosTableFilterControl.*` |
 | the footer under the table | `framework/frontend/{vue,react,angular}/src/HilosTableFooter.*` |
 | the one room a table's live messages share | `framework/frontend/{vue,react,angular}/src/HilosTableLive.*` |
-| the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/vue/src/HilosTableEmptyState.vue` |
+| the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/{vue,react,angular}/src/HilosTableEmptyState.*` |
 | the bar a running job is drawn as | `framework/frontend/{vue,react,angular}/src/HilosTableProgress.*` |
 | the selection panel and the bulk bar | `framework/frontend/{vue,react,angular}/src/HilosTableSelection.*` |
 | the edge the selection column sits on | `framework/frontend/{vue,react,angular}/src/hilosTableSelectionEdge.ts` |

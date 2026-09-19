@@ -272,8 +272,11 @@ describe('HilosLogsRotationsPage', () => {
       },
     )
 
-    expect(byId(container, 'hilos-rotation-empty-nomatch')).not.toBeNull()
-    expect(byId(container, 'hilos-rotation-clear-filters')).not.toBeNull()
+    // A search that matched nothing is the table's own state since HIL-808: the framework
+    // names the query and offers the reset, and the page's words stay for an empty archive.
+    expect(byId(container, 'hilos-table-no-matches')).not.toBeNull()
+    expect(byId(container, 'hilos-table-no-matches-reset')).not.toBeNull()
+    expect(byId(container, 'hilos-rotation-empty-never')).toBeNull()
   })
 
   it('shows no node column and no node filter where nodes have no names', () => {

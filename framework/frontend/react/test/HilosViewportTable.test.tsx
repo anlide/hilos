@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { TableViewportController } from '@hilos/core'
@@ -1965,5 +1965,179 @@ describe('HilosViewportTable expanding a row', () => {
       find(container, '[data-id="hilos-table-row-detail-b"] .reason')
         ?.textContent,
     ).toBe('Bob b')
+  })
+})
+
+describe('HilosViewportTable drawing the states of the body', () => {
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  const STATE_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'kind', label: 'Kind' },
+  ]
+  const STATE_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    search: {},
+    columns: STATE_COLUMNS,
+    empty: { title: 'Nothing here yet' },
+  }
+
+  function renderStates(controller: TableViewportController<Row>) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        columns={STATE_COLUMNS}
+        cells={{ name: (r) => <span className="named">{r.name}</span> }}
+      />,
+    )
+  }
+
+  function twoRows(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      25,
+    )
+  }
+
+  it('keeps the rows through a quick change and draws a skeleton as tall as the window past the threshold', () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(STATE_FRAME)
+    twoRows(controller)
+    const { container } = renderStates(controller)
+
+    act(() => {
+      controller.setSort('name')
+      vi.advanceTimersByTime(399)
+    })
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-loading"]'),
+    ).toHaveLength(0)
+    expect(container.querySelectorAll('.named')).toHaveLength(4)
+
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+
+    // Both branches say it, each in its own shape: rows of cells in the table,
+    // one bar per card in the list.
+    const loading = container.querySelectorAll(
+      '[data-id="hilos-table-loading"]',
+    )
+    expect(loading).toHaveLength(2)
+    expect(loading[0]?.getAttribute('aria-busy')).toBe('true')
+    const tableRows = container.querySelectorAll(
+      'tbody[data-id="hilos-table-loading"] [data-id="hilos-table-skeleton-row"]',
+    )
+    expect(tableRows).toHaveLength(2)
+    // A cell for every column standing in the row, so the widths hold.
+    expect(tableRows[0]?.querySelectorAll('td')).toHaveLength(2)
+    expect(
+      container.querySelectorAll(
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-skeleton-row"]',
+      ),
+    ).toHaveLength(2)
+    expect(
+      container.querySelectorAll('.placeholder[aria-hidden="true"]'),
+    ).toHaveLength(2 * 2)
+    expect(
+      Array.from(container.querySelectorAll('[role="status"]')).filter(
+        (node) => node.textContent === 'Loading…',
+      ),
+    ).toHaveLength(2)
+    expect(container.querySelectorAll('.named')).toHaveLength(0)
+  })
+
+  it('counts the skeleton by the window size when the window before was empty', () => {
+    vi.useFakeTimers()
+    const { controller } = makeController(STATE_FRAME)
+    controller.ingestWindow([], 0, true, null, null, 3)
+    const { container } = renderStates(controller)
+
+    act(() => {
+      controller.setSearch('x')
+      vi.advanceTimersByTime(400)
+    })
+
+    expect(
+      container.querySelectorAll(
+        'tbody[data-id="hilos-table-loading"] [data-id="hilos-table-skeleton-row"]',
+      ),
+    ).toHaveLength(3)
+  })
+
+  it('says nothing was found in both branches and resets out of it', () => {
+    const { controller, sent } = makeController(STATE_FRAME)
+    twoRows(controller)
+    const { container } = renderStates(controller)
+
+    act(() => {
+      controller.setSearch('night')
+      controller.ingestWindow([], 0, true, null, null, 25)
+    })
+
+    const states = container.querySelectorAll(
+      '[data-id="hilos-table-no-matches"]',
+    )
+    expect(states).toHaveLength(2)
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-no-matches-terms"]')[1]
+        ?.textContent,
+    ).toBe('No rows match “night”')
+    expect(container.querySelector('[data-id="hilos-table-empty"]')).toBeNull()
+
+    act(() => {
+      fireEvent.click(
+        container.querySelectorAll(
+          '[data-id="hilos-table-no-matches-reset"]',
+        )[1] as HTMLElement,
+      )
+    })
+    expect(sent.at(-1)?.filter).toEqual({})
+  })
+
+  it('draws the declared empty state in both branches when nothing filters the set', () => {
+    const { controller } = makeController(STATE_FRAME)
+    const { container } = renderStates(controller)
+
+    act(() => controller.ingestWindow([], 0, true, null, null, 25))
+
+    expect(
+      container.querySelectorAll('[data-id="hilos-table-empty-title"]'),
+    ).toHaveLength(2)
+    expect(
+      container.querySelector('[data-id="hilos-table-no-matches"]'),
+    ).toBeNull()
+  })
+
+  it('says nothing was found on a table that still draws its frame from props', () => {
+    const { controller } = makeController()
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        columns={COLUMNS}
+        searchable
+        row={(r) => <td className="cell">{r.name}</td>}
+      />,
+    )
+    act(() => {
+      controller.ingestWindow([], 0, true, null, null, 10)
+      controller.setSearch('night')
+      controller.ingestWindow([], 0, true, null, null, 10)
+    })
+
+    expect(
+      container.querySelector('[data-id="hilos-table-no-matches-terms"]')
+        ?.textContent,
+    ).toBe('No rows match “night”')
   })
 })
