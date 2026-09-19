@@ -144,11 +144,20 @@ export {
   hilosTableBulkPayload,
 } from './table/tableBulkRequest.js'
 export {
+  createDeferredFlagState,
+  type DeferredDelay,
+  type DeferredFlagState,
+} from './primitives/deferredFlag.js'
+export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,
   type LoadingButtonState,
   type SpinnerDelay,
 } from './primitives/loadingButton.js'
+export {
+  DEFAULT_SKELETON_DELAY_MS,
+  HILOS_SKELETON_LINES,
+} from './primitives/skeleton.js'
 export {
   createModalController,
   type ModalController,

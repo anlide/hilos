@@ -35,6 +35,7 @@ export {
 export { HilosPageHeadingIdContext } from './hilosPageHeadingContext.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
+export { HilosSkeleton, type HilosSkeletonProps } from './HilosSkeleton.js'
 export { ErrorPage, type ErrorPageProps } from './ErrorPage.js'
 export {
   HilosMaintenance,

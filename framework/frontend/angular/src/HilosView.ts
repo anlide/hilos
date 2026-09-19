@@ -12,6 +12,16 @@
 // the outcome — loading, error or ready — so the state is readable from the DOM
 // rather than guessed from whichever element happened to render first.
 //
+// What stands in the page's place while it waits is a skeleton, not white
+// (HIL-983): the one the project declared for that page key in `pageSkeletons`,
+// or the default HilosSkeleton. It rises only once the wait has outlasted
+// DEFAULT_SKELETON_DELAY_MS, so a page that answers quickly never flashes grey
+// bars, and the outlet announces it once for the whole page — the bars inside are
+// decorative. The frame takes the page's full height, so a project skeleton can
+// lay out the way its page does. Only the FIRST answer is waited for: a
+// resubscription after a reconnect keeps the page on screen and raises no
+// skeleton.
+//
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 // the `authGate`'s modal shows the same surface over the live page for a gated
@@ -22,17 +32,24 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   effect,
   inject,
   input,
   signal,
 } from '@angular/core'
 import type { Type } from '@angular/core'
-import { AUTH_SURFACE_HEADING_ID, subscribeSignal } from '@hilos/core'
+import {
+  AUTH_SURFACE_HEADING_ID,
+  createDeferredFlagState,
+  DEFAULT_SKELETON_DELAY_MS,
+  subscribeSignal,
+} from '@hilos/core'
 import type { AuthGate } from '@hilos/core'
 
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
+import { HilosSkeleton } from './HilosSkeleton.js'
 import { hilosSignal } from './hilosSignal.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 
@@ -44,7 +61,7 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
 @Component({
   selector: 'hilos-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgComponentOutlet, ErrorPage, HilosModal],
+  imports: [NgComponentOutlet, ErrorPage, HilosModal, HilosSkeleton],
   template: `
     <div
       data-id="hilos-page-state"
@@ -57,6 +74,15 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
       <hilos-error-page [error]="error" />
     } @else if (!pageLoading()) {
       <ng-container [ngComponentOutlet]="view()" />
+    } @else if (showSkeleton()) {
+      <div class="h-100" data-id="hilos-page-skeleton">
+        <span class="visually-hidden" role="status">Loading…</span>
+        @if (skeleton(); as declared) {
+          <ng-container [ngComponentOutlet]="declared" />
+        } @else {
+          <hilos-skeleton />
+        }
+      </div>
     }
     <!-- No title of its own: the sign-in surface is identifier-first (HIL-423),
     so what the screen is called changes with the step the person is on, and only
@@ -102,6 +128,11 @@ export class HilosView {
   /** Maps a page key to the component rendered while that page is current. */
   readonly pages = input.required<Record<string, Type<unknown>>>()
   /**
+   * Maps a page key to the skeleton that page shows while it waits for its first
+   * answer; a page not in the map shows HilosSkeleton.
+   */
+  readonly pageSkeletons = input<Record<string, Type<unknown>>>({})
+  /**
    * The project's sign-in surface (HIL-364), mounted in place of ErrorPage on an
    * anonymous 401 and inside the auth modal for a gated action. Omit it and a
    * 401 renders ErrorPage.
@@ -118,6 +149,10 @@ export class HilosView {
   private readonly route = hilosSignal(this.router.currentRoute)
   protected readonly pageError = hilosSignal(this.router.pageError)
   protected readonly pageLoading = hilosSignal(this.router.pageLoading)
+  private readonly skeletonFlag = createDeferredFlagState(
+    DEFAULT_SKELETON_DELAY_MS,
+  )
+  protected readonly showSkeleton = hilosSignal(this.skeletonFlag.shown)
 
   // The one place the three outcomes of a navigation are named. The marker
   // element carries it so a test waits for the page to be settled instead of
@@ -129,6 +164,10 @@ export class HilosView {
 
   protected readonly view = computed<Type<unknown> | null>(
     () => this.pages()[this.route().page] ?? null,
+  )
+  // The project's own skeleton for the page, or null for the default one.
+  protected readonly skeleton = computed<Type<unknown> | null>(
+    () => this.pageSkeletons()[this.route().page] ?? null,
   )
   protected readonly authSurfaceType = computed<Type<unknown> | null>(
     () => this.authSurface() ?? null,
@@ -145,6 +184,12 @@ export class HilosView {
   protected readonly modalOpen = signal(false)
 
   constructor() {
+    effect(() => {
+      this.skeletonFlag.set(this.pageLoading())
+    })
+    inject(DestroyRef).onDestroy(() => {
+      this.skeletonFlag.dispose()
+    })
     effect((onCleanup) => {
       const gate = this.authGate()
       if (!gate) {

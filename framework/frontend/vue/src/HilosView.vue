@@ -11,24 +11,41 @@ away again one round trip later. The `hilos-page-state` marker names the outcome
 — loading, error or ready — so the state is readable from the DOM rather than
 guessed from whichever element happened to render first.
 
+What stands in the page's place while it waits is a skeleton, not white (HIL-983):
+the one the project declared for that page key in `pageSkeletons`, or the default
+HilosSkeleton. It rises only once the wait has outlasted DEFAULT_SKELETON_DELAY_MS,
+so a page that answers quickly never flashes grey bars, and the outlet announces
+it once for the whole page — the bars inside are decorative. The frame takes the
+page's full height, so a project skeleton can lay out the way its page does. Only
+the FIRST answer is waited for: a resubscription after a reconnect keeps the page
+on screen and raises no skeleton.
+
 It also hosts the auth gate (HIL-165): when the project registers an
 `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 the `authGate`'s modal shows the same surface over the live page for a gated
 action. Both dismiss and resume through the core gate — no navigation. Omit the
 pair and behavior is unchanged: a 401 renders ErrorPage like any status. -->
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, onUnmounted, watch } from 'vue'
 import type { Component } from 'vue'
-import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core'
+import {
+  AUTH_SURFACE_HEADING_ID,
+  createDeferredFlagState,
+  createSignal,
+  DEFAULT_SKELETON_DELAY_MS,
+} from '@hilos/core'
 import type { AuthGate } from '@hilos/core'
 
 import ErrorPage from './ErrorPage.vue'
 import HilosModal from './HilosModal.vue'
+import HilosSkeleton from './HilosSkeleton.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
 
 const props = defineProps<{
   pages: Record<string, Component>
+  /** Page key -> the skeleton that page shows while it waits; HilosSkeleton otherwise. */
+  pageSkeletons?: Record<string, Component>
   authSurface?: Component
   authGate?: AuthGate
 }>()
@@ -48,6 +65,14 @@ const pageError = useSignal(router.pageError)
 const pageLoading = useSignal(router.pageLoading)
 const modalOpen = useSignal(props.authGate?.modalOpen ?? modalClosed)
 const view = computed(() => props.pages[route.value.page])
+
+const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
+const showSkeleton = useSignal(skeletonFlag.shown)
+watch(pageLoading, (loading) => skeletonFlag.set(loading), { immediate: true })
+onUnmounted(skeletonFlag.dispose)
+const skeleton = computed(
+  () => props.pageSkeletons?.[route.value.page] ?? HilosSkeleton,
+)
 
 // The one place the three outcomes of a navigation are named. The marker element
 // carries it so a test waits for the page to be settled instead of polling for
@@ -76,6 +101,14 @@ function onModalToggle(open: boolean): void {
   <component :is="props.authSurface" v-if="showAuthInPlace" />
   <ErrorPage v-else-if="pageError" :error="pageError" />
   <component :is="view" v-else-if="view && !pageLoading" />
+  <div
+    v-else-if="pageLoading && showSkeleton"
+    class="h-100"
+    data-id="hilos-page-skeleton"
+  >
+    <span class="visually-hidden" role="status">Loading…</span>
+    <component :is="skeleton" />
+  </div>
   <!-- No title of its own: the sign-in surface is identifier-first (HIL-423), so
   what the screen is called changes with the step the person is on, and only the
   surface knows that. It renders its own heading in the body. The dialog is still

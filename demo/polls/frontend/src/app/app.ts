@@ -42,6 +42,7 @@ import { LogViewer } from './views/hilos/logs/view'
 import { LogWorkers } from './views/hilos/logs/workers'
 import { LogsOverview } from './views/hilos/logs/overview'
 import { Main } from './views/main/main'
+import { MainSkeleton } from './views/main/main-skeleton'
 import { Privacy } from './views/privacy/privacy'
 import { SecurityOauth } from './views/hilos/security/oauth'
 import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
@@ -123,6 +124,7 @@ const LOGOUT_FALLBACK_MS = 5000
     } @else {
       <hilos-view
         [pages]="pages"
+        [pageSkeletons]="pageSkeletons"
         [authSurface]="authSurfaceType"
         [authGate]="authGate"
       />
@@ -212,6 +214,12 @@ export class App {
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,
     [HilosPages.LICENSE]: License,
+  }
+
+  // The pages that draw a skeleton of their own shape while they wait for their
+  // first answer (HIL-983); every other page gets the outlet's default skeleton.
+  protected readonly pageSkeletons: Record<string, Type<unknown>> = {
+    [PAGE_MAIN]: MainSkeleton,
   }
 
   constructor() {

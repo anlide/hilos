@@ -28,6 +28,11 @@ import {
   HILOS_ROUTE_DECLARATIONS,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
+  createDeferredFlagState,
+  DEFAULT_SKELETON_DELAY_MS,
+  HILOS_SKELETON_LINES,
+  type DeferredDelay,
+  type DeferredFlagState,
 } from '../src/index.js'
 
 it('exports the @hilos/core public surface', () => {
@@ -57,4 +62,11 @@ it('exports the @hilos/core public surface', () => {
   expect(HILOS_ROUTE_DECLARATIONS).toBeTypeOf('object')
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')
+  expect(createDeferredFlagState).toBeTypeOf('function')
+  expect(DEFAULT_SKELETON_DELAY_MS).toBeTypeOf('number')
+  expect(HILOS_SKELETON_LINES).toEqual([9, 6, 10])
+  const delay: DeferredDelay = DEFAULT_SKELETON_DELAY_MS
+  const flag: DeferredFlagState = createDeferredFlagState(delay)
+  expect(flag.shown.get()).toBe(false)
+  flag.dispose()
 })

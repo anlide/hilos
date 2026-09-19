@@ -1,15 +1,17 @@
 // The headless LoadingButton state machine: the delayed-spinner timer a button
 // view renders, with no DOM and no framework. A button shows a spinner only
 // after a short delay so a fast backend reply (the authoritative-backend
-// pattern: act -> block -> reply clears it) never flashes it. The timer logic is
-// subtle enough to be worth writing once here; the per-framework view only
-// drives `loading` in and renders `showSpinner` out (multiframework-core.md).
+// pattern: act -> block -> reply clears it) never flashes it. The timer itself
+// is the deferred flag (deferredFlag.ts), shared with the page skeleton; this
+// module keeps the button's own names on it. The per-framework view only drives
+// `loading` in and renders `showSpinner` out (multiframework-core.md).
 //
 // The trivial parts stay in the view by design (the floor of the primitive
 // contract): `disabled || loading` and swallowing a click while disabled are
 // one-liners no view gets wrong, so they are not pulled down here.
 
-import { createSignal, type ReadonlySignal } from '../state/signal.js'
+import type { ReadonlySignal } from '../state/signal.js'
+import { createDeferredFlagState, type DeferredDelay } from './deferredFlag.js'
 
 /** The default delay before the spinner appears, in milliseconds. */
 export const DEFAULT_SPINNER_DELAY_MS = 300
@@ -18,7 +20,7 @@ export const DEFAULT_SPINNER_DELAY_MS = 300
  * The spinner delay: a fixed number, or a getter read each time the spinner is
  * armed (so a view can keep it reactive without recreating the controller).
  */
-export type SpinnerDelay = number | (() => number)
+export type SpinnerDelay = DeferredDelay
 
 /** The headless LoadingButton state a view renders. */
 export interface LoadingButtonState {
@@ -44,33 +46,11 @@ export interface LoadingButtonState {
 export function createLoadingButtonState(
   delay: SpinnerDelay = DEFAULT_SPINNER_DELAY_MS,
 ): LoadingButtonState {
-  const showSpinner = createSignal(false)
-  let timer: ReturnType<typeof setTimeout> | undefined
-
-  function clearTimer(): void {
-    if (timer !== undefined) {
-      clearTimeout(timer)
-      timer = undefined
-    }
-  }
-
-  function setLoading(loading: boolean): void {
-    clearTimer()
-    if (!loading) {
-      showSpinner.set(false)
-
-      return
-    }
-    const ms = typeof delay === 'function' ? delay() : delay
-    timer = setTimeout(() => {
-      timer = undefined
-      showSpinner.set(true)
-    }, ms)
-  }
+  const flag = createDeferredFlagState(delay)
 
   return {
-    showSpinner,
-    setLoading,
-    dispose: clearTimer,
+    showSpinner: flag.shown,
+    setLoading: flag.set,
+    dispose: flag.dispose,
   }
 }

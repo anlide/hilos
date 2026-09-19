@@ -4,14 +4,23 @@
 // the dialog must name itself without hard-coding a visible title the
 // identifier-first surface owns itself — and since HIL-832 that name is the
 // heading the surface draws, not a fixed string of the frame's own.
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
-import { AUTH_SURFACE_HEADING_ID, createSignal } from '@hilos/core'
+//
+// And the outlet while a page waits for its first answer (HIL-983): a skeleton in
+// the page's place instead of white, never before the delay, gone on the answer,
+// and never over a refusal.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, render } from '@testing-library/react'
+import {
+  AUTH_SURFACE_HEADING_ID,
+  createSignal,
+  DEFAULT_SKELETON_DELAY_MS,
+} from '@hilos/core'
 import type {
   AuthGate,
   HilosRouter,
   PageRouteMatch,
   PageSubscriptionError,
+  WritableSignal,
 } from '@hilos/core'
 
 import { HilosView } from '../src/HilosView.js'
@@ -138,5 +147,154 @@ describe('HilosView auth modal', () => {
     const dialog = document.querySelector('[data-id="modal"]')
     expect(dialog?.getAttribute('aria-label')).toBe('Sign in')
     expect(dialog?.querySelector('.modal-title')).toBeNull()
+  })
+})
+
+const NOT_FOUND: PageSubscriptionError = {
+  page: 'user',
+  httpCode: 404,
+  errorCode: 'not_found',
+  message: 'Not found',
+}
+
+function UserSkeleton() {
+  return <div data-id="user-skeleton" />
+}
+
+interface WaitingRouter {
+  router: HilosRouter
+  pageLoading: WritableSignal<boolean>
+  pageError: WritableSignal<PageSubscriptionError | null>
+}
+
+/** A router whose page is still waiting for its first answer. */
+function waitingRouter(page: string): WaitingRouter {
+  const pageLoading = createSignal(true)
+  const pageError = createSignal<PageSubscriptionError | null>(null)
+
+  return {
+    pageLoading,
+    pageError,
+    router: {
+      ...routerWith(null),
+      currentRoute: createSignal<PageRouteMatch>({
+        page,
+        params: {},
+        admin: false,
+      }),
+      pageError,
+      pageLoading,
+    },
+  }
+}
+
+function renderView(router: HilosRouter, withSkeletons = false) {
+  render(
+    <HilosRouterContext.Provider value={router}>
+      <HilosView
+        pages={PAGES}
+        pageSkeletons={withSkeletons ? { user: UserSkeleton } : undefined}
+      />
+    </HilosRouterContext.Provider>,
+  )
+}
+
+function outlast(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+  })
+}
+
+function pageSkeleton(): Element | null {
+  return document.querySelector('[data-id="hilos-page-skeleton"]')
+}
+
+describe('HilosView skeleton', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('draws nothing in the first moments of the wait', () => {
+    renderView(waitingRouter('user').router)
+
+    outlast(DEFAULT_SKELETON_DELAY_MS - 1)
+    expect(pageSkeleton()).toBeNull()
+  })
+
+  it('draws the default skeleton once the wait outlasts the delay', () => {
+    renderView(waitingRouter('user').router)
+
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(
+      pageSkeleton()?.querySelector('[data-id="hilos-skeleton"]'),
+    ).not.toBeNull()
+  })
+
+  it('announces the page skeleton once, whatever it draws', () => {
+    renderView(waitingRouter('user').router)
+
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    const status = document.querySelectorAll('[role="status"]')
+    expect(status).toHaveLength(1)
+    expect(status[0].textContent).toBe('Loading…')
+  })
+
+  it('gives way to the page on its answer', () => {
+    const { router, pageLoading } = waitingRouter('user')
+    renderView(router)
+
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    act(() => {
+      pageLoading.set(false)
+    })
+    expect(pageSkeleton()).toBeNull()
+    expect(document.querySelector('[data-id="user-page"]')).not.toBeNull()
+  })
+
+  it('draws the skeleton the project declared for the page key', () => {
+    renderView(waitingRouter('user').router, true)
+
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(document.querySelector('[data-id="user-skeleton"]')).not.toBeNull()
+    expect(document.querySelector('[data-id="hilos-skeleton"]')).toBeNull()
+  })
+
+  it('falls back to the default skeleton for an undeclared page key', () => {
+    renderView(waitingRouter('settings').router, true)
+
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(document.querySelector('[data-id="user-skeleton"]')).toBeNull()
+    expect(document.querySelector('[data-id="hilos-skeleton"]')).not.toBeNull()
+  })
+
+  it('shows the refusal, not a skeleton, when the page is denied', () => {
+    const { router, pageError } = waitingRouter('user')
+    renderView(router)
+
+    act(() => {
+      pageError.set(NOT_FOUND)
+    })
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(pageSkeleton()).toBeNull()
+    expect(document.querySelector('[data-id="page-error"]')).not.toBeNull()
+  })
+
+  it('keeps the page-state marker going from loading to ready', () => {
+    const { router, pageLoading } = waitingRouter('user')
+    renderView(router)
+    const marker = () =>
+      document
+        .querySelector('[data-id="hilos-page-state"]')
+        ?.getAttribute('data-state')
+
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(marker()).toBe('loading')
+    act(() => {
+      pageLoading.set(false)
+    })
+    expect(marker()).toBe('ready')
   })
 })

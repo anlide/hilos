@@ -21,6 +21,7 @@ import {
   HilosModal,
   HilosOAuthCallbackPage,
   HilosSettingsPage,
+  HilosSkeleton,
   HilosUserPage,
   HilosUsersPage,
   HilosView,
@@ -37,6 +38,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HILOS_AUTH_GATE).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')
+  expect(HilosSkeleton).toBeTypeOf('function')
   expect(ErrorPage).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
   expect(HilosMaintenance).toBeTypeOf('function')

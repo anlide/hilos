@@ -190,7 +190,9 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   SPA;
 - standard **skeleton / empty / error** components for a data block's three
   states — the concrete form of "a placeholder for everything"
-  ([core-and-connection.md](core-and-connection.md)).
+  ([core-and-connection.md](core-and-connection.md)). Of the three, the skeleton
+  is built — **`HilosSkeleton`** in each view package, which `HilosView` also
+  draws in a page's place while the page waits for its first answer.
 
 The skeleton is a **data-block** loading state — it fills a block while that
 block's data streams in, not a wait on a code chunk: the app ships as a single

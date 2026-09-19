@@ -11,6 +11,7 @@ import {
   HilosOAuthCallbackPage,
   HilosPageHeadingIdContext,
   HilosRouterContext,
+  HilosSkeleton,
   HilosView,
   useConnectionState,
   useReconnectDragging,
@@ -21,6 +22,7 @@ it('exports the @hilos/react public surface', () => {
   expect(useReconnectDragging).toBeTypeOf('function')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')
+  expect(HilosSkeleton).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosRouterContext).toBeTypeOf('object')

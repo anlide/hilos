@@ -49,6 +49,7 @@ import AdminUsers from './views/AdminUsers/AdminUsers.vue'
 import Bot from './views/Bot/Bot.vue'
 import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
+import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import Profile from './views/Profile/Profile.vue'
 import Terms from './views/Terms/Terms.vue'
@@ -112,6 +113,12 @@ const pages: Record<string, Component> = {
   [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
   [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
   [HilosPages.LOGS_VIEW]: HilosLogsView,
+}
+
+// The pages that draw a skeleton of their own shape while they wait for their
+// first answer (HIL-983); every other page gets the outlet's default skeleton.
+const pageSkeletons: Record<string, Component> = {
+  [PAGE_MAIN]: MainSkeleton,
 }
 
 // The magic-link confirm route (HIL-283) and the OAuth callback route (HIL-281).
@@ -301,6 +308,7 @@ watch(isImpersonating, (value) => {
     <HilosView
       v-else
       :pages="pages"
+      :page-skeletons="pageSkeletons"
       :auth-surface="AuthSurface"
       :auth-gate="props.authGate"
     />

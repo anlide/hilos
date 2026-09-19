@@ -42,6 +42,7 @@ import HilosUser from './views/Hilos/Users/User'
 import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
 import Main from './views/Main/Main'
+import MainSkeleton from './views/Main/MainSkeleton'
 import Privacy from './views/Privacy/Privacy'
 import Settings from './views/Hilos/Settings/Settings'
 import Terms from './views/Terms/Terms'
@@ -90,6 +91,12 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
+}
+
+// The pages that draw a skeleton of their own shape while they wait for their
+// first answer (HIL-983); every other page gets the outlet's default skeleton.
+const pageSkeletons: Record<string, ComponentType> = {
+  [PAGE_MAIN]: MainSkeleton,
 }
 
 // The framework sign-out action (HIL-710): signing out writes a session, so it is
@@ -223,7 +230,12 @@ export default function App({ authGate }: AppProps) {
       ) : currentPath === AUTH_OAUTH_CALLBACK_PATH ? (
         <HilosOAuthCallbackPage context={hilosAuthContext} />
       ) : (
-        <HilosView pages={pages} authSurface={AuthSurface} authGate={authGate} />
+        <HilosView
+          pages={pages}
+          pageSkeletons={pageSkeletons}
+          authSurface={AuthSurface}
+          authGate={authGate}
+        />
       )}
     </HilosLayout>
   )

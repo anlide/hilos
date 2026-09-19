@@ -4,6 +4,7 @@ import { expect, it } from 'vitest'
 import {
   HilosLayout,
   HilosLink,
+  HilosSkeleton,
   HilosView,
   hilosRouterKey,
   useConnectionState,
@@ -16,5 +17,6 @@ it('exports the @hilos/vue public surface', () => {
   expect(HilosLayout).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('object')
   expect(HilosView).toBeTypeOf('object')
+  expect(HilosSkeleton).toBeTypeOf('object')
   expect(hilosRouterKey).toBeTypeOf('symbol')
 })

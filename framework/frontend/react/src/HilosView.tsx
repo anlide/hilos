@@ -11,21 +11,35 @@
 // the outcome — loading, error or ready — so the state is readable from the DOM
 // rather than guessed from whichever element happened to render first.
 //
+// What stands in the page's place while it waits is a skeleton, not white
+// (HIL-983): the one the project declared for that page key in `pageSkeletons`,
+// or the default HilosSkeleton. It rises only once the wait has outlasted
+// DEFAULT_SKELETON_DELAY_MS, so a page that answers quickly never flashes grey
+// bars, and the outlet announces it once for the whole page — the bars inside are
+// decorative. The frame takes the page's full height, so a project skeleton can
+// lay out the way its page does. Only the FIRST answer is waited for: a
+// resubscription after a reconnect keeps the page on screen and raises no
+// skeleton.
+//
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 // the `authGate`'s modal shows the same surface over the live page for a gated
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
-import { useContext } from 'react'
+import { useContext, useEffect, useRef } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import {
   AUTH_SURFACE_HEADING_ID,
+  createDeferredFlagState,
   createSignal,
+  DEFAULT_SKELETON_DELAY_MS,
   type AuthGate,
+  type DeferredFlagState,
 } from '@hilos/core'
 
 import { ErrorPage } from './ErrorPage.js'
 import { HilosModal } from './HilosModal.js'
+import { HilosSkeleton } from './HilosSkeleton.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'
 
@@ -36,6 +50,11 @@ const MODAL_CLOSED = createSignal(false)
 export interface HilosViewProps {
   /** Maps a page key to the component rendered while that page is current. */
   pages: Record<string, ComponentType>
+  /**
+   * Maps a page key to the skeleton that page shows while it waits for its first
+   * answer; a page not in the map shows HilosSkeleton.
+   */
+  pageSkeletons?: Record<string, ComponentType>
   /**
    * The project's sign-in surface (HIL-364), mounted in place of ErrorPage on an
    * anonymous 401 and inside the auth modal for a gated action. Omit it and a
@@ -51,9 +70,15 @@ export interface HilosViewProps {
  * surface when the page is gated by an anonymous 401, or the full-page error
  * surface for any other subscription error.
  *
- * @param props The page-key → component map and the optional auth slot.
+ * @param props The page-key → component map, the optional skeleton map, and the
+ *   optional auth slot.
  */
-export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
+export function HilosView({
+  pages,
+  pageSkeletons,
+  authSurface,
+  authGate,
+}: HilosViewProps) {
   const router = useContext(HilosRouterContext)
   if (!router) {
     throw new Error('HilosView requires a HilosRouterContext provider.')
@@ -66,6 +91,18 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
   const View = pages[route.page]
   const AuthSurface = authSurface
 
+  const skeletonFlagRef = useRef<DeferredFlagState | null>(null)
+  if (skeletonFlagRef.current === null) {
+    skeletonFlagRef.current = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
+  }
+  const skeletonFlag = skeletonFlagRef.current
+  const showSkeleton = useSignal(skeletonFlag.shown)
+  useEffect(() => {
+    skeletonFlag.set(pageLoading)
+  }, [skeletonFlag, pageLoading])
+  useEffect(() => () => skeletonFlag.dispose(), [skeletonFlag])
+  const Skeleton = pageSkeletons?.[route.page] ?? HilosSkeleton
+
   // The one place the three outcomes of a navigation are named. The marker
   // element carries it so a test waits for the page to be settled instead of
   // polling for an element that renders before the answer and disappears when
@@ -74,16 +111,28 @@ export function HilosView({ pages, authSurface, authGate }: HilosViewProps) {
   const showAuthInPlace =
     !!pageError && pageError.httpCode === 401 && !!AuthSurface
 
-  // The same three-way choice the Vue peer makes in its template: the surface in
-  // place of a 401'd page, the error surface for any other denial, the mapped
-  // page otherwise. (`AuthSurface` is re-tested only so TypeScript narrows it.)
+  // The same choice the Vue peer makes in its template: the surface in place of
+  // a 401'd page, the error surface for any other denial, the mapped page once it
+  // answered, its skeleton while the wait lasts. (`AuthSurface` is re-tested only
+  // so TypeScript narrows it.)
   let content: ReactNode
   if (showAuthInPlace && AuthSurface) {
     content = <AuthSurface />
   } else if (pageError) {
     content = <ErrorPage error={pageError} />
+  } else if (View && !pageLoading) {
+    content = <View />
+  } else if (pageLoading && showSkeleton) {
+    content = (
+      <div className="h-100" data-id="hilos-page-skeleton">
+        <span className="visually-hidden" role="status">
+          Loading…
+        </span>
+        <Skeleton />
+      </div>
+    )
   } else {
-    content = View && !pageLoading ? <View /> : null
+    content = null
   }
 
   return (
