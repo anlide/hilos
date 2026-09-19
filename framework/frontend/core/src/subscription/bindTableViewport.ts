@@ -1,13 +1,15 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
-// connection by its (page, tableKey) address. A table's controller only ever sees
-// the windows, deltas, counts, appends, own-creates, announcements, their
-// withdrawals and progress bars addressed to it — there is no central switchboard holding every table and
-// handing each its data (table-subscription.md). The binder subscribes the
-// connection's table_window / table_viewport_delta / table_viewport_count /
-// table_viewport_append / table_viewport_own_create / table_viewport_announce /
-// table_viewport_unannounce / table_progress / table_facet_counts signals, drops everything not addressed to this table or whose
-// page is no longer current, normalizes the rows into the page scope, and feeds
-// the sink. The returned unbind drops every subscription on the view's unmount.
+// connection by its (page, tableKey) address. A table's controller only ever
+// sees the windows, deltas, counts, appends, own-creates, announcements, their
+// withdrawals and progress bars addressed to it — there is no central
+// switchboard holding every table and handing each its data
+// (table-subscription.md). The binder subscribes the connection's table_window
+// / table_viewport_delta / table_viewport_count / table_viewport_append /
+// table_viewport_own_create / table_viewport_announce /
+// table_viewport_unannounce / table_progress / table_facet_counts signals,
+// drops everything not addressed to this table or whose page is no longer
+// current, normalizes the rows into the page scope, and feeds the sink. The
+// returned unbind drops every subscription on the view's unmount.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../protocol/constants.js'
