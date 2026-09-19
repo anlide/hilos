@@ -639,7 +639,7 @@ export class HilosConnection {
    * involving an agent, and a connection that stops pinging simply dies.
    * A sender refused this way sends when the mode stops holding the connection
    * (`protectedMode` with `active` false), as the page subscription does for its
-   * page_subscribe.
+   * page_subscribe and the notification binder for its group join.
    *
    * @param text The frame payload, already serialized.
    */
@@ -715,6 +715,10 @@ export class HilosConnection {
    * the backend fans to that group. Returns false, sending nothing, unless the
    * connection is `connected`, like {@link send}; a caller re-sends on the next
    * `connected` transition (a fresh socket starts a fresh subscription set).
+   * A join refused while protected mode holds the connection is sent again when
+   * the mode stops holding it; a caller whose group answers with content joins
+   * again then even if its join landed before the freeze, because no server side
+   * answers a group a second time.
    *
    * Group membership is many-per-connection and independent of the single page
    * subscription, so a live channel a connection keeps for its whole life (e.g.

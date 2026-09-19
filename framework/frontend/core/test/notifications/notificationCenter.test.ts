@@ -90,6 +90,21 @@ function frame(type: string, data: unknown): string {
   return JSON.stringify({ type, data })
 }
 
+const FREEZE = frame('protected_mode', {
+  active: true,
+  operation: 'restore',
+  title: 'Restoring a backup',
+  message: 'Back shortly.',
+})
+
+/** The frame letting this browser into the verification window. */
+const ADMISSION = frame('protected_mode', { active: false, acceptsPass: true })
+
+/** A welcome frame carrying the freeze block the socket opened into. */
+function welcome(protectedMode: Record<string, unknown>): string {
+  return frame('handshake', { build: 'build-a', protectedMode })
+}
+
 describe('notification store', () => {
   it('ingests a snapshot as the recent list and unread count', () => {
     const store = createHilosNotificationStore()
@@ -345,5 +360,100 @@ describe('notification binder', () => {
       type: 'group_subscribe',
       group: NOTIFICATION_GROUP,
     })
+  })
+
+  function joins(): { type: string; group?: string }[] {
+    return sentFrames().filter((f) => f.type === 'group_subscribe')
+  }
+
+  it('joins when the verification window lets in a tab loaded under the freeze', () => {
+    const { connection, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      welcome({
+        active: true,
+        operation: 'restore',
+        title: 'Restoring a backup',
+        message: 'Back shortly.',
+      }),
+    )
+    answerSession()
+    userId.set(42)
+
+    // The connection refuses the join while the mode holds it.
+    expect(joins()).toEqual([])
+
+    MockWebSocket.last.message(ADMISSION)
+
+    expect(joins()).toEqual([
+      { type: 'group_subscribe', group: NOTIFICATION_GROUP },
+    ])
+  })
+
+  it('joins again on admission when the join landed before the freeze, and takes the new snapshot', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+    MockWebSocket.last.message(
+      frame('group_response', {
+        group: `${NOTIFICATION_GROUP}:42`,
+        payload: { recent: [row({ id: 1 })], unreadCount: 1 },
+      }),
+    )
+    expect(joins()).toHaveLength(1)
+
+    MockWebSocket.last.message(FREEZE)
+    MockWebSocket.last.message(ADMISSION)
+
+    // The first snapshot was read from the database the operation may have
+    // replaced, and nothing on the server answers the group again on its own.
+    expect(joins()).toHaveLength(2)
+
+    MockWebSocket.last.message(
+      frame('group_response', {
+        group: `${NOTIFICATION_GROUP}:42`,
+        payload: { recent: [row({ id: 7 })], unreadCount: 0 },
+      }),
+    )
+
+    expect(store.notifications.get().map((n) => n.id)).toEqual([7])
+    expect(store.unreadCount.get()).toBe(0)
+  })
+
+  it('sends nothing on a frame that moves no hold', () => {
+    const { connection, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+
+    MockWebSocket.last.message(ADMISSION)
+
+    expect(joins()).toHaveLength(1)
+  })
+
+  it('joins once however many admission frames arrive', () => {
+    const { connection, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      welcome({
+        active: true,
+        operation: 'restore',
+        title: 'Restoring a backup',
+        message: 'Back shortly.',
+      }),
+    )
+    answerSession()
+    userId.set(42)
+
+    // A pass crossing and then the circle frame: two admissions for one browser.
+    MockWebSocket.last.message(ADMISSION)
+    MockWebSocket.last.message(ADMISSION)
+
+    expect(joins()).toHaveLength(1)
   })
 })

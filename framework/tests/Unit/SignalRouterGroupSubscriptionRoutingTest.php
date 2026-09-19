@@ -14,6 +14,7 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Context\DbContext;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -176,6 +177,37 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         self::assertSame(GroupErrorCode::FORBIDDEN, $payload->errorCode);
     }
 
+    public function testASecondJoinOfAHeldGroupIsAnsweredAgainAndLeavesOneMembership(): void
+    {
+        // The bell joins its group again when protected mode stops holding the connection,
+        // whether or not its earlier join was answered, because nothing on the server answers a
+        // group a second time (HIL-1079). That refresh stands on this: a join of a group the
+        // connection already holds is answered with a fresh frame, not ignored as a duplicate,
+        // and the membership is written over by name rather than added twice.
+        Hilos::$sr = new SignalRouterGroupTopologyTestRouter();
+        $dispatcher = new GroupSubscriptionDispatcher(new SignalRouterGroupTestAgent());
+        $join = new WebSocketGroupSubscribeSignalDTO('accept-key', SignalRouterAdmittingTestGroup::GROUP);
+
+        $dispatcher->dispatchSubscribe($join, SignalRouterAdmittingTestGroup::GROUP);
+        $dispatcher->dispatchSubscribe($join, SignalRouterAdmittingTestGroup::GROUP);
+
+        $answers = [];
+        while (($queued = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $name = $queued->signalName->getName();
+            self::assertNotSame(SignalConstants::SUBSCRIPTION_GROUP_ERROR, $name);
+            if ($name === SignalTypeConstants::GROUP_RESPONSE) {
+                self::assertInstanceOf(WebSocketSignalData::class, $queued->data);
+                $answers[] = $queued->data->targetAcceptKey;
+            }
+        }
+
+        self::assertSame(['accept-key', 'accept-key'], $answers);
+        self::assertSame(
+            SignalRouterAdmittingTestGroup::GROUP,
+            Hilos::$sr->groupSubscriptionName('accept-key', SignalRouterAdmittingTestGroup::GROUP),
+        );
+    }
+
     /**
      * Creates a group subscribe signal for routing tests.
      *
@@ -257,6 +289,54 @@ final class SignalRouterTopologyTestGroup extends AbstractGroup
     public const string SUBSCRIPTION_AGENT_TYPE = 'topology_agent';
 }
 
+final class SignalRouterAdmittingTestGroup extends AbstractGroup
+{
+    public const string GROUP = 'admitting_group';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'topology_agent';
+
+    /**
+     * Admits every connection: the fixture exists to reach the answer, not to judge.
+     *
+     * @param string $acceptKey WebSocket accept key of the joining connection
+     * @param array<string, string> $params Subscription params carried by the join frame
+     */
+    protected function assertSubscribable(string $acceptKey, array $params): void
+    {
+    }
+
+    /**
+     * Answers every join with the same fixed content.
+     *
+     * @param array<string, string> $params Subscription params carried by the join frame
+     * @return SignalDataInterface Fixed content
+     */
+    protected function buildGroupPayload(array $params): SignalDataInterface
+    {
+        return new SignalRouterAdmittingTestGroupPayload();
+    }
+}
+
+final class SignalRouterAdmittingTestGroupPayload implements SignalDataInterface
+{
+    /**
+     * @return array<string, mixed> Wire payload, empty: the fixture carries no fields
+     */
+    public function toArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static();
+    }
+}
+
 final class SignalRouterGroupTopologyTestDbContext extends DbContext
 {
     /**
@@ -271,6 +351,7 @@ final class SignalRouterGroupTopologyTestHilos extends HilosFacade
 {
     public const array GROUPS = [
         SignalRouterTopologyTestGroup::GROUP => SignalRouterTopologyTestGroup::class,
+        SignalRouterAdmittingTestGroup::GROUP => SignalRouterAdmittingTestGroup::class,
     ];
 
     /**

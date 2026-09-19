@@ -591,6 +591,16 @@ it, and the page is answered like any subscribe
 ([core-and-connection.md](../frontend/core-and-connection.md)). A page the server
 already holds is left to the server, so no tab is answered twice.
 
+The notification bell is the second sender a freeze refuses, and its half differs in one
+point. A group has no server-side re-answer — only a join answers it
+(`AbstractGroup::onSubscribe()`) — while its membership outlives the freeze, so a tab
+that joined before the freeze would carry the snapshot of the database the restore
+replaced, with the restore's own outcome notice written into the new one. So the
+notification binder joins again whenever the mode stops holding the connection, whether
+its earlier join was refused or answered; the server records the membership by name and
+answers again, so a tab is never a member twice (HIL-1079,
+[core-and-connection.md](../frontend/core-and-connection.md)).
+
 **On the way out the frame goes to everybody, the initiator included.**
 `DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and
 the frame means reload: after a restore the initiator's data is as stale as

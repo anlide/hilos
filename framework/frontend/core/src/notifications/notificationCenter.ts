@@ -8,7 +8,7 @@
 // `hilos_notifications:<userId>` out of the identity behind the socket, and a
 // name that tried to carry someone else's id is refused. The store here is the
 // reactive half a bell view renders; the binder wires it to a connection and
-// keeps the group joined across reconnects.
+// keeps the group joined across reconnects and across a freeze.
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
@@ -205,9 +205,9 @@ export const hilosNotifications: HilosNotificationStore =
 
 /**
  * Wire a notification store to a connection: route the live signals into the
- * store, and keep the group joined on every connect (and reconnect). The join
- * answers with the snapshot, so there is nothing else to ask for. Register
- * before the socket opens so that answer lands.
+ * store, and keep the group joined on every connect, reconnect and way out of
+ * protected mode. The join answers with the snapshot, so there is nothing else
+ * to ask for. Register before the socket opens so that answer lands.
  *
  * A connection with no user (anonymous, or a demo without auth) never joins, so
  * activating this on such a demo is a no-op rather than an error.
@@ -262,9 +262,11 @@ export function bindNotificationsScope(
     }
   })
 
-  // The user id we have joined the group for on the current socket; reset on any
-  // non-connected transition so a reconnect re-joins (a fresh socket loses every
-  // server-side membership).
+  // The user id this socket holds a join for that reached the server AFTER the
+  // last time protected mode held the connection. Reset on any non-connected
+  // transition so a reconnect re-joins (a fresh socket loses every server-side
+  // membership), on a refusal, and on a frame saying the mode holds the
+  // connection (see the protectedMode listener below).
   let joinedFor: number | null = null
   // Whether the current socket's handshake has answered — see the note above.
   // TODO(HIL-599): the server now holds a frame from a connection it has not been
@@ -282,8 +284,9 @@ export function bindNotificationsScope(
     if (uid === null || joinedFor === uid) {
       return
     }
-    joinedFor = uid
-    connection.subscribeToGroup(NOTIFICATION_GROUP)
+    if (connection.subscribeToGroup(NOTIFICATION_GROUP)) {
+      joinedFor = uid
+    }
   }
 
   /**
@@ -320,7 +323,8 @@ export function bindNotificationsScope(
    * overtakes it is refused as anonymous (the residue of HIL-599, whose server-side
    * park covers page frames only). Left marked as joined, this connection would then
    * carry no notifications at all until its socket dropped; unmarked, the next cue
-   * that reaches maybeJoin() — a state change, a login, the next handshake — joins
+   * that reaches maybeJoin() — a state change, a login, the next handshake, the mode
+   * stopping holding the connection — joins
    * again. Nothing is scheduled here: a refusal must not become a retry loop against
    * a server that means it.
    *
@@ -341,6 +345,18 @@ export function bindNotificationsScope(
       joinedFor = null
       sessionAnswered = false
     }
+  })
+  // The connection refuses every frame while protected mode holds it (send()
+  // returns false), and a membership a join won before the freeze was answered
+  // from a database the operation may have replaced. Nothing on the server
+  // answers a group again - only a join does - so leaving the mode is a cue to
+  // join, exactly as a new socket is (HIL-1079).
+  connection.on('protectedMode', (status) => {
+    if (status.active) {
+      joinedFor = null
+      return
+    }
+    maybeJoin()
   })
   // A login upgrades the session on a socket that already answered, so the id
   // arrives without a handshake behind it; re-check the join whenever it changes.
