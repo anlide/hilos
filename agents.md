@@ -243,3 +243,10 @@ never override a framework rule — see
 | File | Read when... |
 |---|---|
 | [demo/chat/agents.md](demo/chat/agents.md) | working in the chat demo: its agents, pages, data flows, runtime state, moderation/LLM setup, known issues |
+
+## Branches
+
+`total-refac` is the base of all current work. `master` holds the original
+Hilos — a different codebase (`App/`, `Daemon/`, `Service/` at the root), not
+an older state of this one. `master` is the default branch because this
+framework moves there once it is usable.
