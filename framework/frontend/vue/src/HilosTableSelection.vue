@@ -129,7 +129,7 @@ const reportTitle = computed(() => {
   if (props.report === null) {
     return ''
   }
-  const changed = `Changed ${props.report.touched} rows`
+  const changed = `Changed ${props.report.touched} ${props.report.touched === 1 ? 'row' : 'rows'}`
 
   return untouchedCount.value === 0
     ? changed

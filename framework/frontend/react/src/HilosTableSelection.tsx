@@ -135,7 +135,7 @@ export function HilosTableSelection<R>({
 
   let reportTitle = ''
   if (report !== null) {
-    const changed = `Changed ${report.touched} rows`
+    const changed = `Changed ${report.touched} ${report.touched === 1 ? 'row' : 'rows'}`
     reportTitle =
       untouchedCount === 0 ? changed : `${changed}, ${untouchedCount} untouched`
   }

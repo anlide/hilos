@@ -309,7 +309,7 @@ export class HilosTableSelection<R> {
     if (report === null) {
       return ''
     }
-    const changed = `Changed ${report.touched} rows`
+    const changed = `Changed ${report.touched} ${report.touched === 1 ? 'row' : 'rows'}`
 
     return this.untouchedCount() === 0
       ? changed
