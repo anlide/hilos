@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+
+import { setCustomSetting } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
@@ -11,8 +13,9 @@ import { gotoPage } from '../helpers/page'
 // tests (ng test is blocked upstream, so the templates are held by the AOT build
 // and by this). What the section DOES — following a tail (HIL-395), rotating and
 // carrying a batch off (HIL-763) — belongs to its own specs and is not asserted
-// here. Nothing is typed, and the one thing that is mutated — the logging mode —
-// is left on the default one, so a re-run finds the section as this one found it.
+// here. One value is typed on the general settings screen, so that the chosen mode
+// has something to put back, and the mode is left on the default one at the end,
+// so a re-run finds the section as this one found it.
 
 test('renders every screen of the logs section over the live socket', async ({
   page,
@@ -76,11 +79,24 @@ test('renders every screen of the logs section over the live socket', async ({
     page.getByTestId('hilos-setting-preset-investigation'),
   ).toBeVisible()
 
+  // A stand that has never applied a mode has no settings rows at all, so the values
+  // in force are the defaults — and those are what the chosen mode declares, so its
+  // card opens with no differences (HIL-906).
+  await expect(page.getByTestId('hilos-setting-preset-differences')).toHaveCount(0)
+
   // And the clicks themselves, which are the only writes the section makes: both were
   // refused until the agent serving this screen owned the settings it writes (HIL-888),
-  // and everything above passed anyway. A stand that has never applied a mode has no
-  // settings rows at all, so the values in force are the node's environment — which is
-  // not what the chosen mode declares - and the chosen card opens with its differences.
+  // and everything above passed anyway. To have something to put back, one member of
+  // the mode is edited by hand on the general settings screen, as the mockup has it —
+  // the retention age, which only changes which batches are suggested for takeout.
+  const retentionKey = 'logs.archive_retention.max_age_seconds'
+  await gotoPage(page, '/hilos/settings')
+  await page.getByTestId('hilos-table-search').fill(retentionKey)
+  await expect(page.getByTestId(`hilos-table-row-${retentionKey}`)).toBeVisible()
+  await setCustomSetting(page, retentionKey, '1209600')
+  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+
+  await gotoPage(page, '/hilos/logs/settings')
   await expect(page.getByTestId('hilos-setting-preset-differences')).toBeVisible()
 
   // Putting them back is the gesture the defect was found on, and it asks nothing

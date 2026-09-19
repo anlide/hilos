@@ -836,15 +836,17 @@ enum EnvConstants
     /**
      * @var string Seconds of elapsed time since the last rotation after which the per-node log
      * store owner rotates the live logs into the archive. Default 0 disables the age criterion;
-     * 0 for both age and size preserves the start-only rotation behavior.
+     * 0 here and for size with an empty schedule leaves only the rotation at node start — which is
+     * not the default, since size and schedule default to the Normal logging mode (HIL-906).
      * Serves as the default of the logs.rotation.max_age_seconds setting, which overrides it.
      */
     case LOG_ROTATION_MAX_AGE_SECONDS;
 
     /**
      * @var string Summed size in bytes of the live *.log files above which the per-node log store
-     * owner rotates them into the archive. Default 0 disables the size criterion; 0 for both age
-     * and size preserves the start-only rotation behavior.
+     * owner rotates them into the archive. Default 536870912 (512 MiB), the size axis of the Normal
+     * logging mode an installation starts on (HIL-906); 0 disables the size criterion. 0 here and
+     * for age with an empty schedule leaves only the rotation at node start.
      * Serves as the default of the logs.rotation.max_live_size_bytes setting, which overrides it.
      */
     case LOG_ROTATION_MAX_LIVE_SIZE_BYTES;
@@ -852,8 +854,10 @@ enum EnvConstants
     /**
      * @var string Five-field cron expression (server timezone) on which the per-node log store
      * owner rotates the live logs — the planned-rotation axis alongside the age and size axes.
-     * Empty disables the schedule axis; an unparseable expression is logged and also leaves it
-     * disabled. A missed window is not caught up (the state is worker-process-local).
+     * Default '0 3 * * *', the nightly schedule of the Normal logging mode an installation starts
+     * on (HIL-906). Set and empty disables the schedule axis — empty is an answer for this key, not
+     * an absence; an unparseable expression is logged and also leaves it disabled. A missed window
+     * is not caught up (the state is worker-process-local).
      * Serves as the default of the logs.rotation.cron setting, which overrides it.
      */
     case LOG_ROTATION_CRON;

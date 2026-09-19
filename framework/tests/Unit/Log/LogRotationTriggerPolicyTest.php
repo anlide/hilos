@@ -193,6 +193,31 @@ final class LogRotationTriggerPolicyTest extends TestCase
         $this->assertSame('0 3 * * *', $policy->cronExpression);
     }
 
+    public function testEnvironmentThatNamesNoRotationKeyRotatesAsTheNormalMode(): void
+    {
+        Hilos::$env = new EnvAccessor();
+
+        $policy = LogRotationTriggerPolicy::fromEnv();
+
+        $this->assertSame([], $policy->unreadable);
+        $this->assertSame('0 3 * * *', $policy->cronExpression);
+        $this->assertSame(536870912, $policy->maxLiveSizeBytes);
+        $this->assertSame(0, $policy->maxAgeSeconds);
+        $this->assertTrue($policy->isActive());
+    }
+
+    public function testEmptyScheduleInTheEnvironmentStillSwitchesTheAxisOff(): void
+    {
+        Hilos::$env = new EnvAccessor();
+        $this->putEnvironment(maxAge: '0', maxSize: '0', cron: '');
+
+        $policy = LogRotationTriggerPolicy::fromEnv();
+
+        $this->assertSame('', $policy->cronExpression);
+        $this->assertNull($policy->createCronRule());
+        $this->assertFalse($policy->isActive());
+    }
+
     /**
      * Writes all three rotation keys into the process environment, which the accessor reads first.
      *

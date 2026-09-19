@@ -199,9 +199,9 @@ final class HilosSettingPresetsPageSubscribeTest extends TestCase
     /**
      * Puts the installation on the middle mode with one member edited away from it.
      *
-     * Every other member is scripted to what the mode declares, because an unscripted one falls
-     * back to the environment and would show up as a difference of its own - which is the honest
-     * answer on a fresh installation, and one difference too many to read a case by.
+     * Every other member is scripted to what the mode declares, because an unscripted one reads
+     * the environment of the process the test runs in, and a case must not depend on that - a
+     * value set there would show up as a difference of its own, one too many to read a case by.
      */
     private function applyNormalWithOneDrift(): void
     {

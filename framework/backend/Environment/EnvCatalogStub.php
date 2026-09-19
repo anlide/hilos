@@ -351,8 +351,14 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::VAPID_SUBJECT->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::PUSH_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
-            EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
-            EnvConstants::LOG_ROTATION_CRON->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', emptyIsMissing: true),
+            EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                LogSettingsCatalog::ROTATION_MAX_LIVE_SIZE_FALLBACK_BYTES,
+                emptyIsMissing: true,
+            ),
+            // Empty is an answer for this key — the schedule axis is off — and not an absence:
+            // with a non-empty default, an empty value treated as missing could never switch it off.
+            EnvConstants::LOG_ROTATION_CRON->name => self::entry(EnvCatalogConstants::TYPE_STRING, LogSettingsCatalog::ROTATION_CRON_FALLBACK),
             EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 20, emptyIsMissing: true),
             EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,

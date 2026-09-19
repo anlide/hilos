@@ -391,7 +391,9 @@ a live key that shrank. Three axes, any of which fires: a cron schedule
 (`logs.rotation.max_age_seconds`), a summed size of the live files
 (`logs.rotation.max_live_size_bytes`). A numeric axis of zero is off, an empty or
 malformed expression is off, all three off is the start-only rotation the
-daemon has always done. Every **attempt** resets the age baseline, including one
+daemon has always done. An installation that configured nothing does not stand
+on that rotation: the defaults of the three keys are the Normal mode — nightly at
+03:00, 512 MiB, the age axis off (HIL-906). Every **attempt** resets the age baseline, including one
 that moved nothing — an empty directory would otherwise stay past its age
 forever and call for a rotation on every walk — and the baseline starts at the
 agent's start, because the daemon rotated on its way up a moment ago. The size
@@ -585,7 +587,13 @@ statement about a subject that is not its own.
 
 The installation starts on `normal`: the catalog default of `logs.preset` is a
 literal of the recipe and not an environment value, because the environment
-says what a node logs, not which mode an administrator picked.
+says what a node logs, not which mode an administrator picked. It starts clean,
+too: the defaults of the five members — the env catalog's and the fragment's own
+fallbacks — are the values of `normal`, so a fresh installation opens the screen
+with no difference, and `LogSettingsPresetsTest` holds that (HIL-906). An axis a
+node's environment switches off (`LOG_ROTATION_CRON` set and empty,
+`LOG_ROTATION_MAX_LIVE_SIZE_BYTES=0`) is that node's configuration, and the
+screen honestly shows it as a difference.
 `LogPresetNameRule` accepts a declared name or the empty string — "no mode
 applied" is a state the screen has a drawing for, unlike the write level, where
 no step of the scale means "write nothing" — so a typo made on the general
@@ -611,7 +619,8 @@ settings table as ordinary rows.
 With no row written, a key reads exactly what the node's environment says
 (`LOG_ROTATION_*`, `LOG_ARCHIVE_RETENTION_*`, `LOG_INDEX_PUSH_INTERVAL_MS`,
 `LOG_WRITE_LEVEL`): the environment is the catalog default, so an installation
-that configured nothing keeps behaving as it did. Writing a row overrides that
+that configured nothing runs on the environment defaults, which are the values
+of the Normal mode (see above). Writing a row overrides that
 for **every node of the cluster** — the database is shared, the environment is
 per node. A project that never folded the fragment in has no such keys, the
 settings are not consulted, and nothing is wrong: that is the plain env

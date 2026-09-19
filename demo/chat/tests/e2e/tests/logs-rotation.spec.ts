@@ -37,7 +37,10 @@ import { gotoPage, PAGE_READY } from '../helpers/page'
 // left raised keeps rotating every five seconds for the rest of the run, and the
 // worker logs a red e2e is diagnosed from would walk into the archive.
 
-/** The trigger axis the scenario switches on and off; 0 is the stand's default (no rotation ever). */
+/**
+ * The trigger axis the scenario switches on and off; 0 is its default. The stand's other two axes
+ * default to the night and the 512 MiB of the Normal mode (HIL-906).
+ */
 const ROTATION_MAX_AGE = 'logs.rotation.max_age_seconds'
 
 /** Count criterion of the retention rule: the newest N batches are protected whatever their age. */
@@ -234,12 +237,15 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // The archive as it stands, read here rather than at the top: every write above
   // repaints the badges and so re-serves this window, which means the picture on
   // screen now is one the page has answered for three times over. Nothing can
-  // have been added to it either — until the next line, no axis of rotation is on.
+  // have been added to it either — until the next line, only the nightly schedule
+  // and the size threshold are on, and the scenario reaches neither.
   const before = await rowKeys(page)
 
-  // And the trigger. Every axis of rotation is off on a stand, so until this line
-  // no rotation would ever happen; from here the owner of the log directory
-  // rotates on each of its live walks.
+  // And the trigger. Until this line a stand rotates only on the nightly schedule
+  // and at 512 MiB, neither of which the scenario reaches in its seconds; a run
+  // that crosses 03:00 gets one batch beyond its own, which lands after `before`
+  // and is counted as the scenario's — the checks below count "at least", so they
+  // hold. From here the owner of the log directory rotates on each of its live walks.
   await setSetting(tabB, ROTATION_MAX_AGE, '1')
 
   // The gate, before anything is waited for: the rule line on the observer says

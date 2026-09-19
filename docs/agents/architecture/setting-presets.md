@@ -68,7 +68,10 @@ What the declaration says, and what it does not:
   screen is refused at the moment of writing, while a name that stopped existing
   after it was written is read tolerantly as "none applied". Its catalog default
   is a literal of the recipe, not an environment value — the environment says
-  what a node does, not which mode an administrator picked.
+  what a node does, not which mode an administrator picked. And the preset it
+  names must match the defaults of its own members, or every fresh installation
+  opens a card with differences nobody made; `LogSettingsPresetsTest` is the
+  sample check (HIL-906).
 - **The order of the presets is the order of the cards.**
 
 The page costs one subclass of `AbstractHilosSettingPresetsPage` that declares
@@ -288,8 +291,9 @@ only then.
 - `composer run test:framework:unit` — the resolver's three questions and its
   all-or-nothing apply (`SettingPresetResolverTest`), the page's subscribe, push
   and stale-marking (`HilosSettingPresetsPageSubscribeTest`), and the Logs recipe
-  as the worked example: every preset covers the same keys and every value
-  passes its key's rule (`LogSettingsPresetsTest`), the selection rule
+  as the worked example: every preset covers the same keys, every value passes
+  its key's rule, and the default preset matches the defaults of its keys
+  (`LogSettingsPresetsTest`), the selection rule
   (`LogPresetNameRuleTest`).
 - `demo/chat` `composer run test:phpunit` — a preset applied through the settings
   doors, the differences after a hand edit, the revert, the refused unknown name,

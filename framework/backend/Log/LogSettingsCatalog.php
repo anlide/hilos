@@ -24,8 +24,9 @@ use Hilos\Utils\LogLevel;
  *
  * The environment stays the default under each key rather than a layer beside it: with no row
  * written, the key reads exactly what the node's env says, so an installation that configured
- * nothing keeps behaving as it did. Writing a row overrides that for every node of the cluster —
- * the database is shared, the environment is per node.
+ * nothing runs on the environment defaults — and those are the values of the Normal logging mode
+ * it starts on (HIL-906). Writing a row overrides that for every node of the cluster — the
+ * database is shared, the environment is per node.
  *
  * Every key names the rule its values must pass ({@see SettingsCatalogConstants::CATALOG_ENTRY_RULE}),
  * so a schedule that would never fire, or a negative threshold, is refused at the point of writing.
@@ -71,6 +72,12 @@ final class LogSettingsCatalog implements CatalogProviderInterface
     /** Share of the volume the free-space threshold falls back to when the environment cannot answer, in percent. */
     public const int FREE_SPACE_THRESHOLD_FALLBACK_PERCENT = 20;
 
+    /** Schedule the rotation falls back to when the environment cannot answer: the night of the Normal mode (HIL-906). */
+    public const string ROTATION_CRON_FALLBACK = '0 3 * * *';
+
+    /** Size threshold the rotation falls back to when the environment cannot answer: 512 MiB of the Normal mode (HIL-906). */
+    public const int ROTATION_MAX_LIVE_SIZE_FALLBACK_BYTES = 512 * 1024 * 1024;
+
     /**
      * Builds the log settings entries, each defaulting to its environment value.
      *
@@ -83,13 +90,13 @@ final class LogSettingsCatalog implements CatalogProviderInterface
                 self::envInt(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS, 0),
             ),
             self::ROTATION_MAX_LIVE_SIZE_BYTES => self::integerEntry(
-                self::envInt(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES, 0),
+                self::envInt(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES, self::ROTATION_MAX_LIVE_SIZE_FALLBACK_BYTES),
             ),
             self::ROTATION_CRON => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::envString(
                     EnvConstants::LOG_ROTATION_CRON,
-                    '',
+                    self::ROTATION_CRON_FALLBACK,
                 ),
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => CronExpressionRule::class,
             ],

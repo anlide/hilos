@@ -11,6 +11,7 @@ use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Hilos;
 use Hilos\Log\LogFreeSpaceThresholdRule;
 use Hilos\Log\LogIndexPushIntervalRule;
+use Hilos\Log\LogRotationTriggerPolicy;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogSettingsResolver;
 use PHPUnit\Framework\TestCase;
@@ -149,7 +150,9 @@ final class LogSettingsResolverTest extends TestCase
         $resolver = new LogSettingsResolver();
         $policy = $resolver->rotationPolicy();
 
-        $this->assertNull($policy->createCronRule());
+        // The refused row is not obeyed: the schedule is the environment's own, which on an
+        // environment that names nothing is the night of the Normal mode (HIL-906).
+        $this->assertSame(LogRotationTriggerPolicy::fromEnv()->cronExpression, $policy->cronExpression);
         $this->assertNotNull($resolver->takeComplaint());
     }
 
