@@ -39,12 +39,6 @@ use Hilos\Core\Table\TableFacetTally;
  * mirror is neither a DB nor a runtime source, raises no {@see SourceChange}, and there is
  * therefore nothing a delta could be built from. The page re-sends the window when the mirror's
  * fingerprint moves ({@see AbstractHilosLogsKeysPage::onAgentTick()}).
- *
- * Streams of the daemon's own class are dropped HERE rather than by the view. The section's mockup
- * knows two classes and the overview counts two, while {@see LogKeySummary} has three; a row
- * thrown away by the view would still take its place in the total count and make the pager promise
- * a page that holds nothing. The daemon's streams get their own screens once the section's mockups
- * are redrawn (proposal P-218).
  */
 final class HilosLogKeysTable extends TableDefinition implements ViewportTable
 {
@@ -54,7 +48,10 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
     /** Filter-map key: narrow the streams to one cluster node (absent in a single-node installation). */
     public const string FILTER_NODE = 'node';
 
-    /** Filter-map key: narrow the streams to one class, {@see LogKeySummary::CLASS_AGENT} or {@see LogKeySummary::CLASS_WORKER}. */
+    /**
+     * Filter-map key: narrow the streams to one class, {@see LogKeySummary::CLASS_DAEMON},
+     * {@see LogKeySummary::CLASS_AGENT} or {@see LogKeySummary::CLASS_WORKER}.
+     */
     public const string FILTER_CLASS = 'class';
 
     /** Wire slot the row payload rides under; must match the frontend stream slot. */
@@ -275,7 +272,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Projects one node's streams into rows, leaving the daemon's own class out of the list.
+     * Projects one node's streams into rows, one per key and of every class.
      *
      * @param ClusterLogNodeSlot $slot The node's slot in the cluster picture
      * @return list<array<string, mixed>> Row payloads of this node
@@ -286,10 +283,6 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
 
         $rows = [];
         foreach ($slot->index->keys as $summary) {
-            if ($summary->class === LogKeySummary::CLASS_DAEMON) {
-                continue;
-            }
-
             $growthPerDay = $growth[$summary->key] ?? null;
             $rows[] = [
                 HilosLogKeysTableRow::rowKey => self::rowKey($slot->nodeId, $summary->key),
@@ -333,7 +326,11 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
         // Any other value narrows nothing, the way an unknown state does on the rotation history:
         // a name this table has no class for is a mistake to ignore, not a window to empty.
         $class = self::filterString($query, self::FILTER_CLASS);
-        if ($class === LogKeySummary::CLASS_AGENT || $class === LogKeySummary::CLASS_WORKER) {
+        if (
+            $class === LogKeySummary::CLASS_DAEMON
+            || $class === LogKeySummary::CLASS_AGENT
+            || $class === LogKeySummary::CLASS_WORKER
+        ) {
             $rows = array_values(array_filter(
                 $rows,
                 static fn(array $row): bool => $row[HilosLogKeysTableRow::streamClass] === $class,

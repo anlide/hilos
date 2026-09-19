@@ -35,6 +35,7 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('By key')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-log-key-class-all')).toBeVisible()
+  await expect(page.getByTestId('hilos-log-key-class-daemon')).toBeVisible()
 
   await gotoPage(page, '/hilos/logs/workers')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('By worker')

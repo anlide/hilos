@@ -314,6 +314,84 @@ const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
       </template>
     </HilosViewportTable>
 
+    <!-- The legend of the three classes reads no data and has no state, so it stands
+    even under an empty table: it says what the files behind the class switch are. -->
+    <section data-id="hilos-log-key-classes">
+      <h2 class="h6 text-uppercase text-body-secondary mb-2 mt-4">
+        Three stream classes, and there will be no fourth
+      </h2>
+      <p class="small text-body-secondary">
+        The class is a property of which process writes the file, not of how the
+        screen shows it. There are exactly three, and the All button is the sum
+        of the other three.
+      </p>
+      <div class="row row-cols-1 row-cols-lg-3 g-3">
+        <div class="col">
+          <div class="border rounded-3 p-3 h-100">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i
+                class="bi bi-hdd-stack text-body-secondary"
+                aria-hidden="true"
+              ></i>
+              <span class="badge text-bg-light border">Daemon</span>
+            </div>
+            <div class="small mb-2">
+              <code>daemon.log</code>, <code>daemon-error.log</code> and the raw
+              stream beside each
+            </div>
+            <p class="small text-body-secondary mb-0">
+              Matched by the exact file name rather than by a prefix: the
+              daemon's own streams carry no prefix at all. There are four files,
+              not two — beside the one the logger writes lies a raw stream
+              taking everything PHP prints past it: a fatal error, a warning, a
+              trace. Rotation does not touch the raw pair; only a daemon restart
+              replaces it.
+            </p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="border rounded-3 p-3 h-100">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-cpu text-body-secondary" aria-hidden="true"></i>
+              <span class="badge text-bg-light border">Agents</span>
+            </div>
+            <div class="small mb-2"><code>agent-*.log</code></div>
+            <p class="small text-body-secondary mb-0">
+              One file per agent, the stream named after the agent type.
+            </p>
+          </div>
+        </div>
+        <div class="col">
+          <div class="border rounded-3 p-3 h-100">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i
+                class="bi bi-diagram-3 text-body-secondary"
+                aria-hidden="true"
+              ></i>
+              <span class="badge text-bg-light border">Workers</span>
+            </div>
+            <div class="small mb-2">
+              <code>worker-*.log</code> and
+              <code>worker-monopolistic-*.log</code>
+            </div>
+            <p class="small text-body-secondary mb-0">
+              Both prefixes are folded into one class: telling ordinary workers
+              from monopolistic ones is the neighbouring page's question, and
+              here it would only split the list.
+            </p>
+          </div>
+        </div>
+      </div>
+      <p class="small text-body-secondary mt-3 mb-0">
+        The daemon's streams are where the errors that bring anyone to this
+        section land. Hiding them here would keep a whole class of logs from the
+        operator.
+        <template v-if="clustered">
+          Each node has its own four, and they are carried off apart.
+        </template>
+      </p>
+    </section>
+
     <p class="small text-body-secondary mt-3 mb-0">
       The weight answers "how much is taken", the growth answers "when the room
       runs out"; a stream that is no longer written has no growth. Monopolistic

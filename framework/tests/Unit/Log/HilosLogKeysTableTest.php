@@ -24,8 +24,9 @@ use PHPUnit\Framework\TestCase;
  * `worker-0.log` on two machines apart, and the filters have to narrow a cluster-wide list rather
  * than one node's.
  *
- * Two decisions of the leaf are held here as well. The daemon's own streams are dropped while the
- * rows are collected, so they take no place in the total count the pager is drawn from. And a
+ * Two decisions of the leaf are held here as well. Every one of the three stream classes is listed
+ * and counted — the daemon's own streams among them (HIL-931), so the class filter's All is the sum
+ * of the other three and the pager is drawn from the same set the list shows. And a
  * stream whose measuring window has not filled yet carries an unknown growth, which the screen
  * draws as a dash and a descending sort has to put at the BOTTOM — the opposite of what an
  * in-memory ordering does with a null.
@@ -80,11 +81,10 @@ final class HilosLogKeysTableTest extends TestCase
     }
 
     /**
-     * The daemon's own streams are a class this screen does not draw, and dropping them in the view
-     * would not be the same thing: they would still be counted, and the pager would promise a page
-     * that holds nothing.
+     * The daemon's own streams are where the errors that bring anyone to this section land, so they
+     * are a row like any other: listed, and counted in the total the pager is drawn from.
      */
-    public function testTheDaemonsOwnStreamsAreNeitherListedNorCounted(): void
+    public function testTheDaemonsOwnStreamsAreListedAndCounted(): void
     {
         $this->picture($this->node('node-1', [
             $this->summary('daemon.log', class: LogKeySummary::CLASS_DAEMON),
@@ -94,9 +94,9 @@ final class HilosLogKeysTableTest extends TestCase
 
         $snapshot = new HilosLogKeysTable()->getPage(new TableQueryDTO());
 
-        $this->assertSame(1, $snapshot->totalCount);
+        $this->assertSame(3, $snapshot->totalCount);
         $this->assertSame(
-            ['agent-hilos_logs.log'],
+            ['agent-hilos_logs.log', 'daemon-error.log', 'daemon.log'],
             array_map(static fn($row): string => $row->key, $this->rows(new TableQueryDTO())),
         );
     }
@@ -209,6 +209,7 @@ final class HilosLogKeysTableTest extends TestCase
     {
         $this->picture($this->node('node-1', [
             $this->summary('agent-hilos_logs.log', class: LogKeySummary::CLASS_AGENT),
+            $this->summary('daemon.log', class: LogKeySummary::CLASS_DAEMON),
             $this->summary('worker-0.log', class: LogKeySummary::CLASS_WORKER),
             $this->summary('worker-monopolistic-chat.log', class: LogKeySummary::CLASS_WORKER),
         ]));
@@ -221,6 +222,12 @@ final class HilosLogKeysTableTest extends TestCase
             ['worker-0.log', 'worker-monopolistic-chat.log'],
             array_map(static fn($row): string => $row->key, $workers),
         );
+
+        $daemon = $this->rows(new TableQueryDTO(
+            filter: [HilosLogKeysTable::FILTER_CLASS => LogKeySummary::CLASS_DAEMON],
+        ));
+
+        $this->assertSame(['daemon.log'], array_map(static fn($row): string => $row->key, $daemon));
     }
 
     /**
@@ -253,8 +260,7 @@ final class HilosLogKeysTableTest extends TestCase
 
     /**
      * The number beside an option is the total its window would show once picked: the node counts are
-     * taken under the chosen class, the class counts on every class the search left, and neither
-     * counts the daemon's own streams the list never shows.
+     * taken under the chosen class, and the class counts on every class the search left.
      */
     public function testTheOptionCountsAreTheTotalsTheirWindowsWouldShow(): void
     {
@@ -275,7 +281,11 @@ final class HilosLogKeysTableTest extends TestCase
             )),
             [
                 HilosLogKeysTable::FILTER_NODE => ['node-1', 'node-2'],
-                HilosLogKeysTable::FILTER_CLASS => [LogKeySummary::CLASS_AGENT, LogKeySummary::CLASS_WORKER],
+                HilosLogKeysTable::FILTER_CLASS => [
+                    LogKeySummary::CLASS_DAEMON,
+                    LogKeySummary::CLASS_AGENT,
+                    LogKeySummary::CLASS_WORKER,
+                ],
                 'growth' => ['fast'],
             ],
         );
@@ -286,8 +296,9 @@ final class HilosLogKeysTableTest extends TestCase
         $this->assertSame(1, $node[TableConstants::FACET_KEY_OPTIONS]['node-1']->count);
         $this->assertSame(0, $node[TableConstants::FACET_KEY_OPTIONS]['node-2']->count);
         $class = $facets[HilosLogKeysTable::FILTER_CLASS];
-        $this->assertSame(2, $class[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(3, $class[TableConstants::FACET_KEY_ANY]->count);
         $this->assertTrue($class[TableConstants::FACET_KEY_ANY]->exact);
+        $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_DAEMON]->count);
         $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_AGENT]->count);
         $this->assertSame(1, $class[TableConstants::FACET_KEY_OPTIONS][LogKeySummary::CLASS_WORKER]->count);
     }

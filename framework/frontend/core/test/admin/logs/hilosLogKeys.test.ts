@@ -11,6 +11,7 @@ import {
   logKeysSearchPlaceholder,
   resolveHilosLogKeyRow,
   HILOS_LOG_CLASS_AGENT,
+  HILOS_LOG_CLASS_DAEMON,
   HILOS_LOG_CLASS_WORKER,
   KEYS_HEADER_SIGNAL,
   LOGS_KEYS_SIGNAL_SCHEMAS,
@@ -259,15 +260,18 @@ describe('formatLogKeyGrowth', () => {
 })
 
 describe('formatLogKeyClass and formatLogKeyState', () => {
-  it('labels the two classes this screen draws', () => {
+  it('labels the three classes this screen draws', () => {
     expect(formatLogKeyClass(row())).toBe('Worker')
     expect(formatLogKeyClass(row({ class: HILOS_LOG_CLASS_AGENT }))).toBe(
       'Agent',
     )
+    expect(formatLogKeyClass(row({ class: HILOS_LOG_CLASS_DAEMON }))).toBe(
+      'Daemon',
+    )
   })
 
   it('prints a class it does not know rather than folding it into one it does', () => {
-    expect(formatLogKeyClass(row({ class: 'daemon' }))).toBe('daemon')
+    expect(formatLogKeyClass(row({ class: 'docker' }))).toBe('docker')
   })
 
   it('tells a stream still being written from one left in the archive', () => {

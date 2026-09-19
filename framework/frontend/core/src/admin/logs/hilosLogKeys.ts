@@ -12,8 +12,7 @@
 // picture at all and which nodes exist ride the page's own header signal.
 //
 // The screen answers "how much is taken, and by which stream": it starts on the
-// heaviest, it commands nothing, and the daemon's own streams are not in it at all
-// (the backend drops them, proposal P-218).
+// heaviest, and it commands nothing.
 
 import { z } from 'zod'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
@@ -41,7 +40,10 @@ export interface HilosLogKeyRow {
   readonly key: string
   /** Cluster node the file lives on, or null in a single-node installation. */
   readonly node: string | null
-  /** Stream class: {@link HILOS_LOG_CLASS_AGENT} or {@link HILOS_LOG_CLASS_WORKER}. */
+  /**
+   * Stream class: {@link HILOS_LOG_CLASS_DAEMON}, {@link HILOS_LOG_CLASS_AGENT} or
+   * {@link HILOS_LOG_CLASS_WORKER}.
+   */
   readonly class: string
   /** Whether the stream is still being written, or only left in the archive. */
   readonly live: boolean
@@ -102,6 +104,13 @@ export const KEY_FILTER_NODE = 'node'
 
 /** Filter-map key: narrow the streams to one class. */
 export const KEY_FILTER_CLASS = 'class'
+
+/**
+ * Stream class: a log the daemon itself writes. Matched by the exact file name rather
+ * than by a prefix, and four files rather than two: `daemon.log`, `daemon-error.log`
+ * and the raw stream beside each, taking everything PHP prints past the logger.
+ */
+export const HILOS_LOG_CLASS_DAEMON = 'daemon'
 
 /** Stream class: a log an agent writes. */
 export const HILOS_LOG_CLASS_AGENT = 'agent'
@@ -383,12 +392,14 @@ export interface HilosLogKeyClassOption {
 }
 
 /**
- * The three choices the class switch offers. The empty value is "everything" and
- * clears the filter; there is no fourth choice, because the daemon's own streams are
- * not on this screen at all.
+ * The four choices the class switch offers. The empty value is "everything" and
+ * clears the filter; the other three are the closed list of stream classes, so All is
+ * their sum. They stand in the order of the section overview's tiles: daemon, agents,
+ * workers.
  */
 export const HILOS_LOG_CLASS_OPTIONS: readonly HilosLogKeyClassOption[] = [
   { value: '', label: 'All' },
+  { value: HILOS_LOG_CLASS_DAEMON, label: 'Daemon' },
   { value: HILOS_LOG_CLASS_AGENT, label: 'Agents' },
   { value: HILOS_LOG_CLASS_WORKER, label: 'Workers' },
 ]
@@ -397,14 +408,15 @@ export const HILOS_LOG_CLASS_OPTIONS: readonly HilosLogKeyClassOption[] = [
  * The label of one class badge.
  *
  * A class this build does not know is printed as it arrived rather than folded into
- * one of the two: a third class exists on the backend already
- * (`LogKeySummary::CLASS_DAEMON`) and is only kept off this screen by the table, so a
- * name that turns up here is news rather than a mistake to hide.
+ * one of the three: a fourth class would be news from the backend rather than a
+ * mistake to hide.
  *
  * @param row The stream row to label.
  */
 export function formatLogKeyClass(row: HilosLogKeyRow): string {
   switch (row.class) {
+    case HILOS_LOG_CLASS_DAEMON:
+      return 'Daemon'
     case HILOS_LOG_CLASS_AGENT:
       return 'Agent'
     case HILOS_LOG_CLASS_WORKER:

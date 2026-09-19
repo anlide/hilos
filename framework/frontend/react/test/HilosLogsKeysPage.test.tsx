@@ -257,6 +257,12 @@ describe('HilosLogsKeysPage', () => {
     )
 
     expect(filters.at(-1)).toEqual({ class: 'worker' })
+
+    fireEvent.click(
+      byId(container, 'hilos-log-key-class-daemon') as HTMLElement,
+    )
+
+    expect(filters.at(-1)).toEqual({ class: 'daemon' })
   })
 
   /**
