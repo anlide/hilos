@@ -60,6 +60,7 @@ use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\NodeCapacities;
 use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
@@ -292,6 +293,28 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
+        $this->logDeclaredCapacity();
+    }
+
+    /**
+     * Writes what capacity this node declares for placed work, or that it declares none and so
+     * takes none (HIL-445, HIL-448) — the one place an operator sees which nodes carry work.
+     */
+    private function logDeclaredCapacity(): void
+    {
+        $capacities = NodeCapacities::fromTags($this->localIdentity->capabilities)->capacities();
+        if ($capacities === []) {
+            Logger::info("Node {$this->localIdentity->nodeId} declares no capacity: it accepts no placed work"
+                . ' (CLUSTER_NODE_CAPABILITIES has no key=value)');
+            return;
+        }
+
+        $declared = [];
+        foreach ($capacities as $key => $capacity) {
+            $declared[] = $key . '=' . (string)$capacity;
+        }
+
+        Logger::info("Node {$this->localIdentity->nodeId} declares capacity [" . implode(', ', $declared) . '] and accepts placed work');
     }
 
     /**

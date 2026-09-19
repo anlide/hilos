@@ -8,13 +8,19 @@ use Hilos\Cluster\NodeIdentity;
 
 /**
  * Structured reading of a node's advertised capability tags for resource-aware placement
- * (HIL-182).
+ * (HIL-182, HIL-448).
  *
  * A node still advertises a flat {@see NodeIdentity} tag list on the wire; this value object
  * layers meaning on top of it without changing that contract. A tag is one of two shapes:
  *
  * - a boolean capability tag ("worker", "gpu") — a presence flag the hard gate matches;
- * - a numeric capacity ("cpu=8", "ram=32") — how much of a named resource the node has.
+ * - a numeric capacity ("cpu=8", "ram=32") — how much of a named resource the node has. It is
+ *   a CONSUMABLE stock (HIL-448): the leader subtracts the cost of every agent it placed on the
+ *   node, so what a newcomer is checked against is the free remainder, not the declared figure.
+ *
+ * A node that declares no numeric capacity at all accepts no placed work (HIL-445): it is not a
+ * candidate for the policy, and a placement naming it is refused. A capacity of zero is still a
+ * declaration — the node takes agents that cost nothing.
  *
  * The `key=value` grammar reuses the existing tag channel so no peer frame changes: a token
  * without `=`, or one whose value is not numeric, is kept as a plain tag, so operator typos
@@ -94,8 +100,28 @@ final class NodeCapacities
     }
 
     /**
+     * Reports whether the node declares any numeric capacity, and therefore accepts placed work.
+     *
+     * @return bool True when at least one `key=value` capacity was parsed, zero included
+     */
+    public function declaresCapacity(): bool
+    {
+        return $this->capacities !== [];
+    }
+
+    /**
+     * Returns every declared numeric capacity.
+     *
+     * @return array<string, float> Declared capacity keyed by resource name
+     */
+    public function capacities(): array
+    {
+        return $this->capacities;
+    }
+
+    /**
      * Returns the sum of every declared numeric capacity, a coarse "node strength" used as
-     * the best-fit tiebreaker among nodes with an equal preference score.
+     * the best-fit tiebreaker among nodes with an equal load and head count.
      *
      * @return float Total declared capacity
      */

@@ -543,41 +543,92 @@ statements; the mechanism they govern is built by HIL-447 and HIL-448.
 
 1. **Role is not a placement gate, and is not going to become one.** Candidacy is
    decided by what a node *declares*, never by whether it is a master or a slave.
-   Selection already works this way: `ClusterPlacement::pickBestNode()` builds the
-   candidate set from every online node, and `BestFitPlacementPolicy::isEligible()` —
-   required tags plus capacity minimums — is the whole hard gate. The word "master"
-   appears nowhere in it.
+   Selection works this way: `ClusterPlacement::pickBestNode()` builds a candidate from
+   every online node, and `PlacementCandidate::accepts()` — required tags, a declared
+   capacity, free room for the agent's cost — is the whole hard gate, the one
+   implementation both the policy and a placement by node name go through. The word
+   "master" appears nowhere in it.
 2. **A master may carry placed work, and carries node replicas today.** A `NODE`-scope
    replica starts on any node (the placement gate in `WorkerServer::startAgent()` lets
    it through), and `demo/cluster` runs its `db_probe` replica on two masters in a green
-   scenario (`scenario_11_cross_node_db_fact` writes on m1 and reads on m2). What a
-   master cannot accept today is only the demo's fleet, and only because the fleet
-   demands the project tag `worker` (`WorkerAgentDaemon::requiredCapabilities()`) that
-   the masters do not advertise (`CLUSTER_NODE_CAPABILITIES: ""` in
-   `docker-compose.cluster.yml`).
+   scenario (`scenario_11_cross_node_db_fact` writes on m1 and reads on m2) — a replica is
+   not placed by the policy and needs no declared capacity. What the stand's masters do not
+   accept is placed work, and by rule 4: they declare no capacity
+   (`CLUSTER_NODE_CAPABILITIES: ""` in `docker-compose.cluster.yml`).
 3. **The leader carries work by construction, and is a legal placement target — last
    among equals.** A `CLUSTER`+`LEADER` singleton runs where leadership sits (see *The
    placement gate* above). For policy placement, among otherwise equal candidates the
    node-selection policy picks the leader last, and only when no other eligible
    candidate exists does the work go to it rather than staying unplaced: a three-master
    cluster with no slaves must still place its work. It is a ranking rule in the
-   tiebreak chain of `BestFitPlacementPolicy::selectNode()`, not a gate
-   (not in the code yet — HIL-448).
+   tiebreak chain of `BestFitPlacementPolicy::selectNode()`, not a gate. It sits right
+   after the load after placement and before the head count: behind the head count the
+   leader would take every N-th free agent as soon as the other nodes caught up.
 4. **Acceptance of placed work must be declared.** A node that declares no capacity is
-   not a candidate; the declaration is the capacity model
-   (not in the code yet — HIL-448), and the refusal that names its absence is the
-   machine-readable one (not in the code yet — HIL-447). This inverts today's default,
-   where an agent that declares no required tags runs anywhere
-   (`AbstractAgentDaemon::requiredCapabilities()` returns `[]`) and "this master carries
-   nothing" is produced by an empty configuration string rather than by a decision.
-   Until then the tag mechanism stands unchanged and this statement is the intent.
+   not a candidate; the declaration is the capacity model (see *Consumable capacity and
+   agent cost* below), and the refusal that names its absence is the machine-readable one
+   (not in the code yet — HIL-447). This inverted the earlier default, where an agent that
+   declares no required tags ran anywhere and "this master carries nothing" was produced by
+   an empty configuration string rather than by a decision. The rule is in the code: a node
+   with no `key=value` in `CLUSTER_NODE_CAPABILITIES` is no candidate for the policy, a
+   placement naming it is refused (`PlacementCapabilityException::noDeclaredCapacity()`),
+   and every clustered node logs at start which capacity it declares or that it declares
+   none — so the stand's masters with `""` accept no placed work by rule.
 5. **There is no master-specific ceiling, and none will be added.** How much work a node
-   accepts is one model for every node: consumable capacity and an agent's declared cost
-   (not in the code yet — HIL-448), the cap and the honest refusal
+   accepts is one model for every node: consumable capacity and an agent's declared cost,
+   the cap and the honest refusal
    (not in the code yet — HIL-447). A busy master is a scheduling question, not a role
    question — agent work runs in a worker *process*, not on the master loop
    ([agent-lifecycle.md](agent-lifecycle.md)), so the risk is host CPU/IO contention,
    not a blocked event loop.
+
+## Consumable capacity and agent cost (HIL-448)
+
+Placement is resource accounting, not a pick by labels and head count.
+
+- **Capacity.** A node declares it in `CLUSTER_NODE_CAPABILITIES`, parsed by
+  `NodeCapacities::fromTags()`: a bare token (`worker`, `gpu`) is a boolean capability, a
+  `key=value` token with a number (`ram=10`, `slots=4`) is a consumable stock of the
+  resource `key`. Resource names are free — the resource worth guarding is the project's
+  (model slots, GPU memory), and the framework cannot list it. A node declares capacity when
+  it has at least one numeric tag, zero included; a resource it does not name is 0.
+- **Cost.** An agent declares it through `placementProfile()` on its daemon proxy:
+  `ResourceProfile::costs(['ram' => 2.0])`, zeros dropped, a negative value a
+  `LogicException`. The default `ResourceProfile::none()` costs nothing. The leader reads the
+  cost on its master loop each time it chooses a node, so it comes from the agent type, index
+  and constants — no database, file or network I/O
+  ([heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md)). An agent that does
+  not know its appetite in advance (an LLM worker under different models) declares a
+  reservation; nothing measures live consumption.
+- **Held capacity is derived, not counted.** For a node, it is the sum of the costs of the
+  leader's registry records on it in state Placing or Started; Unplaced, Refused, Failed and
+  Stopped hold nothing. The record of the agent being placed is left out, so its old
+  reservation never blocks its own re-placement. The cost is read from the executor at the
+  moment of choice — `PlacementRecord` does not store it.
+- **Gate** — `PlacementCandidate::accepts()`: every required tag, a declared capacity, and
+  free (declared minus held) at least the cost for every resource the agent costs.
+  Oversubscription is refused outright; to oversubscribe, declare more than the hardware has.
+  `ClusterPlacement::placeAgentOnNode()` checks the same gate against the same occupancy, so
+  a placement by name cannot overfill a node past the accounting.
+- **Ranking** — `BestFitPlacementPolicy`, in order: the lower load after placement (the
+  highest, over the costed resources, of held-plus-cost over declared; equal within `1e-9`),
+  which fills the nodes to equal shares — proportional to capacity — and sends a heavy agent
+  where it is the smaller share; a node that is not the leader ahead of the leader (HIL-445
+  rule 3, placed before the head count so it keeps biting); fewer live placements; the
+  greater total declared capacity; the smaller id. An agent that costs nothing scores 0
+  everywhere and is spread by head count, as before costs existed.
+- **Release and a new leader need no code.** A stop forgets the record, a move rewrites it,
+  a node loss either moves it or degrades it to Unplaced — each frees the reservation by
+  moving the record. A dead node is not online, so while its failover grace runs it is no
+  candidate and its reservation stands in nobody's way. A fresh leader rebuilds the registry
+  (`onBecameLeader()` plus the node reports) and derives the held capacity from it the same way.
+- **What spends no capacity.** `NODE`-scope replicas and `CLUSTER`+`LEADER` singletons are
+  not in the placement registry — no node is chosen for them. The operator declares a node's
+  capacity net of what the node carries by itself.
+- **Not here.** The node-level cap, the machine-readable refusal and its visibility —
+  HIL-447. What happens to work that fits nowhere, including a retry of Unplaced agents when
+  capacity is freed (today `retryUnplaced()` runs only when a node comes online) — HIL-446.
+  Moving running agents when a node appears or capacity frees — HIL-443; drain — HIL-444.
 
 ## Quorum-loss reaction and graceful-leave (HIL-341)
 
@@ -619,9 +670,9 @@ Detection and failover for a node that goes down — including a hung-but-connec
 ordinary socket close never catches — built on the registry (HIL-177), peer transport
 (HIL-178), placement primitive (HIL-179), and quorum-loss reaction (HIL-341). Re-placement
 picks the best-fit surviving node through the node-selection policy (HIL-182), which ranks by
-declared capacity and breaks ties toward the node already running the fewest agents — declared
-capacity never drops as agents land, so without that tiebreak a fleet of equal agents piles
-onto one node.
+load after placement over the consumable capacity (HIL-448) and breaks ties toward the node
+already running the fewest agents — agents that cost nothing are spread by that head count
+alone, so a fleet of equal free agents does not pile onto one node.
 
 - **Health detection — per-link keepalive.** Each `PeerLink` runs a keepalive in its
   `onTick`: any inbound frame refreshes "last heard"; after

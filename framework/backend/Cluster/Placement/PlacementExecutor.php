@@ -9,6 +9,7 @@ use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\HilosException;
 use Hilos\Socket\Server\WorkerServer;
+use LogicException;
 
 /**
  * Local port the placement coordinator uses to launch, stop, and describe agents on
@@ -36,12 +37,16 @@ interface PlacementExecutor
     public function requiredCapabilities(string $agentType, ?string $agentIndex): array;
 
     /**
-     * Returns the agent type's numeric resource demand, so the best-fit policy can rank
-     * candidate nodes and the leader can hard-check capacity minimums before placing.
+     * Returns the agent's resource cost, so the leader can reserve it against the node's declared
+     * capacity and keep a node without free room out of the candidates (HIL-448).
+     *
+     * Called on the leader's master loop for every live placement each time a node is chosen, so
+     * the answer comes from the agent type, index and constants — never from I/O.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
+     * @return ResourceProfile Resource cost; empty when the agent consumes nothing
+     * @throws LogicException When the agent declares a negative cost
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */

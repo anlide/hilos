@@ -50,6 +50,8 @@ Plus scenarios beyond that matrix:
     no phantom fleet           leaves the leader naming no node that runs nothing (HIL-719)
  17 foreign certificate        a node certified by an authority the cluster does not trust is
     refused                    refused on both ends of every link and admitted by nobody (HIL-1034)
+ 18 capacity is consumed       ballast fills the slaves in proportion to their declared ram,
+                               never lands on a master, and a full cluster places no more (HIL-448)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -100,6 +102,16 @@ CLAIMER_AGENT_ID = f"{CLAIMER_AGENT_TYPE}:{CLAIMER_INDEX}"
 # Seconds the leader waits between attempts at a policy placement that has not taken; mirrors
 # DaemonManager::POLICY_PLACEMENT_RETRY_SEC. A refusal outliving it is what "terminal" means here.
 POLICY_PLACEMENT_RETRY_SEC = 5.0
+
+# The demo agent that does nothing but hold capacity (HIL-448); mirrors AgentType::BALLAST.
+BALLAST_AGENT_TYPE = "ballast"
+# How many ballasts scenario 18 asks for: one more than the slaves have room for.
+BALLAST_ASKED = 8
+# Ram one ballast reserves; mirrors BallastAgentDaemon::RAM_COST.
+BALLAST_RAM_COST = 2
+# Ram each slave declares; mirrors CLUSTER_NODE_CAPABILITIES in docker-compose.cluster.yml. The
+# masters declare none, so by rule they take no placed work at all.
+SLAVE_RAM = {"s1": 10, "s2": 4}
 
 
 # ------------------------------------------------------- adaptive timing (HIL-367)
@@ -1394,6 +1406,76 @@ def scenario_17_foreign_certificate_refused():
 # 14 also has to come after 12 rather than before it: it deliberately makes a second owner of the
 # collection, and while that stands the nodes refuse each other's frames - which is exactly the
 # count 12 asserts is zero.
+def scenario_18_capacity_is_consumed():
+    """Placement spends what a node declares, and stops when it is spent (HIL-448).
+
+    The slaves declare different stocks of ram (s1 ram=10, s2 ram=4), the masters declare none,
+    and each ballast costs ram=2 and requires no tag. Eight are asked for, one at a time, from the
+    leader. What each assertion proves:
+
+    - s1 holds 5 and s2 holds 2: the spread follows the declared stock (10:4), not the head count.
+      A head count would have put the eight on all five nodes, one or two apiece;
+    - no master holds any: a ballast requires no tag, so the only thing keeping it off a master is
+      the rule that a node declaring no capacity accepts no placed work;
+    - ballast:7 has no record, and still has none after the retry interval has passed twice and a
+      second ask: a node whose stock is spent is no candidate, and with both slaves full there is
+      nowhere left. What should become of such work is HIL-446, not this scenario.
+
+    The order is deterministic - s1, s1, s2, s1, s1, then a tie at full load that the head count
+    gives to s2, then s1 - so the 5/2 split does not depend on timing. Placed LAST because the
+    ballasts stay up and hold capacity, and every earlier scenario is written against a stand
+    without them.
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    ids = [f"{BALLAST_AGENT_TYPE}:{i}" for i in range(BALLAST_ASKED)]
+
+    print(f"    asking {leader} for {BALLAST_ASKED} ballasts of ram={BALLAST_RAM_COST}, one at a time")
+    for i in range(BALLAST_ASKED):
+        assert client(leader, "test:cluster:agent:place", BALLAST_AGENT_TYPE, str(i)), \
+            f"could not ask {leader} to place {ids[i]}"
+
+    fit = sum(ram // BALLAST_RAM_COST for ram in SLAVE_RAM.values())
+
+    def ballasts_started(v):
+        rows = [placement_row(v, agent_id) for agent_id in ids]
+        return sum(1 for row in rows if row.get("state") == "started") == fit
+
+    views = wait_until(ballasts_started, CONVERGE_TIMEOUT, f"{fit} ballasts started")
+
+    def layout(v):
+        placed = {}
+        for agent_id in ids:
+            row = placement_row(v, agent_id)
+            if row:
+                placed[row.get("nodeId")] = placed.get(row.get("nodeId"), 0) + 1
+        return placed
+
+    placed = layout(views)
+    for slave, ram in SLAVE_RAM.items():
+        assert placed.get(slave, 0) == ram // BALLAST_RAM_COST, \
+            f"{slave} (ram={ram}) holds {placed.get(slave, 0)} ballasts, not {ram // BALLAST_RAM_COST}: {placed}"
+    for master in MASTERS:
+        assert master not in placed, f"{master} declares no capacity yet holds {placed[master]} ballasts"
+    last = ids[BALLAST_ASKED - 1]
+    assert placement_row(views, last) == {}, \
+        f"{last} was placed although both slaves are full: {placement_row(views, last)}"
+
+    # Full stays full: past two retry intervals and a second ask, the last ballast still has
+    # nowhere to go and the split has not moved.
+    time.sleep(POLICY_PLACEMENT_RETRY_SEC * 2)
+    assert client(leader, "test:cluster:agent:place", BALLAST_AGENT_TYPE, str(BALLAST_ASKED - 1)), \
+        f"could not ask {leader} for {last} a second time"
+    time.sleep(POLICY_PLACEMENT_RETRY_SEC)
+    views = inspect_all()
+    assert placement_row(views, last) == {}, \
+        f"{last} was placed on a second ask although both slaves are full: {placement_row(views, last)}"
+    assert layout(views) == placed, f"the ballast layout moved from {placed} to {layout(views)}"
+
+    return (f"{leader} placed {fit} ballasts as {placed} in proportion to {SLAVE_RAM}, none on a "
+            f"master, and found no room for {last}")
+
+
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
@@ -1412,6 +1494,7 @@ SCENARIOS = [
     ("15 db interest addressing", scenario_15_db_interest_addressing),
     ("16 recreated node leaves no phantom fleet", scenario_16_recreated_node_leaves_no_phantom_fleet),
     ("17 foreign certificate refused", scenario_17_foreign_certificate_refused),
+    ("18 capacity is consumed", scenario_18_capacity_is_consumed),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the

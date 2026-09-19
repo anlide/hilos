@@ -147,7 +147,8 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $context = new ClusterContext();
         $context->registerPlacement(new ClusterPlacement(
             self::SELF,
-            new FakePlacementMesh([self::SELF => []], online: [self::SELF]),
+            // A node that declares no capacity takes no placed work (HIL-448), so this one declares some.
+            new FakePlacementMesh([self::SELF => ['slots=10']], online: [self::SELF]),
             $executor,
         ));
         Hilos::$cluster = $context;

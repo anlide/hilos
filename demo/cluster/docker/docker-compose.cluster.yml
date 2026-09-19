@@ -156,13 +156,14 @@ services:
       CLUSTER_NODE_ID: m1
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m1.pem
       CLUSTER_NODE_ROLE: master
-      # Empty on purpose, and the emptiness is this stand's choice, not a framework rule: the
-      # framework gates placement on what a node DECLARES, never on its role (HIL-445). With no
-      # tag advertised the three masters host no member of the fleet - the fleet demands the
-      # project tag `worker` - while still hosting the per-node db_probe replica, which a node
-      # replica starts anywhere. The split is what scenarios 3 and 14 are written against.
-      # The decision and what follows from it: docs/agents/architecture/daemon-lifecycle.md,
-      # "Who may carry placed work (HIL-445)".
+      # Empty on purpose: the framework gates placement on what a node DECLARES, never on its
+      # role (HIL-445). An empty string declares no capacity, and a node with no key=value
+      # accepts NO placed work by rule (HIL-448) - no fleet member, no ballast, nothing the
+      # policy places. The per-node db_probe replica (AgentScope::NODE) is not placed and needs
+      # no capacity, so it still runs here. The split is what scenarios 3, 14 and 18 are
+      # written against. The decision and what follows from it:
+      # docs/agents/architecture/daemon-lifecycle.md, "Who may carry placed work (HIL-445)"
+      # and "Consumable capacity and agent cost (HIL-448)".
       CLUSTER_NODE_CAPABILITIES: ""
       CLUSTER_PEER_ADVERTISE: "10.185.0.11:8095"
       CLUSTER_SEEDS: "10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
@@ -231,7 +232,7 @@ services:
       CLUSTER_NODE_ID: s1
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s1.pem
       CLUSTER_NODE_ROLE: slave
-      CLUSTER_NODE_CAPABILITIES: "worker"
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=10"
       CLUSTER_PEER_ADVERTISE: "10.185.0.14:8095"
       CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.15:8095"
       # Fleet members share these regular workers. A member's synthetic job blocks its
@@ -257,7 +258,7 @@ services:
       CLUSTER_NODE_ID: s2
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s2.pem
       CLUSTER_NODE_ROLE: slave
-      CLUSTER_NODE_CAPABILITIES: "worker"
+      CLUSTER_NODE_CAPABILITIES: "worker,ram=4"
       CLUSTER_PEER_ADVERTISE: "10.185.0.15:8095"
       CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095"
       # Regular workers the fleet members share on this node; see s1.

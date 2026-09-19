@@ -20,7 +20,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
-use Hilos\Cluster\Placement\NodeCapacities;
+use Hilos\Cluster\Placement\PlacementCandidate;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Cluster\PendingLeadership;
@@ -479,17 +479,12 @@ final class ClusterContextTest extends TestCase
 
             /**
              * @param list<string> $requiredTags Boolean capability tags the agent must have
-             * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
-             * @param array<string, NodeCapacities> $candidates Candidate nodes' capacities keyed by node id
-             * @param array<string, int> $hosted Agents each candidate already hosts, keyed by node id
+             * @param ResourceProfile $cost Resource cost of the agent
+             * @param array<string, PlacementCandidate> $candidates Online candidate nodes keyed by node id
              * @return ?string The one node id this policy names
              */
-            public function selectNode(
-                array $requiredTags,
-                ResourceProfile $profile,
-                array $candidates,
-                array $hosted = [],
-            ): ?string {
+            public function selectNode(array $requiredTags, ResourceProfile $cost, array $candidates): ?string
+            {
                 return $this->nodeId;
             }
         };

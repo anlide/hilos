@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\Cluster\Tests\Unit;
 
+use Demo\Cluster\Agents\BallastAgent;
 use Demo\Cluster\Agents\ClaimerAgent;
 use Demo\Cluster\Agents\DbProbeAgent;
 use Demo\Cluster\Agents\WorkerAgent;
 use Demo\Cluster\Constants\AgentType;
 use Demo\Cluster\Constants\ClusterCapability;
+use Demo\Cluster\Constants\ClusterResource;
+use Demo\Cluster\Core\Agent\Daemon\BallastAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
@@ -67,7 +70,7 @@ final class ClusterTopologyRegistryTest extends TestCase
 
     public function testAgentRegistryHasThePlaceableWorkerAndTheClaimer(): void
     {
-        $this->assertSame([AgentType::WORKER, AgentType::CLAIMER, AgentType::DB_PROBE], array_keys(Hilos::AGENTS));
+        $this->assertSame([AgentType::WORKER, AgentType::CLAIMER, AgentType::BALLAST, AgentType::DB_PROBE], array_keys(Hilos::AGENTS));
 
         $entry = Hilos::AGENTS[AgentType::WORKER];
         $this->assertSame(WorkerAgent::class, AgentRegistry::workerClass($entry));
@@ -104,6 +107,29 @@ final class ClusterTopologyRegistryTest extends TestCase
         // node would clash with nobody and the scenario would pass on nothing.
         $daemon = new ClaimerAgentDaemon('0');
         $this->assertSame([ClusterCapability::WORKER], $daemon->requiredCapabilities());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
+    public function testTheBallastCostsRamAndRequiresNoTag(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::BALLAST];
+        $this->assertSame(BallastAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(BallastAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(is_subclass_of(BallastAgentDaemon::class, AbstractAgentDaemon::class));
+        $this->assertSame(AgentType::BALLAST, BallastAgent::AGENT_TYPE);
+
+        // Indexed and policy-placed like the claimer: only a scenario brings one up, and the
+        // leader chooses its node.
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+
+        // No tag, so only the rule "no declared capacity, no placed work" keeps it off the
+        // masters - the rule the capacity scenario checks (HIL-448). The cost is what it is for.
+        $daemon = new BallastAgentDaemon('0');
+        $this->assertSame([], $daemon->requiredCapabilities());
+        $this->assertSame([ClusterResource::RAM => BallastAgentDaemon::RAM_COST], $daemon->placementProfile()->costs);
+        $this->assertSame(['ram' => 2.0], $daemon->placementProfile()->costs, 'The scenario mirrors ram=2');
         $this->assertFalse($daemon->requiresMonopolisticProcess());
     }
 

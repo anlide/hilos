@@ -67,6 +67,7 @@ use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
+use LogicException;
 
 /**
  * WorkerServer - Worker communication server implementation.
@@ -2156,15 +2157,17 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Resolves the numeric resource demand an agent type declares, for the best-fit policy and
-     * the leader's capacity hard-check ({@see PlacementExecutor}).
+     * Resolves the resource cost an agent declares, for the leader's capacity accounting
+     * ({@see PlacementExecutor}).
      *
-     * Builds a throwaway agent daemon to read its type-level profile without registering it or
-     * touching a worker, mirroring {@see requiredCapabilities()}.
+     * Builds a throwaway agent daemon to read its cost without registering it or touching a
+     * worker, mirroring {@see requiredCapabilities()}. This runs on the leader's master loop, which
+     * is why the cost must come from the agent type, index and constants, without I/O.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
+     * @return ResourceProfile Resource cost; empty when the agent consumes nothing
+     * @throws LogicException When the agent declares a negative cost
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */

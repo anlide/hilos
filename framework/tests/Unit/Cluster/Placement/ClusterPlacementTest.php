@@ -45,6 +45,9 @@ final class ClusterPlacementTest extends TestCase
 {
     private const string SELF = 'leader';
 
+    /** @var string Capacity tag every node that must stay a candidate declares (HIL-448) */
+    private const string SLOTS = 'slots=10';
+
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
 
@@ -64,7 +67,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testLocalPlacementRunsTheLocalStartPathAndTracksStarted(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
 
@@ -80,7 +83,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testLocalPlacementFailureTracksFailedAndRethrows(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
         $executor->failWith = new NoSuitableWorkerException('regular', false);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
@@ -97,7 +100,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testRemotePlacementSendsPlaceFrameAndTracksPending(): void
     {
-        $mesh = new FakePlacementMesh(['gpu-node' => ['gpu']], linked: ['gpu-node']);
+        $mesh = new FakePlacementMesh(['gpu-node' => ['gpu', self::SLOTS]], linked: ['gpu-node']);
         $executor = new FakePlacementExecutor(['gpu']);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
 
@@ -113,7 +116,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testPlacementRejectsWhenTheNodeLacksARequiredCapability(): void
     {
-        $mesh = new FakePlacementMesh(['plain-node' => []], linked: ['plain-node']);
+        $mesh = new FakePlacementMesh(['plain-node' => [self::SLOTS]], linked: ['plain-node']);
         $executor = new FakePlacementExecutor(['gpu']);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
 
@@ -209,7 +212,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testALocalPlacementWaitingForAWorkerIsPlacingUntilSeated(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
@@ -227,7 +230,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testALocalPlacementWhoseWaitRunsOutIsFailed(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $executor = new FakePlacementExecutor();
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
@@ -276,7 +279,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testStopOnARemoteNodeSendsAStopFrameAndForgets(): void
     {
-        $mesh = new FakePlacementMesh(['gpu-node' => ['gpu']], linked: ['gpu-node']);
+        $mesh = new FakePlacementMesh(['gpu-node' => ['gpu', self::SLOTS]], linked: ['gpu-node']);
         $executor = new FakePlacementExecutor(['gpu']);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
         $placement->placeAgentOnNode('render', '9', 'gpu-node');
@@ -332,7 +335,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testLocateAnswersHereForALocallyPlacedAgent(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->placeAgentOnNode('chat', '1', self::SELF);
 
@@ -355,7 +358,7 @@ final class ClusterPlacementTest extends TestCase
     {
         // 'leader' lacks the gpu tag, so the only capable target is the spare 'node-c'.
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -382,7 +385,7 @@ final class ClusterPlacementTest extends TestCase
     public function testAFlappedNodeBackBeforeGraceCancelsItsFailover(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -408,7 +411,7 @@ final class ClusterPlacementTest extends TestCase
     {
         $logFile = $this->captureLog();
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -432,7 +435,7 @@ final class ClusterPlacementTest extends TestCase
     public function testAFailoverDeadlineSparesAnAgentAlreadyMovedOffTheLostNode(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -460,7 +463,7 @@ final class ClusterPlacementTest extends TestCase
     {
         // No capable node besides the dead one: failover has nowhere to go.
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS]],
             linked: ['node-b'],
             online: [self::SELF, 'node-b'],
         );
@@ -482,7 +485,7 @@ final class ClusterPlacementTest extends TestCase
         );
 
         // A capable node joins: the leader retries the unplaced agent onto it.
-        $mesh->capabilities['node-c'] = ['gpu'];
+        $mesh->capabilities['node-c'] = ['gpu', self::SLOTS];
         $mesh->linked[] = 'node-c';
         $mesh->online = [self::SELF, 'node-c'];
         $placement->noteNodeOnline('node-c', 2000.0);
@@ -629,7 +632,7 @@ final class ClusterPlacementTest extends TestCase
     {
         // 'leader' lacks the gpu tag, so the agent can only land back on a data-plane node.
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -653,7 +656,7 @@ final class ClusterPlacementTest extends TestCase
     public function testTheEmptiedNodeGetsItsOwnAgentsBack(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -676,7 +679,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testAPlacingRecordSurvivesAReportThatDoesNotNameIt(): void
     {
-        $mesh = new FakePlacementMesh([], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $mesh = new FakePlacementMesh(['node-b' => [self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->placeAgentOnNode('render', '9', 'node-b');
@@ -693,7 +696,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testARefusedRecordSurvivesAReportThatDoesNotNameIt(): void
     {
-        $mesh = new FakePlacementMesh([], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $mesh = new FakePlacementMesh(['node-b' => [self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->refusePlacement('render', '9', 'node-b');
@@ -711,7 +714,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testAnAgentTheReportStillNamesIsLeftWhereItIs(): void
     {
-        $mesh = new FakePlacementMesh([], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $mesh = new FakePlacementMesh(['node-b' => [self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
@@ -773,7 +776,7 @@ final class ClusterPlacementTest extends TestCase
     public function testPlaceAgentOnBestNodeReturnsNullWhenNoNodeIsAFit(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['worker']],
+            capabilities: ['node-b' => ['worker', self::SLOTS]],
             linked: ['node-b'],
             online: [self::SELF, 'node-b'],
         );
@@ -784,34 +787,129 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame(0, $placement->registry()->count());
     }
 
-    public function testBestFitPrefersACapacityThePreferenceWeights(): void
+    public function testHeldCapacitySendsTheNextPlacementElsewhereUntilNoNodeHasRoom(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['few-gpu' => ['worker', 'gpu=1'], 'many-gpu' => ['worker', 'gpu=4']],
-            linked: ['few-gpu', 'many-gpu'],
-            online: [self::SELF, 'few-gpu', 'many-gpu'],
+            capabilities: ['node-b' => ['worker', 'ram=4'], 'node-c' => ['worker', 'ram=4']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
         );
-        $profile = ResourceProfile::create(preferences: ['gpu' => 1.0]);
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker'], profile: $profile));
+        $cost = ResourceProfile::costs(['ram' => 3.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker'], profile: $cost));
 
-        $this->assertSame('many-gpu', $placement->placeAgentOnBestNode('render', null));
+        $this->assertSame('node-b', $placement->placeAgentOnBestNode('render', '1'));
+        $this->assertSame('node-c', $placement->placeAgentOnBestNode('render', '2'), 'node-b has 1 of 4 free, the cost is 3');
+        $this->assertNull($placement->placeAgentOnBestNode('render', '3'), 'Both nodes are held full: no candidate');
     }
 
-    public function testNamedPlacementRejectsWhenACapacityMinimumIsUnmet(): void
+    public function testStoppingAnAgentFreesItsCapacity(): void
     {
-        $mesh = new FakePlacementMesh(['weak' => ['worker', 'ram=8']], linked: ['weak'], online: [self::SELF, 'weak']);
-        $profile = ResourceProfile::create(minimums: ['ram' => 32.0]);
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker'], profile: $profile));
+        $mesh = new FakePlacementMesh(['node-b' => ['ram=3']], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $cost = ResourceProfile::costs(['ram' => 3.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost));
+        $placement->placeAgentOnNode('render', '1', 'node-b');
+        $this->assertNull($placement->placeAgentOnBestNode('render', '2'));
+
+        $placement->stopAgentOnNode('render', '1', 'node-b');
+
+        $this->assertSame('node-b', $placement->placeAgentOnBestNode('render', '2'), 'The stop released the reservation');
+    }
+
+    public function testAnAgentDegradedToUnplacedHoldsNothing(): void
+    {
+        $mesh = new FakePlacementMesh(['node-b' => ['ram=3']], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $cost = ResourceProfile::costs(['ram' => 3.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost), null, failoverGraceMs: 500);
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+
+        $mesh->online = [self::SELF];
+        $placement->noteNodeOffline('node-b', 1000.0);
+        $placement->tick(1000.6);
+        $this->assertSame(PlacementState::Unplaced, $placement->registry()->get('render:1')?->state);
+
+        // node-b is back in the online set without the join that would retry render:1 onto it.
+        $mesh->online = [self::SELF, 'node-b'];
+
+        $this->assertSame('node-b', $placement->placeAgentOnBestNode('chat', '1'), 'The unplaced record still names node-b but holds nothing');
+    }
+
+    public function testAnAgentsOwnRecordDoesNotBlockItsRePlacement(): void
+    {
+        $mesh = new FakePlacementMesh(['node-b' => ['ram=3']], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $cost = ResourceProfile::costs(['ram' => 3.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost));
+        $placement->placeAgentOnNode('render', '1', 'node-b');
+        $mesh->sent = [];
+
+        $placement->placeAgentOnNode('render', '1', 'node-b');
+
+        $this->assertCount(1, $mesh->sent, 'The agent\'s old reservation does not count against itself');
+    }
+
+    public function testANamedPlacementOntoANodeWithoutDeclaredCapacityIsRefused(): void
+    {
+        $mesh = new FakePlacementMesh(['bare' => ['worker']], linked: ['bare'], online: [self::SELF, 'bare']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
 
         try {
-            $placement->placeAgentOnNode('render', null, 'weak');
-            $this->fail('A placement onto a node below a required capacity minimum must be rejected');
-        } catch (PlacementCapabilityException) {
-            // expected
+            $placement->placeAgentOnNode('render', '1', 'bare');
+            $this->fail('A node that declares no capacity takes no placed work, even work that costs nothing');
+        } catch (PlacementCapabilityException $e) {
+            $this->assertSame(
+                "Cannot place agent 'render:1' on node 'bare': the node declares no capacity, so it accepts no placed work",
+                $e->getMessage(),
+            );
         }
 
-        $this->assertSame([], $mesh->sent, 'Nothing is sent when the resource minimum is unmet');
+        $this->assertSame([], $mesh->sent);
         $this->assertSame(0, $placement->registry()->count());
+    }
+
+    public function testANamedPlacementBeyondTheFreeCapacityIsRefused(): void
+    {
+        $mesh = new FakePlacementMesh(['node-b' => ['ram=5']], linked: ['node-b'], online: [self::SELF, 'node-b']);
+        $cost = ResourceProfile::costs(['ram' => 3.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost));
+        $placement->placeAgentOnNode('render', '1', 'node-b');
+        $mesh->sent = [];
+
+        try {
+            $placement->placeAgentOnNode('render', '2', 'node-b');
+            $this->fail('A placement by name must not overfill the node past the accounting');
+        } catch (PlacementCapabilityException $e) {
+            $this->assertSame(
+                "Cannot place agent 'render:2' on node 'node-b': insufficient free capacity [ram: needs 3, free 2]",
+                $e->getMessage(),
+            );
+        }
+
+        $this->assertSame([], $mesh->sent);
+        $this->assertNull($placement->registry()->get('render:2'));
+    }
+
+    public function testANewLeaderCountsTheCostOfReportedAgents(): void
+    {
+        // A head count would pick node-b (2 agents against 3); the reported costs leave it full.
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['ram=4'], 'node-c' => ['ram=10']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $cost = ResourceProfile::costs(['ram' => 2.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost));
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '1'),
+            new PeerPlacedAgentEntry('render', '2'),
+        ]));
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '3'),
+            new PeerPlacedAgentEntry('render', '4'),
+            new PeerPlacedAgentEntry('render', '5'),
+        ]));
+
+        $this->assertSame('node-c', $placement->placeAgentOnBestNode('render', '6'));
     }
 
     public function testFailoverReplacesOntoTheStrongestSurvivingCapableNode(): void
@@ -841,7 +939,7 @@ final class ClusterPlacementTest extends TestCase
      */
     public function testARefusedClaimStopsTheAgentAndKeepsTheRecord(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
@@ -859,7 +957,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testFailoverDoesNotResurrectARefusedAgent(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
@@ -875,7 +973,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testTheStoppedStatusConfirmingTheRefusalDoesNotUndoIt(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
@@ -892,7 +990,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testANodeStillHostingARefusedAgentIsToldToStopItAgain(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
@@ -911,7 +1009,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testARefusedAgentIsAddressedNowhereAndPublishedNowhere(): void
     {
-        $mesh = new FakePlacementMesh([self::SELF => [], 'gpu-node' => []], ['gpu-node'], [self::SELF, 'gpu-node']);
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader();
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
@@ -939,7 +1037,7 @@ final class ClusterPlacementTest extends TestCase
     public function testAnExpiredPlacementAskAsksTheNodeInsteadOfRePlacing(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -973,7 +1071,7 @@ final class ClusterPlacementTest extends TestCase
     public function testAReportNamingTheAgentEndsTheWaitAsStarted(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -1000,7 +1098,7 @@ final class ClusterPlacementTest extends TestCase
     public function testAReportWithoutTheAgentRePlacesTheTimedOutPlacing(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -1027,7 +1125,7 @@ final class ClusterPlacementTest extends TestCase
     public function testALateStartedFromANodeTheRecordLeftIsStoppedAndIgnored(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );
@@ -1049,7 +1147,7 @@ final class ClusterPlacementTest extends TestCase
     public function testALateStoppedFromANodeTheRecordLeftDoesNotForgetIt(): void
     {
         $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
             online: [self::SELF, 'node-b', 'node-c'],
         );

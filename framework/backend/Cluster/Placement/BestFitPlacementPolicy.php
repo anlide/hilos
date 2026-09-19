@@ -5,113 +5,86 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Placement;
 
 /**
- * The default node-selection policy (HIL-182): places an agent on the capable node that best
- * fits its resource demand — heavy workers gravitate to strong nodes, light ones to weak.
+ * The default node-selection policy (HIL-182, HIL-448): places an agent where it leaves the
+ * node least loaded, so the fleet fills the nodes in proportion to what they declare.
  *
  * Selection runs in two stages over the candidate nodes:
  *
- * 1. Hard gate — a node is eligible only when it advertises every required capability tag and
- *    its declared capacity meets every hard minimum in the profile. This mirrors the
- *    coordinator's own capability check, so the policy never picks a node a placement would
- *    then reject.
- * 2. Soft ranking — among eligible nodes, each is scored by the profile's preference weights
- *    against the node's declared capacities (a heavier preference for a resource pulls toward
- *    nodes that have more of it). The highest score wins; ties break toward the node already
- *    hosting the fewest placed agents, then toward the node with the greater total declared
- *    capacity (the stronger node), then toward the lexicographically smaller id so the pick is
- *    deterministic.
- *
- * An empty profile scores every eligible node zero, so selection falls through to the
- * tiebreaks: the least loaded capable node, and the strongest among equals. That makes
- * "spread over the capable nodes" the sensible default before any agent declares a numeric
- * demand — without it a fleet of identical agents would pile onto one node, since declared
- * capacity alone never changes as agents land.
+ * 1. Hard gate — {@see PlacementCandidate::accepts()}: every required capability tag present,
+ *    some capacity declared at all, and free room for every resource the agent costs. A node
+ *    that exhausted its stock stops being a candidate here, however few agents it runs.
+ * 2. Ranking — among the accepted nodes, in order:
+ *    1. the lower load after placement ({@see PlacementCandidate::loadAfter()}), equal within
+ *       {@see LOAD_EPSILON} so 3/5 and 6/10 tie. Filling every node to the same share is what
+ *       makes the spread proportional to capacity, and it sends a heavy agent to the node where
+ *       it is the smaller share — the strong one;
+ *    2. a node that is not the leader ahead of the leader (HIL-445, rule 3). The leader is last
+ *       among equals right after the load, before the head count: behind the head count it
+ *       would take every N-th free agent as soon as the others caught up, and the rule would
+ *       stop biting. It stays a candidate — when it is the only node that fits, it gets the work;
+ *    3. fewer live placements — the head count (12cb4386). An agent that costs nothing scores 0
+ *       everywhere and is spread by this rule alone, exactly as before costs existed;
+ *    4. the greater total declared capacity — the stronger node;
+ *    5. the lexicographically smaller id, so the pick is deterministic.
  */
 final class BestFitPlacementPolicy implements PlacementPolicy
 {
+    /** @var float Tolerance under which two loads after placement count as equal */
+    private const float LOAD_EPSILON = 1e-9;
+
     /**
      * @param list<string> $requiredTags Boolean capability tags the agent must have
-     * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
-     * @param array<string, NodeCapacities> $candidates Candidate nodes' capacities keyed by node id
-     * @param array<string, int> $hosted Agents each candidate already hosts, keyed by node id
-     * @return ?string Chosen node id, or null when no candidate satisfies the hard gate
+     * @param ResourceProfile $cost Resource cost of the agent
+     * @param array<string, PlacementCandidate> $candidates Online candidate nodes keyed by node id
+     * @return ?string Chosen node id, or null when no candidate clears the gate
      */
-    public function selectNode(
-        array $requiredTags,
-        ResourceProfile $profile,
-        array $candidates,
-        array $hosted = [],
-    ): ?string {
+    public function selectNode(array $requiredTags, ResourceProfile $cost, array $candidates): ?string
+    {
         $chosen = null;
-        $chosenScore = 0.0;
-        $chosenLoad = 0;
-        $chosenTotal = 0.0;
+        $chosenLoad = 0.0;
 
         $nodeIds = array_keys($candidates);
         sort($nodeIds);
         foreach ($nodeIds as $nodeId) {
-            $capacities = $candidates[$nodeId];
-            if (!$this->isEligible($requiredTags, $profile, $capacities)) {
+            $candidate = $candidates[$nodeId];
+            if (!$candidate->accepts($requiredTags, $cost)) {
                 continue;
             }
 
-            $score = $this->score($profile, $capacities);
-            $load = $hosted[$nodeId] ?? 0;
-            $total = $capacities->totalCapacity();
-            if ($chosen === null
-                || $score > $chosenScore
-                || ($score === $chosenScore && $load < $chosenLoad)
-                || ($score === $chosenScore && $load === $chosenLoad && $total > $chosenTotal)) {
-                $chosen = $nodeId;
-                $chosenScore = $score;
+            $load = $candidate->loadAfter($cost);
+            if ($chosen === null || $this->ranksAbove($candidate, $load, $chosen, $chosenLoad)) {
+                $chosen = $candidate;
                 $chosenLoad = $load;
-                $chosenTotal = $total;
             }
         }
 
-        return $chosen;
+        return $chosen?->nodeId;
     }
 
     /**
-     * Reports whether a node clears the hard gate: every required tag present and every hard
-     * minimum met.
+     * Reports whether a candidate ranks strictly above the one chosen so far. The candidates are
+     * visited in id order, so an exact tie keeps the earlier — smaller — id.
      *
-     * @param list<string> $requiredTags Required capability tags
-     * @param ResourceProfile $profile Agent resource profile
-     * @param NodeCapacities $capacities Candidate node capacities
-     * @return bool True when the node is eligible to host the agent
+     * @param PlacementCandidate $candidate Candidate under consideration
+     * @param float $load Its load after placement
+     * @param PlacementCandidate $chosen Best candidate so far
+     * @param float $chosenLoad Its load after placement
+     * @return bool True when the candidate should replace the chosen one
      */
-    private function isEligible(array $requiredTags, ResourceProfile $profile, NodeCapacities $capacities): bool
+    private function ranksAbove(PlacementCandidate $candidate, float $load, PlacementCandidate $chosen, float $chosenLoad): bool
     {
-        foreach ($requiredTags as $tag) {
-            if (!$capacities->hasTag($tag)) {
-                return false;
-            }
+        if (abs($load - $chosenLoad) > self::LOAD_EPSILON) {
+            return $load < $chosenLoad;
         }
 
-        foreach ($profile->minimums as $key => $minimum) {
-            if ($capacities->capacity($key) < $minimum) {
-                return false;
-            }
+        if ($candidate->isLeader !== $chosen->isLeader) {
+            return !$candidate->isLeader;
         }
 
-        return true;
-    }
-
-    /**
-     * Scores an eligible node by the profile's preference weights against its capacities.
-     *
-     * @param ResourceProfile $profile Agent resource profile
-     * @param NodeCapacities $capacities Candidate node capacities
-     * @return float Weighted preference score; 0.0 when the profile has no preferences
-     */
-    private function score(ResourceProfile $profile, NodeCapacities $capacities): float
-    {
-        $score = 0.0;
-        foreach ($profile->preferences as $key => $weight) {
-            $score += $weight * $capacities->capacity($key);
+        if ($candidate->hosted !== $chosen->hosted) {
+            return $candidate->hosted < $chosen->hosted;
         }
 
-        return $score;
+        return $candidate->capacities->totalCapacity() > $chosen->capacities->totalCapacity();
     }
 }

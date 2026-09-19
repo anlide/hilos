@@ -26,6 +26,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
+use LogicException;
 use Throwable;
 
 /**
@@ -40,9 +41,9 @@ use Throwable;
  *   remote-placement primitive, and {@see placeAgentOnBestNode()} the automatic entry that
  *   picks the target itself. A placement routed at `self` runs the local start path; any
  *   other node id sends a {@see PeerPlaceAgentDTO} over the mesh. Every placement passes the
- *   hard gate first — the target must advertise the required capability tags and meet the
- *   required capacity minimums — before anything is sent. Outcomes are tracked in the
- *   soft-state {@see PlacementRegistry}, which a fresh leader rebuilds from node reports on
+ *   hard gate first — the target must advertise the required capability tags, declare a
+ *   capacity, and have free room for the agent's cost — before anything is sent. Outcomes are
+ *   tracked in the soft-state {@see PlacementRegistry}, which a fresh leader rebuilds from node reports on
  *   {@see onBecameLeader()}.
  * - Node side: an inbound place/stop frame runs the local execute/revoke and replies with
  *   a {@see PeerAgentStatusDTO}; a rebuild query is answered from the node's own hosted
@@ -58,6 +59,12 @@ use Throwable;
  * delegates the "which node" question to for both {@see placeAgentOnBestNode()} and failover.
  * It also serves as the read side of {@see WorkerPlacement}: the signal router asks
  * {@see locate()} where an agent lives so HIL-180 can forward work signals cross-node.
+ *
+ * Capacity accounting (HIL-448) has no state of its own. What a node's placements hold is derived
+ * from the registry every time a node is chosen ({@see placementCandidates()}): the cost of every
+ * Placing or Started record on it, read from the executor at that moment. With no counter to keep
+ * in step, a stop, a move or a node loss frees the capacity simply by moving the record, and a
+ * fresh leader has it back the moment it rebuilds the registry ({@see onBecameLeader()}).
  *
  * Crash-failover (HIL-183) hangs off the same two sides. Driven by node up/down transitions
  * ({@see noteNodeOffline()} / {@see noteNodeOnline()}) and a grace-timer {@see tick()}: the
@@ -265,16 +272,17 @@ final class ClusterPlacement implements WorkerPlacement
      * Places an agent of the given type on a named node: the permanent remote-placement
      * primitive.
      *
-     * Passes the target node through the hard gate (required capability tags and capacity
-     * minimums) first and rejects before anything is sent when it does not fit. A placement at
-     * this node runs the local start path synchronously; any other node id sends a place frame
+     * Passes the target node through the hard gate (required capability tags, a declared
+     * capacity, free room for the agent's cost) first and rejects before anything is sent when it
+     * does not fit. A placement at this node runs the local start path synchronously; any other node id sends a place frame
      * and records the placement as pending until the node's status reply lands. To let the
      * policy choose the node instead of naming one, use {@see placeAgentOnBestNode()}.
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Id of the node to place the agent on
-     * @throws PlacementCapabilityException When the node lacks a required tag or capacity minimum
+     * @throws PlacementCapabilityException When the node lacks a required tag, declares no capacity or has no room for the cost
+     * @throws LogicException When the agent, or one already placed, declares a negative cost
      * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
      * @throws NoSuitableWorkerException When a local placement has no worker to host it
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
@@ -305,16 +313,17 @@ final class ClusterPlacement implements WorkerPlacement
      * Places an agent on the node the policy picks as the best fit: the automatic
      * node-selection entry (HIL-182) layered on the named-node primitive.
      *
-     * Reads the agent's required tags and resource profile, asks the {@see PlacementPolicy} to
+     * Reads the agent's required tags and resource cost, asks the {@see PlacementPolicy} to
      * rank the online nodes by fit, and places on the winner via {@see placeAgentOnNode()}.
      * When no online node clears the hard gate nothing is placed and null is returned, so the
-     * caller can retry on the next capable join rather than fail. A heavy worker thus lands on
-     * a strong node, a light one anywhere it fits.
+     * caller can retry on the next capable join rather than fail. A heavy worker thus lands where
+     * it is the smaller share of the free capacity, a free one wherever fewest agents run.
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @return ?string Chosen node id the agent was placed on, or null when no node is a fit
-     * @throws PlacementCapabilityException When the chosen node no longer meets the hard gate
+     * @throws PlacementCapabilityException When the chosen node no longer clears the hard gate
+     * @throws LogicException When the agent, or one already placed, declares a negative cost
      * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
      * @throws NoSuitableWorkerException When a local placement has no worker to host it
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
@@ -323,8 +332,8 @@ final class ClusterPlacement implements WorkerPlacement
     public function placeAgentOnBestNode(string $agentType, ?string $agentIndex): ?string
     {
         $required = $this->executor->requiredCapabilities($agentType, $agentIndex);
-        $profile = $this->executor->placementProfile($agentType, $agentIndex);
-        $target = $this->pickBestNode($required, $profile, '');
+        $cost = $this->executor->placementProfile($agentType, $agentIndex);
+        $target = $this->pickBestNode($agentType, $agentIndex, $required, $cost, '');
         if ($target === null) {
             Logger::info("No capable node to place agent '{$this->agentId($agentType, $agentIndex)}'");
             return null;
@@ -1282,8 +1291,8 @@ final class ClusterPlacement implements WorkerPlacement
 
         try {
             $required = $this->executor->requiredCapabilities($record->agentType, $record->agentIndex);
-            $profile = $this->executor->placementProfile($record->agentType, $record->agentIndex);
-            $target = $this->pickBestNode($required, $profile, $record->nodeId);
+            $cost = $this->executor->placementProfile($record->agentType, $record->agentIndex);
+            $target = $this->pickBestNode($record->agentType, $record->agentIndex, $required, $cost, $record->nodeId);
             if ($target !== null) {
                 Logger::info("Failover: re-placing '{$agentId}' from lost node '{$record->nodeId}' onto '{$target}'");
                 $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
@@ -1396,8 +1405,8 @@ final class ClusterPlacement implements WorkerPlacement
 
             try {
                 $required = $this->executor->requiredCapabilities($record->agentType, $record->agentIndex);
-                $profile = $this->executor->placementProfile($record->agentType, $record->agentIndex);
-                $target = $this->pickBestNode($required, $profile, '');
+                $cost = $this->executor->placementProfile($record->agentType, $record->agentIndex);
+                $target = $this->pickBestNode($record->agentType, $record->agentIndex, $required, $cost, '');
                 if ($target !== null) {
                     Logger::info("Failover retry: placing unplaced '{$record->agentId()}' onto '{$target}'");
                     $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
@@ -1423,40 +1432,84 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Picks the best-fit online node other than the excluded one, or null when none is a fit.
      *
-     * Builds the candidate set from the online nodes' advertised capacities, counts what each
-     * one already runs, and hands the ranking to the {@see PlacementPolicy}: the hard gate
-     * (required tags plus capacity minimums) and the soft best-fit preference both live in the
-     * policy, so failover and the automatic entry choose identically. Occupancy comes from this
-     * leader's own placement view, which is the only cluster-wide record of who runs what.
+     * Builds a candidate per online node — what it declares, what its live placements hold, how
+     * many they are — and hands the gate and the ranking to the {@see PlacementPolicy}, so
+     * failover and the automatic entry choose identically. Occupancy comes from this leader's own
+     * placement view, which is the only cluster-wide record of who runs what.
      *
+     * @param string $agentType Agent type being placed, whose own record holds nothing against it
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param list<string> $required Capability tags the agent needs
-     * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
+     * @param ResourceProfile $cost Resource cost of the agent
      * @param string $excludeNodeId Node id to skip (the lost host, or '' to exclude none)
      * @return ?string Chosen node id, or null when no online node is a fit
+     * @throws AgentDaemonCreationFailedException When a live placement's daemon cannot be built to read its cost
+     * @throws HilosException Whatever the project's agent-daemon factory raises
+     * @throws LogicException When the agent, or one already placed, declares a negative cost
      */
-    private function pickBestNode(array $required, ResourceProfile $profile, string $excludeNodeId): ?string
+    private function pickBestNode(
+        string $agentType,
+        ?string $agentIndex,
+        array $required,
+        ResourceProfile $cost,
+        string $excludeNodeId,
+    ): ?string {
+        $online = array_values(array_filter(
+            $this->mesh->onlineNodeIds(),
+            static fn(string $nodeId): bool => $nodeId !== $excludeNodeId,
+        ));
+
+        return $this->policy->selectNode(
+            $required,
+            $cost,
+            $this->placementCandidates($this->agentId($agentType, $agentIndex), $online),
+        );
+    }
+
+    /**
+     * Builds the placement candidate of each named node from this leader's registry.
+     *
+     * Only a live placement holds capacity: a Placing or Started record counts its cost and one
+     * head against its node, while an unplaced agent runs nowhere and a stopped or failed one has
+     * already released whatever it held. The record of the agent being placed is left out, so its
+     * old reservation never stands in the way of its own re-placement.
+     *
+     * @param string $placedAgentId Id of the agent being placed
+     * @param list<string> $nodeIds Node ids to build candidates for
+     * @return array<string, PlacementCandidate> Candidates keyed by node id
+     * @throws AgentDaemonCreationFailedException When a live placement's daemon cannot be built to read its cost
+     * @throws HilosException Whatever the project's agent-daemon factory raises
+     * @throws LogicException When the agent, or one already placed, declares a negative cost
+     */
+    private function placementCandidates(string $placedAgentId, array $nodeIds): array
     {
-        $candidates = [];
-        $hosted = [];
-        foreach ($this->mesh->onlineNodeIds() as $nodeId) {
-            if ($nodeId === $excludeNodeId) {
+        $used = array_fill_keys($nodeIds, []);
+        $hosted = array_fill_keys($nodeIds, 0);
+        foreach ($this->registry->all() as $record) {
+            if (!isset($hosted[$record->nodeId])
+                || $record->agentId() === $placedAgentId
+                || ($record->state !== PlacementState::Placing && $record->state !== PlacementState::Started)) {
                 continue;
             }
 
-            $candidates[$nodeId] = NodeCapacities::fromTags($this->mesh->nodeCapabilities($nodeId) ?? []);
-            $hosted[$nodeId] = 0;
-        }
-
-        // Only a live placement occupies a node: an unplaced agent runs nowhere, and a
-        // stopped or failed one has already released whatever it held.
-        foreach ($this->registry->all() as $record) {
-            if (isset($hosted[$record->nodeId])
-                && ($record->state === PlacementState::Placing || $record->state === PlacementState::Started)) {
-                $hosted[$record->nodeId]++;
+            $hosted[$record->nodeId]++;
+            foreach ($this->executor->placementProfile($record->agentType, $record->agentIndex)->costs as $key => $amount) {
+                $used[$record->nodeId][$key] = ($used[$record->nodeId][$key] ?? 0.0) + $amount;
             }
         }
 
-        return $this->policy->selectNode($required, $profile, $candidates, $hosted);
+        $candidates = [];
+        foreach ($nodeIds as $nodeId) {
+            $candidates[$nodeId] = new PlacementCandidate(
+                $nodeId,
+                NodeCapacities::fromTags($this->mesh->nodeCapabilities($nodeId) ?? []),
+                $used[$nodeId],
+                $hosted[$nodeId],
+                $this->isLeader && $nodeId === $this->selfNodeId,
+            );
+        }
+
+        return $candidates;
     }
 
     /**
@@ -1500,37 +1553,39 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Rejects a placement the target node cannot satisfy: a missing required capability tag or
-     * a declared capacity below a required minimum.
+     * Rejects a placement the target node cannot satisfy: a missing required capability tag, no
+     * declared capacity at all, or too little free capacity for the agent's cost.
      *
      * The hard gate both the named-node and best-fit paths pass through, so a placement never
-     * launches an agent on an unfit node. Ranking among fit nodes is the policy's job and never
-     * lands here.
+     * launches an agent on an unfit node. The room check is {@see PlacementCandidate} against the
+     * same occupancy the policy saw, so a placement by name cannot overfill a node past the
+     * accounting. The node need not be online: an undeliverable placement still ends Failed.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Target node id
-     * @throws PlacementCapabilityException When a required tag is missing or a capacity minimum is unmet
-     * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built to read its requirements
+     * @throws PlacementCapabilityException When a required tag is missing, no capacity is declared, or the cost does not fit
+     * @throws LogicException When the agent, or one already placed, declares a negative cost
+     * @throws AgentDaemonCreationFailedException When an agent daemon cannot be built to read its requirements or cost
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     private function requirePlacementFit(string $agentType, ?string $agentIndex, string $nodeId): void
     {
+        $agentId = $this->agentId($agentType, $agentIndex);
         $advertised = $this->mesh->nodeCapabilities($nodeId) ?? [];
         $missing = array_values(array_diff($this->executor->requiredCapabilities($agentType, $agentIndex), $advertised));
         if ($missing !== []) {
-            throw PlacementCapabilityException::unmetCapabilities($nodeId, $this->agentId($agentType, $agentIndex), $missing);
+            throw PlacementCapabilityException::unmetCapabilities($nodeId, $agentId, $missing);
         }
 
-        $capacities = NodeCapacities::fromTags($advertised);
-        $shortfalls = [];
-        foreach ($this->executor->placementProfile($agentType, $agentIndex)->minimums as $key => $minimum) {
-            if ($capacities->capacity($key) < $minimum) {
-                $shortfalls[$key] = $minimum;
-            }
+        $candidate = $this->placementCandidates($agentId, [$nodeId])[$nodeId];
+        if (!$candidate->capacities->declaresCapacity()) {
+            throw PlacementCapabilityException::noDeclaredCapacity($nodeId, $agentId);
         }
 
+        $shortfalls = $candidate->shortfalls($this->executor->placementProfile($agentType, $agentIndex));
         if ($shortfalls !== []) {
-            throw PlacementCapabilityException::unmetResources($nodeId, $this->agentId($agentType, $agentIndex), $shortfalls);
+            throw PlacementCapabilityException::insufficientCapacity($nodeId, $agentId, $shortfalls);
         }
     }
 

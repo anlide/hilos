@@ -12,6 +12,7 @@ use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Logger;
+use LogicException;
 
 /**
  * AbstractAgentDaemon - Abstract base class for agent proxies in daemon.
@@ -63,13 +64,15 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - no numeric resource demand.
+     * Default implementation - consumes nothing.
      *
-     * Returns the empty profile so an agent declares no hard minimums and no soft
-     * preferences, and best-fit places it on the strongest capable node. An agent with a
-     * real resource shape (a heavy LLM worker) overrides this to steer placement.
+     * Returns the empty profile so the agent reserves no capacity on the node it lands on, and
+     * best-fit spreads it by head count. An agent with a real appetite (a heavy LLM worker)
+     * overrides this to declare its cost — from its type, index and constants only, since the
+     * leader reads it on its master loop.
      *
      * @return ResourceProfile Empty resource profile
+     * @throws LogicException When an override declares a negative cost ({@see ResourceProfile::costs()})
      */
     public function placementProfile(): ResourceProfile
     {

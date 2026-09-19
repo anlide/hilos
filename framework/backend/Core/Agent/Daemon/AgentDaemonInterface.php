@@ -11,6 +11,7 @@ use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Socket\Client\WorkerClient;
+use LogicException;
 
 /**
  * AgentDaemonInterface - Interface for agent proxies running in daemon.
@@ -53,7 +54,7 @@ interface AgentDaemonInterface
      * a node whose advertised capabilities do not include every tag returned here (see
      * {@see ClusterPlacement::placeAgentOnNode()}). The default is
      * an empty list — the agent runs anywhere. This binary tag gate is the boolean half of
-     * placement; the numeric half (hard minimums and soft preferences) is
+     * placement; the consumable half — what the agent costs a node — is
      * {@see placementProfile()}.
      *
      * @return list<string> Required capability tags; empty when the agent runs anywhere
@@ -61,15 +62,18 @@ interface AgentDaemonInterface
     public function requiredCapabilities(): array;
 
     /**
-     * The agent's numeric resource demand over a node's declared capacities (HIL-182).
+     * The agent's resource cost: how much of each declared node capacity it consumes (HIL-448).
      *
-     * The soft-preference half of resource-aware placement layered on the boolean
-     * {@see requiredCapabilities()} gate: hard capacity minimums a node must meet and soft
-     * preference weights the best-fit policy ranks capable nodes by, so a heavy worker lands
-     * on a strong node. The default is {@see ResourceProfile::none()} — no minimums and no
-     * preferences — so an agent runs on the strongest capable node unless it declares more.
+     * The consumable half of resource-aware placement layered on the boolean
+     * {@see requiredCapabilities()} gate. The cost is a reservation the leader subtracts from the
+     * node's declared capacity while the agent's placement lives, and a node without free room for
+     * it is not a candidate. The leader reads it on its master loop every time it chooses a node,
+     * so compute it from the agent type, index and constants only — no database, file or network
+     * I/O. The default is {@see ResourceProfile::none()}: the agent consumes nothing and is spread
+     * over the nodes by head count.
      *
-     * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
+     * @return ResourceProfile Resource cost; empty when the agent consumes nothing
+     * @throws LogicException When the declared cost is negative ({@see ResourceProfile::costs()})
      */
     public function placementProfile(): ResourceProfile;
 

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Cluster;
 
+use Demo\Cluster\Agents\BallastAgent;
 use Demo\Cluster\Agents\ClaimerAgent;
 use Demo\Cluster\Agents\DbProbeAgent;
 use Demo\Cluster\Agents\WorkerAgent;
+use Demo\Cluster\Core\Agent\Daemon\BallastAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\ClaimerAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\DbProbeAgentDaemon;
 use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
@@ -61,6 +63,15 @@ final class Hilos extends HilosFacade
             // policy-placement sweep skips indexed agents, and the demo's own supervisor places
             // only the fleet. So nothing brings a claimer up until a scenario addresses one,
             // which is what keeps the deliberate split out of every other run.
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        BallastAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => BallastAgent::class,
+            AgentRegistryKey::DAEMON => BallastAgentDaemon::class,
+            // Indexed like the claimer and for the same reason: the framework's policy-placement
+            // sweep skips indexed agents and the demo's supervisor places only the fleet, so a
+            // ballast holds capacity only while the scenario that asked for it runs.
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],

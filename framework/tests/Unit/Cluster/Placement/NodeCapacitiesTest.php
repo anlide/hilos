@@ -52,6 +52,19 @@ final class NodeCapacitiesTest extends TestCase
         $this->assertSame(0.0, $capacities->capacity('cpu'));
     }
 
+    public function testOnlyANumericTagDeclaresCapacity(): void
+    {
+        $this->assertFalse(NodeCapacities::fromTags(['worker', 'gpu'])->declaresCapacity(), 'Boolean tags declare no capacity');
+        $this->assertFalse(NodeCapacities::fromTags([])->declaresCapacity());
+        $this->assertTrue(NodeCapacities::fromTags(['worker', 'ram=0'])->declaresCapacity(), 'A zero capacity is still a declaration');
+    }
+
+    public function testCapacitiesListsEveryDeclaredStock(): void
+    {
+        $this->assertSame(['ram' => 10.0, 'slots' => 4.0], NodeCapacities::fromTags(['worker', 'ram=10', 'slots=4'])->capacities());
+        $this->assertSame([], NodeCapacities::fromTags(['worker'])->capacities());
+    }
+
     public function testFractionalCapacityIsPreserved(): void
     {
         $this->assertSame(1.5, NodeCapacities::fromTags(['ram=1.5'])->capacity('ram'));

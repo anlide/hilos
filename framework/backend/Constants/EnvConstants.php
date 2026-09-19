@@ -517,7 +517,11 @@ enum EnvConstants
     /** @var string Self-declared node role: master | slave. Required when CLUSTER_ENABLED. */
     case CLUSTER_NODE_ROLE;
 
-    /** @var string Declared node capability tags, comma-separated (e.g. "gpu-local,ssd"). */
+    /**
+     * @var string Declared node capability tags and capacities, comma-separated: a bare tag is a boolean
+     *     capability (worker, gpu), key=value a consumable capacity (ram=32, slots=10). A clustered node
+     *     that declares no key=value accepts no placed work.
+     */
     case CLUSTER_NODE_CAPABILITIES;
 
     /** @var string Host to bind this node's peer transport listener. Required when CLUSTER_ENABLED. */

@@ -369,12 +369,8 @@ final class SpyPlacementPolicy implements PlacementPolicy
         $this->nodeId = $nodeId;
     }
 
-    public function selectNode(
-        array $requiredTags,
-        ResourceProfile $profile,
-        array $candidates,
-        array $hosted = [],
-    ): ?string {
+    public function selectNode(array $requiredTags, ResourceProfile $cost, array $candidates): ?string
+    {
         $this->asked++;
 
         return $this->nodeId;
