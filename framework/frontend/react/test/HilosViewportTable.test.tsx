@@ -969,7 +969,14 @@ describe('HilosViewportTable drawing a row as a card', () => {
 
   it('stands the framework marks beside the page badge, not instead of it', () => {
     const { controller } = makeController(CARD_FRAME)
-    window(controller)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' }, staleSources: ['sizes'] }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
     controller.ingestDelta({
       kind: 'row_moved',
       rowKey: 'a',
@@ -980,8 +987,21 @@ describe('HilosViewportTable drawing a row as a card', () => {
     const group = cardOf(container, 'a').querySelector('.ms-auto')
     expect(group?.querySelector('.state-badge')).not.toBeNull()
     expect(
+      group?.querySelector('[data-id="hilos-table-stale-row-a"]'),
+    ).not.toBeNull()
+    expect(
       group?.querySelector('[data-id="hilos-table-pending-move-a"]'),
     ).not.toBeNull()
+    // The page's badge first, then the freshness mark, then the waiting badge.
+    const marks = Array.from(group?.children ?? []).map(
+      (mark) => mark.getAttribute('data-id') ?? mark.className,
+    )
+    expect(marks.slice(0, 3)).toEqual([
+      'state-badge',
+      'hilos-table-stale-row-a',
+      'visually-hidden',
+    ])
+    expect(marks[3]).toBe('hilos-table-pending-move-a')
   })
 
   it('puts the bar of a running job at the foot of the card', () => {
@@ -1127,6 +1147,240 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(
       cardOf(container, 'b').querySelector('[data-id="hilos-table-select-b"]'),
     ).not.toBeNull()
+  })
+})
+
+describe('HilosViewportTable marking a source that went quiet', () => {
+  afterEach(cleanup)
+
+  // A table assembled from two sources: the name comes from the row's own record,
+  // the presence from a second slot — and a slot is what can go quiet on its own.
+  const SOURCED_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    {
+      key: 'presence',
+      label: 'Presence',
+      sortable: true,
+      source: 'connections',
+    },
+  ]
+
+  function window(
+    controller: TableViewportController<Row>,
+    staleSources: readonly string[] = [],
+  ): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' }, staleSources },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function renderSourced(
+    controller: TableViewportController<Row>,
+    columns: HilosTableColumn[] = SOURCED_COLUMNS,
+  ) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        columns={columns}
+        row={(r) => (
+          <>
+            <td className="cell">{r.name}</td>
+            <td className="cell">online</td>
+          </>
+        )}
+      />,
+    )
+  }
+
+  function headers(container: HTMLElement): HTMLElement[] {
+    return Array.from(container.querySelectorAll<HTMLElement>('thead th'))
+  }
+
+  it('raises the strip and names the columns built from the quiet source', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-stale"]')?.textContent,
+    ).toBe(
+      'Presence is not updating: the link to its source was lost. The other columns are live.',
+    )
+  })
+
+  it('raises the strip in the generic wording when no column named the source', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    // COLUMNS declares no source at all, so there is nothing to name — and saying
+    // nothing would leave yesterday's value looking like today's.
+    const { container } = renderTable(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-stale"]')?.textContent,
+    ).toBe(
+      'Some values here are not updating: the link to their source was lost. The other columns are live.',
+    )
+  })
+
+  it('keeps the sort control on a quiet column and carries the warning inside it', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller)
+
+    const button = container.querySelector(
+      '[data-id="hilos-table-sort-presence"]',
+    )
+    expect(button).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-sort-name"]'),
+    ).not.toBeNull()
+    expect(
+      button?.querySelector('[data-id="hilos-table-stale-column-presence"]'),
+    ).not.toBeNull()
+    expect(headers(container)[1]?.textContent).toContain(
+      'Sorting by this column may be wrong',
+    )
+  })
+
+  it('marks a quiet column that was never sortable without giving it a control', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller, [
+      SOURCED_COLUMNS[0]!,
+      { ...SOURCED_COLUMNS[1]!, sortable: false },
+    ])
+
+    const header = headers(container)[1]
+    expect(
+      container.querySelector('[data-id="hilos-table-sort-presence"]'),
+    ).toBeNull()
+    expect(
+      header?.querySelector('[data-id="hilos-table-stale-column-presence"]'),
+    ).not.toBeNull()
+    expect(header?.textContent).toContain("This column's source is lagging")
+    expect(header?.textContent).not.toContain(
+      'Sorting by this column may be wrong',
+    )
+  })
+
+  it('sends a viewport when the name of a quiet column is clicked', () => {
+    const { controller, sent } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller)
+    sent.length = 0
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-table-sort-presence"]',
+      ) as HTMLElement,
+    )
+
+    expect(sent).toHaveLength(1)
+  })
+
+  it('numbers headers of a composite order whose first column is quiet and speaks both places', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    controller.setOrder([
+      { field: 'presence', direction: 'asc' },
+      { field: 'name', direction: 'desc' },
+    ])
+    const { container } = renderSourced(controller)
+
+    expect(
+      Array.from(container.querySelectorAll('th sup')).map(
+        (mark) => mark.textContent,
+      ),
+    ).toEqual(['2', '1'])
+    expect(
+      Array.from(container.querySelectorAll('th sup + .visually-hidden')).map(
+        (mark) => mark.textContent,
+      ),
+    ).toEqual(['Sort column 2 of 2', 'Sort column 1 of 2'])
+  })
+
+  it('keeps the standing order over a column that went quiet readable', () => {
+    const { controller } = makeController()
+    window(controller, [])
+    const { container } = renderSourced(controller)
+    act(() => controller.setSort('presence'))
+    act(() =>
+      controller.ingestDelta({
+        kind: 'row_stale',
+        rowKey: 'a',
+        staleSources: ['connections'],
+      }),
+    )
+
+    // The rows lie in that order right now, and saying so is the truth; only
+    // choosing or reversing it is gone.
+    const header = headers(container)[1]
+    expect(header?.getAttribute('aria-sort')).toBe('ascending')
+    expect(header?.querySelector('.bi-arrow-up')).not.toBeNull()
+  })
+
+  it('marks exactly the rows whose own values are behind', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller)
+
+    expect(
+      container.querySelector('[data-id="hilos-table-stale-row-a"]'),
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-stale-row-b"]'),
+    ).toBeNull()
+  })
+
+  it('stands the mark cell up on a quiet source with nothing waiting at all', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller)
+
+    expect(headers(container)).toHaveLength(SOURCED_COLUMNS.length + 1)
+    expect(container.querySelector('thead th:last-child')?.textContent).toBe(
+      'Row state and controls',
+    )
+    // Header and body read one condition, so the cell the header just made room
+    // for is the one standing last in the row.
+    const cells = container.querySelectorAll('[data-id="hilos-table-row-a"] td')
+    expect(
+      cells[cells.length - 1]?.querySelector(
+        '[data-id="hilos-table-stale-row-a"]',
+      ),
+    ).not.toBeNull()
+  })
+
+  it('takes the strip, the snowflakes and the cell down when the source is current again', () => {
+    const { controller } = makeController()
+    window(controller, ['connections'])
+    const { container } = renderSourced(controller)
+    act(() =>
+      controller.ingestDelta({
+        kind: 'row_stale',
+        rowKey: 'a',
+        staleSources: [],
+      }),
+    )
+
+    expect(container.querySelector('[data-id="hilos-table-stale"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-stale-column-presence"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-stale-row-a"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-table-sort-presence"]'),
+    ).not.toBeNull()
+    expect(headers(container)).toHaveLength(SOURCED_COLUMNS.length)
   })
 })
 

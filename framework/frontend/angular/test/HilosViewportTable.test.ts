@@ -676,6 +676,204 @@ describe('HilosViewportTable', () => {
       query(fixture, '[data-id="hilos-table-live-rest"] .bi-arrow-down-circle'),
     ).not.toBeNull()
   })
+
+  describe('marking a source that went quiet', () => {
+    // A table assembled from two sources: the name comes from the row's own record,
+    // the presence from a second slot — and a slot is what can go quiet on its own.
+    const SOURCED_COLUMNS: HilosTableColumn[] = [
+      { key: 'name', label: 'Name', sortable: true },
+      {
+        key: 'presence',
+        label: 'Presence',
+        sortable: true,
+        source: 'connections',
+      },
+    ]
+
+    function window(
+      controller: TableViewportController<Row>,
+      staleSources: readonly string[] = [],
+    ): void {
+      controller.ingestWindow(
+        [
+          { rowKey: 'a', slots: { name: 'Alice' }, staleSources },
+          { rowKey: 'b', slots: { name: 'Bob' } },
+        ],
+        2,
+        true,
+        null,
+        null,
+        10,
+      )
+    }
+
+    function headers(fixture: ComponentFixture<unknown>): HTMLElement[] {
+      return all(fixture, 'thead th') as HTMLElement[]
+    }
+
+    it('raises the strip and names the columns built from the quiet source', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+
+      expect(
+        query(fixture, '[data-id="hilos-table-stale"]')?.textContent?.trim(),
+      ).toBe(
+        'Presence is not updating: the link to its source was lost. The other columns are live.',
+      )
+    })
+
+    it('raises the strip in the generic wording when no column named the source', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      // COLUMNS declares no source at all, so there is nothing to name — and saying
+      // nothing would leave yesterday's value looking like today's.
+      const fixture = mountTable(controller)
+
+      expect(
+        query(fixture, '[data-id="hilos-table-stale"]')?.textContent?.trim(),
+      ).toBe(
+        'Some values here are not updating: the link to their source was lost. The other columns are live.',
+      )
+    })
+
+    it('keeps the sort control on a quiet column and carries the warning inside it', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+
+      const button = query(fixture, '[data-id="hilos-table-sort-presence"]')
+      expect(button).not.toBeNull()
+      expect(query(fixture, '[data-id="hilos-table-sort-name"]')).not.toBeNull()
+      expect(
+        button?.querySelector('[data-id="hilos-table-stale-column-presence"]'),
+      ).not.toBeNull()
+      expect(headers(fixture)[1]?.textContent).toContain(
+        'Sorting by this column may be wrong',
+      )
+    })
+
+    it('marks a quiet column that was never sortable without giving it a control', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, [
+        SOURCED_COLUMNS[0]!,
+        { ...SOURCED_COLUMNS[1]!, sortable: false },
+      ])
+
+      const header = headers(fixture)[1]
+      expect(query(fixture, '[data-id="hilos-table-sort-presence"]')).toBeNull()
+      expect(
+        header?.querySelector('[data-id="hilos-table-stale-column-presence"]'),
+      ).not.toBeNull()
+      expect(header?.textContent).toContain("This column's source is lagging")
+      expect(header?.textContent).not.toContain(
+        'Sorting by this column may be wrong',
+      )
+    })
+
+    it('sends a viewport when the name of a quiet column is clicked', () => {
+      const { controller, sent } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      sent.length = 0
+      query(fixture, '[data-id="hilos-table-sort-presence"]')?.click()
+
+      expect(sent).toHaveLength(1)
+    })
+
+    it('numbers headers of a composite order whose first column is quiet and speaks both places', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      controller.setOrder([
+        { field: 'presence', direction: 'asc' },
+        { field: 'name', direction: 'desc' },
+      ])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+
+      expect(all(fixture, 'th sup').map((mark) => mark.textContent)).toEqual([
+        '2',
+        '1',
+      ])
+      expect(
+        all(fixture, 'th sup + .visually-hidden').map(
+          (mark) => mark.textContent,
+        ),
+      ).toEqual(['Sort column 2 of 2', 'Sort column 1 of 2'])
+    })
+
+    it('keeps the standing order over a column that went quiet readable', () => {
+      const { controller } = makePlainController()
+      window(controller, [])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      controller.setSort('presence')
+      fixture.detectChanges()
+      controller.ingestDelta({
+        kind: 'row_stale',
+        rowKey: 'a',
+        staleSources: ['connections'],
+      })
+      fixture.detectChanges()
+
+      // The rows lie in that order right now, and saying so is the truth; only
+      // choosing or reversing it is gone.
+      const header = headers(fixture)[1]
+      expect(header?.getAttribute('aria-sort')).toBe('ascending')
+      expect(header?.querySelector('.bi-arrow-up')).not.toBeNull()
+    })
+
+    it('marks exactly the rows whose own values are behind', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+
+      expect(
+        query(fixture, '[data-id="hilos-table-stale-row-a"]'),
+      ).not.toBeNull()
+      expect(query(fixture, '[data-id="hilos-table-stale-row-b"]')).toBeNull()
+    })
+
+    it('stands the mark cell up on a quiet source with nothing waiting at all', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+
+      expect(headers(fixture)).toHaveLength(SOURCED_COLUMNS.length + 1)
+      expect(query(fixture, 'thead th:last-child')?.textContent?.trim()).toBe(
+        'Row state and controls',
+      )
+      // Header and body read one condition, so the cell the header just made room
+      // for is the one standing last in the row.
+      const cells = all(fixture, '[data-id="hilos-table-row-a"] td')
+      expect(
+        cells[cells.length - 1]?.querySelector(
+          '[data-id="hilos-table-stale-row-a"]',
+        ),
+      ).not.toBeNull()
+    })
+
+    it('takes the strip, the snowflakes and the cell down when the source is current again', () => {
+      const { controller } = makePlainController()
+      window(controller, ['connections'])
+      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      controller.ingestDelta({
+        kind: 'row_stale',
+        rowKey: 'a',
+        staleSources: [],
+      })
+      fixture.detectChanges()
+
+      expect(query(fixture, '[data-id="hilos-table-stale"]')).toBeNull()
+      expect(
+        query(fixture, '[data-id="hilos-table-stale-column-presence"]'),
+      ).toBeNull()
+      expect(query(fixture, '[data-id="hilos-table-stale-row-a"]')).toBeNull()
+      expect(
+        query(fixture, '[data-id="hilos-table-sort-presence"]'),
+      ).not.toBeNull()
+      expect(headers(fixture)).toHaveLength(SOURCED_COLUMNS.length)
+    })
+  })
 })
 
 describe('HilosViewportTable with a declared frame', () => {
@@ -1101,7 +1299,14 @@ describe('HilosViewportTable drawing a row as a card', () => {
 
   it('stands the framework marks beside the page badge, not instead of it', () => {
     const controller = makeController(CARD_FRAME)
-    window(controller)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' }, staleSources: ['sizes'] }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
     controller.ingestDelta({
       kind: 'row_moved',
       rowKey: 'a',
@@ -1112,8 +1317,21 @@ describe('HilosViewportTable drawing a row as a card', () => {
     const group = cardOf(fixture, 'a').querySelector('.ms-auto')
     expect(group?.querySelector('.state-badge')).not.toBeNull()
     expect(
+      group?.querySelector('[data-id="hilos-table-stale-row-a"]'),
+    ).not.toBeNull()
+    expect(
       group?.querySelector('[data-id="hilos-table-pending-move-a"]'),
     ).not.toBeNull()
+    // The page's badge first, then the freshness mark, then the waiting badge.
+    const marks = Array.from(group?.children ?? []).map(
+      (mark) => mark.getAttribute('data-id') ?? mark.className,
+    )
+    expect(marks.slice(0, 4)).toEqual([
+      'state-badge',
+      'hilos-table-stale-row-a',
+      'visually-hidden',
+      'hilos-table-pending-move-a',
+    ])
   })
 
   it('puts the bar of a running job at the foot of the card', () => {

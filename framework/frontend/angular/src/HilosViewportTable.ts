@@ -47,9 +47,12 @@ import {
 import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
   TABLE_DETAIL_COPY,
+  TABLE_STALENESS_COPY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
+  hilosTableStaleColumns,
+  hilosTableStaleSources,
   subscribeSignal,
 } from '@hilos/core'
 import type {
@@ -228,7 +231,39 @@ export interface BulkUntouchedContext {
                           sortPositionLabel(place)
                         }}</span>
                       }
+                      @if (staleColumnKeys().has(column.key)) {
+                        <i
+                          class="bi bi-snow"
+                          [attr.data-id]="
+                            'hilos-table-stale-column-' + column.key
+                          "
+                          aria-hidden="true"
+                        ></i>
+                        <span class="visually-hidden">{{
+                          staleColumnText(column)
+                        }}</span>
+                      }
                     </button>
+                  } @else if (staleColumnKeys().has(column.key)) {
+                    <span class="d-inline-flex align-items-center gap-1">
+                      {{ column.label }}
+                      @if (sortComponent(column.key) !== undefined) {
+                        <i
+                          [class]="'bi ' + sortIcon(column.key)"
+                          aria-hidden="true"
+                        ></i>
+                      }
+                      <i
+                        class="bi bi-snow"
+                        [attr.data-id]="
+                          'hilos-table-stale-column-' + column.key
+                        "
+                        aria-hidden="true"
+                      ></i>
+                      <span class="visually-hidden">{{
+                        staleColumnText(column)
+                      }}</span>
+                    </span>
                   } @else {
                     {{ column.label }}
                   }
@@ -348,6 +383,19 @@ export interface BulkUntouchedContext {
                   }
                   @if (markColumn() && !view.placeholder) {
                     <td class="text-end text-nowrap">
+                      <!-- The freshness mark comes first and the waiting badge
+                      after it: a row can both wait and stand on values that are
+                      behind, and neither statement stands in for the other. -->
+                      @if (view.staleSources.length > 0) {
+                        <i
+                          class="bi bi-snow me-1"
+                          [attr.data-id]="
+                            'hilos-table-stale-row-' + view.rowKey
+                          "
+                          aria-hidden="true"
+                        ></i>
+                        <span class="visually-hidden">{{ rowMark }}</span>
+                      }
                       @if (view.pending === 'move') {
                         <span
                           class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
@@ -590,6 +638,16 @@ export interface BulkUntouchedContext {
                                 rowKey: view.rowKey,
                               }"
                             />
+                          }
+                          @if (view.staleSources.length > 0) {
+                            <i
+                              class="bi bi-snow"
+                              [attr.data-id]="
+                                'hilos-table-stale-row-' + view.rowKey
+                              "
+                              aria-hidden="true"
+                            ></i>
+                            <span class="visually-hidden">{{ rowMark }}</span>
                           }
                           @if (view.pending === 'move') {
                             <span
@@ -1021,13 +1079,32 @@ export class HilosViewportTable<R> {
   // provided nothing gets the left edge, where lists usually keep it.
   protected readonly selectionEdge =
     inject(HILOS_TABLE_SELECTION_EDGE, { optional: true }) ?? 'start'
-  // The row-state cell stands while anything waits OR while the table declared a
-  // field to expand into: it carries both, and a table with no pending change still
-  // needs it the moment a reader is given something to open. Header cell and body
-  // cell read this ONE condition, so the two cannot drift apart into a row wider than
-  // its header.
+  // Which sources went quiet anywhere in the shown window, and which declared columns
+  // are built from them — the columns whose headers and row cells carry the mark. The
+  // sentence about them is the room of live messages' own (HilosTableLive).
+  protected readonly staleSources = computed(() =>
+    hilosTableStaleSources(this.rows()),
+  )
+  protected readonly staleColumnKeys = computed(
+    () =>
+      new Set(
+        hilosTableStaleColumns(this.frameColumns(), this.staleSources()).map(
+          (column) => column.key,
+        ),
+      ),
+  )
+  // The hidden words of the snowflake on a row — the core's, for the template.
+  protected readonly rowMark = TABLE_STALENESS_COPY.rowMark
+  // The row-state cell stands while anything waits OR while a shown row's values are
+  // behind OR while the table declared a field to expand into: it carries all three,
+  // and a table with no pending change still needs it the moment a source goes quiet
+  // or a reader is given something to open. Header cell and body cell read this ONE
+  // condition, so the two cannot drift apart into a row wider than its header.
   protected readonly markColumn = computed(
-    () => this.pendingCount() > 0 || this.detailFields().length > 0,
+    () =>
+      this.pendingCount() > 0 ||
+      this.staleSources().size > 0 ||
+      this.detailFields().length > 0,
   )
   // Every cell that spans the whole row — the placeholder of a removed row, the panel
   // a row expands into, the skeleton and the worded states — counts the columns left
@@ -1308,6 +1385,18 @@ export class HilosViewportTable<R> {
     }
 
     return component.direction === 'asc' ? 'ascending' : 'descending'
+  }
+
+  // The words a frozen header carries for a screen reader: the warning the sort
+  // control carries, or — on a column that was never sortable — the plain statement
+  // that its source is behind. The control stays and the warning rides inside it,
+  // keeping HIL-809's argument about disabled controls as the reason the button is
+  // not greyed: a disabled button drops out of the focus order, and a warning
+  // hung on it would never be read to the one reader who needs it most.
+  protected staleColumnText(column: HilosTableColumn): string {
+    return column.sortable === true
+      ? TABLE_STALENESS_COPY.sortWarning
+      : TABLE_STALENESS_COPY.columnMark
   }
 
   protected onSearchInput(event: Event): void {

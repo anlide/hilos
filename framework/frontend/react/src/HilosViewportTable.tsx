@@ -33,9 +33,12 @@ import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import {
   TABLE_DETAIL_COPY,
+  TABLE_STALENESS_COPY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
+  hilosTableStaleColumns,
+  hilosTableStaleSources,
 } from '@hilos/core'
 import type {
   HilosTableCard,
@@ -195,18 +198,28 @@ export function HilosViewportTable<R>({
   // counts the second list, while the panel is built from the first.
   const detailFields = hilosTableDetailFields(frameColumns)
   const rowColumns = frameColumns.filter((column) => column.detail !== true)
+  // Which sources went quiet anywhere in the shown window, and which declared columns
+  // are built from them — the columns whose headers and row cells carry the mark. The
+  // sentence about them is the room of live messages' own (HilosTableLive).
+  const staleSources = hilosTableStaleSources(rows)
+  const staleColumnKeys = new Set(
+    hilosTableStaleColumns(frameColumns, staleSources).map(
+      (column) => column.key,
+    ),
+  )
   // Which declared column takes which place of the card a row is drawn as on a
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
   // has no arithmetic of its own about it; like the declaration it follows from, it
   // is a constant over the life of a table and null exactly when that is.
   const card = controller.frame.card
-  // The row-state cell stands while anything waits OR while the table declared a
-  // field to expand into: it carries both, and a table with no pending change still
-  // needs it the moment a reader is given something to open. Header cell and body
-  // cell read this ONE condition, so the two cannot drift apart into a row wider than
-  // its header.
-  const markColumn = pendingCount > 0 || detailFields.length > 0
+  // The row-state cell stands while anything waits OR while a shown row's values are
+  // behind OR while the table declared a field to expand into: it carries all three,
+  // and a table with no pending change still needs it the moment a source goes quiet
+  // or a reader is given something to open. Header cell and body cell read this ONE
+  // condition, so the two cannot drift apart into a row wider than its header.
+  const markColumn =
+    pendingCount > 0 || staleSources.size > 0 || detailFields.length > 0
   // Every cell that spans the whole row — the placeholder of a removed row, the panel
   // a row expands into, the skeleton and the worded states — counts the columns left
   // standing in the row plus the mark column while it stands plus the checkbox column
@@ -427,6 +440,18 @@ export function HilosViewportTable<R>({
             {hasCell(layout.badge)
               ? cells?.[layout.badge.key]?.(record, rowKey)
               : null}
+            {view.staleSources.length > 0 ? (
+              <>
+                <i
+                  className="bi bi-snow"
+                  data-id={`hilos-table-stale-row-${rowKey}`}
+                  aria-hidden="true"
+                />
+                <span className="visually-hidden">
+                  {TABLE_STALENESS_COPY.rowMark}
+                </span>
+              </>
+            ) : null}
             {view.pending === 'move' ? (
               <span
                 className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
@@ -581,6 +606,18 @@ export function HilosViewportTable<R>({
     return component.direction === 'asc' ? 'ascending' : 'descending'
   }
 
+  // The words a frozen header carries for a screen reader: the warning the sort
+  // control carries, or — on a column that was never sortable — the plain statement
+  // that its source is behind. The control stays and the warning rides inside it,
+  // keeping HIL-809's argument about disabled controls as the reason the button is
+  // not greyed: a disabled button drops out of the focus order, and a warning
+  // hung on it would never be read to the one reader who needs it most.
+  function staleColumnText(column: HilosTableColumn): string {
+    return column.sortable === true
+      ? TABLE_STALENESS_COPY.sortWarning
+      : TABLE_STALENESS_COPY.columnMark
+  }
+
   // The checkbox tells the core the state it is now IN rather than asking it to
   // toggle: the state of a checkbox is what the reader sees, and a toggle sent from
   // a box the browser has already flipped is a second answer to one question
@@ -705,7 +742,37 @@ export function HilosViewportTable<R>({
                           </span>
                         </>
                       ) : null}
+                      {staleColumnKeys.has(column.key) ? (
+                        <>
+                          <i
+                            className="bi bi-snow"
+                            data-id={`hilos-table-stale-column-${column.key}`}
+                            aria-hidden="true"
+                          />
+                          <span className="visually-hidden">
+                            {staleColumnText(column)}
+                          </span>
+                        </>
+                      ) : null}
                     </button>
+                  ) : staleColumnKeys.has(column.key) ? (
+                    <span className="d-inline-flex align-items-center gap-1">
+                      {column.label}
+                      {sortComponent(column.key) !== undefined ? (
+                        <i
+                          className={`bi ${sortIcon(column.key)}`}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <i
+                        className="bi bi-snow"
+                        data-id={`hilos-table-stale-column-${column.key}`}
+                        aria-hidden="true"
+                      />
+                      <span className="visually-hidden">
+                        {staleColumnText(column)}
+                      </span>
+                    </span>
                   ) : (
                     column.label
                   )}
@@ -801,6 +868,22 @@ export function HilosViewportTable<R>({
                       )}
                       {markColumn && !view.placeholder && view.row !== null ? (
                         <td className="text-end text-nowrap">
+                          {/* The freshness mark comes first and the waiting badge
+                            after it: a row can both wait and stand on values that
+                            are behind, and neither statement stands in for the
+                            other. */}
+                          {view.staleSources.length > 0 ? (
+                            <>
+                              <i
+                                className="bi bi-snow me-1"
+                                data-id={`hilos-table-stale-row-${view.rowKey}`}
+                                aria-hidden="true"
+                              />
+                              <span className="visually-hidden">
+                                {TABLE_STALENESS_COPY.rowMark}
+                              </span>
+                            </>
+                          ) : null}
                           {view.pending === 'move' ? (
                             <span
                               className="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"

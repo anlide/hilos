@@ -160,9 +160,8 @@ accumulated before the break is gone — the window that arrives outranks it.
 > the waiting marks beside it, the bar of work under a row and the project's
 > places next to running work, the cards a declared table becomes on a narrow
 > screen, the panel a row and a card expand into, and the states of the body —
-> the skeleton of a late window and the two worded empty states. What was built
-> on top of them since — the marks of a quiet source on cells and headers — is
-> drawn by Vue alone until its own parity leaf (HIL-818).
+> the skeleton of a late window and the two worded empty states, and the marks of
+> a quiet source on headers, on the row-state cell and on the head of a card.
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
 > the verifier circle on the backups page still hand their view columns, a label
