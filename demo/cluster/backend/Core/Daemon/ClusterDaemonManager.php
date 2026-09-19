@@ -29,12 +29,15 @@ use Throwable;
  * ClusterDaemonManager - Main daemon manager for the cluster demo.
  *
  * Beyond the standard factory wiring it drives placement of the demo's worker
- * fleet. Once this node is leader and the mesh has settled, it asks the framework's
- * best-fit policy (HIL-182) to place every fleet member on the strongest capable
- * data-plane node, and lets the framework's failover defaults (HIL-183) re-place the
- * lost node's share when that node dies. Placement is idempotent per member — a
- * tracked record, in any state, suppresses re-placing — so the leader never
- * double-runs a member, and a fresh leader re-derives the fleet from the mesh.
+ * fleet. Once this node is leader and the mesh has settled, it hands every fleet
+ * member to the framework's best-fit policy (HIL-182, HIL-448). A member declares
+ * the worker capability and no cost at all, so the policy gates on the tag and on
+ * a node having declared some capacity, and then spreads the fleet by head count:
+ * the strongest node is a tie-breaker far down that list, not the target. Failover
+ * defaults (HIL-183) re-place the lost node's share when a node dies. Placement is
+ * idempotent per member — a tracked record, in any state, suppresses re-placing —
+ * so the leader never double-runs a member, and a fresh leader re-derives the
+ * fleet from the mesh.
  */
 final class ClusterDaemonManager extends DaemonManager
 {
