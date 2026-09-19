@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Mail\Delivery;
 
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
@@ -23,6 +24,8 @@ use Hilos\Mail\Template\MagicLinkMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -34,7 +37,9 @@ use RuntimeException;
  * A permanent failure fails fast; a transient one retries with backoff up to the attempt
  * ceiling; an unknown template key is dropped. The pool honours its own concurrency
  * ceiling, and onStop abandons everything in flight. The notification-delivery intake
- * (input B's sibling) is left to the base pipeline.
+ * (input B's sibling) is left to the base pipeline, except for what a freeze does to it
+ * (HIL-1060): with no database mounted any touch of the delivery journal throws, which is
+ * how these cases see that the silenced pipeline writes nothing.
  */
 final class MailDeliveryChannelAgentTest extends TestCase
 {
@@ -43,6 +48,12 @@ final class MailDeliveryChannelAgentTest extends TestCase
 
     /** Sentence carried by the last step drained off the queue, or null when it carried none. */
     private ?string $lastDetail = null;
+
+    protected function tearDown(): void
+    {
+        Hilos::$rt = null;
+        parent::tearDown();
+    }
 
     public function testRawSendDeliversInlineMessageThenDropsIt(): void
     {
@@ -197,6 +208,79 @@ final class MailDeliveryChannelAgentTest extends TestCase
         $agent->onTick();
 
         self::assertSame(0, $agent->createdCount);
+    }
+
+    public function testAQueuedDeliveryReachesTheJournalWithNoFreezeRow(): void
+    {
+        // The control for the cases below: a queued email delivery does reach for the journal.
+        $agent = new TestableMailAgent([]);
+        $this->deliver($agent, 7);
+
+        $this->expectException(LogicException::class);
+        $agent->onTick();
+    }
+
+    public function testAFreezeThatSilencesDropsTheQueuedDeliveries(): void
+    {
+        foreach ([StateProtectedModeRuntime::PHASE_ACTIVATING, StateProtectedModeRuntime::PHASE_ACTIVE] as $phase) {
+            Hilos::$rt = null;
+            $agent = new TestableMailAgent([]);
+            $this->deliver($agent, 7);
+
+            $this->freeze($phase);
+            $agent->onTick();
+
+            // The op was dropped, not kept: nothing reaches for the journal after the lift.
+            $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE);
+            $agent->onTick();
+            self::assertSame(0, $agent->createdCount, $phase);
+        }
+    }
+
+    public function testADeliverySignalledUnderTheFreezeIsRefused(): void
+    {
+        $agent = new TestableMailAgent([]);
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE);
+        $this->deliver($agent, 7);
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent->onTick();
+
+        self::assertSame(0, $agent->createdCount);
+    }
+
+    public function testVerifyingAndDeactivatingDoNotSilence(): void
+    {
+        foreach ([StateProtectedModeRuntime::PHASE_VERIFYING, StateProtectedModeRuntime::PHASE_DEACTIVATING] as $phase) {
+            $agent = new TestableMailAgent([]);
+            $this->freeze($phase);
+            $this->deliver($agent, 7);
+
+            try {
+                $agent->onTick();
+                self::fail("a queued delivery under {$phase} must reach for the journal");
+            } catch (LogicException $e) {
+                self::assertSame('Notification deliveries object collection is not configured', $e->getMessage());
+            }
+        }
+    }
+
+    public function testTheRawHalfKeepsSendingUnderTheFreeze(): void
+    {
+        $transport = new ScriptedMailTransport(2, MailSendOutcome::delivered());
+        $agent = new TestableMailAgent([$transport]);
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE);
+
+        $this->rawSend($agent, new MailSendSignalData(to: 'user@example.com', shardKey: 1, subject: 'Hi', text: 'Body'));
+
+        $agent->onTick();
+        self::assertSame(1, $agent->createdCount);
+        self::assertInstanceOf(EmailMessage::class, $transport->started);
+        self::assertSame('user@example.com', $transport->started->to);
+
+        $agent->onTick();
+        $agent->onTick();
+        self::assertTrue($transport->closed);
     }
 
     public function testInvalidMailConfigDropsRawSendInsteadOfCrashingTheTick(): void
@@ -355,6 +439,40 @@ final class MailDeliveryChannelAgentTest extends TestCase
     }
 
     /**
+     * Hands the agent one durable email delivery, input A.
+     *
+     * @param TestableMailAgent $agent Agent under test
+     * @param int $notificationId Notification the delivery is about
+     */
+    private function deliver(TestableMailAgent $agent, int $notificationId): void
+    {
+        $agent->onSignalAgent(
+            new AgentSignalData(new NotificationDeliverSignalData(notificationId: $notificationId, channel: 'email', shardKey: 1)),
+            'src',
+            HilosSignalConstants::HILOS_MAIL_DELIVER,
+        );
+    }
+
+    /**
+     * Mounts this node's freeze row in the phase the case needs.
+     *
+     * Built through the deserialization path an inbound RT sync uses, as the start gate's cases do.
+     *
+     * @param string $phase Freeze phase to mount
+     */
+    private function freeze(string $phase): void
+    {
+        Hilos::$rt = new MailFreezeTestRtContext();
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
+            StateProtectedModeRuntime::phase => $phase,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+        ]));
+    }
+
+    /**
      * @return MailSendSignalData A letter carrying a code somebody is watching go
      */
     private function watchedLetter(): MailSendSignalData
@@ -424,6 +542,16 @@ final class MailDeliveryChannelAgentTest extends TestCase
         }
 
         return $frames;
+    }
+}
+
+/**
+ * Runtime context that registers no project state: the framework mount supplies the freeze row.
+ */
+final class MailFreezeTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
     }
 }
 

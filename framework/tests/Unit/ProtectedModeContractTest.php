@@ -216,6 +216,31 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertFalse($runtime->locksOut(null, null));
     }
 
+    public function testOnlyActivatingAndActiveSilenceTheUnstoppedWriters(): void
+    {
+        // A follower never reaches `active` in the first operation, so `activating` is the phase
+        // in which the shared database may change under it; the writers must be quiet there too.
+        $expected = [
+            ProtectedModeRuntime::PHASE_INACTIVE => false,
+            ProtectedModeRuntime::PHASE_ACTIVATING => true,
+            ProtectedModeRuntime::PHASE_ACTIVE => true,
+            ProtectedModeRuntime::PHASE_VERIFYING => false,
+            ProtectedModeRuntime::PHASE_DEACTIVATING => false,
+        ];
+
+        foreach ($expected as $phase => $silences) {
+            $runtime = ProtectedModeRuntime::fromRow([
+                ProtectedModeRuntime::phase => $phase,
+                ProtectedModeRuntime::passHashes => [],
+                ProtectedModeRuntime::admittedSessionTokenHashes => [],
+                ProtectedModeRuntime::circleSessionTokenHashes => [],
+                ProtectedModeRuntime::circleNamedCount => 0,
+            ]);
+
+            $this->assertSame($silences, $runtime->silencesUnstoppedWriters(), $phase);
+        }
+    }
+
     public function testActiveRuntimeLocksOutEveryConnectionIncludingTheInitiator(): void
     {
         // The recorded key does not buy a way in while the node is frozen: the agents behind

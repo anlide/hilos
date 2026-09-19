@@ -1425,7 +1425,8 @@ abstract class WorkerServer extends AbstractServer implements
             // frozen with nothing happening behind it goes out over this pool, so a freeze that
             // stopped it would kill the only channel out of the node exactly when it is needed
             // (HIL-482). Narrow and justified - raw send touches no database, the payload travels
-            // whole inside the signal.
+            // whole inside the signal. The exemption keeps the raw half; the durable half silences
+            // itself (AbstractDeliveryChannelAgent, HIL-1060).
             return false;
         }
 
@@ -1892,7 +1893,8 @@ abstract class WorkerServer extends AbstractServer implements
             if ($this->parseAgentId($agentId)->type === HilosAgentType::HILOS_MAIL) {
                 // Left running for the same reason the start gate lets it back up: it carries the
                 // alert about this very freeze, and a stopped mail pool would make a stuck node
-                // silent as well as unreachable (HIL-482).
+                // silent as well as unreachable (HIL-482). Its raw half, that is: the durable half
+                // silences itself (AbstractDeliveryChannelAgent, HIL-1060).
                 continue;
             }
 

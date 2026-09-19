@@ -26,6 +26,7 @@ use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
 use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
 use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 
@@ -54,6 +55,12 @@ use Hilos\Sms\Exception\SmsTemplateParamMissingException;
  * the library adds and prunes rows, a channel agent updates the one attempt it is running.
  * The claim is {@see self::OWNS_DB} on this class and is merged down every subclass, so a leaf
  * carries it whatever else it declares.
+ *
+ * Under a freeze that silences the writers the roster walk leaves running
+ * ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}) the pipeline drops everything it
+ * holds and refuses new deliveries, because nothing of a database being replaced may be acted
+ * on in its successor; the rows stay pending. Only the mail pool meets this in practice - the
+ * freeze stops the other channels outright (HIL-1060).
  */
 abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 {
@@ -163,7 +170,8 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * The single intake: a deliver signal whose channel matches this agent is queued
      * for the tick loop; a mismatched channel or a malformed payload is ignored (the
      * router only routes this channel's signal here, so a mismatch means a
-     * misconfiguration and must not drive a foreign send).
+     * misconfiguration and must not drive a foreign send). A well-formed delivery that
+     * arrives while the freeze silences this pipeline is refused; its row stays pending.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -183,6 +191,13 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
             return;
         }
+        if ($this->freezeSilencesDeliveries()) {
+            $this->logAgentWarning(
+                "delivery for notification {$data->data->notificationId} dropped: protected mode holds the node, its row stays pending",
+            );
+
+            return;
+        }
 
         $this->ops[$data->data->notificationId] = $data->data;
     }
@@ -190,10 +205,25 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     /**
      * Pumps every in-flight attempt one step, then starts freshly queued ops.
      *
+     * Under a freeze that silences this pipeline nothing of it runs: the first such tick drops
+     * what is held and says how much, the later ones find nothing, and neither touches the
+     * database.
+     *
      * @throws HilosException Whatever the delivery bookkeeping or the channel transport raises
      */
     public function onTick(): void
     {
+        if ($this->freezeSilencesDeliveries()) {
+            $dropped = $this->abandonDeliveries();
+            if ($dropped > 0) {
+                $this->logAgentWarning(
+                    "protected mode holds the node: {$dropped} durable deliveries dropped, their rows stay pending",
+                );
+            }
+
+            return;
+        }
+
         $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
         $this->pumpInFlight($nowMs);
         $this->startQueued($nowMs);
@@ -204,12 +234,43 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      */
     public function onStop(): void
     {
+        $this->abandonDeliveries();
+    }
+
+    /**
+     * Whether this node's freeze silences the durable deliveries.
+     *
+     * A null row means this process holds no runtime state, never "the mode is off for this
+     * project" (docs/agents/architecture/protected-mode.md, 'Reading The Runtime Row, And What
+     * Null Means'), and the mode cannot be entered without it.
+     *
+     * @return bool Whether the pipeline must write nothing right now
+     */
+    private function freezeSilencesDeliveries(): bool
+    {
+        return Hilos::$rt?->hilosProtectedModeRuntime?->silencesUnstoppedWriters() === true;
+    }
+
+    /**
+     * Drops every delivery this agent holds, releasing the transport of each in-flight attempt.
+     *
+     * The rows are not touched and stay pending. The count is taken from the queue alone: an
+     * in-flight attempt is always also queued ({@see startQueued()} starts only queued ops,
+     * {@see finishOp()} forgets both).
+     *
+     * @return int Number of deliveries dropped
+     */
+    private function abandonDeliveries(): int
+    {
+        $dropped = count($this->ops);
         foreach ($this->inFlight as $attempt) {
             $attempt->close();
         }
         $this->inFlight = [];
         $this->ops = [];
         $this->nextAttemptMs = [];
+
+        return $dropped;
     }
 
     /**

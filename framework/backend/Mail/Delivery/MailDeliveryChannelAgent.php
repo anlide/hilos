@@ -54,6 +54,9 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
  *  - input B, {@see HilosSignalConstants::HILOS_MAIL_SEND}: a raw send (Auth codes,
  *    magic links) with no delivery row, driven by this class's own in-memory pool.
  *
+ * Under a freeze only input B keeps working: the freeze leaves this pool running for the
+ * watchdog's alarm, and the base silences input A by itself (HIL-1060).
+ *
  * The raw pool has its own concurrency ceiling ({@see maxConcurrent()}), so at peak this
  * instance may hold up to twice that many transports open (input A plus input B). A raw
  * permanent failure (SMTP 5xx, missing config) fails fast; a transient one retries with

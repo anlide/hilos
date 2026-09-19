@@ -240,6 +240,28 @@ final class ProtectedModeRuntime extends RtState
     }
 
     /**
+     * Whether this phase silences the writers the roster walk leaves running.
+     *
+     * The freeze stops every agent of the node but the initiator and the mail pool, and a writer
+     * that is no agent at all - the analytics collector - is never stopped by it. Those writers ask
+     * this question and write nothing to the database while it answers yes: the mail pool's
+     * durable half and the analytics collector.
+     *
+     * The answer is yes under {@see self::PHASE_ACTIVATING} and {@see self::PHASE_ACTIVE}.
+     * `active` is where the initiator runs its operation on the leader or on a single node; a
+     * follower quiesces to `activating` and never advances to `active` in the first operation -
+     * the fact {@see locksOut()} states too - so on a follower `activating` is the phase in which
+     * the database may change under it. {@see self::PHASE_VERIFYING},
+     * {@see self::PHASE_DEACTIVATING} and {@see self::PHASE_INACTIVE} do not silence anyone.
+     *
+     * @return bool Whether the unstopped writers must write nothing right now
+     */
+    public function silencesUnstoppedWriters(): bool
+    {
+        return $this->phase === self::PHASE_ACTIVATING || $this->phase === self::PHASE_ACTIVE;
+    }
+
+    /**
      * Whether a connection holding this accept key is locked out of everything but
      * authentication while the freeze is up.
      *

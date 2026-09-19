@@ -138,6 +138,20 @@ final class ProtectedModeRuntime extends RtItem
     }
 
     /**
+     * Whether this phase silences the writers the roster walk leaves running.
+     *
+     * The rule lives on the state row ({@see StateProtectedModeRuntime::silencesUnstoppedWriters()})
+     * together with the phase set it depends on; this delegate is what lets the mail pool's durable
+     * half and the analytics collector ask the question without holding the backing row.
+     *
+     * @return bool Whether the unstopped writers must write nothing right now
+     */
+    public function silencesUnstoppedWriters(): bool
+    {
+        return $this->_state->silencesUnstoppedWriters();
+    }
+
+    /**
      * @return array<string, mixed> Full state row
      */
     public function toArray(): array

@@ -251,18 +251,26 @@ Four properties generalize to whatever destructive operation comes next:
 The freeze stops agents; anything that writes the database from outside every
 roster — a per-process singleton, a pool half that lives on its own — goes on
 writing through the operation unless it answers the freeze itself. It owes
-silence while this node's phase is `active`, the one phase in which the initiator
-may replace the database, and at the swap it owes forgetting every id of the
+silence while this node's freeze row answers `silencesUnstoppedWriters()` —
+`activating` or `active`, because `active` is where the initiator may replace the
+database on the leader or a single node, and a follower never reaches `active` in
+the first operation — and at the swap it owes forgetting every id of the
 replaced database, before its process answers the re-hydrate round. A cached id
 that the restored database lacks fails on a foreign key, which is the lucky case;
 one that the restored database gives to another value files facts under the
 wrong name with no error at all. The analytics collector is the worked example:
-`AnalyticsCollector::runSafely()` answers nothing while the phase is `active`,
+`AnalyticsCollector::runSafely()` answers nothing while the row silences it,
 `forgetReplacedDatabase()` is called first in `WorkerManager::handleDbReHydrateMessage()`
 and `DaemonManager::applyReHydrateContained()` — on the failed re-read too — and
 what the process owns (its worker and agent sessions) is opened again at resume.
 The re-read after a peer link does not forget: the database there is the same one.
-The durable half of the mail pool is the second writer of this kind, HIL-1060.
+The durable half of the mail pool is the second example, and the forgetting in its
+strongest form: it keeps nothing across the freeze at all.
+`AbstractDeliveryChannelAgent` drops every delivery it holds on its first tick
+under the silence and refuses new ones until the row lets go; the rows stay
+`pending` (HIL-1060). The price is named: a freeze abandoned before the operation
+ran leaves those notifications unsent until the pool learns to pick up pending
+rows when it starts.
 
 ## Entry Is Fail-Closed In Both Branches
 
@@ -347,7 +355,9 @@ a notification: the alarm fires precisely when the database may be unreadable,
 and a `NotificationDraft` is persisted before it is delivered. The consequence is
 load-bearing and narrow: the `hilos_mail` pool is exempt from the freeze on both
 sides (`protectedModeRefusesStart()` lets it start, `stopAgentsForProtectedMode()`
-leaves it running), because otherwise the only channel out of a stuck node is
+leaves it running) — its raw half, that is: the durable deliveries it holds are
+dropped when the freeze silences unstopped writers and refused until it lets go
+(HIL-1060) — because otherwise the only channel out of a stuck node is
 dead exactly when it is needed. **The log line comes first and always** — it is
 the one report that cannot fail, and a delivery failure never changes the
 watchdog's own state.
@@ -620,6 +630,8 @@ project" — activation is not declarative, so there is nothing to ask:
 | `BrowserContext::protectedModeLocksOut()` | is this page subscription frozen out? |
 | `DaemonProtectedModeExecutor::runtimeView()` | where do I write the phase? |
 | `WorkerServer::protectedModeRefusesStart()` | may this agent start during a freeze? |
+| `AbstractDeliveryChannelAgent::freezeSilencesDeliveries()` | must the durable deliveries go quiet? |
+| `AnalyticsCollector::isHeld()` | must the collector record nothing? |
 
 The two entries read the same row as their guard (`StandaloneProtectedMode` and
 `ClusterProtectedMode`, each with its own `runtimeView()`).
@@ -671,11 +683,16 @@ Refuse loudly and before any trace of entry, as above.
   (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`), the freeze left
   on disk (`ProtectedModeFreezeStoreTest`), and the analytics collector told to
   forget by the round answer and not by the peer-link re-read
-  (`WorkerManagerDbReHydrateAckTest`, `DaemonManagerDbReHydrateBarrierTest`).
+  (`WorkerManagerDbReHydrateAckTest`, `DaemonManagerDbReHydrateBarrierTest`),
+  the phases that silence the unstopped writers (`ProtectedModeContractTest`), and
+  the mail pool dropping and refusing its durable deliveries while its raw half
+  keeps sending (`MailDeliveryChannelAgentTest`).
 - `composer run test:framework:integration` — covers the carry-over across a real
   database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`)
   and the analytics collector held by the freeze and forgetting the swapped
-  schema (`AnalyticsDatabaseSwapIntegrationTest`).
+  schema (`AnalyticsDatabaseSwapIntegrationTest`, under `activating` and `active`).
+- `demo/chat` integration `MailPoolFreezeIntegrationTest` — a mail delivery in
+  flight when the freeze begins is cut and its row written no more.
 - `demo/chat` e2e `protected-mode.spec.ts` — drives the mode from a browser:
   enter, the live window showing the stub with the operation the caller named,
   leave, the window working again. It freezes the whole node, so its teardown

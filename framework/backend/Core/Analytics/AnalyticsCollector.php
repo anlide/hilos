@@ -26,7 +26,8 @@ use Throwable;
  *
  * The collector lives in every process and is in no agent roster, so the
  * protected-mode freeze cannot stop it; it answers the freeze itself (HIL-910).
- * While this node's freeze is active it records and writes nothing. At the
+ * While this node's freeze silences the writers the roster walk leaves running
+ * (activating or active) it records and writes nothing. At the
  * swap announcement it forgets every id of the replaced database
  * ({@see self::forgetReplacedDatabase()}), and once the freeze lets the system
  * back it re-opens only what the process owns - its worker session and the
@@ -1490,15 +1491,20 @@ final class AnalyticsCollector
     /**
      * Whether this node's protected-mode freeze holds the collector.
      *
-     * Only the active phase does: it is the one in which the initiator may replace the
-     * database. Before it the database is still the old one, and after it the swap has
-     * already been answered. No freeze row mounted means nothing holds.
+     * The freeze row answers it ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}), the
+     * same question the mail pool's durable half asks (HIL-1060): activating or active. Active
+     * is where the initiator may replace the database on the leader or a single node; a
+     * follower never reaches active in the first operation, so on a follower the database may
+     * change under it while its row reads activating. The leader's stop walk loses nothing to
+     * the wider span: stops under the gate are stamped after a freeze without a swap, and with a
+     * swap the rows written in activating would be gone anyway. No freeze row mounted means
+     * nothing holds.
      *
-     * @return bool True while the freeze is in its active phase
+     * @return bool True while the freeze silences the unstopped writers
      */
     private function isHeld(): bool
     {
-        return Hilos::$rt?->hilosProtectedModeRuntime?->phase === ProtectedModeRuntime::PHASE_ACTIVE;
+        return Hilos::$rt?->hilosProtectedModeRuntime?->silencesUnstoppedWriters() === true;
     }
 
     /**

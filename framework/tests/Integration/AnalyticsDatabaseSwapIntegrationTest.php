@@ -11,6 +11,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Integration coverage for the analytics collector across a protected-mode restore (HIL-910).
@@ -167,18 +168,23 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
      * While the operation may replace the database the collector writes nothing, the flush of
      * a buffer filled before the freeze included; once the phase moves on, that buffer goes out.
      *
+     * Activating holds as well as active (HIL-1060): a follower never reaches active in the
+     * first operation, and the database may change under it while its row reads activating.
+     *
      * The flush is called directly rather than through a due tick: the interval is five
      * seconds of wall clock, and the tick only decides whether to call the same flush.
      *
+     * @param string $phase Freeze phase that must hold the collector
      * @throws DatabaseException When the rows cannot be read back
      */
-    public function testNothingIsWrittenWhileTheFreezeIsActive(): void
+    #[DataProvider('silencingPhases')]
+    public function testNothingIsWrittenWhileTheFreezeSilencesTheCollector(string $phase): void
     {
         $collector = new AnalyticsCollector();
         $collector->openWorkerSession(self::WORKER_INDEX, false);
         $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
 
-        $this->freeze(ProtectedModeRuntime::PHASE_ACTIVE);
+        $this->freeze($phase);
         $this->assertNull($collector->openWsConnection(self::ACCEPT_KEY, null));
         $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
         $collector->flush();
@@ -191,6 +197,17 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
 
         // The signal recorded before the freeze, and not the one dropped under it.
         $this->assertCount(1, $this->rowsOf('SELECT `id` FROM `hilos_analytics_worker_system_signal`'));
+    }
+
+    /**
+     * @return array<string, array{string}> Every phase in which the freeze silences the collector
+     */
+    public static function silencingPhases(): array
+    {
+        return [
+            'activating' => [ProtectedModeRuntime::PHASE_ACTIVATING],
+            'active' => [ProtectedModeRuntime::PHASE_ACTIVE],
+        ];
     }
 
     /**
