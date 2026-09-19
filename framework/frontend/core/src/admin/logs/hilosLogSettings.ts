@@ -156,11 +156,17 @@ export function formatLogWriteLevel(value: unknown): string {
  * N-th hour. Anything else is printed as the expression itself — the frontend keeps
  * no cron parser, since an invented one would be wrong confidently.
  *
+ * An empty expression is the axis switched off ({@link LOG_SETTING_ROTATION_CRON}
+ * declares it so), and it reads as such rather than as a hole in the sentence.
+ *
  * @param value Value of {@link LOG_SETTING_ROTATION_CRON}: a five-field cron expression.
  */
 export function formatLogRotationSchedule(value: unknown): string {
   if (typeof value !== 'string') {
     return raw(value)
+  }
+  if (value === '') {
+    return 'with no schedule'
   }
 
   const daily = DAILY_CRON.exec(value)
@@ -184,11 +190,15 @@ export function formatLogRotationSchedule(value: unknown): string {
 /**
  * The size one live file may reach, in the largest unit it is whole in.
  *
- * @param value Value of {@link LOG_SETTING_ROTATION_MAX_LIVE_SIZE}, in bytes.
+ * @param value Value of {@link LOG_SETTING_ROTATION_MAX_LIVE_SIZE}, in bytes; 0 is
+ *   the axis switched off.
  */
 export function formatLogSizeThreshold(value: unknown): string {
   if (typeof value !== 'number') {
     return raw(value)
+  }
+  if (value === 0) {
+    return 'no size limit'
   }
 
   const mebibytes = value / BYTES_PER_MEBIBYTE
@@ -202,11 +212,15 @@ export function formatLogSizeThreshold(value: unknown): string {
 /**
  * How long an archived batch is kept, in days.
  *
- * @param value Value of {@link LOG_SETTING_RETENTION_MAX_AGE}, in seconds.
+ * @param value Value of {@link LOG_SETTING_RETENTION_MAX_AGE}, in seconds; 0 is the
+ *   axis switched off.
  */
 export function formatLogRetentionDays(value: unknown): string {
   if (typeof value !== 'number') {
     return raw(value)
+  }
+  if (value === 0) {
+    return 'no age limit'
   }
 
   return counted(trimmedNumber(value / SECONDS_PER_DAY), 'day')
@@ -237,6 +251,34 @@ function formatLogRotationAge(value: unknown): string {
  */
 function trimmedNumber(value: number): number {
   return Math.round(value * 10) / 10
+}
+
+/**
+ * The size threshold as the tail of a sentence beginning "rotates".
+ *
+ * The preposition is chosen here and not by {@link formatLogSizeThreshold}, which is
+ * exported and keeps the bare form of a threshold that is on.
+ *
+ * @param value Value of {@link LOG_SETTING_ROTATION_MAX_LIVE_SIZE}, in bytes.
+ */
+function sizeTail(value: unknown): string {
+  const size = formatLogSizeThreshold(value)
+
+  return value === 0 ? `with ${size}` : `at ${size}`
+}
+
+/**
+ * The retention as the tail of a sentence beginning "keeps batches".
+ *
+ * The preposition is chosen here and not by {@link formatLogRetentionDays}, which is
+ * exported and keeps the bare form of a retention that is on.
+ *
+ * @param value Value of {@link LOG_SETTING_RETENTION_MAX_AGE}, in seconds.
+ */
+function retentionTail(value: unknown): string {
+  const kept = formatLogRetentionDays(value)
+
+  return value === 0 ? `with ${kept}` : `for ${kept}`
 }
 
 /**
@@ -302,21 +344,33 @@ export const hilosLogSettingsVocabulary: HilosSettingPresetsVocabulary = {
       LOG_SETTING_ROTATION_CRON in values &&
       LOG_SETTING_ROTATION_MAX_LIVE_SIZE in values
     ) {
-      const schedule = formatLogRotationSchedule(
-        values[LOG_SETTING_ROTATION_CRON],
+      // "or" reads as "whichever comes first", so an axis switched off is left out
+      // rather than listed among the ones that fire.
+      const axes: string[] = []
+      const schedule = values[LOG_SETTING_ROTATION_CRON]
+      if (schedule !== '') {
+        axes.push(formatLogRotationSchedule(schedule))
+      }
+      const size = values[LOG_SETTING_ROTATION_MAX_LIVE_SIZE]
+      if (size !== 0) {
+        axes.push(sizeTail(size))
+      }
+      lines.push(
+        axes.length === 0
+          ? 'rotates only when the node restarts'
+          : `rotates ${axes.join(' or ')}`,
       )
-      const size = formatLogSizeThreshold(
-        values[LOG_SETTING_ROTATION_MAX_LIVE_SIZE],
-      )
-      lines.push(`rotates ${schedule} or at ${size}`)
     }
     if (LOG_SETTING_RETENTION_MAX_AGE in values) {
-      const kept = formatLogRetentionDays(values[LOG_SETTING_RETENTION_MAX_AGE])
-      lines.push(`keeps batches for ${kept}`)
+      lines.push(
+        `keeps batches ${retentionTail(values[LOG_SETTING_RETENTION_MAX_AGE])}`,
+      )
     }
 
-    // LOG_SETTING_ROTATION_MAX_AGE is deliberately absent: every mode declares that
-    // axis off, and naming an axis nobody uses is showing an empty place.
+    // An axis switched off is not named on a card, as on the Rotations screen
+    // (formatRotationRule): naming an axis nobody uses is showing an empty place.
+    // That is also why LOG_SETTING_ROTATION_MAX_AGE, which every mode declares off,
+    // has no line at all.
     return lines
   },
   differenceLine(difference) {
@@ -337,16 +391,16 @@ export const hilosLogSettingsVocabulary: HilosSettingPresetsVocabulary = {
         return `rotates ${current} instead of ${declared}`
       }
       case LOG_SETTING_ROTATION_MAX_LIVE_SIZE: {
-        const current = formatLogSizeThreshold(difference.currentValue)
-        const declared = formatLogSizeThreshold(difference.presetValue)
+        const current = sizeTail(difference.currentValue)
+        const declared = sizeTail(difference.presetValue)
 
-        return `rotates at ${current} instead of at ${declared}`
+        return `rotates ${current} instead of ${declared}`
       }
       case LOG_SETTING_RETENTION_MAX_AGE: {
-        const current = formatLogRetentionDays(difference.currentValue)
+        const current = retentionTail(difference.currentValue)
         const declared = formatLogRetentionDays(difference.presetValue)
 
-        return `keeps batches for ${current} instead of ${declared}`
+        return `keeps batches ${current} instead of ${declared}`
       }
       case LOG_SETTING_ROTATION_MAX_AGE: {
         // Only one direction is possible: a preset always declares this axis off, so

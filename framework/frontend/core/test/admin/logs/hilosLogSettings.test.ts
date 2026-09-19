@@ -82,6 +82,10 @@ describe('formatLogRotationSchedule', () => {
     expect(formatLogRotationSchedule('15 4 * * 0')).toBe('15 4 * * 0')
     expect(formatLogRotationSchedule('*/5 * * * *')).toBe('*/5 * * * *')
   })
+
+  it('reads an empty expression as the schedule switched off', () => {
+    expect(formatLogRotationSchedule('')).toBe('with no schedule')
+  })
 })
 
 describe('formatLogSizeThreshold', () => {
@@ -94,6 +98,10 @@ describe('formatLogSizeThreshold', () => {
     expect(formatLogSizeThreshold(1024 * MIB)).toBe('1 GiB')
     expect(formatLogSizeThreshold(2048 * MIB)).toBe('2 GiB')
   })
+
+  it('reads zero as the size trigger switched off', () => {
+    expect(formatLogSizeThreshold(0)).toBe('no size limit')
+  })
 })
 
 describe('formatLogRetentionDays', () => {
@@ -101,6 +109,10 @@ describe('formatLogRetentionDays', () => {
     expect(formatLogRetentionDays(7 * DAY)).toBe('7 days')
     expect(formatLogRetentionDays(30 * DAY)).toBe('30 days')
     expect(formatLogRetentionDays(DAY)).toBe('1 day')
+  })
+
+  it('reads zero as the age limit switched off', () => {
+    expect(formatLogRetentionDays(0)).toBe('no age limit')
   })
 })
 
@@ -139,6 +151,43 @@ describe('hilosLogSettingsVocabulary.valueLines', () => {
           .some((line) => line.includes('after the last rotation')),
       ).toBe(false)
     }
+  })
+
+  it('leaves the size trigger out of the rotation line when it is off', () => {
+    expect(
+      hilosLogSettingsVocabulary.valueLines({
+        ...RECIPE.normal,
+        [LOG_SETTING_ROTATION_MAX_LIVE_SIZE]: 0,
+      }),
+    ).toContain('rotates at 03:00')
+  })
+
+  it('leaves the schedule out of the rotation line when it is off', () => {
+    expect(
+      hilosLogSettingsVocabulary.valueLines({
+        ...RECIPE.normal,
+        [LOG_SETTING_ROTATION_CRON]: '',
+      }),
+    ).toContain('rotates at 512 MiB')
+  })
+
+  it('says rotation waits for a restart when both of its axes are off', () => {
+    expect(
+      hilosLogSettingsVocabulary.valueLines({
+        ...RECIPE.normal,
+        [LOG_SETTING_ROTATION_CRON]: '',
+        [LOG_SETTING_ROTATION_MAX_LIVE_SIZE]: 0,
+      }),
+    ).toContain('rotates only when the node restarts')
+  })
+
+  it('reads a retention of zero as no age limit', () => {
+    expect(
+      hilosLogSettingsVocabulary.valueLines({
+        ...RECIPE.normal,
+        [LOG_SETTING_RETENTION_MAX_AGE]: 0,
+      }),
+    ).toContain('keeps batches with no age limit')
   })
 })
 
@@ -191,6 +240,66 @@ describe('hilosLogSettingsVocabulary.differenceLine', () => {
         currentValue: 14 * DAY,
       }),
     ).toBe('keeps batches for 14 days instead of 30 days')
+  })
+
+  it('reads a schedule switched off against the one the mode declares', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_ROTATION_CRON,
+        presetValue: '0 3 * * *',
+        currentValue: '',
+      }),
+    ).toBe('rotates with no schedule instead of at 03:00')
+  })
+
+  it('reads a size trigger switched off against the one the mode declares', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_ROTATION_MAX_LIVE_SIZE,
+        presetValue: 512 * MIB,
+        currentValue: 0,
+      }),
+    ).toBe('rotates with no size limit instead of at 512 MiB')
+  })
+
+  it('reads a retention switched off against the one the mode declares', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_RETENTION_MAX_AGE,
+        presetValue: 30 * DAY,
+        currentValue: 0,
+      }),
+    ).toBe('keeps batches with no age limit instead of 30 days')
+  })
+
+  it('reads a schedule switched on where the mode declares it off', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_ROTATION_CRON,
+        presetValue: '',
+        currentValue: '0 3 * * *',
+      }),
+    ).toBe('rotates at 03:00 instead of with no schedule')
+  })
+
+  it('reads a size trigger switched on where the mode declares it off', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_ROTATION_MAX_LIVE_SIZE,
+        presetValue: 0,
+        currentValue: 512 * MIB,
+      }),
+    ).toBe('rotates at 512 MiB instead of with no size limit')
+  })
+
+  it('reads a retention switched on where the mode declares it off', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_RETENTION_MAX_AGE,
+        presetValue: 0,
+        currentValue: 14 * DAY,
+      }),
+    ).toBe('keeps batches for 14 days instead of no age limit')
   })
 
   it('reads the axis a mode never declares as switched on by hand', () => {
