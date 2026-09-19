@@ -220,7 +220,7 @@ describe('HilosTableSelection', () => {
     fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
     expect(byId('modal')).not.toBeNull()
     expect(document.body.textContent).toContain(
-      '1 rows on this page will be affected',
+      '1 row on this page will be affected',
     )
     expect(asked).toHaveLength(0)
 

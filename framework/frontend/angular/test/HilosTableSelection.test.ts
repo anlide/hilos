@@ -251,7 +251,7 @@ describe('HilosTableSelection', () => {
     click(fixture, 'hilos-table-bulk-delete')
     expect(byId(fixture, 'modal')).not.toBeNull()
     expect(fixture.nativeElement.textContent).toContain(
-      '1 rows on this page will be affected',
+      '1 row on this page will be affected',
     )
     expect(asked).toHaveLength(0)
 

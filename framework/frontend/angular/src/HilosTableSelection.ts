@@ -326,7 +326,7 @@ export class HilosTableSelection<R> {
   protected readonly confirmBody = computed(() =>
     this.byFilter()
       ? 'Every row matching the current filter will be affected, including rows that are not on this page'
-      : `${this.count()} rows on this page will be affected`,
+      : `${this.count()} ${this.count() === 1 ? 'row' : 'rows'} on this page will be affected`,
   )
 
   constructor() {

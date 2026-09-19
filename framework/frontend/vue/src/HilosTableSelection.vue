@@ -152,7 +152,7 @@ const {
 const confirmBody = computed(() =>
   byFilter.value
     ? 'Every row matching the current filter will be affected, including rows that are not on this page'
-    : `${count.value} rows on this page will be affected`,
+    : `${count.value} ${count.value === 1 ? 'row' : 'rows'} on this page will be affected`,
 )
 
 function openConfirm(action: HilosTableBulkAction): void {

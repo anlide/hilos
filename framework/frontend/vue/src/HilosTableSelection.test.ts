@@ -194,7 +194,7 @@ describe('HilosTableSelection', () => {
     await wrapper.find('[data-id="hilos-table-bulk-delete"]').trigger('click')
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(document.body.textContent).toContain(
-      '1 rows on this page will be affected',
+      '1 row on this page will be affected',
     )
     expect(asked).toHaveLength(0)
 

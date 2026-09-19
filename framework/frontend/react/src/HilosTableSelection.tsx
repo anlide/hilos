@@ -142,7 +142,7 @@ export function HilosTableSelection<R>({
 
   const confirmBody = byFilter
     ? 'Every row matching the current filter will be affected, including rows that are not on this page'
-    : `${count} rows on this page will be affected`
+    : `${count} ${count === 1 ? 'row' : 'rows'} on this page will be affected`
 
   function openConfirm(action: HilosTableBulkAction): void {
     bulkTracked.clearError()
