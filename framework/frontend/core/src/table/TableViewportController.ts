@@ -903,6 +903,17 @@ export class TableViewportController<R> implements TableWindowSink {
     return this.searchSignal
   }
 
+  /**
+   * The current filter map, read-only.
+   *
+   * A view showing a filter reads it here rather than keeping its own copy:
+   * {@link resetFilters} returns the map to `initialFilter`, so a copy would go
+   * on showing the choice the table has already dropped.
+   */
+  get filter(): ReadonlySignal<Readonly<Record<string, unknown>>> {
+    return this.filterSignal
+  }
+
   /** The active order, or `undefined` when unsorted. */
   get order(): ReadonlySignal<TableSortOrder | undefined> {
     return this.orderSignal

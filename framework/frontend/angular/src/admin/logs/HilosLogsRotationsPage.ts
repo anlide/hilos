@@ -5,7 +5,9 @@
 // two directories, carried off apart — so the node column, the node filter and the node
 // half of the search hint exist only where nodes have names. Search, the node filter
 // and the All / awaiting switch ride the open viewport filter map (server-side, no
-// local filtering); the window is re-served by the page whenever the cluster picture or
+// local filtering); the switch shows the table's own filter and lives in the address
+// too (HIL-903), so the overview banner opens it on Awaiting and a reload keeps what
+// is on the screen; the window is re-served by the page whenever the cluster picture or
 // the rule moves. A recommended batch carries the first of this screen's two commands:
 // a modal saying where the batch lies and how to copy it off, and a confirmation that
 // it was (HIL-483) — the badge then repaints when the holding node's next index
@@ -22,6 +24,7 @@ import {
   Component,
   computed,
   effect,
+  inject,
   input,
   signal,
 } from '@angular/core'
@@ -66,6 +69,7 @@ import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { HILOS_ROUTER } from '../../hilosRouterToken.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 // The retention badge: a batch on its way is in motion and not in trouble, a
@@ -478,8 +482,12 @@ export class HilosLogsRotationsPage {
   protected readonly logSettingsHref =
     HILOS_PAGE_ROUTES[HilosPages.LOGS_SETTINGS]
 
+  // The navigator the switch reads its entry value from and writes its choice to;
+  // mounted without one, the screen opens on All and leaves the address alone.
+  private readonly router = inject(HILOS_ROUTER, { optional: true })
+
   protected readonly rotations = computed(() =>
-    createHilosLogRotationsTable(this.context()),
+    createHilosLogRotationsTable(this.context(), this.router ?? undefined),
   )
   private readonly actions = computed(() =>
     createHilosLogRotationsActions(this.context()),
@@ -495,7 +503,9 @@ export class HilosLogsRotationsPage {
   private readonly search = signal('')
 
   // Domain filters: the node and the state ride the open filter map so the backend
-  // narrows the window (no local filtering). Empty clears the filter.
+  // narrows the window (no local filtering). Empty clears the filter. The state is
+  // mirrored from the table itself rather than kept here, so the generic "Reset
+  // filters" moves the switch along with the rows.
   protected readonly nodeFilter = signal('')
   protected readonly stateFilter = signal('')
 
@@ -617,6 +627,7 @@ export class HilosLogsRotationsPage {
       this.header.set(headerHandle.header.get())
       this.rowCount.set(rotations.controller.rows.get().length)
       this.search.set(rotations.controller.search.get())
+      this.stateFilter.set(rotations.state.get())
       const unsubscribes = [
         subscribeSignal(headerHandle.header, (next) => {
           this.header.set(next)
@@ -626,6 +637,9 @@ export class HilosLogsRotationsPage {
         }),
         subscribeSignal(rotations.controller.search, (next) => {
           this.search.set(next)
+        }),
+        subscribeSignal(rotations.state, (next) => {
+          this.stateFilter.set(next)
         }),
       ]
       onCleanup(() => {
@@ -699,7 +713,6 @@ export class HilosLogsRotationsPage {
   }
 
   protected setState(value: string): void {
-    this.stateFilter.set(value)
     this.rotations().controller.setFilter(ROTATION_FILTER_STATE, value)
   }
 

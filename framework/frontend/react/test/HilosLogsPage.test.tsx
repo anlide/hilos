@@ -455,7 +455,7 @@ describe('HilosLogsPage', () => {
     expect(banner?.textContent).not.toContain('node-1')
   })
 
-  it('takes both ways off the screen to the rotation history', () => {
+  it('takes both ways off the screen to the rotations awaiting carry-off', () => {
     const { connection, push } = makeConnection()
     const container = mountPage(connection)
 
@@ -468,10 +468,10 @@ describe('HilosLogsPage', () => {
 
     expect(
       byId(container, 'hilos-logs-takeout-open')?.getAttribute('href'),
-    ).toBe('/hilos/logs/rotations')
+    ).toBe('/hilos/logs/rotations/due')
     expect(
       byId(container, 'hilos-logs-node-due-node-2')?.getAttribute('href'),
-    ).toBe('/hilos/logs/rotations')
+    ).toBe('/hilos/logs/rotations/due')
   })
 
   it('shows the growth in its three positions and never as a zero', () => {

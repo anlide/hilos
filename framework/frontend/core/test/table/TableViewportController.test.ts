@@ -339,6 +339,22 @@ describe('TableViewportController', () => {
     })
   })
 
+  it('shows its filter map read-only: the preset, a change, and the reset back to the preset', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      initialFilter: { state: 'due' },
+    })
+
+    expect(controller.filter.get()).toEqual({ state: 'due' })
+
+    controller.setFilter('state', '')
+    expect(controller.filter.get()).toEqual({})
+
+    controller.resetFilters()
+    expect(controller.filter.get()).toEqual({ state: 'due' })
+  })
+
   it('setSort toggles the direction on the same field', () => {
     const { controller, sent } = makeController()
     controller.setSort('key')

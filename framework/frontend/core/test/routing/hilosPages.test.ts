@@ -130,9 +130,16 @@ describe('the log viewer route', () => {
       },
       admin: true,
     })
-    // The neighbouring log pages are static rows and keep winning their paths.
-    expect(router.match('/hilos/logs/rotations').page).toBe(
-      HilosPages.LOGS_ROTATIONS,
-    )
+    // The rotations page carries its state filter in an optional tail (HIL-903).
+    expect(router.match('/hilos/logs/rotations')).toEqual({
+      page: HilosPages.LOGS_ROTATIONS,
+      params: {},
+      admin: true,
+    })
+    expect(router.match('/hilos/logs/rotations/due')).toEqual({
+      page: HilosPages.LOGS_ROTATIONS,
+      params: { state: 'due' },
+      admin: true,
+    })
   })
 })

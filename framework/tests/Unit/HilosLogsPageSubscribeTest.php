@@ -263,6 +263,31 @@ final class HilosLogsPageSubscribeTest extends TestCase
     }
 
     /**
+     * A batch an operator confirmed taking out is not awaiting takeout any more (HIL-903), even
+     * while its node's verdict still names it and the pruner has not removed it yet: the rotations
+     * screen shows it as taken, and the banner that links to the awaiting filter has to count the
+     * batches that filter shows.
+     */
+    public function testAConfirmedBatchIsNotCountedAsAwaitingTakeout(): void
+    {
+        $old = time() - 10 * self::A_DAY_IN_SECONDS;
+        $this->fileThePicture(
+            self::nodeSlot(
+                'node-1',
+                batches: [self::batch($old), self::batch($old + 60, takenAt: $old + 3600), self::batch($old + 120)],
+                due: [$old, $old + 60, $old + 120],
+            ),
+        );
+        $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
+
+        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $overview = $this->overview();
+        $this->assertSame(2, $overview->batchesDueForTakeout);
+        $this->assertSame(2, $overview->nodes[0][HilosLogsOverviewSignalData::batchesDueForTakeout]);
+    }
+
+    /**
      * Only a node with a name of its own gets a row. The installation that runs on one node
      * reports under no name, and the table it would head is a table of one row about "here".
      */
@@ -980,6 +1005,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @param int $workerBytes What the worker files in it weigh
      * @param int $workerMonopolisticBytes What the monopolistic worker files in it weigh
      * @param int $daemonBytes What the daemon's own files in it weigh
+     * @param ?int $takenAt When an operator confirmed carrying it off, null while nobody has
      * @return LogBatchSummary Batch as the node reported it
      */
     private static function batch(
@@ -988,8 +1014,20 @@ final class HilosLogsPageSubscribeTest extends TestCase
         int $workerBytes = 0,
         int $workerMonopolisticBytes = 0,
         int $daemonBytes = 0,
+        ?int $takenAt = null,
     ): LogBatchSummary {
-        return new LogBatchSummary($timestamp, 1, $agentBytes, 1, $workerBytes, 1, $workerMonopolisticBytes, 1, $daemonBytes);
+        return new LogBatchSummary(
+            $timestamp,
+            1,
+            $agentBytes,
+            1,
+            $workerBytes,
+            1,
+            $workerMonopolisticBytes,
+            1,
+            $daemonBytes,
+            $takenAt,
+        );
     }
 
     /**

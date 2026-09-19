@@ -5,10 +5,11 @@
 // Everything on it arrives in ONE frame of the page's own signal and refreshes itself
 // by push; there is no table viewport, because the per-node rows are one per node that
 // reported and fit in that frame whole. The screen commands nothing: the takeout banner
-// and the per-node badge are ordinary navigation into the rotations history. Which of
-// the two empty states it is in, and the wording of every figure, are the core
-// headless's (hilosLogsOverview); this view owns only the markup, so a project mounts
-// it by passing its HilosLogsOverviewContext. Bootstrap classes only
+// and the per-node badge are ordinary links into the rotations history, at the
+// address that opens it on the awaiting filter (HIL-903) — the batches the counter
+// names. Which of the two empty states it is in, and the wording of every figure,
+// are the core headless's (hilosLogsOverview); this view owns only the markup, so a
+// project mounts it by passing its HilosLogsOverviewContext. Bootstrap classes only
 // (styling-rules.md).
 import {
   ChangeDetectionStrategy,
@@ -27,9 +28,10 @@ import {
   formatLogsOverviewRotationAt,
   hasLogsOverviewNodes,
   hasLogsOverviewRecent,
-  HILOS_PAGE_ROUTES,
+  HILOS_ROTATION_STATE_DUE,
   HilosPages,
   logLevelVariant,
+  logRotationsPath,
   logsOverviewBatchesNote,
   logsOverviewForecastNote,
   logsOverviewGrowthNote,
@@ -489,8 +491,7 @@ export class HilosLogsPage {
   readonly context = input.required<HilosLogsOverviewContext>()
 
   protected readonly page = HilosPages.LOGS
-  protected readonly rotationsPath =
-    HILOS_PAGE_ROUTES[HilosPages.LOGS_ROTATIONS]
+  protected readonly rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
   protected readonly formatBytes = formatLogsOverviewBytes
   protected readonly formatCount = formatLogsOverviewCount
   protected readonly formatRotationAt = formatLogsOverviewRotationAt

@@ -1,12 +1,13 @@
 // The Angular peer of vue/src/admin/logs/HilosLogsPage.test.ts and
 // react/test/HilosLogsPage.test.tsx, for the one piece of this screen's markup that
 // is new in all three at once: the row of stream classes and its daemon tile
-// (HIL-936).
+// (HIL-936), and the address the takeout banner and the per-node badge link to
+// (HIL-903), which each view writes itself.
 //
-// Only the tile and the order of the row are here. The empty states, the takeout
-// banner and the per-node table are the core headless's discrimination and are
-// proved once, in the peers; a third copy of them would test @hilos/core through
-// three view layers rather than test this view.
+// Only those are here. The empty states and the rest of the takeout banner and the
+// per-node table are the core headless's discrimination and are proved once, in the
+// peers; a third copy of them would test @hilos/core through three view layers
+// rather than test this view.
 //
 // What is Angular's own is the mount (TestBed) and the fact that a frame is read by
 // running change detection rather than by awaiting a tick.
@@ -17,6 +18,7 @@ import {
   OVERVIEW_SIGNAL,
   type HilosConnection,
   type HilosLogsOverview,
+  type HilosLogsOverviewNode,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
@@ -24,6 +26,25 @@ import { describe, expect, it } from 'vitest'
 
 import { HilosLogsPage } from '../src/admin/logs/HilosLogsPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+
+/** One node's row as the overview carries it. */
+function node(
+  overrides: Partial<HilosLogsOverviewNode> = {},
+): HilosLogsOverviewNode {
+  return {
+    nodeId: 'node-1',
+    available: true,
+    lastRotationAt: '2026-09-02T03:00:00+00:00',
+    liveBytes: 210 * 1024 * 1024,
+    archiveBytes: 1024 * 1024 * 1024,
+    growthBytesPerDay: 190 * 1024 * 1024,
+    batchesDueForTakeout: 0,
+    filesystemFreeBytes: null,
+    filesystemTotalBytes: null,
+    freeSpaceThresholdPercent: null,
+    ...overrides,
+  }
+}
 
 /** The overview as the page answers a subscription with it. */
 function overview(
@@ -191,5 +212,30 @@ describe('HilosLogsPage', () => {
       'hilos-logs-tile-agents',
       'hilos-logs-tile-workers',
     ])
+  })
+
+  it('takes both ways off the screen to the rotations awaiting carry-off', () => {
+    const { connection, push } = makeConnection()
+    const fixture = mountPage(connection)
+
+    push(
+      overview({
+        batchesDueForTakeout: 2,
+        nodes: [node({ nodeId: 'node-2', batchesDueForTakeout: 2 })],
+      }),
+    )
+    fixture.detectChanges()
+
+    const root = fixture.nativeElement as HTMLElement
+    expect(
+      root
+        .querySelector('[data-id="hilos-logs-takeout-open"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/logs/rotations/due')
+    expect(
+      root
+        .querySelector('[data-id="hilos-logs-node-due-node-2"]')
+        ?.getAttribute('href'),
+    ).toBe('/hilos/logs/rotations/due')
   })
 })

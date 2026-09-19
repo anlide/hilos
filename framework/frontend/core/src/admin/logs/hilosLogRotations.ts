@@ -26,7 +26,9 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
+import { type PageRouteMatch } from '../../routing/PageRouter.js'
 import {
   readNumber,
   readNumberOrNull,
@@ -34,7 +36,12 @@ import {
   readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { createSignal, type ReadonlySignal } from '../../state/signal.js'
+import {
+  computedSignal,
+  createSignal,
+  subscribeSignal,
+  type ReadonlySignal,
+} from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
@@ -125,6 +132,14 @@ export const ROTATION_FILTER_NODE = 'node'
 
 /** Filter-map key: narrow the history to one retention state. */
 export const ROTATION_FILTER_STATE = 'state'
+
+/**
+ * Route slot carrying the state filter the screen was entered with (HIL-903).
+ *
+ * It shares its value with {@link ROTATION_FILTER_STATE} and is still a second
+ * name: one names a slot of the address, the other a key of the filter map.
+ */
+export const ROTATION_STATE_PARAM = 'state'
 
 /** Retention verdict: the batch is inside what the policy protects. */
 export const HILOS_ROTATION_STATE_KEPT = 'kept'
@@ -276,10 +291,64 @@ export function resolveHilosLogRotationRow(row: TableRow): HilosLogRotationRow {
 export interface HilosLogRotationsTable {
   /** The server-windowed controller the view renders rows, descriptor, and filters from. */
   readonly controller: TableViewportController<HilosLogRotationRow>
+  /**
+   * The state filter of the table, `''` when none: what the All / awaiting
+   * switch shows. It is the table's own map and not a copy, so the generic
+   * "Reset filters" moves the switch along with the rows.
+   */
+  readonly state: ReadonlySignal<string>
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
   dispose(): void
+}
+
+/**
+ * The slice of the navigator the rotations screen drives: it reads the address
+ * it was entered by, and rewrites it whenever the All / awaiting switch moves.
+ *
+ * {@link HilosRouter} is a structural fit; a test passes a fake. Rewriting rather
+ * than navigating keeps the page subscribed — the switch narrows the same table.
+ */
+export interface HilosLogRotationsAddress {
+  /** The matched route, whose params carry the state filter when the address names one. */
+  readonly currentRoute: ReadonlySignal<PageRouteMatch>
+  /**
+   * Rewrite the current address without re-subscribing the page.
+   *
+   * @param pathname The address the current state filter resolves to.
+   */
+  replacePath(pathname: string): void
+}
+
+/**
+ * Reads the state filter an address names: `'due'` for the awaiting tail, `''`
+ * otherwise.
+ *
+ * An unknown tail reads as no tail rather than as a refusal: the address came
+ * from outside, and the switch has no other value to land on.
+ *
+ * @param params The route params of the rotations route.
+ */
+export function readLogRotationsAddress(
+  params: Record<string, string>,
+): string {
+  return params[ROTATION_STATE_PARAM] === HILOS_ROTATION_STATE_DUE
+    ? HILOS_ROTATION_STATE_DUE
+    : ''
+}
+
+/**
+ * The address a state filter resolves to: the bare rotations address for
+ * `''`, the awaiting tail for `'due'`.
+ *
+ * @param state The state filter, `''` when none.
+ */
+export function logRotationsPath(state: string): string {
+  return resolveHilosPath(
+    HilosPages.LOGS_ROTATIONS,
+    state === '' ? {} : { [ROTATION_STATE_PARAM]: state },
+  )
 }
 
 /**
@@ -294,13 +363,25 @@ export interface HilosLogRotationsTable {
  * moves, over this same descriptor. The returned handle's `start` binds the table
  * and requests the first window; `dispose` unbinds it.
  *
+ * The state filter lives in the address too (HIL-903). An address carrying the
+ * awaiting tail — where the overview banner links — opens the table with that
+ * filter as a route preset, so the unfiltered first window is never shown; and
+ * whenever the table's state filter moves, by the switch or by the generic
+ * "Reset filters" returning to the preset, the address is rewritten in place to
+ * match, so a reload or a copied link opens what is on the screen. Without a
+ * navigator there is neither a preset nor a rewrite.
+ *
  * @param context The project context (connection and scope stores).
- * @param initialFilter The initial filter map, or none.
+ * @param address The navigator the state filter is read from and written to, or none.
  */
 export function createHilosLogRotationsTable(
   context: HilosLogRotationsContext,
-  initialFilter?: Record<string, unknown>,
+  address?: HilosLogRotationsAddress,
 ): HilosLogRotationsTable {
+  const entered =
+    address === undefined
+      ? ''
+      : readLogRotationsAddress(address.currentRoute.get().params)
   const controller = new TableViewportController<HilosLogRotationRow>({
     resolve: resolveHilosLogRotationRow,
     sendViewport: (descriptor) =>
@@ -309,12 +390,19 @@ export function createHilosLogRotationsTable(
         ROTATIONS_TABLE,
         descriptor,
       ),
-    initialFilter,
+    initialFilter:
+      entered === '' ? undefined : { [ROTATION_FILTER_STATE]: entered },
+  })
+  const state = computedSignal(() => {
+    const value = controller.filter.get()[ROTATION_FILTER_STATE]
+
+    return typeof value === 'string' ? value : ''
   })
   const teardown: Array<() => void> = []
 
   return {
     controller,
+    state,
     start() {
       teardown.push(
         bindTableViewport(
@@ -324,6 +412,18 @@ export function createHilosLogRotationsTable(
           controller,
         ),
       )
+      if (address !== undefined) {
+        teardown.push(
+          subscribeSignal(state, (value) => {
+            if (
+              value !==
+              readLogRotationsAddress(address.currentRoute.get().params)
+            ) {
+              address.replacePath(logRotationsPath(value))
+            }
+          }),
+        )
+      }
     },
     dispose() {
       for (const off of teardown.splice(0)) {

@@ -3,9 +3,10 @@
 // history screen — carrying a batch off, and taking that word back (HIL-759) —
 // plus the fourth batch state the badge has to name (HIL-870).
 //
-// Only the cases about the withdrawal, about the takeout modal's promise and about
-// the Files cell are here, by the same names the other two shells give them. The
-// empty states, the filters and the sub-line are the core headless's
+// Only the cases about the withdrawal, about the takeout modal's promise, about
+// the Files cell and about the switch following the address (HIL-903) are here, by
+// the same names the other two shells give them. The empty states, the other
+// filters and the sub-line are the core headless's
 // discrimination and are proved once, in the peers; a third copy of them would
 // test @hilos/core through three view layers rather than test this view.
 //
@@ -19,6 +20,7 @@ import {
   createSignal,
   HilosPages,
   ROTATIONS_HEADER_SIGNAL,
+  SIGNAL_TYPE_PAGE_RESPONSE,
   ScopeManager,
   type ActionHandle,
   type ActionLifecycle,
@@ -27,6 +29,7 @@ import {
   type HilosLogRotationsHeader,
   type HilosRouter,
   type PageRouteMatch,
+  type TableViewportDescriptor,
 } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
 
@@ -49,11 +52,21 @@ function header(
   }
 }
 
-function router(): HilosRouter {
+/**
+ * A navigator entered at `params`, recording the addresses it is rewritten to.
+ *
+ * @param params The route params the screen was entered with.
+ * @param rewrites Collects every address passed to `replacePath`.
+ * @returns The navigator.
+ */
+function router(
+  params: Record<string, string> = {},
+  rewrites: string[] = [],
+): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.LOGS_ROTATIONS,
-      params: {},
+      params,
       admin: true,
     }),
     currentPath: createSignal(''),
@@ -67,7 +80,9 @@ function router(): HilosRouter {
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
     navigate: () => {},
-    replacePath: () => {},
+    replacePath: (pathname: string) => {
+      rewrites.push(pathname)
+    },
     start: () => {},
     stop: () => {},
   } as unknown as HilosRouter
@@ -78,18 +93,21 @@ function router(): HilosRouter {
  * page's own header, and the window of the rotations table. The window matters
  * even when it is empty — until one arrives the table is loading.
  *
- * @returns The connection plus the two pushes a case drives it with.
+ * @returns The connection, the descriptors it was sent, and the pushes a case drives it with.
  */
 function makeConnection(): {
   connection: HilosConnection
+  sent: TableViewportDescriptor[]
   pushHeader: (frame: HilosLogRotationsHeader) => void
   pushWindow: (rows: Record<string, unknown>[]) => void
+  pushPageWindow: (rows: Record<string, unknown>[]) => void
 } {
   const projectListeners: ((signal: {
     type: string
     data: unknown
   }) => void)[] = []
   const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  const sent: TableViewportDescriptor[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'projectSignal') {
@@ -111,11 +129,46 @@ function makeConnection(): {
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
-    sendTableViewport(): void {},
+    sendTableViewport(
+      _page: string,
+      _tableKey: string,
+      descriptor: TableViewportDescriptor,
+    ): void {
+      sent.push(descriptor)
+    },
   } as unknown as HilosConnection
 
   return {
     connection,
+    sent,
+    // The window the page's own answer carries — every batch, whatever the address
+    // named, because the page declares the table and not the route's filter.
+    pushPageWindow(rows: Record<string, unknown>[]): void {
+      for (const listener of projectListeners) {
+        listener({
+          type: SIGNAL_TYPE_PAGE_RESPONSE,
+          data: {
+            page: HilosPages.LOGS_ROTATIONS,
+            payload: {
+              windows: {
+                hilosLogRotations: {
+                  rows: rows.map((slot) => ({
+                    rowKey: String(slot.rowKey),
+                    slots: { batch: slot },
+                  })),
+                  sort: [{ field: 'batchAt', direction: 'desc' }],
+                  limit: 25,
+                  totalCount: rows.length,
+                  totalExact: true,
+                  firstAnchor: null,
+                  lastAnchor: null,
+                },
+              },
+            },
+          },
+        })
+      }
+    },
     pushHeader(frame: HilosLogRotationsHeader): void {
       for (const listener of projectListeners) {
         listener({ type: ROTATIONS_HEADER_SIGNAL, data: frame })
@@ -209,9 +262,10 @@ function batch(
 function mountPage(
   connection: HilosConnection,
   actions: ActionLifecycle = makeActions().actions,
+  navigator: HilosRouter = router(),
 ): ComponentFixture<HilosLogsRotationsPage> {
   TestBed.configureTestingModule({
-    providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    providers: [{ provide: HILOS_ROUTER, useValue: navigator }],
   })
 
   const fixture = TestBed.createComponent(HilosLogsRotationsPage)
@@ -451,5 +505,41 @@ describe('HilosLogsRotationsPage', () => {
     expect(screenText(fixture)).not.toContain(
       'Has the batch not been carried off?',
     )
+  })
+
+  it('opens on Awaiting carry-off when entered by the awaiting address', () => {
+    const { connection, sent, pushPageWindow } = makeConnection()
+    const fixture = mountPage(
+      connection,
+      makeActions().actions,
+      router({ state: 'due' }),
+    )
+
+    pushPageWindow([batch()])
+    fixture.detectChanges()
+
+    // The page's unfiltered window is not drawn; the table asks for the awaiting one.
+    expect(screenText(fixture)).not.toContain('archive/2027-01-15-08-00-00/')
+    expect(
+      byId(fixture, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(sent[0]?.filter).toEqual({ state: 'due' })
+  })
+
+  it('rewrites the address in place when the switch moves to All', () => {
+    const { connection } = makeConnection()
+    const rewrites: string[] = []
+    const fixture = mountPage(
+      connection,
+      makeActions().actions,
+      router({ state: 'due' }, rewrites),
+    )
+
+    clickById(fixture, 'hilos-rotation-state-all')
+
+    expect(rewrites).toEqual(['/hilos/logs/rotations'])
+    expect(
+      byId(fixture, 'hilos-rotation-state-all')?.getAttribute('aria-pressed'),
+    ).toBe('true')
   })
 })

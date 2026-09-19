@@ -311,8 +311,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *
      * The takeout figure is the one not taken out of {@see ClusterLogTotals}, because it is not a
      * total over the picture but a per-node verdict added up: each node judges its own archive and
-     * reports the answer with its index (HIL-871), so this counter is the sum of those lists and
-     * moves when a node re-reports, not when this page next looks at a clock.
+     * reports the answer with its index (HIL-871), so this counter adds up those lists, less the
+     * batches an operator already confirmed taking out ({@see self::batchesDueOf()}), and moves
+     * when a node re-reports, not when this page next looks at a clock.
      */
     private static function refreshOverview(): void
     {
@@ -438,13 +439,19 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * How many of one node's batches that node says are past their retention.
+     * How many of one node's batches that node says are past their retention and nobody has taken out.
      *
      * Counted rather than judged (HIL-871): the rule is applied on the machine holding the
-     * directory, and this figure is the length of the list that arrived. It stays per node for
-     * the reason it was always per node - archives do not travel, so a batch ages out where it
-     * lies, and the cluster figure is the sum of these verdicts rather than a verdict over a pile
-     * nobody holds.
+     * directory, and this figure reads the list that arrived. It stays per node for the reason it
+     * was always per node - archives do not travel, so a batch ages out where it lies, and the
+     * cluster figure is the sum of these counts rather than a verdict over a pile nobody holds.
+     *
+     * The list alone is not the count (HIL-903): the verdict judges a confirmed batch too, and the
+     * rotations screen answers a confirmation ahead of the rule ({@see HilosLogRotationsTable}), so
+     * a batch confirmed and waiting for the pruner is "taken" there and must not be "awaiting" here
+     * - the banner links to the awaiting filter, and both have to name the same batches. A verdict
+     * whose batch is missing from the index is not counted either: the screen draws a row only
+     * from a batch, so nothing would answer the number there.
      *
      * A node that could not be read reports no batches and therefore no verdicts; the column
      * still shows it a null rather than this zero, which {@see self::nodeRow()} decides.
@@ -454,7 +461,15 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      */
     private static function batchesDueOf(NodeLogIndex $index): int
     {
-        return count($index->dueBatchTimestamps);
+        $due = array_flip($index->dueBatchTimestamps);
+        $count = 0;
+        foreach ($index->batches as $batch) {
+            if ($batch->takenAt === null && isset($due[$batch->timestamp])) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**

@@ -5,7 +5,9 @@ of room. A row is one batch ON ONE NODE — the same rotation moment on two mach
 two directories, carried off apart — so the node column, the node filter and the node
 half of the search hint exist only where nodes have names. Search, the node filter
 and the All / awaiting switch ride the open viewport filter map (server-side, no
-local filtering); the window is re-served by the page whenever the cluster picture or
+local filtering); the switch shows the table's own filter and lives in the address
+too (HIL-903), so the overview banner opens it on Awaiting and a reload keeps what
+is on the screen; the window is re-served by the page whenever the cluster picture or
 the rule moves. A recommended batch carries the first of this screen's two commands:
 a modal saying where the batch lies and how to copy it off, and a confirmation that
 it was (HIL-483) — the badge then repaints when the holding node's next index
@@ -47,7 +49,7 @@ import {
   type HilosLogRotationsContext,
   type HilosTableColumn,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -55,6 +57,7 @@ import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
+import { hilosRouterKey } from '../../hilosRouterKey.js'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -64,7 +67,10 @@ const props = defineProps<{
   context: HilosLogRotationsContext
 }>()
 
-const rotations = createHilosLogRotationsTable(props.context)
+// The navigator the switch reads its entry value from and writes its choice to;
+// mounted without one, the screen opens on All and leaves the address alone.
+const router = inject(hilosRouterKey, undefined)
+const rotations = createHilosLogRotationsTable(props.context, router)
 const rotationsTable = rotations.controller
 const rotationsActions = createHilosLogRotationsActions(props.context)
 const headerHandle = createHilosLogRotationsHeader(props.context)
@@ -128,9 +134,11 @@ const columns = computed<HilosTableColumn[]>(() => [
 ])
 
 // Domain filters: the node and the state ride the open filter map so the backend
-// narrows the window (no local filtering). Empty clears the filter.
+// narrows the window (no local filtering). Empty clears the filter. The state is
+// read from the table itself rather than kept here, so the generic "Reset filters"
+// moves the switch along with the rows.
 const nodeFilter = ref('')
-const stateFilter = ref('')
+const stateFilter = useSignal(rotations.state)
 
 function setNode(value: string): void {
   nodeFilter.value = value
@@ -142,7 +150,6 @@ function onNode(event: Event): void {
 }
 
 function setState(value: string): void {
-  stateFilter.value = value
   rotationsTable.setFilter(ROTATION_FILTER_STATE, value)
 }
 

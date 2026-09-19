@@ -203,7 +203,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.LOGS]: { path: '/hilos/logs', admin: true },
   [HilosPages.LOGS_KEYS]: { path: '/hilos/logs/keys', admin: true },
   [HilosPages.LOGS_WORKERS]: { path: '/hilos/logs/workers', admin: true },
-  [HilosPages.LOGS_ROTATIONS]: { path: '/hilos/logs/rotations', admin: true },
+  [HilosPages.LOGS_ROTATIONS]: {
+    path: '/hilos/logs/rotations/{state?}',
+    admin: true,
+  },
   [HilosPages.LOGS_SETTINGS]: { path: '/hilos/logs/settings', admin: true },
   [HilosPages.LOGS_VIEW]: {
     path: '/hilos/logs/view/{nodeId?}/{source?}/{stream?}/{anchor?}',

@@ -5,7 +5,9 @@
 // two directories, carried off apart — so the node column, the node filter and the node
 // half of the search hint exist only where nodes have names. Search, the node filter
 // and the All / awaiting switch ride the open viewport filter map (server-side, no
-// local filtering); the window is re-served by the page whenever the cluster picture or
+// local filtering); the switch shows the table's own filter and lives in the address
+// too (HIL-903), so the overview banner opens it on Awaiting and a reload keeps what
+// is on the screen; the window is re-served by the page whenever the cluster picture or
 // the rule moves. A recommended batch carries the first of this screen's two commands:
 // a modal saying where the batch lies and how to copy it off, and a confirmation that
 // it was (HIL-483) — the badge then repaints when the holding node's next index
@@ -17,7 +19,7 @@
 // discrimination and the wording are the core headless's (hilosLogRotations); this view
 // owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
 // Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
@@ -55,6 +57,7 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
@@ -167,9 +170,12 @@ function offersUndo(row: HilosLogRotationRow): boolean {
 export function HilosLogsRotationsPage({
   context,
 }: HilosLogsRotationsPageProps) {
+  // The navigator the switch reads its entry value from and writes its choice to;
+  // mounted without one, the screen opens on All and leaves the address alone.
+  const router = useContext(HilosRouterContext)
   const rotations = useMemo(
-    () => createHilosLogRotationsTable(context),
-    [context],
+    () => createHilosLogRotationsTable(context, router ?? undefined),
+    [context, router],
   )
   const rotationsTable = rotations.controller
   const rotationsActions = useMemo(
@@ -208,9 +214,11 @@ export function HilosLogsRotationsPage({
   const searchPlaceholder = rotationsSearchPlaceholder(header)
 
   // Domain filters: the node and the state ride the open filter map so the backend
-  // narrows the window (no local filtering). Empty clears the filter.
+  // narrows the window (no local filtering). Empty clears the filter. The state is
+  // read from the table itself rather than kept here, so the generic "Reset filters"
+  // moves the switch along with the rows.
   const [nodeFilter, setNodeFilter] = useState('')
-  const [stateFilter, setStateFilter] = useState('')
+  const stateFilter = useSignal(rotations.state)
 
   function setNode(value: string): void {
     setNodeFilter(value)
@@ -218,7 +226,6 @@ export function HilosLogsRotationsPage({
   }
 
   function setState(value: string): void {
-    setStateFilter(value)
     rotationsTable.setFilter(ROTATION_FILTER_STATE, value)
   }
 
