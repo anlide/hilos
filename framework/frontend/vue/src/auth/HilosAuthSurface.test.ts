@@ -24,7 +24,11 @@ import {
   bindCodeSendProgress,
   bindPageReady,
   cancelOAuthTrip,
+  CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createHilosAuthContext,
   createOAuthLogin,
   createSignal,
@@ -47,7 +51,7 @@ import {
   type HilosConnection,
   type ProjectSignal,
 } from '@hilos/core'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HilosAuthSurface from './HilosAuthSurface.vue'
@@ -573,8 +577,12 @@ async function flush(wrapper: {
  * null frame below does, and what the server itself sends to take a line away.
  *
  * @param state The `CODE_SEND_STATE_*` the line should report, or null for none.
+ * @param detail The provider's own sentence riding the frame, or null for none.
  */
-function reportSendProgress(state: string | null): void {
+function reportSendProgress(
+  state: string | null,
+  detail: string | null = null,
+): void {
   const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
   const connection = {
     on: (_event: string, listener: (signal: never) => void) => {
@@ -592,10 +600,47 @@ function reportSendProgress(state: string | null): void {
   for (const listener of listeners) {
     listener({
       type: SIGNAL_CODE_SEND_PROGRESS,
-      data: { state, channel: 'email', detail: null },
+      data: { state, channel: 'email', detail },
     })
   }
   unbind()
+}
+
+/**
+ * Mount the magic-link registry and walk it to the code screen of the letter,
+ * where the send line lives.
+ *
+ * @returns The mounted surface, standing on the code screen.
+ */
+async function openLetterCodeScreen(): Promise<VueWrapper> {
+  vi.useFakeTimers()
+  const { context } = magicLinkContext()
+  const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+  await wrapper
+    .find('[data-id="auth-identifier"]')
+    .setValue('someone@example.com')
+  await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+  await flush(wrapper)
+  await wrapper.find('[data-id="auth-icon-magic-link"]').trigger('click')
+  await flush(wrapper)
+
+  return wrapper
+}
+
+/**
+ * How many elements of the code screen's form stand before the code field — the
+ * unit test's stand-in for its vertical position, which jsdom does not lay out.
+ * Counted inside the form, because the live regions above it are visually
+ * hidden and gain a node when they speak.
+ *
+ * @param root The mounted surface's root element.
+ * @returns The number of form elements preceding the code field.
+ */
+function elementsBeforeCodeField(root: Element): number {
+  const all = Array.from(root.querySelectorAll('form *'))
+
+  return all.findIndex((node) => node.getAttribute('data-id') === 'auth-code')
 }
 
 /** The provider the trip cases ride to. */
@@ -894,6 +939,102 @@ describe('HilosAuthSurface', () => {
     )
     expect(line.classes()).toContain('text-body-secondary')
     expect(line.find('i').classes()).toContain('bi-flask')
+  })
+
+  it('holds the send line room with an idle twin before the first frame', async () => {
+    const wrapper = await openLetterCodeScreen()
+
+    // The code screen stands and nothing has been said about the letter yet:
+    // the slot is there anyway, holding one inert copy of the line.
+    const slot = wrapper.find('[data-id="auth-send-progress-slot"]')
+    expect(slot.element.children).toHaveLength(1)
+    const twin = slot.find('[data-id="auth-send-progress-idle"]')
+    expect(twin.exists()).toBe(true)
+    expect(twin.attributes('aria-hidden')).toBe('true')
+    expect(twin.classes()).toContain('invisible')
+    expect(twin.find('button').exists()).toBe(false)
+    expect(slot.find('[data-id="auth-send-progress"]').exists()).toBe(false)
+  })
+
+  it('swaps the twin for the line without moving the code field', async () => {
+    const wrapper = await openLetterCodeScreen()
+    const before = elementsBeforeCodeField(wrapper.element)
+
+    reportSendProgress(CODE_SEND_STATE_SENT)
+    await flush(wrapper)
+
+    // One visible line, no twin, and the field below stands where it stood:
+    // the line took the room the twin was holding instead of adding one.
+    const slot = wrapper.find('[data-id="auth-send-progress-slot"]')
+    expect(slot.element.children).toHaveLength(1)
+    expect(slot.find('[data-id="auth-send-progress"]').exists()).toBe(true)
+    expect(slot.find('[data-id="auth-send-progress-idle"]').exists()).toBe(
+      false,
+    )
+    expect(elementsBeforeCodeField(wrapper.element)).toBe(before)
+  })
+
+  it('offers the full send line behind a button in every state', async () => {
+    const wrapper = await openLetterCodeScreen()
+
+    for (const state of [
+      CODE_SEND_STATE_QUEUED,
+      CODE_SEND_STATE_SENDING,
+      CODE_SEND_STATE_SENT,
+      CODE_SEND_STATE_FAILED,
+      CODE_SEND_STATE_NOT_SENT,
+    ]) {
+      reportSendProgress(state)
+      await flush(wrapper)
+
+      // The button stands in every state, not only on a refusal, and the
+      // panel it opens holds the very text the line is showing.
+      const line = wrapper.find('[data-id="auth-send-progress"]')
+      const details = line.find('[data-id="auth-send-progress-details"]')
+      expect(details.exists()).toBe(true)
+      expect(details.attributes('aria-label')).toBe('Show the full message')
+      await details.trigger('click')
+      await flush(wrapper)
+      const full = document.querySelector('[data-id="auth-send-progress-full"]')
+      expect(full?.textContent?.trim()).toBe(line.text())
+      expect(
+        document.querySelector('[data-id="auth-send-progress-close"]'),
+      ).not.toBeNull()
+    }
+
+    // A line the server takes away closes the panel along with it.
+    reportSendProgress(null)
+    await flush(wrapper)
+    expect(document.querySelector('[data-id="auth-send-progress-full"]')).toBe(
+      null,
+    )
+  })
+
+  it('keeps a long provider sentence to the one line and gives all of it to the panel', async () => {
+    const wrapper = await openLetterCodeScreen()
+    reportSendProgress(CODE_SEND_STATE_FAILED, 'short')
+    await flush(wrapper)
+    const line = wrapper.find('[data-id="auth-send-progress"]')
+    const shortShape = line.element.querySelectorAll('*').length
+    const shortClasses = line.classes()
+
+    const sentence = 'x'.repeat(200)
+    reportSendProgress(CODE_SEND_STATE_FAILED, sentence)
+    await flush(wrapper)
+
+    // Same nodes, same classes: the length is the text's business, and the
+    // text is truncated to the room rather than growing it.
+    const long = wrapper.find('[data-id="auth-send-progress"]')
+    expect(long.element.querySelectorAll('*').length).toBe(shortShape)
+    expect(long.classes()).toEqual(shortClasses)
+    expect(long.find('span').classes()).toContain('text-truncate')
+
+    await long.find('[data-id="auth-send-progress-details"]').trigger('click')
+    await flush(wrapper)
+    expect(
+      document.querySelector('[data-id="auth-send-progress-full"]')
+        ?.textContent,
+    ).toContain(`Could not send: ${sentence}`)
   })
 
   it('takes the finished panel away when the ack is answered in another tab', async () => {

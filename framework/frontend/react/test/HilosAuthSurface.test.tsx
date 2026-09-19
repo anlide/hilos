@@ -22,7 +22,11 @@ import {
   bindCodeSendProgress,
   bindPageReady,
   cancelOAuthTrip,
+  CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
+  CODE_SEND_STATE_QUEUED,
+  CODE_SEND_STATE_SENDING,
+  CODE_SEND_STATE_SENT,
   createHilosAuthContext,
   createOAuthLogin,
   createSignal,
@@ -511,8 +515,12 @@ function type(id: string, value: string): void {
  * null frame below does, and what the server itself sends to take a line away.
  *
  * @param state The `CODE_SEND_STATE_*` the line should report, or null for none.
+ * @param detail The provider's own sentence riding the frame, or null for none.
  */
-function reportSendProgress(state: string | null): void {
+function reportSendProgress(
+  state: string | null,
+  detail: string | null = null,
+): void {
   const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
   const connection = {
     on: (_event: string, listener: (signal: never) => void) => {
@@ -530,10 +538,61 @@ function reportSendProgress(state: string | null): void {
   for (const listener of listeners) {
     listener({
       type: SIGNAL_CODE_SEND_PROGRESS,
-      data: { state, channel: 'email', detail: null },
+      data: { state, channel: 'email', detail },
     })
   }
   unbind()
+}
+
+/**
+ * Mount a registry with a magic link and walk it to the code screen of the
+ * letter, where the send line lives.
+ */
+async function openLetterCodeScreen(): Promise<void> {
+  vi.useFakeTimers()
+  const { context } = contextAnswering([
+    PASSWORD_METHOD_KEY,
+    MAGIC_LINK_METHOD_KEY,
+  ])
+  render(<HilosAuthSurface context={context} />)
+
+  type('auth-identifier', 'someone@example.com')
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+  })
+  await flush()
+  fireEvent.click(byId('auth-icon-magic-link') as Element)
+  await flush()
+}
+
+/**
+ * Put a frame on the send line and let the surface redraw under it.
+ *
+ * @param state The `CODE_SEND_STATE_*` the line should report, or null for none.
+ * @param detail The provider's own sentence riding the frame, or null for none.
+ */
+async function sendFrame(
+  state: string | null,
+  detail: string | null = null,
+): Promise<void> {
+  await act(async () => {
+    reportSendProgress(state, detail)
+  })
+  await flush()
+}
+
+/**
+ * How many elements of the code screen's form stand before the code field — the
+ * unit test's stand-in for its vertical position, which jsdom does not lay out.
+ * Counted inside the form, because the live regions above it are visually
+ * hidden and gain a node when they speak.
+ *
+ * @returns The number of form elements preceding the code field.
+ */
+function elementsBeforeCodeField(): number {
+  const all = Array.from(document.querySelectorAll('form *'))
+
+  return all.findIndex((node) => node.getAttribute('data-id') === 'auth-code')
 }
 
 /** The provider the trip cases ride to. */
@@ -866,6 +925,97 @@ describe('HilosAuthSurface', () => {
     )
     expect(line?.className).toContain('text-body-secondary')
     expect(line?.querySelector('i')?.className).toContain('bi-flask')
+  })
+
+  it('holds the send line room with an idle twin before the first frame', async () => {
+    await openLetterCodeScreen()
+
+    // The code screen stands and nothing has been said about the letter yet:
+    // the slot is there anyway, holding one inert copy of the line.
+    const slot = byId('auth-send-progress-slot')
+    expect(slot?.children).toHaveLength(1)
+    const twin = slot?.querySelector('[data-id="auth-send-progress-idle"]')
+    expect(twin).not.toBeNull()
+    expect(twin?.getAttribute('aria-hidden')).toBe('true')
+    expect(twin?.classList.contains('invisible')).toBe(true)
+    expect(twin?.querySelector('button')).toBeNull()
+    expect(slot?.querySelector('[data-id="auth-send-progress"]')).toBeNull()
+  })
+
+  it('swaps the twin for the line without moving the code field', async () => {
+    await openLetterCodeScreen()
+    const before = elementsBeforeCodeField()
+
+    await sendFrame(CODE_SEND_STATE_SENT)
+
+    // One visible line, no twin, and the field below stands where it stood:
+    // the line took the room the twin was holding instead of adding one.
+    const slot = byId('auth-send-progress-slot')
+    expect(slot?.children).toHaveLength(1)
+    expect(slot?.querySelector('[data-id="auth-send-progress"]')).not.toBeNull()
+    expect(
+      slot?.querySelector('[data-id="auth-send-progress-idle"]'),
+    ).toBeNull()
+    expect(elementsBeforeCodeField()).toBe(before)
+  })
+
+  it('offers the full send line behind a button in every state', async () => {
+    await openLetterCodeScreen()
+
+    for (const state of [
+      CODE_SEND_STATE_QUEUED,
+      CODE_SEND_STATE_SENDING,
+      CODE_SEND_STATE_SENT,
+      CODE_SEND_STATE_FAILED,
+      CODE_SEND_STATE_NOT_SENT,
+    ]) {
+      await sendFrame(state)
+
+      // The button stands in every state, not only on a refusal, and the
+      // panel it opens holds the very text the line is showing.
+      const line = byId('auth-send-progress')
+      const details = line?.querySelector(
+        '[data-id="auth-send-progress-details"]',
+      )
+      expect(details).not.toBeNull()
+      expect(details?.getAttribute('aria-label')).toBe('Show the full message')
+      fireEvent.click(details as Element)
+      await flush()
+      expect(byId('auth-send-progress-full')?.textContent?.trim()).toBe(
+        line?.textContent,
+      )
+      expect(byId('auth-send-progress-close')).not.toBeNull()
+    }
+
+    // A line the server takes away closes the panel along with it.
+    await sendFrame(null)
+    expect(byId('auth-send-progress-full')).toBeNull()
+  })
+
+  it('keeps a long provider sentence to the one line and gives all of it to the panel', async () => {
+    await openLetterCodeScreen()
+    await sendFrame(CODE_SEND_STATE_FAILED, 'short')
+    const short = byId('auth-send-progress')
+    const shortShape = short?.querySelectorAll('*').length
+    const shortClasses = short?.className
+
+    const sentence = 'x'.repeat(200)
+    await sendFrame(CODE_SEND_STATE_FAILED, sentence)
+
+    // Same nodes, same classes: the length is the text's business, and the
+    // text is truncated to the room rather than growing it.
+    const long = byId('auth-send-progress')
+    expect(long?.querySelectorAll('*').length).toBe(shortShape)
+    expect(long?.className).toBe(shortClasses)
+    expect(
+      long?.querySelector('span')?.classList.contains('text-truncate'),
+    ).toBe(true)
+
+    fireEvent.click(byId('auth-send-progress-details') as Element)
+    await flush()
+    expect(byId('auth-send-progress-full')?.textContent).toContain(
+      `Could not send: ${sentence}`,
+    )
   })
 
   it('tells a tab that came back by reload the address was taken while away', async () => {

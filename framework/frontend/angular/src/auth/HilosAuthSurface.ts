@@ -89,6 +89,8 @@ import type {
 } from '@hilos/core'
 
 import { HilosFormError } from '../HilosFormError.js'
+import { HilosLongText } from '../HilosLongText.js'
+import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { hilosSignal } from '../hilosSignal.js'
 import { HILOS_AUTH_GATE } from './hilosAuthGateToken.js'
@@ -264,6 +266,15 @@ const SEND_PROGRESS_COPY: Record<
 }
 
 /**
+ * The send line and its idle twin, to the character — only `invisible` and the
+ * state's tone differ, and neither changes the height (HIL-977).
+ */
+const SEND_PROGRESS_ROW_CLASS = 'd-flex align-items-center gap-2 small mb-3'
+
+/** The details button and the inert copy of it the twin holds the room for. */
+const SEND_PROGRESS_DETAILS_CLASS = 'btn btn-link btn-sm p-0 lh-1 flex-shrink-0'
+
+/**
  * The line under the identifier row: where the code being waited for has got to,
  * or null when there is nothing to say (HIL-826).
  *
@@ -304,7 +315,7 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
 @Component({
   selector: 'hilos-auth-surface',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosFormError, LoadingButton],
+  imports: [HilosFormError, HilosLongText, HilosModal, LoadingButton],
   template: `
     <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
       <h2 [id]="headingId" class="h5 mb-3" data-id="auth-heading">
@@ -695,16 +706,78 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             </p>
           }
 
-          @if (sendProgress(); as progress) {
-            <div
-              class="d-flex align-items-center gap-2 small mb-3"
-              [class]="progress.tone"
-              data-id="auth-send-progress"
-            >
-              <i class="bi" [class]="progress.icon" aria-hidden="true"></i>
-              <span>{{ progress.text }}</span>
-            </div>
-          }
+          <!-- The send line holds its room from the moment the code screen
+          opens (HIL-977, styling-rules.md "The room a live message takes"):
+          the slot always holds exactly one row, the line itself or its
+          invisible twin of the very same markup, so neither the line's arrival
+          nor a provider's long sentence moves the code field. The text is
+          truncated to one line and the whole of it sits behind the details
+          button, in every state. -->
+          <div data-id="auth-send-progress-slot">
+            @if (sendProgress(); as progress) {
+              <div
+                [class]="sendProgressRowClass + ' ' + progress.tone"
+                data-id="auth-send-progress"
+              >
+                <i
+                  [class]="'bi flex-shrink-0 ' + progress.icon"
+                  aria-hidden="true"
+                ></i>
+                <span class="flex-grow-1 text-truncate">{{
+                  progress.text
+                }}</span>
+                <button
+                  type="button"
+                  [class]="sendProgressDetailsClass"
+                  aria-label="Show the full message"
+                  title="Show the full message"
+                  data-id="auth-send-progress-details"
+                  (click)="sendDetailOpen.set(true)"
+                >
+                  <i class="bi bi-info-circle" aria-hidden="true"></i>
+                </button>
+              </div>
+            } @else {
+              <div
+                [class]="sendProgressRowClass + ' invisible'"
+                aria-hidden="true"
+                data-id="auth-send-progress-idle"
+              >
+                <i
+                  class="bi bi-hourglass-split flex-shrink-0"
+                  aria-hidden="true"
+                ></i>
+                <span class="flex-grow-1 text-truncate">&nbsp;</span>
+                <!-- A span, not a button: the twin holds room, it does not take
+                focus. -->
+                <span [class]="sendProgressDetailsClass">
+                  <i class="bi bi-info-circle" aria-hidden="true"></i>
+                </span>
+              </div>
+            }
+          </div>
+          <hilos-modal
+            [open]="sendDetailOpen()"
+            (openChange)="sendDetailOpen.set($event)"
+            title="Send details"
+            initialFocus="dialog"
+          >
+            <hilos-long-text
+              kind="prose"
+              [text]="sendProgress()?.text ?? ''"
+              dataId="auth-send-progress-full"
+            />
+            <ng-template #modalActions let-requestClose="requestClose">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-id="auth-send-progress-close"
+                (click)="requestClose()"
+              >
+                Close
+              </button>
+            </ng-template>
+          </hilos-modal>
 
           <!-- The letter went out with two ways back in it, so the screen says
           so before it asks for one: the link is still the shorter road for
@@ -1128,6 +1201,17 @@ export class HilosAuthSurface {
   // "finish linking" prompt asking the person to sign in with an existing
   // method. The token replay itself is the global watcher's job (oauthLogin).
   protected readonly linkPrompt = signal(false)
+
+  // Whether the send line's details panel is open (HIL-977). The panel shows the
+  // line as it is now, not a snapshot of it: a state change rewrites the text in
+  // place, and only a line that went away altogether closes it.
+  protected readonly sendDetailOpen = signal(false)
+
+  /** The send line's row classes, shared to the character with its idle twin. */
+  protected readonly sendProgressRowClass = SEND_PROGRESS_ROW_CLASS
+
+  /** The details button's classes, and the inert copy's in the twin. */
+  protected readonly sendProgressDetailsClass = SEND_PROGRESS_DETAILS_CLASS
 
   // Channels that answered "cannot reach this number" (HIL-492). Client state,
   // not stored anywhere: it is true of a number and not of an account, so it is
@@ -1554,6 +1638,13 @@ export class HilosAuthSurface {
     // this one tells it what the server said.
     effect(() => {
       this.auth().reportSendProgress(this.reportedProgress())
+    })
+    // A line the server took away takes its panel with it: showing the text of
+    // something no longer on the screen would be news about nothing.
+    effect(() => {
+      if (this.sendProgress() === null) {
+        this.sendDetailOpen.set(false)
+      }
     })
     // The machine arrives through the context input (not at construction) and
     // carries core signals, so mirror them into the Angular signals above once

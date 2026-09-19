@@ -73,6 +73,8 @@ import {
 } from '@hilos/core'
 
 import { HilosFormError } from '../HilosFormError.js'
+import { HilosLongText } from '../HilosLongText.js'
+import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
 import { HilosAuthGateContext } from './hilosAuthGateContext.js'
@@ -225,6 +227,15 @@ const SEND_PROGRESS_COPY: Record<
       `Not really sent to ${target} — letters are written here, not mailed`,
   },
 }
+
+/**
+ * The send line and its idle twin, to the character — only `invisible` and the
+ * state's tone differ, and neither changes the height (HIL-977).
+ */
+const SEND_PROGRESS_ROW_CLASS = 'd-flex align-items-center gap-2 small mb-3'
+
+/** The details button and the inert copy of it the twin holds the room for. */
+const SEND_PROGRESS_DETAILS_CLASS = 'btn btn-link btn-sm p-0 lh-1 flex-shrink-0'
 
 /**
  * The line under the identifier row: where the code being waited for has got to,
@@ -433,6 +444,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // the screen it lands on. The next dispatch clears it: by then the person is
   // acting on the new screen, and news about the past is over.
   const [notice, setNotice] = useState<string | null>(null)
+
+  // Whether the send line's details panel is open (HIL-977). The panel shows the
+  // line as it is now, not a snapshot of it: a state change rewrites the text in
+  // place, and only a line that went away altogether closes it.
+  const [sendDetailOpen, setSendDetailOpen] = useState(false)
 
   // The OAuth trip running behind this screen, when the parked ceremony is one
   // (HIL-633). The park is the same step for every icon method, but an OAuth wait
@@ -708,6 +724,15 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         null)
 
   const sendProgress = sendProgressLine(state.sendProgress, form.identifier)
+
+  // A line the server took away takes its panel with it: showing the text of
+  // something no longer on the screen would be news about nothing.
+  const sendProgressGone = sendProgress === null
+  useEffect(() => {
+    if (sendProgressGone) {
+      setSendDetailOpen(false)
+    }
+  }, [sendProgressGone])
 
   /** The channel a delivered code went over, named on the code screen. */
   const deliveredChannel =
@@ -1536,15 +1561,78 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
             </p>
           ) : null}
 
-          {sendProgress ? (
-            <div
-              className={`d-flex align-items-center gap-2 small mb-3 ${sendProgress.tone}`}
-              data-id="auth-send-progress"
-            >
-              <i className={`bi ${sendProgress.icon}`} aria-hidden="true" />
-              <span>{sendProgress.text}</span>
-            </div>
-          ) : null}
+          {/* The send line holds its room from the moment the code screen
+              opens (HIL-977, styling-rules.md "The room a live message
+              takes"): the slot always holds exactly one row, the line itself
+              or its invisible twin of the very same markup, so neither the
+              line's arrival nor a provider's long sentence moves the code
+              field. The text is truncated to one line and the whole of it
+              sits behind the details button, in every state. */}
+          <div data-id="auth-send-progress-slot">
+            {sendProgress ? (
+              <div
+                className={`${SEND_PROGRESS_ROW_CLASS} ${sendProgress.tone}`}
+                data-id="auth-send-progress"
+              >
+                <i
+                  className={`bi flex-shrink-0 ${sendProgress.icon}`}
+                  aria-hidden="true"
+                />
+                <span className="flex-grow-1 text-truncate">
+                  {sendProgress.text}
+                </span>
+                <button
+                  type="button"
+                  className={SEND_PROGRESS_DETAILS_CLASS}
+                  aria-label="Show the full message"
+                  title="Show the full message"
+                  data-id="auth-send-progress-details"
+                  onClick={() => setSendDetailOpen(true)}
+                >
+                  <i className="bi bi-info-circle" aria-hidden="true" />
+                </button>
+              </div>
+            ) : (
+              <div
+                className={`${SEND_PROGRESS_ROW_CLASS} invisible`}
+                aria-hidden="true"
+                data-id="auth-send-progress-idle"
+              >
+                <i
+                  className="bi bi-hourglass-split flex-shrink-0"
+                  aria-hidden="true"
+                />
+                <span className="flex-grow-1 text-truncate">&nbsp;</span>
+                {/* A span, not a button: the twin holds room, it does not take
+                    focus. */}
+                <span className={SEND_PROGRESS_DETAILS_CLASS}>
+                  <i className="bi bi-info-circle" aria-hidden="true" />
+                </span>
+              </div>
+            )}
+          </div>
+          <HilosModal
+            open={sendDetailOpen}
+            title="Send details"
+            initialFocus="dialog"
+            onClose={() => setSendDetailOpen(false)}
+            actions={({ requestClose }) => (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                data-id="auth-send-progress-close"
+                onClick={requestClose}
+              >
+                Close
+              </button>
+            )}
+          >
+            <HilosLongText
+              kind="prose"
+              text={sendProgress?.text ?? ''}
+              dataId="auth-send-progress-full"
+            />
+          </HilosModal>
 
           {/* The letter went out with two ways back in it, so the screen says so
               before it asks for one: the link is still the shorter road for

@@ -66,6 +66,8 @@ import {
 } from '@hilos/core'
 
 import HilosFormError from '../HilosFormError.vue'
+import HilosLongText from '../HilosLongText.vue'
+import HilosModal from '../HilosModal.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
 import { hilosAuthGateKey } from './hilosAuthGateKey.js'
@@ -233,6 +235,15 @@ const SEND_PROGRESS_COPY: Record<
   },
 }
 
+/**
+ * The send line and its idle twin, to the character — only `invisible` and the
+ * state's tone differ, and neither changes the height (HIL-977).
+ */
+const SEND_PROGRESS_ROW_CLASS = 'd-flex align-items-center gap-2 small mb-3'
+
+/** The details button and the inert copy of it the twin holds the room for. */
+const SEND_PROGRESS_DETAILS_CLASS = 'btn btn-link btn-sm p-0 lh-1 flex-shrink-0'
+
 const auth = createAuthFlow({
   methods: context.methods,
   channels: context.channels,
@@ -306,6 +317,11 @@ const unavailableChannels = ref(new Set<string>())
 // lands on. The next dispatch clears it: by then the person is acting on the new
 // screen, and news about the past is over.
 const notice = ref<string | null>(null)
+
+// Whether the send line's details panel is open (HIL-977). The panel shows the
+// line as it is now, not a snapshot of it: a state change rewrites the text in
+// place, and only a line that went away altogether closes it.
+const sendDetailOpen = ref(false)
 
 // The clock the countdowns are read against. A ticking ref rather than Date.now()
 // inside the computeds: a computed only recomputes when something it read changes,
@@ -612,6 +628,14 @@ const sendProgress = computed(() => {
     icon: copy.icon,
     tone: copy.tone,
     text: progress.detail === null ? text : `${text}: ${progress.detail}`,
+  }
+})
+
+// A line the server took away takes its panel with it: showing the text of
+// something no longer on the screen would be news about nothing.
+watch(sendProgress, (value) => {
+  if (value === null) {
+    sendDetailOpen.value = false
   }
 })
 
@@ -1510,15 +1534,70 @@ onUnmounted(() => {
         Sent via {{ deliveredChannel }}.
       </p>
 
-      <div
-        v-if="sendProgress"
-        class="d-flex align-items-center gap-2 small mb-3"
-        :class="sendProgress.tone"
-        data-id="auth-send-progress"
-      >
-        <i class="bi" :class="sendProgress.icon" aria-hidden="true" />
-        <span>{{ sendProgress.text }}</span>
+      <!-- The send line holds its room from the moment the code screen opens
+      (HIL-977, styling-rules.md "The room a live message takes"): the slot
+      always holds exactly one row, the line itself or its invisible twin of the
+      very same markup, so neither the line's arrival nor a provider's long
+      sentence moves the code field. The text is truncated to one line and the
+      whole of it sits behind the details button, in every state. -->
+      <div data-id="auth-send-progress-slot">
+        <div
+          v-if="sendProgress"
+          :class="[SEND_PROGRESS_ROW_CLASS, sendProgress.tone]"
+          data-id="auth-send-progress"
+        >
+          <i
+            class="bi flex-shrink-0"
+            :class="sendProgress.icon"
+            aria-hidden="true"
+          />
+          <span class="flex-grow-1 text-truncate">{{ sendProgress.text }}</span>
+          <button
+            type="button"
+            :class="SEND_PROGRESS_DETAILS_CLASS"
+            aria-label="Show the full message"
+            title="Show the full message"
+            data-id="auth-send-progress-details"
+            @click="sendDetailOpen = true"
+          >
+            <i class="bi bi-info-circle" aria-hidden="true" />
+          </button>
+        </div>
+        <div
+          v-else
+          :class="[SEND_PROGRESS_ROW_CLASS, 'invisible']"
+          aria-hidden="true"
+          data-id="auth-send-progress-idle"
+        >
+          <i class="bi bi-hourglass-split flex-shrink-0" aria-hidden="true" />
+          <span class="flex-grow-1 text-truncate">&nbsp;</span>
+          <!-- A span, not a button: the twin holds room, it does not take focus. -->
+          <span :class="SEND_PROGRESS_DETAILS_CLASS">
+            <i class="bi bi-info-circle" aria-hidden="true" />
+          </span>
+        </div>
       </div>
+      <HilosModal
+        v-model="sendDetailOpen"
+        title="Send details"
+        initial-focus="dialog"
+      >
+        <HilosLongText
+          kind="prose"
+          :text="sendProgress?.text ?? ''"
+          data-id="auth-send-progress-full"
+        />
+        <template #actions="{ requestClose }">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-id="auth-send-progress-close"
+            @click="requestClose"
+          >
+            Close
+          </button>
+        </template>
+      </HilosModal>
 
       <!-- The letter went out with two ways back in it, so the screen says so
       before it asks for one: the link is still the shorter road for whoever can

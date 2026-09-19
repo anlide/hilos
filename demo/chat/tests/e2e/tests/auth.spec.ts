@@ -765,8 +765,19 @@ test('says how the letter is going, to every tab of the browser and across a rel
   // tick behind the screen, so waiting for its last state is also waiting for the
   // whole chain to have run: the command reported "queued", the mail queue reported
   // "sending", and the transport took the letter (HIL-826).
+  // The code field is measured before the line settles and after: the line
+  // takes room the screen held for it from the start, so neither its arrival
+  // nor its changes move what is under it (HIL-977).
+  const codeField = page.getByTestId('auth-code')
+  await expect(codeField).toBeVisible()
+  const before = await codeField.boundingBox()
   const sent = `Sent to ${email}`
   await expect(page.getByTestId('auth-send-progress')).toContainText(sent)
+  const after = await codeField.boundingBox()
+  expect(after?.y).toBe(before?.y)
+
+  // The whole line sits behind a button in every state, not only on a refusal.
+  await expect(page.getByTestId('auth-send-progress-details')).toBeVisible()
 
   // A reload keeps it, because the line belongs to the SESSION and not to the
   // socket: the tab that comes back is told what it is owed by its handshake, the
