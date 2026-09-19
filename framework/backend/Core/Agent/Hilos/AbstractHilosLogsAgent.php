@@ -145,6 +145,10 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      * the frame travels one way, and the next claim of interest is due on this agent's own tick
      * whatever happened to this one.
      *
+     * One name is taken and dropped: the settings library's answer to a preset apply is addressed
+     * to the modes page, and it travels through the agent on its way there. It is ignored here so
+     * that a signal somebody else owns does not read as a fault of this one.
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
@@ -158,6 +162,17 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
                     ClusterLogIndexMirror::applyPortion($data->data);
                 }
 
+                return;
+
+            case HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE:
+                // Not ours, and not a stray either: the settings library answers a preset apply to
+                // the MODES PAGE, and an agent-routed signal reaches this agent first and the page
+                // after it - WorkerManager::handleAgentMessage() calls onSignalAgent() and then
+                // hands the same frame to the page router. So the answer passes through here on
+                // its way to AbstractHilosSettingPresetsPage::onSignalAgent(), and it is ignored
+                // rather than refused: falling through to the default threw on every apply of a
+                // mode and left the refusal in this agent's error log, where the section's "latest
+                // errors" reads it back as a live fault of the logs subsystem.
                 return;
 
             default:
