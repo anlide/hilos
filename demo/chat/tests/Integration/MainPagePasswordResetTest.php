@@ -218,6 +218,98 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
+     * A tab of the session that never asked for a code still follows the step (HIL-915).
+     *
+     * The order of the two opens is the whole defect. The listener joins BEFORE any
+     * recovery begins, so neither of the two moments that park a connection - asking for
+     * a code, or handshaking into a session already on a live recovery - ever happens to
+     * it, and it holds no row. The step belongs to the session, not to the rows, and a
+     * push that walked only the rows went past the tab while F5 cured it.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testATabOpenedBeforeTheRequestIsMovedOntoThePasswordStep(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+
+        $token = $this->openSession($agent, 'early-listener-ak');
+        $this->openSession($agent, 'actor-ak', $token);
+
+        try {
+            $this->requestReset($agent, 'actor-ak', $email);
+            $this->seedKnownCode($email);
+            $this->drainConvergeSignals();
+
+            ExecutionContext::setCurrentAcceptKey('actor-ak');
+            $this->confirm($agent, 'actor-ak', $email, self::CODE);
+            $converged = $this->drainConvergeSignals();
+
+            $this->assertArrayHasKey('early-listener-ak', $converged, 'The tab that never parked is moved too');
+            $this->assertSame($email, $converged['early-listener-ak']->identifier);
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $converged['early-listener-ak']->step);
+            $this->assertSame(AuthFlowIntent::RECOVERY, $converged['early-listener-ak']->intent);
+            $this->assertNull($converged['early-listener-ak']->code);
+            $this->assertArrayNotHasKey(
+                'actor-ak',
+                $converged,
+                'The tab that proved the code is answered by its action reply, not by a converge',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A tab parked on another address hears the step and keeps no grant for it (HIL-915).
+     *
+     * Where the address rule lives now. The push is addressed to every tab of the session,
+     * and a socket read off the connection registry names no address to test, so the frame
+     * names the PROVEN one and the surface that receives it drops it unless it shows that
+     * address. What is granted is a different act and stays scoped: the address nobody
+     * proved a code for stays shut.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testATabParkedOnAnotherAddressIsSentTheFrameAndNotTheGrant(): void
+    {
+        $agent = $this->bootAgent();
+        $mine = $this->uniqueEmail();
+        $theirs = $this->uniqueEmail();
+        $this->seedUserWithPassword($mine);
+        $this->seedUserWithPassword($theirs);
+
+        $token = $this->openSession($agent, 'frame-mine-ak');
+        $this->openSession($agent, 'frame-theirs-ak', $token);
+
+        try {
+            ExecutionContext::setCurrentAcceptKey('frame-theirs-ak');
+            $this->requestReset($agent, 'frame-theirs-ak', $theirs);
+            ExecutionContext::setCurrentAcceptKey('frame-mine-ak');
+            $this->requestReset($agent, 'frame-mine-ak', $mine);
+            $this->seedKnownCode($mine);
+            $this->drainConvergeSignals();
+
+            $this->confirm($agent, 'frame-mine-ak', $mine, self::CODE);
+            $converged = $this->drainConvergeSignals();
+
+            $this->assertArrayHasKey('frame-theirs-ak', $converged, 'Every tab of the session is told');
+            $this->assertSame(
+                $mine,
+                $converged['frame-theirs-ak']->identifier,
+                'The frame names the proven address, so the surface can judge it',
+            );
+            $this->assertFalse(
+                Hilos::$rt->hilosRecoveryWaiters['frame-theirs-ak']?->codeAccepted,
+                'Being told is not being granted: the other address stays shut',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * A second code asked for from the same tab moves the wait and shuts the first address.
      *
      * The one branch the wait-moved frame exists for (HIL-685). The tab is parked once, so

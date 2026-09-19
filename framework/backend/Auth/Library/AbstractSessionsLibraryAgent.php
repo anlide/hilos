@@ -2183,10 +2183,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Opens the password step in the other tabs of a session that just proved a code (HIL-416).
      *
      * The push half of session-binding. A code accepted in one tab is accepted for the
-     * session, so the tabs that were sitting on the code screen of the same address are
-     * moved forward with it - otherwise the person would be looking at two windows of
-     * one browser disagreeing about which screen they are on, and typing the code again
-     * in the second would cost an attempt for nothing.
+     * session, so its other tabs are moved forward with it - otherwise the person would be
+     * looking at two windows of one browser disagreeing about which screen they are on,
+     * and typing the code again in the second would cost an attempt for nothing.
+     *
+     * The tabs are the SESSION's, not the parked rows' (HIL-915). The runtime list is a
+     * projection and not the truth, exactly as {@see self::parkedAcceptKeys()} says of the
+     * registration half: a row is written only when a socket asks for a code or handshakes
+     * into a live recovery, so a tab that was open before the recovery began holds none,
+     * and one that asked earlier may hold a row naming an address the session has since
+     * left. Every live socket of the session is entitled to the step whether or not it was
+     * ever parked - the handshake derives it from the session, which is why a reload
+     * always cured such a tab - so the push reads the same two sources.
+     *
+     * No row is tested for the address: a socket read off the connection registry carries
+     * none. The frame names the proven address and the surface that receives it drops it
+     * unless that is the address on screen. Moving a screen is not granting a right - the
+     * grant stays on the rows of this address, and the save reads the address off it.
      *
      * The rows stay parked: the grant is written on them and the wait is not over yet.
      * The answering connection is skipped - its caller answered it with the action reply.
@@ -2201,20 +2214,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         string $sessionToken,
         string $initiatorAcceptKey,
     ): void {
-        foreach (Hilos::$rt->hilosRecoveryWaiters->forSessionToken($sessionToken) as $waiter) {
-            if ($waiter->acceptKey === $initiatorAcceptKey || $waiter->identifier !== $identifier) {
+        foreach ($this->recoveryConvergeAcceptKeys($sessionToken) as $acceptKey) {
+            if ($acceptKey === $initiatorAcceptKey) {
                 continue;
             }
 
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
-                $waiter->acceptKey,
-                new AuthConvergeSignalData(
-                    $waiter->acceptKey,
-                    $identifier,
-                    AuthFlowStep::SET_PASSWORD,
-                    AuthFlowIntent::RECOVERY,
-                ),
+                $acceptKey,
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::SET_PASSWORD, AuthFlowIntent::RECOVERY),
             );
         }
     }
@@ -3960,6 +3968,33 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         return $parked;
+    }
+
+    /**
+     * Names the connections a session's recovery step must reach (HIL-915).
+     *
+     * TWO sources, in the shape of {@see self::parkedAcceptKeys()}: the rows parked by the
+     * session, and every live connection of it. The parked source stays first and is not
+     * dropped - a row can outlive the connection registry's view of a socket for the
+     * length of one tick - and the set makes the overlap free. A project that keeps no
+     * session-stage connection rows adds nothing through the second source.
+     *
+     * @param string $sessionToken Session token whose recovery step moved
+     * @return list<string> Accept keys of the connections this session's recovery step must reach
+     * @throws HilosException On runtime failure
+     */
+    private function recoveryConvergeAcceptKeys(string $sessionToken): array
+    {
+        $keys = [];
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forSessionToken($sessionToken) as $waiter) {
+            $keys[$waiter->acceptKey] = true;
+        }
+
+        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+            $keys[$acceptKey] = true;
+        }
+
+        return array_keys($keys);
     }
 
     /**
