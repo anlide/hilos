@@ -113,7 +113,7 @@ enum OAuthProviderPreset: string
      * in which case each one is `<base>/<provider>/authorize|token|userinfo`.
      *
      * @param string $clientId OAuth client id issued to the project
-     * @param string $clientSecret OAuth client secret issued to the project (env-only)
+     * @param string $clientSecret OAuth client secret issued to the project (never synced to a client)
      * @param string $redirectUri SPA callback the provider redirects back to
      * @return OAuthProviderConfig Config under this preset's key
      * @throws EnvException When OAUTH_ENDPOINT_URL is missing, outside the catalog, or of the wrong type

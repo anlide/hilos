@@ -57,6 +57,8 @@ export { HilosLogsViewPage } from './admin/logs/HilosLogsViewPage.js'
 export { HilosLogsSettingsPage } from './admin/logs/HilosLogsSettingsPage.js'
 export { HilosCommunicationsPage } from './admin/communications/HilosCommunicationsPage.js'
 export { HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.js'
+export { HilosSecurityOauthPage } from './admin/security/HilosSecurityOauthPage.js'
+export { HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOauthProviderPage.js'
 export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export {
   HilosUsersPage,

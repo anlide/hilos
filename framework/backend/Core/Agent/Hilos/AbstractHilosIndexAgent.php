@@ -10,6 +10,8 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\HilosNotifier;
@@ -34,6 +36,20 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     use ProtectedModeTestDriverTrait;
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+
+    /**
+     * The OAuth provider rows, which the provider page this agent serves writes (HIL-286).
+     *
+     * The page's actions run in this agent, and the rows are what an administrator entered on
+     * that page and nowhere else, so their writer is this agent and no library stands between:
+     * there is no other process that brings a provider row into being or edits one. Every
+     * other process reads them process-wide ({@see HilosDbContext::processWideReadCollections()}).
+     *
+     * @var array<string, list<TruthSourceOperation>>
+     */
+    public const array OWNS_DB = [
+        HilosDbContext::oauthProviders => TruthSourceOperation::BY_KIND,
+    ];
 
     /**
      * The commands this agent answers, and the reason each of them is the index agent's.

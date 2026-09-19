@@ -1,0 +1,201 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Database\Object\Item;
+
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\OAuthProvider as EntityOAuthProvider;
+use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\SqlParam;
+use Hilos\Database\SqlParamCollection;
+
+/**
+ * OAuthProvider object - wraps OAuthProvider entity.
+ *
+ * Exposes the provider's non-secret fields and the secret primitives of the
+ * provider layer (HIL-286). The `client_secret` column is never exposed as a
+ * property, in toArray(), or over the DB sync bus: it is read and written with
+ * targeted queries here, the way the identity layer handles a password hash.
+ *
+ * @extends Object_<EntityOAuthProvider>
+ *
+ * @property-read ?int $id
+ * @property string $providerKey
+ * @property ?string $clientId
+ * @property ?string $scope
+ */
+final class OAuthProvider extends Object_
+{
+    public const string ENTITY_CLASS = EntityOAuthProvider::class;
+    public const string id = 'id';
+    public const string providerKey = 'providerKey';
+    public const string clientId = 'clientId';
+    public const string scope = 'scope';
+
+    /**
+     * Returns the database collection key.
+     *
+     * @return string Collection key (HilosDbContext::oauthProviders)
+     */
+    protected static function getCollectionKey(): string
+    {
+        return HilosDbContext::oauthProviders;
+    }
+
+    /**
+     * Magic getter for entity properties.
+     *
+     * @param string $property Property name (id, providerKey, clientId, scope)
+     * @return mixed Property value
+     * @throws DatabaseException When the property is not a known OAuthProvider field
+     */
+    public function __get(string $property): mixed
+    {
+        return match ($property) {
+            self::id => $this->entity->id,
+            self::providerKey => $this->entity->provider_key,
+            self::clientId => $this->entity->client_id,
+            self::scope => $this->entity->scope,
+            default => parent::__get($property),
+        };
+    }
+
+    /**
+     * Magic setter for entity properties.
+     *
+     * The `client_secret` column has no setter here; it is written only through
+     * {@see writeClientSecret()}.
+     *
+     * @param string $property Property name (providerKey, clientId, scope)
+     * @param mixed $value Value to set
+     * @throws DatabaseException When the property cannot be set on an OAuthProvider
+     */
+    public function __set(string $property, mixed $value): void
+    {
+        match ($property) {
+            self::providerKey => $this->entity->provider_key = (string)$value,
+            self::clientId => $this->entity->client_id = is_scalar($value) ? (string)$value : null,
+            self::scope => $this->entity->scope = is_scalar($value) ? (string)$value : null,
+            default => parent::__set($property, $value),
+        };
+    }
+
+    /**
+     * Reports whether this provider row carries a non-empty client secret.
+     *
+     * The set/not-set state is all that leaves the layer for the admin surface: the
+     * secret is read with a targeted query and only the boolean is returned. False for
+     * an unpersisted row.
+     *
+     * @return bool True when the stored secret is a non-empty string
+     * @throws DatabaseException When the secret lookup query fails
+     */
+    public function hasClientSecret(): bool
+    {
+        return $this->readClientSecret() !== null;
+    }
+
+    /**
+     * Reads the stored client secret for building the provider's live configuration.
+     *
+     * The one read that hands the value out, and its only reader is the resolver that
+     * builds the configuration the token exchange runs on - the provider cannot be
+     * talked to without it. Nothing on the way to a browser calls this. An empty
+     * stored string reads as no secret, exactly as a NULL does.
+     *
+     * @return ?string Stored secret, or null when none is stored or the row is unpersisted
+     * @throws DatabaseException When the secret lookup query fails
+     */
+    public function readClientSecret(): ?string
+    {
+        if ($this->entity->id === null) {
+            return null;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        $resultSet = Database::sql(
+            'SELECT `' . EntityOAuthProvider::client_secret . '` FROM `' . EntityOAuthProvider::_table
+                . '` WHERE `' . EntityOAuthProvider::id . '` = ?',
+            $params,
+        )->first();
+        if ($resultSet === null) {
+            return null;
+        }
+
+        $row = $resultSet->first();
+        if ($row === null) {
+            return null;
+        }
+        $secret = $row[EntityOAuthProvider::client_secret] ?? null;
+
+        return is_string($secret) && $secret !== '' ? $secret : null;
+    }
+
+    /**
+     * Replaces the stored client secret, or erases it with null (HIL-286).
+     *
+     * Written with a targeted UPDATE, so the secret stays out of the ORM columns, the
+     * object/view surface, and the cross-worker sync bus. Because no mapped column moves,
+     * the ordinary update announcement would never fire, and a screen drawn off this row
+     * would keep showing the old set/not-set state; the change is therefore announced on
+     * the source bus here with an empty diff - the row changed, no column a reader holds
+     * did. A no-op for an unpersisted row.
+     *
+     * @param ?string $secret New secret, or null to erase the stored one
+     * @throws DatabaseException When the secret update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     */
+    public function writeClientSecret(?string $secret): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        $idString = (string)$this->entity->id;
+        DbWriteGuard::guardItemWrite(static::getCollectionKey(), $idString, TruthSourceOperation::Update);
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::auto($secret));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityOAuthProvider::_table . '` SET `' . EntityOAuthProvider::client_secret
+                . '` = ? WHERE `' . EntityOAuthProvider::id . '` = ?',
+            $params,
+        );
+
+        SourceChangeBus::publish(SourceChange::dbUpdated(
+            static::getCollectionKey(),
+            $idString,
+            [],
+            ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
+        ));
+    }
+
+    /**
+     * Converts the provider row to associative array (never includes the secret).
+     *
+     * @return array<string, mixed> Provider data (id, providerKey, clientId, scope)
+     */
+    public function toArray(): array
+    {
+        return [
+            self::id => $this->entity->id,
+            self::providerKey => $this->entity->provider_key,
+            self::clientId => $this->entity->client_id,
+            self::scope => $this->entity->scope,
+        ];
+    }
+}

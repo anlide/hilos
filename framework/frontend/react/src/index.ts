@@ -94,6 +94,14 @@ export {
   type HilosCommunicationsChannelPageProps,
 } from './admin/communications/HilosCommunicationsChannelPage.js'
 export {
+  HilosSecurityOauthPage,
+  type HilosSecurityOauthPageProps,
+} from './admin/security/HilosSecurityOauthPage.js'
+export {
+  HilosSecurityOauthProviderPage,
+  type HilosSecurityOauthProviderPageProps,
+} from './admin/security/HilosSecurityOauthProviderPage.js'
+export {
   HilosCommunicationsDeliveriesPage,
   type HilosCommunicationsDeliveriesPageProps,
 } from './admin/communications/HilosCommunicationsDeliveriesPage.js'

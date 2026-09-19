@@ -18,6 +18,9 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -39,6 +42,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
+ * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
+ * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
+ * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
  */
 final class ChatTableContext extends TableContext
 {
@@ -55,6 +61,9 @@ final class ChatTableContext extends TableContext
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
+    public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
+    public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;
+    public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.

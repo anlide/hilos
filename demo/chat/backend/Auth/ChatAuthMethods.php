@@ -6,6 +6,7 @@ namespace Demo\Chat\Auth;
 
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\HilosException;
 
 /**
  * ChatAuthMethods - the auth methods this demo has actually wired (HIL-414).
@@ -37,6 +38,7 @@ final class ChatAuthMethods
      * Builds the method keys detection may name, in the order a surface shows them.
      *
      * @return list<string> Enabled method keys (see AuthMethodKey)
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     public static function enabledKeys(): array
     {
@@ -52,6 +54,7 @@ final class ChatAuthMethods
      * Builds the detector over this project's enabled methods.
      *
      * @return IdentifierDetector Detector answering with keys this demo can serve
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     public static function detector(): IdentifierDetector
     {

@@ -8,6 +8,7 @@ use Demo\Tasks\Auth\TasksOAuthConfig;
 use Demo\Tasks\Database\Actions\Item\UserActions;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
+use Hilos\HilosException;
 use Hilos\Auth\OAuth\OAuthUserInfo;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 
@@ -29,6 +30,7 @@ final class OAuthAgent extends AbstractOAuthAgent
      * Builds this demo's provider registry: a real provider for each configured client pair, none otherwise.
      *
      * @return OAuthProviderRegistry Configured providers
+     * @throws HilosException Whatever reading the providers' configuration raises
      */
     protected function buildProviderRegistry(): OAuthProviderRegistry
     {

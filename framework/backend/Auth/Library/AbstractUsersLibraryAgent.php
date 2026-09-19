@@ -246,9 +246,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM,
     ];
 
-    /** Methods this project offers for an identifier, resolved once on start. */
-    private IdentifierDetector $authMethods;
-
     /**
      * Action name of the dispatch running right now, or null outside one.
      *
@@ -282,16 +279,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /** Taking a sign-in method off an account, built on first use. */
     private ?IdentityCommands $identityCommands = null;
-
-    /**
-     * Resolves the project's auth seams.
-     *
-     * @throws HilosException On database or runtime startup failure
-     */
-    public function onStart(): void
-    {
-        $this->authMethods = $this->buildAuthMethods();
-    }
 
     /**
      * What a library does to a row it shares with another owner: bring it into being, take it away.
@@ -388,11 +375,17 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * between a class and its own collaborators; the same note covers everything below
      * that a group calls. Nothing outside {@see AbstractLibraryCommands} is meant to.
      *
-     * @return IdentifierDetector Detector over the project's enabled method keys
+     * Built for every lookup and not once on start: the methods include the project's OAuth
+     * providers, and which of them can sign anyone in is what an administrator enters in the
+     * admin (HIL-286). A detector held from the start would go on naming the providers this
+     * process started with until the daemon restarted.
+     *
+     * @return IdentifierDetector Detector over the project's enabled method keys, as configured now
+     * @throws HilosException When the project's methods cannot be read
      */
     public function authMethods(): IdentifierDetector
     {
-        return $this->authMethods;
+        return $this->buildAuthMethods();
     }
 
     /**
@@ -701,7 +694,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * Builds the detector over the method keys this project has actually wired.
      *
+     * Called for every lookup, so it reads the project's configuration as it is at that moment.
+     *
      * @return IdentifierDetector Detector answering with keys the project can serve
+     * @throws HilosException When the project's methods cannot be read
      */
     abstract protected function buildAuthMethods(): IdentifierDetector;
 

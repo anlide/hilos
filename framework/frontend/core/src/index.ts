@@ -822,6 +822,24 @@ export {
   type HilosDeliveriesTable,
 } from './admin/communications/hilosDeliveries.js'
 export {
+  resolveHilosOAuthProviderRow,
+  resolveHilosOAuthFieldRow,
+  resolveHilosOAuthRedirectRow,
+  createHilosOAuthProvidersTable,
+  createHilosOAuthRedirect,
+  createHilosOAuthProviderSummary,
+  createHilosOAuthProviderFields,
+  createHilosSecurityOauthActions,
+  HilosOAuthProviderRowKey,
+  type OAuthValueSource,
+  type HilosOAuthProviderRow,
+  type HilosOAuthFieldRow,
+  type HilosOAuthRedirectRow,
+  type HilosOAuthTable,
+  type HilosSecurityOauthContext,
+  type HilosSecurityOauthActions,
+} from './admin/security/hilosSecurityOauth.js'
+export {
   resolveHilosLogKeyRow,
   createHilosLogKeysTable,
   createHilosLogKeysHeader,

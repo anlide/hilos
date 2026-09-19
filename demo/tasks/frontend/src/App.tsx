@@ -36,6 +36,8 @@ import HilosLogsRotations from './views/Hilos/Logs/Rotations'
 import HilosLogsSettings from './views/Hilos/Logs/Settings'
 import HilosLogsView from './views/Hilos/Logs/View'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers'
+import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth'
+import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider'
 import HilosUser from './views/Hilos/Users/User'
 import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
@@ -78,6 +80,12 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
   [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
   [HilosPages.LOGS_VIEW]: HilosLogsView,
+  // The framework OAuth admin pages (HIL-286): the framework owns the providers,
+  // fields and return-address tables and the set / reset round-trips; the project
+  // binds its context (views/Hilos/Security) and, on its backend, declares its
+  // provider directory.
+  [HilosPages.SECURITY_OAUTH]: HilosSecurityOauth,
+  [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProvider,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

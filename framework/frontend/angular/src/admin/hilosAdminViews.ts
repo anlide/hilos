@@ -44,8 +44,6 @@ import { HilosI18nTranslateActionErrorPage } from './i18n/translate/HilosI18nTra
 import { HilosI18nTranslateEmailPage } from './i18n/translate/HilosI18nTranslateEmailPage.js'
 import { HilosSecurityPage } from './security/HilosSecurityPage.js'
 import { HilosSecurity2faPage } from './security/HilosSecurity2faPage.js'
-import { HilosSecurityOauthPage } from './security/HilosSecurityOauthPage.js'
-import { HilosSecurityOauthProviderPage } from './security/HilosSecurityOauthProviderPage.js'
 import { HilosBillingPage } from './billing/HilosBillingPage.js'
 import { HilosBillingProviderPage } from './billing/HilosBillingProviderPage.js'
 import { HilosBillingPaymentsPage } from './billing/HilosBillingPaymentsPage.js'
@@ -106,8 +104,9 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     // mounts them directly rather than through this context-free default map.
     [HilosPages.SECURITY]: HilosSecurityPage,
     [HilosPages.SECURITY_2FA]: HilosSecurity2faPage,
-    [HilosPages.SECURITY_OAUTH]: HilosSecurityOauthPage,
-    [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProviderPage,
+    // SECURITY_OAUTH and SECURITY_OAUTH_PROVIDER are real framework pages since
+    // HIL-286: their tables read a live connection, so a project mounts
+    // HilosSecurityOauthPage and HilosSecurityOauthProviderPage directly with its context.
     [HilosPages.BILLING]: HilosBillingPage,
     [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,

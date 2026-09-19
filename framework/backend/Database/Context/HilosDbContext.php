@@ -11,6 +11,7 @@ use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
+use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
@@ -24,6 +25,7 @@ use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
+use Hilos\Database\View\Collection\OAuthProviders as DbCollectionOAuthProviders;
 use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
 use Hilos\Database\View\Collection\RegistrationReservations as DbCollectionRegistrationReservations;
@@ -33,11 +35,13 @@ use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifica
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
+use Hilos\Database\Actions\Collection\OAuthProvidersActions;
 use Hilos\Database\Actions\Collection\PushSubscriptionsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\NotificationActions;
+use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
@@ -62,6 +66,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionPushSubscriptions $pushSubscriptions
  * @property-read DbCollectionVerifierCircleMembers $verifierCircle
  * @property-read DbCollectionAuthBlocks $authBlocks
+ * @property-read DbCollectionOAuthProviders $oauthProviders
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -88,21 +93,25 @@ abstract class HilosDbContext extends DbContext
     public const string verifierCircle = 'verifierCircle';
     public const string authBlocks = 'authBlocks';
     public const string authBlock = 'authBlock';
+    public const string oauthProviders = 'oauthProviders';
+    public const string oauthProvider = 'oauthProvider';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
-     * notification preferences, push subscriptions, the verifier circle, auth blocks).
+     * notification preferences, push subscriptions, the verifier circle, auth blocks,
+     * OAuth providers).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
-     * notification deliveries, notification preferences, push subscriptions and auth
-     * blocks load by key (per-user / per-(type,identifier) / per-credential / per-token /
-     * per-recipient / per-(notification,channel) / per-(user,channel) / per-endpoint /
-     * per-(scope,identity,action) lookups), never as a full set, so registering the
-     * collections stays inert for projects that do not activate the hilos_identity /
-     * hilos_user_verification / hilos_passkey_credential / hilos_session /
-     * hilos_notification / hilos_notification_delivery / hilos_notification_preference /
-     * hilos_push_subscription / hilos_auth_block tables.
+     * notification deliveries, notification preferences, push subscriptions, auth
+     * blocks and OAuth providers load by key (per-user / per-(type,identifier) /
+     * per-credential / per-token / per-recipient / per-(notification,channel) /
+     * per-(user,channel) / per-endpoint / per-(scope,identity,action) / per-provider
+     * lookups), never as a full set, so registering the collections stays inert for
+     * projects that do not activate the hilos_identity / hilos_user_verification /
+     * hilos_passkey_credential / hilos_session / hilos_notification /
+     * hilos_notification_delivery / hilos_notification_preference /
+     * hilos_push_subscription / hilos_auth_block / hilos_oauth_provider tables.
      *
      * The verifier circle is the one collection here that IS read whole, and it stays
      * inert for a different reason: only an installation that declares the backup feature
@@ -153,12 +162,20 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::authBlocks] = ObjectAuthBlocks::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::authBlocks, DbCollectionAuthBlocks::class);
+
+        $this->_objectCollections[self::oauthProviders] = ObjectOAuthProviders::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::oauthProviders,
+            DbCollectionOAuthProviders::class,
+            OAuthProvidersActions::class,
+            OAuthProviderActions::class,
+        );
     }
 
     /**
      * Names the framework collections read from any process at all.
      *
-     * Four, and each for its own seam. Sessions and identities answer "whose session is this",
+     * Five, and each for its own seam. Sessions and identities answer "whose session is this",
      * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
      * and before any page subscription, so nothing else declares them. Settings is read by seams
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
@@ -170,6 +187,11 @@ abstract class HilosDbContext extends DbContext
      * rows, the per-user group that answers a join with the snapshot, and the delivery-channel
      * agent that reads a row as it sends it. Which of them would stop seeing fresh rows without
      * this entry is a question this leaf does not answer.
+     *
+     * OAuth providers (HIL-286) are read wherever a provider registry is built: the users
+     * library that starts a sign-in, the OAuth agent that finishes one, and the seam that
+     * names a project's sign-in methods. What the administrator entered takes effect on the
+     * next build in each of them, so each has to hold the rows as they are now.
      *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.
@@ -184,6 +206,7 @@ abstract class HilosDbContext extends DbContext
             self::identities,
             self::sessions,
             self::notifications,
+            self::oauthProviders,
         ];
     }
 }

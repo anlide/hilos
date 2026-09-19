@@ -12,6 +12,7 @@ use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Demo\Polls\Agents\OAuthAgent;
 use Demo\Polls\Agents\PollsAgent;
 use Demo\Polls\Auth\PollsCodeChannelRegistry;
+use Demo\Polls\Auth\PollsOAuthProviderDirectory;
 use Demo\Polls\Browser\PollsBrowserContext;
 use Demo\Polls\Browser\PollsBrowserRef;
 use Demo\Polls\Browser\Table\UserDetailBrowserTable;
@@ -39,6 +40,10 @@ use Demo\Polls\Pages\Hilos\PrivacyPage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\TermsPage;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
+use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
 use Demo\Polls\Pages\MainPage;
@@ -79,6 +84,9 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -105,6 +113,8 @@ final class Hilos extends HilosFacade
     protected const string SETTINGS_CATALOG = PollsSettingsCatalog::class;
 
     protected const string CODE_CHANNEL_REGISTRY = PollsCodeChannelRegistry::class;
+
+    protected const string OAUTH_PROVIDER_DIRECTORY = PollsOAuthProviderDirectory::class;
 
     protected const ?string LEGAL_CATALOG = PollsLegalCatalog::class;
 
@@ -134,6 +144,10 @@ final class Hilos extends HilosFacade
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
         LicensePage::PAGE => LicensePage::class,
+        SecurityPage::PAGE => SecurityPage::class,
+        SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
+        SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
     ];
 
     public const array GROUPS = [
@@ -259,6 +273,9 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
         PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
+        PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
+        PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -277,6 +294,14 @@ final class Hilos extends HilosFacade
         ],
         LogsWorkersPage::PAGE => [
             PollsTableContext::hilosLogWorkers => [],
+        ],
+        SecurityOAuthPage::PAGE => [
+            PollsTableContext::hilosSecurityOauthRedirect => [],
+            PollsTableContext::hilosSecurityOauthProviders => [],
+        ],
+        SecurityOAuthProviderPage::PAGE => [
+            PollsTableContext::hilosSecurityOauthProviders => [],
+            PollsTableContext::hilosSecurityOauthProviderFields => [],
         ],
         UsersPage::PAGE => [
             PollsTableContext::hilosUsers => [],

@@ -238,6 +238,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Builds the detector over the sign-in methods this demo has actually wired.
      *
      * @return IdentifierDetector Detector answering with this demo's enabled method keys
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     protected function buildAuthMethods(): IdentifierDetector
     {
@@ -248,6 +249,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Builds the OAuth service this demo's providers are configured on.
      *
      * @return OAuthService Service over the demo's provider credentials
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     protected function buildOAuthService(): ?OAuthService
     {

@@ -29,6 +29,8 @@ use Demo\Polls\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
+use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
 use Demo\Polls\Pages\MainPage;
@@ -49,6 +51,9 @@ use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -313,6 +318,9 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
             PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+            PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
+            PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
+            PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -326,6 +334,8 @@ final class PollsTopologyRegistryTest extends TestCase
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
+                SecurityOAuthPage::PAGE,
+                SecurityOAuthProviderPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
             ],

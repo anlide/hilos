@@ -17,8 +17,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for which OAuth providers the chat demo's wiring leaves standing (HIL-924).
  *
- * A provider is there exactly when its client pair is: an empty pair leaves it out on
- * every node alike, because no in-process stub stands in for it any more. A filled pair
+ * A provider is there exactly when its effective client pair is (HIL-286: what an
+ * administrator entered, then env, then the preset - here no database is mounted, so env
+ * decides): an empty pair leaves it out on every node alike, because no in-process stub
+ * stands in for it any more. A filled pair
  * builds the real provider over the framework's preset, and on the test stand that
  * preset is pointed at the stand's own provider emulator. A project reads its enabled
  * sign-in methods off this registry, so both halves are asserted.

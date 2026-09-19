@@ -64,6 +64,8 @@ import HilosBackup from './views/Hilos/Backup/Backup.vue'
 import HilosCommunications from './views/Hilos/Communications/Communications.vue'
 import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
 import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
+import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth.vue'
+import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
 import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
@@ -102,6 +104,8 @@ const pages: Record<string, Component> = {
   [HilosPages.COMMUNICATIONS]: HilosCommunications,
   [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
   [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
+  [HilosPages.SECURITY_OAUTH]: HilosSecurityOauth,
+  [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProvider,
   [HilosPages.LOGS]: HilosLogsOverview,
   [HilosPages.LOGS_KEYS]: HilosLogsKeys,
   [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,

@@ -6,6 +6,7 @@ namespace Demo\Polls\Auth;
 
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\HilosException;
 
 /**
  * PollsAuthMethods - the auth methods this demo has actually wired (HIL-634).
@@ -35,6 +36,7 @@ final class PollsAuthMethods
      * Builds the method keys detection may name, in the order a surface shows them.
      *
      * @return list<string> Enabled method keys (see AuthMethodKey)
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     public static function enabledKeys(): array
     {
@@ -50,6 +52,7 @@ final class PollsAuthMethods
      * Builds the detector over this project's enabled methods.
      *
      * @return IdentifierDetector Detector answering with keys this demo can serve
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     public static function detector(): IdentifierDetector
     {

@@ -30,6 +30,8 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Pages\Hilos\Users\UsersPage;
 use Demo\Tasks\Pages\MainPage;
@@ -55,6 +57,9 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -331,6 +336,9 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
             TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+            TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
+            TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
+            TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -345,6 +353,8 @@ final class TasksTopologyRegistryTest extends TestCase
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
+                SecurityOAuthPage::PAGE,
+                SecurityOAuthProviderPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
             ],

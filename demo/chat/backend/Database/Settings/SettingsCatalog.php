@@ -7,6 +7,7 @@ namespace Demo\Chat\Database\Settings;
 use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
+use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
@@ -127,6 +128,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()),
             DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
+            OAuthSettingsCatalog::getCatalog(),
         );
     }
 }

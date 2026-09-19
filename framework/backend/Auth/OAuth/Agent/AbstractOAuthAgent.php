@@ -97,9 +97,6 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     /** Default per-request network timeout in milliseconds (token and userinfo each). */
     private const float DEFAULT_HTTP_TIMEOUT_MS = 5000.0;
 
-    /** Providers configured by the project, resolved once on start. */
-    private OAuthProviderRegistry $providers;
-
     /**
      * In-flight pending ops delivered by the callback, this agent's own runtime state.
      *
@@ -113,11 +110,15 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     private array $exchanges = [];
 
     /**
-     * Resolves the project's configured OAuth providers and initializes the pending-op store.
+     * Initializes the pending-op store.
+     *
+     * The providers are not resolved here. Their credentials are what an administrator
+     * enters in the admin (HIL-286), so a registry built once per process would keep signing
+     * in on the pair this agent started with until the daemon restarted; it is built on every
+     * exchange instead ({@see startOp()}), as every other caller builds it.
      */
     public function onStart(): void
     {
-        $this->providers = $this->buildProviderRegistry();
         $this->pending = OAuthPendingLogins::init();
     }
 
@@ -181,7 +182,10 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     /**
      * Builds the provider registry from the project's OAuth provider config.
      *
+     * Called once per exchange, so it reads the configuration as it is at that moment.
+     *
      * @return OAuthProviderRegistry Configured providers
+     * @throws HilosException Whatever reading the project's provider configuration raises
      */
     abstract protected function buildProviderRegistry(): OAuthProviderRegistry;
 
@@ -291,14 +295,23 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Dispatches one op: open the token request over HTTP.
+     * Dispatches one op: find its provider as configured right now, then open the token request over HTTP.
+     *
+     * A configuration that cannot be read fails the one login it was read for, the way a
+     * provider that cannot be reached does; the next exchange reads it again.
      *
      * @param OAuthPendingLogin $op Op to start
      * @param float $nowMs Current time in milliseconds
      */
     private function startOp(OAuthPendingLogin $op, float $nowMs): void
     {
-        $provider = $this->providers->get($op->provider);
+        try {
+            $provider = $this->buildProviderRegistry()->get($op->provider);
+        } catch (HilosException $e) {
+            $this->failOp($op, 'provider configuration could not be read: ' . $e->getMessage());
+
+            return;
+        }
         if ($provider === null) {
             $this->failOp($op, "unknown provider '{$op->provider}'");
 

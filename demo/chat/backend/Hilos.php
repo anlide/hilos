@@ -54,6 +54,7 @@ use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
+use Demo\Chat\Auth\ChatOAuthProviderDirectory;
 use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
@@ -189,6 +190,9 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
+use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -239,6 +243,8 @@ final class Hilos extends HilosFacade
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
 
     protected const string CODE_CHANNEL_REGISTRY = ChatCodeChannelRegistry::class;
+
+    protected const string OAUTH_PROVIDER_DIRECTORY = ChatOAuthProviderDirectory::class;
 
     protected const string ADMIN_AUDIENCE = ChatAdminAudience::class;
 
@@ -507,6 +513,9 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosLogKeys => HilosLogKeysTable::class,
         ChatTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         ChatTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        ChatTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
+        ChatTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
+        ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -605,6 +614,14 @@ final class Hilos extends HilosFacade
         ],
         CommunicationsDeliveriesPage::PAGE => [
             ChatTableContext::hilosNotificationDeliveries => [],
+        ],
+        SecurityOAuthPage::PAGE => [
+            ChatTableContext::hilosSecurityOauthRedirect => [],
+            ChatTableContext::hilosSecurityOauthProviders => [],
+        ],
+        SecurityOAuthProviderPage::PAGE => [
+            ChatTableContext::hilosSecurityOauthProviders => [],
+            ChatTableContext::hilosSecurityOauthProviderFields => [],
         ],
         LogsKeysPage::PAGE => [
             ChatTableContext::hilosLogKeys => [],

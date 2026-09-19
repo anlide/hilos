@@ -43,6 +43,8 @@ import { LogWorkers } from './views/hilos/logs/workers'
 import { LogsOverview } from './views/hilos/logs/overview'
 import { Main } from './views/main/main'
 import { Privacy } from './views/privacy/privacy'
+import { SecurityOauth } from './views/hilos/security/oauth'
+import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
 import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
 import { User } from './views/hilos/users/user'
@@ -190,6 +192,12 @@ export class App {
     // entity + presence sources on the backend.
     [HilosPages.USERS]: Users,
     [HilosPages.USER]: User,
+    // The framework OAuth admin pages (HIL-286): the framework owns the providers,
+    // fields and return-address tables and their set / reset round-trips; the
+    // project binds its connection, scope stores and action lifecycle
+    // (views/hilos/security) and declares its provider directory on the backend.
+    [HilosPages.SECURITY_OAUTH]: SecurityOauth,
+    [HilosPages.SECURITY_OAUTH_PROVIDER]: SecurityOauthProvider,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its

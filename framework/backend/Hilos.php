@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
+use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -161,6 +162,19 @@ abstract class Hilos implements TruthSourceOwner
      * @var class-string<CodeChannelRegistry>
      */
     protected const string CODE_CHANNEL_REGISTRY = CodeChannelRegistry::class;
+
+    /**
+     * OAuth provider directory class (HIL-286).
+     *
+     * The providers a project offers sign-in with, and the recipe and env variables
+     * behind each. The framework default is the empty base, so a project that points
+     * this nowhere has no provider on its sign-in screen and none in its admin; a
+     * project points it at its own subclass and both surfaces draw whatever it
+     * declared, in directory order.
+     *
+     * @var class-string<OAuthProviderDirectory>
+     */
+    protected const string OAUTH_PROVIDER_DIRECTORY = OAuthProviderDirectory::class;
 
     /**
      * Notification-type registry class (HIL-485).
@@ -470,6 +484,16 @@ abstract class Hilos implements TruthSourceOwner
     public static function notificationChannelRegistryClass(): string
     {
         return static::appClass()::NOTIFICATION_CHANNEL_REGISTRY;
+    }
+
+    /**
+     * Returns the project's OAuth provider directory class (HIL-286).
+     *
+     * @return class-string<OAuthProviderDirectory> OAuth provider directory class
+     */
+    public static function oauthProviderDirectoryClass(): string
+    {
+        return static::appClass()::OAUTH_PROVIDER_DIRECTORY;
     }
 
     /**

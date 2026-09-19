@@ -26,6 +26,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Pages\AbstractHilosProfilePage;
 use Random\RandomException;
@@ -84,6 +85,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws InvalidArgumentException When the authorize-URL signal cannot be named or queued
      * @throws RandomException When minting an OAuth link state cannot draw from the CSPRNG
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      * @return ?ActionReplyDTO Always null: the link start answers with a signal, not a reply
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -148,6 +150,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @throws ValidationException When the provider is not configured
      * @throws InvalidArgumentException When the authorize-URL signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot produce a state nonce
+     * @throws HilosException Whatever reading the OAuth providers' configuration raises
      */
     private function handleLinkOAuthStart(LinkOAuthStartActionDTO $dto): void
     {

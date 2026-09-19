@@ -421,6 +421,24 @@ final class HilosSignalConstants
      */
     public const string COMMUNICATIONS_DELIVERY_RETRY = 'communications_delivery_retry';
 
+    // ── Hilos security admin: OAuth provider actions (client → server, HIL-286) ──
+    /**
+     * Client → server: write one field of one OAuth provider (client id, scope or secret).
+     *
+     * Owned by the provider page. The secret is accepted and replaced, and its answer
+     * carries no value - only that it was written.
+     */
+    public const string SECURITY_OAUTH_PROVIDER_SET = 'security_oauth_provider_set';
+
+    /** Client → server: take one field of one OAuth provider back to its env/recipe value. */
+    public const string SECURITY_OAUTH_PROVIDER_RESET = 'security_oauth_provider_reset';
+
+    /** Client → server: write the shared OAuth return address. Owned by the providers list page. */
+    public const string SECURITY_OAUTH_REDIRECT_SET = 'security_oauth_redirect_set';
+
+    /** Client → server: take the shared OAuth return address back to its env value. */
+    public const string SECURITY_OAUTH_REDIRECT_RESET = 'security_oauth_redirect_reset';
+
     // ── Hilos logs admin: viewer page actions (client → server) ──
     /**
      * Client → server: read one page of lines from one log file (HIL-757).
@@ -1157,6 +1175,14 @@ final class HilosSignalConstants
      * {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_CHANNEL_SETTING_WRITE_DONE = 'hilos_channel_setting_write_done';
+
+    /**
+     * Settings library → OAuth providers page: the return-address write it forwarded is done (HIL-286).
+     *
+     * A name of that page's own for the same reason as {@see HILOS_CHANNEL_SETTING_WRITE_DONE}:
+     * the map of page-owned signals holds one entry per name.
+     */
+    public const string HILOS_OAUTH_REDIRECT_WRITE_DONE = 'hilos_oauth_redirect_write_done';
 
     /**
      * The settings library → the log modes screen: your preset is applied, or refused (HIL-946).
