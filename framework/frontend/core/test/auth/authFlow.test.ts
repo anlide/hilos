@@ -16,9 +16,13 @@
 // HIL-973 adds the answer the icon row and a found number's channel choice now
 // ask, and the proven reply the lookup schema lets through. HIL-926 adds the
 // return that ends a parked ceremony with a refusal on the field (failMethod).
+// HIL-427 moves the method set to the server: the machine builds its
+// descriptors from the live set and reads every reply through it, so a switch
+// reshapes the surface without the lookup being asked again.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
+  authFlowMethodsFor,
   classifyIdentifier,
   createAuthFlow,
   isFlowSubmittable,
@@ -43,6 +47,8 @@ import {
 } from '../../src/auth/authFlow.js'
 import { createAuthActions, toFlowPatch } from '../../src/auth/authActions.js'
 import { type HilosAuthContext } from '../../src/auth/authContext.js'
+import { type AuthMethodEntry } from '../../src/session/sessionScope.js'
+import { createSignal } from '../../src/state/signal.js'
 
 /** One second in ms — the scale a backend `resendAt` moment is built in here. */
 const SECOND_MS = 1000
@@ -87,6 +93,34 @@ const ALL_METHODS = [
   MAGIC_LINK_FLOW_METHOD,
 ]
 
+/**
+ * The enabled set the fixture's installation sends, in the order the server
+ * would — the same buttons as {@link ALL_METHODS}, plus the phone code, which
+ * draws no button but has to survive the reading of every reply.
+ */
+const ALL_ENTRIES: readonly AuthMethodEntry[] = [
+  { key: 'password', name: null },
+  { key: 'oauth:github', name: 'GitHub' },
+  { key: 'oauth:google', name: 'Google' },
+  { key: 'passkey', name: null },
+  { key: MAGIC_LINK_METHOD_KEY, name: null },
+  { key: 'sms', name: null },
+]
+
+/**
+ * A live enabled set over the given keys, named as the fixture's server names them.
+ *
+ * @param keys The enabled method keys, in button order.
+ */
+function enabledSet(keys: readonly string[]) {
+  return createSignal<readonly AuthMethodEntry[]>(
+    keys.map(
+      (key) =>
+        ALL_ENTRIES.find((entry) => entry.key === key) ?? { key, name: null },
+    ),
+  )
+}
+
 const SMS_CHANNEL: CodeChannelDescriptor = {
   key: 'sms',
   label: 'Text me',
@@ -120,7 +154,7 @@ function detected(
 /** Build a flow with sensible passing stubs; override any seam per test. */
 function setup(options: Partial<AuthFlowOptions> = {}) {
   return createAuthFlow({
-    methods: ALL_METHODS,
+    authMethods: createSignal<readonly AuthMethodEntry[]>(ALL_ENTRIES),
     channels: [SMS_CHANNEL, TELEGRAM_CHANNEL],
     onDetect: async (identifier) => detected({ identifier }),
     onSubmit: async () => ({ ok: true }),
@@ -1966,7 +2000,7 @@ describe('failure surface', () => {
 
 describe('method-set-agnostic', () => {
   it('password only: no icons anywhere, the machine still flows', async () => {
-    const flow = setup({ methods: [PASSWORD_FLOW_METHOD] })
+    const flow = setup({ authMethods: enabledSet(['password']) })
     expect(flow.icons.get()).toEqual([])
     await typeAndDetect(flow, 'a@b.com')
     expect(flow.primaryAction.get()).toEqual({ kind: 'submit' })
@@ -1974,7 +2008,7 @@ describe('method-set-agnostic', () => {
 
   it('icons only: a passwordless account still gets a primary method', async () => {
     const flow = setup({
-      methods: [OAUTH_GITHUB_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
+      authMethods: enabledSet(['oauth:github', MAGIC_LINK_METHOD_KEY]),
       onDetect: async (identifier) =>
         detected({ identifier, methods: [MAGIC_LINK_METHOD_KEY] }),
     })
@@ -2007,7 +2041,7 @@ describe('method-set-agnostic', () => {
 
   it('an empty method registry never throws', async () => {
     const flow = setup({
-      methods: [],
+      authMethods: enabledSet([]),
       onDetect: async (identifier) =>
         detected({ identifier, methods: [MAGIC_LINK_METHOD_KEY] }),
     })
@@ -2016,6 +2050,90 @@ describe('method-set-agnostic', () => {
     expect(flow.primaryAction.get()).toBeNull()
     await flow.chooseMethod('passkey')
     expect(flow.flow.get().step).toBe('identifier')
+  })
+})
+
+describe('the live method set (HIL-427)', () => {
+  it('builds the descriptors in the order the server sent, sms drawing none', () => {
+    expect(authFlowMethodsFor(ALL_ENTRIES)).toEqual(ALL_METHODS)
+    expect(
+      authFlowMethodsFor([
+        { key: 'sms', name: null },
+        { key: 'some_future_method', name: null },
+      ]),
+    ).toEqual([])
+  })
+
+  it('captions a provider with the name the server sent', () => {
+    expect(
+      authFlowMethodsFor([{ key: 'oauth:acme', name: 'Acme ID' }]),
+    ).toEqual([oauthFlowMethod('oauth:acme', 'Continue with Acme ID')])
+  })
+
+  it('a method switched off leaves the icon row without the lookup being asked', () => {
+    const authMethods = enabledSet(ALL_ENTRIES.map((entry) => entry.key))
+    const flow = setup({ authMethods })
+    expect(flow.icons.get().map((icon) => icon.key)).toContain('passkey')
+
+    authMethods.set(ALL_ENTRIES.filter((entry) => entry.key !== 'passkey'))
+
+    expect(flow.icons.get().map((icon) => icon.key)).not.toContain('passkey')
+    expect(flow.methods.get().map((method) => method.key)).not.toContain(
+      'passkey',
+    )
+  })
+
+  it('a switch re-reads the held reply: the password goes, the link steps up, nothing is re-asked', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier, methods: ['password', MAGIC_LINK_METHOD_KEY] }),
+    )
+    const authMethods = enabledSet(ALL_ENTRIES.map((entry) => entry.key))
+    const flow = setup({ authMethods, onDetect })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.primaryAction.get()).toEqual({ kind: 'submit' })
+
+    authMethods.set(ALL_ENTRIES.filter((entry) => entry.key !== 'password'))
+
+    expect(flow.detection.get().result?.methods).toEqual([
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    expect(flow.primaryAction.get()).toEqual({
+      kind: 'method',
+      key: MAGIC_LINK_METHOD_KEY,
+    })
+    expect(onDetect).toHaveBeenCalledTimes(1)
+  })
+
+  it('a phone keeps its code when only sms is left: the set is read by key, not by button', async () => {
+    const flow = setup({
+      authMethods: enabledSet(['sms']),
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+    expect(flow.detection.get().result?.methods).toEqual(['sms'])
+    expect(flow.primaryAction.get()).toEqual({ kind: 'channel', key: 'sms' })
+  })
+
+  it('a free address whose only registrable method is off is not a registration', async () => {
+    const flow = setup({
+      authMethods: enabledSet([MAGIC_LINK_METHOD_KEY]),
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          status: 'none',
+          methods: [],
+          registerable: ['password'],
+        }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    expect(flow.detection.get().result?.registerable).toEqual([])
+    expect(flow.flow.get().intent).toBe('login')
   })
 })
 

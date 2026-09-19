@@ -84,6 +84,7 @@ export const HilosPages = {
   SECURITY_2FA: 'hilos_security_2fa',
   SECURITY_OAUTH: 'hilos_security_oauth',
   SECURITY_OAUTH_PROVIDER: 'hilos_security_oauth_provider',
+  SECURITY_SIGN_IN_METHODS: 'hilos_security_sign_in_methods',
   BILLING: 'hilos_billing',
   BILLING_PROVIDER: 'hilos_billing_provider',
   BILLING_PAYMENTS: 'hilos_billing_payments',
@@ -243,6 +244,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.SECURITY_OAUTH]: { path: '/hilos/security/oauth', admin: true },
   [HilosPages.SECURITY_OAUTH_PROVIDER]: {
     path: '/hilos/security/oauth/{providerId}',
+    admin: true,
+  },
+  [HilosPages.SECURITY_SIGN_IN_METHODS]: {
+    path: '/hilos/security/sign-in-methods',
     admin: true,
   },
   [HilosPages.BILLING]: { path: '/hilos/billing', admin: true },

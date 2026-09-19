@@ -73,6 +73,7 @@ export { default as HilosCommunicationsPage } from './admin/communications/Hilos
 export { default as HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.vue'
 export { default as HilosSecurityOauthPage } from './admin/security/HilosSecurityOauthPage.vue'
 export { default as HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOauthProviderPage.vue'
+export { default as HilosSecuritySignInMethodsPage } from './admin/security/HilosSecuritySignInMethodsPage.vue'
 export { default as HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.vue'
 export { default as HilosLogsPage } from './admin/logs/HilosLogsPage.vue'
 export { default as HilosLogsKeysPage } from './admin/logs/HilosLogsKeysPage.vue'

@@ -109,6 +109,9 @@ export function hilosAdminViews(): Record<string, ComponentType> {
     // SECURITY_OAUTH and SECURITY_OAUTH_PROVIDER are real framework pages since
     // HIL-286: their tables read a live connection, so a project mounts
     // HilosSecurityOauthPage and HilosSecurityOauthProviderPage directly with its context.
+    // SECURITY_SIGN_IN_METHODS is one too since HIL-427: its table and its live
+    // method set read the connection and the session scope, so a project mounts
+    // HilosSecuritySignInMethodsPage directly with its context.
     [HilosPages.BILLING]: HilosBillingPage,
     [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,

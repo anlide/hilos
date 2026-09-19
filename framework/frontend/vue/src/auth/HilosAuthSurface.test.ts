@@ -33,12 +33,9 @@ import {
   createOAuthLogin,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
-  MAGIC_LINK_FLOW_METHOD,
   MAGIC_LINK_METHOD_KEY,
   OAUTH_RESULT_SIGNAL,
   OAUTH_RETURN_MESSAGE_TYPE,
-  oauthFlowMethod,
-  PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
   SESSION_ACK_REGISTERED,
@@ -47,6 +44,7 @@ import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   type ActionHandle,
   type AuthGate,
+  type AuthMethodEntry,
   type HilosAuthContext,
   type HilosConnection,
   type ProjectSignal,
@@ -56,6 +54,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HilosAuthSurface from './HilosAuthSurface.vue'
 import { hilosAuthGateKey } from './hilosAuthGateKey.js'
+
+/**
+ * A scope manager holding the enabled sign-in methods, the way a handshake puts
+ * them in the session scope (HIL-427): the surface reads its set there.
+ *
+ * @param entries The enabled methods, in button order.
+ */
+function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
+  const scopes = new ScopeManager()
+  scopes.session.data.set('authMethods', entries)
+
+  return scopes
+}
 
 // The session slot the surface reads its ack from — the default of
 // `sessionPendingAck`, which is what the surface asks for (sessionScope.ts).
@@ -201,11 +212,9 @@ function passwordOnlyContext(refuseLogin = false): {
     },
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),
@@ -256,11 +265,12 @@ function magicLinkContext(): {
     dispatched,
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([
+        { key: 'password', name: null },
+        { key: 'magic_link', name: null },
+      ]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),
@@ -308,11 +318,9 @@ function freeIdentifierContext(
 
   return createHilosAuthContext({
     connection,
-    scopes: new ScopeManager(),
+    scopes: scopesWith([{ key: 'password', name: null }]),
     actions,
-    methods: [PASSWORD_FLOW_METHOD],
     channels: [],
-    oauthProviders: [],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })
@@ -358,11 +366,12 @@ function registrableIdentifierContext(): HilosAuthContext {
 
   return createHilosAuthContext({
     connection,
-    scopes: new ScopeManager(),
+    scopes: scopesWith([
+      { key: 'password', name: null },
+      { key: 'magic_link', name: null },
+    ]),
     actions,
-    methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
     channels: [],
-    oauthProviders: [],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })
@@ -411,11 +420,12 @@ function liveAccountContext(
 
   return createHilosAuthContext({
     connection,
-    scopes: new ScopeManager(),
+    scopes: scopesWith([
+      { key: 'password', name: null },
+      { key: 'magic_link', name: null },
+    ]),
     actions,
-    methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
     channels: [],
-    oauthProviders: [],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })
@@ -466,11 +476,9 @@ function heldIdentifierContext(): {
     dispatched,
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),
@@ -527,11 +535,12 @@ function expiringLetterContext(lifetimeMs: number): {
     dispatched,
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([
+        { key: 'password', name: null },
+        { key: 'magic_link', name: null },
+      ]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),
@@ -724,16 +733,12 @@ function oauthTripWorld(): TripWorld {
   } as unknown as ActionLifecycle
   const context = createHilosAuthContext({
     connection,
-    scopes: new ScopeManager(),
+    scopes: scopesWith([
+      { key: 'password', name: null },
+      { key: GITHUB_PROVIDER, name: 'GitHub' },
+    ]),
     actions,
-    methods: [
-      PASSWORD_FLOW_METHOD,
-      oauthFlowMethod(GITHUB_PROVIDER, 'Continue with GitHub'),
-    ],
     channels: [],
-    oauthProviders: [
-      { key: GITHUB_PROVIDER, label: 'Continue with GitHub', name: 'GitHub' },
-    ],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })
@@ -1682,18 +1687,31 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
   })
 
-  it('refuses a registry with no method at all, at wiring time', () => {
-    expect(() =>
-      createHilosAuthContext({
-        connection: { on: vi.fn() } as unknown as HilosConnection,
-        scopes: new ScopeManager(),
-        actions: { dispatch: vi.fn() } as unknown as ActionLifecycle,
-        methods: [],
-        channels: [],
-        oauthProviders: [],
-        termsPath: '/terms',
-        privacyPath: '/privacy',
-      }),
-    ).toThrow(/at least one method/)
+  it('reshapes itself when the installation switches a method off (HIL-427)', async () => {
+    const context = createHilosAuthContext({
+      connection: {
+        on: vi.fn().mockReturnValue(() => undefined),
+      } as unknown as HilosConnection,
+      scopes: scopesWith([
+        { key: 'password', name: null },
+        { key: 'passkey', name: null },
+      ]),
+      actions: { dispatch: vi.fn() } as unknown as ActionLifecycle,
+      channels: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    expect(wrapper.find('[data-id="auth-icon-passkey"]').exists()).toBe(true)
+
+    // The frame the settings library sends lands in the same session slot.
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+    ])
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="auth-icon-passkey"]').exists()).toBe(false)
+    expect(context.actions.dispatch).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 })

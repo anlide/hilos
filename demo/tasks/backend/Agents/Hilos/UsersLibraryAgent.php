@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Agents\Hilos;
 
-use Demo\Tasks\Auth\TasksAuthMethods;
 use Demo\Tasks\Auth\TasksOAuthConfig;
 use Demo\Tasks\Constants\TasksNotificationType;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
-use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Constants\HilosAgentType;
@@ -232,17 +230,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         $name = Hilos::$db->users[$userId]?->name;
 
         return $name === null || $name === '' ? null : $name;
-    }
-
-    /**
-     * Builds the detector over the sign-in methods this demo has actually wired.
-     *
-     * @return IdentifierDetector Detector answering with this demo's enabled method keys
-     * @throws HilosException Whatever reading the OAuth providers' configuration raises
-     */
-    protected function buildAuthMethods(): IdentifierDetector
-    {
-        return TasksAuthMethods::detector();
     }
 
     /**

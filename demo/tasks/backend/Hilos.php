@@ -11,6 +11,7 @@ use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Agents\TasksAgent;
+use Demo\Tasks\Auth\TasksAuthMethodDirectory;
 use Demo\Tasks\Auth\TasksCodeChannelRegistry;
 use Demo\Tasks\Auth\TasksOAuthProviderDirectory;
 use Demo\Tasks\Backup\BackupCatalog;
@@ -44,6 +45,7 @@ use Demo\Tasks\Pages\Hilos\TermsPage;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
@@ -93,6 +95,7 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
+use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -119,6 +122,8 @@ final class Hilos extends HilosFacade
     protected const string SETTINGS_CATALOG = TasksSettingsCatalog::class;
 
     protected const string CODE_CHANNEL_REGISTRY = TasksCodeChannelRegistry::class;
+
+    protected const string AUTH_METHOD_DIRECTORY = TasksAuthMethodDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = TasksOAuthProviderDirectory::class;
 
@@ -158,6 +163,7 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
+        SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
     ];
 
     public const array GROUPS = [
@@ -293,6 +299,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
+        TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -323,6 +330,9 @@ final class Hilos extends HilosFacade
         SecurityOAuthProviderPage::PAGE => [
             TasksTableContext::hilosSecurityOauthProviders => [],
             TasksTableContext::hilosSecurityOauthProviderFields => [],
+        ],
+        SecuritySignInMethodsPage::PAGE => [
+            TasksTableContext::hilosSecuritySignInMethods => [],
         ],
         UsersPage::PAGE => [
             TasksTableContext::hilosUsers => [],

@@ -347,6 +347,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_RESET => PageConstants::HILOS_SECURITY_OAUTH,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_SET => PageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_RESET => PageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
+            HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -395,6 +396,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_RESET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SECURITY_SIGN_IN_METHOD_SET => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 
@@ -416,6 +418,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_OAUTH,
+                HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             ],
         ], Hilos::getPageSignalRoutes());
     }
@@ -435,6 +438,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => AgentType::HILOS_INDEX,
             ],
         ], Hilos::getPageSignalAgentRoutes());
     }

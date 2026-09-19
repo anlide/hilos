@@ -7,13 +7,20 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\SettingsPage;
+use Hilos\Auth\AuthMethodKey;
+use Hilos\Auth\Method\AuthMethodSettings;
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -279,6 +286,74 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
+     * A write that changed the sign-in method set sends the new set to every connection, once (HIL-427).
+     *
+     * Through the general settings table on purpose: the screen of the methods is one door and
+     * this is another, and the set has to reach the surfaces whichever of them moved it.
+     */
+    public function testAWriteThatChangedTheMethodSetSendsItToEveryConnection(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(AuthMethodSettings::DISABLED_KEY);
+
+            $this->assertNull($this->submit(
+                'methods-changed-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(AuthMethodSettings::DISABLED_KEY, AuthMethodKey::SMS),
+            ));
+
+            $frames = $this->methodSetFrames();
+            $this->assertCount(1, $frames);
+            $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
+            $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
+            $this->assertInstanceOf(AuthMethodsSignalData::class, $frames[0]->data->data);
+            $this->assertSame(EnabledAuthMethods::toWire(), $frames[0]->data->data->authMethods);
+            $this->assertNotContains(AuthMethodKey::SMS, array_column($frames[0]->data->data->authMethods, 'key'));
+        }, [AuthMethodSettings::DISABLED_KEY]);
+    }
+
+    /**
+     * A write that left the method set as it was sends no set.
+     */
+    public function testAWriteThatLeftTheMethodSetAloneSendsNothing(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(self::CATALOG_KEY);
+
+            $this->submit(
+                'methods-unchanged-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(self::CATALOG_KEY, 'not-a-method'),
+            );
+
+            $this->assertSame([], $this->methodSetFrames());
+        }, [self::CATALOG_KEY]);
+    }
+
+    /**
+     * Switching every method off is refused by the setting's rule, and a refused write sends no set.
+     */
+    public function testSwitchingEveryMethodOffIsRefusedAndSendsNothing(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(AuthMethodSettings::DISABLED_KEY);
+
+            $error = $this->submit(
+                'methods-all-off-ak',
+                HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO(
+                    AuthMethodSettings::DISABLED_KEY,
+                    AuthMethodSettings::format(Hilos::authMethodDirectoryClass()::keys()),
+                ),
+            );
+
+            $this->assertSame('At least one sign-in method must stay on', $error);
+            $this->assertNull(Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
+            $this->assertSame([], $this->methodSetFrames());
+        }, [AuthMethodSettings::DISABLED_KEY]);
+    }
+
+    /**
      * Runs one settings action end to end: the page checks and forwards, the library writes.
      *
      * Both halves in one process, which is what makes this a test of the seam and not of one
@@ -326,6 +401,23 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }
 
         $this->fail('An ask that arrived as a frame is answered or it hangs');
+    }
+
+    /**
+     * Takes every queued sign-in method set off the router, leaving nothing behind.
+     *
+     * @return list<SignalDTO> Queued method-set frames in the order they were sent
+     */
+    private function methodSetFrames(): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AUTH_METHODS) {
+                $frames[] = $signal;
+            }
+        }
+
+        return $frames;
     }
 
     /**

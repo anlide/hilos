@@ -44,7 +44,10 @@
 // `Object.is` (signal.ts): replace objects on update, never mutate them.
 
 import { toLocal } from '../session/serverClock.js'
-import { type PendingAuthStep } from '../session/sessionScope.js'
+import {
+  type AuthMethodEntry,
+  type PendingAuthStep,
+} from '../session/sessionScope.js'
 import {
   computedSignal,
   createSignal,
@@ -382,8 +385,15 @@ export type AuthSubmitAction = 'submit' | 'resend' | 'finish_without_password'
 
 /** Wiring for {@link createAuthFlow}. */
 export interface AuthFlowOptions {
-  /** The project's ordered enabled methods; drives the field, icons and reveal. */
-  methods: readonly AuthFlowMethodDescriptor[]
+  /**
+   * The installation's enabled sign-in methods, live and in button order
+   * (HIL-427) — what the handshake and the settings library's frame deliver
+   * ({@link sessionAuthMethods}). The machine builds its descriptors from it
+   * ({@link authFlowMethodsFor}) and reads every lookup reply through it, so a
+   * method switched off while the surface is open drops out of the field, the
+   * icons and the reveal without the lookup being asked again.
+   */
+  authMethods: ReadonlySignal<readonly AuthMethodEntry[]>
   /** The project's ordered code delivery channels (HIL-492); may be empty. */
   channels: readonly CodeChannelDescriptor[]
   /**
@@ -449,8 +459,13 @@ export interface AuthFlow {
   readonly flow: ReadonlySignal<AuthFlowState>
   /** The current form values. */
   readonly form: ReadonlySignal<AuthFlowForm>
-  /** The live identifier lookup state. */
+  /**
+   * The live identifier lookup state, its reply read through the enabled set: a
+   * method the installation switched off is named in neither list of it.
+   */
   readonly detection: ReadonlySignal<DetectionState>
+  /** The descriptors of the enabled methods, in button order (HIL-427). */
+  readonly methods: ReadonlySignal<readonly AuthFlowMethodDescriptor[]>
   /** Whether a submit or ceremony is in flight (disables the controls). */
   readonly pending: ReadonlySignal<boolean>
   /** The active step's inline error, or `null` when clear. */
@@ -704,6 +719,9 @@ export const PASSWORD_METHOD_KEY = 'password'
  */
 export const MAGIC_LINK_METHOD_KEY = 'magic_link'
 
+/** The key prefix every OAuth provider method carries, e.g. `oauth:github`. */
+export const OAUTH_METHOD_PREFIX = 'oauth:'
+
 /** A full-email shape — the gate for firing a lookup, not backend validation. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -822,6 +840,73 @@ export const MAGIC_LINK_FLOW_METHOD: AuthFlowMethodDescriptor = {
     identifierKinds: ['email'],
   },
   placement: 'password_adjacent',
+}
+
+/**
+ * The descriptors of an enabled method set, in its order (HIL-427).
+ *
+ * The one place a method key turns into what the surface draws: a project no
+ * longer lists descriptors, the installation's set arrives from the server and
+ * the framework knows each key's shape. A provider is captioned with the name
+ * the server sent. `sms` gets no descriptor on purpose — the phone road is
+ * drawn from the lookup reply and the code channels, not from an icon — and a
+ * key the framework does not know is left out rather than drawn as a button
+ * nothing answers.
+ *
+ * @param entries The enabled methods, in button order.
+ * @returns Their descriptors, in the same order.
+ */
+export function authFlowMethodsFor(
+  entries: readonly AuthMethodEntry[],
+): readonly AuthFlowMethodDescriptor[] {
+  const methods: AuthFlowMethodDescriptor[] = []
+  for (const entry of entries) {
+    if (entry.key === PASSWORD_METHOD_KEY) {
+      methods.push(PASSWORD_FLOW_METHOD)
+    } else if (entry.key === PASSKEY_FLOW_METHOD.key) {
+      methods.push(PASSKEY_FLOW_METHOD)
+    } else if (entry.key === MAGIC_LINK_METHOD_KEY) {
+      methods.push(MAGIC_LINK_FLOW_METHOD)
+    } else if (entry.key.startsWith(OAUTH_METHOD_PREFIX)) {
+      methods.push(
+        oauthFlowMethod(entry.key, `Continue with ${entry.name ?? entry.key}`),
+      )
+    }
+  }
+
+  return methods
+}
+
+/**
+ * A lookup state read through the enabled set: each list of its reply keeps
+ * only the keys the installation offers now (HIL-427).
+ *
+ * By KEY and not by descriptor: `sms` has no descriptor and has to survive, or
+ * a phone account would lose its only way in. The reason fields stay as the
+ * backend wrote them — a list emptied here says nothing about why, which is
+ * the answer HIL-973 settled on for a method the administrator took away.
+ *
+ * @param state The lookup state as the backend answered it.
+ * @param keys The enabled method keys.
+ * @returns The same state, its reply narrowed.
+ */
+function narrowDetection(
+  state: DetectionState,
+  keys: readonly string[],
+): DetectionState {
+  const result = state.result
+  if (result === null) {
+    return state
+  }
+
+  return {
+    ...state,
+    result: {
+      ...result,
+      methods: result.methods.filter((key) => keys.includes(key)),
+      registerable: result.registerable.filter((key) => keys.includes(key)),
+    },
+  }
 }
 
 /**
@@ -1224,7 +1309,19 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     options.externalCancelGraceMs ?? DEFAULT_EXTERNAL_CANCEL_GRACE_MS
   const flow = createSignal<AuthFlowState>(INITIAL_FLOW)
   const form = createSignal<AuthFlowForm>(EMPTY_FORM)
-  const detection = createSignal<DetectionState>(IDLE_DETECTION)
+  // What the backend answered, as it answered it; everything reads the narrowed
+  // view below, so a switch of the set re-reads the held reply instead of asking
+  // the lookup again (HIL-427).
+  const detectionSource = createSignal<DetectionState>(IDLE_DETECTION)
+  const methods = computedSignal(() =>
+    authFlowMethodsFor(options.authMethods.get()),
+  )
+  const detection = computedSignal(() =>
+    narrowDetection(
+      detectionSource.get(),
+      options.authMethods.get().map((entry) => entry.key),
+    ),
+  )
   const pending = createSignal(false)
   const error = createSignal<AuthFlowError | null>(null)
   const resendAvailableAt = createSignal<number | null>(null)
@@ -1234,7 +1331,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   )
   const icons = computedSignal(() =>
     visibleMethodIcons(
-      options.methods,
+      methods.get(),
       form.get().identifier,
       flow.get().identifierKind,
       flow.get().intent,
@@ -1258,9 +1355,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     return (
       state.step === 'set_password' &&
       state.intent === 'register' &&
-      options.methods.some(
-        (descriptor) => descriptor.key === MAGIC_LINK_METHOD_KEY,
-      )
+      methods
+        .get()
+        .some((descriptor) => descriptor.key === MAGIC_LINK_METHOD_KEY)
     )
   })
   const primaryAction = computedSignal<AuthFlowPrimaryAction>(() => {
@@ -1316,11 +1413,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
           }
           // A passwordless account promotes its first enabled passwordless
           // method (registry order) to the primary button.
-          const method = options.methods.find(
-            (descriptor) =>
-              descriptor.kind === 'icon' &&
-              result.methods.includes(descriptor.key),
-          )
+          const method = methods
+            .get()
+            .find(
+              (descriptor) =>
+                descriptor.kind === 'icon' &&
+                result.methods.includes(descriptor.key),
+            )
 
           return method === undefined
             ? null
@@ -1333,11 +1432,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
           // A passwordless-only registration goes through its method's
           // ceremony — mirror of the active-account promotion above, kept in
           // step with isFlowSubmittable (which never enables submit here).
-          const method = options.methods.find(
-            (descriptor) =>
-              descriptor.kind === 'icon' &&
-              result.registerable.includes(descriptor.key),
-          )
+          const method = methods
+            .get()
+            .find(
+              (descriptor) =>
+                descriptor.kind === 'icon' &&
+                result.registerable.includes(descriptor.key),
+            )
 
           return method === undefined
             ? null
@@ -1398,14 +1499,14 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // An empty or partial field rolls detection back to idle without spending a
     // lookup; a stale in-flight reply is dropped by the sequence+echo guards.
     if (!isIdentifierComplete(identifier, kind)) {
-      detection.set(IDLE_DETECTION)
+      detectionSource.set(IDLE_DETECTION)
 
       return
     }
     const seq = detectSeq
     // The reveal stays on the reply it was drawn from until the new one lands:
     // taking it away for the flight is the flicker this leaf removes (HIL-646).
-    detection.set(pendingDetection(detection.get().result))
+    detectionSource.set(pendingDetection(detectionSource.get().result))
     debounceTimer = setTimeout(() => {
       debounceTimer = null
       void runDetect(seq, identifier, kind, moveOnPending)
@@ -1426,14 +1527,14 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     // Same roll-back to idle an empty or partial field gets from
     // scheduleDetect: there is nothing to ask about and nothing to reveal.
     if (!isIdentifierComplete(identifier, kind)) {
-      detection.set(IDLE_DETECTION)
+      detectionSource.set(IDLE_DETECTION)
 
       return
     }
     const seq = detectSeq
     // No holding here (HIL-646): showing the verdict that predates leaving the
     // field is the very defect HIL-651 closed.
-    detection.set(pendingDetection(null))
+    detectionSource.set(pendingDetection(null))
     void runDetect(seq, identifier, kind, false)
   }
 
@@ -1462,13 +1563,22 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (seq !== detectSeq || !isCurrentReply(result.identifier)) {
         return
       }
-      detection.set({ status: 'resolved', result })
-      applyDetection(result, moveOnPending)
+      detectionSource.set({ status: 'resolved', result })
+      // The intent is derived from the reply as this installation reads it: a
+      // free address whose only registrable method is switched off is not a
+      // registration.
+      applyDetection(
+        narrowDetection(
+          { status: 'resolved', result },
+          options.authMethods.get().map((entry) => entry.key),
+        ).result ?? result,
+        moveOnPending,
+      )
     } catch {
       if (seq === detectSeq) {
         // NO degraded state: an unanswered lookup reveals nothing and the
         // connection gate owns broken transport (rules-and-violations §A).
-        detection.set(IDLE_DETECTION)
+        detectionSource.set(IDLE_DETECTION)
       }
     }
   }
@@ -1763,6 +1873,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     flow,
     form,
     detection,
+    methods,
     pending,
     error,
     submittable,
@@ -1940,7 +2051,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (pending.get()) {
         return
       }
-      const descriptor = options.methods.find((method) => method.key === key)
+      const descriptor = methods.get().find((method) => method.key === key)
       if (descriptor === undefined || descriptor.kind !== 'icon') {
         return
       }
@@ -2112,7 +2223,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       dispatchSeq += 1
       flow.set(INITIAL_FLOW)
       form.set(EMPTY_FORM)
-      detection.set(IDLE_DETECTION)
+      detectionSource.set(IDLE_DETECTION)
       pending.set(false)
       error.set(null)
       resendAvailableAt.set(null)

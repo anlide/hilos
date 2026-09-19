@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Detection;
 
 use Hilos\Auth\AuthMethodKey;
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
@@ -49,8 +50,8 @@ use Hilos\Hilos;
  * What a project ENABLES is an input, not a decision made here: the constructor
  * takes the method keys this project offers and every answer is intersected with
  * them, so a method switched off (or never wired) cannot be named to a surface
- * that has nowhere to send it. The registry of enabled methods is HIL-427; until
- * it exists a project assembles the set itself.
+ * that has nowhere to send it. The set is the installation's enabled methods
+ * ({@see EnabledAuthMethods}): what the project wired, narrowed by the admin (HIL-427).
  *
  * A second intersection stands beside it, and it is the framework's own rather than
  * the project's: what this installation can DELIVER a one-time code to (HIL-830).

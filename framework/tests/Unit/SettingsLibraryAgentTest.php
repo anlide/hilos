@@ -107,6 +107,25 @@ final class SettingsLibraryAgentTest extends TestCase
         $this->assertSame(self::NO_TABLE, $this->answer()->error);
     }
 
+    /**
+     * A refused write changed nothing, so the answer is the only frame: no sign-in method set follows it (HIL-427).
+     */
+    public function testARefusedAskSendsNoMethodSet(): void
+    {
+        $this->ask(HilosSignalConstants::HILOS_SETTING_WRITE, new SettingWriteSignalData(
+            replySignal: self::REPLY_SIGNAL,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: self::REQUEST_ID,
+            action: HilosSignalConstants::SETTING_ADD,
+            successMessage: self::SUCCESS_SENTENCE,
+            key: 'auth.methods.disabled',
+            value: 'sms',
+        ));
+
+        $this->assertSame(self::NO_TABLE, $this->answer()->error);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
     public function testAResetAskIsAnsweredWithTheTableRefusalRatherThanThrown(): void
     {
         $this->ask(HilosSignalConstants::HILOS_SETTING_RESET, new SettingResetSignalData(

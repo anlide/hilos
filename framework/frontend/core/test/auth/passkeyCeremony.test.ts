@@ -24,7 +24,6 @@ import {
   AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
   AUTH_ACTION_PASSKEY_REGISTER_OPTIONS,
 } from '../../src/auth/authProtocol.js'
-import { PASSKEY_FLOW_METHOD } from '../../src/auth/authFlow.js'
 import {
   createHilosAuthContext,
   type HilosAuthContext,
@@ -166,9 +165,7 @@ function passkeyWorld(failure: DOMException): HilosAuthContext {
     connection,
     scopes: new ScopeManager(),
     actions,
-    methods: [PASSKEY_FLOW_METHOD],
     channels: [],
-    oauthProviders: [],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })

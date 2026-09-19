@@ -44,6 +44,7 @@ import {
 import { type HilosAuthContext } from './authContext.js'
 import {
   MAGIC_LINK_METHOD_KEY,
+  OAUTH_METHOD_PREFIX,
   PASSKEY_FLOW_METHOD,
   SMS_CODE_CHANNEL,
   type AuthFlowForm,
@@ -75,9 +76,6 @@ import {
 } from './authProtocol.js'
 import { describeOAuthError, startOAuthLogin } from './oauthLogin.js'
 import { runPasskeyDiscoverableLogin } from './passkeyCeremony.js'
-
-/** The key prefix every OAuth provider method carries, e.g. `oauth:github`. */
-const OAUTH_METHOD_PREFIX = 'oauth:'
 
 /**
  * How long a code request waits for its outcome signal before giving up. Comfortably

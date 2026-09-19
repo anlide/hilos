@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
+use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
@@ -162,6 +163,18 @@ abstract class Hilos implements TruthSourceOwner
      * @var class-string<CodeChannelRegistry>
      */
     protected const string CODE_CHANNEL_REGISTRY = CodeChannelRegistry::class;
+
+    /**
+     * Sign-in method directory class (HIL-427).
+     *
+     * The methods a project has wired a handler behind, in the order of its sign-in
+     * buttons. The framework default is the empty base, so a project that points this
+     * nowhere offers no way in; a project points it at its own subclass, and an
+     * administrator narrows what it declared from the admin, never widens it.
+     *
+     * @var class-string<AuthMethodDirectory>
+     */
+    protected const string AUTH_METHOD_DIRECTORY = AuthMethodDirectory::class;
 
     /**
      * OAuth provider directory class (HIL-286).
@@ -494,6 +507,16 @@ abstract class Hilos implements TruthSourceOwner
     public static function oauthProviderDirectoryClass(): string
     {
         return static::appClass()::OAUTH_PROVIDER_DIRECTORY;
+    }
+
+    /**
+     * Returns the project's sign-in method directory class (HIL-427).
+     *
+     * @return class-string<AuthMethodDirectory> Sign-in method directory class
+     */
+    public static function authMethodDirectoryClass(): string
+    {
+        return static::appClass()::AUTH_METHOD_DIRECTORY;
     }
 
     /**

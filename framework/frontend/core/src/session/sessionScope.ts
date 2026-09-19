@@ -7,6 +7,7 @@ import {
   SIGNAL_CODE_SEND_PROGRESS,
   codeSendProgressSchema,
 } from '../auth/authSendProgress.js'
+import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
   scopePayloadSchema,
@@ -54,6 +55,41 @@ const PENDING_AUTH_STEP_KEY = 'pendingAuthStep'
  * the backend writes it on every handshake and no project names it.
  */
 const CODE_DELIVERY_KEY = 'codeDelivery'
+
+/**
+ * Plain session-scope key carrying the installation's enabled sign-in methods
+ * (HIL-427). Written by every handshake and again by {@link SIGNAL_AUTH_METHODS}
+ * whenever an administrator changes the set, so one key holds the live answer.
+ */
+const AUTH_METHODS_KEY = 'authMethods'
+
+/**
+ * The settings library → every connection: the installation's enabled sign-in
+ * methods, sent after a write that changed them (PHP `HILOS_AUTH_METHODS`).
+ */
+export const SIGNAL_AUTH_METHODS = 'hilos_auth_methods'
+
+/**
+ * One enabled sign-in method (HIL-427): its key, and the name a provider's
+ * button shows — null for a method that is not a provider, which the surface
+ * names itself.
+ */
+export interface AuthMethodEntry {
+  /** The method key: `password`, `passkey`, `magic_link`, `sms` or `oauth:<provider>`. */
+  readonly key: string
+  /** The provider's name for an `oauth:` key, or null. */
+  readonly name: string | null
+}
+
+const authMethodEntrySchema = z.looseObject({
+  key: z.string(),
+  name: z.string().nullable(),
+})
+
+/** The payload of {@link SIGNAL_AUTH_METHODS}: the whole set, in button order. */
+export const authMethodsSchema = z.looseObject({
+  authMethods: z.array(authMethodEntrySchema),
+})
 
 /**
  * What an installation with nothing configured is READ as, key by key. A
@@ -154,6 +190,7 @@ export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_HANDSHAKE_RESPONSE]: scopePayloadSchema,
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
   [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
+  [SIGNAL_AUTH_METHODS]: authMethodsSchema,
 }
 
 /** Where the current user sits in the session scope, and which field names it. */
@@ -243,6 +280,14 @@ export function bindSessionScope(
       ingest(scopes.session, { data: payload.data ?? {} })
       ingest(scopes.session, payload, {
         entityTypes: { [slot]: entityType, [impersonatedBySlot]: entityType },
+      })
+    }
+    if (signal.type === SIGNAL_AUTH_METHODS) {
+      // The same key the handshake writes (HIL-427): a surface reads one slot and
+      // cannot tell which of the two brought the set, which is the point.
+      const frame = signal.data as z.infer<typeof authMethodsSchema>
+      ingest(scopes.session, {
+        data: { [AUTH_METHODS_KEY]: frame.authMethods },
       })
     }
   })
@@ -490,6 +535,46 @@ export function sessionCodeDelivery(
   const slot = scopes.session.data.signal(CODE_DELIVERY_KEY)
 
   return computedSignal(() => readCodeDelivery(slot.get()))
+}
+
+/**
+ * The installation's enabled sign-in methods, in button order (HIL-427).
+ *
+ * Live: the handshake writes the set and the settings library's frame rewrites
+ * it whenever an administrator switches a method, so a surface built from this
+ * reshapes itself without asking. Absent before the handshake, and read as no
+ * method at all — a surface is not interactive before its handshake anyway, and
+ * inventing a set here would draw buttons the installation may have switched
+ * off. A malformed entry is dropped rather than guessed at.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionAuthMethods(
+  scopes: ScopeManager,
+): ReadonlySignal<readonly AuthMethodEntry[]> {
+  const slot = scopes.session.data.signal(AUTH_METHODS_KEY)
+
+  return computedSignal(() => readAuthMethods(slot.get()))
+}
+
+/**
+ * Read the method set the session scope holds, dropping what is not an entry.
+ *
+ * @param value The raw session-scope slot.
+ */
+function readAuthMethods(value: unknown): readonly AuthMethodEntry[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const entries: AuthMethodEntry[] = []
+  for (const item of value) {
+    const parsed = authMethodEntrySchema.safeParse(item)
+    if (parsed.success) {
+      entries.push({ key: parsed.data.key, name: parsed.data.name })
+    }
+  }
+
+  return entries
 }
 
 /**

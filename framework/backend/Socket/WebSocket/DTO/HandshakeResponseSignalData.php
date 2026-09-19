@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -71,6 +72,14 @@ use Hilos\Core\Router\SignalDataInterface;
  * carries it as null is one that never passed the framework's stamp; the surface reads
  * that as "everything is deliverable", which is what every deployment did before the
  * key existed.
+ *
+ * `authMethods` is the installation's enabled sign-in methods (HIL-427), in the order
+ * the surface draws them, each with the name a provider's button shows. It rides the
+ * handshake for the reason `codeDelivery` does - the surface has to know it before
+ * anything is typed - but unlike it the set DOES change under a live process: an
+ * administrator switches a method, and the settings library sends the new set to every
+ * connection on its own frame. The handshake gives a new connection the set as it is
+ * now; the frame keeps the old ones in step. Null means the stamp never ran.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -85,6 +94,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string serverTimeMs = 'serverTimeMs';
     public const string pendingAuthStep = 'pendingAuthStep';
     public const string codeDelivery = 'codeDelivery';
+    public const string authMethods = 'authMethods';
     public const string email = 'email';
     public const string phone = 'phone';
     public const string identifier = 'identifier';
@@ -121,6 +131,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     Authentication step the session stands on, or null when it stands on none
      * @param ?array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time
      *     code to, or null before the session context is stamped
+     * @param ?list<array{key: string, name: ?string}> $authMethods Enabled sign-in methods in button order,
+     *     or null before the session context is stamped
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -132,6 +144,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?int $serverTimeMs = null,
         public readonly ?array $pendingAuthStep = null,
         public readonly ?array $codeDelivery = null,
+        public readonly ?array $authMethods = null,
     ) {
     }
 
@@ -158,6 +171,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             serverTimeMs: $this->serverTimeMs,
             pendingAuthStep: $this->pendingAuthStep,
             codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
         );
     }
 
@@ -176,9 +190,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     channel: ?string, expiresAt: ?int, code: ?string} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
+     * @param list<array{key: string, name: ?string}> $authMethods Enabled sign-in methods in button order
      * @return self The same response carrying that session context
      */
-    public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep, array $codeDelivery): self
+    public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep, array $codeDelivery, array $authMethods): self
     {
         return new self(
             selfId: $this->selfId,
@@ -190,6 +205,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             serverTimeMs: $serverTimeMs,
             pendingAuthStep: $pendingAuthStep,
             codeDelivery: $codeDelivery,
+            authMethods: $authMethods,
         );
     }
 
@@ -221,6 +237,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::serverTimeMs => $this->serverTimeMs,
                 self::pendingAuthStep => $this->pendingAuthStep,
                 self::codeDelivery => $this->codeDelivery,
+                self::authMethods => $this->authMethods,
             ],
         ];
     }
@@ -256,12 +273,14 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $serverTimeMs = self::optionalInt($section, self::serverTimeMs);
         $pendingAuthStep = self::readPendingAuthStep($section);
         $codeDelivery = self::readCodeDelivery($section);
+        $authMethods = self::readAuthMethods($section);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
                 serverTimeMs: $serverTimeMs,
                 pendingAuthStep: $pendingAuthStep,
                 codeDelivery: $codeDelivery,
+                authMethods: $authMethods,
             );
         }
 
@@ -275,6 +294,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             serverTimeMs: $serverTimeMs,
             pendingAuthStep: $pendingAuthStep,
             codeDelivery: $codeDelivery,
+            authMethods: $authMethods,
         );
     }
 
@@ -339,5 +359,22 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             self::email => self::requireBool($node, self::email),
             self::phone => self::requireBool($node, self::phone),
         ];
+    }
+
+    /**
+     * Reads the enabled sign-in methods back into their declared shape.
+     *
+     * Absent stays absent, as {@see readCodeDelivery()} keeps it; a present list is read
+     * entry by entry the way the frame that later replaces it is ({@see AuthMethodsSignalData}).
+     *
+     * @param array<string, mixed> $section Plain data section of the response
+     * @return ?list<array{key: string, name: ?string}> Methods in button order, or null when absent
+     * @throws InvalidFormatException When a present entry is not a map or lacks its key
+     */
+    private static function readAuthMethods(array $section): ?array
+    {
+        $node = self::optionalArray($section, self::authMethods);
+
+        return $node === null ? null : AuthMethodsSignalData::entriesFrom($node);
     }
 }

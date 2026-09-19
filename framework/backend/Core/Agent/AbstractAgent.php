@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
@@ -45,6 +46,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -387,8 +389,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * store, and while impersonating, the administrator behind the takeover - and this
      * stamps on what no project can know: the server clock the browser measures its own
      * offset against, the registration step the session left unfinished, whether this
-     * installation can deliver a one-time code at all, and the success ack the socket
-     * still owes (HIL-486, HIL-422, HIL-830).
+     * installation can deliver a one-time code at all, the sign-in methods it offers, and
+     * the success ack the socket still owes (HIL-486, HIL-422, HIL-830, HIL-427).
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -401,6 +403,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @param HandshakeResponseSignalData $identity Who the session is, as the project builds it
      * @param SessionStateSignalData $state Session state frame the response answers
      * @throws InvalidArgumentException When the signal name is empty
+     * @throws DatabaseException When the sign-in method setting cannot be read
+     * @throws SettingException When the sign-in method setting's catalog entry or stored value is invalid
      */
     public function sendHandshakeResponse(
         string $signalName,
@@ -416,6 +420,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                     TimeHelper::nowMs(),
                     $state->pendingAuthStep,
                     new CodeDeliveryAvailability()->toArray(),
+                    EnabledAuthMethods::toWire(),
                 )
                 ->withPendingAck($state->pendingAck),
         );

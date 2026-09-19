@@ -10,7 +10,9 @@ import {
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionCodeDelivery,
+  sessionAuthMethods,
   SESSION_ACK_REGISTERED,
+  SIGNAL_AUTH_METHODS,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
@@ -37,9 +39,12 @@ function fakeConnection() {
       return () => {}
     },
     emitHandshakeResponse(payload: Record<string, unknown>): void {
+      this.emit('handshake_response', payload)
+    },
+    emit(type: string, payload: Record<string, unknown>): void {
       const signal = {
         kind: 'project',
-        type: 'handshake_response',
+        type,
         data: payload,
         envelope: {},
       } as unknown as ProjectSignal
@@ -279,6 +284,54 @@ describe('sessionScope', () => {
     connection.emitHandshakeResponse({ data: { codeDelivery: null } })
 
     expect(delivery.get()).toStrictEqual({ email: true, phone: true })
+  })
+
+  it('reads the enabled sign-in methods the handshake and the settings frame write (HIL-427)', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const methods = sessionAuthMethods(scopes)
+
+    // Before the handshake the surface is not interactive, and no set is read as
+    // no method rather than as an invented one.
+    expect(methods.get()).toStrictEqual([])
+
+    connection.emitHandshakeResponse({
+      data: {
+        authMethods: [
+          { key: 'password', name: null },
+          { key: 'oauth:github', name: 'GitHub' },
+        ],
+      },
+    })
+    expect(methods.get()).toStrictEqual([
+      { key: 'password', name: null },
+      { key: 'oauth:github', name: 'GitHub' },
+    ])
+
+    // An administrator switched the password off: the frame rewrites the same
+    // slot, and whoever reads it cannot tell which of the two brought the set.
+    connection.emit(SIGNAL_AUTH_METHODS, {
+      authMethods: [{ key: 'oauth:github', name: 'GitHub' }],
+    })
+    expect(methods.get()).toStrictEqual([
+      { key: 'oauth:github', name: 'GitHub' },
+    ])
+    expect(SESSION_SIGNAL_SCHEMAS[SIGNAL_AUTH_METHODS]).toBeDefined()
+  })
+
+  it('drops a method entry it cannot read rather than guessing at it', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+
+    connection.emitHandshakeResponse({
+      data: { authMethods: [{ key: 'sms', name: null }, { name: 'no key' }] },
+    })
+
+    expect(sessionAuthMethods(scopes).get()).toStrictEqual([
+      { key: 'sms', name: null },
+    ])
   })
 
   it('reads the step a session was moved to, with the reason it was moved for', () => {

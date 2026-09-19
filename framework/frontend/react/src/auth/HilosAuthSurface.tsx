@@ -57,6 +57,7 @@ import {
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
+  sessionAuthMethods,
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
@@ -358,8 +359,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const oauth = useMemo(() => createOAuthLogin(context), [context])
   const auth = useMemo(
     () =>
+      // The set is the installation's, live from the session scope (HIL-427):
+      // an administrator switching a method off reshapes this surface on the frame.
       createAuthFlow({
-        methods: context.methods,
+        authMethods: sessionAuthMethods(context.scopes),
         channels: context.channels,
         onDetect: (identifier) => authActions.onDetect(identifier),
         onSubmit: authActions.onSubmit,
@@ -407,6 +410,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const submittable = useSignal(auth.submittable)
   const canFinishWithoutPassword = useSignal(auth.canFinishWithoutPassword)
   const icons = useSignal(auth.icons)
+  const methods = useSignal(auth.methods)
   const channels = useSignal(auth.channels)
   const primaryAction = useSignal(auth.primaryAction)
   const screenKey = useSignal(auth.screenKey)
@@ -720,8 +724,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const primaryMethod =
     primaryAction === null || primaryAction.kind !== 'method'
       ? null
-      : (context.methods.find((method) => method.key === primaryAction.key) ??
-        null)
+      : (methods.find((method) => method.key === primaryAction.key) ?? null)
 
   const sendProgress = sendProgressLine(state.sendProgress, form.identifier)
 

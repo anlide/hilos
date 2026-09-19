@@ -7,7 +7,6 @@ namespace Hilos\Tests\Unit\Auth\Code;
 use Hilos\Auth\Code\CodeSendTicket;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
-use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
@@ -448,11 +447,6 @@ final class CodeSendProgressTestUsersAgent extends AbstractUsersLibraryAgent
     public function displayNameOf(int $userId): ?string
     {
         throw new LogicException('The fixture library names no users');
-    }
-
-    protected function buildAuthMethods(): IdentifierDetector
-    {
-        throw new LogicException('The fixture library detects nothing');
     }
 }
 

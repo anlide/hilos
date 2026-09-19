@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\WorkerManager;
@@ -229,13 +228,5 @@ final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAg
     public function displayNameOf(int $userId): ?string
     {
         return null;
-    }
-
-    /**
-     * @return IdentifierDetector Detector offering no method, since no test submits an identifier
-     */
-    protected function buildAuthMethods(): IdentifierDetector
-    {
-        return new IdentifierDetector([]);
     }
 }

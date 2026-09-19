@@ -46,6 +46,7 @@ import { MainSkeleton } from './views/main/main-skeleton'
 import { Privacy } from './views/privacy/privacy'
 import { SecurityOauth } from './views/hilos/security/oauth'
 import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
+import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
 import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
 import { User } from './views/hilos/users/user'
@@ -200,6 +201,11 @@ export class App {
     // (views/hilos/security) and declares its provider directory on the backend.
     [HilosPages.SECURITY_OAUTH]: SecurityOauth,
     [HilosPages.SECURITY_OAUTH_PROVIDER]: SecurityOauthProvider,
+    // The framework sign-in methods page (HIL-427): the framework owns the table,
+    // the live enabled set and the switch; the project binds its connection, scope
+    // stores and action lifecycle (views/hilos/security) and declares its method
+    // directory on the backend.
+    [HilosPages.SECURITY_SIGN_IN_METHODS]: SecuritySignInMethods,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its

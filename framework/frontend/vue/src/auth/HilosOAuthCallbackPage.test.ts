@@ -8,10 +8,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createHilosAuthContext,
   createSignal,
-  PASSWORD_FLOW_METHOD,
   ScopeManager,
   type ActionHandle,
   type ActionLifecycle,
+  type AuthMethodEntry,
   type HilosAuthContext,
   type HilosConnection,
   type HilosRouter,
@@ -19,6 +19,19 @@ import {
 
 import HilosOAuthCallbackPage from './HilosOAuthCallbackPage.vue'
 import { hilosRouterKey } from '../hilosRouterKey.js'
+
+/**
+ * A scope manager holding the enabled sign-in methods, the way a handshake puts
+ * them in the session scope (HIL-427): the surface reads its set there.
+ *
+ * @param entries The enabled methods, in button order.
+ */
+function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
+  const scopes = new ScopeManager()
+  scopes.session.data.set('authMethods', entries)
+
+  return scopes
+}
 
 /** One mount's world: what the relay dispatched, and where it navigated. */
 interface RelayWorld {
@@ -54,11 +67,9 @@ function relayWorld(): RelayWorld {
   return {
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),

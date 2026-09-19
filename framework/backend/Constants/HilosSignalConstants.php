@@ -17,6 +17,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
@@ -246,6 +247,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos OAuth provider detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_OAUTH_PROVIDER = 'subscription_page_hilos_security_oauth_provider';
 
+    /** Subscription signal for Hilos sign-in methods (HIL-427). */
+    public const string SUBSCRIPTION_PAGE_HILOS_SECURITY_SIGN_IN_METHODS = 'subscription_page_hilos_security_sign_in_methods';
+
     /** Subscription signal for Hilos billing hub. */
     public const string SUBSCRIPTION_PAGE_HILOS_BILLING = 'subscription_page_hilos_billing';
 
@@ -438,6 +442,15 @@ final class HilosSignalConstants
 
     /** Client → server: take the shared OAuth return address back to its env value. */
     public const string SECURITY_OAUTH_REDIRECT_RESET = 'security_oauth_redirect_reset';
+
+    // ── Hilos security admin: sign-in methods action (client → server, HIL-427) ──
+    /**
+     * Client → server: switch one sign-in method on or off.
+     *
+     * Owned by the sign-in methods page, which rewrites the one list of switched-off methods
+     * and asks the settings library to store it.
+     */
+    public const string SECURITY_SIGN_IN_METHOD_SET = 'security_sign_in_method_set';
 
     // ── Hilos logs admin: viewer page actions (client → server) ──
     /**
@@ -880,6 +893,18 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_CODE_SEND = 'hilos_auth_code_send';
 
     /**
+     * Settings library → every connection: the installation's enabled sign-in methods (HIL-427).
+     *
+     * Sent after a settings write that changed the set, whichever door it came through - the
+     * sign-in methods screen, the general settings table, a preset - so every open sign-in
+     * surface rebuilds itself without asking. ws_all_connected, because a guest on the sign-in
+     * page is subscribed to no page the set belongs to. Carried by
+     * {@see AuthMethodsSignalData}; the handshake carries the same entries for a connection
+     * that opens later.
+     */
+    public const string HILOS_AUTH_METHODS = 'hilos_auth_methods';
+
+    /**
      * Code agent → the requesting connection: what became of the code request.
      *
      * Every outcome travels here, success included, which is what parts this from the
@@ -1183,6 +1208,13 @@ final class HilosSignalConstants
      * the map of page-owned signals holds one entry per name.
      */
     public const string HILOS_OAUTH_REDIRECT_WRITE_DONE = 'hilos_oauth_redirect_write_done';
+
+    /**
+     * Settings library → sign-in methods page: the method-list write it forwarded is done (HIL-427).
+     *
+     * A name of that page's own for the same reason as {@see HILOS_CHANNEL_SETTING_WRITE_DONE}.
+     */
+    public const string HILOS_SIGN_IN_METHODS_WRITE_DONE = 'hilos_sign_in_methods_write_done';
 
     /**
      * The settings library → the log modes screen: your preset is applied, or refused (HIL-946).

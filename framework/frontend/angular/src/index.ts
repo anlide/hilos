@@ -60,6 +60,7 @@ export { HilosCommunicationsPage } from './admin/communications/HilosCommunicati
 export { HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.js'
 export { HilosSecurityOauthPage } from './admin/security/HilosSecurityOauthPage.js'
 export { HilosSecurityOauthProviderPage } from './admin/security/HilosSecurityOauthProviderPage.js'
+export { HilosSecuritySignInMethodsPage } from './admin/security/HilosSecuritySignInMethodsPage.js'
 export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export {
   HilosUsersPage,

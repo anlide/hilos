@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Settings\Library;
 
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -66,6 +68,16 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * key and the request id, and the receipt of the ask stamps them on the write this library
  * performs ({@see HandoverAskInterface}) - nothing here calls for the stamp.
  *
+ * THE ONE THING IT SENDS BESIDES ITS ANSWERS: the sign-in method set (HIL-427). An
+ * administrator narrows the methods through one setting, and every open sign-in surface has
+ * to rebuild itself when that setting moves - whichever door moved it: the sign-in methods
+ * screen, the general settings table, a preset. This library is the only writer all three
+ * pass through, so it is the one place a change of the set can be seen whole: it reads the
+ * enabled set before and after each write, and when the two differ it sends the new set to
+ * every connection ({@see HilosSignalConstants::HILOS_AUTH_METHODS}). A screen could not do it
+ * - the general table knows nothing of sign-in - and a subscriber to the settings collection
+ * would fire once per worker instead of once per write.
+ *
  * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
  * fixed pair of names would make it know each screen by name - the next screen that writes a
  * setting would have to edit this body to be let in. Instead every ask carries the name to
@@ -121,16 +133,18 @@ final class SettingsLibraryAgent extends AbstractAgent
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declares
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
-     * @throws InvalidArgumentException When the answer cannot be named or queued
+     * @throws InvalidArgumentException When the answer or the new method set cannot be named or queued
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
+        $methodsBefore = $this->offeredMethods();
+
         switch ($name) {
             case HilosSignalConstants::HILOS_SETTING_WRITE:
                 if (!$data->data instanceof SettingWriteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingWriteSignalData::class, $data->data);
                 }
-                $this->answer($data->data, $this->storeValue($data->data));
+                $this->settle($data->data, $this->storeValue($data->data), $methodsBefore);
 
                 return;
 
@@ -138,7 +152,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingResetSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingResetSignalData::class, $data->data);
                 }
-                $this->answer($data->data, $this->resetToDefault($data->data));
+                $this->settle($data->data, $this->resetToDefault($data->data), $methodsBefore);
 
                 return;
 
@@ -146,7 +160,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingDeleteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingDeleteSignalData::class, $data->data);
                 }
-                $this->answer($data->data, $this->dropOrphan($data->data));
+                $this->settle($data->data, $this->dropOrphan($data->data), $methodsBefore);
 
                 return;
 
@@ -158,7 +172,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                         $data->data,
                     );
                 }
-                $this->answer($data->data, $this->applyPreset($data->data));
+                $this->settle($data->data, $this->applyPreset($data->data), $methodsBefore);
 
                 return;
 
@@ -279,6 +293,51 @@ final class SettingsLibraryAgent extends AbstractAgent
         }
 
         return $refusal;
+    }
+
+    /**
+     * Answers the ask, then tells every connection the new method set when the write changed it.
+     *
+     * A refused write changed nothing and sends nothing. Neither does a write the method set
+     * could not be read around: the set is then unknown on both sides of it, and the next write
+     * that can be read will carry whatever this one changed.
+     *
+     * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
+     * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
+     * @param ?list<array{key: string, name: ?string}> $methodsBefore Enabled method set before the write, or null when unread
+     * @throws InvalidArgumentException When the answer or the new method set cannot be named or queued
+     */
+    private function settle(HandoverAskInterface $ask, ?ActionRefusal $refusal, ?array $methodsBefore): void
+    {
+        $this->answer($ask, $refusal);
+        if ($refusal !== null || $methodsBefore === null) {
+            return;
+        }
+
+        $methodsAfter = $this->offeredMethods();
+        if ($methodsAfter !== null && $methodsAfter !== $methodsBefore) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, new AuthMethodsSignalData($methodsAfter));
+        }
+    }
+
+    /**
+     * Reads the enabled sign-in method set in the shape a surface is handed it, or null when it cannot be read.
+     *
+     * A read that fails is logged and answered with null rather than thrown: the write this
+     * library is serving must be answered either way, and a set nobody could read is not a
+     * change anybody can announce.
+     *
+     * @return ?list<array{key: string, name: ?string}> Enabled methods in button order, or null when unread
+     */
+    private function offeredMethods(): ?array
+    {
+        try {
+            return EnabledAuthMethods::toWire();
+        } catch (HilosException $e) {
+            $this->logAgentError("Sign-in method set could not be read: {$e->getMessage()}");
+
+            return null;
+        }
     }
 
     /**

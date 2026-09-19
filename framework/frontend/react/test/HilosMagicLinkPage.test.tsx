@@ -14,12 +14,11 @@ import {
   bindPageReady,
   createHilosAuthContext,
   createSignal,
-  MAGIC_LINK_FLOW_METHOD,
-  PASSWORD_FLOW_METHOD,
   ScopeManager,
   SIGNAL_TYPE_PAGE_RESPONSE,
   type ActionHandle,
   type ActionLifecycle,
+  type AuthMethodEntry,
   type HilosAuthContext,
   type HilosConnection,
   type HilosRouter,
@@ -30,6 +29,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosMagicLinkPage } from '../src/auth/HilosMagicLinkPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+
+/**
+ * A scope manager holding the enabled sign-in methods, the way a handshake puts
+ * them in the session scope (HIL-427): the surface reads its set there.
+ *
+ * @param entries The enabled methods, in button order.
+ */
+function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
+  const scopes = new ScopeManager()
+  scopes.session.data.set('authMethods', entries)
+
+  return scopes
+}
 
 /** The same backstop the screen declares; restated so a drift shows up here. */
 const MAGIC_LINK_TIMEOUT_MS = 20000
@@ -106,11 +118,12 @@ function relayWorld(confirmOk: boolean): {
     },
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([
+        { key: 'password', name: null },
+        { key: 'magic_link', name: null },
+      ]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),

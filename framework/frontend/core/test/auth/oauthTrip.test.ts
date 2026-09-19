@@ -18,7 +18,6 @@ import {
   AUTH_ACTION_LINK_OAUTH_START,
   AUTH_ACTION_OAUTH_START,
 } from '../../src/auth/authProtocol.js'
-import { PASSWORD_FLOW_METHOD } from '../../src/auth/authFlow.js'
 import { createHilosAuthContext } from '../../src/auth/authContext.js'
 import {
   createOAuthLogin,
@@ -133,6 +132,12 @@ function tripWorld(): TripWorld {
   const messageListeners: Array<(event: MessageEvent) => void> = []
   const held: Array<(reason: unknown) => void> = []
   const scopes = new ScopeManager()
+  // The providers' names arrive with the enabled set, the way a handshake puts
+  // them in the session scope (HIL-427); the waiting copy reads them there.
+  scopes.session.data.set('authMethods', [
+    { key: GITHUB, name: 'GitHub' },
+    { key: GOOGLE, name: 'Google' },
+  ])
 
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
@@ -175,12 +180,7 @@ function tripWorld(): TripWorld {
     connection,
     scopes,
     actions,
-    methods: [PASSWORD_FLOW_METHOD],
     channels: [],
-    oauthProviders: [
-      { key: GITHUB, label: 'Continue with GitHub', name: 'GitHub' },
-      { key: GOOGLE, label: 'Continue with Google', name: 'Google' },
-    ],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })

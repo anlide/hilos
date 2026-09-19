@@ -22,12 +22,9 @@ import {
   createOAuthLogin,
   createSignal,
   DEFAULT_DETECT_DEBOUNCE_MS,
-  MAGIC_LINK_FLOW_METHOD,
   MAGIC_LINK_METHOD_KEY,
   OAUTH_RESULT_SIGNAL,
   OAUTH_RETURN_MESSAGE_TYPE,
-  oauthFlowMethod,
-  PASSWORD_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   ScopeManager,
   SESSION_ACK_REGISTERED,
@@ -37,6 +34,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
   type AuthGate,
+  type AuthMethodEntry,
   type HilosAuthContext,
   type HilosConnection,
   type ProjectSignal,
@@ -45,6 +43,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosAuthSurface } from '../src/auth/HilosAuthSurface.js'
 import { HILOS_AUTH_GATE } from '../src/auth/hilosAuthGateToken.js'
+
+/**
+ * A scope manager holding the enabled sign-in methods, the way a handshake puts
+ * them in the session scope (HIL-427): the surface reads its set there.
+ *
+ * @param entries The enabled methods, in button order.
+ */
+function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
+  const scopes = new ScopeManager()
+  scopes.session.data.set('authMethods', entries)
+
+  return scopes
+}
 
 // The session slot the surface reads its ack from — the default of
 // `sessionPendingAck`, which is what the surface asks for (sessionScope.ts).
@@ -102,11 +113,9 @@ function surfaceWorld(): {
     },
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([{ key: 'password', name: null }]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),
@@ -156,11 +165,12 @@ function magicLinkWorld(): { context: HilosAuthContext; gate: AuthGate } {
     },
     context: createHilosAuthContext({
       connection,
-      scopes: new ScopeManager(),
+      scopes: scopesWith([
+        { key: 'password', name: null },
+        { key: 'magic_link', name: null },
+      ]),
       actions,
-      methods: [PASSWORD_FLOW_METHOD, MAGIC_LINK_FLOW_METHOD],
       channels: [],
-      oauthProviders: [],
       termsPath: '/terms',
       privacyPath: '/privacy',
     }),
@@ -286,16 +296,12 @@ function oauthTripWorld(): TripWorld {
   } as unknown as ActionLifecycle
   const context = createHilosAuthContext({
     connection,
-    scopes: new ScopeManager(),
+    scopes: scopesWith([
+      { key: 'password', name: null },
+      { key: GITHUB_PROVIDER, name: 'GitHub' },
+    ]),
     actions,
-    methods: [
-      PASSWORD_FLOW_METHOD,
-      oauthFlowMethod(GITHUB_PROVIDER, 'Continue with GitHub'),
-    ],
     channels: [],
-    oauthProviders: [
-      { key: GITHUB_PROVIDER, label: 'Continue with GitHub', name: 'GitHub' },
-    ],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })
@@ -491,6 +497,27 @@ describe('HilosAuthSurface', () => {
     reportSendProgress(null)
     activeTrip?.unbind()
     activeTrip = null
+  })
+
+  it('reshapes itself when the installation switches a method off (HIL-427)', async () => {
+    const world = magicLinkWorld()
+    const context = createHilosAuthContext({
+      ...world.context,
+      scopes: scopesWith([
+        { key: 'password', name: null },
+        { key: 'passkey', name: null },
+      ]),
+    })
+    const fixture = mountSurface({ context, gate: world.gate })
+    expect(byId(fixture, 'auth-icon-passkey')).not.toBeNull()
+
+    // The frame the settings library sends lands in the same session slot.
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+    ])
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-icon-passkey')).toBeNull()
   })
 
   it('holds the send line room with an idle twin before the first frame', async () => {

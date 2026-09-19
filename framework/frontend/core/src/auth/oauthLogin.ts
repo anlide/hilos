@@ -38,7 +38,7 @@
 import { browserValue } from '../browser/browserValue.js'
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
-import { sessionUserId } from '../session/sessionScope.js'
+import { sessionAuthMethods, sessionUserId } from '../session/sessionScope.js'
 import {
   createSignal,
   subscribeSignal,
@@ -396,17 +396,20 @@ function finishTrip(outcome: OAuthTripOutcome): void {
 }
 
 /**
- * The provider's short name for the waiting copy. An unknown key falls back to
- * itself rather than to an empty string: "Waiting for oauth:github" is ugly and
- * says what is wrong, while "Waiting for " says nothing at all.
+ * The provider's short name for the waiting copy, as the server named it in the
+ * enabled set (HIL-427). An unknown key falls back to itself rather than to an
+ * empty string: "Waiting for oauth:github" is ugly and says what is wrong, while
+ * "Waiting for " says nothing at all.
  *
- * @param context The project auth context declaring this deployment's providers.
+ * @param context The project auth context whose session scope holds the set.
  * @param provider The provider key a trip was started for.
  */
 function providerNameOf(context: HilosAuthContext, provider: string): string {
-  const option = context.oauthProviders.find((entry) => entry.key === provider)
+  const entry = sessionAuthMethods(context.scopes)
+    .get()
+    .find((method) => method.key === provider)
 
-  return option?.name ?? provider
+  return entry?.name ?? provider
 }
 
 /**

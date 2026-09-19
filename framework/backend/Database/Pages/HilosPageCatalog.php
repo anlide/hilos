@@ -184,7 +184,7 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_SECURITY => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Security Center',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Two-factor authentication and OAuth login providers.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Sign-in methods, two-factor authentication and OAuth login providers.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-lock',
         ],
@@ -202,6 +202,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'OAuth provider',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single OAuth provider configuration.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY_OAUTH,
+        ],
+        HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Sign-in methods',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Which ways in this installation offers.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_SECURITY,
         ],
         HilosPageConstants::HILOS_BILLING => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Billing',

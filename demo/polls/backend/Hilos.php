@@ -11,6 +11,7 @@ use Demo\Polls\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Demo\Polls\Agents\OAuthAgent;
 use Demo\Polls\Agents\PollsAgent;
+use Demo\Polls\Auth\PollsAuthMethodDirectory;
 use Demo\Polls\Auth\PollsCodeChannelRegistry;
 use Demo\Polls\Auth\PollsOAuthProviderDirectory;
 use Demo\Polls\Browser\PollsBrowserContext;
@@ -42,6 +43,7 @@ use Demo\Polls\Pages\Hilos\TermsPage;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
@@ -87,6 +89,7 @@ use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
+use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -113,6 +116,8 @@ final class Hilos extends HilosFacade
     protected const string SETTINGS_CATALOG = PollsSettingsCatalog::class;
 
     protected const string CODE_CHANNEL_REGISTRY = PollsCodeChannelRegistry::class;
+
+    protected const string AUTH_METHOD_DIRECTORY = PollsAuthMethodDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = PollsOAuthProviderDirectory::class;
 
@@ -148,6 +153,7 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
+        SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
     ];
 
     public const array GROUPS = [
@@ -276,6 +282,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
+        PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -302,6 +309,9 @@ final class Hilos extends HilosFacade
         SecurityOAuthProviderPage::PAGE => [
             PollsTableContext::hilosSecurityOauthProviders => [],
             PollsTableContext::hilosSecurityOauthProviderFields => [],
+        ],
+        SecuritySignInMethodsPage::PAGE => [
+            PollsTableContext::hilosSecuritySignInMethods => [],
         ],
         UsersPage::PAGE => [
             PollsTableContext::hilosUsers => [],

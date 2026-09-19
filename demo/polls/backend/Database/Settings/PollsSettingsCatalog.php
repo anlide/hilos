@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Database\Settings;
 
+use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -48,6 +49,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
         ],
             LogSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
+            AuthMethodSettingsCatalog::getCatalog(),
         );
     }
 }

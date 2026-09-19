@@ -21,9 +21,9 @@ use Hilos\Database\Identity\IdentityType;
  * provider is its own method key, `oauth:` followed by the provider key, because
  * the surface has to name the provider on a button.
  *
- * `passkey` is deliberately absent: this surface offers a device key only on an
- * empty field (discoverable-only, HIL-418), so detection never returns it and
- * nothing enables it here.
+ * `passkey` is a method of the set an installation turns on and off (HIL-427), but
+ * detection never names it: the surface offers a device key only on an empty field
+ * (discoverable-only, HIL-418), so no typed identifier is answered with it.
  */
 final class AuthMethodKey
 {
@@ -35,6 +35,9 @@ final class AuthMethodKey
 
     /** Sign in (or register) with a code sent to the phone number. */
     public const string SMS = 'sms';
+
+    /** Sign in with a device key offered on the empty field, and enrol one from the profile. */
+    public const string PASSKEY = 'passkey';
 
     /**
      * Prefix every OAuth method key carries, followed by the provider name.

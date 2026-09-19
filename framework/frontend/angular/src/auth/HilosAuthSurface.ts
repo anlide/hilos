@@ -60,6 +60,7 @@ import {
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
+  sessionAuthMethods,
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
@@ -1144,8 +1145,10 @@ export class HilosAuthSurface {
     const context = this.context()
     const actions = this.authActions()
 
+    // The set is the installation's, live from the session scope (HIL-427): an
+    // administrator switching a method off reshapes this surface on the frame.
     return createAuthFlow({
-      methods: context.methods,
+      authMethods: sessionAuthMethods(context.scopes),
       channels: context.channels,
       onDetect: (identifier) => actions.onDetect(identifier),
       onSubmit: actions.onSubmit,
@@ -1183,6 +1186,7 @@ export class HilosAuthSurface {
   protected readonly submittable = signal(false)
   protected readonly canFinishWithoutPassword = signal(false)
   protected readonly icons = signal<readonly AuthFlowMethodDescriptor[]>([])
+  private readonly methods = signal<readonly AuthFlowMethodDescriptor[]>([])
   protected readonly channels = signal<readonly CodeChannelDescriptor[]>([])
   protected readonly primaryAction = signal<AuthFlowPrimaryAction>(null)
   protected readonly screenKey = signal<AuthFlowScreen>('sign_in')
@@ -1593,10 +1597,7 @@ export class HilosAuthSurface {
         return null
       }
 
-      return (
-        this.context().methods.find((method) => method.key === action.key) ??
-        null
-      )
+      return this.methods().find((method) => method.key === action.key) ?? null
     },
   )
 
@@ -1669,6 +1670,7 @@ export class HilosAuthSurface {
         bind(auth.submittable, this.submittable),
         bind(auth.canFinishWithoutPassword, this.canFinishWithoutPassword),
         bind(auth.icons, this.icons),
+        bind(auth.methods, this.methods),
         bind(auth.channels, this.channels),
         bind(auth.primaryAction, this.primaryAction),
         bind(auth.screenKey, this.screenKey),

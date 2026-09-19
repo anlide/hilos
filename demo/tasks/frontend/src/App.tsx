@@ -38,6 +38,7 @@ import HilosLogsView from './views/Hilos/Logs/View'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers'
 import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth'
 import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider'
+import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
 import HilosUser from './views/Hilos/Users/User'
 import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
@@ -87,6 +88,10 @@ const pages: Record<string, ComponentType> = {
   // provider directory.
   [HilosPages.SECURITY_OAUTH]: HilosSecurityOauth,
   [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProvider,
+  // The framework sign-in methods page (HIL-427): the framework owns the table,
+  // the live enabled set and the switch; the project binds its context
+  // (views/Hilos/Security) and, on its backend, declares its method directory.
+  [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

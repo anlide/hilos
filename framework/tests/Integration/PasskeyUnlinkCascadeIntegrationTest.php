@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
-use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
@@ -485,14 +484,6 @@ final class PasskeyUnlinkTestLibrary extends AbstractUsersLibraryAgent
     public function displayNameOf(int $userId): ?string
     {
         throw new LogicException('the unlink cases name nobody');
-    }
-
-    /**
-     * @return IdentifierDetector Detector over no wired methods: no identifier is detected here
-     */
-    protected function buildAuthMethods(): IdentifierDetector
-    {
-        return new IdentifierDetector([]);
     }
 }
 

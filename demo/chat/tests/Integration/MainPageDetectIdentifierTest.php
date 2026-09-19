@@ -6,24 +6,29 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
-use Demo\Chat\Auth\ChatAuthMethods;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
+use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\RegisterActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\Method\AuthMethodSettings;
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Constants\EnvConstants;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -66,6 +71,9 @@ use Hilos\Sms\SmsChannelConfig;
 final class MainPageDetectIdentifierTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
+
+    /** Agent id the fixture writes the method setting under. */
+    private const string SETTINGS_AGENT_ID = 'test-settings-writer';
     private const string PASSWORD = 'correct horse battery';
 
     /**
@@ -406,7 +414,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ]);
 
         try {
-            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($email, RandomHelper::hex(16));
+            $detection = new IdentifierDetector(EnabledAuthMethods::keys())->detect($email, RandomHelper::hex(16));
 
             $this->assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
             $this->assertSame([], $detection->methods);
@@ -434,7 +442,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ]);
 
         try {
-            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($email, RandomHelper::hex(16));
+            $detection = new IdentifierDetector(EnabledAuthMethods::keys())->detect($email, RandomHelper::hex(16));
 
             $this->assertSame([AuthMethodKey::PASSWORD], $detection->methods);
             $this->assertNull($detection->signInBlock);
@@ -463,7 +471,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ]);
 
         try {
-            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($phone, RandomHelper::hex(16));
+            $detection = new IdentifierDetector(EnabledAuthMethods::keys())->detect($phone, RandomHelper::hex(16));
 
             $this->assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
             $this->assertSame([], $detection->methods);
@@ -490,7 +498,7 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         ]);
 
         try {
-            $detection = new IdentifierDetector(ChatAuthMethods::enabledKeys())->detect($email, RandomHelper::hex(16));
+            $detection = new IdentifierDetector(EnabledAuthMethods::keys())->detect($email, RandomHelper::hex(16));
 
             $this->assertSame([AuthMethodKey::MAGIC_LINK], $detection->methods);
             $this->assertNull($detection->signInBlock);
@@ -534,17 +542,54 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     }
 
     /**
-     * This demo enables the three built-in methods plus every provider it wired.
+     * This demo wires the four built-in methods plus every provider it declared, all on by default.
      */
     public function testEnabledSetIsAssembledFromTheWiredProviders(): void
     {
         $this->assertSame([
             AuthMethodKey::PASSWORD,
+            AuthMethodKey::PASSKEY,
             AuthMethodKey::MAGIC_LINK,
             AuthMethodKey::SMS,
             OAuthProviderPreset::GITHUB->value,
             OAuthProviderPreset::GOOGLE->value,
-        ], ChatAuthMethods::enabledKeys());
+        ], EnabledAuthMethods::keys());
+    }
+
+    /**
+     * A method the administrator switched off is named nowhere, and its submit is refused (HIL-427).
+     *
+     * Through the library, as a surface reaches it: the lookup reads the set anew, so the
+     * switch is in force on the very next action, and the password this account has is
+     * neither offered nor accepted.
+     *
+     * @throws HilosException When setup or the lookup fails
+     */
+    public function testSwitchedOffMethodIsNamedNowhereAndItsSubmitRefused(): void
+    {
+        $agent = $this->bootAgent();
+        $this->openSession($agent, 'switched-off-ak');
+        $email = $this->uniqueEmail();
+        $this->seedUser($email, IdentityType::PASSWORD, $email);
+        $this->writeSwitchedOff(AuthMethodKey::PASSWORD);
+
+        try {
+            $this->assertNotContains(AuthMethodKey::PASSWORD, $this->detect($agent, 'switched-off-ak', $email)->methods);
+
+            try {
+                $this->usersLibrary()->onAgentAction(
+                    'switched-off-ak',
+                    HilosSignalConstants::HILOS_LOGIN,
+                    new LoginActionDTO($email, 'whatever-it-is'),
+                );
+                $this->fail('A login on a switched-off password was let through');
+            } catch (ValidationException $e) {
+                $this->assertSame(AuthMessages::METHOD_TURNED_OFF, $e->getMessage());
+            }
+        } finally {
+            $this->writeSwitchedOff(null);
+            $this->cleanUp();
+        }
     }
 
     /**
@@ -760,6 +805,31 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         $collection = Hilos::$db->getObjectCollection(HilosDbContext::registrationReservations);
 
         return $collection;
+    }
+
+    /**
+     * Stores the switched-off method set, or takes the stored one away, under a writer of its own.
+     *
+     * The settings belong to their library in a running daemon; here a holder of the
+     * fixture's own writes them, and the agent under test is current again afterwards.
+     *
+     * @param ?string $disabled Stored value, or null to delete the row
+     * @throws HilosException When the settings write fails
+     */
+    private function writeSwitchedOff(?string $disabled): void
+    {
+        TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
+        ExecutionContext::setCurrentAgentId(self::SETTINGS_AGENT_ID);
+
+        try {
+            Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->actions->delete();
+            if ($disabled !== null) {
+                Hilos::$db->settings->actions->add(AuthMethodSettings::DISABLED_KEY, $disabled, Hilos::$setting->catalog());
+            }
+        } finally {
+            TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
+            ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
+        }
     }
 
     /**

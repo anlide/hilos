@@ -167,4 +167,13 @@ final class AuthMessages
      * ever interesting to somebody probing the callback.
      */
     public const string OAUTH_VERIFICATION_FAILED = 'OAuth verification failed';
+
+    /**
+     * Refusal of an action whose sign-in method an administrator switched off (HIL-427).
+     *
+     * An ordinary action error on purpose: the surface drops the method's button as soon as
+     * the new set reaches it, and this is what a submit already under way hears in between.
+     * It names no account and no identifier, only the way in.
+     */
+    public const string METHOD_TURNED_OFF = 'This sign-in method is turned off';
 }

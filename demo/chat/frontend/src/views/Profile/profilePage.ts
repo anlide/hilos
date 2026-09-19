@@ -10,7 +10,9 @@ import {
   hilosNotificationPreferences,
   NOTIFICATION_SIGNAL_PREFERENCES_CHANGED,
   notificationPreferencesSectionSchema,
+  oauthProviderOptionsFor,
   readString,
+  sessionAuthMethods,
   subscribeSignal,
   type EntityRef,
   type HilosNotificationPreferencesChanged,
@@ -19,7 +21,6 @@ import {
   type ReadonlySignal,
 } from '@hilos/core'
 
-import { OAUTH_PROVIDERS } from '../../auth/oauthProviders'
 import { connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'
 import { Identities, PasskeyCredentials } from '../../types'
@@ -155,16 +156,19 @@ export interface AvailableProvider {
   readonly label: string
 }
 
+/** The installation's enabled sign-in methods, live (HIL-427). */
+const enabledMethods = sessionAuthMethods(scopes)
+
 /**
- * The configured OAuth providers not yet linked to the current account, resolved
+ * The enabled OAuth providers not yet linked to the current account, resolved
  * reactively (HIL-401). A provider drops off the moment its identity appears in
  * {@link profileIdentities} (a link landing), so the Profile "Link an account"
  * buttons reflect the live identity list without a bespoke ack.
  *
- * The set comes from {@link OAUTH_PROVIDERS} — this project's own declaration —
- * rather than from a descriptor the core hard-codes (HIL-419): a provider is
- * offered here because this demo wired its credentials, which is a fact the
- * framework has no way of knowing.
+ * The set is the installation's enabled providers, live from the session scope
+ * (HIL-427) — the same set the sign-in icons are drawn from, so a provider an
+ * administrator switched off leaves this row too, and its link action would be
+ * refused on the server anyway.
  */
 export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
   computedSignal(() => {
@@ -178,9 +182,9 @@ export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
         ),
     )
 
-    return OAUTH_PROVIDERS.filter((provider) => !linked.has(provider.key)).map(
-      (provider) => ({ key: provider.key, label: provider.label }),
-    )
+    return oauthProviderOptionsFor(enabledMethods.get())
+      .filter((provider) => !linked.has(provider.key))
+      .map((provider) => ({ key: provider.key, label: provider.label }))
   })
 
 // The profile page-data slot carrying the notification-preferences section

@@ -48,6 +48,8 @@ use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
+use Hilos\Auth\Method\AuthMethodGate;
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\Session\SessionAck;
@@ -69,6 +71,8 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Runtime\State\Item\RecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter;
 use Hilos\Hilos;
@@ -95,10 +99,10 @@ use Random\RandomException;
  * It is ABSTRACT for one reason, the same one that makes the OAuth agent abstract: creating
  * a user touches the project's own users table, which the framework does not know the shape
  * of. The project supplies that step through {@see createUser()} and whatever it does
- * besides through {@see afterUserCreated()}, and names the methods it offers for an
- * identifier through {@see buildAuthMethods()}. Everything else - the commands, their
- * guards, their answers - stays here and is the same for every project that declares
- * {@see HilosFeature::AUTH}.
+ * besides through {@see afterUserCreated()}; the methods it offers for an identifier are
+ * its method directory narrowed by the admin ({@see EnabledAuthMethods}). Everything else -
+ * the commands, their guards, their answers - stays here and is the same for every project
+ * that declares {@see HilosFeature::AUTH}.
  */
 abstract class AbstractUsersLibraryAgent extends AbstractAgent
 {
@@ -375,17 +379,18 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * between a class and its own collaborators; the same note covers everything below
      * that a group calls. Nothing outside {@see AbstractLibraryCommands} is meant to.
      *
-     * Built for every lookup and not once on start: the methods include the project's OAuth
-     * providers, and which of them can sign anyone in is what an administrator enters in the
-     * admin (HIL-286). A detector held from the start would go on naming the providers this
-     * process started with until the daemon restarted.
+     * Built for every lookup and not once on start: the set is what an administrator switched
+     * on (HIL-427), read from settings every process holds locally, so a detector held from
+     * the start would go on naming the methods this process started with until the daemon
+     * restarted.
      *
-     * @return IdentifierDetector Detector over the project's enabled method keys, as configured now
-     * @throws HilosException When the project's methods cannot be read
+     * @return IdentifierDetector Detector over the installation's enabled method keys, as set now
+     * @throws DatabaseException When the stored method setting cannot be read
+     * @throws SettingException When the method setting's catalog entry or stored value is invalid
      */
     public function authMethods(): IdentifierDetector
     {
-        return $this->buildAuthMethods();
+        return new IdentifierDetector(EnabledAuthMethods::keys());
     }
 
     /**
@@ -692,16 +697,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Builds the detector over the method keys this project has actually wired.
-     *
-     * Called for every lookup, so it reads the project's configuration as it is at that moment.
-     *
-     * @return IdentifierDetector Detector answering with keys the project can serve
-     * @throws HilosException When the project's methods cannot be read
-     */
-    abstract protected function buildAuthMethods(): IdentifierDetector;
-
-    /**
      * Builds the OAuth service the provider commands run on.
      *
      * Default is null: signing in through a provider is optional, and a project that
@@ -750,12 +745,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @return ?ActionReplyDTO What the surface is told, or null when the holder answers instead
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
-     * @throws ValidationException When the command refuses what was submitted
+     * @throws ValidationException When the action's sign-in method is switched off, or the command refuses what was submitted
      * @throws RandomException When issuing a verification code cannot draw from the CSPRNG
      * @throws HilosException When a command exposes database, runtime, or settings failure
      */
     private function runOwnedAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
+        // Before anything else, a flow begun before the switch included: a method switched
+        // off is closed on the server, not only hidden on the surface (HIL-427).
+        AuthMethodGate::assertActionOpen($action);
+
         switch ($action) {
             case HilosSignalConstants::HILOS_DETECT_IDENTIFIER:
                 if (!$dto instanceof DetectIdentifierActionDTO) {

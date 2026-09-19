@@ -11,10 +11,10 @@ import {
   createHilosAuthContext,
   createOAuthLogin,
   createSignal,
-  PASSWORD_FLOW_METHOD,
   ScopeManager,
   type ActionHandle,
   type ActionLifecycle,
+  type AuthMethodEntry,
   type HilosAuthContext,
   type HilosConnection,
   type HilosOAuthLogin,
@@ -26,6 +26,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosOAuthCallbackPage } from '../src/auth/HilosOAuthCallbackPage.js'
 import { HilosOAuthWaitModal } from '../src/auth/HilosOAuthWaitModal.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+
+/**
+ * A scope manager holding the enabled sign-in methods, the way a handshake puts
+ * them in the session scope (HIL-427): the surface reads its set there.
+ *
+ * @param entries The enabled methods, in button order.
+ */
+function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
+  const scopes = new ScopeManager()
+  scopes.session.data.set('authMethods', entries)
+
+  return scopes
+}
 
 /** The provider every trip here is for. */
 const GITHUB = 'oauth:github'
@@ -87,13 +100,12 @@ function tripWorld(): TripWorld {
 
   const context = createHilosAuthContext({
     connection,
-    scopes: new ScopeManager(),
+    scopes: scopesWith([
+      { key: 'password', name: null },
+      { key: GITHUB, name: 'GitHub' },
+    ]),
     actions,
-    methods: [PASSWORD_FLOW_METHOD],
     channels: [],
-    oauthProviders: [
-      { key: GITHUB, label: 'Continue with GitHub', name: 'GitHub' },
-    ],
     termsPath: '/terms',
     privacyPath: '/privacy',
   })

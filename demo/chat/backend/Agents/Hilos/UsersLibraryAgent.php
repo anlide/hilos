@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\Agents\ModeratorAgent;
-use Demo\Chat\Auth\ChatAuthMethods;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -24,7 +23,6 @@ use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
-use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\IdentityCommands;
@@ -423,17 +421,6 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     public function afterUserCreated(int $userId, string $identifier): void
     {
         Hilos::$db->events->actions->addUserRegistered($userId);
-    }
-
-    /**
-     * Builds the detector over the sign-in methods this demo has actually wired.
-     *
-     * @return IdentifierDetector Detector answering with the chat's enabled method keys
-     * @throws HilosException Whatever reading the OAuth providers' configuration raises
-     */
-    protected function buildAuthMethods(): IdentifierDetector
-    {
-        return ChatAuthMethods::detector();
     }
 
     /**

@@ -183,6 +183,9 @@ final class HilosPageConstants
     /** @var string Hilos — single OAuth provider (detail) */
     public const string HILOS_SECURITY_OAUTH_PROVIDER = 'hilos_security_oauth_provider';
 
+    /** @var string Hilos — sign-in methods an installation offers (HIL-427) */
+    public const string HILOS_SECURITY_SIGN_IN_METHODS = 'hilos_security_sign_in_methods';
+
     /** @var string Hilos — billing (payment providers) hub */
     public const string HILOS_BILLING = 'hilos_billing';
 

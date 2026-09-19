@@ -228,11 +228,14 @@ export {
   sessionPendingAck,
   sessionPendingAuthStep,
   sessionCodeDelivery,
+  sessionAuthMethods,
+  SIGNAL_AUTH_METHODS,
   SIGNAL_HANDSHAKE_RESPONSE,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
   SESSION_SIGNAL_SCHEMAS,
+  type AuthMethodEntry,
   type CodeDelivery,
   type PendingAuthStep,
   type SessionScopeOptions,
@@ -293,6 +296,7 @@ export {
 } from './auth/authActions.js'
 export {
   createHilosAuthContext,
+  oauthProviderOptionsFor,
   type HilosAuthContext,
   type HilosOAuthProviderOption,
 } from './auth/authContext.js'
@@ -420,11 +424,13 @@ export {
   applicableChannels,
   screenKeyOf,
   oauthFlowMethod,
+  authFlowMethodsFor,
   PASSWORD_MIN_LENGTH,
   DEFAULT_DETECT_DEBOUNCE_MS,
   DEFAULT_EXTERNAL_CANCEL_GRACE_MS,
   PASSWORD_METHOD_KEY,
   MAGIC_LINK_METHOD_KEY,
+  OAUTH_METHOD_PREFIX,
   PASSWORD_FLOW_METHOD,
   PASSKEY_FLOW_METHOD,
   MAGIC_LINK_FLOW_METHOD,
@@ -848,6 +854,16 @@ export {
   type HilosSecurityOauthContext,
   type HilosSecurityOauthActions,
 } from './admin/security/hilosSecurityOauth.js'
+export {
+  resolveHilosSignInMethodRow,
+  createHilosSignInMethodsTable,
+  createHilosSignInMethodsActions,
+  HilosSignInMethodRowKey,
+  type HilosSignInMethodRow,
+  type HilosSignInMethodsContext,
+  type HilosSignInMethodsActions,
+  type HilosSignInMethodsTable,
+} from './admin/security/hilosSecuritySignInMethods.js'
 export {
   resolveHilosLogKeyRow,
   createHilosLogKeysTable,

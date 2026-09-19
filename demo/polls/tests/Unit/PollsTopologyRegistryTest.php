@@ -31,6 +31,7 @@ use Demo\Polls\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
 use Demo\Polls\Pages\MainPage;
@@ -54,6 +55,7 @@ use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
+use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -321,6 +323,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
+            PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -336,6 +339,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 LogsWorkersPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
+                SecuritySignInMethodsPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
             ],

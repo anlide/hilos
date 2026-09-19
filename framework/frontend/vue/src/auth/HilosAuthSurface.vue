@@ -51,6 +51,7 @@ import {
   PASSKEY_FLOW_METHOD,
   PASSWORD_METHOD_KEY,
   PASSWORD_MIN_LENGTH,
+  sessionAuthMethods,
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
@@ -244,8 +245,10 @@ const SEND_PROGRESS_ROW_CLASS = 'd-flex align-items-center gap-2 small mb-3'
 /** The details button and the inert copy of it the twin holds the room for. */
 const SEND_PROGRESS_DETAILS_CLASS = 'btn btn-link btn-sm p-0 lh-1 flex-shrink-0'
 
+// The set is the installation's, live from the session scope (HIL-427): an
+// administrator switching a method off reshapes this surface on the frame.
 const auth = createAuthFlow({
-  methods: context.methods,
+  authMethods: sessionAuthMethods(context.scopes),
   channels: context.channels,
   onDetect: (identifier) => authActions.onDetect(identifier),
   onSubmit: authActions.onSubmit,
@@ -277,6 +280,7 @@ const error = useSignal(auth.error)
 const submittable = useSignal(auth.submittable)
 const canFinishWithoutPassword = useSignal(auth.canFinishWithoutPassword)
 const icons = useSignal(auth.icons)
+const methods = useSignal(auth.methods)
 const channels = useSignal(auth.channels)
 const primaryAction = useSignal(auth.primaryAction)
 const screenKey = useSignal(auth.screenKey)
@@ -602,7 +606,7 @@ const primaryMethod = computed(() => {
     return null
   }
 
-  return context.methods.find((method) => method.key === action.key) ?? null
+  return methods.value.find((method) => method.key === action.key) ?? null
 })
 
 /**

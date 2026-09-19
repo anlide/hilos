@@ -53,6 +53,7 @@ use Demo\Chat\Environment\ChatLlmProfileOverrideSource;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
+use Demo\Chat\Auth\ChatAuthMethodDirectory;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
 use Demo\Chat\Auth\ChatOAuthProviderDirectory;
 use Demo\Chat\Legal\LegalCatalog;
@@ -123,6 +124,7 @@ use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Chat\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
@@ -193,6 +195,7 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
+use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -243,6 +246,8 @@ final class Hilos extends HilosFacade
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
 
     protected const string CODE_CHANNEL_REGISTRY = ChatCodeChannelRegistry::class;
+
+    protected const string AUTH_METHOD_DIRECTORY = ChatAuthMethodDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = ChatOAuthProviderDirectory::class;
 
@@ -326,6 +331,7 @@ final class Hilos extends HilosFacade
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
+        SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
         BillingPage::PAGE => BillingPage::class,
         BillingProviderPage::PAGE => BillingProviderPage::class,
         BillingPaymentsPage::PAGE => BillingPaymentsPage::class,
@@ -516,6 +522,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         ChatTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
+        ChatTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -622,6 +629,9 @@ final class Hilos extends HilosFacade
         SecurityOAuthProviderPage::PAGE => [
             ChatTableContext::hilosSecurityOauthProviders => [],
             ChatTableContext::hilosSecurityOauthProviderFields => [],
+        ],
+        SecuritySignInMethodsPage::PAGE => [
+            ChatTableContext::hilosSecuritySignInMethods => [],
         ],
         LogsKeysPage::PAGE => [
             ChatTableContext::hilosLogKeys => [],

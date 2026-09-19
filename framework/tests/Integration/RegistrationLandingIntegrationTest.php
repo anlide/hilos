@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
-use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -683,11 +682,6 @@ final class RegistrationLandingFixtureLibrary extends AbstractUsersLibraryAgent
     public function displayNameOf(int $userId): ?string
     {
         throw new LogicException('The fixture library names no users');
-    }
-
-    protected function buildAuthMethods(): IdentifierDetector
-    {
-        throw new LogicException('The fixture library detects nothing');
     }
 }
 

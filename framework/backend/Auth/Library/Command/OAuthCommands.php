@@ -8,6 +8,7 @@ use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Library\DTO\OAuthStartActionDTO;
+use Hilos\Auth\Method\AuthMethodGate;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
@@ -62,14 +63,15 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param OAuthStartActionDTO $dto Parsed start payload (provider, trip id)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the project has no OAuth wiring, or the provider is not configured
+     * @throws ValidationException When the provider is switched off, the project has no OAuth wiring, or the provider is not configured
      * @throws InvalidArgumentException When the authorize signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot produce a state nonce
-     * @throws HilosException When the provider registry cannot be built
+     * @throws HilosException When the provider registry or the sign-in method setting cannot be read
      */
     public function startOAuth(string $acceptKey, OAuthStartActionDTO $dto): void
     {
         $acting = $this->acting($acceptKey);
+        AuthMethodGate::assertProviderOpen($dto->provider);
 
         try {
             $authorizeUrl = $this->oauthService()->beginAuthorization($dto->provider, $acting->sessionToken);
@@ -99,13 +101,16 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param OAuthCallbackActionDTO $dto Parsed callback payload (provider, code, state)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the project has no OAuth wiring, the provider is unknown, or the state is invalid
+     * @throws ValidationException When the provider is switched off, the project has no OAuth wiring, the provider is unknown,
+     *     or the state is invalid
      * @throws InvalidArgumentException When the hand-off to the OAuth agent cannot be named or queued
-     * @throws HilosException When the provider registry cannot be built
+     * @throws HilosException When the provider registry or the sign-in method setting cannot be read
      */
     public function callbackOAuth(string $acceptKey, OAuthCallbackActionDTO $dto): void
     {
         $acting = $this->acting($acceptKey);
+        // A login begun before the provider was switched off comes back to a closed door.
+        AuthMethodGate::assertProviderOpen($dto->provider);
 
         $service = $this->oauthService();
         try {
@@ -158,8 +163,9 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key the action arrived on
      * @param LinkOAuthAfterReauthActionDTO $dto Parsed link payload (signed token)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the project has no OAuth wiring, or the token is invalid, foreign-owned, or already linked
-     * @throws HilosException When the identity lookup or bind fails
+     * @throws ValidationException When the project has no OAuth wiring, the token is invalid, foreign-owned, or already linked,
+     *     or its provider is switched off
+     * @throws HilosException When the identity lookup or bind, or the sign-in method setting, fails
      */
     public function linkAfterReauth(string $acceptKey, LinkOAuthAfterReauthActionDTO $dto): void
     {
@@ -169,6 +175,8 @@ final class OAuthCommands extends AbstractLibraryCommands
         if ($link === null) {
             throw new ValidationException(AuthMessages::INVALID_LINK);
         }
+        // The provider rides the signed token, so it is known only once the token is read.
+        AuthMethodGate::assertProviderOpen($link->provider);
 
         if (Hilos::$db->identities->findUserIdByVerifiedEmail($link->email) !== $acting->userId) {
             throw new ValidationException(AuthMessages::INVALID_LINK);

@@ -103,6 +103,10 @@ export {
   type HilosSecurityOauthProviderPageProps,
 } from './admin/security/HilosSecurityOauthProviderPage.js'
 export {
+  HilosSecuritySignInMethodsPage,
+  type HilosSecuritySignInMethodsPageProps,
+} from './admin/security/HilosSecuritySignInMethodsPage.js'
+export {
   HilosCommunicationsDeliveriesPage,
   type HilosCommunicationsDeliveriesPageProps,
 } from './admin/communications/HilosCommunicationsDeliveriesPage.js'

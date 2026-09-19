@@ -16,7 +16,7 @@ import { clickSubmit, typeInto } from '../helpers/session'
 // framework HilosViewportTable over the live socket. The window comes from the
 // backend — search, sort, and paging change the viewport descriptor and the
 // server replies a window — so a key is isolated with the search box before it
-// is asserted on (the chat catalog spans five pages of ten). The table is a
+// is asserted on (the chat catalog spans six pages of ten). The table is a
 // declared one, so it stands in the document twice — rows for a wide screen,
 // cards for a narrow one — and a control inside a cell is aimed at through the
 // copy on screen (shownByTestId). Live edits from
@@ -101,25 +101,26 @@ test('paginates the server window by its page numbers and its neighbors', async 
   await signUpAdmin(page)
   await openSettings(page)
 
-  // The catalog spans five pages of ten; the first page holds the chat_* keys,
-  // the example_* keys sort onto the second next to the logs.* rotation and
-  // retention keys, and the notifications.* keys (the email, push and sms
-  // delivery channels plus the delivery-log retention setting) trail onto the
-  // third, fourth and fifth.
+  // The catalog spans six pages of ten; the first page opens with the sign-in
+  // method list (HIL-427) and holds the chat_* keys, the default_bot_* keys
+  // sort onto the second next to the example_* keys, and the logs.* and
+  // notifications.* keys trail onto the rest. The row read on the second page
+  // is taken from its middle, so an uncataloged row a neighboring spec leaves
+  // behind does not carry it across a page boundary.
   const firstPageRow = page.getByTestId(
     'hilos-table-row-chat_attachment_max_file_bytes',
   )
-  const secondPageRow = page.getByTestId('hilos-table-row-example_string')
+  const secondPageRow = page.getByTestId('hilos-table-row-default_bot_provider')
   const pageOne = page.getByTestId('hilos-table-page-1')
   const pageTwo = page.getByTestId('hilos-table-page-2')
 
   // A cataloged set is counted whole, so the count is exact and the footer draws
-  // a number for every page — five fit the pager without a gap — with the page on
-  // screen as the one that says so (HIL-802). Nothing past the fifth: a number
+  // a number for every page — six fit the pager without a gap — with the page on
+  // screen as the one that says so (HIL-802). Nothing past the sixth: a number
   // with no page behind it would lead nowhere.
   await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByTestId('hilos-table-page-5')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-page-6')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-page-6')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-page-7')).toHaveCount(0)
   await expect(firstPageRow).toBeVisible()
   await expect(secondPageRow).toHaveCount(0)
 
