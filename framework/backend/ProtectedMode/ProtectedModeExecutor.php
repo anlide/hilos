@@ -83,11 +83,12 @@ interface ProtectedModeExecutor
     public function enterVerifying(): void;
 
     /**
-     * Takes the operator's browser into the verification window, once this node's roster is back.
+     * Takes the browsers the window lets in - the operator's and every circle member's - into the
+     * verification window, once this node's roster is back.
      *
      * The second half of {@see enterVerifying()}, reached out of
-     * {@see ProtectedModeSwitch::onRosterResumed()}: the initiator's tabs leave the stub and their
-     * pages are answered again. Those pages are answered by the agents the lift brings back, which
+     * {@see ProtectedModeSwitch::onRosterResumed()}: the tabs of those sessions leave the stub and
+     * their pages are answered again. Those pages are answered by the agents the lift brings back, which
      * is why this half waits for the lift. The broadcast to everyone else does not wait: it needs no
      * agent, and held back it would overtake frames sent after it. Nothing is carried between the
      * two halves - the row is read again.

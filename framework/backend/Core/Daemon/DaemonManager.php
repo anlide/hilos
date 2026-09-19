@@ -1479,9 +1479,10 @@ abstract class DaemonManager extends BaseManager implements
      * pass against the row, and this writes the verdict where the workers can read it. A process
      * holding no runtime row records nothing - there is no freeze there to be let into.
      *
-     * On the crossing - and only on it - the whole session is told, because the tab that typed the
-     * code is rarely the only one open and nothing tears the others down: they would stand on the
-     * stub for the rest of the window waiting for a reload nobody asked them for.
+     * On the crossing - and only on it - the whole session is told and its open pages are answered
+     * again, because the tab that typed the code is rarely the only one open and nothing tears the
+     * others down: they would stand on the stub, or on a page answered under the old phase, for the
+     * rest of the window waiting for a reload nobody asked them for.
      *
      * A refused write is logged and swallowed rather than raised, because the caller is the
      * connection-accept path: an exception there tears down a handshake that was otherwise fine,
@@ -1535,6 +1536,14 @@ abstract class DaemonManager extends BaseManager implements
                 ),
                 $sessionTokenHash,
             );
+
+            // The frame moves the stub, not what stands behind it: the tabs come out onto pages
+            // answered before the phase moved (HIL-912). They are answered again, behind the frame
+            // and under the same try - the safe reading of a failure is the same one, the verifier
+            // stays where they are and presents the code again. A tab opened under the freeze holds
+            // no subscription here to answer: its subscribe was refused on the client, and the tab
+            // sends it itself on this frame.
+            $this->reassessPagesOfSession($sessionTokenHash);
         } catch (InvalidArgumentException $exception) {
             Logger::error('Protected mode: failed to tell an admitted verifier: ' . $exception->getMessage());
         }

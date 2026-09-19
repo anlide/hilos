@@ -9,6 +9,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
@@ -93,14 +94,33 @@ final class ProtectedModeAdmissionFrameTest extends TestCase
         $this->assertNotNull($state->bannerMessage);
     }
 
+    public function testTheAdmittedSessionsOpenPagesAreAnsweredAgainBehindTheFrame(): void
+    {
+        // The frame takes the tabs off the stub; what stands behind it was answered before the
+        // phase moved, and stays that way until a reload unless it is answered again (HIL-912).
+        // The re-answer is queued behind the frame, so the page lands on a tab that has already
+        // left the stub.
+        $this->daemon->admitProtectedModeSession(self::VERIFIER_SESSION);
+
+        $this->assertSame(
+            [
+                [SignalTypeConstants::WS_SESSION, self::VERIFIER_SESSION],
+                [SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION, self::VERIFIER_SESSION],
+            ],
+            $this->admissionSignals(),
+        );
+    }
+
     public function testASecondTabOfTheSameBrowserPresentingTheCodeAgainWakesNobody(): void
     {
         $this->daemon->admitProtectedModeSession(self::VERIFIER_SESSION);
-        $this->sessionFrames();
+        $this->admissionSignals();
 
         $this->daemon->admitProtectedModeSession(self::VERIFIER_SESSION);
 
-        $this->assertSame([], $this->sessionFrames());
+        // Neither the frame nor the re-answer: this tab crossed nothing, the others were answered
+        // on the crossing, and the new tab is answered by its own welcome.
+        $this->assertSame([], $this->admissionSignals());
         $this->assertSame(
             [self::VERIFIER_SESSION],
             Hilos::$rt?->hilosProtectedModeRuntime?->admittedSessionTokenHashes,
@@ -143,6 +163,29 @@ final class ProtectedModeAdmissionFrameTest extends TestCase
         }
 
         return $frames;
+    }
+
+    /**
+     * Drains the queue and keeps both halves of an admission, each with the session it addresses.
+     *
+     * Drained for the reason {@see sessionFrames()} gives; the order is kept, because the re-answer
+     * is owed to a tab the frame has already taken off the stub.
+     *
+     * @return list<array{0: string, 1: ?string}> Signal type and addressed session hash, in the order queued
+     */
+    private function admissionSignals(): array
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($data instanceof WebSocketSignalData && $signal->signalType->getType() === SignalTypeConstants::WS_SESSION) {
+                $signals[] = [SignalTypeConstants::WS_SESSION, $data->targetSessionTokenHash];
+            } elseif ($data instanceof PageAccessReassessSessionSignalData) {
+                $signals[] = [SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION, $data->sessionTokenHash];
+            }
+        }
+
+        return $signals;
     }
 }
 

@@ -213,10 +213,13 @@ final class PageAccessReassessment
      * the runtime write of the phase rides the same queue ahead of it, so every worker re-judges
      * against the phase it has just been told about.
      *
-     * The caller is the protected-mode executor opening the verification window (HIL-911). Its
-     * operator's tabs were answered while the phase was still inactive, and nothing else would
-     * answer them again: the backup page's reopen section is built only when a subscription is
-     * answered.
+     * The callers are the two ways into the verification window: the protected-mode executor
+     * opening it for the operator and the circle (HIL-911, HIL-912), and the admission of a browser
+     * that presented a pass (HIL-912). Their tabs were answered while the phase was still inactive,
+     * and nothing else would answer them again: the backup page's reopen section is built only when
+     * a subscription is answered. A tab opened under the freeze is not among them - the client
+     * refused its subscribe, so there is nothing here to re-judge, and it subscribes on the frame
+     * that lets it in.
      *
      * @param string $sessionTokenHash Hash of the session token whose open pages are to be re-judged
      * @throws InvalidArgumentException When the announcement cannot be named

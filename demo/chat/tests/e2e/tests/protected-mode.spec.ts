@@ -290,10 +290,12 @@ test('the code lets the whole browser in, and the tab that was waiting comes out
 
   // The tab that will do the typing, and one that is already standing on the stub
   // when it happens — the ordinary case, since the operator reads the code out to
-  // somebody who is already looking at the maintenance screen.
+  // somebody who is already looking at the maintenance screen. The waiting tab stands
+  // on the main page, the surface that came up blank behind a live admission until a
+  // reload (HIL-912).
   await gotoMaintenance(page, ADMIN_URL)
   const waiting = await page.context().newPage()
-  await gotoMaintenance(waiting, ADMIN_URL)
+  await gotoMaintenance(waiting, '/')
 
   await presentCode(page, pass)
   await expect(page.getByTestId('maintenance')).toBeHidden()
@@ -301,8 +303,13 @@ test('the code lets the whole browser in, and the tab that was waiting comes out
   // Pushed, and that is the whole point of asserting it on a live tab: nothing here
   // navigates or reloads, and no connection was torn down when the mode turned on,
   // so a tab left out of this frame would stand on the stub for the rest of the
-  // window.
-  await expect(waiting.getByTestId('maintenance')).toBeHidden()
+  // window. And not only the stub going away: the page behind it has to be answered
+  // again, or the tab comes out onto a page that was never answered under the freeze.
+  await expectInsideMainPage(waiting)
+
+  // An F5 lands on the same page, which is the criterion: a reload changes nothing.
+  await gotoAdmitted(waiting, '/')
+  await expectInsideMainPage(waiting)
 
   // And a tab opened afterwards is inside without ever being shown the field: it
   // arrives with the same cookie and an accept key the row has never seen.
@@ -805,15 +812,23 @@ test('the named circle walks in with the tab it already had open, and nobody els
   expect(inside.circleAdmitted).toBe(1)
   expect(inside.passCount).toBe(0)
 
-  // The member walks in on the tab they already had, with no code minted at all.
-  await gotoAdmitted(member, '/')
-  await expect(member.getByTestId('maintenance')).toHaveCount(0)
-  await expect(member.getByTestId('protected-mode-banner')).toContainText(
-    BANNER_MESSAGE,
-  )
+  // The member walks in on the tab they already had, with no code minted at all, and
+  // nothing here navigates: the tab is the one that was open when the node froze. It
+  // leaves the stub on a pushed frame and its page is answered again behind it, so what
+  // is asserted is the page itself and not only the stub going away (HIL-912).
+  await expectInsideMainPage(member)
 
   // The stranger, who was equally online and equally signed in, stays on the stub:
-  // being here is not the qualification, being named is.
+  // being here is not the qualification, being named is. The live tab first - the frame
+  // that let the member in went to the member's session and to nobody else.
+  await expect(stranger.getByTestId('maintenance')).toBeVisible()
+  await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
+
+  // An F5 changes nothing for either of them: the 101 admits by the same photograph the
+  // push was addressed by, so the member reloads into the same page and the stranger
+  // reloads into the same stub.
+  await gotoAdmitted(member, '/')
+  await expectInsideMainPage(member)
   await gotoMaintenance(stranger, '/')
   await expect(stranger.getByTestId('maintenance')).toBeVisible()
 
@@ -888,6 +903,26 @@ test('a circle member who was away when the node froze is named and still outsid
 
   await returning.close()
 })
+
+/**
+ * Asserts a tab is inside the verification window on the chat main page, drawn.
+ *
+ * Three things and in this order: the stub is gone, the banner the window shows its
+ * own people is up, and the page behind them settled on an answer with its own content
+ * on screen. The last one is what a tab carried out of the stub on a frame alone lacks -
+ * it shows the application shell over a page nobody answered. Navigates nothing, so it
+ * reads a live tab exactly as it stands.
+ *
+ * @param page The tab that was let into the window.
+ */
+async function expectInsideMainPage(page: Page): Promise<void> {
+  await expect(page.getByTestId('maintenance')).toHaveCount(0)
+  await expect(page.getByTestId('protected-mode-banner')).toContainText(
+    BANNER_MESSAGE,
+  )
+  await expectPageReady(page)
+  await expect(page.getByTestId('events-header')).toBeVisible()
+}
 
 /**
  * The circle row of one address, named by the handle its own row carries.

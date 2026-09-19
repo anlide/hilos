@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
@@ -175,7 +176,8 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     }
 
     /**
-     * The frames {@see enterVerifying()} owes the operator once the roster it asked for is back.
+     * The frames {@see enterVerifying()} owes everyone the window lets in once the roster is back:
+     * the operator and every member of the circle photographed at the freeze.
      */
     public function finishVerifying(): void
     {
@@ -184,14 +186,18 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
-        // This phase is where the operator comes back in, and it has to be pushed: entering the
-        // freeze tore no connection down, so every tab of theirs is standing on the stub and would
-        // stand there for the whole window waiting for an F5 nobody told them to press. The frame
-        // is the opposite of the broadcast enterVerifying() sent - active: false, the mode does not
-        // hold you - and it goes to the session so that all their tabs leave the stub at the same
-        // moment. It is a second frame rather than one broadcast without the exclusion, because a
-        // personal frame racing the general one would arrive in either order, and losing that race
-        // leaves the operator on the stub in a system that is running again.
+        // This phase is where the window's own people come back in, and it has to be pushed:
+        // entering the freeze tore no connection down, so every tab of the operator and of each
+        // circle member is standing on the stub and would stand there for the whole window waiting
+        // for an F5 nobody told them to press - the reload lets a circle member in on the 101, and
+        // a reload changing what a tab is let into is the defect (HIL-912). The frame is the
+        // opposite of the broadcast enterVerifying() sent - active: false, the mode does not hold
+        // you - and it goes to the session so that all its tabs leave the stub at the same moment.
+        // It is a second frame rather than one broadcast without the exclusion, because a personal
+        // frame racing the general one would arrive in either order, and losing that race leaves
+        // the operator on the stub in a system that is running again. The circle is not excluded
+        // from that broadcast at all: it went out with the phase, before the roster, so this frame
+        // lands after it.
         // acceptsPass stays true: it carries the row's own bit, and a client reading active: false
         // without it takes the frame for a lift and reloads itself back out of the window.
         // passIssued is read off the row as well: the window opens before anything is minted
@@ -199,27 +205,46 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // The stub copy stays null for the reason the frame exists - these tabs are leaving the
         // stub - and the banner sentence rides instead: it is what they render once they are out,
         // and it is the same $copy, read from the other side (HIL-736).
-        $copy = ProtectedModeStubCopy::forOperation($view->operation);
+        //
+        // The set is keyed by the hash, because the operator can be a member of their own circle
+        // and is owed one frame, not two. Plain keys and not hash_equals: nothing is admitted by
+        // this comparison - the row already decided that - and all that is at stake is a duplicate.
+        $admitted = [];
         if ($view->initiatorSessionTokenHash !== null) {
-            Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeSessionState(
-                new ProtectedModeStateSignalData(
-                    active: false,
-                    operation: $view->operation,
-                    title: null,
-                    message: null,
-                    acceptsPass: true,
-                    passIssued: $view->passHashes !== [],
-                    bannerMessage: $copy->bannerMessage,
-                ),
-                $view->initiatorSessionTokenHash,
-            );
+            $admitted[$view->initiatorSessionTokenHash] = true;
+        }
+        foreach ($view->circleSessionTokenHashes as $circleSessionTokenHash) {
+            $admitted[$circleSessionTokenHash] = true;
+        }
 
-            // Leaving the stub is not enough: every tab comes out onto the page it already had,
-            // answered while the phase was still inactive, so the backup page would lack the reopen
-            // block the banner above tells the operator to use. Its pages are answered again.
-            // After the resume and not before it, because a page is answered by the agent that
-            // serves it, and while the agents stand nobody would (HIL-911).
-            Hilos::$cluster?->protectedModeClientNotifier()?->reassessPagesOfSession($view->initiatorSessionTokenHash);
+        $copy = ProtectedModeStubCopy::forOperation($view->operation);
+        foreach (array_keys($admitted) as $sessionTokenHash) {
+            // One session failing must not cost the others their window, so each is tried alone.
+            try {
+                Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeSessionState(
+                    new ProtectedModeStateSignalData(
+                        active: false,
+                        operation: $view->operation,
+                        title: null,
+                        message: null,
+                        acceptsPass: true,
+                        passIssued: $view->passHashes !== [],
+                        bannerMessage: $copy->bannerMessage,
+                    ),
+                    $sessionTokenHash,
+                );
+
+                // Leaving the stub is not enough: every tab comes out onto the page it already had,
+                // answered while the phase was still inactive, so the backup page would lack the
+                // reopen block the banner tells the operator to use. Its pages are answered again.
+                // After the resume and not before it, because a page is answered by the agent that
+                // serves it, and while the agents stand nobody would (HIL-911). A tab opened under
+                // the freeze is not reached by this: its subscribe never left the client, and the
+                // tab sends it itself on the frame above (HIL-912).
+                Hilos::$cluster?->protectedModeClientNotifier()?->reassessPagesOfSession($sessionTokenHash);
+            } catch (InvalidArgumentException $exception) {
+                Logger::error('Protected mode: failed to let a verifier into the window: ' . $exception->getMessage());
+            }
         }
     }
 

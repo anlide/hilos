@@ -2,7 +2,8 @@
 // (wire-protocol.md). Subscribing a page atomically replaces the previous
 // subscription — navigation is one page_subscribe, never an unsubscribe+
 // subscribe pair — and every `connected` transition re-sends the current
-// subscription, because a new socket is a fresh protocol exchange. The
+// subscription, because a new socket is a fresh protocol exchange, and sends it
+// when protected mode stops holding a connection that could not send it. The
 // manager owns the page scope lifecycle and the stale-signal guard: a page
 // payload is ingested only while its page is still the current subscription.
 
@@ -21,6 +22,7 @@ import {
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
 } from '../protocol/constants.js'
 import {
+  type HilosConnectionEventMap,
   type ConnectionState,
   type TableViewportDescriptor,
 } from '../connection/HilosConnection.js'
@@ -36,14 +38,23 @@ import { createSignal, type ReadonlySignal } from '../state/signal.js'
 /** The page status the auth gate owns: only its resume takes this one down. */
 const UNAUTHORIZED = 401
 
+/** The connection events the manager listens to. */
+type PageSubscriptionEventMap = Pick<
+  HilosConnectionEventMap,
+  'state' | 'protectedMode'
+>
+
 /**
  * The slice of HilosConnection the manager touches; a test double only has to
- * implement these four members.
+ * implement these members.
  */
 export interface PageSubscriptionConnection {
   readonly state: ConnectionState
   send(text: string): boolean
-  on(event: 'state', listener: (state: ConnectionState) => void): () => void
+  on<K extends keyof PageSubscriptionEventMap>(
+    event: K,
+    listener: (payload: PageSubscriptionEventMap[K]) => void,
+  ): () => void
   forgetPageFrames(): void
   tableWindowDescriptors(): Record<string, TableViewportDescriptor>
 }
@@ -84,6 +95,18 @@ export class PageSubscription {
    */
   private sessionAnswered = false
 
+  /**
+   * Whether the current page's page_subscribe reached the server ON THE CURRENT
+   * SOCKET. The connection refuses every outbound frame while protected mode holds
+   * it, and refuses without dropping the socket: neither a `connected` transition
+   * nor a session answer is coming to send the frame again. A tab loaded under the
+   * freeze would then stand on its page, unanswered, for the whole window after it
+   * was let in — the server re-answers only the pages it holds a subscription for
+   * (HIL-912). So the refusal is remembered here, and the frame goes out when the
+   * mode stops holding this connection.
+   */
+  private subscribeDelivered = false
+
   /** The current page's catalog identity, read off the page scope it arrives in. */
   private readonly pageIdentitySignal: ReadonlySignal<
     HilosPageIdentity | undefined
@@ -106,6 +129,12 @@ export class PageSubscription {
     connection.on('state', (state) => {
       if (state !== 'connected') {
         this.sessionAnswered = false
+        this.subscribeDelivered = false
+      }
+    })
+    connection.on('protectedMode', (status) => {
+      if (!status.active && !this.subscribeDelivered) {
+        this.sendSubscribe()
       }
     })
   }
@@ -404,6 +433,6 @@ export class PageSubscription {
     if (Object.keys(windows).length > 0) {
       frame[FIELD_TABLE_WINDOWS] = windows
     }
-    this.connection.send(JSON.stringify(frame))
+    this.subscribeDelivered = this.connection.send(JSON.stringify(frame))
   }
 }

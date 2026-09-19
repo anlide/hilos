@@ -6,18 +6,38 @@ import {
   type ConnectionState,
   type TableViewportDescriptor,
 } from '../../src/connection/HilosConnection.js'
+import {
+  PROTECTED_MODE_INACTIVE,
+  type ProtectedModeStatus,
+} from '../../src/protocol/protectedMode.js'
+
+/** The connection events the double replays. */
+interface FakeConnectionEvents {
+  state: ConnectionState
+  protectedMode: ProtectedModeStatus
+}
 
 /**
- * A connection double recording sent frames, replaying state changes, and
- * counting how often the page-frame buffer was dropped.
+ * A connection double recording sent frames, replaying state changes and
+ * protected-mode frames, and counting how often the page-frame buffer was
+ * dropped. Like HilosConnection, it refuses every frame while the mode holds it.
  */
 function fakeConnection(initialState: ConnectionState = 'connected') {
   const listeners: Array<(state: ConnectionState) => void> = []
+  const protectedModeListeners: Array<(status: ProtectedModeStatus) => void> =
+    []
+  const listenersOf: {
+    [K in keyof FakeConnectionEvents]: Array<
+      (payload: FakeConnectionEvents[K]) => void
+    >
+  } = { state: listeners, protectedMode: protectedModeListeners }
   const sent: Array<Record<string, unknown>> = []
 
   return {
     state: initialState,
     sent,
+    /** Whether protected mode holds this connection, as the last frame said. */
+    frozen: false,
     /** The windows this connection's tables are holding, as the subscribe frame reports them. */
     windows: {} as Record<string, TableViewportDescriptor>,
     forgotPageFrames: 0,
@@ -30,16 +50,25 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
         listener(state)
       }
     },
+    setProtectedMode(status: ProtectedModeStatus) {
+      this.frozen = status.active
+      for (const listener of protectedModeListeners) {
+        listener(status)
+      }
+    },
     send(text: string): boolean {
-      if (this.state !== 'connected') {
+      if (this.state !== 'connected' || this.frozen) {
         return false
       }
       sent.push(JSON.parse(text) as Record<string, unknown>)
 
       return true
     },
-    on(_event: 'state', listener: (state: ConnectionState) => void) {
-      listeners.push(listener)
+    on<K extends keyof FakeConnectionEvents>(
+      event: K,
+      listener: (payload: FakeConnectionEvents[K]) => void,
+    ) {
+      listenersOf[event].push(listener)
 
       return () => {}
     },
@@ -553,5 +582,96 @@ describe('pageLoading', () => {
 
     expect(applied).toBe(true)
     expect(pages.pageLoading.get()).toBe(false)
+  })
+})
+
+describe('a subscribe the freeze refused', () => {
+  const frozen: ProtectedModeStatus = {
+    ...PROTECTED_MODE_INACTIVE,
+    active: true,
+    acceptsPass: true,
+  }
+  const admitted: ProtectedModeStatus = {
+    ...PROTECTED_MODE_INACTIVE,
+    acceptsPass: true,
+  }
+
+  it('is sent once when the admission frame arrives', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    connection.setProtectedMode(frozen)
+    pages.releaseOnSession()
+
+    pages.subscribe('main', { room: 7 })
+    expect(connection.sent).toEqual([])
+
+    connection.setProtectedMode(admitted)
+
+    expect(connection.sent).toEqual([
+      { type: 'page_subscribe', page: 'main', params: { room: 7 } },
+    ])
+  })
+
+  it('is not sent again when the server already holds it', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('main')
+    connection.setProtectedMode(frozen)
+
+    connection.setProtectedMode(admitted)
+
+    expect(connection.sent.length).toBe(1)
+  })
+
+  it('carries a refused re-subscribe without raising pageLoading', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('main')
+    pages.ingestPageResponse('main', {})
+    connection.setState('connecting')
+    connection.setProtectedMode(frozen)
+    connection.setState('connected')
+    pages.releaseOnSession()
+    expect(connection.sent.length).toBe(1)
+
+    connection.setProtectedMode(admitted)
+
+    expect(connection.sent.length).toBe(2)
+    expect(connection.sent[1]).toMatchObject({
+      type: 'page_subscribe',
+      page: 'main',
+    })
+    expect(pages.pageLoading.get()).toBe(false)
+  })
+
+  it('stays unsent while the frame still says the mode holds', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    connection.setProtectedMode(frozen)
+    pages.releaseOnSession()
+    pages.subscribe('main')
+
+    connection.setProtectedMode({ ...frozen, passIssued: true })
+
+    expect(connection.sent).toEqual([])
+  })
+
+  it('waits for the session answer when admitted before it', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    connection.setProtectedMode(frozen)
+    pages.subscribe('main')
+
+    connection.setProtectedMode(admitted)
+    expect(connection.sent).toEqual([])
+
+    pages.releaseOnSession()
+
+    expect(connection.sent).toMatchObject([
+      { type: 'page_subscribe', page: 'main' },
+    ])
+    expect(connection.sent.length).toBe(1)
   })
 })

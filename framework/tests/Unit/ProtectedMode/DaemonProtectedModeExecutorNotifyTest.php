@@ -14,6 +14,9 @@ use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -233,6 +236,82 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertSame(['session-hash-7'], $this->notifier->reassessedSessions);
     }
 
+    public function testTheWindowCarriesEveryCircleMemberInBesideTheOperator(): void
+    {
+        // The circle is the second door of the window, and a member's tab that was already open is
+        // standing on the stub exactly like the operator's. The 101 lets it in on a reload; without
+        // this frame and this re-answer the live tab never comes in at all, and a reload changes
+        // what the tab is let into (HIL-912).
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->photographCircle(['circle-hash-1', 'circle-hash-2']);
+        $this->notifier->sessionFrames = [];
+
+        $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
+
+        $this->assertSame(
+            ['session-hash-7', 'circle-hash-1', 'circle-hash-2'],
+            array_column($this->notifier->sessionFrames, 1),
+        );
+        foreach ($this->notifier->sessionFrames as [$state]) {
+            $this->assertFalse($state->active);
+            $this->assertTrue($state->acceptsPass);
+            $this->assertFalse($state->passIssued);
+        }
+        $this->assertSame(
+            ['session-hash-7', 'circle-hash-1', 'circle-hash-2'],
+            $this->notifier->reassessedSessions,
+        );
+    }
+
+    public function testAnOperatorInTheirOwnCircleIsToldOnce(): void
+    {
+        // The operator can be named in the circle they froze with; they are one browser and are
+        // owed one frame and one re-answer, not two of each.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->photographCircle(['session-hash-7', 'circle-hash-1']);
+        $this->notifier->sessionFrames = [];
+
+        $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
+
+        $this->assertSame(['session-hash-7', 'circle-hash-1'], array_column($this->notifier->sessionFrames, 1));
+        $this->assertSame(['session-hash-7', 'circle-hash-1'], $this->notifier->reassessedSessions);
+    }
+
+    public function testAnEmptyCircleLeavesTheOperatorAlone(): void
+    {
+        // A freeze that named a circle nobody of which was online photographs nothing; the window
+        // then addresses the operator and nobody else, as it did before the circle existed.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->photographCircle([]);
+        $this->notifier->sessionFrames = [];
+
+        $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
+
+        $this->assertSame(['session-hash-7'], array_column($this->notifier->sessionFrames, 1));
+        $this->assertSame(['session-hash-7'], $this->notifier->reassessedSessions);
+    }
+
+    public function testTheCircleIsServedWhenNoBrowserStartedTheOperation(): void
+    {
+        // A CLI restore has no browser behind the initiator, and the circle is then the only way
+        // anyone gets in without a pass: it must not ride on the initiator's session being known.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', null);
+        $this->executor->enterActive();
+        $this->photographCircle(['circle-hash-1']);
+
+        $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
+
+        $this->assertSame(['circle-hash-1'], array_column($this->notifier->sessionFrames, 1));
+        $this->assertSame(['circle-hash-1'], $this->notifier->reassessedSessions);
+    }
+
     public function testClosingBackAndLiftingAnswerNoPageAgain(): void
     {
         // Closing back puts the tabs behind the stub, where nothing of a page is visible, and the
@@ -441,6 +520,23 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertSame([
             ['agentType' => 'backup', 'agentIndex' => '2'],
         ], $relay->readyCalls);
+    }
+
+    /**
+     * Writes the circle photograph the way the freeze does, between the database swap and the window.
+     *
+     * The circle names one person more than it found online, so the photograph is written even
+     * when it came out empty - an installation that named nobody writes no photograph at all.
+     *
+     * @param list<string> $sessionTokenHashes Session token hashes of the named people found online
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the test did not register the daemon truth source
+     */
+    private function photographCircle(array $sessionTokenHashes): void
+    {
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitCircle(
+            new VerifierCircleSnapshot(count($sessionTokenHashes) + 1, $sessionTokenHashes),
+        );
     }
 
     /**

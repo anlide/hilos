@@ -535,8 +535,8 @@ the freeze (`enterActivating()`) and closing back into it (`reenterActive()`)
 spare nobody: there is no application to keep the operator in, so its tabs go to
 the same stub as everyone's. The verification window is the one caller that
 excludes, and it excludes in order to say the opposite: `enterVerifying()`
-broadcasts the stub to everyone still outside, then addresses the initiator's
-session on its own (see below). `announcePassIssued()` repeats that exclusion for
+broadcasts the stub to everyone still outside, and `finishVerifying()` then
+addresses the initiator's session on its own (see below). `announcePassIssued()` repeats that exclusion for
 the same reason — its frame says `active`, and reaching the operator with it
 would put them back on the stub in the one phase they are inside the application.
 
@@ -549,30 +549,47 @@ of the admitted session a frame of its own, over the `WS_SESSION` delivery built
 for the initiator in HIL-655: `active: false` with `acceptsPass: true`. The
 second bit is load-bearing — the client calls the mode over only when both are
 false, and a frame without it would reload the tab out of the window instead of
-into it.
+into it. The same crossing, in `DaemonManager::admitProtectedModeSession()`, then
+has the session's open pages answered again (see below, HIL-912).
 
-**The operator is carried back in the same way, and by the same delivery
-(HIL-718).** `enterVerifying()` follows its broadcast with a frame addressed to
-the initiator's session: `active: false` with `acceptsPass: true`, `passIssued`
-false because the window opens before anything is minted. Two things about this
-one in particular. It is a second frame rather than the broadcast sent without
-its exclusion, because a personal frame racing the general one would arrive in
-either order, and losing that race would leave the operator on the stub in a
-system that is running again. And when the freeze recognized no session — a CLI
-restore, or a browser whose session the agent could not read — the frame is not
-sent at all, there being nothing to address it to.
+**The operator and the circle are carried back in the same way, and by the same
+delivery (HIL-718, HIL-912).** Once the roster is back, `finishVerifying()` sends a
+frame addressed to the initiator's session and to every session of the circle
+photographed at the freeze: `active: false` with `acceptsPass: true`, `passIssued`
+read off the row because a pass can be minted while the roster comes back. The
+set is keyed by the hash, so an operator who is a member of their own circle is
+told once, and each session is tried alone, so one failure does not cost the
+others their window. Two things about this frame in particular. It is a second
+frame rather than the broadcast sent without its exclusion, because a personal
+frame racing the general one would arrive in either order, and losing that race
+would leave the operator on the stub in a system that is running again. The
+circle is not excluded from that broadcast at all: it went out with the phase,
+before the roster, so the personal frame lands after it and a circle tab holds
+the stub only for the gap between the two. And when the freeze recognized no
+session and photographed no circle — a CLI restore, or a browser whose session
+the agent could not read — no frame is sent at all, there being nothing to
+address it to.
 
 **Leaving the stub is not the whole way back, so the pages are answered again
-(HIL-911).** Those tabs come out onto the pages they already had, answered while the
-phase was still inactive — and the backup page built its reopen block from that phase,
+(HIL-911, HIL-912).** Those tabs come out onto the pages they already had, answered while
+the phase was still inactive — and the backup page built its reopen block from that phase,
 so the banner would tell the operator to reopen the system from a page offering nothing
-to press. `enterVerifying()` therefore ends by asking
-`ProtectedModeClientNotifier::reassessPagesOfSession()` to re-decide every open page of
-the initiator's session: the ordinary re-decision of an open page, by its session
-criterion ([page-access-control.md](page-access-control.md)), answered with a whole
-`page_response` the client ingests in place. It runs after the agents are resumed,
-because a page is answered by the agent serving it, and it is skipped exactly when the
-session frame is — no session, nothing to answer.
+to press. Every browser the window lets in therefore has its personal frame followed by
+`ProtectedModeClientNotifier::reassessPagesOfSession()`, which re-decides every open page
+of that session: the operator and the circle from `finishVerifying()`, a pass holder on
+the crossing in `admitProtectedModeSession()`. It is the ordinary re-decision of an open
+page, by its session criterion ([page-access-control.md](page-access-control.md)),
+answered with a whole `page_response` the client ingests in place. It runs after the
+agents are resumed, because a page is answered by the agent serving it, and it is skipped
+exactly when the session frame is — no session, nothing to answer.
+
+The re-decision reaches only a page the worker holds a subscription for, and a tab
+loaded UNDER the freeze holds none: the client refuses every outbound frame while the
+mode holds it, the page subscribe included. That half is the client's — the tab sends
+the subscribe it could not send when the personal frame says the mode no longer holds
+it, and the page is answered like any subscribe
+([core-and-connection.md](../frontend/core-and-connection.md)). A page the server
+already holds is left to the server, so no tab is answered twice.
 
 **On the way out the frame goes to everybody, the initiator included.**
 `DaemonProtectedModeExecutor::enterInactive()` passes no exclusion at all, and

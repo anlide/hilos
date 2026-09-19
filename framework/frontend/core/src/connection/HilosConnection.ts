@@ -637,6 +637,9 @@ export class HilosConnection {
    * not be the thing that wakes the system it is apologizing for. The keepalive
    * ping is not affected: the daemon answers it in the socket layer without
    * involving an agent, and a connection that stops pinging simply dies.
+   * A sender refused this way sends when the mode stops holding the connection
+   * (`protectedMode` with `active` false), as the page subscription does for its
+   * page_subscribe.
    *
    * @param text The frame payload, already serialized.
    */
