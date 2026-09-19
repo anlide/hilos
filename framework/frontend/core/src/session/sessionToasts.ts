@@ -13,7 +13,11 @@
 // reconnect, a second tab and an ordinary removal one and the same sentence.
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
-import { subscribeSignal, type Unsubscribe } from '../state/signal.js'
+import {
+  type ReadonlySignal,
+  subscribeSignal,
+  type Unsubscribe,
+} from '../state/signal.js'
 import {
   type HilosSessionToast,
   type HilosToastStore,
@@ -171,4 +175,43 @@ export function bindSessionToasts(
       stop()
     }
   }
+}
+
+/**
+ * Empty the toast stack the moment the session is left with nobody behind it
+ * (HIL-916).
+ *
+ * A toast answers somebody, and that somebody has left: the cards on screen, the
+ * waiting errors, the missed notices and both numbers of the service line go at
+ * once, through the store's own `clear()`. The server drops the session's cards
+ * at the same moment and says so with the empty list; the two frames arrive in
+ * either order and both end in an empty corner.
+ *
+ * The trigger is the fact, not the button. Every road that loses the person —
+ * the shell sign-out, the session expiring, an account merge, a password reset
+ * from another device — ends in a handshake answer without a current user, and
+ * a sign-out that was REFUSED never produces one, so its refusal stays on the
+ * stack by construction.
+ *
+ * A sign-in is not an edge here: the guest's own notices are read by the very
+ * person who has just signed in, and the rotated session is owed nothing — its
+ * handshake frame says so. The watch fires on a change only, never on
+ * subscription, so a guest's first handshake, a reconnect of the same person and
+ * an impersonation (one person to another, never through nobody) clear nothing.
+ * A notice arriving after the clear is shown as usual: the clear is a moment,
+ * not a mode.
+ *
+ * @param store The toast store every tab of the session draws.
+ * @param currentUserId The session's current user, `null` for nobody.
+ * @returns Stops the watch.
+ */
+export function clearToastsOnSignOut(
+  store: HilosToastStore,
+  currentUserId: ReadonlySignal<number | null>,
+): Unsubscribe {
+  return subscribeSignal(currentUserId, (userId) => {
+    if (userId === null) {
+      store.clear()
+    }
+  })
 }

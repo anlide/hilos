@@ -611,4 +611,119 @@ describe('HilosToastHost', () => {
     expect(byId(container, 'hilos-toast-success')).toBeNull()
     expect(store.toasts.get()).toEqual([])
   })
+
+  // The holds follow the cards (HIL-916): taken by the engine's mouseover, given
+  // back when a card that was on screen leaves, never re-read from :hover.
+  describe('holds', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+      vi.useRealTimers()
+    })
+
+    /**
+     * Push a notice after the stack went still and run its whole lifetime out.
+     *
+     * @param store The stack under test.
+     */
+    function pushAndWaitItOut(store: HilosToastStore): void {
+      act(() => {
+        store.push('Saved', { severity: 'success' })
+      })
+      act(() => {
+        vi.advanceTimersByTime(20_000)
+      })
+    }
+
+    it('does not take the hold back after the only card closes under a resting cursor', () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const { container } = render(<HilosToastHost store={store} />)
+      const stack = byId(container, 'hilos-toasts') as HTMLElement
+      // The stale read of P-217: right after the patch that removed the last
+      // card, :hover still answers with the state from before it.
+      vi.spyOn(stack, 'matches').mockReturnValue(true)
+
+      fireEvent.mouseOver(stack)
+      fireEvent.click(byId(container, 'hilos-toast-close') as HTMLElement)
+      pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+
+    it('gives back the cursor hold when the stack is cleared under a resting cursor', () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const { container } = render(<HilosToastHost store={store} />)
+
+      fireEvent.mouseOver(byId(container, 'hilos-toasts') as HTMLElement)
+      act(() => {
+        store.clear()
+      })
+      pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+
+    it('gives back the cursor hold when the server takes the card under the cursor away', () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.syncSession([sessionToast()])
+      const { container } = render(<HilosToastHost store={store} />)
+      expect(store.toasts.get()[0].measured).toBe(true)
+
+      fireEvent.mouseOver(byId(container, 'hilos-toasts') as HTMLElement)
+      act(() => {
+        store.syncSession([])
+      })
+      pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+
+    it('keeps the cursor hold when a notice that never showed goes to the missed list', () => {
+      vi.useFakeTimers()
+      // Two cards fill a third of jsdom's 768-pixel window; the third misses.
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, 0, 100, 100),
+      )
+      const store = createHilosToastStore()
+      store.push('One', { severity: 'info' })
+      store.push('Two', { severity: 'info' })
+      const { container } = render(<HilosToastHost store={store} />)
+
+      fireEvent.mouseOver(byId(container, 'hilos-toasts') as HTMLElement)
+      act(() => {
+        store.push('Three', { severity: 'info' })
+      })
+      expect(store.overflow.get().missed).toBe(1)
+      act(() => {
+        vi.advanceTimersByTime(20_000)
+      })
+
+      expect(store.toasts.get().map((toast) => toast.message)).toEqual([
+        'One',
+        'Two',
+      ])
+    })
+
+    it('gives back the focus hold when the stack is cleared under keyboard focus', () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const { container } = render(<HilosToastHost store={store} />)
+
+      act(() => {
+        byId(container, 'hilos-toast-close')?.focus()
+      })
+      expect(store.reading.get()).toBe(true)
+      act(() => {
+        store.clear()
+      })
+      pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+  })
 })

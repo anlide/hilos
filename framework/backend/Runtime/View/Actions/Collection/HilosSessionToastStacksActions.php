@@ -19,12 +19,14 @@ use Hilos\Runtime\View\Item\HilosSessionToastStack;
 /**
  * Write API for the session toast stacks, and the home of the removal rule (HIL-768).
  *
- * Four of the five methods are a tab or a sender speaking - a card is raised, closed, reported
+ * Four of the six methods are a tab or a sender speaking - a card is raised, closed, reported
  * burned down, or the stack is being read here. The fifth, {@see self::settle()}, is the only
  * one that DECIDES, and it is deliberately separate from all four: a card goes away when a
  * countdown somewhere has finished AND nobody is reading, and neither half of that is known to
  * whichever tab just spoke. Keeping the judgement in one method is what stops the three
- * entrances from each growing their own slightly different version of it.
+ * entrances from each growing their own slightly different version of it. The sixth,
+ * {@see self::forget()}, is not a tab speaking at all but the session ending: its person has
+ * left, and the whole stack goes with them (HIL-916).
  *
  * Every method that returns a bool answers ONE question - did the list of cards the session is
  * shown change? - because that is exactly what the caller does with it: the stack travels to
@@ -296,6 +298,39 @@ final class HilosSessionToastStacksActions extends RtActions
         }
 
         $this->writeRemaining($state, $kept);
+
+        return true;
+    }
+
+    /**
+     * Takes a session's whole stack away because the session has lost its person (HIL-916).
+     *
+     * Everything on the stack was addressed to that person, and nobody who uses the browser
+     * after them is owed any of it. A sign-out keeps the session and its token, so without
+     * this the stack would outlive the person and be handed to the next frame of the same
+     * browser - a reconnect, a tab opened later.
+     *
+     * A row only exists while it holds cards, so a row taken away always changed the list.
+     *
+     * @param string $sessionTokenHash Hash of the session cookie token
+     * @return bool Whether the session's list of cards changed
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever the row's read of the written fields raises
+     */
+    public function forget(string $sessionTokenHash): bool
+    {
+        $this->ensureCanWrite();
+
+        $state = $this->stateCollection->get($sessionTokenHash);
+        if ($state === null) {
+            return false;
+        }
+
+        $this->removeStateFromCollection($sessionTokenHash);
 
         return true;
     }

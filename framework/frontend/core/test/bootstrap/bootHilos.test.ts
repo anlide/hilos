@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { bootHilos } from '../../src/bootstrap/bootHilos.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { hilosToasts } from '../../src/state/toasts.js'
 import {
   type ConnectionState,
   type HilosConnection,
@@ -81,6 +82,11 @@ function boot(connection: ReturnType<typeof fakeConnection>) {
 }
 
 describe('bootHilos', () => {
+  afterEach(() => {
+    // The stack is the shared singleton every boot binds to.
+    hilosToasts.clear()
+  })
+
   it('opens the connection and subscribes the located page', () => {
     const connection = fakeConnection()
     const { hilosRouter } = boot(connection)
@@ -112,6 +118,21 @@ describe('bootHilos', () => {
       | { type: string; id: number }
       | undefined
     expect(ref?.type).toBe('user')
+  })
+
+  it('empties the toast stack when the handshake says the session has nobody', () => {
+    const connection = fakeConnection()
+    boot(connection)
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+    })
+    hilosToasts.push('saved')
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: null },
+    })
+
+    expect(hilosToasts.toasts.get()).toEqual([])
   })
 
   it('resolves the current title from the project titles and app name', () => {

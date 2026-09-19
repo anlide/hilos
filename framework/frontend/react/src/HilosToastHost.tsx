@@ -22,7 +22,7 @@
 // hilos-styles.scss (styling-rules.md).
 import { useEffect, useRef, useState } from 'react'
 import type { FocusEvent, MouseEvent } from 'react'
-import { hilosToasts } from '@hilos/core'
+import { hilosToasts, subscribeSignal } from '@hilos/core'
 import type {
   HilosToast,
   HilosToastHoldReason,
@@ -141,6 +141,10 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
   const overflow = useSignal(target.overflow)
   const viewer = useRef<HilosToastViewer | null>(null)
   const cards = useRef(new Map<number, HTMLDivElement>())
+  // The cards that were on screen at the last pass: measured, so out of the
+  // measuring layer and possibly under the pointer. One of them leaving is what
+  // gives the cursor's hold back (see the held ref).
+  const visible = useRef(new Set<number>())
   const stack = useRef<HTMLDivElement | null>(null)
   // The card the "N missed" control last put up, until the next pass that
   // reports heights: that pass is where the card is really on screen, and where
@@ -149,13 +153,20 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
   // The cursor, the keyboard focus and a tab nobody is looking at are three
   // independent holds on the countdown: the host only reports them, the store
   // counts them. The ref is the source of truth for the "at most one hold of
-  // each kind" rule — a toast that closes under the pointer takes the release
-  // event with it (Chrome and WebKit fire no mouseleave and no focusout for an
-  // element that leaves the DOM, and they never make it up afterwards), so both
-  // holds are given back by hand in dismiss and the cursor's one is re-taken
-  // from onMouseOver rather than onMouseEnter — mouseover also fires for the
-  // toast that slides under a cursor standing still, which is exactly what
-  // happens to the notice below the one just closed. The state next to it is
+  // each kind" rule — a card that leaves the stack takes its release event with
+  // it (Chrome and WebKit fire no mouseleave and no focusout for an element that
+  // leaves the DOM, and they never make it up afterwards). So the cursor's hold
+  // is taken only by onMouseOver — mouseover also fires for the card that
+  // arrives or slides under a cursor standing still — and given back by
+  // onMouseLeave or whenever a card that was on screen leaves the stack, by any
+  // road: the close cross, the server's frame, an expiry, a clear. Whatever is
+  // still under the pointer takes it again from the next mouseover. The focus
+  // hold is given back by focusout or, after a pass, when focus is no longer
+  // inside the stack — a tree fact, not a style. Nothing re-reads :hover after
+  // a render: that read answers with the state from before the patch, and a
+  // hold it took was never given back (HIL-916). Accepted gap: a pointer resting
+  // on a card that does not move while another leaves by the keyboard or the
+  // server — the countdown runs until the mouse moves. The state next to it is
   // what the life bar draws its freeze from.
   const held = useRef({ cursor: false, focus: false, tab: false })
   const [frozen, setFrozen] = useState(false)
@@ -223,16 +234,37 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
     }
   }, [target])
 
+  // The cursor's hold goes back the moment a card that was on screen leaves
+  // the stack. Synchronously, as the store publishes the new list and before the
+  // redraw, so the mouseover for the card sliding into place always lands after
+  // this release and takes the hold again; a release in the pass below would run
+  // after paint and could drop a hold the pointer is really on. The ids that
+  // left are forgotten at once, so a second publish before the redraw does not
+  // release twice.
+  useEffect(
+    () =>
+      subscribeSignal(target.toasts, (list) => {
+        const present = new Set(list.map((toast) => toast.id))
+        let left = false
+        for (const id of visible.current) {
+          if (!present.has(id)) {
+            visible.current.delete(id)
+            left = true
+          }
+        }
+        if (left) {
+          setHold('cursor', false)
+        }
+      }),
+    [target],
+  )
+
   // Measured after the browser has laid the cards out, and again after every
   // render: a card is only really on screen once the store knows how tall it is,
-  // and every report after the first only updates the number. The cursor is
-  // re-checked in the same place, and one way only: it takes the hold if the
-  // stack turns out to be under the pointer and never gives it back. Chromium
-  // does not re-check what is under the cursor when an element is ADDED, so a
-  // stack that grew under a still pointer would otherwise never learn of it;
-  // removal both engines re-check honestly, and releasing here instead would
-  // need an environment that answers `:hover`, which jsdom is not. The first
-  // call of this effect is the mount, so there is no separate branch for it.
+  // and every report after the first only updates the number. The same pass
+  // gives the focus hold back when focus has left the stack without a focusout
+  // and remembers which cards are on screen. The first call of this effect is
+  // the mount, so there is no separate branch for it.
   useEffect(() => {
     const attached = viewer.current
     if (attached === null) {
@@ -256,9 +288,15 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
         .querySelector<HTMLElement>('[data-id="hilos-toast-close"]')
         ?.focus()
     }
-    if (stack.current !== null && stack.current.matches(':hover')) {
-      setHold('cursor', true)
+    if (
+      held.current.focus &&
+      !(stack.current?.contains(document.activeElement) ?? false)
+    ) {
+      setHold('focus', false)
     }
+    visible.current = new Set(
+      toasts.filter((toast) => toast.measured).map((toast) => toast.id),
+    )
   })
 
   const keep =
@@ -288,8 +326,6 @@ export function HilosToastHost({ store, corner }: HilosToastHostProps) {
     returned.current = target.showMissed()
   }
   const dismiss = (id: number): void => {
-    setHold('cursor', false)
-    setHold('focus', false)
     target.dismiss(id)
   }
 

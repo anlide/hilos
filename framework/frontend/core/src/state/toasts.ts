@@ -865,7 +865,8 @@ export function createHilosToastStore(): HilosToastStore {
       // is still holding its own half of the count, and zeroing them here would
       // make that viewer's next release drive the total below zero — after which
       // the countdown would run only while the cursor rests on the stack. A hold
-      // comes back from its owner, or from detach.
+      // comes back from its owner, or from detach: the hosts give theirs back
+      // when the cards they stood on leave the stack (HIL-916).
       toasts.set([])
       publishOverflow()
     },

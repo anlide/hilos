@@ -144,6 +144,25 @@ final class SessionToastStackRuleTest extends TestCase
         $this->assertNull($stacks[self::SESSION_HASH]);
     }
 
+    public function testForgettingAStackTakesItsRowAway(): void
+    {
+        $stacks = $this->stacks();
+        $this->raise('Backup "2026-09-03" is ready.');
+        $stacks->actions->setReading(self::SESSION_HASH, self::TAB_A, true);
+
+        $changed = $stacks->actions->forget(self::SESSION_HASH);
+
+        // The session has lost its person (HIL-916): nothing on the stack has an addressee any
+        // more, so a cursor resting on it holds nothing back either.
+        $this->assertTrue($changed);
+        $this->assertNull($stacks[self::SESSION_HASH]);
+    }
+
+    public function testForgettingASessionThatWasShownNothingChangesNothing(): void
+    {
+        $this->assertFalse($this->stacks()->actions->forget(self::SESSION_HASH));
+    }
+
     public function testClosingOneOfTwoCardsLeavesTheOtherAndTheRow(): void
     {
         $stacks = $this->stacks();

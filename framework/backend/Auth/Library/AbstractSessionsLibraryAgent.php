@@ -1737,6 +1737,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * marker left behind would let whoever uses that browser next press Stop into the
      * administrator's account.
      *
+     * It is also where the session's toast stack is taken down (HIL-916). A sign-out keeps
+     * the token, so the stack would otherwise be handed to whoever holds the browser next;
+     * every road that loses the person passes here, the erase of {@see eraseBrowser()} too.
+     * A session that is already anonymous returns above and keeps its stack.
+     *
      * @param string $sessionToken Session cookie token to revert to anonymous
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
@@ -1756,6 +1761,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $impersonatorId = $session->impersonatorUserId;
         $vacatedUserId = $session->userId;
         $session->actions->unbindUser();
+        $this->forgetSessionToasts($sessionToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
                 'event' => 'impersonate_stop',
@@ -2647,6 +2653,26 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
         if ($stacks->actions->dismiss($sessionTokenHash, $key)) {
+            $this->publishSessionToasts($sessionTokenHash);
+        }
+    }
+
+    /**
+     * Takes a session's whole stack away because the session has lost its person (HIL-916).
+     *
+     * @param string $sessionToken Session cookie token of the session reverted to anonymous
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the toast frame cannot be named or queued
+     */
+    private function forgetSessionToasts(string $sessionToken): void
+    {
+        $stacks = Hilos::$rt?->hilosSessionToastStacks;
+        if ($stacks === null) {
+            return;
+        }
+
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($sessionToken);
+        if ($stacks->actions->forget($sessionTokenHash)) {
             $this->publishSessionToasts($sessionTokenHash);
         }
     }

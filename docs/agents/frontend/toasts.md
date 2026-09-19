@@ -198,6 +198,16 @@ A project may render its own stack by creating an independent store
   Releasing one hold while another is still held resumes nothing; on release
   the countdown continues from what is left. Walk away to another tab and
   everything is still there when you come back.
+  The cursor hold is taken only by the engine's own `mouseover` — which the
+  engine also sends for a card arriving or sliding under a still pointer — and
+  is given back by `mouseleave` AND whenever a card that was on screen leaves
+  the stack, because a removed node takes its `mouseleave` with it. The focus
+  hold is given back by `focusout` and whenever, after a redraw, focus is no
+  longer inside the stack. Neither is ever re-read from `:hover` after a
+  render: that read is stale by construction and froze the tab for good
+  (HIL-916). One gap is accepted: a pointer resting on a card that does not
+  move while another card leaves by the keyboard or the server — the countdown
+  runs until the mouse moves.
 - **The cap is a third of the window height, not a card count.** Five short
   notices and two long ones occupy different space, and a phone and a monitor
   differ more still — the limit is measured in the unit the problem actually
@@ -264,6 +274,17 @@ A project may render its own stack by creating an independent store
   finger — and **a tab opened later** is shown what the session is still owed,
   with a fresh countdown of its own, because the card has only now come into
   view.
+  **A sign-out empties the stack.** When the session is left with nobody
+  behind it, whatever road led there — the shell sign-out, expiry, an account
+  merge, a password reset from another device — every tab empties its corner
+  (cards, waiting errors, missed notices, both numbers of the service line),
+  and the server drops the session's stack and says so with the empty list:
+  a toast answers somebody, and that somebody has left. The trigger is the
+  person being gone (`clearToastsOnSignOut`, bound by `bootHilos`), not the
+  press of a button, so a refused sign-out keeps its refusal. A sign-in
+  clears nothing — the guest's notices are read by the person who just signed
+  in, and the rotated session is owed nothing — and neither does an
+  impersonation, which keeps the same administrator at the keyboard.
 
 ## Where the stack sits
 
@@ -310,8 +331,10 @@ an error waits indefinitely. See [accessibility.md](accessibility.md).
 - Unit owns the clock, the pause, the cap, the merge and the return of missed
   notices: `core/test/state/toasts.test.ts` covers the store; the host's pause
   events and live-region wiring live in `react/test/HilosToastHost.test.tsx`,
-  and the service line's control is covered in all three hosts. A feature that
-  pushes needs no store test of its own.
+  and the service line's control is covered in all three hosts. The sign-out
+  clear is covered in `core/test/session/sessionToasts.test.ts`, the holds'
+  return in the three hosts' units. A feature that pushes needs no store test
+  of its own.
 - **Not e2e, on purpose.** The lifetime, the pause and the cap are timing, and
   asserting them through a browser would mean a spec that sits still for 20
   seconds to prove a toast is still there — slow, and flaky the moment the box

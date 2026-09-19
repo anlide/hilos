@@ -4,6 +4,7 @@ import {
   HilosConnection,
   type WebSocketLike,
 } from '../../src/connection/HilosConnection.js'
+import { createSignal } from '../../src/state/signal.js'
 import { createHilosToastStore } from '../../src/state/toasts.js'
 import type {
   HilosSessionToast,
@@ -11,6 +12,7 @@ import type {
 } from '../../src/state/toasts.js'
 import {
   bindSessionToasts,
+  clearToastsOnSignOut,
   SIGNAL_SESSION_TOASTS,
   TOAST_ACTION_DISMISS,
   TOAST_ACTION_EXPIRED,
@@ -286,5 +288,73 @@ describe('session toast binder', () => {
     viewer.hold('tab')
 
     expect(actions()).toEqual([])
+  })
+})
+
+describe('sign-out clear', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function signedIn(): {
+    store: HilosToastStore
+    userId: ReturnType<typeof createSignal<number | null>>
+  } {
+    const store = createHilosToastStore()
+    const userId = createSignal<number | null>(7)
+    clearToastsOnSignOut(store, userId)
+
+    return { store, userId }
+  }
+
+  it('empties the stack when the session is left with nobody', () => {
+    const { store, userId } = signedIn()
+    store.push('saved')
+    store.syncSession([card({ key: 'k1' })])
+    store.push('third')
+    store.push('fourth')
+    store.push('fifth')
+    expect(store.overflow.get().missed).toBe(1)
+
+    userId.set(null)
+
+    expect(store.toasts.get()).toEqual([])
+    expect(store.overflow.get()).toEqual({ waiting: 0, missed: 0 })
+  })
+
+  it("empties nothing on a guest's sign-in", () => {
+    const store = createHilosToastStore()
+    const userId = createSignal<number | null>(null)
+    clearToastsOnSignOut(store, userId)
+    store.push('saved')
+
+    userId.set(7)
+
+    expect(store.toasts.get()).toHaveLength(1)
+  })
+
+  it('empties nothing when the person changes without leaving', () => {
+    const { store, userId } = signedIn()
+    store.push('saved')
+
+    userId.set(9)
+
+    expect(store.toasts.get()).toHaveLength(1)
+  })
+
+  it('keeps a notice that arrives after the sign-out', () => {
+    const { store, userId } = signedIn()
+    store.push('saved')
+
+    userId.set(null)
+    store.push('signed out')
+
+    expect(store.toasts.get().map((toast) => toast.message)).toEqual([
+      'signed out',
+    ])
   })
 })

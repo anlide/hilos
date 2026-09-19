@@ -28,7 +28,7 @@ import type {
   HilosToastStore,
   HilosToastViewer,
 } from '@hilos/core'
-import { hilosToasts } from '@hilos/core'
+import { hilosToasts, subscribeSignal } from '@hilos/core'
 
 import HilosLink from './HilosLink.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
@@ -167,6 +167,11 @@ function occupiedHeight(element: HTMLElement): number {
 // arrived before the first frame from burning down behind the splash screen.
 let viewer: HilosToastViewer | null = null
 const cards = new Map<number, HTMLElement>()
+// The cards that were on screen at the last render: measured, so out of the
+// measuring layer and possibly under the pointer. One of them leaving is what
+// gives the cursor's hold back (see holdOnCursor).
+let visible = new Set<number>()
+let stopFollowing: (() => void) | null = null
 const stack = ref<HTMLElement | null>(null)
 
 // The three holds this host owns, and whether it is holding each right now: the
@@ -228,6 +233,36 @@ function reportHeights(): void {
     viewer.reportHeight(id, occupiedHeight(element))
   }
   followReturned()
+  if (held.focus && !(stack.value?.contains(document.activeElement) ?? false)) {
+    releaseFocusHold()
+  }
+  visible = new Set(
+    toasts.value.filter((toast) => toast.measured).map((toast) => toast.id),
+  )
+}
+
+/**
+ * Give the cursor's hold back when a card that was on screen has left the stack.
+ *
+ * Runs as the store publishes the new list, before the redraw, so the mouseover
+ * the engine sends for the card sliding into place always lands after this
+ * release and takes the hold again. The ids that left are forgotten at once, so
+ * a second publish before the redraw does not release twice.
+ *
+ * @param list The stack the store has just published.
+ */
+function followLeaving(list: readonly HilosToast[]): void {
+  const present = new Set(list.map((toast) => toast.id))
+  let left = false
+  for (const id of visible) {
+    if (!present.has(id)) {
+      visible.delete(id)
+      left = true
+    }
+  }
+  if (left) {
+    releaseCursorHold()
+  }
 }
 
 /**
@@ -251,53 +286,45 @@ function followReturned(): void {
   card.querySelector<HTMLElement>('[data-id="hilos-toast-close"]')?.focus()
 }
 
-/**
- * Take the cursor's hold if the stack turns out to be under the pointer.
- *
- * One-way on purpose: it only ever takes the hold, never gives it back. The
- * host also releases that hold by hand when a card is dismissed (a card closing
- * under the pointer takes its own mouseleave with it), so a stack still under
- * the pointer has to get the hold back without waiting for the reader to move
- * the mouse. Releasing here instead would need an environment that answers
- * `:hover`, which jsdom is not, and removal re-checks honestly anyway.
- */
-function holdIfUnderCursor(): void {
-  if (stack.value !== null && stack.value.matches(':hover')) {
-    holdOnCursor()
-  }
-}
-
 onMounted(() => {
   viewer = store.attach()
   viewer.setViewportHeight(window.innerHeight)
   onVisibility()
   window.addEventListener('resize', onResize)
   document.addEventListener('visibilitychange', onVisibility)
+  stopFollowing = subscribeSignal(store.toasts, followLeaving)
   reportHeights()
-  holdIfUnderCursor()
 })
 
 onUpdated(() => {
   reportHeights()
-  holdIfUnderCursor()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
   document.removeEventListener('visibilitychange', onVisibility)
+  stopFollowing?.()
+  stopFollowing = null
   // detach gives back whatever holds this host was still holding.
   viewer?.detach()
   viewer = null
 })
 
 // The host owns at most one hold of each kind and knows whether it is holding it,
-// because a toast that closes under the pointer takes the release event with it:
-// Chrome and WebKit fire no mouseleave and no focusout for an element that leaves
-// the DOM, and they never make it up afterwards. So both holds are given back by
-// hand in dismiss(), and the cursor's one is re-taken from mouseover rather than
-// mouseenter — mouseover also fires for the toast that slides under a cursor
-// standing still, which is exactly what happens to the notice below the one just
-// closed.
+// because a card that leaves the stack takes its release event with it: Chrome
+// and WebKit fire no mouseleave and no focusout for an element that leaves the
+// DOM, and they never make it up afterwards. So the cursor's hold is taken only by
+// the engine's mouseover — which also fires for the card that arrives or slides
+// under a cursor standing still — and given back by mouseleave or whenever a card
+// that was on screen leaves the stack, by any road: the close cross, the server's
+// frame, an expiry, a clear (followLeaving). Whatever is still under the pointer
+// takes it again from the next mouseover. The focus hold is given back by
+// focusout or, after a redraw, when focus is no longer inside the stack — a tree
+// fact, not a style. Nothing re-reads :hover after a render: that read answers
+// with the state from before the patch, and a hold it took was never given back
+// (HIL-916). Accepted gap: a pointer resting on a card that does not move while
+// another leaves by the keyboard or the server — the countdown runs until the
+// mouse moves.
 function holdOnCursor(): void {
   if (viewer !== null && !held.cursor) {
     held.cursor = true
@@ -333,8 +360,6 @@ function releaseOnBlur(event: FocusEvent): void {
 }
 
 function dismiss(id: number): void {
-  releaseCursorHold()
-  releaseFocusHold()
   store.dismiss(id)
 }
 

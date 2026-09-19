@@ -25,7 +25,10 @@ import {
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import { bindCodeSendProgress } from '../auth/authSendProgress.js'
-import { bindSessionToasts } from '../session/sessionToasts.js'
+import {
+  bindSessionToasts,
+  clearToastsOnSignOut,
+} from '../session/sessionToasts.js'
 import { hilosToasts } from '../state/toasts.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
@@ -88,6 +91,12 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // (HIL-768), and a project without them is never sent a frame. One behavior
   // rather than a flag nobody would ever want off.
   bindSessionToasts(config.connection, hilosToasts)
+  // Bound beside it and for the same reason (HIL-916): a session left with
+  // nobody behind it owes nobody its toasts. One behavior, no option.
+  clearToastsOnSignOut(
+    hilosToasts,
+    sessionUserId(config.scopes, config.session),
+  )
   // Bound here for the same reason and one sharper (HIL-826): the send-progress
   // line is published on every HANDSHAKE, and on a gated page the auth surface
   // only mounts once that handshake has been answered. A surface that listened

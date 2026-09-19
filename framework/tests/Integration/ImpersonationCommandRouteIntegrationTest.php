@@ -24,6 +24,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\HilosException;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
@@ -126,6 +127,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
@@ -582,6 +584,9 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         // agent-less because this case drives the library as a plain object, outside the
         // agent execution context a worker would have entered.
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        // A sign-out takes the session's toast stack down with the person (HIL-916), which is
+        // a runtime write too, and the library claims that collection at start the same way.
+        RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
     }
 
     /**

@@ -1,6 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHilosToastStore, createSignal } from '@hilos/core'
 import type {
   HilosRouter,
@@ -368,5 +368,137 @@ describe('HilosToastHost', () => {
       false,
     )
     expect(wrapper.find('[data-id="hilos-toasts"]').text()).toBe('Saved')
+  })
+
+  // The holds follow the cards (HIL-916): taken by the engine's mouseover, given
+  // back when a card that was on screen leaves, never re-read from :hover.
+  describe('holds', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+      vi.useRealTimers()
+    })
+
+    /**
+     * Mount a host into the document, so focus can really move into it.
+     *
+     * @param store The stack to render.
+     */
+    function attached(store: HilosToastStore): VueWrapper {
+      const wrapper = mount(HilosToastHost, {
+        props: { store },
+        attachTo: document.body,
+        global: { provide: { [hilosRouterKey as symbol]: router([]) } },
+      })
+      mounted.push(wrapper)
+
+      return wrapper
+    }
+
+    /**
+     * Push a notice after the stack went still, let the host measure it, and
+     * run its whole lifetime out.
+     *
+     * @param store The stack under test.
+     */
+    async function pushAndWaitItOut(store: HilosToastStore): Promise<void> {
+      store.push('Saved', { severity: 'success' })
+      await nextTick()
+      await nextTick()
+      vi.advanceTimersByTime(20_000)
+    }
+
+    it('does not take the hold back after the only card closes under a resting cursor', async () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const wrapper = mountHost(store)
+      await nextTick()
+      const stack = wrapper.find('[data-id="hilos-toasts"]')
+      // Found before the stub: the wrapper's find asks the root's matches too.
+      const close = wrapper.find('[data-id="hilos-toast-close"]')
+      // The stale read of P-217: right after the patch that removed the last
+      // card, :hover still answers with the state from before it.
+      vi.spyOn(stack.element as HTMLElement, 'matches').mockReturnValue(true)
+
+      await stack.trigger('mouseover')
+      await close.trigger('click')
+      await nextTick()
+      await pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+
+    it('gives back the cursor hold when the stack is cleared under a resting cursor', async () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const wrapper = mountHost(store)
+      await nextTick()
+
+      await wrapper.find('[data-id="hilos-toasts"]').trigger('mouseover')
+      store.clear()
+      await nextTick()
+      await pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+
+    it('gives back the cursor hold when the server takes the card under the cursor away', async () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.syncSession([sessionToast()])
+      const wrapper = mountHost(store)
+      await nextTick()
+      expect(store.toasts.get()[0].measured).toBe(true)
+
+      await wrapper.find('[data-id="hilos-toasts"]').trigger('mouseover')
+      store.syncSession([])
+      await nextTick()
+      await pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
+
+    it('keeps the cursor hold when a notice that never showed goes to the missed list', async () => {
+      vi.useFakeTimers()
+      // Two cards fill a third of jsdom's 768-pixel window; the third misses.
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, 0, 100, 100),
+      )
+      const store = createHilosToastStore()
+      store.push('One', { severity: 'info' })
+      store.push('Two', { severity: 'info' })
+      const wrapper = mountHost(store)
+      await nextTick()
+
+      await wrapper.find('[data-id="hilos-toasts"]').trigger('mouseover')
+      store.push('Three', { severity: 'info' })
+      await nextTick()
+      await nextTick()
+      expect(store.overflow.get().missed).toBe(1)
+      vi.advanceTimersByTime(20_000)
+
+      expect(store.toasts.get().map((toast) => toast.message)).toEqual([
+        'One',
+        'Two',
+      ])
+    })
+
+    it('gives back the focus hold when the stack is cleared under keyboard focus', async () => {
+      vi.useFakeTimers()
+      const store = createHilosToastStore()
+      store.push('Backup created.', { severity: 'success' })
+      const wrapper = attached(store)
+      await nextTick()
+
+      const close = wrapper.find('[data-id="hilos-toast-close"]')
+      ;(close.element as HTMLElement).focus()
+      expect(store.reading.get()).toBe(true)
+      store.clear()
+      await nextTick()
+      await pushAndWaitItOut(store)
+
+      expect(store.toasts.get()).toEqual([])
+    })
   })
 })

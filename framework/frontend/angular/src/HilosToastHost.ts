@@ -335,17 +335,30 @@ export class HilosToastHost {
 
   private viewer: HilosToastViewer | null = null
 
+  // The cards that were on screen at the last render: measured, so out of the
+  // measuring layer and possibly under the pointer. One of them leaving is what
+  // gives the cursor's hold back (see `held`).
+  private visible = new Set<number>()
+
   // The three holds this host owns, and whether it is holding each right now:
   // the cursor over the stack, the keyboard focus inside it, and a tab nobody is
   // looking at — walk away and everything is still there when you come back. The
   // host owes the store exactly one hold of each kind (mouseover and
-  // visibilitychange both fire more than once), because a toast that closes
-  // under the pointer takes the release event with it: Chrome and WebKit fire no
-  // mouseleave and no focusout for an element that leaves the DOM, and they
-  // never make it up afterwards. So both holds are given back by hand in
-  // dismiss(), and the cursor's one is re-taken from mouseover rather than
-  // mouseenter — mouseover also fires for the toast that slides under a cursor
-  // standing still. They are signals because the life bar draws the freeze from
+  // visibilitychange both fire more than once), because a card that leaves the
+  // stack takes its release event with it: Chrome and WebKit fire no mouseleave
+  // and no focusout for an element that leaves the DOM, and they never make it
+  // up afterwards. So the cursor's hold is taken only by mouseover — which also
+  // fires for the card that arrives or slides under a cursor standing still —
+  // and given back by mouseleave or whenever a card that was on screen leaves
+  // the stack, by any road: the close cross, the server's frame, an expiry, a
+  // clear (followLeaving). Whatever is still under the pointer takes it again
+  // from the next mouseover. The focus hold is given back by focusout or, after
+  // a render, when focus is no longer inside the stack — a tree fact, not a
+  // style. Nothing re-reads :hover after a render: that read answers with the
+  // state from before the patch, and a hold it took was never given back
+  // (HIL-916). Accepted gap: a pointer resting on a card that does not move
+  // while another leaves by the keyboard or the server — the countdown runs
+  // until the mouse moves. They are signals because the life bar draws the freeze from
   // this very counter: the bar cannot drift apart from what the store was told,
   // since both come from here.
   private readonly held = {
@@ -368,6 +381,7 @@ export class HilosToastHost {
       this.overflow.set(store.overflow.get())
       const unsubscribeStack = subscribeSignal(store.toasts, (list) => {
         this.toasts.set(list)
+        this.followLeaving(list)
       })
       const unsubscribeOverflow = subscribeSignal(store.overflow, (counts) => {
         this.overflow.set(counts)
@@ -410,13 +424,9 @@ export class HilosToastHost {
     })
     // Measured after the browser has laid the cards out, and again after every
     // render: a card is only really on screen once the store knows how tall it is,
-    // and every report after the first only updates the number. The cursor is
-    // re-checked in the same place, and one way only: it takes the hold if the
-    // stack turns out to be under the pointer and never gives it back. Chromium
-    // does not re-check what is under the cursor when an element is ADDED, so a
-    // stack that grew under a still pointer would otherwise never learn of it;
-    // removal both engines re-check honestly, and releasing here instead would
-    // need an environment that answers `:hover`.
+    // and every report after the first only updates the number. The same pass
+    // gives the focus hold back when focus has left the stack without a focusout
+    // and remembers which cards are on screen.
     afterRenderEffect(() => {
       const viewer = this.viewer
       const cards = this.cards()
@@ -433,11 +443,14 @@ export class HilosToastHost {
       this.followReturned(cards, stack)
       const container = this.stack()
       if (
-        container !== undefined &&
-        container.nativeElement.matches(':hover')
+        this.held.focus() &&
+        !(container?.nativeElement.contains(document.activeElement) ?? false)
       ) {
-        this.setHold('cursor', true)
+        this.setHold('focus', false)
       }
+      this.visible = new Set(
+        stack.filter((toast) => toast.measured).map((toast) => toast.id),
+      )
     })
   }
 
@@ -523,8 +536,6 @@ export class HilosToastHost {
    * @param id The toast id.
    */
   protected dismiss(id: number): void {
-    this.setHold('cursor', false)
-    this.setHold('focus', false)
     this.store().dismiss(id)
   }
 
@@ -573,6 +584,32 @@ export class HilosToastHost {
   protected releaseOnBlur(event: FocusEvent): void {
     if (!movesWithin(event)) {
       this.setHold('focus', false)
+    }
+  }
+
+  /**
+   * Give the cursor's hold back when a card that was on screen has left the
+   * stack.
+   *
+   * Runs as the store publishes the new list, before the redraw, so the
+   * mouseover the engine sends for the card sliding into place always lands
+   * after this release and takes the hold again. The ids that left are
+   * forgotten at once, so a second publish before the redraw does not release
+   * twice.
+   *
+   * @param list The stack the store has just published.
+   */
+  private followLeaving(list: readonly HilosToast[]): void {
+    const present = new Set(list.map((toast) => toast.id))
+    let left = false
+    for (const id of this.visible) {
+      if (!present.has(id)) {
+        this.visible.delete(id)
+        left = true
+      }
+    }
+    if (left) {
+      this.setHold('cursor', false)
     }
   }
 

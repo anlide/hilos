@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
@@ -22,6 +23,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
@@ -217,6 +219,39 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         $this->assertNull(Hilos::$rt?->hilosSessionToastStacks[$this->sessionHash()]);
     }
 
+    public function testASignOutTakesTheSessionsStackAwayAndTellsBothTabs(): void
+    {
+        $this->signIn();
+        $agent = new SessionToastDeliveryTestAgent();
+        $agent->onSignalAgent(
+            new AgentSignalData(data: $this->raise()),
+            'test',
+            HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
+        );
+        $this->drainSignals();
+
+        $agent->onAgentAction(self::TAB_A, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
+
+        // A sign-out keeps the token (HIL-916): left standing, the stack would be handed to
+        // whoever uses this browser next, on its very next frame.
+        $frame = $this->lastToastFrame();
+        $this->assertNotNull($frame);
+        $this->assertSame($this->sessionHash(), $frame->targetSessionTokenHash);
+        $this->assertSame([], $frame->data->toArray()['toasts'] ?? null);
+        $this->assertNull(Hilos::$rt?->hilosSessionToastStacks[$this->sessionHash()]);
+    }
+
+    public function testASignOutOfASessionShownNothingSendsNoToastFrame(): void
+    {
+        $this->signIn();
+        $agent = new SessionToastDeliveryTestAgent();
+        $this->drainSignals();
+
+        $agent->onAgentAction(self::TAB_A, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
+
+        $this->assertNull($this->lastToastFrame());
+    }
+
     public function testAHandshakeIsAnsweredEvenWhenTheSessionIsOwedNothing(): void
     {
         $agent = new SessionToastDeliveryTestAgent();
@@ -261,6 +296,17 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         $this->assertNull(Hilos::$rt?->hilosSessionToastStacks[$this->sessionHash()]);
         // Nobody is left on the session, so the removal is not announced to anybody either.
         $this->assertNull($this->lastToastFrame());
+    }
+
+    /**
+     * Stores the fixture session as signed in, so a sign-out has a person to take away.
+     *
+     * @throws HilosException On database failure
+     */
+    private function signIn(): void
+    {
+        // The stub has no foreign key to a user table, so any id stands for the person.
+        Hilos::$db->sessions->actions->createAnonymous(self::SESSION_TOKEN)->actions->bindUser(7);
     }
 
     /**

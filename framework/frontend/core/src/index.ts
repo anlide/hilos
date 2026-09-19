@@ -243,6 +243,7 @@ export {
 export { applyServerTime, offsetMs, toLocal } from './session/serverClock.js'
 export {
   bindSessionToasts,
+  clearToastsOnSignOut,
   SIGNAL_SESSION_TOASTS,
   TOAST_ACTION_DISMISS,
   TOAST_ACTION_EXPIRED,
