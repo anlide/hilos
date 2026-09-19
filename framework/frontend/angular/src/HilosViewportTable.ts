@@ -22,7 +22,12 @@
 // choice for the whole application rather than an input of this table
 // (mockups/components/table section 6). Below the md breakpoint a declared table is
 // a list of cards instead, built from the same declared columns and filled by the
-// same marked templates (mockups/components/table section 9). Bootstrap classes only.
+// same marked templates (mockups/components/table section 9). A field that did not
+// fit a column of its own is declared `detail` and waits in a panel under the row:
+// the framework owns the room, the order and the labels, while the page draws every
+// value through `<ng-template hilosTableDetail="<column key>">`, exactly as it draws
+// a cell (mockups/components/table section 4). A card opens into its own panel,
+// inside its own body and off an id base of its own. Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -37,6 +42,8 @@ import {
 } from '@angular/core'
 import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
+  TABLE_DETAIL_COPY,
+  hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
   subscribeSignal,
@@ -56,6 +63,7 @@ import type {
 import { HilosTableBar } from './HilosTableBar.js'
 import { HilosTableCell } from './HilosTableCell.js'
 import type { HilosTableCellContext } from './HilosTableCell.js'
+import { HilosTableDetail } from './HilosTableDetail.js'
 import { HilosTableFooter } from './HilosTableFooter.js'
 import { HilosTableLive } from './HilosTableLive.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
@@ -189,7 +197,7 @@ export interface BulkUntouchedContext {
                   />
                 </th>
               }
-              @for (column of frameColumns(); track column.key) {
+              @for (column of rowColumns(); track column.key) {
                 <th
                   scope="col"
                   [class]="column.headerClass ?? ''"
@@ -280,7 +288,7 @@ export interface BulkUntouchedContext {
                   addressable by column at all. The cell stands even where the page
                   marked no template, or the row comes out narrower than its header
                   (Flow F3). -->
-                  @for (column of frameColumns(); track column.key) {
+                  @for (column of rowColumns(); track column.key) {
                     <td [class]="column.cellClass ?? ''">
                       @if (cellTemplate(column.key); as cell) {
                         <ng-container
@@ -326,6 +334,31 @@ export interface BulkUntouchedContext {
                         <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
                         Will leave
                       </span>
+                    }
+                    <!-- The control comes last and stands at the very edge: the
+                    badge STATES something about the row, while this one is the
+                    only thing in the cell the reader acts on. -->
+                    @if (detailFields().length > 0) {
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary ms-1"
+                        [attr.data-id]="'hilos-table-expand-' + view.rowKey"
+                        [attr.aria-expanded]="view.expanded"
+                        [attr.aria-controls]="detailId(view.rowKey)"
+                        (click)="
+                          controller().expandRow(view.rowKey, !view.expanded)
+                        "
+                      >
+                        <i
+                          class="bi"
+                          [class.bi-chevron-up]="view.expanded"
+                          [class.bi-chevron-down]="!view.expanded"
+                          aria-hidden="true"
+                        ></i>
+                        <span class="visually-hidden">{{
+                          view.expanded ? detailCopy.hide : detailCopy.show
+                        }}</span>
+                      </button>
                     }
                   </td>
                 }
@@ -377,6 +410,47 @@ export interface BulkUntouchedContext {
                       }
                     </td>
                   }
+                </tr>
+              }
+
+              <!-- The panel this row expands into, drawn after the row's own bar:
+              the bar is a continuation of the row it belongs to, and what the
+              reader opened themselves comes after what is happening to the record
+              on its own. A placeholder never says it is expanded, and the second
+              half of the condition keeps the fields from being handed one. -->
+              @if (view.expanded && !view.placeholder) {
+                <tr
+                  [id]="detailId(view.rowKey)"
+                  class="table-active"
+                  [attr.data-id]="'hilos-table-row-detail-' + view.rowKey"
+                >
+                  <td [attr.colspan]="bodyColspan()" class="pt-0">
+                    <dl class="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                      @for (field of detailFields(); track field.key) {
+                        <div class="col">
+                          <dt class="text-body-secondary fw-normal">
+                            {{ field.label }}
+                          </dt>
+                          <dd class="mb-0 text-break">
+                            <!-- A field the page declared but drew nothing into
+                            shows the dash its cells show, rather than an empty
+                            line that would read as "there is no value". -->
+                            @if (detailTemplate(field.key); as detail) {
+                              <ng-container
+                                [ngTemplateOutlet]="detail"
+                                [ngTemplateOutletContext]="{
+                                  $implicit: view.row,
+                                  rowKey: view.rowKey,
+                                }"
+                              />
+                            } @else {
+                              {{ detailCopy.empty }}
+                            }
+                          </dd>
+                        </div>
+                      }
+                    </dl>
+                  </td>
                 </tr>
               }
             }
@@ -501,6 +575,39 @@ export interface BulkUntouchedContext {
                               Will leave
                             </span>
                           }
+                          <!-- The control comes after everything that merely
+                          STATES something about the record, exactly as it does at
+                          the end of a row: it is the one thing in the head the
+                          reader acts on. -->
+                          @if (detailFields().length > 0) {
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-outline-secondary"
+                              [attr.data-id]="
+                                'hilos-table-expand-' + view.rowKey
+                              "
+                              [attr.aria-expanded]="view.expanded"
+                              [attr.aria-controls]="cardDetailId(view.rowKey)"
+                              (click)="
+                                controller().expandRow(
+                                  view.rowKey,
+                                  !view.expanded
+                                )
+                              "
+                            >
+                              <i
+                                class="bi"
+                                [class.bi-chevron-up]="view.expanded"
+                                [class.bi-chevron-down]="!view.expanded"
+                                aria-hidden="true"
+                              ></i>
+                              <span class="visually-hidden">{{
+                                view.expanded
+                                  ? detailCopy.hide
+                                  : detailCopy.show
+                              }}</span>
+                            </button>
+                          }
                           @if (selectionEnabled() && selectionEdge === 'end') {
                             <input
                               class="form-check-input mt-1"
@@ -536,6 +643,46 @@ export interface BulkUntouchedContext {
                             </dd>
                           }
                         </dl>
+                      }
+
+                      <!-- What the reader opened, going on with the very pairs of
+                      label and value the fields above are: in a row the panel
+                      comes last of all, under the bar of the row's own work, but in
+                      a card the controls and that bar are the bottom block and the
+                      panel belongs with the body. -->
+                      @if (view.expanded) {
+                        <div
+                          [id]="cardDetailId(view.rowKey)"
+                          class="mb-2"
+                          [attr.data-id]="
+                            'hilos-table-row-detail-' + view.rowKey
+                          "
+                        >
+                          <dl class="row mb-0 small g-0">
+                            @for (field of detailFields(); track field.key) {
+                              <dt class="col-5 fw-normal text-body-secondary">
+                                {{ field.label }}
+                              </dt>
+                              <dd class="col-7 mb-0 text-break">
+                                <!-- A field the page declared but drew nothing
+                                into shows the dash its cells show, rather than an
+                                empty line that would read as "there is no
+                                value". -->
+                                @if (detailTemplate(field.key); as detail) {
+                                  <ng-container
+                                    [ngTemplateOutlet]="detail"
+                                    [ngTemplateOutletContext]="{
+                                      $implicit: view.row,
+                                      rowKey: view.rowKey,
+                                    }"
+                                  />
+                                } @else {
+                                  {{ detailCopy.empty }}
+                                }
+                              </dd>
+                            }
+                          </dl>
+                        </div>
                       }
 
                       <!-- The controls of the row, full width at the foot of the
@@ -719,6 +866,25 @@ export class HilosViewportTable<R> {
         this.cells().map((cell) => [cell.hilosTableCell(), cell.template]),
       ),
   )
+  /**
+   * The values of the fields of the panel a row expands into, one `<ng-template
+   * hilosTableDetail="<column key>">` per field. Collected through descendants, as
+   * the cells are, and read in both epochs of the frame.
+   */
+  protected readonly details = contentChildren(HilosTableDetail, {
+    descendants: true,
+  })
+  // The marked templates by the key of their column — what a field of a panel reads
+  // to find its value.
+  private readonly detailTemplates = computed(
+    () =>
+      new Map(
+        this.details().map((detail) => [
+          detail.hilosTableDetail(),
+          detail.template,
+        ]),
+      ),
+  )
   protected readonly empty = contentChild<TemplateRef<unknown>>('empty')
   /**
    * The human name of one row a bulk run left untouched, for the report of the run:
@@ -761,6 +927,18 @@ export class HilosViewportTable<R> {
   protected readonly frameColumns = computed<readonly HilosTableColumn[]>(
     () => this.declaration()?.columns ?? this.columns(),
   )
+  // The fields that wait in a panel instead of taking a column of their own, and the
+  // columns that are left standing in the row. Every place that measures or draws the
+  // row itself — the header, the width of a full-row cell, the cells of a row bar —
+  // counts the second list, while the panel is built from the first.
+  protected readonly detailFields = computed(() =>
+    hilosTableDetailFields(this.frameColumns()),
+  )
+  protected readonly rowColumns = computed(() =>
+    this.frameColumns().filter((column) => column.detail !== true),
+  )
+  // The words of the control and of an empty field — the core's, for the template.
+  protected readonly detailCopy = TABLE_DETAIL_COPY
   // Which declared column takes which place of the card a row is drawn as on a
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
@@ -795,20 +973,35 @@ export class HilosViewportTable<R> {
   // provided nothing gets the left edge, where lists usually keep it.
   protected readonly selectionEdge =
     inject(HILOS_TABLE_SELECTION_EDGE, { optional: true }) ?? 'start'
-  // The row-state cell stands while anything waits. Header cell and body cell read
-  // this ONE condition, so the two cannot drift apart into a row wider than its header.
-  protected readonly markColumn = computed(() => this.pendingCount() > 0)
-  // Every cell that spans the whole row — the placeholder of a removed row, the empty
-  // and loading states — counts the columns plus the mark column while it stands plus
-  // the checkbox column while the table has marks. This is the ONE place the width is
-  // worked out, and everything that spans a row reads it rather than counting again.
+  // The row-state cell stands while anything waits OR while the table declared a
+  // field to expand into: it carries both, and a table with no pending change still
+  // needs it the moment a reader is given something to open. Header cell and body
+  // cell read this ONE condition, so the two cannot drift apart into a row wider than
+  // its header.
+  protected readonly markColumn = computed(
+    () => this.pendingCount() > 0 || this.detailFields().length > 0,
+  )
+  // Every cell that spans the whole row — the placeholder of a removed row, the panel
+  // a row expands into, the empty and loading states — counts the columns left
+  // standing in the row plus the mark column while it stands plus the checkbox column
+  // while the table has marks. This is the ONE place the width is worked out, and
+  // everything that spans a row reads it rather than counting again.
   protected readonly bodyColspan = computed(
     () =>
-      this.frameColumns().length +
+      this.rowColumns().length +
       (this.markColumn() ? 1 : 0) +
       (this.selectionEnabled() ? 1 : 0),
   )
   protected readonly titleId = `hilos-table-title-${viewportTableSeq++}`
+  // The base every expanded row's panel takes its id from — minted the same way the
+  // title above is, and for the same reason: the control that points at a panel and
+  // the panel itself are drawn in two places of one template.
+  protected readonly detailBaseId = `hilos-table-detail-${viewportTableSeq++}`
+  // The base the panel inside a CARD takes its id from — a second one, minted for the
+  // same table. An id is unique in a document and both branches stand in it at once,
+  // so a card borrowing the row's id would put that id in twice and break the tie
+  // between control and panel on both.
+  protected readonly cardDetailBaseId = `hilos-table-card-detail-${viewportTableSeq++}`
   // What names a declared table: its own title when it declared one, and otherwise
   // the heading of the page it stands on, which already names it. Null for a table
   // that declared neither and stands outside an admin page — it has no name to take.
@@ -867,7 +1060,7 @@ export class HilosViewportTable<R> {
   // The spans add up to bodyColspan by construction, which is what keeps the row
   // from growing wider than its header the moment a waiting change appears.
   protected readonly progressCells = computed<readonly ProgressCell[]>(() => {
-    const columns = this.frameColumns()
+    const columns = this.rowColumns()
     const cells: ProgressCell[] = []
     for (const column of columns) {
       const covered = column.progress === true
@@ -936,15 +1129,21 @@ export class HilosViewportTable<R> {
   // while a pending change waits on the row — a move and a removal alike — and green
   // for the couple of seconds after a value landed. Waiting outranks the highlight,
   // because it is the one of the two the reader still has to act on. Red belongs to a
-  // refused write, not to waiting. Bootstrap's contextual row classes carry their own
-  // dark-mode variants, so they adapt to the active theme with no custom styles. An
-  // untinted row gets the empty string, which is what the [class] binding takes.
+  // refused write, not to waiting. Grey comes last of the three: amber and green
+  // speak of something that happened to the row and the reader has yet to take in,
+  // while grey says only that the reader opened this one themselves. Bootstrap's
+  // contextual row classes carry their own dark-mode variants, so they adapt to the
+  // active theme with no custom styles. An untinted row gets the empty string, which
+  // is what the [class] binding takes.
   protected rowClass(view: TableViewportRow<R>): string {
     if (view.pending !== null) {
       return 'table-warning'
     }
+    if (view.highlighted) {
+      return 'table-success'
+    }
 
-    return view.highlighted ? 'table-success' : ''
+    return view.expanded ? 'table-active' : ''
   }
 
   // The arrow a header carries: every column the order runs by gets one, because
@@ -983,6 +1182,26 @@ export class HilosViewportTable<R> {
     key: string,
   ): TemplateRef<HilosTableCellContext<unknown>> | undefined {
     return this.cellTemplates().get(key)
+  }
+
+  // The template the page marked for one field of a panel, or undefined where it
+  // marked none — which is what stands a dash in the field.
+  protected detailTemplate(
+    key: string,
+  ): TemplateRef<HilosTableCellContext<unknown>> | undefined {
+    return this.detailTemplates().get(key)
+  }
+
+  // The id of one row's panel, which the control above it points at through
+  // aria-controls. One base for the whole table and the row key after it: the keys
+  // are unique within a window, and two tables on one page mint two bases.
+  protected detailId(rowKey: string): string {
+    return `${this.detailBaseId}-${rowKey}`
+  }
+
+  /** The same for the panel inside the card of that row, off its own base. */
+  protected cardDetailId(rowKey: string): string {
+    return `${this.cardDetailBaseId}-${rowKey}`
   }
 
   // The bar running over one row, or undefined when none is. Read out of the map

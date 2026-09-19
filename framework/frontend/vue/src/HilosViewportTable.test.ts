@@ -2118,6 +2118,24 @@ describe('HilosViewportTable expanding a row', () => {
       false,
     )
   })
+
+  it('hands a detail field the row and its key, as a cell is handed them', async () => {
+    const { controller } = makeController()
+    window(controller)
+    const wrapper = mountDetailTable(controller, {
+      'detail-lastError': (props: { row: unknown; rowKey: string }) =>
+        h(
+          'span',
+          { class: 'reason' },
+          `${(props.row as Row).name} ${props.rowKey}`,
+        ),
+    })
+    await wrapper.find('[data-id="hilos-table-expand-b"]').trigger('click')
+
+    expect(
+      wrapper.find('[data-id="hilos-table-row-detail-b"] .reason').text(),
+    ).toBe('Bob b')
+  })
 })
 
 describe('HilosViewportTable drawing the states of the body', () => {

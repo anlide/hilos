@@ -153,17 +153,6 @@ export function HilosCommunicationsDeliveriesPage({
           [DELIVERY_ATTEMPTS_FIELD]: (row) => row.attempts,
           [DELIVERY_DELIVERED_AT_FIELD]: (row) => row.deliveredAt || '—',
           [DELIVERY_USER_LABEL_FIELD]: (row) => recipientLabel(row),
-          [DELIVERY_NOTIFICATION_TITLE_FIELD]: (row) => (
-            <>
-              <div className="fw-semibold">{row.notificationTitle || '—'}</div>
-              <code className="small text-body-secondary">
-                {row.notificationType}
-              </code>
-            </>
-          ),
-          [DELIVERY_LAST_ERROR_FIELD]: (row) => (
-            <span className="text-body-secondary">{row.lastError || '—'}</span>
-          ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) =>
             isDeliveryRetryable(row) ? (
               <LoadingButton
@@ -176,6 +165,17 @@ export function HilosCommunicationsDeliveriesPage({
                 Retry
               </LoadingButton>
             ) : null,
+        }}
+        details={{
+          [DELIVERY_NOTIFICATION_TITLE_FIELD]: (row) => (
+            <>
+              <div className="fw-semibold">{row.notificationTitle || '—'}</div>
+              <code className="small text-body-secondary">
+                {row.notificationType}
+              </code>
+            </>
+          ),
+          [DELIVERY_LAST_ERROR_FIELD]: (row) => row.lastError || '—',
         }}
       />
     </HilosAdminPage>

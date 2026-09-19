@@ -158,10 +158,11 @@ accumulated before the break is gone — the window that arrives outranks it.
 > numbers in the footer and the place of a column in a composite order on its
 > header, and the one room of live messages above the rows with the row tint and
 > the waiting marks beside it, the bar of work under a row and the project's
-> places next to running work, and the cards a declared table becomes on a narrow
-> screen. What was built on top of them since — row detail, the worded empty
-> states, and the marks of a quiet source on cells and headers — is drawn by Vue
-> alone until its own parity leaf (HIL-816 to HIL-818).
+> places next to running work, the cards a declared table becomes on a narrow
+> screen, and the panel a row and a card expand into. What was built on top of
+> them since — the worded empty states and the marks of a quiet source on cells
+> and headers — is drawn by Vue alone until their own parity leaves (HIL-817,
+> HIL-818).
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
 > the verifier circle on the backups page still hand their view columns, a label
@@ -377,9 +378,17 @@ simply not among them.
 
 **The framework owns the panel, the page owns its values.** The room under the
 row, the order of the fields, their labels, the control and its accessibility are
-the framework's; every value comes from the page through a `#detail-<key>` slot,
-exactly as the content of a cell does. A slot the page left unfilled shows a dash
-rather than an empty line, which would read as "there is no value".
+the framework's; every value comes from the page, exactly as the content of a
+cell does, and in the same form in each view. Vue takes a named slot per field,
+`#detail-<key>`. React takes a map of renderers by column key, the prop
+`details`, `{ lastError: (row, rowKey) => … }`. Angular takes one `ng-template`
+per field marked with the `hilosTableDetail` directive and the column's key,
+`<ng-template hilosTableDetail="lastError" let-row let-rowKey="rowKey">`,
+collected through `contentChildren`. Each is handed the row and its key, as a
+cell is. "The page drew nothing" reads as the absence it is — no slot, no key in
+the map, no marked template — and shows a dash rather than an empty line, which
+would read as "there is no value"; a renderer that returned nothing is not that
+absence.
 
 **On a narrow screen the panel is inside the card**, opened from a control in the
 head of it and drawn between the fields and the controls — it goes on with the
@@ -1044,8 +1053,10 @@ an address does not:
 | the frame a page declares | `framework/frontend/core/src/table/tableFrame.ts` |
 | the counts beside a filter's options | `framework/backend/Core/Table/TableFacetTally.php`, `framework/backend/Core/Browser/Context/BrowserContext.php` (`sendTableFacetCounts`), `framework/backend/Core/Page/PageSignalRouter.php` (`recountFacets`) |
 | the card a row projects to | `framework/frontend/core/src/table/tableCard.ts` |
+| the panel a row expands into | `framework/frontend/core/src/table/tableDetail.ts` |
 | the card, the cell slots and the two branches as they are drawn | `framework/frontend/{vue,react,angular}/src/HilosViewportTable.*` |
 | the mark an Angular page puts on the template of one column's cell | `framework/frontend/angular/src/HilosTableCell.ts` |
+| the mark an Angular page puts on the template of one field of the panel | `framework/frontend/angular/src/HilosTableDetail.ts` |
 | the words a quiet source is marked with, and the columns it froze | `framework/frontend/core/src/table/tableStaleness.ts` |
 | the selection a table holds | `framework/frontend/core/src/table/tableSelection.ts` |
 | the progress bars a table reports | `framework/frontend/core/src/table/tableProgress.ts` |

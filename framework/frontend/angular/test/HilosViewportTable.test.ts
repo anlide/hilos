@@ -8,6 +8,8 @@
 // be handed. The
 // admin-page group stands the table inside the admin shell, the way the framework's
 // admin pages draw it, where a table declaring no title is named by the page heading.
+// The last two open a row and a card into the panel of fields that did not fit a
+// column (HIL-816), whose values the host marks one template per field.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
@@ -25,6 +27,7 @@ import type {
 
 import { HilosAdminPage } from '../src/HilosAdminPage.js'
 import { HilosTableCell } from '../src/HilosTableCell.js'
+import { HilosTableDetail } from '../src/HilosTableDetail.js'
 import { HilosViewportTable } from '../src/HilosViewportTable.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import {
@@ -1648,5 +1651,345 @@ describe('HilosViewportTable drawing work over one row', () => {
         '[data-id^="hilos-table-progress-row-"]',
       ),
     ).toHaveLength(0)
+  })
+})
+
+// A table with one field that did not fit a column of its own: the row shows the
+// name, and the reason waits in the panel under it.
+const DETAIL_COLUMNS: HilosTableColumn[] = [
+  { key: 'name', label: 'Name', sortable: true },
+  { key: 'lastError', label: 'Error', detail: true },
+]
+
+/**
+ * A host drawing that table from its inputs; `detail` picks what the page marks for
+ * the field — the reason, the row and its key, or nothing at all.
+ */
+@Component({
+  selector: 'test-detail-table-host',
+  imports: [HilosTableDetail, HilosViewportTable],
+  template: `
+    <hilos-viewport-table
+      [controller]="controller"
+      [columns]="columns"
+      [searchable]="true"
+    >
+      <ng-template #row let-row>
+        <td class="cell">{{ row.name }}</td>
+      </ng-template>
+      @if (detail === 'reason') {
+        <ng-template hilosTableDetail="lastError">
+          <span class="reason">Mailbox full</span>
+        </ng-template>
+      } @else if (detail === 'keyed') {
+        <ng-template hilosTableDetail="lastError" let-row let-rowKey="rowKey">
+          <span class="reason">{{ row.name }} {{ rowKey }}</span>
+        </ng-template>
+      }
+    </hilos-viewport-table>
+  `,
+})
+class DetailTableHost {
+  controller!: TableViewportController<Row>
+  columns = DETAIL_COLUMNS
+  detail: 'reason' | 'keyed' | 'none' = 'reason'
+}
+
+// The same table as a declared frame with a head, a line and controls: on a narrow
+// screen the field is what the card opens into.
+const CARD_DETAIL_FRAME: HilosTableFrame = {
+  title: 'Backups',
+  columns: [
+    { key: 'name', label: 'Name' },
+    { key: 'kind', label: 'Kind' },
+    { key: 'lastError', label: 'Error', detail: true },
+    { key: 'actions', label: '' },
+  ],
+}
+
+/** A host filling every place of such a card; `withDetail` off marks no field. */
+@Component({
+  selector: 'test-detail-cards-host',
+  imports: [HilosTableCell, HilosTableDetail, HilosViewportTable],
+  template: `
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name">
+        <span class="named">Alice</span>
+      </ng-template>
+      <ng-template hilosTableCell="kind">
+        <span class="kind">full</span>
+      </ng-template>
+      <ng-template hilosTableCell="actions">
+        <button type="button" class="restore">Restore</button>
+      </ng-template>
+      @if (withDetail) {
+        <ng-template hilosTableDetail="lastError">
+          <span class="reason">Mailbox full</span>
+        </ng-template>
+      }
+    </hilos-viewport-table>
+  `,
+})
+class DetailCardsHost {
+  controller!: TableViewportController<Row>
+  withDetail = true
+}
+
+function ingestTwo(controller: TableViewportController<Row>): void {
+  controller.ingestWindow(
+    [
+      { rowKey: 'a', slots: { name: 'Alice' } },
+      { rowKey: 'b', slots: { name: 'Bob' } },
+    ],
+    2,
+    true,
+    null,
+    null,
+    10,
+  )
+}
+
+function press(fixture: ComponentFixture<unknown>, selector: string): void {
+  query(fixture, selector)?.click()
+  fixture.detectChanges()
+}
+
+describe('HilosViewportTable expanding a card', () => {
+  function mountDetailCards(
+    controller: TableViewportController<Row>,
+    withDetail = true,
+  ): ComponentFixture<DetailCardsHost> {
+    const fixture = TestBed.createComponent(DetailCardsHost)
+    fixture.componentInstance.controller = controller
+    fixture.componentInstance.withDetail = withDetail
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  const CARD_A = '[data-id="hilos-table-card-a"]'
+  const CARD_A_CONTROL = `${CARD_A} [data-id="hilos-table-expand-a"]`
+  const CARD_A_PANEL = `${CARD_A} [data-id="hilos-table-row-detail-a"]`
+
+  it('opens one card from the control in its head and closes it again', () => {
+    const controller = makeController(CARD_DETAIL_FRAME)
+    ingestTwo(controller)
+    const fixture = mountDetailCards(controller)
+    const control = query(fixture, CARD_A_CONTROL)
+
+    expect(control?.getAttribute('aria-expanded')).toBe('false')
+    expect(control?.textContent?.trim()).toBe('Show details')
+    expect(query(fixture, CARD_A_PANEL)).toBeNull()
+
+    press(fixture, CARD_A_CONTROL)
+
+    const panel = query(fixture, CARD_A_PANEL)
+    expect(panel?.textContent).toContain('Error')
+    expect(panel?.querySelector('.reason')?.textContent).toBe('Mailbox full')
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-card-b"] [data-id="hilos-table-row-detail-b"]',
+      ),
+    ).toBeNull()
+
+    press(fixture, CARD_A_CONTROL)
+
+    expect(query(fixture, CARD_A_PANEL)).toBeNull()
+  })
+
+  it('stands the panel after the fields and before the controls', () => {
+    const controller = makeController(CARD_DETAIL_FRAME)
+    ingestTwo(controller)
+    const fixture = mountDetailCards(controller)
+    press(fixture, CARD_A_CONTROL)
+
+    const blocks = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        `${CARD_A} .card-body > *`,
+      ),
+    )
+    expect(blocks[1]?.tagName).toBe('DL')
+    expect(blocks[2]?.getAttribute('data-id')).toBe('hilos-table-row-detail-a')
+    expect(blocks[3]?.classList.contains('d-grid')).toBe(true)
+  })
+
+  it('gives the card panel an id of its own, apart from the row panel', () => {
+    const controller = makeController(CARD_DETAIL_FRAME)
+    ingestTwo(controller)
+    const fixture = mountDetailCards(controller)
+    press(fixture, CARD_A_CONTROL)
+
+    const rowPanel = query(fixture, 'tr[data-id="hilos-table-row-detail-a"]')
+    const cardControl = query(fixture, CARD_A_CONTROL)
+    const cardPanel = query(fixture, CARD_A_PANEL)
+
+    expect(cardPanel?.id).toBeTruthy()
+    expect(cardPanel?.id).not.toBe(rowPanel?.id)
+    expect(cardControl?.getAttribute('aria-controls')).toBe(cardPanel?.id)
+    expect(cardControl?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('offers no control on a card of a table that declared no such field', () => {
+    const controller = makeController({
+      title: 'Backups',
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'actions', label: '' },
+      ],
+    })
+    ingestTwo(controller)
+    const fixture = mountDetailCards(controller, false)
+
+    expect(query(fixture, CARD_A_CONTROL)).toBeNull()
+  })
+
+  it('stands a dash in a card field the page drew nothing into', () => {
+    const controller = makeController(CARD_DETAIL_FRAME)
+    ingestTwo(controller)
+    const fixture = mountDetailCards(controller, false)
+    press(fixture, CARD_A_CONTROL)
+
+    expect(query(fixture, `${CARD_A_PANEL} dd`)?.textContent?.trim()).toBe('—')
+  })
+})
+
+describe('HilosViewportTable expanding a row', () => {
+  function mountDetailTable(
+    controller: TableViewportController<Row>,
+    detail: DetailTableHost['detail'] = 'reason',
+  ): ComponentFixture<DetailTableHost> {
+    const fixture = TestBed.createComponent(DetailTableHost)
+    fixture.componentInstance.controller = controller
+    fixture.componentInstance.detail = detail
+    fixture.detectChanges()
+
+    return fixture
+  }
+
+  function detailController(): TableViewportController<Row> {
+    const controller = makeUndeclaredController()
+    ingestTwo(controller)
+
+    return controller
+  }
+
+  it('keeps a detail column out of the header and out of the width of a row', () => {
+    const fixture = mountDetailTable(detailController())
+
+    // One declared column left standing, plus the row-state cell the control lives in.
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('thead th'),
+    ).toHaveLength(2)
+    expect(query(fixture, 'thead')?.textContent).not.toContain('Error')
+    expect(query(fixture, '[data-id="hilos-table-sort-lastError"]')).toBeNull()
+  })
+
+  it('offers the control only where a detail field was declared', () => {
+    const controller = detailController()
+    const plain = TestBed.createComponent(PlainTableHost)
+    plain.componentInstance.controller = controller
+    plain.detectChanges()
+
+    expect(
+      query(mountDetailTable(controller), '[data-id="hilos-table-expand-a"]'),
+    ).not.toBeNull()
+    expect(query(plain, '[data-id="hilos-table-expand-a"]')).toBeNull()
+  })
+
+  it('opens the panel of one row and closes it again from the same control', () => {
+    const fixture = mountDetailTable(detailController())
+    const control = query(fixture, '[data-id="hilos-table-expand-a"]')
+
+    expect(control?.getAttribute('aria-expanded')).toBe('false')
+    expect(control?.textContent?.trim()).toBe('Show details')
+    expect(query(fixture, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+
+    press(fixture, '[data-id="hilos-table-expand-a"]')
+
+    const panel = query(fixture, '[data-id="hilos-table-row-detail-a"]')
+    expect(panel).not.toBeNull()
+    expect(panel?.textContent).toContain('Error')
+    expect(panel?.querySelector('.reason')?.textContent).toBe('Mailbox full')
+    expect(
+      query(fixture, '[data-id="hilos-table-expand-a"]')?.textContent?.trim(),
+    ).toBe('Hide details')
+    expect(query(fixture, '[data-id="hilos-table-row-detail-b"]')).toBeNull()
+
+    press(fixture, '[data-id="hilos-table-expand-a"]')
+
+    expect(query(fixture, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+  })
+
+  it('points the control at its own panel and hides the chevron from the reader', () => {
+    const fixture = mountDetailTable(detailController())
+    press(fixture, '[data-id="hilos-table-expand-a"]')
+
+    const control = query(fixture, '[data-id="hilos-table-expand-a"]')
+    const panel = query(fixture, '[data-id="hilos-table-row-detail-a"]')
+    expect(control?.getAttribute('aria-expanded')).toBe('true')
+    expect(control?.getAttribute('aria-controls')).toBe(panel?.id)
+    expect(panel?.id).toBeTruthy()
+    expect(control?.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    expect(
+      control?.querySelector('i')?.classList.contains('bi-chevron-up'),
+    ).toBe(true)
+  })
+
+  it('spans the panel across the whole row, tinted as the row it hangs under', () => {
+    const fixture = mountDetailTable(detailController())
+    press(fixture, '[data-id="hilos-table-expand-a"]')
+
+    const panel = query(fixture, '[data-id="hilos-table-row-detail-a"]')
+    expect(panel?.classList.contains('table-active')).toBe(true)
+    expect(panel?.querySelector('td')?.getAttribute('colspan')).toBe('2')
+    expect(
+      query(fixture, '[data-id="hilos-table-row-a"]')?.classList.contains(
+        'table-active',
+      ),
+    ).toBe(true)
+  })
+
+  it('stands a dash in a field the page declared but drew nothing into', () => {
+    const fixture = mountDetailTable(detailController(), 'none')
+    press(fixture, '[data-id="hilos-table-expand-a"]')
+
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-row-detail-a"] dd',
+      )?.textContent?.trim(),
+    ).toBe('—')
+  })
+
+  it('closes every panel when the window changes', () => {
+    const fixture = mountDetailTable(detailController())
+    press(fixture, '[data-id="hilos-table-expand-a"]')
+    press(fixture, '[data-id="hilos-table-expand-b"]')
+
+    const search = query(
+      fixture,
+      '[data-id="hilos-table-search"]',
+    ) as HTMLInputElement
+    search.value = 'failed'
+    search.dispatchEvent(new Event('input'))
+    fixture.detectChanges()
+
+    expect(query(fixture, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-row-detail-b"]')).toBeNull()
+  })
+
+  it('hands a detail field the row and its key, as a cell is handed them', () => {
+    const fixture = mountDetailTable(detailController(), 'keyed')
+    press(fixture, '[data-id="hilos-table-expand-b"]')
+
+    expect(
+      query(
+        fixture,
+        '[data-id="hilos-table-row-detail-b"] .reason',
+      )?.textContent?.trim(),
+    ).toBe('Bob b')
   })
 })

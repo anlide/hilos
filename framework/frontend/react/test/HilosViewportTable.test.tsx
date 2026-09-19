@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { TableViewportController } from '@hilos/core'
 import type {
   ActionHandle,
@@ -1217,7 +1218,6 @@ describe('HilosViewportTable with a selection column', () => {
     expect(leftCells[0]?.querySelector('input')?.dataset['id']).toBe(
       'hilos-table-select-a',
     )
-    cleanup()
 
     const right = renderWithEdge(controller, 'end').container
     const headers = right.querySelectorAll('thead th')
@@ -1303,7 +1303,6 @@ describe('HilosViewportTable with a selection column', () => {
         .querySelector('[data-id="hilos-table-placeholder"]')
         ?.getAttribute('colspan'),
     ).toBe(String(COLUMNS.length + 1))
-    cleanup()
 
     const empty = makeController(BULK_FRAME)
     empty.controller.ingestWindow([], 0, true, null, null, 10)
@@ -1577,5 +1576,394 @@ describe('HilosViewportTable drawing work over one row', () => {
     expect(
       container.querySelectorAll('[data-id^="hilos-table-progress-row-"]'),
     ).toHaveLength(0)
+  })
+})
+
+describe('HilosViewportTable expanding a card', () => {
+  afterEach(cleanup)
+
+  // The same table as next door with one field that did not fit a column: on a
+  // narrow screen it is what the card opens into.
+  const CARD_DETAIL_FRAME: HilosTableFrame = {
+    title: 'Backups',
+    columns: [
+      { key: 'name', label: 'Name' },
+      { key: 'kind', label: 'Kind' },
+      { key: 'lastError', label: 'Error', detail: true },
+      { key: 'actions', label: '' },
+    ],
+  }
+
+  const CARD_DETAIL_CELLS = {
+    name: () => <span className="named">Alice</span>,
+    kind: () => <span className="kind">full</span>,
+    actions: () => (
+      <button type="button" className="restore">
+        Restore
+      </button>
+    ),
+  }
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function renderDetailCards(
+    controller: TableViewportController<Row>,
+    details: Partial<
+      Record<string, (row: Row, rowKey: string) => ReactNode>
+    > = {
+      lastError: () => <span className="reason">Mailbox full</span>,
+    },
+  ) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        cells={CARD_DETAIL_CELLS}
+        details={details}
+      />,
+    )
+  }
+
+  function inCard(
+    container: HTMLElement,
+    rowKey: string,
+    selector: string,
+  ): HTMLElement | null {
+    return container.querySelector<HTMLElement>(
+      `[data-id="hilos-table-card-${rowKey}"] ${selector}`,
+    )
+  }
+
+  it('opens one card from the control in its head and closes it again', () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const { container } = renderDetailCards(controller)
+    const control = inCard(
+      container,
+      'a',
+      '[data-id="hilos-table-expand-a"]',
+    ) as HTMLElement
+
+    expect(control.getAttribute('aria-expanded')).toBe('false')
+    expect(control.textContent).toBe('Show details')
+    expect(
+      inCard(container, 'a', '[data-id="hilos-table-row-detail-a"]'),
+    ).toBeNull()
+
+    fireEvent.click(control)
+
+    const panel = inCard(
+      container,
+      'a',
+      '[data-id="hilos-table-row-detail-a"]',
+    ) as HTMLElement
+    expect(panel.textContent).toContain('Error')
+    expect(panel.querySelector('.reason')?.textContent).toBe('Mailbox full')
+    expect(
+      inCard(container, 'b', '[data-id="hilos-table-row-detail-b"]'),
+    ).toBeNull()
+
+    fireEvent.click(
+      inCard(container, 'a', '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    expect(
+      inCard(container, 'a', '[data-id="hilos-table-row-detail-a"]'),
+    ).toBeNull()
+  })
+
+  it('stands the panel after the fields and before the controls', () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const { container } = renderDetailCards(controller)
+    fireEvent.click(
+      inCard(container, 'a', '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    const blocks = container.querySelectorAll(
+      '[data-id="hilos-table-card-a"] .card-body > *',
+    )
+    expect(blocks[1]?.tagName).toBe('DL')
+    expect(blocks[2]?.getAttribute('data-id')).toBe('hilos-table-row-detail-a')
+    expect(blocks[3]?.classList.contains('d-grid')).toBe(true)
+  })
+
+  it('gives the card panel an id of its own, apart from the row panel', () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const { container } = renderDetailCards(controller)
+    fireEvent.click(
+      inCard(container, 'a', '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    const rowPanel = container.querySelector(
+      'tr[data-id="hilos-table-row-detail-a"]',
+    ) as HTMLElement
+    const cardControl = inCard(
+      container,
+      'a',
+      '[data-id="hilos-table-expand-a"]',
+    ) as HTMLElement
+    const cardPanel = inCard(
+      container,
+      'a',
+      '[data-id="hilos-table-row-detail-a"]',
+    ) as HTMLElement
+
+    expect(cardPanel.id).toBeTruthy()
+    expect(cardPanel.id).not.toBe(rowPanel.id)
+    expect(cardControl.getAttribute('aria-controls')).toBe(cardPanel.id)
+    expect(cardControl.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('offers no control on a card of a table that declared no such field', () => {
+    const { controller } = makeController({
+      title: 'Backups',
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'actions', label: '' },
+      ],
+    })
+    window(controller)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        cells={{ name: () => <span className="named">Alice</span> }}
+      />,
+    )
+
+    expect(
+      inCard(container, 'a', '[data-id="hilos-table-expand-a"]'),
+    ).toBeNull()
+  })
+
+  it('stands a dash in a card field the page drew nothing into', () => {
+    const { controller } = makeController(CARD_DETAIL_FRAME)
+    window(controller)
+    const { container } = renderDetailCards(controller, {})
+    fireEvent.click(
+      inCard(container, 'a', '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    expect(
+      inCard(container, 'a', '[data-id="hilos-table-row-detail-a"] dd')
+        ?.textContent,
+    ).toBe('—')
+  })
+})
+
+describe('HilosViewportTable expanding a row', () => {
+  afterEach(cleanup)
+
+  // A table with one field that did not fit a column of its own: the row shows the
+  // name, and the reason waits in the panel under it.
+  const DETAIL_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'lastError', label: 'Error', detail: true },
+  ]
+
+  function window(controller: TableViewportController<Row>): void {
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+  }
+
+  function renderDetailTable(
+    controller: TableViewportController<Row>,
+    details: Partial<
+      Record<string, (row: Row, rowKey: string) => ReactNode>
+    > = {
+      lastError: () => <span className="reason">Mailbox full</span>,
+    },
+  ) {
+    return render(
+      <HilosViewportTable
+        controller={controller}
+        columns={DETAIL_COLUMNS}
+        searchable
+        row={(r) => <td className="cell">{r.name}</td>}
+        details={details}
+      />,
+    )
+  }
+
+  function find(container: HTMLElement, selector: string): HTMLElement | null {
+    return container.querySelector<HTMLElement>(selector)
+  }
+
+  it('keeps a detail column out of the header and out of the width of a row', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller)
+
+    // One declared column left standing, plus the row-state cell the control lives in.
+    expect(container.querySelectorAll('thead th')).toHaveLength(2)
+    expect(find(container, 'thead')?.textContent).not.toContain('Error')
+    expect(find(container, '[data-id="hilos-table-sort-lastError"]')).toBeNull()
+  })
+
+  it('offers the control only where a detail field was declared', () => {
+    const { controller } = makeController()
+    window(controller)
+
+    expect(
+      find(
+        renderDetailTable(controller).container,
+        '[data-id="hilos-table-expand-a"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      find(
+        renderTable(controller).container,
+        '[data-id="hilos-table-expand-a"]',
+      ),
+    ).toBeNull()
+  })
+
+  it('opens the panel of one row and closes it again from the same control', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller)
+    const control = find(
+      container,
+      '[data-id="hilos-table-expand-a"]',
+    ) as HTMLElement
+
+    expect(control.getAttribute('aria-expanded')).toBe('false')
+    expect(control.textContent).toBe('Show details')
+    expect(find(container, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+
+    fireEvent.click(control)
+
+    const panel = find(container, '[data-id="hilos-table-row-detail-a"]')
+    expect(panel).not.toBeNull()
+    expect(panel?.textContent).toContain('Error')
+    expect(panel?.querySelector('.reason')?.textContent).toBe('Mailbox full')
+    expect(
+      find(container, '[data-id="hilos-table-expand-a"]')?.textContent,
+    ).toBe('Hide details')
+    expect(find(container, '[data-id="hilos-table-row-detail-b"]')).toBeNull()
+
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    expect(find(container, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+  })
+
+  it('points the control at its own panel and hides the chevron from the reader', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller)
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    const control = find(
+      container,
+      '[data-id="hilos-table-expand-a"]',
+    ) as HTMLElement
+    const panel = find(
+      container,
+      '[data-id="hilos-table-row-detail-a"]',
+    ) as HTMLElement
+    expect(control.getAttribute('aria-expanded')).toBe('true')
+    expect(control.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.id).toBeTruthy()
+    expect(control.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(
+      control.querySelector('i')?.classList.contains('bi-chevron-up'),
+    ).toBe(true)
+  })
+
+  it('spans the panel across the whole row, tinted as the row it hangs under', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller)
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    const panel = find(
+      container,
+      '[data-id="hilos-table-row-detail-a"]',
+    ) as HTMLElement
+    expect(panel.classList.contains('table-active')).toBe(true)
+    expect(panel.querySelector('td')?.getAttribute('colspan')).toBe('2')
+    expect(
+      find(container, '[data-id="hilos-table-row-a"]')?.classList.contains(
+        'table-active',
+      ),
+    ).toBe(true)
+  })
+
+  it('stands a dash in a field the page declared but drew nothing into', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller, {})
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+
+    expect(
+      find(container, '[data-id="hilos-table-row-detail-a"] dd')?.textContent,
+    ).toBe('—')
+  })
+
+  it('closes every panel when the window changes', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller)
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-a"]') as HTMLElement,
+    )
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-b"]') as HTMLElement,
+    )
+
+    fireEvent.change(
+      find(container, '[data-id="hilos-table-search"]') as HTMLElement,
+      { target: { value: 'failed' } },
+    )
+
+    expect(find(container, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+    expect(find(container, '[data-id="hilos-table-row-detail-b"]')).toBeNull()
+  })
+
+  it('hands a detail field the row and its key, as a cell is handed them', () => {
+    const { controller } = makeController()
+    window(controller)
+    const { container } = renderDetailTable(controller, {
+      lastError: (r, rowKey) => (
+        <span className="reason">{`${r.name} ${rowKey}`}</span>
+      ),
+    })
+    fireEvent.click(
+      find(container, '[data-id="hilos-table-expand-b"]') as HTMLElement,
+    )
+
+    expect(
+      find(container, '[data-id="hilos-table-row-detail-b"] .reason')
+        ?.textContent,
+    ).toBe('Bob b')
   })
 })

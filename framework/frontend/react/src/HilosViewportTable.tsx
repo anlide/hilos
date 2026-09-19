@@ -19,10 +19,17 @@
 // choice for the whole application rather than a prop of this table
 // (mockups/components/table section 6). Below the md breakpoint a declared table is
 // a list of cards instead, built from the same declared columns and filled by the
-// same cell renderers (mockups/components/table section 9). Bootstrap classes only.
+// same cell renderers (mockups/components/table section 9). A field that did not
+// fit a column of its own is declared `detail` and waits in a panel under the row:
+// the framework owns the room, the order and the labels, while the page draws every
+// value through `details`, exactly as it draws a cell (mockups/components/table
+// section 4). A card opens into its own panel, inside its own body and off an id
+// base of its own. Bootstrap classes only.
 import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import {
+  TABLE_DETAIL_COPY,
+  hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTableSortPositionLabel,
 } from '@hilos/core'
@@ -60,6 +67,13 @@ export interface HilosViewportTableProps<R> {
    * the column. A column this has no renderer for still gets its cell in the row.
    */
   cells?: Partial<Record<string, (row: R, rowKey: string) => ReactNode>>
+  /**
+   * The content of one field of the panel a row expands into, by the key of its
+   * column — the content only, the framework writes the label and the room around
+   * it. Works in both epochs of the frame; a field this has no renderer for shows a
+   * dash.
+   */
+  details?: Partial<Record<string, (row: R, rowKey: string) => ReactNode>>
   /**
    * Render the cells of one row of a table whose page declared no frame; the
    * returned `<td>`s fill the row. A declared table takes `cells` instead and is not
@@ -117,6 +131,7 @@ export function HilosViewportTable<R>({
   controller,
   columns = [],
   cells,
+  details,
   row,
   label,
   searchable = false,
@@ -160,22 +175,41 @@ export function HilosViewportTable<R>({
   // spanning the whole row count this one list, so they cannot disagree on its width.
   const frameColumns: readonly HilosTableColumn[] =
     declaration?.columns ?? columns
+  // The fields that wait in a panel instead of taking a column of their own, and the
+  // columns that are left standing in the row. Every place that measures or draws the
+  // row itself — the header, the width of a full-row cell, the cells of a row bar —
+  // counts the second list, while the panel is built from the first.
+  const detailFields = hilosTableDetailFields(frameColumns)
+  const rowColumns = frameColumns.filter((column) => column.detail !== true)
   // Which declared column takes which place of the card a row is drawn as on a
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
   // has no arithmetic of its own about it; like the declaration it follows from, it
   // is a constant over the life of a table and null exactly when that is.
   const card = controller.frame.card
-  // The row-state cell stands while anything waits. Header cell and body cell read
-  // this ONE condition, so the two cannot drift apart into a row wider than its header.
-  const markColumn = pendingCount > 0
-  // Every cell that spans the whole row — the placeholder of a removed row, the empty
-  // and loading states — counts the columns plus the mark column while it stands plus
-  // the checkbox column while the table has marks. This is the ONE place the width is
-  // worked out, and everything that spans a row reads it rather than counting again.
+  // The row-state cell stands while anything waits OR while the table declared a
+  // field to expand into: it carries both, and a table with no pending change still
+  // needs it the moment a reader is given something to open. Header cell and body
+  // cell read this ONE condition, so the two cannot drift apart into a row wider than
+  // its header.
+  const markColumn = pendingCount > 0 || detailFields.length > 0
+  // Every cell that spans the whole row — the placeholder of a removed row, the panel
+  // a row expands into, the empty and loading states — counts the columns left
+  // standing in the row plus the mark column while it stands plus the checkbox column
+  // while the table has marks. This is the ONE place the width is worked out, and
+  // everything that spans a row reads it rather than counting again.
   const bodyColspan =
-    frameColumns.length + (markColumn ? 1 : 0) + (selectionEnabled ? 1 : 0)
+    rowColumns.length + (markColumn ? 1 : 0) + (selectionEnabled ? 1 : 0)
   const titleId = useId()
+  // The base every expanded row's panel takes its id from — minted the same way the
+  // title above is, and for the same reason: the control that points at a panel and
+  // the panel itself are drawn in two places of one tree.
+  const detailBaseId = useId()
+  // The base the panel inside a CARD takes its id from — a second one, minted for the
+  // same table. An id is unique in a document and both branches stand in it at once,
+  // so a card borrowing the row's id would put that id in twice and break the tie
+  // between control and panel on both.
+  const cardDetailBaseId = useId()
   // Which edge the checkbox column sits on — one choice for the whole installation
   // and not a prop of this table, because two tables of one product disagreeing
   // about it is the very thing the rule forbids (Design D5). A project that
@@ -223,7 +257,7 @@ export function HilosViewportTable<R>({
   // The spans add up to bodyColspan by construction, which is what keeps the row
   // from growing wider than its header the moment a waiting change appears.
   const progressCells: ProgressCell[] = []
-  for (const column of frameColumns) {
+  for (const column of rowColumns) {
     const covered = column.progress === true
     const last = progressCells[progressCells.length - 1]
     if (last !== undefined && last.covered === covered) {
@@ -232,9 +266,9 @@ export function HilosViewportTable<R>({
       progressCells.push({ span: 1, covered })
     }
   }
-  if (!frameColumns.some((column) => column.progress === true)) {
+  if (!rowColumns.some((column) => column.progress === true)) {
     progressCells.splice(0, progressCells.length, {
-      span: frameColumns.length,
+      span: rowColumns.length,
       covered: true,
     })
   }
@@ -264,12 +298,68 @@ export function HilosViewportTable<R>({
     return rowProgressBars.get(rowKey)
   }
 
-  // The cells of one row of a declared table: one per declared column, the content
-  // from the page's renderer for that column and the class from the column itself.
-  // The cell stands even where the page gave no renderer: a row one cell short is a
-  // row narrower than its header (Flow F3).
+  // The id of one row's panel, which the control above it points at through
+  // aria-controls. One base for the whole table and the row key after it: the keys
+  // are unique within a window, and two tables on one page mint two bases.
+  function detailId(rowKey: string): string {
+    return `${detailBaseId}-${rowKey}`
+  }
+
+  /** The same for the panel inside the card of that row, off its own base. */
+  function cardDetailId(rowKey: string): string {
+    return `${cardDetailBaseId}-${rowKey}`
+  }
+
+  // The value of one field of a panel. A field the page declared but drew nothing
+  // into shows the dash its cells show, rather than an empty line that would read as
+  // "there is no value" — and "drew nothing" is a key missing from `details`, not a
+  // renderer that returned nothing, exactly as a slot the page filled but left empty.
+  function detailValue(
+    field: HilosTableColumn,
+    record: R,
+    rowKey: string,
+  ): ReactNode {
+    const render = details?.[field.key]
+
+    return render === undefined
+      ? TABLE_DETAIL_COPY.empty
+      : render(record, rowKey)
+  }
+
+  // The control that opens a row or a card, pointed at the panel it opens. It calls
+  // the core with the value it wants rather than toggling: the view keeps no state
+  // of its own about which rows are open.
+  function expandControl(
+    view: TableViewportRow<R>,
+    panelId: string,
+    className: string,
+  ): ReactNode {
+    return (
+      <button
+        type="button"
+        className={className}
+        data-id={`hilos-table-expand-${view.rowKey}`}
+        aria-expanded={view.expanded}
+        aria-controls={panelId}
+        onClick={() => controller.expandRow(view.rowKey, !view.expanded)}
+      >
+        <i
+          className={`bi ${view.expanded ? 'bi-chevron-up' : 'bi-chevron-down'}`}
+          aria-hidden="true"
+        />
+        <span className="visually-hidden">
+          {view.expanded ? TABLE_DETAIL_COPY.hide : TABLE_DETAIL_COPY.show}
+        </span>
+      </button>
+    )
+  }
+
+  // The cells of one row of a declared table: one per column left standing in the
+  // row, the content from the page's renderer for that column and the class from the
+  // column itself. The cell stands even where the page gave no renderer: a row one
+  // cell short is a row narrower than its header (Flow F3).
   function declaredCells(record: R, rowKey: string): ReactNode {
-    return frameColumns.map((column) => (
+    return rowColumns.map((column) => (
       <td key={column.key} className={column.cellClass}>
         {cells?.[column.key]?.(record, rowKey)}
       </td>
@@ -360,6 +450,16 @@ export function HilosViewportTable<R>({
                 leave
               </span>
             ) : null}
+            {/* The control comes after everything that merely STATES something
+                about the record, exactly as it does at the end of a row: it is the
+                one thing in the head the reader acts on. */}
+            {detailFields.length > 0
+              ? expandControl(
+                  view,
+                  cardDetailId(rowKey),
+                  'btn btn-sm btn-outline-secondary',
+                )
+              : null}
             {selectionEdge === 'end' ? selectBox : null}
           </span>
         </div>
@@ -380,6 +480,31 @@ export function HilosViewportTable<R>({
               </Fragment>
             ))}
           </dl>
+        ) : null}
+
+        {/* What the reader opened, going on with the very pairs of label and value
+            the fields above are: in a row the panel comes last of all, under the
+            bar of the row's own work, but in a card the controls and that bar are
+            the bottom block and the panel belongs with the body. */}
+        {view.expanded ? (
+          <div
+            id={cardDetailId(rowKey)}
+            className="mb-2"
+            data-id={`hilos-table-row-detail-${rowKey}`}
+          >
+            <dl className="row mb-0 small g-0">
+              {detailFields.map((field) => (
+                <Fragment key={field.key}>
+                  <dt className="col-5 fw-normal text-body-secondary">
+                    {field.label}
+                  </dt>
+                  <dd className="col-7 mb-0 text-break">
+                    {detailValue(field, record, rowKey)}
+                  </dd>
+                </Fragment>
+              ))}
+            </dl>
+          </div>
         ) : null}
 
         {/* The controls of the row, full width at the foot of the card. Which of
@@ -412,14 +537,20 @@ export function HilosViewportTable<R>({
   // while a pending change waits on the row — a move and a removal alike — and green
   // for the couple of seconds after a value landed. Waiting outranks the highlight,
   // because it is the one of the two the reader still has to act on. Red belongs to a
-  // refused write, not to waiting. Bootstrap's contextual row classes carry their own
-  // dark-mode variants, so they adapt to the active theme with no custom style layer.
+  // refused write, not to waiting. Grey comes last of the three: amber and green
+  // speak of something that happened to the row and the reader has yet to take in,
+  // while grey says only that the reader opened this one themselves. Bootstrap's
+  // contextual row classes carry their own dark-mode variants, so they adapt to the
+  // active theme with no custom style layer.
   function rowClass(view: TableViewportRow<R>): string | undefined {
     if (view.pending !== null) {
       return 'table-warning'
     }
+    if (view.highlighted) {
+      return 'table-success'
+    }
 
-    return view.highlighted ? 'table-success' : undefined
+    return view.expanded ? 'table-active' : undefined
   }
 
   function sortIcon(key: string): string {
@@ -548,7 +679,7 @@ export function HilosViewportTable<R>({
                   outside the declared columns on either side of them: it belongs to
                   the framework, and the page's columns are the page's. */}
               {selectionEdge === 'start' ? selectPageCell : null}
-              {frameColumns.map((column) => (
+              {rowColumns.map((column) => (
                 <th
                   key={column.key}
                   scope="col"
@@ -618,6 +749,7 @@ export function HilosViewportTable<R>({
                   </td>
                 ) : null
               const bar = rowBar(view.rowKey)
+              const record = view.row
 
               return (
                 <Fragment key={view.rowKey}>
@@ -673,6 +805,16 @@ export function HilosViewportTable<R>({
                             Will leave
                           </span>
                         ) : null}
+                        {/* The control comes last and stands at the very edge:
+                            the badge STATES something about the row, while this
+                            one is the only thing in the cell the reader acts on. */}
+                        {detailFields.length > 0
+                          ? expandControl(
+                              view,
+                              detailId(view.rowKey),
+                              'btn btn-sm btn-outline-secondary ms-1',
+                            )
+                          : null}
                       </td>
                     ) : null}
                     {selectionEdge === 'end' ? selectRowCell : null}
@@ -706,6 +848,36 @@ export function HilosViewportTable<R>({
                           ) : null}
                         </td>
                       ))}
+                    </tr>
+                  ) : null}
+
+                  {/* The panel this row expands into, drawn after the row's own
+                    bar: the bar is a continuation of the row it belongs to, and
+                    what the reader opened themselves comes after what is happening
+                    to the record on its own. A placeholder never says it is
+                    expanded; the second half of the condition says the same thing
+                    to the compiler, so the fields are handed a row rather than a
+                    row-or-nothing. */}
+                  {view.expanded && record !== null ? (
+                    <tr
+                      id={detailId(view.rowKey)}
+                      className="table-active"
+                      data-id={`hilos-table-row-detail-${view.rowKey}`}
+                    >
+                      <td colSpan={bodyColspan} className="pt-0">
+                        <dl className="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                          {detailFields.map((field) => (
+                            <div key={field.key} className="col">
+                              <dt className="text-body-secondary fw-normal">
+                                {field.label}
+                              </dt>
+                              <dd className="mb-0 text-break">
+                                {detailValue(field, record, view.rowKey)}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </td>
                     </tr>
                   ) : null}
                 </Fragment>

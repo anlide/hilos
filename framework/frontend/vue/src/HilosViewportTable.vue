@@ -834,9 +834,12 @@ function onSelectPage(event: Event): void {
                       <!-- A field the page declared but drew nothing into shows
                       the dash its cells show, rather than an empty line that
                       would read as "there is no value". -->
-                      <slot :name="`detail-${field.key}`" :row="view.row">{{
-                        TABLE_DETAIL_COPY.empty
-                      }}</slot>
+                      <slot
+                        :name="`detail-${field.key}`"
+                        :row="view.row"
+                        :row-key="view.rowKey"
+                        >{{ TABLE_DETAIL_COPY.empty }}</slot
+                      >
                     </dd>
                   </div>
                 </dl>
@@ -1026,9 +1029,12 @@ function onSelectPage(event: Event): void {
                     <!-- A field the page declared but drew nothing into shows
                     the dash its cells show, rather than an empty line that
                     would read as "there is no value". -->
-                    <slot :name="`detail-${field.key}`" :row="view.row">{{
-                      TABLE_DETAIL_COPY.empty
-                    }}</slot>
+                    <slot
+                      :name="`detail-${field.key}`"
+                      :row="view.row"
+                      :row-key="view.rowKey"
+                      >{{ TABLE_DETAIL_COPY.empty }}</slot
+                    >
                   </dd>
                 </template>
               </dl>

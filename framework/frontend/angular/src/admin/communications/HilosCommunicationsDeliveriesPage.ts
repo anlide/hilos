@@ -32,6 +32,7 @@ import type { HilosDeliveriesContext, HilosDeliveryRow } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
+import { HilosTableDetail } from '../../HilosTableDetail.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
@@ -49,7 +50,13 @@ const STATUS_CLASS: Record<string, string> = {
 @Component({
   selector: 'hilos-communications-deliveries-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosTableCell, HilosViewportTable, LoadingButton],
+  imports: [
+    HilosAdminPage,
+    HilosTableCell,
+    HilosTableDetail,
+    HilosViewportTable,
+    LoadingButton,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <!-- The channel the route opened the journal on is the table's preset, not a
@@ -87,15 +94,15 @@ const STATUS_CLASS: Record<string, string> = {
         <ng-template hilosTableCell="userLabel" let-row>{{
           recipientLabel(row)
         }}</ng-template>
-        <ng-template hilosTableCell="notificationTitle" let-row>
+        <ng-template hilosTableDetail="notificationTitle" let-row>
           <div class="fw-semibold">{{ row.notificationTitle || '—' }}</div>
           <code class="small text-body-secondary">{{
             row.notificationType
           }}</code>
         </ng-template>
-        <ng-template hilosTableCell="lastError" let-row>
-          <span class="text-body-secondary">{{ row.lastError || '—' }}</span>
-        </ng-template>
+        <ng-template hilosTableDetail="lastError" let-row>{{
+          row.lastError || '—'
+        }}</ng-template>
         <ng-template hilosTableCell="actions" let-row>
           @if (isRetryable(row)) {
             <button
