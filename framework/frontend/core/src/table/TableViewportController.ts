@@ -346,6 +346,7 @@ export interface TableWindowSink {
     totalCount: number,
     totalExact: boolean,
   ): void
+  ingestUnannounce(rowKey: string): void
 }
 
 export interface TableViewportControllerOptions<R> {
@@ -1448,6 +1449,27 @@ export class TableViewportController<R> implements TableWindowSink {
       this.announcedAbove.add(rowKey)
     } else {
       this.announcedInside.add(rowKey)
+    }
+    this.refreshAnnouncedSignal()
+  }
+
+  /**
+   * Ingest word that a row this window does not hold was deleted
+   * (`table_viewport_unannounce`): take its key back from whichever place holds it.
+   *
+   * The server does not remember what it announced, so this arrives for every deleted row
+   * outside the window; a key this window was never told about, or one a window already
+   * cleared, is dropped without touching the announced signal, so a delete that changes
+   * nothing on the strip wakes none of its readers. The count is not touched either — the
+   * total of the delete arrives on its own frame.
+   *
+   * @param rowKey Key of the deleted row.
+   */
+  ingestUnannounce(rowKey: string): void {
+    const above = this.announcedAbove.delete(rowKey)
+    const inside = this.announcedInside.delete(rowKey)
+    if (!above && !inside) {
+      return
     }
     this.refreshAnnouncedSignal()
   }

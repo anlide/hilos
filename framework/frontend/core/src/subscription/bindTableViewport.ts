@@ -1,11 +1,11 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
 // connection by its (page, tableKey) address. A table's controller only ever sees
-// the windows, deltas, counts, appends, own-creates, announcements and progress
-// bars addressed to it — there is no central switchboard holding every table and
+// the windows, deltas, counts, appends, own-creates, announcements, their
+// withdrawals and progress bars addressed to it — there is no central switchboard holding every table and
 // handing each its data (table-subscription.md). The binder subscribes the
 // connection's table_window / table_viewport_delta / table_viewport_count /
 // table_viewport_append / table_viewport_own_create / table_viewport_announce /
-// table_progress / table_facet_counts signals, drops everything not addressed to this table or whose
+// table_viewport_unannounce / table_progress / table_facet_counts signals, drops everything not addressed to this table or whose
 // page is no longer current, normalizes the rows into the page scope, and feeds
 // the sink. The returned unbind drops every subscription on the view's unmount.
 
@@ -210,6 +210,18 @@ export function bindTableViewport(
     },
   )
 
+  // Nor here: the withdrawal carries a key and nothing else.
+  const unsubscribeUnannounce = connection.on(
+    'tableViewportUnannounce',
+    (signal) => {
+      const data = signal.data
+      if (data.tableKey !== address.tableKey || data.page !== address.page) {
+        return
+      }
+      sink.ingestUnannounce(data.rowKey)
+    },
+  )
+
   // No page scope here either, and for the same reason: a bar carries no row body. What it
   // does carry is the pair (scope, rowKey), and this is where that pair is judged — a row bar
   // with no row to hang under is dropped rather than shown somewhere else, and a row key sent
@@ -256,6 +268,7 @@ export function bindTableViewport(
     unsubscribeAppend()
     unsubscribeOwnCreate()
     unsubscribeAnnounce()
+    unsubscribeUnannounce()
     unsubscribeProgress()
     unsubscribeBulkReport()
     connection.unregisterTableWindow(address.tableKey)

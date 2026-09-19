@@ -24,6 +24,7 @@ import {
   type TableFacetCountsSignal,
   type TableProgressSignal,
   type TableViewportAnnounceSignal,
+  type TableViewportUnannounceSignal,
   type TableViewportAppendSignal,
   type TableViewportCountSignal,
   type TableViewportOwnCreateSignal,
@@ -32,7 +33,7 @@ import {
   type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting the eight table signals, with real unsubscribe. */
+/** A connection double emitting the nine table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
@@ -43,6 +44,9 @@ function fakeConnection() {
   >()
   const announceListeners = new Set<
     (signal: TableViewportAnnounceSignal) => void
+  >()
+  const unannounceListeners = new Set<
+    (signal: TableViewportUnannounceSignal) => void
   >()
   const progressListeners = new Set<(signal: TableProgressSignal) => void>()
   const bulkReportListeners = new Set<(signal: TableBulkReportSignal) => void>()
@@ -101,6 +105,14 @@ function fakeConnection() {
           announceListeners.add(typed)
 
           return () => announceListeners.delete(typed)
+        }
+        case 'tableViewportUnannounce': {
+          const typed = listener as unknown as (
+            signal: TableViewportUnannounceSignal,
+          ) => void
+          unannounceListeners.add(typed)
+
+          return () => unannounceListeners.delete(typed)
         }
         case 'tableProgress': {
           const typed = listener as unknown as (
@@ -183,6 +195,11 @@ function fakeConnection() {
         listener({ data } as unknown as TableViewportAnnounceSignal)
       }
     },
+    emitUnannounce(data: TableViewportUnannounceSignal['data']): void {
+      for (const listener of unannounceListeners) {
+        listener({ data } as unknown as TableViewportUnannounceSignal)
+      }
+    },
     emitProgress(data: TableProgressSignal['data']): void {
       for (const listener of progressListeners) {
         listener({ data } as unknown as TableProgressSignal)
@@ -201,7 +218,7 @@ function fakeConnection() {
   }
 }
 
-/** A controller double recording the windows, deltas, counts, appends, own creates, announcements, bars and bulk reports fed to it. */
+/** A controller double recording the windows, deltas, counts, appends, own creates, announcements, their withdrawals, bars and bulk reports fed to it. */
 function fakeSink(): TableWindowSink & {
   windows: Array<{
     rows: readonly TableRow[]
@@ -228,6 +245,7 @@ function fakeSink(): TableWindowSink & {
     totalCount: number
     totalExact: boolean
   }>
+  unannouncements: string[]
   progress: HilosTableProgressFrame[]
   snapshots: Array<readonly HilosTableProgressFrame[]>
   bulkReports: HilosTableBulkReport[]
@@ -262,6 +280,7 @@ function fakeSink(): TableWindowSink & {
     totalCount: number
     totalExact: boolean
   }> = []
+  const unannouncements: string[] = []
   const progress: HilosTableProgressFrame[] = []
   const snapshots: Array<readonly HilosTableProgressFrame[]> = []
   const bulkReports: HilosTableBulkReport[] = []
@@ -274,6 +293,7 @@ function fakeSink(): TableWindowSink & {
     appends,
     ownCreates,
     announcements,
+    unannouncements,
     progress,
     snapshots,
     bulkReports,
@@ -335,6 +355,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestAnnounce(rowKey, placement, totalCount, totalExact): void {
       announcements.push({ rowKey, placement, totalCount, totalExact })
+    },
+    ingestUnannounce(rowKey): void {
+      unannouncements.push(rowKey)
     },
     ingestProgress(frame): void {
       progress.push(frame)
@@ -1074,6 +1097,45 @@ describe('bindTableViewport', () => {
     })
 
     expect(sink.announcements).toEqual([])
+  })
+
+  it('routes a withdrawal addressed to the table, dropping other tables and pages', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitUnannounce({ page: 'main', tableKey: 'other', rowKey: 'x' })
+    connection.emitUnannounce({
+      page: 'other',
+      tableKey: 'settings',
+      rowKey: 'y',
+    })
+    connection.emitUnannounce({
+      page: 'main',
+      tableKey: 'settings',
+      rowKey: 'z',
+    })
+
+    expect(sink.unannouncements).toEqual(['z'])
+  })
+
+  it('stops routing withdrawals after unbind', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    const unbind = bind(connection, scopes, sink)
+
+    unbind()
+    connection.emitUnannounce({
+      page: 'main',
+      tableKey: 'settings',
+      rowKey: 'x',
+    })
+
+    expect(sink.unannouncements).toEqual([])
   })
 
   it('routes an own create addressed to the table, normalizing the row', () => {

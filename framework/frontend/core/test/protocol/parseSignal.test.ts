@@ -404,6 +404,31 @@ describe('parseSignal', () => {
     }
   })
 
+  it('parses a table_viewport_unannounce frame', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_unannounce","data":{"page":"p","tableKey":"t","rowKey":"x"}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal.kind).toBe('tableViewportUnannounce')
+      expect('data' in result.signal && result.signal.data).toEqual({
+        page: 'p',
+        tableKey: 't',
+        rowKey: 'x',
+      })
+    }
+  })
+
+  it('rejects a table_viewport_unannounce frame without the row key', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_unannounce","data":{"page":"p","tableKey":"t"}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure.kind).toBe('invalid-signal-data')
+    }
+  })
+
   it('rejects a table_viewport_announce frame naming a place the window can show', () => {
     const result = parseSignal(
       '{"type":"table_viewport_announce","data":{"page":"p","tableKey":"t","rowKey":"x","placement":"tail","totalCount":4,"totalExact":true,"pageCount":1}}',

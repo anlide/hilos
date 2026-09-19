@@ -536,6 +536,14 @@ announcement is a count, not a list of rows.
 On the wire this is `table_viewport_announce` (page, tableKey, rowKey, placement,
 totalCount, totalExact, pageCount), where `placement` is `above` or `inside`.
 
+The word has a mirror. When a row the window does not hold is deleted, the server
+sends `table_viewport_unannounce` (page, tableKey, rowKey) and the core takes the
+key back from whichever place holds it, so the bar names rows Show will actually
+bring. The server keeps no memory of what it announced to whom, so the frame goes
+to every window that does not hold the row; a key the core was never told about is
+dropped without touching the bar. The frame carries no count: the total of the
+delete travels on `table_viewport_count` as it always did.
+
 ## Apply
 
 **After Apply the screen always changes** — a button after which it is unchanged
@@ -1010,6 +1018,7 @@ and everything below is addressed to the one connection it concerns:
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |
 | `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `requestId` — the row takes the place the sort gives it, not the tail |
 | `table_viewport_announce` | server → client, live | `page`, `tableKey`, `rowKey`, `placement` (`above` / `inside`), `totalCount`, `totalExact`, `pageCount` |
+| `table_viewport_unannounce` | server → client, live | `page`, `tableKey`, `rowKey` |
 | `table_progress` | server → client, live | `page`, `tableKey`, `scope` (`row` / `table` / `bulk`), `progressKey`, `rowKey` (`scope: row` only), `current`, `total`, `ended`, `detail` — work already running when a tab subscribes arrives instead in the `progress` key of the `windows` section |
 | `table_bulk_report` | server → client, addressed to the initiator | `page`, `tableKey`, `progressKey`, `touched` (a count, never names — changed rows have already arrived as live deltas), `untouched` (`[{ rowKey, reason }]`), `untouchedOmitted` (absent when every name fit under the server's ceiling) |
 

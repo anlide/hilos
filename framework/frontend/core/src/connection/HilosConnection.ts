@@ -45,6 +45,7 @@ import {
   type TableProgressSignal,
   type TableBulkReportSignal,
   type TableViewportAnnounceSignal,
+  type TableViewportUnannounceSignal,
   type TableViewportAppendSignal,
   type TableViewportOwnCreateSignal,
   type TableFacetCountsSignal,
@@ -244,6 +245,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableViewportOwnCreate: TableViewportOwnCreateSignal
   /** Word of a created row the window cannot show (`table_viewport_announce`): its key and its place. */
   tableViewportAnnounce: TableViewportAnnounceSignal
+  /** Word that an announced row left the set (`table_viewport_unannounce`): its key alone. */
+  tableViewportUnannounce: TableViewportUnannounceSignal
   /** A bar of work running on a table (`table_progress`): where it is drawn, whose work it is, how far along. */
   tableProgress: TableProgressSignal
   /** How a bulk run judged the rows it reached (`table_bulk_report`): how many it changed, and the ones it left by name. */
@@ -999,6 +1002,9 @@ export class HilosConnection {
         break
       case 'tableViewportAnnounce':
         this.emitter.emit('tableViewportAnnounce', signal)
+        break
+      case 'tableViewportUnannounce':
+        this.emitter.emit('tableViewportUnannounce', signal)
         break
       case 'tableProgress':
         this.emitter.emit('tableProgress', signal)

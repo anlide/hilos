@@ -125,6 +125,9 @@ final class SignalTypeConstants
     /** @var string Table viewport announce signal type (server-to-client live word of a created row the window cannot show) */
     public const string TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce';
 
+    /** @var string Table viewport unannounce signal type (server-to-client live word that an announced row left the set) */
+    public const string TABLE_VIEWPORT_UNANNOUNCE = 'table_viewport_unannounce';
+
     /** @var string Table progress signal type (server-to-client live word of work running on one table) */
     public const string TABLE_PROGRESS = 'table_progress';
 

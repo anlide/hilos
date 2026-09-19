@@ -35,6 +35,7 @@ use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
+use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
@@ -591,6 +592,39 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame('alpha', $delta->rowKey);
         $this->assertSame(TableViewportDeltaDTO::REASON_DELETED, $delta->reason);
         $this->assertFalse($viewport->hasRow('alpha'));
+    }
+
+    public function testADeletedRowTheWindowDoesNotHoldIsUnannouncedBeforeTheCount(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 2, true, null, null);
+        $context = $this->bootWithViewport([], $viewport);
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta']));
+        $context->flushToSignalRouter();
+
+        $unannounce = $this->nextUnannounce();
+        $this->assertSame(ViewportDeltaUnitContext::PAGE, $unannounce->page);
+        $this->assertSame(ViewportDeltaUnitTable::TABLE, $unannounce->tableKey);
+        $this->assertSame('beta', $unannounce->rowKey);
+
+        $this->assertSame(1, $this->nextCount()->totalCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertTrue($viewport->hasRow('alpha'));
+    }
+
+    public function testADeletedRowTheWindowHoldsIsNotUnannounced(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, limit: 10);
+        $viewport->recordWindow(self::windowOf(['alpha']), 1, true, null, null);
+        $context = $this->bootWithViewport([], $viewport);
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(0, $this->nextCount()->totalCount);
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $this->nextDelta()->kind);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testDeltaTaggedOwnWhenOriginMatchesReceiver(): void
@@ -1737,6 +1771,24 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
         $this->assertInstanceOf(TableViewportAnnounceDTO::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
+     * Asserts the next queued signal is an addressed table viewport unannouncement and returns it.
+     *
+     * @return TableViewportUnannounceDTO The unannounce payload
+     */
+    private function nextUnannounce(): TableViewportUnannounceDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_UNANNOUNCE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportUnannounceDTO::class, $signal->data->data);
 
         return $signal->data->data;
     }

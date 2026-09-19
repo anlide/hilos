@@ -97,6 +97,9 @@ export const SIGNAL_TYPE_TABLE_VIEWPORT_OWN_CREATE = 'table_viewport_own_create'
 /** Server frame `type` announcing a created row a window cannot show (PHP `SignalTypeConstants::TABLE_VIEWPORT_ANNOUNCE`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_ANNOUNCE = 'table_viewport_announce'
 
+/** Server frame `type` taking back the word of an announced row that left the set (PHP `SignalTypeConstants::TABLE_VIEWPORT_UNANNOUNCE`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT_UNANNOUNCE = 'table_viewport_unannounce'
+
 /** Server frame `type` carrying a bar of work running on a table (PHP `SignalTypeConstants::TABLE_PROGRESS`). */
 export const SIGNAL_TYPE_TABLE_PROGRESS = 'table_progress'
 

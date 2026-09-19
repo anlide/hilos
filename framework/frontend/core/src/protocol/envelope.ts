@@ -270,6 +270,24 @@ export type TableViewportAnnounceSignalData = z.infer<
 >
 
 /**
+ * Payload of the framework table viewport unannouncement
+ * (`type: 'table_viewport_unannounce'`, PHP `TableViewportUnannounceDTO`): word that a
+ * row this window does not hold was deleted, so a key announced for it is taken back.
+ * The server does not remember what it announced, so a window that was never told
+ * about the key drops the frame. No place travels, the row having none anymore, and
+ * no count: the total arrives on its own count frame.
+ */
+export const tableViewportUnannounceSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  rowKey: z.string(),
+})
+
+export type TableViewportUnannounceSignalData = z.infer<
+  typeof tableViewportUnannounceSignalDataSchema
+>
+
+/**
  * Payload of the framework table progress frame (`type: 'table_progress'`, PHP
  * `TableProgressSignalData`): one bar of work running on a table, and never a row
  * of its set. `scope` names where it is drawn — under its own row, above the table,

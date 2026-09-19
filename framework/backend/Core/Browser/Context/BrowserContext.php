@@ -70,6 +70,7 @@ use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
+use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
@@ -2358,6 +2359,10 @@ abstract class BrowserContext
             return;
         }
 
+        if ($mutation->type === TableMutationType::Delete && !$viewport->hasRow((string) $mutation->rowKey)) {
+            $this->emitViewportUnannounce($mutation, $acceptKey, $page, $browserKey);
+        }
+
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey, $membership);
 
         $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own, $membership);
@@ -2695,6 +2700,36 @@ abstract class BrowserContext
                 $totalExact,
                 $this->pageCount($totalCount, $viewport->limit, $totalExact),
             ),
+            $acceptKey,
+        );
+    }
+
+    /**
+     * Takes back the word of a row the window may have been announced, now that it is deleted.
+     *
+     * The server keeps no memory of what it announced to whom ({@see self::emitViewportAnnounce()}
+     * writes nothing into the window), so the word goes to every window that does not hold the
+     * row, and the client drops a key it was never told about. A row the window holds is not
+     * this road's: the row delta takes it away.
+     *
+     * Only the key travels. The total of the delete goes out on its own frame
+     * ({@see self::emitViewportCount()}), and a second carrier of the same numbers would give one
+     * event two sources of one truth. Nothing is counted here and the window is not touched.
+     *
+     * @param TableRowMutationDTO $mutation Delete mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     */
+    private function emitViewportUnannounce(
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_VIEWPORT_UNANNOUNCE,
+            new TableViewportUnannounceDTO($page, $browserKey, (string) $mutation->rowKey),
             $acceptKey,
         );
     }

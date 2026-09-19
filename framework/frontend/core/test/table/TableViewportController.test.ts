@@ -1048,6 +1048,53 @@ describe('TableViewportController', () => {
     })
   })
 
+  it('takes back an announced row from either place, leaving the count alone', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestAnnounce('b', 'above', 2, true)
+    controller.ingestAnnounce('c', 'inside', 3, true)
+    controller.ingestCount(1, true)
+
+    controller.ingestUnannounce('b')
+    controller.ingestUnannounce('c')
+
+    expect(controller.announced.get()).toEqual({
+      above: 0,
+      inside: 0,
+      total: 0,
+    })
+    expect(controller.totalCount.get()).toBe(1)
+  })
+
+  it('moves nothing when the same row is taken back twice', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestAnnounce('b', 'above', 2, true)
+    controller.ingestAnnounce('c', 'above', 3, true)
+    controller.ingestUnannounce('b')
+    const after = controller.announced.get()
+
+    controller.ingestUnannounce('b')
+
+    expect(controller.announced.get()).toBe(after)
+    expect(after).toEqual({ above: 1, inside: 0, total: 1 })
+  })
+
+  it('drops a row it was never told about without touching the strip', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestAnnounce('b', 'above', 2, true)
+    const before = controller.announced.get()
+
+    controller.ingestUnannounce('x')
+
+    // The same object, not an equal one: the signal was not rebuilt, so its readers
+    // were not woken by a delete that changes nothing on the strip.
+    expect(controller.announced.get()).toBe(before)
+    expect(before).toEqual({ above: 1, inside: 0, total: 1 })
+    expect(controller.totalCount.get()).toBe(2)
+  })
+
   it('forgets what was announced when any window arrives', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
