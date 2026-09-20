@@ -32,6 +32,7 @@ document.
 | which sort orders a table may declare, what it refuses when asked for another, and what it answers — the index under every order, the primary key at its end, computed fields, mixed directions, stale sources, in-memory sets | [table-sort-orders.md](table-sort-orders.md) |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
+| adding or upgrading a frontend dependency — how both npm roots declare their Angular versions, which ranges are deliberate, how a version moves, and what to do instead of deleting a lockfile on `ERESOLVE` | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
 | creating, moving, or naming the files of a page — the per-page folder, the view / `…Page` selectors / `…Actions` files, and whether a type is domain or page-local | [page-module-structure.md](page-module-structure.md) |
 | the app's page registry — the `pages/` folder (keys, routes, entity-slot types) and the `bindPageScope` / `PAGE_SIGNAL_SCHEMAS` / `createAppPageRouter` SDK binding | [page-registry.md](page-registry.md) |
@@ -70,7 +71,8 @@ before editing.
 - [conflict-resolution.md](conflict-resolution.md) — modal-owned editing with a baseline / draft /
   incoming 3-way merge and its edge cases.
 - [sdk-packaging.md](sdk-packaging.md) — the dev monorepo, the two-tier SDK, the slot-first
-  extension model, and Composer-vendored distribution.
+  extension model, Composer-vendored distribution, and how the two npm roots
+  declare and move their Angular versions.
 - [multiframework-core.md](multiframework-core.md) — the agnostic core, the neutral signal primitive,
   and the per-framework view adapters proven by conformance demos.
 - [page-module-structure.md](page-module-structure.md) — one folder per page under `views/`, the

@@ -62,3 +62,8 @@ that match the affected subsystem.
   hand-rolled or standard-library solution will not do; a frontend dependency
   must stay behind the SDK boundary and reversible (see
   `docs/agents/framework-development.md` → Dependencies).
+- Do not add or bump an `@angular/*` package without reading
+  `docs/agents/frontend/sdk-packaging.md` → Angular versions: in
+  `dependencies` / `devDependencies` both npm roots declare the same exact
+  version, a caret there lifts the whole Angular framework, and only the AOT
+  build notices.

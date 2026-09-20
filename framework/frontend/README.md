@@ -22,20 +22,21 @@ docker compose -f framework/docker/docker-compose.frontend.yml \
 
 For example, append `npm install` or `npm run build` as `<command>`.
 
-## Angular versions are pinned
+## Angular versions
 
-Every `@angular/*` dependency — in this workspace and in `demo/polls/frontend` —
-is declared as an exact version, never a caret, and both roots declare the same
-one. Angular's own packages hold each other to an exact version in their
-`peerDependencies`, so a single caret resolved one minor ahead of its siblings
-drags the whole framework with it, and the lockfile shows it as an ordinary
-neighbour bump. The only step that notices is the AOT build (`ng-packagr`, i.e.
-`npm run build` for `@hilos/angular`); check, unit, lint and format-check all
-stay green on the mixed framework (HIL-848). So: adding a new `@angular/*`
-package means writing the version already installed in the tree, and upgrading
-Angular is a deliberate edit of both roots in one change, never a side effect of
-installing something else. `typescript` carries a tilde for the same reason —
-`@angular/compiler-cli` requires `typescript >=6.0 <6.1`.
+Both npm roots that carry Angular — this workspace, through
+`angular/package.json`, and `demo/polls/frontend` — declare every `@angular/*`
+in `dependencies` / `devDependencies` as an exact version, and both declare the
+same one. Three kinds of entry beside them are ranges on purpose: the `^22`
+`peerDependencies` of `@hilos/angular` (a peer range is what a consuming project
+resolves against), the `ng-packagr` caret, and the `typescript` tilde
+(`@angular/compiler-cli` requires `typescript >=6.0 <6.1`). Angular's own
+packages hold each other to an exact version in their `peerDependencies`, so one
+caret resolved a minor ahead of its siblings drags the whole framework with it,
+and only the AOT build (`ng-packagr`, i.e. `npm run build` for `@hilos/angular`)
+notices (HIL-848). Adding an `@angular/*` package or upgrading Angular follows
+`docs/agents/frontend/sdk-packaging.md`, section "Angular versions: exact in
+both roots, a range only in the peers".
 
 ## Commands
 
