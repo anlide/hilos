@@ -81,9 +81,9 @@ final class SessionCarrier
                 continue;
             }
 
-            // The impersonator is the human being at the keyboard; the impersonated user is the
-            // account being looked at, and it is not the one whose login has to survive.
-            $userId = $session->impersonatorUserId ?? $session->userId;
+            // The person at the keyboard is the one whose login has to survive: behind an
+            // impersonation that is the administrator, not the account being looked at.
+            $userId = $session->userAtKeyboard();
             if ($userId === null) {
                 continue;
             }

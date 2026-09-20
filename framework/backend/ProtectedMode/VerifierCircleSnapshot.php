@@ -95,7 +95,7 @@ final readonly class VerifierCircleSnapshot
                 continue;
             }
 
-            $userId = $session->impersonatorUserId ?? $session->userId;
+            $userId = $session->userAtKeyboard();
             if ($userId === null || !isset($namedUserIds[$userId])) {
                 continue;
             }

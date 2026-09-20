@@ -2503,7 +2503,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * be a row waiting for a reader who, by the time they arrive, is being told about
      * something that finished long ago.
      *
-     * @param RaiseSessionToastSignalData $frame Session to tell, and what to say
+     * A card is for a PERSON and not for a browser, and a session keeps its token across a
+     * sign-out ({@see deauthenticateSession()} unbinds the person and keeps the row), so the
+     * hash alone is not an address: minutes after the press the same sockets may belong to
+     * whoever sat down next. The frame therefore names who it is for, and that name is
+     * compared against whoever is at the keyboard NOW; they differ and the card is dropped in
+     * silence - nothing written, nothing sent, nothing logged, because there is nobody to show
+     * it to and this happens on every sign-out that had a run in flight (HIL-1062).
+     *
+     * @param RaiseSessionToastSignalData $frame Session to tell, who it is for, and what to say
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When the toast frame cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot mint the card's name
@@ -2517,6 +2525,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $liveAcceptKeys = $this->liveAcceptKeysBySessionTokenHash()[$frame->sessionTokenHash] ?? [];
         if ($liveAcceptKeys === []) {
+            return;
+        }
+
+        if ($this->resolveUserAtKeyboard($liveAcceptKeys[0]) !== $frame->addresseeUserId) {
             return;
         }
 

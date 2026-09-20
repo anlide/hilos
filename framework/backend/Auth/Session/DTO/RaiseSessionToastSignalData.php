@@ -24,6 +24,13 @@ use Hilos\Core\Router\SignalDataInterface;
  * turns the accept key of whoever asked into one. A sender with no initiator - a schedule, a
  * command line - has no session to name and simply raises nothing.
  *
+ * Beside the hash travels the PERSON the card is for - whoever was at the keyboard when the
+ * action was taken, read by {@see AbstractAgent::resolveUserAtKeyboard()} from the same
+ * connection row. A session keeps its token across a sign-out, so the hash alone is an address
+ * for a browser and not for a human being, and a run that finishes minutes after the press
+ * would otherwise speak to whoever is sitting there by then (HIL-1062). Null means nobody was
+ * at the keyboard, and only a session with nobody in it may be shown such a card.
+ *
  * There is no key on it. The name of a card is minted where the card is stored, so a sender
  * cannot address one that is already there, and a repeat of the same sentence is recognized by
  * being the same sentence rather than by the sender saying so.
@@ -32,6 +39,7 @@ final class RaiseSessionToastSignalData extends BaseDTO implements SignalDataInt
 {
     /**
      * @param string $sessionTokenHash Hash of the cookie token of the session being told
+     * @param ?int $addresseeUserId Person the card is for, or null when nobody was at the keyboard
      * @param string $message Sentence the person reads
      * @param SessionToastSeverity $severity Which of the four kinds the card is
      * @param string $source Who is speaking, drawn above the sentence
@@ -39,6 +47,7 @@ final class RaiseSessionToastSignalData extends BaseDTO implements SignalDataInt
      */
     public function __construct(
         public readonly string $sessionTokenHash,
+        public readonly ?int $addresseeUserId,
         public readonly string $message,
         public readonly SessionToastSeverity $severity,
         public readonly string $source,
@@ -55,6 +64,7 @@ final class RaiseSessionToastSignalData extends BaseDTO implements SignalDataInt
     {
         return [
             'sessionTokenHash' => $this->sessionTokenHash,
+            'addresseeUserId' => $this->addresseeUserId,
             'message' => $this->message,
             'severity' => $this->severity->value,
             'source' => $this->source,
@@ -78,6 +88,7 @@ final class RaiseSessionToastSignalData extends BaseDTO implements SignalDataInt
 
         return new static(
             sessionTokenHash: self::requireString($data, 'sessionTokenHash'),
+            addresseeUserId: self::optionalInt($data, 'addresseeUserId'),
             message: self::requireString($data, 'message'),
             severity: $severity,
             source: self::requireString($data, 'source'),

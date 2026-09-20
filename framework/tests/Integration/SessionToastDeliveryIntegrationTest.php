@@ -63,6 +63,12 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
 
     private const string MESSAGE = 'Backup "2026-09-03_11-00-00" is ready.';
 
+    /** The stub has no foreign key to a user table, so an id is all a person needs to be. */
+    private const int PERSON = 7;
+
+    /** The administrator behind an impersonation: the human being at the keyboard. */
+    private const int ADMINISTRATOR = 9;
+
     private ?DbContext $previousDb = null;
 
     protected function setUp(): void
@@ -157,6 +163,82 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         $this->assertNull(Hilos::$rt?->hilosSessionToastStacks[$this->sessionHash(self::OTHER_SESSION_TOKEN)]);
     }
 
+    public function testARaiseReachesThePersonStillAtTheKeyboard(): void
+    {
+        $this->signIn();
+        $agent = new SessionToastDeliveryTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: $this->raise(addresseeUserId: self::PERSON)),
+            'test',
+            HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
+        );
+
+        // The person who pressed is still the person sitting there, so nothing about the card
+        // changes: the addressee gate is invisible in the case it exists to leave alone.
+        $frame = $this->lastToastFrame();
+        $this->assertNotNull($frame);
+        $this->assertCount(1, $frame->data->toArray()['toasts'] ?? []);
+    }
+
+    public function testARaiseForAPersonWhoHasSignedOutIsDroppedInSilence(): void
+    {
+        $this->signIn();
+        $agent = new SessionToastDeliveryTestAgent();
+        $agent->onAgentAction(self::TAB_A, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
+        $this->drainSignals();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: $this->raise(addresseeUserId: self::PERSON)),
+            'test',
+            HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
+        );
+
+        // The tabs are still open and the token is still the same one - only the person is
+        // gone. Nothing is written and nothing is sent: the guest at that browser is not who
+        // the backup was started by, and there is nobody left to show the card to.
+        $this->assertNull($this->lastToastFrame());
+        $this->assertNull(Hilos::$rt?->hilosSessionToastStacks[$this->sessionHash()]);
+    }
+
+    public function testAGuestsOwnRaiseStillReachesThatGuest(): void
+    {
+        Hilos::$db->sessions->actions->createAnonymous(self::SESSION_TOKEN);
+        $agent = new SessionToastDeliveryTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: $this->raise()),
+            'test',
+            HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
+        );
+
+        // Nobody equals nobody: a run started by a session with no person in it is answered to
+        // that same session. Two guests one after another at one browser are one guest here.
+        $frame = $this->lastToastFrame();
+        $this->assertNotNull($frame);
+        $this->assertCount(1, $frame->data->toArray()['toasts'] ?? []);
+    }
+
+    public function testARaiseForTheAdministratorReachesASessionThatIsNowImpersonating(): void
+    {
+        $session = Hilos::$db->sessions->actions->createAnonymous(self::SESSION_TOKEN);
+        $session->actions->bindUser(self::PERSON);
+        $session->actions->setImpersonator(self::ADMINISTRATOR);
+        $agent = new SessionToastDeliveryTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: $this->raise(addresseeUserId: self::ADMINISTRATOR)),
+            'test',
+            HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
+        );
+
+        // Who is at the keyboard is the administrator behind the takeover, not the account
+        // being looked at, so a run they started before it reaches them inside it.
+        $frame = $this->lastToastFrame();
+        $this->assertNotNull($frame);
+        $this->assertCount(1, $frame->data->toArray()['toasts'] ?? []);
+    }
+
     public function testACountdownReportedInOneTabWaitsWhileTheOtherIsRead(): void
     {
         $agent = new SessionToastDeliveryTestAgent();
@@ -224,7 +306,7 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
         $this->signIn();
         $agent = new SessionToastDeliveryTestAgent();
         $agent->onSignalAgent(
-            new AgentSignalData(data: $this->raise()),
+            new AgentSignalData(data: $this->raise(addresseeUserId: self::PERSON)),
             'test',
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
         );
@@ -305,18 +387,21 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
      */
     private function signIn(): void
     {
-        // The stub has no foreign key to a user table, so any id stands for the person.
-        Hilos::$db->sessions->actions->createAnonymous(self::SESSION_TOKEN)->actions->bindUser(7);
+        Hilos::$db->sessions->actions->createAnonymous(self::SESSION_TOKEN)->actions->bindUser(self::PERSON);
     }
 
     /**
      * @param string $sessionToken Session the raise is addressed to
+     * @param ?int $addresseeUserId Person the card is for, or null when nobody was at the keyboard
      * @return RaiseSessionToastSignalData Frame a sender queues when its run has finished
      */
-    private function raise(string $sessionToken = self::SESSION_TOKEN): RaiseSessionToastSignalData
-    {
+    private function raise(
+        string $sessionToken = self::SESSION_TOKEN,
+        ?int $addresseeUserId = null,
+    ): RaiseSessionToastSignalData {
         return new RaiseSessionToastSignalData(
             sessionTokenHash: $this->sessionHash($sessionToken),
+            addresseeUserId: $addresseeUserId,
             message: self::MESSAGE,
             severity: SessionToastSeverity::SUCCESS,
             source: 'Backup',

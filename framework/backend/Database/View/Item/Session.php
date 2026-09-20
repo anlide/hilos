@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\View\Item;
 
 use Hilos\Database\Actions\Item\SessionActions;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\Session as ObjectSession;
@@ -56,5 +57,21 @@ final class Session extends DbItem
             ObjectSession::pendingAck => $this->_object->pendingAck,
             default => parent::__get($name),
         };
+    }
+
+    /**
+     * Returns the person at the keyboard of this session, or null when nobody is.
+     *
+     * Delegates to the object layer's formula: the administrator behind an impersonation,
+     * otherwise the person signed in, and nobody when the session carries no person. The
+     * sentence lives in one place so that every reader of it - the login carry-over, the
+     * verifier circle and the addressee of a session toast - asks the same question.
+     *
+     * @return ?int User id of whoever is at the keyboard, or null when the session is anonymous
+     * @throws DatabaseException If entity access fails
+     */
+    public function userAtKeyboard(): ?int
+    {
+        return $this->_object->userAtKeyboard();
     }
 }

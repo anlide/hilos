@@ -463,6 +463,17 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     private ?string $currentInitiatorSessionTokenHash = null;
 
     /**
+     * Person at the keyboard of {@see self::$currentInitiatorSessionTokenHash} when the run was
+     * admitted, or null when nobody was signed in there.
+     *
+     * Read at ADMISSION for the reason written over the hash above, and for a second one of its
+     * own: the card is for a human being, and a session keeps its token across a sign-out, so a
+     * hash read minutes later would still name the browser but no longer the person who pressed
+     * (HIL-1062).
+     */
+    private ?int $currentInitiatorUserId = null;
+
+    /**
      * @var list<BackupCronJob> Agent-mechanism cron jobs (rule paired with scope); empty when
      *     backups are disabled or no agent entries exist.
      */
@@ -693,6 +704,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
+     * @throws DatabaseException When reading the initiator's session fails
+     * @throws LogicException When the sessions collection class constants are not configured
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -722,6 +735,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the handler cannot name its reply to the command
+     * @throws DatabaseException When reading the initiator's session fails
+     * @throws LogicException When the sessions collection class constants are not configured
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
@@ -1478,6 +1493,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator or the parked freeze-lift cannot be named
+     * @throws DatabaseException When reading the initiator's session fails
+     * @throws LogicException When the sessions collection class constants are not configured
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -1868,6 +1885,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws FramePopOrderException When the stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
+     * @throws DatabaseException When reading the initiator's session fails
+     * @throws LogicException When the sessions collection class constants are not configured
      */
     public function startBackup(
         BackupScope $scope,
@@ -1923,6 +1942,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $this->currentInitiator = $initiatorAcceptKey;
         $this->currentInitiatorRequestId = $initiatorRequestId;
         $this->currentInitiatorSessionTokenHash = $this->resolveInitiatorSessionTokenHash($initiatorAcceptKey);
+        $this->currentInitiatorUserId = $this->resolveUserAtKeyboard($initiatorAcceptKey);
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = (float)Hilos::$env[EnvConstants::BACKUP_TIMEOUT]->int();
         $this->runKind = BackupRunKind::CREATE;
@@ -3337,6 +3357,8 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
+     * @throws DatabaseException When reading the initiator's session fails
+     * @throws LogicException When the sessions collection class constants are not configured
      */
     public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void
     {
@@ -3513,6 +3535,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             HilosSignalConstants::HILOS_SESSION_TOAST_RAISE,
             new RaiseSessionToastSignalData(
                 sessionTokenHash: $sessionTokenHash,
+                addresseeUserId: $this->currentInitiatorUserId,
                 message: "Backup \"{$id}\" is ready.",
                 severity: SessionToastSeverity::SUCCESS,
                 source: 'Backup',
@@ -3781,6 +3804,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $this->currentInitiator = null;
         $this->currentInitiatorRequestId = null;
         $this->currentInitiatorSessionTokenHash = null;
+        $this->currentInitiatorUserId = null;
         $this->startedAt = 0.0;
         $this->timeoutSeconds = 0.0;
         $this->pendingRestoreId = null;

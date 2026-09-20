@@ -82,6 +82,14 @@ The two addressees look different on screen:
   sender and the path. `BackupAgent::announceCreatedBackup()` is the worked
   example.
 
+A background raise names the session **and the person it is for** — whoever was
+at the keyboard when the action was taken (`AbstractAgent::resolveUserAtKeyboard()`),
+null when that was nobody. A session keeps its cookie token across a sign-out, so
+the hash names a browser and not a human being: the library compares the name
+against whoever is at that keyboard when the card would be shown, and a card
+whose person has left is dropped in silence rather than shown to whoever sat
+down next.
+
 Leading is the whole card as one click target (a stretched link, like a list
 row) — never a button inside the card.
 

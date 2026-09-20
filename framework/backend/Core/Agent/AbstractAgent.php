@@ -587,6 +587,40 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     }
 
     /**
+     * Reads the person at the keyboard of a connection, or null when nobody is at it.
+     *
+     * The twin of {@see resolveInitiatorSessionTokenHash()}: both start from an accept key and
+     * both read the same runtime connection row, because "which browser asked" and "who was at
+     * it" are one question asked twice. A sender takes the answer at the press, a library asks
+     * it again at the moment of showing, and neither writes the formula out for itself.
+     *
+     * Null is an ordinary answer and not a failure: an accept key with no connection behind it,
+     * a connection carrying no session token, a session row that has gone, and a session with
+     * no person in it all mean the same thing - nobody is named. A caller that compares two
+     * such answers therefore finds them equal, which is what lets a guest's own action still be
+     * answered.
+     *
+     * @param ?string $acceptKey Accept key of the connection to read, or null when there is none
+     * @return ?int User id of whoever is at that keyboard, or null when nobody is
+     * @throws DatabaseException When the session lookup fails
+     * @throws LogicException When the sessions collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object type does not match its collection
+     */
+    protected function resolveUserAtKeyboard(?string $acceptKey): ?int
+    {
+        if ($acceptKey === null || $acceptKey === '') {
+            return null;
+        }
+
+        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
+        if ($sessionToken === null) {
+            return null;
+        }
+
+        return Hilos::$db->sessions->findByToken($sessionToken)?->userAtKeyboard();
+    }
+
+    /**
      * Request the cluster to enter protected mode for a destructive operation.
      *
      * The initiator agent (a backup restore agent today, other destructive operations later) runs in

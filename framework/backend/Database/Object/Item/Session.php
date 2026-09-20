@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Session as EntitySession;
@@ -122,5 +123,28 @@ final class Session extends Object_
             self::lastSeenAt => $this->entity->last_seen_at,
             self::expiresAt => $this->entity->expires_at,
         ];
+    }
+
+    /**
+     * Returns the person at the keyboard of this session, or null when nobody is.
+     *
+     * The administrator behind an impersonation is the human being at the keyboard; the
+     * impersonated account is what is being looked at, not who is looking. A session with
+     * no person in it answers nobody whatever its marker says: a row left with a marker and
+     * no user must not name its administrator, because the administrator is not there. That
+     * branch is a belt over a door already shut - {@see SessionActions::unbindUser()} lowers
+     * the marker together with the person since HIL-1061, and stopping an impersonation
+     * wears the same belt - so it covers only rows written by the code before that.
+     *
+     * @return ?int User id of whoever is at the keyboard, or null when the session is anonymous
+     * @throws DatabaseException If entity access fails
+     */
+    public function userAtKeyboard(): ?int
+    {
+        if ($this->userId === null) {
+            return null;
+        }
+
+        return $this->impersonatorUserId ?? $this->userId;
     }
 }
