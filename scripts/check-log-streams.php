@@ -27,10 +27,11 @@ declare(strict_types=1);
  *                     nobody to alert; a freeze entered through the live initiator and left idle
  *                     until the master's own watchdog writes an agent line.
  *   rotation-refused  a daemon container of its own, with a file of the host bind-mounted INTO
- *                     the log directory: rename() cannot move a mount point even as root. Chosen
- *                     to reach the rotation complaint of map row 3, and found on the first live
- *                     run to reach the watchdog's own PHP error handler instead (row 18): rename()
- *                     warns before it returns false, and the watchdog leaves (P-353).
+ *                     the log directory: rename() cannot move a mount point even as root. The
+ *                     start rotation skips that file, names it at error level, and the node comes
+ *                     up; both halves are asserted. It was chosen for map row 3, reached row 18
+ *                     instead while the refused rename still ended the watchdog, and reaches row 3
+ *                     since HIL-1045.
  *
  * Readiness is asked over the command socket (`cli.php daemon:status`, run inside the daemon's
  * container where the daemon addresses itself), never read off the log files — a stream that
@@ -178,6 +179,9 @@ const LOG_STREAMS_WORKER_INDEX_ROW = 10;
 
 /** The map row the warning record of master-error proves; polled before the fatal is provoked. */
 const LOG_STREAMS_WARNING_ROW = 19;
+
+/** The map row of rotation-refused, whose living-node half is asserted over the daemon, not by a record. */
+const LOG_STREAMS_ROTATION_ROW = 3;
 
 $root = dirname(__DIR__);
 require_once $root . '/scripts/stand-registry.php';
@@ -480,9 +484,11 @@ function provokeIdleFreeze(array $box, array $marks, array $records): array
  *
  * The host file lives in the temporary directory and is removed by the scenario; nothing is
  * written into the tree, and no permission is touched: the trap is that rename(2) refuses to
- * move a mount point, for root as for anyone. What that provokes today is a PHP warning inside
- * the watchdog — its landing is what the scenario's record asserts — and a watchdog that leaves;
- * the container is dead by the time the closing snapshot is taken, which is fine for reading it.
+ * move a mount point, for root as for anyone. The start rotation skips the mount point, names it
+ * at error level, and the node comes up. The scenario proves both halves: the line, through the
+ * scenario's record, and the living node, by waiting for the daemon to answer afterwards — a node
+ * that does not come up is the regression this check exists against, so that wait turns into a RED
+ * of the scenario rather than a harness error.
  *
  * @param array{root: string, cwd: string, compose: string, logDir: string} $box Where things are.
  * @param array<int, array<string, mixed>> $records The scenario's records.
@@ -510,11 +516,23 @@ function runRotationRefusedScenario(array $box, array $records): array
         return ['failures' => [], 'harness' => $started];
     }
 
+    $failures = [];
+    $ready = waitDaemonReady(LOG_STREAMS_OWN_CONTAINER);
+    if ($ready !== null) {
+        $failures[] = sprintf(
+            "RED map row %d, scenario %s: the node did not come up after the rotation skipped a file it could not move\n%s\n",
+            LOG_STREAMS_ROTATION_ROW,
+            LOG_STREAM_SCENARIO_ROTATION_REFUSED,
+            $ready,
+        );
+    }
+
     $snapshot = awaitLandings($box, LOG_STREAMS_OWN_CONTAINER, $marks, $records);
+    $failures = array_merge($failures, judgeScenario($records, $snapshot));
     removeOwnContainer($box);
     unlink($pin);
 
-    return ['failures' => judgeScenario($records, $snapshot), 'harness' => null];
+    return ['failures' => $failures, 'harness' => null];
 }
 
 // ------------------------------------------------------------------ the stand

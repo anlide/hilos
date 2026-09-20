@@ -200,7 +200,7 @@ final class LogStreamVerdictsTest extends TestCase
         $records = require __DIR__ . '/../../../scripts/log-streams.php';
 
         self::assertSame([], validateLogStreamRecords($records));
-        self::assertSame([1, 2, 5, 6, 8, 10, 11, 13, 14, 15, 17, 18, 19, 23], logStreamRowsCovered($records));
+        self::assertSame([1, 2, 3, 5, 6, 8, 10, 11, 13, 14, 15, 17, 19, 23], logStreamRowsCovered($records));
         foreach (LOG_STREAM_SCENARIOS as $scenario) {
             self::assertNotSame([], logStreamRecordsOf($records, $scenario), $scenario . ' has no record');
         }

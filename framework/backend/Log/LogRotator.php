@@ -9,6 +9,9 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DockerManager;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\FileMoveException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Utils\Exception\LogRotationException;
 
@@ -128,7 +131,10 @@ final class LogRotator
      * it, apart from the kept basenames. The batch directory is created only once there is
      * something to put in it, so a run with nothing to move leaves no empty folder for the carrier
      * to walk. Individual move failures are collected and skipped; only directory-creation
-     * failures raise.
+     * failures raise. Both the moves and the two directory creations go through
+     * {@see FsPath}, because a bare `rename()` or `mkdir()` raises a warning before it returns
+     * false and every Hilos process turns that warning into the end of the process — which left
+     * the branches below unreachable until HIL-1045.
      *
      * @return LogRotationReport What was moved, where, and what stayed behind
      * @throws LogRotationException If the staging or timestamp directory cannot be created
@@ -153,16 +159,18 @@ final class LogRotator
         }
 
         $stagingDir = $this->stagingDirectory();
-        if (!is_dir($stagingDir)) {
-            if (!mkdir($stagingDir, self::BATCH_DIR_PERMISSIONS, true)) {
-                throw new LogRotationException("Cannot create staging directory: $stagingDir");
-            }
+        try {
+            FsPath::ensureDirectory($stagingDir, self::BATCH_DIR_PERMISSIONS);
+        } catch (DirectoryCreateException $failure) {
+            throw new LogRotationException("Cannot create staging directory: $stagingDir", $failure);
         }
 
         $timestamp = date(LogRotationConstants::TIMESTAMP_FORMAT);
         $timestampDir = $stagingDir . DIRECTORY_SEPARATOR . $timestamp;
-        if (!mkdir($timestampDir, self::BATCH_DIR_PERMISSIONS, true)) {
-            throw new LogRotationException("Cannot create timestamp directory: $timestampDir");
+        try {
+            FsPath::ensureDirectory($timestampDir, self::BATCH_DIR_PERMISSIONS);
+        } catch (DirectoryCreateException $failure) {
+            throw new LogRotationException("Cannot create timestamp directory: $timestampDir", $failure);
         }
 
         $movedCount = 0;
@@ -170,7 +178,9 @@ final class LogRotator
         foreach ($logFiles as $logFile) {
             $targetPath = $timestampDir . DIRECTORY_SEPARATOR . basename($logFile);
 
-            if (!rename($logFile, $targetPath)) {
+            try {
+                FsPath::move($logFile, $targetPath);
+            } catch (FileMoveException) {
                 $failedFiles[] = $logFile;
                 continue;
             }

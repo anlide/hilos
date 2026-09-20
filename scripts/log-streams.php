@@ -10,8 +10,8 @@ declare(strict_types=1);
  * HIL-872 map (`hilos-ops/maps/HIL-872-log-streams.md`, the measurement of 2026-09-12), and
  * a few more for what a landed fix promised since. The map stays history and is not edited:
  * where a fix has overtaken it the record carries today's contract and names the row it
- * supersedes. Row 3 has no record on purpose: its line cannot be reached today (P-353), and a
- * record pinning that would pin a defect as the norm.
+ * supersedes. Row 18 has no record on purpose: its only live lever was the defect HIL-1045
+ * removed, and a proof that rests on a bug must not keep the bug.
  *
  * A record is:
  *   rows        the map rows the record proves, by number.
@@ -280,18 +280,18 @@ return [
     ],
     // ---------------------------------------------------------------- rotation-refused
     [
-        'rows' => [18],
+        'rows' => [3],
         'scenario' => 'rotation-refused',
-        'source' => 'a PHP warning inside the watchdog lands in the container log and daemon-error.log, and nowhere else',
-        // framework/backend/Core/Daemon/BaseManager.php errorHandler() in the WATCHDOG, reached through
-        // framework/backend/Log/LogRotator.php rotate(): rename() of a mount point warns "Device or resource
-        // busy" before it returns false. The lever was chosen for map row 3 (HIL-1016's "Log rotation could
-        // not move ..."), and the first live run showed that line is unreachable today: the warning reaches
-        // the watchdog's handler first, and the watchdog leaves (P-353). What the lever does prove is row 18.
-        'pattern' => '/WARNING in LogRotator\.php:\d+ - rename\(\/var\/log\/hilos\/pinned-by-log-stream-check\.log,/',
+        'source' => 'the start rotation names the file it could not move, and the node comes up anyway',
+        // framework/backend/Core/Daemon/DockerManager.php rotateLogs(): "Log rotation could not move {$failedFile}"
+        // (HIL-1016), reachable since framework/backend/Log/LogRotator.php rotate() moves through FsPath::move()
+        // instead of a bare rename() whose warning ended the watchdog first (HIL-1045).
+        'pattern' => '/Log rotation could not move \/var\/log\/hilos\/pinned-by-log-stream-check\.log/',
         'lands' => ['container-log', 'daemon-error.log'],
         'never' => ['daemon.log', 'container-log-stderr', 'daemon-raw.log', 'daemon-error-raw.log'],
         'nowhere' => false,
         'empty' => [],
+        'supersedes' => 'map row 3 says the line goes to daemon-error.log only and never reaches docker logs;'
+            . ' since HIL-1016 moved it off Logger::errorLog() it reaches both',
     ],
 ];
