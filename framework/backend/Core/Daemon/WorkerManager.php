@@ -739,7 +739,7 @@ abstract class WorkerManager extends BaseManager
      * @throws AgentCreationFailedException When agent creation fails
      * @throws ClaimWidthConflictException When the agent declares one collection both whole and by rows
      * @throws ClaimedRowKeysMissingException When the agent declares a collection by rows and names none of them
-     * @throws HilosException Whatever the started agent's start hook raises, or the roster reconcile after it
+     * @throws HilosException Whatever the roster reconcile after the start hook raises
      */
     private function handleAgentStart(AgentStartDTO $data): void
     {
@@ -764,7 +764,8 @@ abstract class WorkerManager extends BaseManager
         // its own record of the agent before this worker did anything, and holds every frame
         // addressed to the agent until one of the two reports arrives (HIL-629). The start hook
         // below stays outside, because an agent whose onStart() throws is one this worker keeps -
-        // a master that forgot it would start a second one elsewhere.
+        // a master that forgot it would start a second one elsewhere. Its throw does not leave
+        // this method at all: see the hook's own catch, and HIL-1040 for why.
         try {
             // Before the instance exists, because an agent is handed its data rather than asked to
             // run without it: what the class says it reads is taken up here, and waited for, so
@@ -826,7 +827,27 @@ abstract class WorkerManager extends BaseManager
 
             throw $failure;
         }
-        $agent->onStart();
+        // Contained here and reported as a start that happened (HIL-1040). The agent is one this
+        // worker keeps - its claims stand, the idle tracker knows it, and it takes messages as it
+        // did before HIL-629 - so a master told "the start failed" would be told something untrue
+        // and would answer every frame held for it with a refusal. It would also never hear what
+        // the agent owns in RT, which only the tail below carries. Written loudly instead: a
+        // project whose hook throws has a defect, and this is the whole of what says so. Whether
+        // a throwing onStart() ought to take the agent down is a question about the framework at
+        // large, and it has no answer here.
+        try {
+            $agent->onStart();
+        } catch (Throwable $hookFailure) {
+            Logger::logAgentError($agentId, "Start hook failed: {$hookFailure->getMessage()}");
+            Logger::error(sprintf(
+                "Agent '%s' start hook failed: %s in %s:%d - %s",
+                $agentId,
+                get_class($hookFailure),
+                $hookFailure->getFile(),
+                $hookFailure->getLine(),
+                $hookFailure->getMessage(),
+            ));
+        }
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side

@@ -186,6 +186,8 @@ final class WorkerServerPoolGrowthTest extends TestCase
     public function testAFreezeTakesAWaitingAgentOutOfTheWait(): void
     {
         $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
         $server = $this->buildServer($manager);
         $server->startAgentPublic(self::MONOPOLISTIC_TYPE);
 
@@ -195,6 +197,10 @@ final class WorkerServerPoolGrowthTest extends TestCase
         $this->assertFalse($server->isAgentAwaitingWorker(self::MONOPOLISTIC_TYPE));
         $this->assertFalse($manager->hasAgent(self::MONOPOLISTIC_TYPE));
         $this->assertSame([], $server->getProtectedModeStoppedAgents());
+        // Said out loud, because the frames the master holds for a starting agent end on a word
+        // and on nothing else since HIL-1040: a wait that stopped being silently would leave a
+        // page loading for as long as the process lives.
+        $this->assertSame([self::MONOPOLISTIC_TYPE], $startSink->failedAgentIds);
 
         // A worker registering after the freeze is not handed the agent the freeze took out
         $worker = $server->addWorker(self::FIRST_WORKER_INDEX);
@@ -233,6 +239,8 @@ final class WorkerServerPoolGrowthTest extends TestCase
     public function testAStopTakesAWaitingAgentOutOfTheWait(): void
     {
         $manager = new PoolGrowthTestAgentManagerDaemon();
+        $startSink = new PoolGrowthTestStartSink();
+        $manager->registerAgentStartSink($startSink);
         $server = $this->buildServer($manager);
         $server->executePlacement(self::MONOPOLISTIC_TYPE, null);
 
@@ -240,6 +248,9 @@ final class WorkerServerPoolGrowthTest extends TestCase
 
         $this->assertFalse($server->isAgentAwaitingWorker(self::MONOPOLISTIC_TYPE));
         $this->assertFalse($manager->hasAgent(self::MONOPOLISTIC_TYPE));
+        // Told for the same reason the freeze tells: a frame held for this agent is waiting on
+        // exactly this word and has no clock left behind it (HIL-1040).
+        $this->assertSame([self::MONOPOLISTIC_TYPE], $startSink->failedAgentIds);
         $worker = $server->addWorker(self::FIRST_WORKER_INDEX);
         $server->advancePublic();
         $this->assertSame([], $worker->startedAgentTypes);

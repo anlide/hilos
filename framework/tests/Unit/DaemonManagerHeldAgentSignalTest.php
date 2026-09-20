@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\AgentSignalMesh;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Placement\AgentLocation;
+use Hilos\Cluster\WorkerPlacement;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -11,9 +16,12 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Daemon\AgentDeliveryOutcome;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ParkedAgentSignal;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\UnknownAgentDestination;
@@ -29,12 +37,14 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -45,8 +55,12 @@ use ReflectionClass;
  * It used to be written to the worker right behind the start, and a start that failed inside the
  * worker took it along - or, for an agent no node was known to host, it was dropped on the spot.
  * Now the master holds it: for the start report of an agent coming up here, or for an address
- * that does not exist yet. It goes to that one agent once the agent is up, and to the refusal it
- * is owed once the start's own ceiling plus a second has passed.
+ * that does not exist yet. It goes to that one agent once the agent is up.
+ *
+ * The two holds end differently (HIL-1040). A start under way here is going to be reported one way
+ * or the other, so that hold has no deadline and outlasts however long the start takes. An agent
+ * nobody could place has no report coming, so that hold keeps the ceiling it always had - and
+ * loses it the moment the agent does turn up starting here.
  *
  * The drain is driven the way {@see DaemonManagerAgentStartRefusedTest} drives it; Reflection
  * reaches the private members because the code-style rule grants tests that exception.
@@ -55,9 +69,30 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 {
     private const string ACCEPT_KEY = 'ak-629';
 
+    /** @var string Node a case sends the agent off to, so the placing door has somewhere to forward */
+    private const string OTHER_NODE = 'node-b';
+
+    /** @var string Signal name the master facade addresses the agent with */
+    private const string MASTER_SIGNAL = 'master_facade_signal';
+
+    /** @var string Signal name a frame forwarded from another node carries */
+    private const string FORWARDED_SIGNAL = 'forwarded_signal';
+
+    /** @var string Correlation id the command cases hold their request under */
+    private const string CORRELATION_ID = 'corr-1040';
+
+    /**
+     * @var float Seconds of waiting a case simulates to stand for a start that is slow but running
+     *
+     * A multiple of the worker's own budget rather than a number of its own, so it stays well past
+     * the ceiling the master used to hold a frame for however that budget moves.
+     */
+    private const float LONG_START_SECONDS = AgentConstants::START_DEADLINE_SECONDS * 4;
+
     protected function tearDown(): void
     {
         Hilos::$sr = null;
+        Hilos::$cluster = null;
 
         parent::tearDown();
     }
@@ -119,29 +154,64 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
-     * A page whose agent never comes up gets the answer a dropped subscribe always got, only later,
-     * and the frame is not held a second time.
+     * A page whose agent is starting here waits as long as the start runs and is answered by the
+     * report, never by a clock: the hold carries no deadline at all, so simulated waiting far past
+     * the ceiling the master used to give itself changes nothing about it (HIL-1040).
      */
-    public function testAFrameHeldPastItsDeadlineIsAnsweredAsTheDropWasAndNotHeldAgain(): void
+    public function testAFrameForAStartUnderWayOutlastsTheOldCeilingAndGoesOutOnTheReport(): void
     {
         $manager = new HeldAgentSignalTestManager();
         $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
         $manager->drainQueue();
-        $this->assertSame([], $manager->pageErrorFrames());
 
-        $manager->expireHeldFrames();
+        $held = $manager->heldFrames();
+        $this->assertCount(1, $held);
+        $this->assertNull($held[0]->deadline);
+
+        $manager->ageHeldFrames(self::LONG_START_SECONDS);
         $manager->drainQueue();
 
-        $frames = $manager->pageErrorFrames();
-        $this->assertCount(1, $frames);
-        $error = $frames[0]->data;
-        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
-        $this->assertSame('node_unreachable', $error->errorCode);
-        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertCount(1, $manager->heldFrames());
 
         $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
         $manager->drainQueue();
-        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::COLD_PAGE . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * The one hold left with a clock loses it the moment its agent turns up starting here: from
+     * then on there IS a report coming, and the frame waits on it like any other. Otherwise the
+     * ceiling meant for "no node has this agent" would cut short a start that is running.
+     */
+    public function testAnAddresslessHoldLosesItsDeadlineOnceTheStartBeginsHere(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $manager->drainQueue();
+        $this->assertNotNull($manager->heldFrames()[0]->deadline);
+
+        $manager->workerServer->ensureAgentUp(HeldAgentSignalTestRouter::COLD_AGENT, null);
+        $manager->drainQueue();
+        $this->assertNull($manager->heldFrames()[0]->deadline);
+
+        $manager->expireHeldFrames();
+        $manager->ageHeldFrames(self::LONG_START_SECONDS);
+        $manager->drainQueue();
+        $this->assertSame([], $manager->pageErrorFrames());
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::UNPLACED_PAGE . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries,
+        );
     }
 
     /**
@@ -228,7 +298,9 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
-     * An agent no node is known to host is waited for too, instead of answered at once.
+     * An agent no node is known to host is waited for too, instead of answered at once - and it is
+     * the only wait a deadline still ends. The answer is the one a dropped subscribe always got,
+     * only later, and the frame is not held a second time.
      */
     public function testAFrameForAnAgentWithNoAddressIsHeldAndAnsweredOnlyWhenTheWaitEnds(): void
     {
@@ -242,7 +314,301 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->expireHeldFrames();
         $manager->drainQueue();
 
+        $frames = $manager->pageErrorFrames();
+        $this->assertCount(1, $frames);
+        $error = $frames[0]->data;
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        $this->assertSame('node_unreachable', $error->errorCode);
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * The worker running the agent dies before the start it was running is reported. Nothing is
+     * coming any more, so this is the end of the wait, and the hold has no deadline behind it to
+     * end it later - the page is answered here or never.
+     */
+    public function testTheDeathOfTheWorkerAnswersWhatWasHeldForItsAgent(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+
+        $manager->reportWorkerLost(HeldAgentSignalTestRouter::COLD_AGENT);
+
+        $frames = $manager->pageErrorFrames();
+        $this->assertCount(1, $frames);
+        $error = $frames[0]->data;
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        $this->assertSame('agent_unavailable', $error->errorCode);
+        $this->assertSame([], $manager->heldFrames());
+    }
+
+    /**
+     * Answered and not put back: a start that took its worker down would take the next one down
+     * the same way, so the frame must not be waiting for whatever comes up in its place.
+     */
+    public function testAFrameAnsweredForALostWorkerIsNotRedelivered(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queuePush(HeldAgentSignalTestRouter::COLD_PUSH);
+        $manager->drainQueue();
+
+        $manager->reportWorkerLost(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * The report names the agents of one worker, and a frame waiting on an agent of another one
+     * is somebody else's wait.
+     */
+    public function testTheDeathOfAWorkerLeavesFramesHeldForOtherAgentsAlone(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queuePush(HeldAgentSignalTestRouter::COLD_PUSH);
+        $manager->drainQueue();
+
+        $manager->reportWorkerLost(HeldAgentSignalTestRouter::FROZEN_AGENT);
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertSame([], $manager->pageErrorFrames());
+    }
+
+    /**
+     * A command held for a starting agent outlives its caller now that the hold has no clock, so
+     * the caller leaving has to be a fact of its own - and it drops the frame without a word,
+     * because the one who would read the refusal is exactly who has gone.
+     */
+    public function testACommandWhoseCallerStoppedWaitingIsDroppedWithoutAnAnswer(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+
+        $manager->onCommandAbandoned(self::CORRELATION_ID);
+
+        $this->assertSame([], $manager->heldFrames());
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+        $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * Two operators can be waiting on the same agent, and one giving up is not the other's word.
+     */
+    public function testAnotherCallerLeavingLeavesThisCommandHeld(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueCommand(HeldAgentSignalTestRouter::COLD_COMMAND);
+        $manager->drainQueue();
+
+        $manager->onCommandAbandoned('corr-somebody-else');
+
+        $this->assertCount(1, $manager->heldFrames());
+    }
+
+    /**
+     * The master's own facade used to place the agent and write into a worker with code of its
+     * own, which put its signal behind a start that could still fail. It goes through the same
+     * door as everything else now, so the signal waits for the start like a routed frame.
+     */
+    public function testASignalFromTheMasterFacadeIsHeldWhileTheAgentStarts(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->sendToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, self::MASTER_SIGNAL, new SignalData([]));
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [self::MASTER_SIGNAL . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * The frame a neighbour forwarded here is held the same way. It used to go straight into a
+     * worker, because the peer transport was wired to the worker server rather than to the
+     * master - so a frame that had crossed the cluster was the one frame with no hold at all.
+     */
+    public function testAFrameReceivedFromAnotherNodeIsHeldWhileTheAgentStarts(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, $this->forwardedSignal());
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [self::FORWARDED_SIGNAL . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * An agent already up takes the forwarded frame at once, which is what the case above is
+     * worth nothing without: a hold that never ends would look the same from the outside.
+     */
+    public function testAFrameReceivedFromAnotherNodeForAnAgentAlreadyUpIsDeliveredStraightAway(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::UP_AGENT, null, $this->forwardedSignal());
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame(
+            [self::FORWARDED_SIGNAL . '@' . HeldAgentSignalTestRouter::UP_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * The one hold with a clock keeps it when its agent is not starting but already RUNNING here.
+     *
+     * Nothing is coming for an agent that reported its start long ago, so a release that read the
+     * worker link alone would call this a start under way, take the clock off and hold the frame
+     * for the life of the process. The address can be missing for an agent running right here: a
+     * follower with no placement view yet, a cluster mid-election.
+     */
+    public function testAnAddresslessHoldKeepsItsDeadlineWhenItsAgentIsAlreadyUpHere(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->workerServer->ensureAgentUp(HeldAgentSignalTestRouter::UP_AGENT, null);
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_UP_PAGE);
+        $manager->drainQueue();
+        $this->assertNotNull($manager->heldFrames()[0]->deadline);
+
+        $manager->drainQueue();
+        $this->assertNotNull($manager->heldFrames()[0]->deadline);
+
+        $manager->expireHeldFrames();
+        $manager->drainQueue();
+
         $this->assertCount(1, $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
+    }
+
+    /**
+     * A frame that already crossed the mesh is marked, and the mark is what keeps the release
+     * from asking the placement about it a second time.
+     */
+    public function testAFrameFromAnotherNodeIsHeldWithTheMarkAndALocalOneWithout(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, $this->forwardedSignal());
+        $this->assertTrue($manager->heldFrames()[0]->localOnly);
+
+        $local = new HeldAgentSignalTestManager();
+        $this->queuePush(HeldAgentSignalTestRouter::COLD_PUSH);
+        $local->drainQueue();
+        $this->assertFalse($local->heldFrames()[0]->localOnly);
+    }
+
+    /**
+     * The agent turns up on another node while the forwarded frame waits: the frame is dropped
+     * with a line rather than sent on. Sending it on would put a third opinion about the host on
+     * the wire, and two nodes that disagree would trade the frame back and forth.
+     */
+    public function testAFrameFromAnotherNodeIsDroppedRatherThanForwardedOnAgain(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, $this->forwardedSignal());
+        $this->assertCount(1, $manager->heldFrames());
+
+        $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->placedReleases, 'The placing door must not be asked about a forwarded frame.');
+    }
+
+    /**
+     * The control the case above is worth nothing without: a frame this node parked itself IS
+     * handed to the placing door when its agent turns up elsewhere, which is what forwards it.
+     */
+    public function testAFrameThisNodeParkedIsStillForwardedWhenItsAgentTurnsUpElsewhere(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queuePush(HeldAgentSignalTestRouter::COLD_PUSH);
+        $manager->drainQueue();
+        $manager->placedReleases = [];
+
+        $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $manager->placedReleases);
+    }
+
+    /**
+     * Registers a placement lookup that sends one agent off this node.
+     *
+     * @param string $agentId Agent the lookup reports running elsewhere
+     */
+    private function placeOnAnotherNode(string $agentId): void
+    {
+        $context = new ClusterContext();
+        $context->registerWorkerPlacement(new class ($agentId, self::OTHER_NODE) implements WorkerPlacement {
+            /**
+             * @param string $placedAgentId Agent id this lookup sends off the node
+             * @param string $nodeId Node it names for that agent
+             */
+            public function __construct(private readonly string $placedAgentId, private readonly string $nodeId)
+            {
+            }
+
+            public function locate(string $agentType, ?string $agentIndex): AgentLocation
+            {
+                $agentId = $agentIndex !== null ? "{$agentType}:{$agentIndex}" : $agentType;
+
+                return $agentId === $this->placedAgentId
+                    ? AgentLocation::onNode($this->nodeId)
+                    : AgentLocation::here();
+            }
+        });
+
+        Hilos::$cluster = $context;
+    }
+
+    /**
+     * @return SignalDTO One frame shaped the way the peer transport hands one over
+     */
+    private function forwardedSignal(): SignalDTO
+    {
+        return new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(self::FORWARDED_SIGNAL),
+            new SignalData([]),
+        );
+    }
+
+    /**
+     * @param string $command Command name the router answers with its case's agent
+     */
+    private function queueCommand(string $command): void
+    {
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName($command),
+            new CommandRequestDTO(self::CORRELATION_ID, $command),
+        );
     }
 
     /**
@@ -277,6 +643,9 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
  */
 final class HeldAgentSignalTestManager extends DaemonManager
 {
+    /** @var int Index of the worker the loss cases report dead */
+    private const int HOST_WORKER = 3;
+
     /** The stand-in worker server the drain delivers through */
     public HeldAgentSignalTestWorkerServer $workerServer;
 
@@ -288,12 +657,37 @@ final class HeldAgentSignalTestManager extends DaemonManager
         $this->registerServer($this->workerServer);
     }
 
+    /** @var list<string> Agent types the placing door was asked to reach, in order */
+    public array $placedReleases = [];
+
     /**
      * Runs the private queue drain the daemon loop runs at the end of each iteration.
      */
     public function drainQueue(): void
     {
         new ReflectionClass(DaemonManager::class)->getMethod('dispatchSignals')->invoke($this);
+    }
+
+    /**
+     * Records that the placing door was asked, which is the door a forwarded frame must not reach.
+     *
+     * @param WorkerServer $workerServer Worker server hosting the agents of this node
+     * @param ?AgentSignalMesh $mesh Outbound peer port, or null when no peer server is registered
+     * @param AgentAddressedDestination $destination Agent to reach, already placed
+     * @param SignalDTO $signal Signal to deliver
+     * @return AgentDeliveryOutcome What the delivery answered
+     * @throws AgentException When a local agent cannot be reached and the daemon is not shutting down
+     * @throws HilosException Whatever the project's agent-daemon factory raises while the local agent starts
+     */
+    protected function deliverToAgentDestination(
+        WorkerServer $workerServer,
+        ?AgentSignalMesh $mesh,
+        AgentAddressedDestination $destination,
+        SignalDTO $signal,
+    ): AgentDeliveryOutcome {
+        $this->placedReleases[] = $destination->agentType;
+
+        return parent::deliverToAgentDestination($workerServer, $mesh, $destination, $signal);
     }
 
     /**
@@ -328,13 +722,53 @@ final class HeldAgentSignalTestManager extends DaemonManager
     }
 
     /**
-     * Moves every frame held for an agent past its deadline, so the next drain answers it.
+     * Moves every frame that has a deadline past it, so the next drain answers it.
+     *
+     * A frame held for a start under way here has none to move (HIL-1040): it waits on a fact,
+     * and handing it a deadline would test a clock the code no longer keeps over it.
      */
     public function expireHeldFrames(): void
     {
         $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
         $held->setValue($this, array_map(
-            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => new ParkedAgentSignal($parked->signal, $parked->agentId, 0.0),
+            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => $parked->deadline === null
+                ? $parked
+                : new ParkedAgentSignal($parked->signal, $parked->agentId, $parked->parkedAt, 0.0, $parked->localOnly),
+            $held->getValue($this),
+        ));
+    }
+
+    /**
+     * Delivers the report the roster makes when a worker dies with agents still on it.
+     *
+     * @param string $agentType Agent the dead worker was hosting
+     */
+    public function reportWorkerLost(string $agentType): void
+    {
+        $this->reportAgentsLostWithWorker(self::HOST_WORKER, false, [$agentType]);
+    }
+
+    /**
+     * Rewinds every held frame by the given seconds, so the next drain sees it as that much older.
+     *
+     * Time passes for the whole record - the moment the hold began and the deadline it carries, if
+     * it carries one - which is what lets a case say "this much waiting went by" without waiting.
+     * A frame holding for a start under way carries no deadline, so all that changes is its age,
+     * and that is the point of the helper (HIL-1040).
+     *
+     * @param float $seconds Seconds of waiting to simulate
+     */
+    public function ageHeldFrames(float $seconds): void
+    {
+        $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
+        $held->setValue($this, array_map(
+            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => new ParkedAgentSignal(
+                $parked->signal,
+                $parked->agentId,
+                $parked->parkedAt - $seconds,
+                $parked->deadline === null ? null : $parked->deadline - $seconds,
+                $parked->localOnly,
+            ),
             $held->getValue($this),
         ));
     }
@@ -390,9 +824,13 @@ final class HeldAgentSignalTestRouter extends SignalRouter
 
     public const string FROZEN_PUSH = 'frozen_push';
 
+    public const string COLD_COMMAND = 'cold:command';
+
     public const string COLD_PAGE = 'cold_room';
 
     public const string UNPLACED_PAGE = 'unplaced_room';
+
+    public const string UNPLACED_UP_PAGE = 'unplaced_up_room';
 
     /** @var list<WebSocketSignalData> Subscription errors queued for a browser, in order */
     public array $pageErrorFrames = [];
@@ -424,11 +862,13 @@ final class HeldAgentSignalTestRouter extends SignalRouter
     protected function additionalDestinations(SignalDTO $signal): array
     {
         return match ($signal->signalName->getName()) {
-            self::COLD_PUSH, self::COLD_FOLLOW_UP, self::COLD_PAGE => [new AgentDestination(self::COLD_AGENT)],
+            self::COLD_PUSH, self::COLD_FOLLOW_UP, self::COLD_PAGE,
+            self::COLD_COMMAND => [new AgentDestination(self::COLD_AGENT)],
             self::SHARED_PUSH => [new AgentDestination(self::UP_AGENT), new AgentDestination(self::COLD_AGENT)],
             self::UP_PUSH => [new AgentDestination(self::UP_AGENT)],
             self::FROZEN_PUSH => [new AgentDestination(self::FROZEN_AGENT)],
             self::UNPLACED_PAGE => [new UnknownAgentDestination(self::COLD_AGENT)],
+            self::UNPLACED_UP_PAGE => [new UnknownAgentDestination(self::UP_AGENT)],
             default => [],
         };
     }

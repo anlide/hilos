@@ -8,7 +8,9 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -119,10 +121,16 @@ final class WorkerManagerStopCleanupTest extends TestCase
     }
 
     /**
-     * An agent whose onStart() throws is one this worker keeps, so it is not reported as a failed
-     * start: a master that forgot it would start a second one on another worker.
+     * An agent whose onStart() throws is one this worker keeps, so it is reported as STARTED and
+     * the throw does not leave the start at all (HIL-1040).
+     *
+     * A master told "the start failed" would be told something untrue - the agent is here, holds
+     * its claims and takes messages - and would answer with a refusal every frame it is holding
+     * for it, which before HIL-629 that agent simply received. Reported as failed OR not reported
+     * at all, the frames wait on a report that never comes, because the hold has no deadline
+     * behind it any more.
      */
-    public function testAStartHookThatThrowsIsNotReportedAsAFailedStart(): void
+    public function testAStartHookThatThrowsIsReportedAsAStartedAgentAndDoesNotEscape(): void
     {
         $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
         $agent->startException = new RuntimeException('start hook failed');
@@ -130,16 +138,24 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $client = new WorkerManagerStopCleanupTestClient();
         $manager->attachClient($client);
 
-        try {
-            $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
-            $this->fail('A start hook that throws must throw out of the start');
-        } catch (RuntimeException) {
-            $this->assertSame([], array_values(array_filter(
-                $client->sent,
-                static fn(WorkerDTO|array $sent): bool => $sent instanceof WorkerAgentStartFailedDTO,
-            )));
-        }
+        $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
 
+        $this->assertSame([], array_values(array_filter(
+            $client->sent,
+            static fn(WorkerDTO|array $sent): bool => $sent instanceof WorkerAgentStartFailedDTO,
+        )));
+        // The report goes out as a raw array rather than a DTO, so it is read by its type field.
+        $started = array_values(array_filter(
+            $client->sent,
+            static fn(WorkerDTO|array $sent): bool => is_array($sent)
+                && isset($sent[WorkerDTO::TYPE])
+                && $sent[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STARTED,
+        ));
+        $this->assertCount(1, $started);
+        $this->assertSame(
+            WorkerManagerStopCleanupTestAgent::AGENT_TYPE,
+            $started[0][AgentConstants::FIELD_AGENT_ID],
+        );
         $this->assertTrue($manager->hostsAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
     }
 

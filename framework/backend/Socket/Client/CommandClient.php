@@ -490,6 +490,9 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
     /**
      * Fail a held request that has waited longer than {@see CommandChannelWindows::CHANNEL_HELD_SECONDS}.
+     *
+     * Given up on rather than forgotten: the caller stops waiting here, and a frame the master
+     * holds for a starting agent on this request's behalf is dropped with it (HIL-1040).
      */
     public function onTick(): void
     {
@@ -502,7 +505,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             // The outermost window, which nothing is meant to reach: whatever the request was
             // routed to neither answered nor refused inside its own window.
             Logger::warning("Command channel: gave up holding {$this->traceOfHeldRequest()}");
-            $this->server->forget($correlationId);
+            $this->server->abandon($correlationId);
             $this->writeReply(CommandReplyDTO::error($correlationId, 'Command timed out'));
         }
     }
@@ -512,13 +515,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      *
      * A disconnect with a request still held is the caller having given up first, and it is
      * written down for that reason: from here on the reply, whenever it arrives, has nowhere to
-     * go, and the only account of the request that ever existed is this line.
+     * go, and the only account of the request that ever existed is this line. It is also the
+     * moment a frame held for a starting agent on this request's behalf stops being owed to
+     * anybody, which the master is told through the same door (HIL-1040).
      */
     protected function onClose(): void
     {
         if ($this->heldCorrelationId !== null) {
             Logger::warning("Command channel: the caller left while holding {$this->traceOfHeldRequest()}");
-            $this->server->forget($this->heldCorrelationId);
+            $this->server->abandon($this->heldCorrelationId);
             $this->heldCorrelationId = null;
             $this->heldCommand = '';
         }

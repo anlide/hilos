@@ -827,6 +827,11 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * log line uses: an index of zero is a client that never registered, and every real worker
      * counts from one, so an unregistered client must not match agents by a zero it shares
      * with nobody.
+     *
+     * Forgetting them also answers whoever was waiting on one of them mid-start, which is what
+     * the raise below is about: a page or a command owed a refusal that cannot be named.
+     *
+     * @throws InvalidArgumentException When a refusal owed to a frame held for a lost agent cannot be named
      */
     protected function onClose(): void
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
+use Hilos\Core\Daemon\AbandonedCommandSink;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\DaemonStatusSource;
@@ -42,6 +43,9 @@ class CommandServer extends AbstractServer
 
     /** @var ?ConnectionDropper Master seam that force-closes a WebSocket connection, wired at registration */
     private ?ConnectionDropper $connectionDropper = null;
+
+    /** @var ?AbandonedCommandSink Master seam told of a request nobody waits on any more, wired at registration */
+    private ?AbandonedCommandSink $abandonedCommandSink = null;
 
     /** @var ?ProtectedModeSnapshotSource Master seam that reports the protected-mode state, wired at registration */
     private ?ProtectedModeSnapshotSource $protectedModeSnapshotSource = null;
@@ -93,10 +97,26 @@ class CommandServer extends AbstractServer
     }
 
     /**
+     * Drops a held command client and tells the master nobody is waiting on it any more.
+     *
+     * The door for the two events that mean the CALLER is gone - the socket closed, or the
+     * channel's own window ran out - as opposed to {@see forget()}, which a delivered reply also
+     * goes through. Only these two let the master drop a frame it holds for a starting agent
+     * (HIL-1040); calling it on a delivery would drop a hold for a request that was answered.
+     *
+     * @param string $correlationId Correlation id nobody is waiting on any more
+     */
+    public function abandon(string $correlationId): void
+    {
+        $this->forget($correlationId);
+        $this->abandonedCommandSink?->onCommandAbandoned($correlationId);
+    }
+
+    /**
      * Delivers an agent reply to the held command client and drops it.
      *
      * A reply for a correlation id nobody holds is written down rather than dropped in silence
-     * (HIL-1000). It is not an error here - the request was dropped by {@see forget()} when its
+     * (HIL-1000). It is not an error here - the request was dropped by {@see abandon()} when its
      * caller gave up or its window ran out - but it is the far end of exactly the trip that
      * ended in silence for whoever asked, and without this line that trip has no last entry at
      * all: the answer arrived, and the account of it stopped where the holder used to be.
@@ -128,6 +148,19 @@ class CommandServer extends AbstractServer
     public function setConnectionDropper(ConnectionDropper $connectionDropper): void
     {
         $this->connectionDropper = $connectionDropper;
+    }
+
+    /**
+     * Wires the master seam told of a request whose caller stopped waiting.
+     *
+     * Set by {@see DaemonManager::registerServer()} so the channel's two departure events can
+     * reach the frames the master holds for a starting agent (HIL-1040).
+     *
+     * @param AbandonedCommandSink $sink Master seam told of an abandoned correlation id
+     */
+    public function setAbandonedCommandSink(AbandonedCommandSink $sink): void
+    {
+        $this->abandonedCommandSink = $sink;
     }
 
     /**

@@ -201,13 +201,18 @@ final class DaemonManagerCommandRefusalTestManager extends DaemonManager
     }
 
     /**
-     * Moves every frame held for an agent past its deadline, so the next drain answers it.
+     * Moves every frame that has a deadline past it, so the next drain answers it.
+     *
+     * A frame held for a start under way here has none to move (HIL-1040): it waits on a fact,
+     * and handing it a deadline would test a clock the code no longer keeps over it.
      */
     public function expireHeldFrames(): void
     {
         $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
         $held->setValue($this, array_map(
-            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => new ParkedAgentSignal($parked->signal, $parked->agentId, 0.0),
+            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => $parked->deadline === null
+                ? $parked
+                : new ParkedAgentSignal($parked->signal, $parked->agentId, $parked->parkedAt, 0.0, $parked->localOnly),
             $held->getValue($this),
         ));
     }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
-use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 
 /**
@@ -14,9 +13,8 @@ use Hilos\Cluster\Placement\PlacementExecutor;
  * quiesced, {@see DaemonProtectedModeExecutor::notifyInitiatorReady()} hands the initiator's
  * agent identity to this seam so the daemon can address the worker hosting it. If refused,
  * refusal is delivered over the same seam. The worker server implements it by reusing its
- * send-to-agent-worker path, mirroring how {@see PlacementExecutor} and {@see AgentSignalSink}
- * expose the worker server to the peer transport. A test supplies a fake so the executor runs
- * without a worker pool.
+ * send-to-agent-worker path, mirroring how {@see PlacementExecutor} exposes the worker server
+ * to the peer transport. A test supplies a fake so the executor runs without a worker pool.
  */
 interface ProtectedModeInitiatorRelay
 {

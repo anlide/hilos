@@ -118,7 +118,10 @@ final class DaemonManagerSignalFacadeTest extends TestCase
         $manager->sendToAgent(self::AGENT_TYPE, '7', self::SIGNAL_NAME, new SignalData([]));
 
         $this->assertSame([], $manager->workerServer?->delivered);
-        $this->assertStringContainsString('no live link to node node-b', $this->written());
+        // Two lines now, since the facade shares the routed walk's door: the door names the node
+        // and what failed about it, the facade names the signal it could not deliver.
+        $this->assertStringContainsString('no live link', $this->written());
+        $this->assertStringContainsString('node node-b', $this->written());
         $this->assertStringContainsString(self::SIGNAL_NAME, $this->written());
     }
 
@@ -135,7 +138,8 @@ final class DaemonManagerSignalFacadeTest extends TestCase
         $manager->sendToAgent(self::AGENT_TYPE, null, self::SIGNAL_NAME, new SignalData([]));
 
         $this->assertSame([], $manager->workerServer?->delivered);
-        $this->assertStringContainsString('no peer server for node node-b', $this->written());
+        $this->assertStringContainsString('no peer server', $this->written());
+        $this->assertStringContainsString('node node-b', $this->written());
     }
 
     public function testAnAgentSignalWithNoWorkerServerIsWrittenWithItsAddressee(): void
@@ -152,7 +156,9 @@ final class DaemonManagerSignalFacadeTest extends TestCase
 
     /**
      * The whole point of the void return: delivery raising is a normal outcome of a link that
-     * died, and letting it out would end run() and take the node down with it.
+     * died, and letting it out would end run() and take the node down with it. The raise is
+     * contained inside the shared delivery door now, which writes the failure's own words; the
+     * facade writes the line it owes its caller on top of that.
      */
     public function testADeliveryThatRaisesIsSwallowedAndWritten(): void
     {
@@ -162,8 +168,10 @@ final class DaemonManagerSignalFacadeTest extends TestCase
         $manager->sendToAgent(self::AGENT_TYPE, null, self::SIGNAL_NAME, new SignalData([]));
 
         $written = $this->written();
-        $this->assertStringContainsString(AgentNotFoundException::class, $written);
+        $this->assertStringContainsString('Agent start refused', $written);
+        $this->assertStringContainsString("Agent '" . self::AGENT_TYPE . "' does not exist", $written);
         $this->assertStringContainsString('agent ' . self::AGENT_TYPE, $written);
+        $this->assertStringContainsString('its start on this node was refused', $written);
     }
 
     /**
@@ -323,6 +331,19 @@ final class DaemonManagerSignalFacadeTestManager extends DaemonManager
 
 final class DaemonManagerSignalFacadeTestAgentManagerDaemon extends AgentManagerDaemon
 {
+    /**
+     * Every agent these cases address counts as up, so the shared delivery door hands it the
+     * frame rather than holding it for a start report no worker of this test will send. What
+     * the hold itself does is held to account by {@see DaemonManagerHeldAgentSignalTest}.
+     *
+     * @param string $agentId Agent the facade asks about
+     * @return bool Always true
+     */
+    public function isAgentStarted(string $agentId): bool
+    {
+        return true;
+    }
+
     protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
         throw new AgentDaemonCreationFailedException('not used in test');

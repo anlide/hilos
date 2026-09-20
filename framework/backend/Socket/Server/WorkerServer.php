@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
-use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -83,7 +82,6 @@ use LogicException;
  */
 abstract class WorkerServer extends AbstractServer implements
     PlacementExecutor,
-    AgentSignalSink,
     ProtectedModeInitiatorRelay,
     ProtectedModeAgentFreezer
 {
@@ -1256,8 +1254,9 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * Through the ordinary start, so every gate it passed when it asked is asked again: a node
      * that lost leadership or an RT claim in the meantime keeps the agent off it as it would have
-     * then. A start that ends without a worker link was refused quietly by one of those gates, and
-     * the record the wait kept is taken away with it.
+     * then. A start that ends without a worker link was refused quietly by one of those gates -
+     * quietly to the gate, not to the master: the wait ends out loud, because the frames held for
+     * this agent are waiting on exactly that word (HIL-1040).
      *
      * @param AwaitingWorkerAgent $awaiting Agent to seat
      */
@@ -1274,7 +1273,10 @@ abstract class WorkerServer extends AbstractServer implements
 
         $agentDaemon = $this->agentManager->getAgent($awaiting->agentId);
         if ($agentDaemon === null || !$agentDaemon->hasWorkerClient()) {
-            $this->forgetUnlinkedRecord($awaiting->agentId);
+            $this->reportWaitEndedWithoutStart(
+                $awaiting->agentId,
+                'a gate refused the start when its monopolistic worker came free',
+            );
 
             return;
         }
@@ -1286,39 +1288,47 @@ abstract class WorkerServer extends AbstractServer implements
      * Ends a wait that produced no agent: the record goes, and the asker and the project are told
      * (HIL-998).
      *
-     * The same answer a start refused for want of a worker gets (HIL-999), and at once: reported
-     * as a start that failed, which drops the record and answers the frames the master holds for
-     * the agent in the words of a start refused on this node, plus one
-     * {@see MasterFailureUnit::AGENT_START} card for the project.
+     * The same answer a start refused for want of a worker gets (HIL-999), and at once, plus one
+     * {@see MasterFailureUnit::AGENT_START} card for the project - which is what separates this
+     * from the other ends of the wait: nobody asked for those, this one is a failure.
      *
      * @param string $agentId Agent whose wait ended without a worker
      * @param Throwable $failure What the start was refused with
      */
     private function refuseAwaitingAgent(string $agentId, Throwable $failure): void
     {
-        try {
-            $this->agentManager->reportAgentStartFailed($agentId, $failure->getMessage());
-        } catch (InvalidArgumentException $e) {
-            // The record is gone before the sink is told; an answer that cannot be named leaves the
-            // held frame to its own deadline, which answers it then
-            Logger::error("Monopolistic pool: refusal of agent {$agentId} could not be answered: {$e->getMessage()}");
-        }
+        $this->reportWaitEndedWithoutStart($agentId, $failure->getMessage());
         $this->reportContainedFailure(new ContainedFailure(MasterFailureUnit::AGENT_START, $agentId, $failure));
     }
 
     /**
-     * Takes away the record of an agent that is linked to no worker, and leaves a linked one alone.
+     * Tells the master that a wait for a monopolistic worker ended and the agent will not start.
      *
-     * The record a wait keeps is the temporary one {@see startAgentInternal()} writes, the only kind
-     * of record that is linked to no worker, so this is the rollback HIL-999 does for a refused
-     * start, taken later.
+     * EVERY way out of that wait comes through here, because the frames the master holds for a
+     * starting agent end on a fact and on nothing else since HIL-1040: a wait that simply stopped
+     * being would leave a page loading and an operator's command unanswered for as long as the
+     * process lives. Before that they ran out on a six-second ceiling, which is why three of these
+     * ways out used to be able to say nothing at all.
      *
-     * @param string $agentId Agent whose record may go
+     * Reported as a start that failed, which drops the master's record and answers those frames in
+     * the words of a start refused on this node. The record is the temporary one
+     * {@see startAgentInternal()} writes for a waiting agent and is linked to no worker, so there
+     * is no live agent for the drop to take away.
+     *
+     * A refusal that cannot be named is written and swallowed: the record is gone by then, nothing
+     * is left to unwind, and raising here would take the loop down over a frame nobody can be told
+     * about. That frame is stranded, and this line is the only account of it there will be.
+     *
+     * @param string $agentId Agent whose wait ended without a start
+     * @param string $reason Why it will not start, as the master reports it on
      */
-    private function forgetUnlinkedRecord(string $agentId): void
+    private function reportWaitEndedWithoutStart(string $agentId, string $reason): void
     {
-        if ($this->agentManager->getAgent($agentId)?->hasWorkerClient() === false) {
-            $this->agentManager->removeAgent($agentId);
+        try {
+            $this->agentManager->reportAgentStartFailed($agentId, $reason);
+        } catch (InvalidArgumentException $failure) {
+            Logger::error("Monopolistic pool: the end of agent {$agentId}'s wait"
+                . " could not be answered: {$failure->getMessage()}");
         }
     }
 
@@ -1656,33 +1666,6 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Delivers a signal forwarded from another node to a local agent.
-     *
-     * Implements {@see AgentSignalSink} for cross-node signal routing: the target agent was
-     * already resolved on the sending node, so this only wraps the signal for the local
-     * worker and reuses {@see sendSignalToAgent()} — the same path a locally-dispatched
-     * signal takes, including starting the agent if it is not yet running.
-     *
-     * @param string $agentType Target agent type
-     * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @param SignalDTO $signal Signal to deliver
-     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
-     * @throws NoSuitableWorkerException If no suitable worker is available
-     * @throws AgentNotFoundException If agent does not exist after startAgent() call
-     * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
-     * @throws WorkerClientNotFoundException If worker client is not found for agent
-     * @throws HilosException Whatever the project's agent-daemon factory raises
-     */
-    public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
-    {
-        $this->sendSignalToAgent(
-            $agentType,
-            $agentIndex,
-            new DaemonAgentMessageDTO($this->buildAgentId($agentType, $agentIndex), $signal),
-        );
-    }
-
-    /**
      * Stop agent and remove from manager
      *
      * Sends agent_stop signal to worker and removes agent from agent manager.
@@ -1698,7 +1681,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         if (isset($this->agentsAwaitingWorker[$agentId])) {
             unset($this->agentsAwaitingWorker[$agentId]);
-            $this->forgetUnlinkedRecord($agentId);
+            $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for a monopolistic worker');
 
             return;
         }
@@ -1880,7 +1863,7 @@ abstract class WorkerServer extends AbstractServer implements
             }
 
             unset($this->agentsAwaitingWorker[$agentId]);
-            $this->forgetUnlinkedRecord($agentId);
+            $this->reportWaitEndedWithoutStart($agentId, 'protected mode holds the node');
             Logger::info("Monopolistic pool: agent {$agentId} left its wait for a worker, protected mode holds the node");
         }
 

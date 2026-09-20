@@ -107,11 +107,36 @@ names the node that runs it. A start the worker refuses before it holds the agen
 refused — comes back as `agent_start_failed`: the master forgets the record it
 wrote, answers the held frames as a start refused on this node, and the next
 frame starts the agent again. An agent whose `onStart()` throws is not such a
-start; the worker keeps it. A frame whose agent is not up within
-`AgentConstants::START_DEADLINE_SECONDS` plus one second is answered the way a
-dropped frame always was — a page with its subscription error, an operator with a
-refusal, a push with a log line. The hold lives in the master's memory and dies
-with it: delivery across a node that fell over is HIL-347.
+start: the worker keeps it, writes the throw down loudly, finishes the rest of
+the start and reports `agent_started` — so the agent takes messages and the
+frames held for it arrive. What a throwing `onStart()` ought to mean for the
+framework at large is a question nobody has answered yet; what it must not mean
+is an agent that is alive and unreachable.
+
+**The hold for a start under way ends on a fact, not on a clock** (HIL-1040).
+However long the start takes — waiting on the state it reads, waiting on a
+monopolistic worker raised for it — the frame waits with it, because every way
+that start can end reaches the master: `agent_started` delivers the frame,
+`agent_start_failed` answers it as a start refused here, the death of the worker
+hosting the agent answers it as a host that went down — never redelivers it,
+because a start that killed one worker would kill the next — and the departure of
+whoever asked drops it unanswered, whether that is a browser closing its socket
+or an operator's command giving up on its own window. One hold keeps a deadline,
+and it is the one with no report coming: a frame that met an empty address is
+answered after `AgentConstants::START_DEADLINE_SECONDS` plus one second the way
+a dropped frame always was — a page with its subscription error, an operator
+with a refusal, a push with a log line — because nothing anywhere reports "this
+agent could not be placed". That deadline comes off the moment the agent does
+turn up starting here. The hold lives in the master's memory and dies with it:
+delivery across a node that fell over is HIL-347.
+
+The price of ending on a fact is that a start which ends without one strands its
+frames: a worker wedged in `onStart()` forever, and an agent stopped in the
+middle of a start that a live worker was still running. A page and a command are
+taken off the hold when whoever asked goes away; a push has nobody to leave and
+simply accumulates. What a stop should mean for a frame held for the agent being
+stopped is not decided — nobody has been asked yet, and the freeze, which stops
+every agent at once, is where the question really belongs.
 
 **Three things must agree before an agent is stopped**, and the count is on the
 worker side, where the agent lives:

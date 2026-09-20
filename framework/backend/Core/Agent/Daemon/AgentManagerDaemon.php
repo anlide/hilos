@@ -1092,6 +1092,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param int $workerIndex Index of the worker that died
      * @param bool $isMonopolistic True when that worker was monopolistic
      * @return list<string> Ids of the agents forgotten, in roster order; empty when it hosted none
+     * @throws InvalidArgumentException When the loss sink cannot name an answer it owes a held frame
      */
     public function forgetAgentsOfWorker(int $workerIndex, bool $isMonopolistic): array
     {

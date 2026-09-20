@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /**
  * AgentLossSink - master-side seam the roster hands a dead worker's agents to.
@@ -37,9 +38,14 @@ interface AgentLossSink
      * project's to replace. Runs on the master loop, so an implementation does what the
      * hook it feeds is allowed to do and nothing slower.
      *
+     * The implementation may owe an answer to whoever was waiting on one of these agents -
+     * a page held mid-start, an operator's command - which is why this door is allowed to
+     * raise on a refusal it cannot name (HIL-1040).
+     *
      * @param int $workerIndex Index of the worker that died
      * @param bool $isMonopolistic True when that worker was monopolistic
      * @param list<string> $agentIds Ids of the agents it was hosting, in roster order
+     * @throws InvalidArgumentException When a refusal owed to a page or a command cannot be named
      */
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void;
 }

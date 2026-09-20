@@ -9,9 +9,9 @@ use Hilos\Socket\Server\WorkerServer;
 /**
  * ClusterWorkerServer - Worker server for the cluster demo.
  *
- * The base WorkerServer already implements the PlacementExecutor / AgentSignalSink
- * ports the cluster transport binds to, so a placed agent is launched through the
- * ordinary startAgent path. Nothing to add beyond the empty start hook.
+ * The base WorkerServer already implements the PlacementExecutor port the cluster
+ * transport binds to, so a placed agent is launched through the ordinary startAgent
+ * path. Nothing to add beyond the empty start hook.
  */
 final class ClusterWorkerServer extends WorkerServer
 {
