@@ -234,9 +234,11 @@ only what every sessions library owns — the session set, the rotations, the
 toast stacks and the identity rows a merge moves — and each project subclass
 with a sign-in surface declares the three collections behind that question in
 its own `OWNS_DB` and `OWNS_RT`. The same shape one section over, where the
-verifier circle left `AbstractHilosIndexAgent` for the one demo that declares
+verifier circle left `AbstractHilosIndexAgent` for the demos that declare
 `HilosFeature::BACKUP`: a class constant has no feature flag to ask, so the
-project that knows the answer says it.
+project that knows the answer says it. That shows the shape, not who owns the
+circle: the tie to `BACKUP` is today's and leaves when the circle moves under
+the freeze (not in the code yet — HIL-1118).
 
 ## Three Cases A Flat Constant Cannot Say
 

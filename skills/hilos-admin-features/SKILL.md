@@ -33,6 +33,7 @@ read the canonical spec before editing.
   table per subject, the administrators' windows as state inside it, and a
   refusal instead of an empty list when no holder answers:
   `docs/agents/architecture/table-agents.md`
+- Who owns the verifier circle: `docs/agents/architecture/protected-mode.md`
 
 ## Workflow
 
@@ -74,6 +75,8 @@ read the canonical spec before editing.
   project to activate the feature; bind content to the framework table instead.
 - Keep `admin_users` (Mode 2, project-owned) separate from `hilos_users`
   (Mode 1, framework-owned); do not fold one into the other.
+- The verifier circle belongs to the freeze, not to backup, and a framework-owned
+  section may have no line in `FEATURES` at all (Mode 1 of the graduation spec).
 - Do not pass `Hilos::$db`/`$rt`/`$setting`/`$table` through constructors to reach
   a graduated base; read the facade at the point of use.
 - Do not move an admin action's name to the owning agent, and do not write one

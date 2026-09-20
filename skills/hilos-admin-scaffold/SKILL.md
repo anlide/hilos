@@ -31,8 +31,9 @@ the recipe before generating code.
    source (settings — configure-only), project-owned data behind a framework
    contract (hilos-users — bound), or a configure-only engine with a monopoly
    agent (backup — a catalog carrying the reference and PII registries, env
-   values, and agent/CLI/RT-index binding). Read the base class; generate what it
-   leaves abstract.
+   values, and agent/CLI/RT-index binding; the verifier circle's table is not
+   backup's to activate — it belongs to the freeze, and the recipe says where it
+   comes from). Read the base class; generate what it leaves abstract.
 2. Generate against the framework base classes and their extension points, never
    by copying another project. The engine — table merge, page subscribe, action
    lifecycle — stays in the framework base.

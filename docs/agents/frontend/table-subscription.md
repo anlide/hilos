@@ -164,7 +164,7 @@ accumulated before the break is gone — the window that arrives outranks it.
 > a quiet source on headers, on the row-state cell and on the head of a card.
 > Six framework tables declare one — settings, users, the delivery journal,
 > backups, the channels hub and a channel's fields. The framework's log pages and
-> the verifier circle on the backups page still hand their view columns, a label
+> the verifier circle's table still hand their view columns, a label
 > and an empty text as props, and a table that declares nothing keeps drawing the
 > bar and the footer it drew before.
 

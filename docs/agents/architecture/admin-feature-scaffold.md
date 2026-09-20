@@ -166,7 +166,10 @@ also registers those. Generate, in any order:
    declares it, so the project writes no mount line at all — and is refused at
    startup if it writes one anyway
    ([../runtime/rt-context.md](../runtime/rt-context.md), *Feature-Owned Runtime
-   State*).
+   State*). The verifier circle's table is no part of this activation: it
+   belongs to the freeze ([protected-mode.md](protected-mode.md)), so every
+   installation carries it, backup or not (not in the code yet — HIL-1118), and
+   its surface is a section of its own (not in the code yet — HIL-1119).
 2. A backup catalog — `final class … implements
    Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
    `BACKUP_CATALOG` constant on the project `Hilos` facade (the framework default
@@ -495,9 +498,14 @@ project-bound contract. Pick the recipe by which one it is:
   register the `final` table + thin page + mount);
 - data is project-owned behind a framework contract → follow the **hilos-users**
   recipe (generate the binding: entity / presence source + the abstract hooks +
-  thin page + mount).
+  thin page + mount);
+- a framework-owned section with no feature switch → activation is registering
+  its page and table in the topology, and there is nothing to declare in
+  `FEATURES` ([admin-features.md](admin-features.md), Mode 1); the first one is
+  `hilos_maintenance`, and its recipe arrives with its code
+  (not in the code yet — HIL-1119).
 
-If neither fits — there is no framework base yet — the feature is not ready to
+If none fits — there is no framework base yet — the feature is not ready to
 scaffold; it must first be built or graduated per [admin-features.md](admin-features.md).
 
 ## Preferred Shape

@@ -32,6 +32,13 @@ without a context (`Hilos::refuseRuntimeFeaturesWithoutContext()`), and
 `HilosFeature::BACKUP` brings `RestoreRuntime`, so a restore without RT is cut
 off at startup rather than mid-restore.
 
+The verifier circle belongs to the mode, not to `HilosFeature::BACKUP`, and its
+table is the second unconditional thing after the freeze row: the verification
+window admits people by it, so every installation that can freeze carries it
+(not in the code yet — HIL-1118). Today `BackupFeature` lists it in
+`requiredDbTables` and `VerifierCircleSnapshot::capture()` returns early without
+`BACKUP`, so there the circle is empty for want of a place to ask.
+
 ## The Agent Owns The Entry; CLI Is Only The Trigger
 
 Entering goes one way and one way only:
@@ -422,20 +429,22 @@ no fourth way in.
 **The third door opens on a photograph rather than on a presentation
 (HIL-643).** The other two are earned at the door — the initiator by having
 asked for the freeze, a verifier by producing a code. The circle is decided
-before the door exists: an operator names people from the backup page, and at the
-moment the node freezes `VerifierCircleSnapshot::capture()` reads that list
-against the live connections and writes the session hashes of the members who
-were online onto the row. Nothing is presented afterwards; the tab that was
-already open walks in.
+before the door exists: an operator names people in the Maintenance section of
+the admin surface (not in the code yet — HIL-1119) — the backup page only points
+there (not in the code yet — HIL-1122) — and at the moment the node freezes
+`VerifierCircleSnapshot::capture()` reads that list against the live connections
+and writes the session hashes of the members who were online onto the row.
+Nothing is presented afterwards; the tab that was already open walks in.
 
 The order matters and is not an implementation detail. The photograph is taken
-under the freeze and **before the database is replaced**, because it is the last
-moment the question has an answer: the circle table lives in the database a
-restore rewrites, and afterwards the archive's own circle applies. It is also the
-first moment the answer is final — the node is quiesced, so the set of live
-connections has stopped changing. That is also why only somebody signed in at
-that moment is admitted: resolving a person to a session later would mean reading
-a session table the restore has replaced.
+under the freeze, because for any freeze that is the first moment the answer is
+final: the node is quiesced, so the set of live connections has stopped
+changing, and only somebody signed in at that moment is admitted. A restore
+adds a reason of its own, and it is why the photograph is taken
+**before the database is replaced**: that is also the last moment the question
+has an answer — the circle table lives in the database a restore rewrites, and
+afterwards the archive's own circle applies — and resolving a person to a
+session later would mean reading a session table the restore has replaced.
 
 The read and the write sit on opposite sides of a process boundary and neither
 may cross it. The circle is three database queries, which the master is forbidden
@@ -448,6 +457,16 @@ reaches the master. In a cluster the photograph stays on the row of the node tha
 froze and is fanned nowhere, exactly as the initiator's own session hash is: a
 browser is attached to the node it connected to, and a member who reached another
 node meets the stub there.
+
+Whatever the operation, the initiator of the freeze takes the photograph, on the
+freeze's own ready path; a restore is today's only destructive operation, not a
+condition (not in the code yet — HIL-1118). Today two carriers each take it:
+`BackupAgent::captureVerifierCircle()` and `captureVerifierCircleForTest()` of
+`ProtectedModeTestDriverTrait`, the latter under a freeze that restores nothing.
+
+Without `HilosFeature::BACKUP` the circle loses nothing: the freeze alone admits
+its member (not in the code yet — HIL-1118), people are named in the same
+section (not in the code yet — HIL-1119), and empty means nobody was named.
 
 **Both presented doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
 first phase with anything behind them.** Under `PHASE_ACTIVATING` and
