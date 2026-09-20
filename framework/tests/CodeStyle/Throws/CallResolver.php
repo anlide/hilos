@@ -24,6 +24,9 @@ final readonly class CallResolver
      */
     private const array MAGIC_PROPERTY_CONSTANTS = ['objectCollection' => 'OBJECT_COLLECTION_CLASS'];
 
+    /** Method whose contract answers for an undeclared instance-property read. */
+    private const string MAGIC_READER = '__get';
+
     /**
      * Built-in roots whose constructors raise nothing, so a class in the index that
      * inherits its constructor from one of them has been read to the end.
@@ -73,9 +76,9 @@ final readonly class CallResolver
      * nothing, unless that class is a built-in exception or error. An opaque entry is
      * never read to its target: that is what the index recorded it for.
      *
-     * A call reached through a magic property is not read to the end either, even when
-     * a constant or a class-level tag names the property's class: the read runs
-     * `__get()`, and the walk trusts the type the tag writes down, not the body behind it.
+     * A magic step is read through its class's `__get()` contract, including an
+     * inherited reader. A step without that declaration remains unread, as does an
+     * undeclared static property: PHP calls no magic reader for a static read.
      *
      * @param ClassRecord $class Class the call is written in
      * @param MethodRecord $method Method the call is written in
@@ -91,7 +94,7 @@ final readonly class CallResolver
             return false;
         }
         if ($site->kind !== CallSite::KIND_NEW) {
-            return $this->resolve($class, $method, $site) !== null && !$this->readsAMagicProperty($class, $method, $site);
+            return $this->resolve($class, $method, $site) !== null && $this->magicReaders($class, $method, $site) !== null;
         }
         if ($this->resolve($class, $method, $site) !== null) {
             return true;
@@ -118,22 +121,31 @@ final readonly class CallResolver
      * @param ClassRecord $class Class the call is written in
      * @param MethodRecord $method Method the call is written in
      * @param CallSite $site Call whose receiver chain is walked
-     * @return bool True when a step of the chain is a property no class along the way declares
+     * @return ?array<int, MethodRecord> Magic readers along the chain, or null when an undeclared step has no reader
      */
-    private function readsAMagicProperty(ClassRecord $class, MethodRecord $method, CallSite $site): bool
+    public function magicReaders(ClassRecord $class, MethodRecord $method, CallSite $site): ?array
     {
+        $readers = [];
         $current = $this->baseType($class, $method, $site->base, []);
         foreach ($site->path as $step) {
             if ($current === null || str_ends_with($current, self::ARRAY_SUFFIX)) {
-                return false;
+                return $readers;
             }
             if (!$this->declaresProperty($current, $step, [])) {
-                return true;
+                if (str_starts_with($step, CallSite::STATIC_STEP_PREFIX)) {
+                    return null;
+                }
+                $reader = $this->index->resolveMethod($current, self::MAGIC_READER);
+                if ($reader === null) {
+                    return null;
+                }
+                $readers[] = $reader;
             }
-            $current = $this->lookupProperty($current, $step, []);
+            $receiver = $current;
+            $current = $this->lookupProperty($receiver, $step, []) ?? $this->magicPropertyType($receiver, $step);
         }
 
-        return false;
+        return $readers;
     }
 
     /**

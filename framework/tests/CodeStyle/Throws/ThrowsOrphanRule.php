@@ -21,8 +21,8 @@ use Hilos\Tests\CodeStyle\Violation;
  *   declaration names, and the method is not judged at all — through a private helper
  *   as much as directly. An entry the index sees and cannot follow counts the same: a
  *   function, a closure, a call on what an expression returned, a callee, member or
- *   class held in a variable, a `throw` of anything but `new`, and a read through a
- *   magic property, whose `__get()` runs unread.
+ *   class held in a variable, a `throw` of anything but `new`, a magic step whose
+ *   class declares no `__get()`, and an undeclared static step.
  * - **Nothing can enter.** A body with no call, no `new` and no `throw` is an
  *   extension point, and its tag stands for what an override will raise.
  * - **The inherited contract declares it.** An implementation may repeat what the
@@ -45,8 +45,9 @@ final class ThrowsOrphanRule implements CrossFileRule
      */
     public const string SCOPE = 'THROWS-ORPHAN judges only a method whose every call resolved into a declaration, and'
         . ' only a tag no reachable exception is related to. A function, a closure, a call on what an expression'
-        . ' returned, a callee, member or class held in a variable, a throw of anything but new and a read through'
-        . ' __get() are calls that did not resolve. It is silent on a body with no call, new or throw in it'
+        . ' returned, a callee, member or class held in a variable, a throw of anything but new, a magic step whose'
+        . ' class declares no __get(), and an undeclared static step are calls that did not resolve. A tag covered'
+        . ' by a wide __get() contract counts as alive. It is silent on a body with no call, new or throw in it'
         . ' at all, which is an extension point rather than a tag left behind; on a tag the inherited contract'
         . ' declares; and on a tag that covers the tag of an override. A method without a body is never judged:';
 
@@ -94,7 +95,7 @@ final class ThrowsOrphanRule implements CrossFileRule
     public function check(SourceIndex $index): iterable
     {
         $this->index = $index;
-        $this->body = new BodyExceptions($index);
+        $this->body = BodyExceptions::withMagicReads($index);
         $this->children = $this->childrenMap();
         $traits = $this->usedTraits();
 

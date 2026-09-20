@@ -12,6 +12,8 @@ namespace Hilos\Tests\CodeStyle\Throws;
  * same walk — resolve each call, take the target's contract, walk through a private
  * helper instead of trusting its tag, subtract what an enclosing `catch` swallows —
  * and two copies of it would drift the first time the resolver learns a new form.
+ * A magic read contributes its reader's contract to the third direction alone;
+ * the first two directions do not demand that contract from callers.
  *
  * The walk answers a second question on the way, which only the third direction
  * needs: whether every call in the body resolved into a declaration. A claim that a
@@ -34,11 +36,30 @@ final class BodyExceptions
 
     /**
      * @param SourceIndex $index Indexed tree the calls are resolved against
+     * @param bool $magicReads Whether magic readers contribute their contracts
      */
-    public function __construct(private readonly SourceIndex $index)
+    private function __construct(private readonly SourceIndex $index, private readonly bool $magicReads)
     {
         $this->resolver = new CallResolver($index);
         $this->hierarchy = new ExceptionHierarchy($index);
+    }
+
+    /**
+     * @param SourceIndex $index Indexed tree the calls are resolved against
+     * @return self Walk of explicit contracts for the first two directions
+     */
+    public static function forContracts(SourceIndex $index): self
+    {
+        return new self($index, false);
+    }
+
+    /**
+     * @param SourceIndex $index Indexed tree the calls are resolved against
+     * @return self Walk including magic readers for the orphaned-tag direction
+     */
+    public static function withMagicReads(SourceIndex $index): self
+    {
+        return new self($index, true);
     }
 
     /**
@@ -54,6 +75,12 @@ final class BodyExceptions
         } else {
             $target = $this->resolver->resolve($class, $method, $site);
             $reaching = $target === null ? [] : $this->contractOf($target);
+        }
+
+        if ($this->magicReads) {
+            foreach ($this->resolver->magicReaders($class, $method, $site) ?? [] as $reader) {
+                $reaching += $this->contractOf($reader);
+            }
         }
 
         foreach (array_keys($reaching) as $exception) {
@@ -228,15 +255,21 @@ final class BodyExceptions
             return [$site->target => []];
         }
 
-        $target = $this->resolver->resolve($class, $method, $site);
-        if ($target === null) {
-            return [];
-        }
-        if (!$target->isPrivateLink()) {
-            return array_fill_keys(array_unique($target->throws), []);
+        $reached = [];
+        if ($this->magicReads) {
+            foreach ($this->resolver->magicReaders($class, $method, $site) ?? [] as $reader) {
+                $reached += array_fill_keys(array_unique($reader->throws), []);
+            }
         }
 
-        $reached = [];
+        $target = $this->resolver->resolve($class, $method, $site);
+        if ($target === null) {
+            return $reached;
+        }
+        if (!$target->isPrivateLink()) {
+            return $reached + array_fill_keys(array_unique($target->throws), []);
+        }
+
         $label = self::PRIVATE_MARK . $this->label($target->class, $target->name);
         foreach ($this->throughPrivateLink($target, $seen) as $exception => $chain) {
             $reached[$exception] = [$label, ...$chain];

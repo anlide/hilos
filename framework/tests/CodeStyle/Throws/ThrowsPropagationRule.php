@@ -98,7 +98,7 @@ final class ThrowsPropagationRule implements CrossFileRule
     public function check(SourceIndex $index): iterable
     {
         $this->index = $index;
-        $this->body = new BodyExceptions($index);
+        $this->body = BodyExceptions::forContracts($index);
 
         $violations = [];
         foreach ($index->classes() as $class) {

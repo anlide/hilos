@@ -14,10 +14,11 @@ use PHPUnit\Framework\TestCase;
  * that must stay silent.
  *
  * The silences are the half that matters more: a tag past an unresolved call, past
- * each entry the index sees and cannot follow, past a magic read, a stub with nothing
- * in its body, a tag the implemented contract declares and a base tag an override
- * needs are promises not to speak, and nothing but this list notices when one of them
- * is broken. Two hits sit on fixtures seeded for the other directions,
+ * each entry the index sees and cannot follow, a magic read without a reader, a stub
+ * with nothing in its body, a tag the implemented contract declares and a base tag
+ * an override needs are promises not to speak. A reader's contract backs its live tag
+ * directly, through a private helper and by inheritance; unrelated tags and a caught
+ * reader's tag are reported. Two hits sit on fixtures seeded for the other directions,
  * and they are true: `narrowsTheBase()` and the widened constructor document a narrow
  * exception their bodies do not raise.
  */
@@ -32,6 +33,16 @@ final class ThrowsOrphanFixtureTest extends TestCase
             [
                 'THROWS-ORPHAN ThrowsTree/Caller.php:74 — Caller::narrowsTheBase() documents NarrowException its '
                     . 'body cannot throw (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-ORPHAN ThrowsTree/Support/MagicHolder.php:43 — MagicHolder::keepsADeadTagPastAMagicRead() '
+                    . 'documents OtherException its body cannot throw (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-ORPHAN ThrowsTree/Support/MagicHolder.php:53 — '
+                    . 'MagicHolder::keepsADeadTagPastAMagicReadInAHelper() documents OtherException its body cannot '
+                    . 'throw (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-ORPHAN ThrowsTree/Support/MagicHolder.php:62 — MagicHolder::catchesTheMagicRead() documents '
+                    . 'NarrowException its body cannot throw (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-ORPHAN ThrowsTree/Support/MagicInheritor.php:18 — '
+                    . 'MagicInheritor::keepsADeadTagPastAnInheritedReader() documents OtherException its body cannot '
+                    . 'throw (see docs/agents/code-style/phpdoc.md)',
                 'THROWS-ORPHAN ThrowsTree/Support/OrphanHolder.php:27 — OrphanHolder::__construct() documents '
                     . 'OtherException its body cannot throw (see docs/agents/code-style/phpdoc.md)',
                 'THROWS-ORPHAN ThrowsTree/Support/OrphanHolder.php:36 — OrphanHolder::keepsADeadTag() documents '

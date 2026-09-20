@@ -180,9 +180,15 @@ for everything else.
 half, a tag left behind after a call is removed, but only in a body read whole. It
 stops at a call that does not resolve — a function, a closure, a call on what an
 expression returned, a callee, member or class held in a variable, a `throw` of
-anything but `new` and a read through `__get()` all count as such — at a body with
-no call, `new` or `throw` in it, at a tag the base declares and at a tag an override
-needs. Past those stops, after deleting a call, reread the caller's own `@throws`.
+anything but `new`, a magic step whose class declares no `__get()`, and an
+undeclared static step all count as such — at a body with no call, `new` or
+`throw` in it, at a tag the base declares and at a tag an override needs. A magic
+reader, inherited or declared locally, contributes its `@throws` before the
+enclosing `catch` is subtracted, including inside a private helper. A tag covered
+by a wide `__get()` contract counts as alive: a reader declaring `HilosException`
+can therefore back any tag in that hierarchy. This does not ask callers to
+propagate the magic reader's contract. Past those stops, after deleting a call,
+reread the caller's own `@throws`.
 
 Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee
