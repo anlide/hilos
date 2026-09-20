@@ -1,6 +1,6 @@
 ---
 name: hilos-orm
-description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior.
+description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior. Use it too when a new Entity has to say which column cuts its table into sets — the same declaration decides which rows an agent may own as its set, so ask who will own them before naming the column.
 ---
 
 # Hilos ORM
@@ -36,8 +36,10 @@ touched ORM surfaces.
   `docs/agents/orm/entity.md`
 - Repository/service anti-pattern: `docs/agents/antipatterns/no-repository-service.md`
 - Test commands: use `$hilos-testing-cli`
-- Declaring what an agent owns and what it reads, and the operations a claim
-  carries: `docs/agents/architecture/truth-source.md`
+- Declaring what an agent owns and what it reads, the operations a claim
+  carries, and why the `_setVia` of a new Entity decides which rows an agent may
+  own as its set rather than the table whole (*A Claim Over A Set*):
+  `docs/agents/architecture/truth-source.md`
 
 ## Mental Model
 

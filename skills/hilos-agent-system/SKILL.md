@@ -1,6 +1,6 @@
 ---
 name: hilos-agent-system
-description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened. Use it too when the agent answers for a table rather than for an entity — the surface a page draws over a set or over one instance, with the viewers' windows inside it. Use it too when you are about to move long or blocking work out of an agent — a child process, a background script, a process of your own — and need to know which shapes this framework allows.
+description: Add, modify, or review Hilos agents, AgentDaemon classes, AgentType constants, AgentManager factories, onStart/onTick/onStop hooks, signal handlers, truth sources, monopolistic agents, and long-running agent workflows. Use when creating a new agent type or changing agent lifecycle behavior, when declaring an agent that answers for a whole set of an entity rather than for one instance, where how many of it run and which node runs it are two separate questions, and when an agent serves one instance of something — a user, a document, a room — and you do not want one of them alive for every instance that was ever opened. Use it too when the agent answers for a table rather than for an entity — the surface a page draws over a set or over one instance, with the viewers' windows inside it. Use it too when you are about to move long or blocking work out of an agent — a child process, a background script, a process of your own — and need to know which shapes this framework allows. Use it too when the agent owns not a whole table but one set of its rows — everything that belongs to the one instance it answers for — and you are choosing the width of its claim.
 ---
 
 # Hilos Agent System
@@ -12,8 +12,9 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Adding a new agent type: `docs/agents/agent-system/adding-agent.md`
 - Writing or reviewing `onTick()`: `docs/agents/agent-system/ontick-rule.md`
 - Truth sources, shared state, long operations: `docs/agents/agent-system/monopolistic-agent.md`
-- Declaring what an agent owns and what it reads, and the operations a claim
-  carries: `docs/agents/architecture/truth-source.md`
+- Declaring what an agent owns and what it reads, the operations a claim
+  carries, and its width — the whole collection, named keys, or one set of the
+  table: `docs/agents/architecture/truth-source.md`
 - Agent lifecycle and signal methods, and how long an agent that serves one
   instance stays alive: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
@@ -70,6 +71,15 @@ Use this skill for agent business logic and registration work. Start by reading 
    alone — which is what makes a placed fleet's state converge across the mesh.
    The two maps of a half are exclusive: a collection named by both, or declared
    narrowly with a seam that names no row, refuses the agent's start.
+   Ask which width the agent needs before writing the map. An agent that owns
+   everything belonging to one instance — this person's rows, this event's —
+   owns neither the table nor a list of keys but a *set*: the rows cut out by
+   the column the Entity names in `_setVia`. That third width names the
+   collection in `OWNS_DB_SET` (`OWNS_RT_SET` for the runtime half) and its set
+   key in `ownedDbSetKey()` (`ownedRtSetKey()`), and the agent does not choose
+   the cut. It is specified in *A Claim Over A Set* of
+   `docs/agents/architecture/truth-source.md`, which says sentence by sentence
+   how much of it the code holds; read that before writing against either name.
    Say what the agent may DO with the rows it claims when that is less than
    everything: `AbstractAgent::defaultTruthSourceOperations()` is the one place a
    kind of agent answers, and `AbstractUsersLibraryAgent` overrides it with adding

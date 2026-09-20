@@ -9,11 +9,18 @@ database registry), `framework/backend/TruthSource/RtTruthSourceRegistry.php`
 for the runtime half, and `framework/backend/Core/Source/Interest/` for the
 reader side.
 
-Two words are fixed here. A **claim** is one agent's statement that it owns a
-collection, wholly or by named keys; a **grant** is what a registry keeps of it
-(`TruthSourceGrant`: the keys and the operations). *Truth source* and *owner*
-name the same thing — the one writer whose copy a collection is — and this file
-says *owner*.
+Four words are fixed here, so that the next leaf does not coin its own. A
+**claim** is one agent's statement that it owns a collection, wholly or by named
+keys; a **grant** is what a registry keeps of it (`TruthSourceGrant`: the keys
+and the operations). A **set** is the rows of a table cut out by the column its
+Entity names in `_setVia` ([entity.md](../orm/entity.md)), and a **set key** is
+the value of that column that names their owner: the notifications of one person
+are a set of `hilos_notification`, and that person's id is its set key. Both
+words belong to the third width a claim may have, *A Claim Over A Set*. Not the
+*set of an entity* that [entity-libraries.md](entity-libraries.md) gives a
+library — that is every row of the entity, and a set here is one slice of it.
+*Truth source* and *owner* name the same thing — the one writer whose copy a
+collection is — and this file says *owner*.
 
 ## Core Rule
 
@@ -57,7 +64,11 @@ the standing case: each edits the journal row of the attempt it runs
 prunes those rows. The operations are read folded — `BY_KIND` expanded and the
 parents' records merged — so an heir that gives a borrowed record the right to
 add owns the collection. A claim narrowed to named rows (`OWNS_DB_ROWS`,
-`OWNS_RT_ROWS`) is never borrowed: the rows it names are its own.
+`OWNS_RT_ROWS`) is never borrowed: the rows it names are its own. A claim over a
+set is another matter, because the rows of a set are often brought into being by
+somebody else: it is borrowed by the same test — no `Add` among its folded
+operations — and waits at the start the same way
+(not in the code yet — HIL-1110). *A Claim Over A Set* has the case.
 
 The interest of a claim that may add is raised at the claim and not at the
 report that follows it. An agent writing its first row inside `onStart()` reads
@@ -111,6 +122,12 @@ one of the two maps of its half, and one named by both refuses the agent's
 start — see *Three Cases A Flat Constant Cannot Say* for why the rows themselves
 are not written there.
 
+A third map joins them in each half, `OWNS_DB_SET` and `OWNS_RT_SET`, of the
+same form and on `AbstractAgent` for the same reason, for a collection the owner
+holds by one set of it (not in the code yet — HIL-1110). The maps of a half are
+then three and stay exclusive: a collection stands in exactly one of them, and
+one named by two refuses the agent's start (not in the code yet — HIL-1110).
+
 A record naming no operation gets `TruthSourceOperation::BY_KIND` and is answered
 by the kind of the agent, which is the empty list under a name: a bare one would
 say both "nothing may be done here" and "the set was never written".
@@ -118,12 +135,13 @@ say both "nothing may be done here" and "the set was never written".
 ## The Operation Axis
 
 A right has two axes. The width of the claim says which rows are yours — the
-whole collection, or keys named one by one. The operations say what may be done
-with them: `TruthSourceOperation::Add`, `TruthSourceOperation::Update`,
-`TruthSourceOperation::Remove`. The two sit in one grant rather than in two
-stores keyed by the same pair, because they are always answered together: a
-refusal names both, and the guard that refuses a write says which operation it
-refused along with the ones the source does hold.
+whole collection, or keys named one by one; a third width, the rows of the set
+its owner holds, is the next section's (not in the code yet — HIL-1109). The
+operations say what may be done with them: `TruthSourceOperation::Add`,
+`TruthSourceOperation::Update`, `TruthSourceOperation::Remove`. The two sit in
+one grant rather than in two stores keyed by the same pair, because they are
+always answered together: a refusal names both, and the guard that refuses a
+write says which operation it refused along with the ones the source does hold.
 
 A claim that names no operations gets `TruthSourceOperation::ALL`. Where that
 default comes from is decided once per kind of agent, in
@@ -153,6 +171,160 @@ third argument. That last one is recent, and it closed the one bypass this
 document used to record — the chat's users library holds `connections` for
 updating only, and until the seam had an axis to say so, it registered in the
 registry by hand. Nothing in the tree goes round either seam today.
+
+## A Claim Over A Set
+
+The two widths above leave one owner unsaid: the agent that answers for one
+instance — this person, this event — and owns what belongs to it. A claim over
+the whole collection hands it every person's rows. A claim by keys makes it name
+its rows one by one, and a row born after its start is not among them. The third
+width is *the rows of my set*: a claim over one set of a table, named by its set
+key.
+
+The width is written down here before any of it is built, so that the leaves
+building it cut by one answer (not in the code yet — HIL-1109). Every sentence
+below that the code does not hold yet ends with the marker of the leaf that
+lands it; a sentence with no marker describes the tree as it stands, or a
+decision no code will change. The table closing the section says which leaf
+lands what.
+
+**The entity cuts the table; the agent names only its key.** Which column cuts a
+table into sets is declared once, on the Entity, in `_setVia`
+([entity.md](../orm/entity.md), *Whose set the table is part of*), and an agent
+does not decide it again. It says two things, each in a form this page already
+has: which collection it holds by a set, and which value of that column is its
+own (owner's decision, 2026-09-19). The form turned down was an agent carrying
+a predicate of its own — "my rows are those whose column Z equals my key". The
+price of the choice is said rather than hidden: an agent cannot own a cut the
+Entity did not declare — the chat's `EventMessage` is cut by `event_id`, so no
+agent is given "the messages I wrote", although `author_user_id` lies on the
+row — and a table that needs another cut changes its `_setVia`, for every reader
+at once.
+
+**The declaration does not come to depend on its reader.** HIL-862 left the gap
+between the set declaration and the right open on purpose, and left a warning
+beside it: the declaration is static and says whose set a table is part of, a
+grant is runtime and says whose rows these are, and merging the two would make
+the declaration depend on who reads it. This width does not merge them, because
+it keeps their questions apart. *Which column cuts this table* stays static, on
+the Entity, one answer for everybody. *Which value of that column is mine* stays
+runtime, on the grant. No reader chooses the declaration, so nothing in it bends
+to a reader.
+
+**The sets of one table are a partition.** One column cuts the table, so every
+row stands in exactly one set, and whether two claims meet is answered by
+comparing two set keys — no query, no look at the rows. Two owners of different
+sets of one table are therefore lawful, and are the width doing its work: the
+agent of each instance holding the rows of its own. Two owners holding one set
+in full — every operation, the word as *What The Start Refuses* uses it — are
+the contradiction two full owners of a collection are, and are refused as one
+(not in the code yet — HIL-1114). Under the form turned down this would not be
+decidable without the database: two agents cutting one table by different
+columns hold sets that overlap.
+
+**The claim is written in two halves, like the narrow one.** WHICH collection is
+held by a set is a constant on the class, `OWNS_DB_SET`, of the form
+`OWNS_DB_ROWS` beside it has — a map from collection key to operations,
+`TruthSourceOperation::BY_KIND` included — and on `AbstractAgent` rather than on
+`TruthSourceOwner` for the reason the narrow width is: a command and the
+application class have no instance to ask (not in the code yet — HIL-1110).
+WHICH set is a seam on the live instance,
+`ownedDbSetKey(string $collection): string`, asked once, at the beat
+`ownedDbRowKeys()` is asked (not in the code yet — HIL-1110). One key and not a
+list, on purpose: the table is cut by one column, so an instance holds one set
+of it, and a plural seam would quietly bring back the predicate that was turned
+down.
+
+**A collection stands in exactly one of the three maps of its half.**
+`OWNS_DB`, `OWNS_DB_ROWS` and `OWNS_DB_SET` are three widths of one claim, and a
+collection named by more than one of them refuses the agent's start with
+`ClaimWidthConflictException`, as one named by both of today's maps does
+(not in the code yet — HIL-1110). An empty set key refuses it too, with
+`ClaimedSetKeyMissingException` — the twin of `ClaimedRowKeysMissingException`,
+and for its reason: a width of no rows is already the right to create, so a set
+registered under no key would be a claim over nothing that says so only at the
+first foreign write (not in the code yet — HIL-1110).
+
+**Two floors refuse a set claim declared wrong.** The two refusals above belong
+to the start of the agent, in `OwnershipDeclaration`, because they are what a
+class and its instance can contradict between themselves
+(not in the code yet — HIL-1110). A third needs the Entity and belongs to the
+topology: a set claimed in a collection whose Entity declares
+`Entity::SET_STANDALONE`, a table cut by no column and so with no set to claim
+(not in the code yet — HIL-1110). It is judged in
+`TopologyValidator::validateReferences()` (not in the code yet — HIL-1110): that
+half runs once the collections are mounted and can walk from a mounted
+collection to its Entity, which is why `validateBrowserJoinColumns()` is judged
+there. `SetOwnershipGuard` is not the judge and gets no second subject. It
+answers whether a *table* declared its set, and — where `_foreign` names the
+parent — whether that parent declared itself a root; a claim is an agent's
+statement, the guard reads no agents, and the width does not repeat its
+cross-check.
+
+**The width is a third named state of `TruthSourceKeys`.** Beside `all()` and
+`listed()` stands the factory `TruthSourceKeys::set(string $setKey)`, with the
+questions `coversSet(): bool` and `setKey(): string`, and the sentence of the
+class docblock that reads "Two named states and no third" is rewritten to three
+(not in the code yet — HIL-1109). Named `set` and not `bySet`: the factories of
+that class call a width by the noun of what it covers.
+
+**Belonging is asked of the row's set column, not of its key.** The key of a row
+says nothing about whose set it is in, so `TruthSourceKeys::covers()` has no
+answer at this width: the guard is asked with the value the row carries in its
+`_setVia` column, and compares it with the set key of the grant
+(not in the code yet — HIL-1109). That value is already in hand at the door —
+`DbActions::ensureCanWrite()` holds the object it is about to write, not only
+its id. What the seam between the door and the guard looks like is HIL-1109's to
+name, not this page's. A row born after the agent's start is covered by
+construction, because the grant keeps a set key and not a list of rows collected
+at the start (not in the code yet — HIL-1110).
+
+**The set tree is walked upward, by default and to any depth.** A set hangs on a
+row that is itself in a set: a passkey credential is cut by `identity_id` and
+the identity by `user_id`, so a credential is two steps from its person. The
+owner of a set owns what hangs below it, and the walk up the `_setVia` chain is
+allowed by default, for any number of steps (not in the code yet — HIL-1111).
+Where a row carries a short path to its root beside its owning column, declaring
+that path is the preferred form, because it answers without the walk
+(not in the code yet — HIL-1111). `PasskeyCredential` is the living case:
+`user_id` lies on the row beside `identity_id`, a short path to the same owner.
+Owner's decision, 2026-09-19: declaring the path is better, and walking is
+allowed by default. Forbidding the walk and demanding a direct column to the
+root was weighed and not chosen; how a row declares its short path is HIL-1111's
+to name.
+
+**A claim over a set may be borrowed.** The rows of a set are often brought into
+being by somebody else: the agent of one person would edit that person's sign-in
+methods while the users library goes on adding them, as it does today
+(`AbstractUsersLibraryAgent::OWNS_DB` holds `identities` with every operation).
+Such a claim carries no `Add`, and the test that exists already calls it
+borrowed — `OwnershipDeclaration::isBorrowedClaim()` reads the absence of `Add`
+off the folded operations and asks nothing about the width — so its holder waits
+for the state at the start, beside its reads (not in the code yet — HIL-1110).
+The mechanism does not change with the width. Only a claim by named keys is
+never borrowed, because the rows it names are its own. Whether a person's agent
+is such a holder is not decided here — applying the width to a person is epic
+HIL-1039.
+
+**The runtime half is symmetric.** `OWNS_RT_SET` and
+`ownedRtSetKey(string $collection): string` are declared, asked and refused as
+the database pair is, and land in the same epic, so that a half one width behind
+the other is not read later as a bug (not in the code yet — HIL-1115). One thing
+the database half has and the runtime half does not is the declaration of the
+cut: a runtime row has no Entity to carry `_setVia`. What names the set column
+of a runtime collection is HIL-1115's to answer; what is settled already is that
+the agent does not.
+
+| Piece | Lands with |
+|---|---|
+| the value of the width, and belonging asked of the row's set column | HIL-1109 |
+| the declaration on the agent, the three exclusive maps, both floors of refusal, the borrowed set claim | HIL-1110 |
+| the walk up the set tree, and the short path a row declares | HIL-1111 |
+| what the creation door asks under this width | HIL-1112 — open, and not answered here |
+| how one statement over many rows asks within one set | HIL-1113 — open, and not answered here |
+| two owners of one set refused, and the receipt for a pair the project lives with | HIL-1114 |
+| the runtime half | HIL-1115 |
+| the width holding while its owners sit on different nodes | HIL-1116 |
 
 ## Who Reads The Declaration, And When
 
@@ -268,6 +440,16 @@ is a contradiction with no reading — the registry keeps one grant per
 of the two calls would otherwise decide the width in silence. Both are read on
 the folded maps, so a parent contradicting its subclass is caught as readily as
 a class contradicting itself.
+
+A set key is known only to the live instance in the same way — an agent learns
+whose agent it is when it is built — so a claim over a set is written in the
+same two halves. WHICH collection is held by a set is the constant,
+`OWNS_DB_SET` or `OWNS_RT_SET`; WHICH set is the seam, `ownedDbSetKey()` or
+`ownedRtSetKey()`, asked once at that same beat
+(not in the code yet — HIL-1110). The same two things refuse the start there: a
+seam that answers with an empty key, and a collection named by more than one of
+what are then three maps of a half (not in the code yet — HIL-1110). *A Claim
+Over A Set* has the width itself.
 
 **The collection's name is given by the project, not by the class.** The
 framework's `AbstractUsersLibraryAgent` needs the account table, under a name
@@ -387,6 +569,16 @@ whole collection covers any rows, so a full owner beside a by-row owner of the
 same collection is that same refusal rather than a second rule. Two by-row
 claims are not judged at all — which rows an instance holds, only the instance
 knows.
+
+The width over a set brings a case that can be judged. The sets of one table are
+a partition, so two owners of different sets never meet, and two owners holding
+one set in full are this same refusal (not in the code yet — HIL-1114). Which
+moment compares the two set keys — a class does not carry its own — and what a
+receipt for such a pair looks like are HIL-1114's to name. It brings one refusal
+of the topology as well, judged a moment later than the three here, in
+`TopologyValidator::validateReferences()`, once the collections are mounted: a
+set claimed in a collection whose Entity declares `Entity::SET_STANDALONE`
+(not in the code yet — HIL-1110). See *A Claim Over A Set*.
 
 A class that names one collection both in its reads (`READS_DB`, `READS_RT`) and
 in its claims: a claim is the reader interest already, so the second list says

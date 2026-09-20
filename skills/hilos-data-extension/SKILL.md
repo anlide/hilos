@@ -1,6 +1,6 @@
 ---
 name: hilos-data-extension
-description: Choose and extend Hilos data models across Hilos::$db and Hilos::$rt. Use when adding a DB collection, DB item property, collection action, item action, runtime state, runtime collection, or when deciding whether new state belongs in durable ORM or transient runtime.
+description: Choose and extend Hilos data models across Hilos::$db and Hilos::$rt. Use when adding a DB collection, DB item property, collection action, item action, runtime state, runtime collection, or when deciding whether new state belongs in durable ORM or transient runtime. Use it too when the rows of a new collection belong to somebody — a person, an event — and you are deciding whether its owner holds the collection whole or only its own set of rows.
 ---
 
 # Hilos Data Extension
@@ -18,8 +18,10 @@ you choose.
   `docs/agents/runtime/rt-state.md`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
 - Truth source ownership: `docs/agents/agent-system/monopolistic-agent.md`.
-- Declaring what an agent owns and what it reads, and the operations a claim
-  carries: `docs/agents/architecture/truth-source.md`
+- Declaring what an agent owns and what it reads, the operations a claim
+  carries, and whether the owner of a new collection holds it whole or by the
+  set its rows are cut into (*A Claim Over A Set*):
+  `docs/agents/architecture/truth-source.md`
 - Repository/service anti-pattern:
   `docs/agents/antipatterns/no-repository-service.md`.
 - Test command selection: use `$hilos-testing-cli`.

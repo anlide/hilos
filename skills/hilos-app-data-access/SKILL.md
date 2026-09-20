@@ -1,6 +1,6 @@
 ---
 name: hilos-app-data-access
-description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers. Use it too when you need every row of an entity — a list, a search, a count — or need to create a row that has no owner yet, or when the reader is a table — a surface drawn over a set or over one instance — and you need to know who serves it and where its rows come from.
+description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers. Use it too when you need every row of an entity — a list, a search, a count — or need to create a row that has no owner yet, or when the reader is a table — a surface drawn over a set or over one instance — and you need to know who serves it and where its rows come from. Use it too when you write a row from an agent and need to know whether that agent owns the table whole or only the rows of its own set.
 ---
 
 # Hilos App Data Access
@@ -39,8 +39,10 @@ switch to the focused data-layer skill first.
 - Signal routing and DTO payloads: use `$hilos-signals`.
 - A value out of `Hilos::$env` or `Hilos::$setting`, which is a catalog and not a
   collection: `docs/agents/code-style/catalog-backed-accessors.md`.
-- Declaring what an agent owns and what it reads, and the operations a claim
-  carries: `docs/agents/architecture/truth-source.md`
+- Declaring what an agent owns and what it reads, the operations a claim
+  carries, and whether the agent you write from owns the table whole or only the
+  rows of its set (*A Claim Over A Set*):
+  `docs/agents/architecture/truth-source.md`
 
 ## Mental Model
 
