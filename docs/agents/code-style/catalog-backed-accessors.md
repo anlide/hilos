@@ -92,6 +92,44 @@ one overload of every door; `EnvValue::string()` and `SettingValue::string()` ar
 the shape. Before adding one, make sure the catalog declares the type: the reader
 compares the declared type with the requested one and refuses a mismatch.
 
+## Asking the catalog
+
+The accessor asks its provider once per instance. `getCatalog()` keeps the
+first answer on the accessor and hands it to every later read:
+
+```php
+private ?array $catalogCache = null;
+
+return $this->catalogCache ??= $this->catalogClass::getCatalog();
+```
+
+Four things hold for any accessor built this way, the next one included:
+
+- **The cache lives on the accessor instance, not statically on the catalog
+  class.** A test swaps the accessor for the length of one case — the reason
+  the reader holds its accessor, above — and a static cache would answer the
+  next case out of the catalog the previous one declared.
+- **It fills lazily.** Nothing warms it: the constructor stores the provider
+  class and nothing else, and the first question builds the catalog — a key
+  read or a question about the catalog itself. An accessor nobody asks builds
+  none.
+- **No method empties it, and none is added.** `EnvAccessor` does carry
+  `clearCache()` and `reload()`, and both are about the loaded `.env` values,
+  not about the catalog: a declaration assembled from literals has nothing to
+  go stale against.
+- **Another catalog is another accessor.** The provider class is a constructor
+  argument, so a second catalog is reached by constructing a second accessor,
+  never by re-pointing the first.
+
+Keeping the first answer is safe because a catalog is a declaration, not a
+value: the provider builds the same array from the same literals every call, so
+remembering it changes nothing an owner can observe. What it saves is real —
+one index read consults the catalog three times, the key check, the type and
+the value, and a settings screen row asks four or more times. The `getCatalog()`
+docblock of `EnvAccessor` carries what a rebuild per lookup costs, and the one
+of `SettingsAccessor` carries the single case where staleness was weighed and
+ruled out; neither is restated here.
+
 ## Two things called settings
 
 ```php
@@ -116,3 +154,5 @@ first is a collection and follows
 5. You write the docblock: propagate the `@throws` of the direct callee — the
    index is a call to `offsetGet()`, and `THROWS-PROPAGATION` asks for its whole
    contract.
+6. You are building a third accessor of this kind: the catalog is asked once
+   per instance, and the four consequences are in *Asking the catalog* above.

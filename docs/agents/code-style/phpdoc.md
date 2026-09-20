@@ -266,10 +266,20 @@ a screen the class never sees, and it is wrong the moment that screen changes.
 
 The cure is to state the class's own side of the wire — what payload it sends,
 what a subscribe to it is answered with, which agent type is bound, what access
-level applies — and, where the reader genuinely needs the pointer, a `{@see}`
-to the SDK component that draws it. If nothing but the screen was in the
-sentence, delete it: the four public page classes (`AbstractHilosAboutPage`
-and its siblings) say nothing about their screens and lose nothing by it.
+level applies — and, where the reader genuinely needs the pointer, the name of
+the SDK component that draws it, in prose: `HilosStaticPage`, in backticks and
+nothing else. If nothing but the screen was in the sentence, delete it: the four
+public page classes (`AbstractHilosAboutPage` and its siblings) say nothing
+about their screens and lose nothing by it.
+
+That pointer is prose and not a `{@see}` because the component is not a PHP
+symbol. `PHPDOC-FQN` reads the head of a cross-reference as one and reports a
+short name that is neither imported nor declared in this namespace, which is
+rule 9 above; a component lives in TypeScript and has no class to import, so
+`{@see HilosStaticPage}` is a guard hit with no way out — the name is right and
+the form is wrong. Backticks carry the same pointer and claim nothing an IDE
+could follow. Name the component, not one of its files: the name is one across
+the three SDK packages, and each of them spells the file its own way.
 
 The reason is that a backend class cannot know what the frontend rendered: the
 view lives in another package, comes in one flavor per view framework, and
