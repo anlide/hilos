@@ -96,9 +96,9 @@ describe('HilosTableFooter', () => {
     expect(wrapper.find('[data-id="hilos-table-prev"]').exists()).toBe(false)
   })
 
-  it('disables the step back on the first page and the step on at the last', () => {
+  it('disables the step back on the first page and the step on at the last', async () => {
     const { controller } = makeController()
-    controller.ingestWindow(window(20), 20, true, null, null, 20)
+    controller.ingestWindow(window(20), 21, true, null, null, 20)
     const wrapper = mountFooter(controller)
 
     expect(
@@ -106,7 +106,28 @@ describe('HilosTableFooter', () => {
     ).toBeDefined()
     expect(
       wrapper.find('[data-id="hilos-table-next"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    controller.setPage(1)
+    controller.ingestWindow(window(1), 21, true, null, null, 20)
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper.find('[data-id="hilos-table-next"]').attributes('disabled'),
     ).toBeDefined()
+  })
+
+  it('draws no pager when the whole set fits on one page', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(2), 2, true, null, null, 20)
+    const wrapper = mountFooter(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-count"]').text()).toBe(
+      '1 – 2 of 2',
+    )
+    expect(wrapper.find('[data-id="hilos-table-prev"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-next"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id^="hilos-table-page-"]').exists()).toBe(false)
   })
 
   it('offers page numbers exactly while the count is exact', () => {

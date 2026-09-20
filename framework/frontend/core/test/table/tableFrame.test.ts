@@ -464,7 +464,17 @@ describe('TableViewportController frame footer', () => {
       pageCount: 13,
       hasPreviousPage: false,
       hasNextPage: true,
+      paginated: true,
     })
+  })
+
+  it('marks a set fitting on one page as not paginated', () => {
+    const { controller, open } = makeController(backupsFrame)
+    open(rows(10), 10, true, null, null)
+
+    const footer = controller.frame.footer.get()
+    expect(footer.pageCount).toBe(1)
+    expect(footer.paginated).toBe(false)
   })
 
   it('moves the range with the page and opens the way back', () => {
@@ -497,6 +507,7 @@ describe('TableViewportController frame footer', () => {
     expect(footer.totalExact).toBe(false)
     expect(footer.pageCount).toBeNull()
     expect(footer.hasNextPage).toBe(true)
+    expect(footer.paginated).toBe(true)
   })
 })
 

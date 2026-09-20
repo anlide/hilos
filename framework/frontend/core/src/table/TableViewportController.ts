@@ -690,6 +690,15 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   readonly hasPreviousPage: ReadonlySignal<boolean>
 
+  /**
+   * Whether the pager has anywhere to lead: false when the whole set fits on one page.
+   *
+   * A set that fits on one page renders a lone number and two disabled arrows: that is
+   * the appearance of navigation rather than navigation. An inexact count keeps the pager
+   * always, because whether a next page exists cannot be known.
+   */
+  readonly paginated: ReadonlySignal<boolean>
+
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
 
@@ -802,6 +811,11 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return rowsBefore === null ? this.pageSignal.get() > 0 : rowsBefore > 0
     })
+    this.paginated = computedSignal(() => {
+      const pageCount = this.pageCount.get()
+
+      return pageCount === null || pageCount > 1
+    })
     this.pendingCount = this.pendingCountSignal
     this.announced = this.announcedSignal
     this.loaded = this.loadedSignal
@@ -911,6 +925,7 @@ export class TableViewportController<R> implements TableWindowSink {
           pageCount: this.pageCount.get(),
           hasPreviousPage: this.hasPreviousPage.get(),
           hasNextPage: this.hasNextPage.get(),
+          paginated: this.paginated.get(),
         }
       }),
       body: computedSignal<HilosTableBody>(() => {

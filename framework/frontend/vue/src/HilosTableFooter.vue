@@ -90,6 +90,7 @@ const pages = computed<readonly PagerSlot[]>(() => {
       {{ countLabel }}
     </span>
     <div
+      v-if="footer.paginated"
       class="ms-auto btn-group btn-group-sm"
       role="group"
       aria-label="Pagination"

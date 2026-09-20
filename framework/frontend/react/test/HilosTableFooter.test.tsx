@@ -107,11 +107,29 @@ describe('HilosTableFooter', () => {
 
   it('disables the step back on the first page and the step on at the last', () => {
     const { controller } = makeController()
-    controller.ingestWindow(window(20), 20, true, null, null, 20)
+    controller.ingestWindow(window(20), 21, true, null, null, 20)
     renderFooter(controller)
 
     expect((byId('hilos-table-prev') as HTMLButtonElement).disabled).toBe(true)
+    expect((byId('hilos-table-next') as HTMLButtonElement).disabled).toBe(false)
+
+    act(() => {
+      controller.setPage(1)
+      controller.ingestWindow(window(1), 21, true, null, null, 20)
+    })
+
     expect((byId('hilos-table-next') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('draws no pager when the whole set fits on one page', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(2), 2, true, null, null, 20)
+    renderFooter(controller)
+
+    expect(byId('hilos-table-count')?.textContent).toBe('1 – 2 of 2')
+    expect(byId('hilos-table-prev')).toBeNull()
+    expect(byId('hilos-table-next')).toBeNull()
+    expect(document.querySelector('[data-id^="hilos-table-page-"]')).toBeNull()
   })
 
   it('offers page numbers exactly while the count is exact', () => {

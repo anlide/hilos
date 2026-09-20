@@ -230,6 +230,8 @@ export interface HilosTableFooter {
   readonly hasPreviousPage: boolean
   /** Whether there is a page after this one to go to. */
   readonly hasNextPage: boolean
+  /** Whether the pager has anywhere to lead: false when the whole set fits on one page. */
+  readonly paginated: boolean
 }
 
 /**

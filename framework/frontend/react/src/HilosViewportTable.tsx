@@ -251,7 +251,7 @@ export function HilosViewportTable<R>({
   const nameId = declaration?.title ? titleId : pageHeadingId
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
-  const paginated = pageCount === null || pageCount > 1
+  const paginated = useSignal(controller.paginated)
   // The total reads as "at least this many" when the count stopped at its ceiling, which is
   // what the trailing plus says.
   const countLabel = totalExact ? `${totalCount} total` : `${totalCount}+ total`

@@ -137,7 +137,7 @@ describe('HilosTableFooter', () => {
 
   it('disables the step back on the first page and the step on at the last', () => {
     const { controller } = makeController()
-    controller.ingestWindow(window(20), 20, true, null, null, 20)
+    controller.ingestWindow(window(20), 21, true, null, null, 20)
     const fixture = mountFooter(controller)
 
     expect(
@@ -145,7 +145,28 @@ describe('HilosTableFooter', () => {
     ).toBe(true)
     expect(
       (byId(fixture, 'hilos-table-next') as HTMLButtonElement).disabled,
+    ).toBe(false)
+
+    controller.setPage(1)
+    controller.ingestWindow(window(1), 21, true, null, null, 20)
+    fixture.detectChanges()
+
+    expect(
+      (byId(fixture, 'hilos-table-next') as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+
+  it('draws no pager when the whole set fits on one page', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(2), 2, true, null, null, 20)
+    const fixture = mountFooter(controller)
+
+    expect(byId(fixture, 'hilos-table-count')?.textContent?.trim()).toBe(
+      '1 – 2 of 2',
+    )
+    expect(byId(fixture, 'hilos-table-prev')).toBeNull()
+    expect(byId(fixture, 'hilos-table-next')).toBeNull()
+    expect(pageNumbers(fixture)).toEqual([])
   })
 
   it('offers page numbers exactly while the count is exact', () => {

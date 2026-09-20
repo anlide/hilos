@@ -606,6 +606,10 @@ The window reply carries `totalCount` and `totalExact`.
   ("1 – 20 of 128", pages 1 2 3).
 - **`totalExact: false`** — the count is a ceiling, shown as "500+", `pageCount`
   is not sent at all, and there are no page numbers: only Back and Next.
+- **A set that fits on one page** receives no pager at all when the count is
+  exact: the count label stays ("1 – 2 of 2"), while the buttons and numbers are
+  dropped altogether. When the count is inexact the arrows stay always, because
+  whether a next page exists cannot be known.
 
 **`rowsBefore` travels exactly where the page numbers do, and for the same
 reason.** With an exact count it is on every window; with a ceiling it is absent

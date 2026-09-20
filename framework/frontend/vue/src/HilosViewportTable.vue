@@ -197,11 +197,8 @@ const skeletonRows = computed(() =>
 // take the room the table bar gives to the project.
 const rowProgress = useSignal(props.controller.progress.rows)
 
-// A table whose count stopped at its ceiling has no page count to compare against, and the
-// footer is exactly what such a table still needs: it is the only place saying there is more.
-const paginated = computed(
-  () => pageCount.value === null || pageCount.value > 1,
-)
+// признак считает ядро
+const paginated = useSignal(props.controller.paginated)
 
 // The fields that wait in a panel instead of taking a column of their own, and the
 // columns that are left standing in the row. Every place that measures or draws the

@@ -50,75 +50,77 @@ const PAGER_SLOTS = 7
           <span class="small text-body-secondary" data-id="hilos-table-count">
             {{ countLabel() }}
           </span>
-          <div
-            class="ms-auto btn-group btn-group-sm"
-            role="group"
-            aria-label="Pagination"
-          >
-            <button
-              type="button"
-              class="btn btn-outline-secondary"
-              [disabled]="!footer.hasPreviousPage"
-              [attr.aria-label]="pages().length > 0 ? 'Previous page' : null"
-              data-id="hilos-table-prev"
-              (click)="controller().prevPage()"
+          @if (footer.paginated) {
+            <div
+              class="ms-auto btn-group btn-group-sm"
+              role="group"
+              aria-label="Pagination"
             >
-              <i
-                class="bi bi-chevron-left"
-                [class.me-1]="pages().length === 0"
-                aria-hidden="true"
-              ></i>
-              @if (pages().length === 0) {
-                Previous
-              }
-            </button>
-            @for (slot of pages(); track slotKey(slot, $index)) {
-              @if (slot.kind === 'page' && slot.number !== footer.page + 1) {
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary"
-                  [attr.aria-label]="'Page ' + slot.number"
-                  [attr.data-id]="'hilos-table-page-' + slot.number"
-                  (click)="controller().setPage(slot.number - 1)"
-                >
-                  {{ slot.number }}
-                </button>
-              } @else if (slot.kind === 'page') {
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary active"
-                  aria-current="page"
-                  disabled
-                  [attr.data-id]="'hilos-table-page-' + slot.number"
-                >
-                  {{ slot.number }}
-                </button>
-              } @else {
-                <span
-                  class="btn btn-outline-secondary disabled"
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                [disabled]="!footer.hasPreviousPage"
+                [attr.aria-label]="pages().length > 0 ? 'Previous page' : null"
+                data-id="hilos-table-prev"
+                (click)="controller().prevPage()"
+              >
+                <i
+                  class="bi bi-chevron-left"
+                  [class.me-1]="pages().length === 0"
                   aria-hidden="true"
-                  >…</span
-                >
+                ></i>
+                @if (pages().length === 0) {
+                  Previous
+                }
+              </button>
+              @for (slot of pages(); track slotKey(slot, $index)) {
+                @if (slot.kind === 'page' && slot.number !== footer.page + 1) {
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary"
+                    [attr.aria-label]="'Page ' + slot.number"
+                    [attr.data-id]="'hilos-table-page-' + slot.number"
+                    (click)="controller().setPage(slot.number - 1)"
+                  >
+                    {{ slot.number }}
+                  </button>
+                } @else if (slot.kind === 'page') {
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary active"
+                    aria-current="page"
+                    disabled
+                    [attr.data-id]="'hilos-table-page-' + slot.number"
+                  >
+                    {{ slot.number }}
+                  </button>
+                } @else {
+                  <span
+                    class="btn btn-outline-secondary disabled"
+                    aria-hidden="true"
+                    >…</span
+                  >
+                }
               }
-            }
-            <button
-              type="button"
-              class="btn btn-outline-secondary"
-              [disabled]="!footer.hasNextPage"
-              [attr.aria-label]="pages().length > 0 ? 'Next page' : null"
-              data-id="hilos-table-next"
-              (click)="controller().nextPage()"
-            >
-              @if (pages().length === 0) {
-                Next
-              }
-              <i
-                class="bi bi-chevron-right"
-                [class.ms-1]="pages().length === 0"
-                aria-hidden="true"
-              ></i>
-            </button>
-          </div>
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                [disabled]="!footer.hasNextPage"
+                [attr.aria-label]="pages().length > 0 ? 'Next page' : null"
+                data-id="hilos-table-next"
+                (click)="controller().nextPage()"
+              >
+                @if (pages().length === 0) {
+                  Next
+                }
+                <i
+                  class="bi bi-chevron-right"
+                  [class.ms-1]="pages().length === 0"
+                  aria-hidden="true"
+                ></i>
+              </button>
+            </div>
+          }
         </div>
       }
     }

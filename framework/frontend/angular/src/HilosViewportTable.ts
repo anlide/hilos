@@ -1185,11 +1185,7 @@ export class HilosViewportTable<R> {
   >(new Map())
   // A table whose count stopped at its ceiling has no page count to compare against, and
   // the footer is what such a table still needs: it is the only place saying there is more.
-  protected readonly paginated = computed(() => {
-    const pageCount = this.pageCount()
-
-    return pageCount === null || pageCount > 1
-  })
+  protected readonly paginated = signal<boolean>(true)
   // The total reads as "at least this many" when the count stopped at its ceiling, which is
   // what the trailing plus says.
   protected readonly countLabel = computed(() =>
@@ -1256,6 +1252,7 @@ export class HilosViewportTable<R> {
         bind(controller.order, this.order),
         bind(controller.page, this.page),
         bind(controller.pageCount, this.pageCount),
+        bind(controller.paginated, this.paginated),
         bind(controller.totalCount, this.totalCount),
         bind(controller.totalExact, this.totalExact),
         bind(controller.hasNextPage, this.hasNextPage),

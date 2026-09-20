@@ -103,73 +103,75 @@ export function HilosTableFooter<R>({ controller }: HilosTableFooterProps<R>) {
       <span className="small text-body-secondary" data-id="hilos-table-count">
         {countLabel}
       </span>
-      <div
-        className="ms-auto btn-group btn-group-sm"
-        role="group"
-        aria-label="Pagination"
-      >
-        <button
-          type="button"
-          className="btn btn-outline-secondary"
-          disabled={!footer.hasPreviousPage}
-          aria-label={pages.length > 0 ? 'Previous page' : undefined}
-          data-id="hilos-table-prev"
-          onClick={() => controller.prevPage()}
+      {footer.paginated ? (
+        <div
+          className="ms-auto btn-group btn-group-sm"
+          role="group"
+          aria-label="Pagination"
         >
-          <i
-            className={`bi bi-chevron-left${pages.length === 0 ? ' me-1' : ''}`}
-            aria-hidden="true"
-          />
-          {pages.length === 0 ? 'Previous' : null}
-        </button>
-        {pages.map((slot, index) =>
-          slot.kind === 'gap' ? (
-            <span
-              key={`gap-${index}`}
-              className="btn btn-outline-secondary disabled"
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            disabled={!footer.hasPreviousPage}
+            aria-label={pages.length > 0 ? 'Previous page' : undefined}
+            data-id="hilos-table-prev"
+            onClick={() => controller.prevPage()}
+          >
+            <i
+              className={`bi bi-chevron-left${pages.length === 0 ? ' me-1' : ''}`}
               aria-hidden="true"
-            >
-              …
-            </span>
-          ) : slot.number !== footer.page + 1 ? (
-            <button
-              key={`page-${slot.number}`}
-              type="button"
-              className="btn btn-outline-secondary"
-              aria-label={`Page ${slot.number}`}
-              data-id={`hilos-table-page-${slot.number}`}
-              onClick={() => controller.setPage(slot.number - 1)}
-            >
-              {slot.number}
-            </button>
-          ) : (
-            <button
-              key={`page-${slot.number}`}
-              type="button"
-              className="btn btn-outline-secondary active"
-              aria-current="page"
-              disabled
-              data-id={`hilos-table-page-${slot.number}`}
-            >
-              {slot.number}
-            </button>
-          ),
-        )}
-        <button
-          type="button"
-          className="btn btn-outline-secondary"
-          disabled={!footer.hasNextPage}
-          aria-label={pages.length > 0 ? 'Next page' : undefined}
-          data-id="hilos-table-next"
-          onClick={() => controller.nextPage()}
-        >
-          {pages.length === 0 ? 'Next' : null}
-          <i
-            className={`bi bi-chevron-right${pages.length === 0 ? ' ms-1' : ''}`}
-            aria-hidden="true"
-          />
-        </button>
-      </div>
+            />
+            {pages.length === 0 ? 'Previous' : null}
+          </button>
+          {pages.map((slot, index) =>
+            slot.kind === 'gap' ? (
+              <span
+                key={`gap-${index}`}
+                className="btn btn-outline-secondary disabled"
+                aria-hidden="true"
+              >
+                …
+              </span>
+            ) : slot.number !== footer.page + 1 ? (
+              <button
+                key={`page-${slot.number}`}
+                type="button"
+                className="btn btn-outline-secondary"
+                aria-label={`Page ${slot.number}`}
+                data-id={`hilos-table-page-${slot.number}`}
+                onClick={() => controller.setPage(slot.number - 1)}
+              >
+                {slot.number}
+              </button>
+            ) : (
+              <button
+                key={`page-${slot.number}`}
+                type="button"
+                className="btn btn-outline-secondary active"
+                aria-current="page"
+                disabled
+                data-id={`hilos-table-page-${slot.number}`}
+              >
+                {slot.number}
+              </button>
+            ),
+          )}
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            disabled={!footer.hasNextPage}
+            aria-label={pages.length > 0 ? 'Next page' : undefined}
+            data-id="hilos-table-next"
+            onClick={() => controller.nextPage()}
+          >
+            {pages.length === 0 ? 'Next' : null}
+            <i
+              className={`bi bi-chevron-right${pages.length === 0 ? ' ms-1' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
