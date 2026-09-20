@@ -203,6 +203,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
             limit: $query->limit,
             firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
+            rowsBefore: $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
         );
     }
 

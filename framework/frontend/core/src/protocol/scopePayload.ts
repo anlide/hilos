@@ -103,6 +103,9 @@ export type TableProgressWire = z.infer<typeof tableProgressSectionSchema>
  * The work running on the table rides along under `progress`, without an address: the section
  * already stands under the table's own key. It is absent rather than empty when nothing is
  * running, for the reason every other empty section is absent.
+ *
+ * `rowsBefore` is where the window sits in the set, and travels here exactly as it does in a
+ * `table_window` reply: only under an exact total, absent otherwise.
  */
 export const tableWindowSectionSchema = z.looseObject({
   rows: z.array(tableRowSchema),
@@ -117,6 +120,7 @@ export const tableWindowSectionSchema = z.looseObject({
   totalExact: z.boolean(),
   firstAnchor: z.record(z.string(), z.unknown()).nullable(),
   lastAnchor: z.record(z.string(), z.unknown()).nullable(),
+  rowsBefore: z.number().int().optional(),
   progress: z.array(tableProgressSectionSchema).optional(),
 })
 

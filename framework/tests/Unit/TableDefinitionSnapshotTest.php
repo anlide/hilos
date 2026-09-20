@@ -33,6 +33,7 @@ final class TableDefinitionSnapshotTest extends TestCase
         $snapshot = $this->makeTable()->getPage(new TableQueryDTO(limit: 5, pageIndex: 2));
 
         $this->assertSame(5, $snapshot->limit);
+        $this->assertSame(10, $snapshot->rowsBefore);
         $this->assertSame(['id' => 1], $snapshot->lastAnchor?->toArray());
         $this->assertSame(1, $snapshot->totalCount);
         $this->assertCount(1, $snapshot->rows);
@@ -57,6 +58,7 @@ final class TableDefinitionSnapshotTest extends TestCase
                     limit: $query->limit,
                     firstAnchor: new TableAnchorDTO(['id' => 1]),
                     lastAnchor: new TableAnchorDTO(['id' => 1]),
+                    rowsBefore: $query->pageIndex === null ? 0 : $query->pageIndex * $query->limit,
                 );
             }
         };

@@ -13,6 +13,7 @@ use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Core\Table\TableConstants;
@@ -27,6 +28,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Filter\ColumnFilter;
 use Hilos\Database\Filter\FilterInterface;
+use Hilos\Database\Filter\KeysetAnchorFilter;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -466,9 +468,16 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * reader nothing: past the ceiling the table shows "500+" and offers no page numbers. A query
      * with no limit reads the whole set anyway, so there its count is exact and free.
      *
+     * Where the window sits is answered beside it, as the rows of the set standing before its
+     * first row. A window addressed by anchor is the only one that has to be counted for it, and
+     * only under an exact count: a numbered page starts where the pages before it end, the first
+     * window of the set starts at nothing, and past the ceiling there are no page numbers for a
+     * place to be read into.
+     *
      * @param TableQueryDTO $query Query parameters
      * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int),
-     *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
+     *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO),
+     *     rowsBefore (?int)
      * @throws DatabaseException If database query fails
      * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
@@ -524,26 +533,29 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
 
         $plan = TableWindowPlan::forQuery($query, $orderBy, $totalCount, $totalExact);
         if ($plan === null) {
+            // The only refused window is a numbered page lying past the end of an exactly counted
+            // set, and its place is where that page would have started.
             return [
                 TableConstants::RESULT_KEY_OBJECTS => [],
                 TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount,
                 TableConstants::RESULT_KEY_TOTAL_EXACT => $totalExact,
                 TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
                 TableConstants::RESULT_KEY_LAST_ANCHOR => null,
+                TableConstants::RESULT_KEY_ROWS_BEFORE => $totalExact
+                    ? $this->rowsBeforeWindow($query, $orderBy, null, $totalCount, $filters, $filtersParam)
+                    : null,
             ];
         }
 
+        $windowFilters = $filters;
+        $windowFiltersParam = $filtersParam;
         if ($plan->keyset !== null) {
-            $condition = $plan->keyset->toSql($entityClass::_table);
-            $filters = $filters === '' ? $condition : "({$filters}) AND {$condition}";
-            foreach ($plan->keyset->getParams() as $value) {
-                $filtersParam[] = SqlParam::auto($value);
-            }
+            [$windowFilters, $windowFiltersParam] = self::narrowedByKeyset($filters, $filtersParam, $plan->keyset, $entityClass::_table);
         }
 
         $entityCollection = $entityClass::get(
-            filters: $filters,
-            filtersParam: $filtersParam,
+            filters: $windowFilters,
+            filtersParam: $windowFiltersParam,
             orderBy: $plan->orderBy,
             limit: $plan->limit,
             offset: $plan->offset,
@@ -571,18 +583,112 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         $anchorColumns = array_keys($orderBy);
         $firstKey = array_key_first($entities);
         $lastKey = array_key_last($entities);
+        $firstAnchor = $firstKey === null
+            ? null
+            : TableAnchorDTO::fromRow($entities[$firstKey]->toArray(), $anchorColumns);
 
         return [
             TableConstants::RESULT_KEY_OBJECTS => $pageObjects,
             TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount,
             TableConstants::RESULT_KEY_TOTAL_EXACT => $totalExact,
-            TableConstants::RESULT_KEY_FIRST_ANCHOR => $firstKey === null
-                ? null
-                : TableAnchorDTO::fromRow($entities[$firstKey]->toArray(), $anchorColumns),
+            TableConstants::RESULT_KEY_FIRST_ANCHOR => $firstAnchor,
             TableConstants::RESULT_KEY_LAST_ANCHOR => $lastKey === null
                 ? null
                 : TableAnchorDTO::fromRow($entities[$lastKey]->toArray(), $anchorColumns),
+            TableConstants::RESULT_KEY_ROWS_BEFORE => $totalExact
+                ? $this->rowsBeforeWindow($query, $orderBy, $firstAnchor, $totalCount, $filters, $filtersParam)
+                : null,
         ];
+    }
+
+    /**
+     * Counts the rows of the set standing before a window, which is where that window sits in it.
+     *
+     * Four of the five windows answer without a query. A window holding the whole set has nothing
+     * before it. A numbered page starts where the pages before it end, whether or not it turned
+     * out to hold rows. The first window of the set starts at nothing — and that is read off the
+     * ADDRESS rather than off the rows, so a first window that came back empty because somebody
+     * deleted its rows still sits at the start rather than behind the whole set. An empty window
+     * addressed by an anchor sits where that anchor pointed — past the end of the set going
+     * forward, at the start of it going back — because there is no first row to count up to. Only
+     * a window taken from an anchor is counted for, and that is the cost the owner accepted for
+     * Show and for paging.
+     *
+     * The count runs to {@see TableConstants::COUNT_CEILING} like the count of the set does, and
+     * the caller asks only under an exact total, so the ceiling is never what comes back: a window
+     * of a set no larger than the ceiling has fewer rows than that standing before it.
+     *
+     * @param TableQueryDTO $query Window query, which carries the address the window was asked by
+     * @param array<string, string> $orderBy Key column => SqlSortDirection the whole set is ordered by
+     * @param ?TableAnchorDTO $firstAnchor Place the first row of the window sits at, or null when it is empty
+     * @param int $totalCount Rows the set holds, which is the place of a window addressed past its end
+     * @param string $filters WHERE clause describing the set, empty when nothing narrows it
+     * @param list<SqlParam> $filtersParam Bound parameters of that clause
+     * @return int Rows of the set standing before the window
+     * @throws DatabaseException If the count query fails
+     */
+    private function rowsBeforeWindow(
+        TableQueryDTO $query,
+        array $orderBy,
+        ?TableAnchorDTO $firstAnchor,
+        int $totalCount,
+        string $filters,
+        array $filtersParam,
+    ): int {
+        if ($query->limit === TableConstants::NO_LIMIT) {
+            return 0;
+        }
+        if ($query->pageIndex !== null) {
+            return max(0, $query->pageIndex) * $query->limit;
+        }
+        if ($query->anchor === null && $query->anchorDirection === TableAnchorDirection::After) {
+            return 0;
+        }
+        if ($firstAnchor === null) {
+            return $query->anchorDirection === TableAnchorDirection::Before ? 0 : $totalCount;
+        }
+
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+        [$beforeFilters, $beforeFiltersParam] = self::narrowedByKeyset(
+            $filters,
+            $filtersParam,
+            new KeysetAnchorFilter($orderBy, $firstAnchor, TableAnchorDirection::Before),
+            $entityClass::_table,
+        );
+
+        return $entityClass::countUpTo(
+            TableConstants::COUNT_CEILING,
+            filters: $beforeFilters,
+            filtersParam: $beforeFiltersParam,
+        );
+    }
+
+    /**
+     * Narrows the filter of a set by the condition placing a window against its order.
+     *
+     * The window query and the count of what stands before that window ask one question of one
+     * set, a side of the anchor each, so the keyset reaches the filter through one place: written
+     * twice, the two spellings would answer the same descriptor differently the day either moved.
+     *
+     * @param string $filters WHERE clause describing the set, empty when nothing narrows it
+     * @param list<SqlParam> $filtersParam Bound parameters of that clause
+     * @param KeysetAnchorFilter $keyset Condition placing the window against the set's order
+     * @param string $table Table whose columns the condition is written over
+     * @return array{string, list<SqlParam>} The narrowed clause and its parameters
+     */
+    private static function narrowedByKeyset(
+        string $filters,
+        array $filtersParam,
+        KeysetAnchorFilter $keyset,
+        string $table,
+    ): array {
+        $condition = $keyset->toSql($table);
+        foreach ($keyset->getParams() as $value) {
+            $filtersParam[] = SqlParam::auto($value);
+        }
+
+        return [$filters === '' ? $condition : "({$filters}) AND {$condition}", $filtersParam];
     }
 
     /**

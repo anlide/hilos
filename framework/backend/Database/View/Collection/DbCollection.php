@@ -544,7 +544,8 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param TableQueryDTO $query Query parameters
      *
      * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int),
-     *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO)
+     *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO),
+     *     rowsBefore (?int)
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -566,6 +567,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             TableConstants::RESULT_KEY_TOTAL_EXACT => $result[TableConstants::RESULT_KEY_TOTAL_EXACT],
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
+            TableConstants::RESULT_KEY_ROWS_BEFORE => $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
         ];
     }
 
@@ -603,8 +605,9 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param TableQueryDTO $query Query parameters
      *
      * @return array{rows: list<T>, totalCount: int, totalExact: bool, firstAnchor: ?TableAnchorDTO,
-     *     lastAnchor: ?TableAnchorDTO} Window rows, how many the set holds and whether that number is
-     *     the whole of it, and the two places the window sits between
+     *     lastAnchor: ?TableAnchorDTO, rowsBefore: ?int} Window rows, how many the set holds and whether
+     *     that number is the whole of it, the two places the window sits between, and how many rows of
+     *     the set stand before it
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -621,6 +624,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
                 TableConstants::RESULT_KEY_TOTAL_EXACT => true,
                 TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
                 TableConstants::RESULT_KEY_LAST_ANCHOR => null,
+                TableConstants::RESULT_KEY_ROWS_BEFORE => 0,
             ];
         }
 
@@ -640,6 +644,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             TableConstants::RESULT_KEY_TOTAL_EXACT => $result[TableConstants::RESULT_KEY_TOTAL_EXACT],
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
+            TableConstants::RESULT_KEY_ROWS_BEFORE => $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
         ];
     }
 

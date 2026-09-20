@@ -244,12 +244,27 @@ export interface HilosTableFooter {
  *   empty text and its main action are what to offer;
  * - `empty_filtered` — the set is empty under a search or a filter, so what to
  *   offer is "Nothing found" and a way to reset;
+ * - `empty_page` — the window is empty over a set that is not, so what to offer
+ *   is a way back to the rows;
  * - `rows` — there are rows to draw.
+ *
+ * `empty_page` is about the PAGE, where the other two empties are about the set,
+ * and keeping them apart is the whole of it: a window can miss the rows while the
+ * set still has them — the rows moved out from under it, or the address landed
+ * past the end — and saying "nothing here yet" then tells the reader the set is
+ * gone beside a footer counting it. What the reader needs there is not the page's
+ * main action but the way back, so it is a state of its own rather than a wording
+ * of `empty`.
  *
  * A page that refuses altogether is not one of these: that is the page's own
  * refusal (HilosRouter.pageError), not a state of its table.
  */
-export type HilosTableBody = 'loading' | 'empty' | 'empty_filtered' | 'rows'
+export type HilosTableBody =
+  | 'loading'
+  | 'empty'
+  | 'empty_filtered'
+  | 'empty_page'
+  | 'rows'
 
 /**
  * The readable frame state a {@link HilosTableFrame} declaration turns into —

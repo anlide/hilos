@@ -1,13 +1,17 @@
-// HilosTableEmptyState — the two states the body of a table says in words: the
-// set is empty and nothing filters it ("data is not here yet"), or it is empty
-// under a search or a filter ("Nothing found"). Which of the two holds is decided
+// HilosTableEmptyState — the three states the body of a table says in words: the
+// set is empty and nothing filters it ("data is not here yet"), it is empty under
+// a search or a filter ("Nothing found"), or the WINDOW is empty over a set that
+// is not ("Nothing on this page"). Which of the three holds is decided
 // by the core (tableFrame.ts, HilosTableBody); this view only draws it, and the
 // table draws it in both of its branches, wide and narrow. The first state speaks
 // the page's own words — the title and hint of its declared empty state, and its
 // main action, the same button the bar offers — while the second is the
 // framework's and names what was searched for, because resetting is only an offer
 // when the reader can see what will be reset (mockups/components/table section
-// 10). Internal to the Angular view layer on purpose: it is not exported from
+// 10). The third is the framework's too and offers neither: the set has rows, so
+// creating one answers nothing and there may be no filter to reset — what the
+// reader needs is the way back to the rows.
+// Internal to the Angular view layer on purpose: it is not exported from
 // index.ts, for the reason the bar is not. The Angular port of the Vue reference
 // (vue/src/HilosTableEmptyState.vue), under the same names and words.
 import { NgTemplateOutlet } from '@angular/common'
@@ -104,6 +108,29 @@ function filterTerm(view: HilosTableFilterView): string {
           </button>
         }
       </div>
+    } @else if (kind() === 'empty_page') {
+      <div
+        class="text-center py-4"
+        role="status"
+        data-id="hilos-table-empty-page"
+      >
+        <i
+          class="bi bi-arrow-left-circle fs-1 text-body-secondary mb-2 d-block"
+          aria-hidden="true"
+        ></i>
+        <div class="fw-semibold small mb-1">Nothing on this page</div>
+        <p class="small text-body-secondary mb-3">
+          These rows moved while the page was open.
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          data-id="hilos-table-empty-page-back"
+          (click)="controller().prevPage()"
+        >
+          Back to the rows
+        </button>
+      </div>
     } @else {
       <div
         class="text-center py-4"
@@ -136,8 +163,8 @@ function filterTerm(view: HilosTableFilterView): string {
 export class HilosTableEmptyState<R> {
   /** The headless server-windowed controller the state reads and resets. */
   readonly controller = input.required<TableViewportController<R>>()
-  /** Which of the two worded states of the body to draw. */
-  readonly kind = input.required<'empty' | 'empty_filtered'>()
+  /** Which of the three worded states of the body to draw. */
+  readonly kind = input.required<'empty' | 'empty_filtered' | 'empty_page'>()
   /**
    * The page's own words, standing when it declared no empty state. A template
    * rather than projected content: the tile stands in both branches of the table

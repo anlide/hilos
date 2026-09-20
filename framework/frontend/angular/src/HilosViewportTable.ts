@@ -29,7 +29,7 @@
 // a cell (mockups/components/table section 4). A card opens into its own panel,
 // inside its own body and off an id base of its own. The body is drawn from the
 // state the core decides (HilosTableBody): rows, a skeleton of rows while a window
-// change is late, or one of the two worded states drawn by HilosTableEmptyState —
+// change is late, or one of the three worded states drawn by HilosTableEmptyState —
 // the page's own "nothing here yet" and the framework's "Nothing found"
 // (mockups/components/table section 10). Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
@@ -546,9 +546,7 @@ export interface BulkUntouchedContext {
                   <td [attr.colspan]="bodyColspan()">
                     <hilos-table-empty-state
                       [controller]="controller()"
-                      [kind]="
-                        body() === 'empty_filtered' ? 'empty_filtered' : 'empty'
-                      "
+                      [kind]="emptyKind()"
                       [fallback]="emptyFallback"
                     />
                   </td>
@@ -836,7 +834,7 @@ export interface BulkUntouchedContext {
               }
             </div>
           } @else if (body() === 'loading') {
-            <!-- The skeleton and the two states a table says in words live
+            <!-- The skeleton and the three states a table says in words live
             inside the table in the wide branch, so a narrow screen would hide
             them along with it and the phone would be left with a blank space
             where they are (Flow F12). A card of the skeleton is one bar, as the
@@ -858,7 +856,7 @@ export interface BulkUntouchedContext {
           } @else {
             <hilos-table-empty-state
               [controller]="controller()"
-              [kind]="body() === 'empty_filtered' ? 'empty_filtered' : 'empty'"
+              [kind]="emptyKind()"
               [fallback]="emptyFallback"
             />
           }
@@ -880,7 +878,7 @@ export interface BulkUntouchedContext {
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm"
-              [disabled]="page() === 0"
+              [disabled]="!hasPreviousPage()"
               data-id="hilos-table-prev"
               (click)="controller().prevPage()"
             >
@@ -1144,12 +1142,24 @@ export class HilosViewportTable<R> {
   protected readonly totalCount = signal(0)
   protected readonly totalExact = signal(true)
   protected readonly hasNextPage = signal(false)
+  protected readonly hasPreviousPage = signal(false)
   protected readonly pendingCount = signal(0)
-  // Which state the body is in — rows, the skeleton, or one of the two worded
+  // Which state the body is in — rows, the skeleton, or one of the three worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches read this one
   // answer.
   protected readonly body = signal<HilosTableBody>('loading')
+  // Which worded state the tile draws. The three that carry words pass through as they
+  // are; 'loading' never reaches the tile — the skeleton stands in its place — but the
+  // type has to be narrowed somewhere, and doing it here keeps both branches of the
+  // table reading one answer instead of each spelling the narrowing out again.
+  protected readonly emptyKind = computed<
+    'empty' | 'empty_filtered' | 'empty_page'
+  >(() => {
+    const body = this.body()
+
+    return body === 'empty_filtered' || body === 'empty_page' ? body : 'empty'
+  })
   protected readonly pageSize = signal(0)
   // As many skeleton rows as the window had rows, so the height of the table does
   // not jump while the next one is on its way; a window that had none — a reset out
@@ -1249,6 +1259,7 @@ export class HilosViewportTable<R> {
         bind(controller.totalCount, this.totalCount),
         bind(controller.totalExact, this.totalExact),
         bind(controller.hasNextPage, this.hasNextPage),
+        bind(controller.hasPreviousPage, this.hasPreviousPage),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.frame.body, this.body),
         bind(controller.pageSize, this.pageSize),

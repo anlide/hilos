@@ -315,6 +315,7 @@ export interface TableWindowSink {
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
     limit: number,
+    rowsBefore?: number | null,
   ): void
   ingestSubscriptionWindow(
     rows: readonly TableRow[],
@@ -325,6 +326,7 @@ export interface TableWindowSink {
     limit: number,
     sort: TableSortOrder | undefined,
     progress: readonly HilosTableProgressFrame[],
+    rowsBefore?: number | null,
   ): void
   ingestDelta(delta: TableViewportDelta): void
   ingestProgress(frame: HilosTableProgressFrame): void
@@ -432,7 +434,25 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly orderSignal: WritableSignal<TableSortOrder | undefined>
 
+  /**
+   * Presses of Next and Back, and the page number only where the window reports no place.
+   *
+   * A counter drifts by construction: a row created above a standing window moves that
+   * window through the set without the reader touching anything, and no number of presses
+   * knows of it. So wherever the window says where it sits ({@link rowsBeforeSignal}), the
+   * number is read out of that instead, and this is left to the one case with no place to
+   * read — a total that stopped at its ceiling, where there are no page numbers anyway.
+   */
   private readonly pageSignal = createSignal(0)
+
+  /**
+   * Rows of the set standing before the window, or null when the window reported no place.
+   *
+   * It arrives with the window and stays as delivered: a live frame about a row created
+   * above the window does not move it, or the footer would travel under a reader who
+   * pressed nothing. The next window is what makes it true again.
+   */
+  private readonly rowsBeforeSignal = createSignal<number | null>(null)
 
   /** Place the window is asked from, or null for the edge {@link anchorDirection} points away from. */
   private anchor: TableAnchor | null = null
@@ -630,13 +650,45 @@ export class TableViewportController<R> implements TableWindowSink {
   readonly pageCount: ReadonlySignal<number | null>
 
   /**
+   * Rows of the set standing before the window, or null while the window reports no place.
+   *
+   * This is where the window sits, and the page number and the footer range are read out
+   * of it. It comes from the server with the window and only under an exact total, for the
+   * same reason page numbers exist only there: past the ceiling there is no size of the set
+   * for a place to be read against.
+   */
+  readonly rowsBefore: ReadonlySignal<number | null>
+
+  /**
+   * Zero-based page the window sits on.
+   *
+   * Read out of {@link rowsBefore} where the window reports one, and off the presses of
+   * Next and Back where it does not. The first reading survives a row created above the
+   * window; the second one cannot, which is why it is kept for the one case that has no
+   * place to read — a total that stopped at its ceiling.
+   */
+  private readonly pageNumber: ReadonlySignal<number>
+
+  /**
    * Whether there is a page after this one to go to.
    *
-   * With an exact total this is the page number against the page count. Without one there
-   * is no last page to compare against, so the answer is read off the window itself: a
-   * window filled to its size has rows behind it, and a short one is the end of the set.
+   * Where the window reports its place, this is that place plus the rows shown against the
+   * total: "there are rows behind this window" said about the set rather than about a count
+   * of presses. With an exact total and no place reported it is the page number against the
+   * page count. Without an exact total there is no last page to compare against, so the
+   * answer is read off the window itself: a window filled to its size has rows behind it,
+   * and a short one is the end of the set.
    */
   readonly hasNextPage: ReadonlySignal<boolean>
+
+  /**
+   * Whether there is a page before this one to go to.
+   *
+   * Where the window reports its place, anything standing to the left is a way back —
+   * including from a window that came back empty, which is reached from the address it was
+   * asked by rather than from rows it does not have. Otherwise it is the count of presses.
+   */
+  readonly hasPreviousPage: ReadonlySignal<boolean>
 
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
@@ -721,12 +773,34 @@ export class TableViewportController<R> implements TableWindowSink {
           )
         : null,
     )
+    this.rowsBefore = this.rowsBeforeSignal
+    this.pageNumber = computedSignal(() => {
+      const rowsBefore = this.rowsBeforeSignal.get()
+
+      return rowsBefore === null
+        ? this.pageSignal.get()
+        : Math.floor(rowsBefore / this.pageSizeSignal.get())
+    })
     this.hasNextPage = computedSignal(() => {
+      const rowsBefore = this.rowsBeforeSignal.get()
+      const shown = this.windowSignal.get().length
+      // The place answers this only for a window that HAS rows. An empty one knows where
+      // it sits but not what lies behind it — "nothing after the address" and "the address
+      // landed past the end" read the same from here — so it falls back to the page count,
+      // which is also what keeps the control off where there is nothing to page from.
+      if (rowsBefore !== null && shown > 0) {
+        return rowsBefore + shown < this.totalCountSignal.get()
+      }
       const pageCount = this.pageCount.get()
 
       return pageCount === null
-        ? this.windowSignal.get().length >= this.pageSizeSignal.get()
-        : this.pageSignal.get() < pageCount - 1
+        ? shown >= this.pageSizeSignal.get()
+        : this.pageNumber.get() < pageCount - 1
+    })
+    this.hasPreviousPage = computedSignal(() => {
+      const rowsBefore = this.rowsBeforeSignal.get()
+
+      return rowsBefore === null ? this.pageSignal.get() > 0 : rowsBefore > 0
     })
     this.pendingCount = this.pendingCountSignal
     this.announced = this.announcedSignal
@@ -821,8 +895,12 @@ export class TableViewportController<R> implements TableWindowSink {
       ),
       footer: computedSignal<HilosTableFooter>(() => {
         const shown = this.windowSignal.get().length
-        const page = this.pageSignal.get()
-        const firstRow = shown === 0 ? 0 : page * this.pageSizeSignal.get() + 1
+        const page = this.pageNumber.get()
+        // Where the window reports no place, the range is still counted off the page, which
+        // is what it was counted off everywhere before a window could say where it sits.
+        const rowsBefore =
+          this.rowsBeforeSignal.get() ?? page * this.pageSizeSignal.get()
+        const firstRow = shown === 0 ? 0 : rowsBefore + 1
 
         return {
           firstRow,
@@ -831,7 +909,7 @@ export class TableViewportController<R> implements TableWindowSink {
           totalExact: this.totalExactSignal.get(),
           page,
           pageCount: this.pageCount.get(),
-          hasPreviousPage: page > 0,
+          hasPreviousPage: this.hasPreviousPage.get(),
           hasNextPage: this.hasNextPage.get(),
         }
       }),
@@ -841,6 +919,12 @@ export class TableViewportController<R> implements TableWindowSink {
         }
         if (this.windowSignal.get().length > 0) {
           return 'rows'
+        }
+        // An empty window over a set that is not empty: the page is what has nothing on it,
+        // not the table. Saying "nothing here yet" beside a footer counting 21 rows tells
+        // the reader the set is gone when it is only this window that missed it.
+        if (this.totalCountSignal.get() > 0) {
+          return 'empty_page'
         }
 
         return this.searchSignal.get() !== '' || activeFilterCount.get() > 0
@@ -990,9 +1074,9 @@ export class TableViewportController<R> implements TableWindowSink {
     return this.bulkState
   }
 
-  /** The current zero-based page index. */
+  /** The current zero-based page index, read out of {@link rowsBefore} where there is one. */
   get page(): ReadonlySignal<number> {
-    return this.pageSignal
+    return this.pageNumber
   }
 
   /**
@@ -1215,37 +1299,74 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /**
    * Go to the next page — the rows after the window's last one — then request it. Does
-   * nothing on the last page, where there is nothing after the window to ask for, and
-   * nothing on an empty window: with no boundary in hand there is nothing to page from,
-   * and moving the number anyway would show one page while asking for another.
+   * nothing where there is nothing after the window to ask for.
    *
    * Whether there is a next page is {@link hasNextPage}, which is also what the view
-   * disables the control by — one rule, read in one place.
+   * disables the control by — one rule, read in one place. An empty window is no longer
+   * refused outright: the address it was ASKED by is still in hand, so there is somewhere
+   * to page from even with no rows to page off. Where even that address has nothing to
+   * move — the start of the set — nothing happens, and {@link hasNextPage} is what keeps
+   * the control off there rather than live and inert.
    */
   nextPage(): void {
-    if (this.lastAnchor === null || !this.hasNextPage.get()) {
+    if (!this.hasNextPage.get()) {
       return
     }
-    this.anchor = this.lastAnchor
-    this.anchorDirection = 'after'
-    this.pageIndex = null
-    this.pageSignal.set(this.pageSignal.get() + 1)
+    if (this.lastAnchor !== null) {
+      this.anchor = this.lastAnchor
+      this.anchorDirection = 'after'
+      this.pageIndex = null
+      this.pageSignal.set(this.pageSignal.get() + 1)
+    } else if (this.anchor !== null) {
+      this.anchorDirection = 'after'
+      this.pageIndex = null
+      this.pageSignal.set(this.pageSignal.get() + 1)
+    } else if (this.pageIndex !== null) {
+      this.pageIndex += 1
+      this.pageSignal.set(this.pageSignal.get() + 1)
+    } else {
+      // Nothing to move: the address is the start of the set and the window came back
+      // empty anyway. Asking for the same window again is not paging, and the rule that
+      // an empty window is not paged from is older than this leaf.
+      return
+    }
     this.changeWindow()
   }
 
   /**
    * Go to the previous page — the rows before the window's first one — then request it.
-   * Does nothing on the first page, where there is nothing before the window to ask for,
-   * and nothing on an empty window, for the reason {@link nextPage} gives.
+   * Does nothing where nothing stands to the left, which is {@link hasPreviousPage}.
+   *
+   * Two cases are not simply "the rows before the first one". With less than a page to the
+   * left, the START of the set is asked for instead: a window standing at rows 12–21 of a
+   * page of ten would otherwise step back to 2–11, and then hand back a first page of one
+   * row — while the row the reader came back for is the one at the top. And on an empty
+   * window there is no first row at all, so the way back is read off the address the window
+   * was asked by: the same place, the other way round, leads where the reader stood.
    */
   prevPage(): void {
-    if (this.firstAnchor === null || this.pageSignal.get() <= 0) {
+    if (!this.hasPreviousPage.get()) {
       return
     }
-    this.anchor = this.firstAnchor
-    this.anchorDirection = 'before'
-    this.pageIndex = null
-    this.pageSignal.set(this.pageSignal.get() - 1)
+    const rowsBefore = this.rowsBeforeSignal.get()
+    if (rowsBefore !== null && rowsBefore < this.pageSizeSignal.get()) {
+      this.anchor = null
+      this.anchorDirection = 'after'
+      this.pageIndex = null
+    } else if (this.firstAnchor !== null) {
+      this.anchor = this.firstAnchor
+      this.anchorDirection = 'before'
+      this.pageIndex = null
+    } else if (this.anchor !== null) {
+      this.anchorDirection =
+        this.anchorDirection === 'after' ? 'before' : 'after'
+      this.pageIndex = null
+    } else if (this.pageIndex !== null) {
+      this.pageIndex = Math.max(0, this.pageIndex - 1)
+    } else {
+      return
+    }
+    this.pageSignal.set(Math.max(0, this.pageSignal.get() - 1))
     this.changeWindow()
   }
 
@@ -1270,6 +1391,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param firstAnchor Place the first row sits at, or null when the window is empty.
    * @param lastAnchor Place the last row sits at, or null when the window is empty.
    * @param limit How many rows the window carries — the size the backend served it at.
+   * @param rowsBefore Rows of the set standing before the window, or null when it reports none.
    */
   ingestWindow(
     rows: readonly TableRow[],
@@ -1278,12 +1400,16 @@ export class TableViewportController<R> implements TableWindowSink {
     firstAnchor: TableAnchor | null,
     lastAnchor: TableAnchor | null,
     limit: number,
+    rowsBefore: number | null = null,
   ): void {
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
     this.firstAnchor = firstAnchor
     this.lastAnchor = lastAnchor
+    this.rowsBeforeSignal.set(
+      rowsBefore === null ? null : Math.max(0, rowsBefore),
+    )
     this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
     this.placeholderKeysSignal.set(new Set())
     this.loadedSignal.set(true)
@@ -1336,6 +1462,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param limit How many rows the window carries — the size the backend served it at.
    * @param sort The order the window ran in, or undefined when it ran in none.
    * @param progress The work running on the table, as the answer names it in full.
+   * @param rowsBefore Rows of the set standing before the window, or null when it reports none.
    */
   ingestSubscriptionWindow(
     rows: readonly TableRow[],
@@ -1346,6 +1473,7 @@ export class TableViewportController<R> implements TableWindowSink {
     limit: number,
     sort: TableSortOrder | undefined,
     progress: readonly HilosTableProgressFrame[],
+    rowsBefore: number | null = null,
   ): void {
     this.replaceProgress(progress)
     if (!this.openingOrderKnown) {
@@ -1376,6 +1504,7 @@ export class TableViewportController<R> implements TableWindowSink {
       firstAnchor,
       lastAnchor,
       limit,
+      rowsBefore,
     )
     if (
       firstWindow &&
@@ -2311,6 +2440,10 @@ export class TableViewportController<R> implements TableWindowSink {
     this.anchorDirection = 'after'
     this.pageIndex = null
     this.pageSignal.set(0)
+    // The place goes with the address, not with the rows: what was asked for is the start of
+    // the set, and the footer says so at once rather than naming the place of a window that
+    // belongs to a set nobody is looking at any more. The answer replaces it a moment later.
+    this.rowsBeforeSignal.set(0)
   }
 
   private send(): void {

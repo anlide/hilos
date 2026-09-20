@@ -1,14 +1,17 @@
-<!-- HilosTableEmptyState — the two states the body of a table says in words: the
-set is empty and nothing filters it ("data is not here yet"), or it is empty
-under a search or a filter ("Nothing found"). Which of the two holds is decided
-by the core (tableFrame.ts, HilosTableBody); this view only draws it, and the
-table draws it in both of its branches, wide and narrow. The first state speaks
-the page's own words — the title and hint of its declared empty state, and its
-main action, the same button the bar offers — while the second is the
-framework's and names what was searched for, because resetting is only an offer
-when the reader can see what will be reset (mockups/components/table section
-10). Internal to the Vue view layer on purpose: it is not exported from
-index.ts, for the reason the bar is not. -->
+<!-- HilosTableEmptyState — the three states the body of a table says in words:
+the set is empty and nothing filters it ("data is not here yet"), it is empty
+under a search or a filter ("Nothing found"), or the WINDOW is empty over a set
+that is not ("Nothing on this page"). Which of the three holds is decided by the
+core (tableFrame.ts, HilosTableBody); this view only draws it, and the table
+draws it in both of its branches, wide and narrow. The first state speaks the
+page's own words — the title and hint of its declared empty state, and its main
+action, the same button the bar offers — while the second is the framework's and
+names what was searched for, because resetting is only an offer when the reader
+can see what will be reset (mockups/components/table section 10). The third is
+the framework's too, and offers neither of those: the set has rows, so creating
+one answers nothing and there may be no filter to reset — what the reader needs
+is the way back to the rows. Internal to the Vue view layer on purpose: it is
+not exported from index.ts, for the reason the bar is not. -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
 import type { HilosTableFilterView, TableViewportController } from '@hilos/core'
@@ -18,8 +21,8 @@ import { useSignal } from './useSignal.js'
 const props = defineProps<{
   /** The headless server-windowed controller the state reads and resets. */
   controller: TableViewportController<R>
-  /** Which of the two worded states of the body to draw. */
-  kind: 'empty' | 'empty_filtered'
+  /** Which of the three worded states of the body to draw. */
+  kind: 'empty' | 'empty_filtered' | 'empty_page'
 }>()
 
 // What the page declared about the frame, or null when it declared nothing. It
@@ -120,6 +123,30 @@ function pressMainAction(): void {
       @click="pressMainAction"
     >
       {{ declaration.mainAction.label }}
+    </button>
+  </div>
+
+  <div
+    v-else-if="kind === 'empty_page'"
+    class="text-center py-4"
+    role="status"
+    data-id="hilos-table-empty-page"
+  >
+    <i
+      class="bi bi-arrow-left-circle fs-1 text-body-secondary mb-2 d-block"
+      aria-hidden="true"
+    ></i>
+    <div class="fw-semibold small mb-1">Nothing on this page</div>
+    <p class="small text-body-secondary mb-3">
+      These rows moved while the page was open.
+    </p>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline-secondary"
+      data-id="hilos-table-empty-page-back"
+      @click="controller.prevPage()"
+    >
+      Back to the rows
     </button>
   </div>
 

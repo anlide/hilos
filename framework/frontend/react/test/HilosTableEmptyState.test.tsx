@@ -6,7 +6,7 @@ import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
 import { HilosTableEmptyState } from '../src/HilosTableEmptyState.js'
 
 // The React port of vue/src/HilosTableEmptyState.test.ts, under the same case
-// names, for the two worded states of the body of a table.
+// names, for the three worded states of the body of a table.
 
 afterEach(() => cleanup())
 
@@ -116,6 +116,38 @@ describe('HilosTableEmptyState', () => {
     expect(byId('hilos-table-no-matches-terms')?.textContent).toContain(
       'Period: from 2026-08-01',
     )
+  })
+
+  it('offers the way back to the rows when the window is empty over a set that is not', () => {
+    const { controller, sent } = makeController(FILTERED_FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      21,
+      true,
+      null,
+      null,
+      10,
+      0,
+    )
+    controller.setPage(2)
+    // The third page came back holding nothing while the set holds twenty-one rows: the
+    // rows under that address moved while the page was open.
+    controller.ingestWindow([], 21, true, null, null, 10, 20)
+    render(<HilosTableEmptyState controller={controller} kind="empty_page" />)
+
+    const state = byId('hilos-table-empty-page') as HTMLElement
+    expect(state.getAttribute('role')).toBe('status')
+    expect(state.textContent).toContain('Nothing on this page')
+    expect(state.textContent).toContain(
+      'These rows moved while the page was open.',
+    )
+
+    act(() => {
+      fireEvent.click(byId('hilos-table-empty-page-back') as HTMLElement)
+    })
+
+    // The same thing Back in the footer does, and it asks for a place rather than a filter.
+    expect(sent.at(-1)?.pageIndex).toBe(1)
   })
 
   it('resets the search and the filters back to the ones the table opened with', () => {

@@ -78,6 +78,58 @@ final class TableWindowSignalDataTest extends TestCase
         $this->assertFalse($restored->totalExact);
     }
 
+    public function testTheWindowSaysHowManyRowsStandBeforeIt(): void
+    {
+        $dto = new TableWindowSignalData(
+            page: 'hilos_settings',
+            tableKey: 'settings',
+            rows: [],
+            totalCount: 21,
+            totalExact: true,
+            limit: 10,
+            rowsBefore: 11,
+        );
+
+        $payload = $dto->toArray();
+
+        $this->assertSame(11, $payload[TableWindowSignalData::rowsBefore]);
+        $this->assertSame(11, TableWindowSignalData::fromArray($payload)->rowsBefore);
+    }
+
+    public function testAWindowOfASetCountedOnlyToItsCeilingCarriesNoPlaceAtAll(): void
+    {
+        $dto = new TableWindowSignalData(
+            page: 'hilos_notification_deliveries',
+            tableKey: 'deliveries',
+            rows: [],
+            totalCount: TableConstants::COUNT_CEILING,
+            totalExact: false,
+            limit: 25,
+        );
+
+        $payload = $dto->toArray();
+
+        $this->assertArrayNotHasKey(TableWindowSignalData::rowsBefore, $payload);
+        $this->assertNull(TableWindowSignalData::fromArray($payload)->rowsBefore);
+    }
+
+    public function testAWindowStandingAtTheStartOfTheSetSaysSoRatherThanSayingNothing(): void
+    {
+        $dto = new TableWindowSignalData(
+            page: 'hilos_settings',
+            tableKey: 'settings',
+            rows: [],
+            totalCount: 21,
+            totalExact: true,
+            limit: 10,
+            rowsBefore: 0,
+        );
+
+        $payload = $dto->toArray();
+
+        $this->assertSame(0, $payload[TableWindowSignalData::rowsBefore]);
+    }
+
     public function testFromArrayRefusesAWindowWithoutTheWordOnItsCountAndNamesTheKey(): void
     {
         $this->expectException(InvalidFormatException::class);

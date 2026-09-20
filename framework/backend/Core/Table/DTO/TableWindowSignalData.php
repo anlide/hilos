@@ -20,13 +20,18 @@ use Hilos\Core\Table\TableConstants;
  * both ends and JSON only on the wire.
  *
  * The two boundary anchors are what the client asks the next window with — the last one carries
- * paging forward, the first one carries it back — and they are all the window says about where
- * it sits. An empty window has neither.
+ * paging forward, the first one carries it back. An empty window has neither.
+ *
+ * Where the window sits is a separate thing from how it is addressed, and it travels as the rows
+ * standing before it. The client reads the page number and the row range out of that place
+ * instead of counting presses of Next: a row created above a standing window moves the window
+ * through the set without the reader touching anything, and a counter has no way to learn of it.
  *
  * The total arrives with a word on what it is. A windowed query counts only up to
  * {@see TableConstants::COUNT_CEILING}, so past that the number is the ceiling and reads as "at
  * least this many"; the flag is what lets the client tell the two apart, and the page count is
- * the thing that stops being derivable the moment it says the total is not exact.
+ * the thing that stops being derivable the moment it says the total is not exact. The window's
+ * place is omitted there for the same reason and travels the same way the page count does.
  */
 final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -38,6 +43,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
     public const string limit = 'limit';
     public const string firstAnchor = 'firstAnchor';
     public const string lastAnchor = 'lastAnchor';
+    public const string rowsBefore = 'rowsBefore';
 
     /**
      * Creates a table window signal payload.
@@ -50,6 +56,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
      * @param ?TableAnchorDTO $firstAnchor Place the first row sits at, or null when the window is empty
      * @param ?TableAnchorDTO $lastAnchor Place the last row sits at, or null when the window is empty
+     * @param ?int $rowsBefore Rows of the set standing before the window, or null when the total is not exact
      */
     public function __construct(
         public readonly string $page,
@@ -60,6 +67,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
         public readonly int $limit,
         public readonly ?TableAnchorDTO $firstAnchor = null,
         public readonly ?TableAnchorDTO $lastAnchor = null,
+        public readonly ?int $rowsBefore = null,
     ) {
     }
 
@@ -70,7 +78,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
      */
     public function toArray(): array
     {
-        return [
+        $payload = [
             self::page => $this->page,
             self::tableKey => $this->tableKey,
             self::rows => $this->rows,
@@ -80,6 +88,11 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
             self::firstAnchor => $this->firstAnchor?->toArray(),
             self::lastAnchor => $this->lastAnchor?->toArray(),
         ];
+        if ($this->rowsBefore !== null) {
+            $payload[self::rowsBefore] = $this->rowsBefore;
+        }
+
+        return $payload;
     }
 
     /**
@@ -100,6 +113,7 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
             limit: self::requireInt($data, self::limit),
             firstAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::firstAnchor)),
             lastAnchor: TableAnchorDTO::fromWire(self::optionalArray($data, self::lastAnchor)),
+            rowsBefore: self::optionalInt($data, self::rowsBefore),
         );
     }
 }

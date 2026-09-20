@@ -34,7 +34,7 @@ when the controller carries a declaration, and from its own props when it does
 not — two epochs of the same table living side by side: the framework's admin
 tables declare, while its log pages still pass props.
 The body is drawn from the state the core decides (HilosTableBody): rows, a
-skeleton of rows while a window change is late, or one of the two worded states
+skeleton of rows while a window change is late, or one of the three worded states
 drawn by HilosTableEmptyState — the page's own "nothing here yet" and the
 framework's "Nothing found" (mockups/components/table section 10). -->
 
@@ -174,9 +174,10 @@ const pageCount = useSignal(props.controller.pageCount)
 const totalCount = useSignal(props.controller.totalCount)
 const totalExact = useSignal(props.controller.totalExact)
 const hasNextPage = useSignal(props.controller.hasNextPage)
+const hasPreviousPage = useSignal(props.controller.hasPreviousPage)
 const pendingCount = useSignal(props.controller.pendingCount)
 
-// Which state the body is in — rows, the skeleton, or one of the two worded
+// Which state the body is in — rows, the skeleton, or one of the three worded
 // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
 // view layers cannot decide it three ways, and both branches below read this one
 // answer.
@@ -850,7 +851,11 @@ function onSelectPage(event: Event): void {
             <td :colspan="bodyColspan">
               <HilosTableEmptyState
                 :controller="controller"
-                :kind="body === 'empty_filtered' ? 'empty_filtered' : 'empty'"
+                :kind="
+                  body === 'empty_filtered' || body === 'empty_page'
+                    ? body
+                    : 'empty'
+                "
               >
                 <slot name="empty">{{ emptyText }}</slot>
               </HilosTableEmptyState>
@@ -1079,7 +1084,7 @@ function onSelectPage(event: Event): void {
         </div>
       </div>
 
-      <!-- The skeleton and the two states a table says in words. They live
+      <!-- The skeleton and the three states a table says in words. They live
       inside the table in the wide branch, so a narrow screen would hide them
       along with it and the phone would be left with a blank space where they
       are (Flow F12). A card of the skeleton is one bar, as the mockup draws it.
@@ -1105,7 +1110,9 @@ function onSelectPage(event: Event): void {
       <HilosTableEmptyState
         v-else
         :controller="controller"
-        :kind="body === 'empty_filtered' ? 'empty_filtered' : 'empty'"
+        :kind="
+          body === 'empty_filtered' || body === 'empty_page' ? body : 'empty'
+        "
       >
         <slot name="empty">{{ emptyText }}</slot>
       </HilosTableEmptyState>
@@ -1126,7 +1133,7 @@ function onSelectPage(event: Event): void {
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm"
-          :disabled="page === 0"
+          :disabled="!hasPreviousPage"
           data-id="hilos-table-prev"
           @click="controller.prevPage()"
         >

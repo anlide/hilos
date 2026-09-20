@@ -139,4 +139,14 @@ final class TableConstants
 
     /** Result key for limit. */
     public const string RESULT_KEY_LIMIT = 'limit';
+
+    /**
+     * Result key for how many rows of the set stand before the first row of the window.
+     *
+     * This is what the window says about its place in the set, and the client derives the page
+     * number and the row range shown in the footer from it. It exists only where page numbers
+     * do - under an exact count - because past {@see self::COUNT_CEILING} there is no set size
+     * for a place to be read against.
+     */
+    public const string RESULT_KEY_ROWS_BEFORE = 'rowsBefore';
 }

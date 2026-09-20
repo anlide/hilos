@@ -528,4 +528,23 @@ describe('TableViewportController frame body', () => {
 
     expect(controller.frame.body.get()).toBe('empty_filtered')
   })
+
+  it('calls an empty window over a set that is not empty a page, not a set', () => {
+    const { controller, open } = makeController(backupsFrame)
+
+    // The rows this window was asked for moved out from under its address. Saying "no
+    // backups yet" here would tell the reader the set is gone beside a footer counting it.
+    open([], 21, true, null, null)
+
+    expect(controller.frame.body.get()).toBe('empty_page')
+  })
+
+  it('still calls an empty filtered set filtered when no window of it could hold rows', () => {
+    const { controller, open } = makeController(backupsFrame)
+    controller.setFilter('kind', 'full')
+
+    open([], 0, true, null, null)
+
+    expect(controller.frame.body.get()).toBe('empty_filtered')
+  })
 })

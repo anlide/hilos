@@ -499,6 +499,7 @@ abstract class BrowserContext
                     limit: $snapshot->limit,
                     firstAnchor: $snapshot->firstAnchor,
                     lastAnchor: $snapshot->lastAnchor,
+                    rowsBefore: $snapshot->rowsBefore,
                 ),
                 targetAcceptKey: $acceptKey,
             ),
@@ -787,6 +788,12 @@ abstract class BrowserContext
             TableWindowSignalData::firstAnchor => $window->snapshot->firstAnchor?->toArray(),
             TableWindowSignalData::lastAnchor => $window->snapshot->lastAnchor?->toArray(),
         ];
+        if ($window->snapshot->rowsBefore !== null) {
+            // Omitted rather than sent as null, the same way the frame omits it: a count that
+            // stopped at its ceiling has no set size for a place to be read against, and zero
+            // would read as "the window starts the set".
+            $section[TableWindowSignalData::rowsBefore] = $window->snapshot->rowsBefore;
+        }
 
         try {
             $progress = $table->progressSnapshot();

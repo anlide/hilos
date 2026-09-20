@@ -64,7 +64,7 @@ final class InMemoryTableFilter
         }
 
         $totalCount = count($rows);
-        $window = self::window($rows, $query, $keyField);
+        [$window, $rowsBefore] = self::window($rows, $query, $keyField);
         $anchorFields = self::anchorFields($order, $keyField);
 
         return new TableSnapshotDTO(
@@ -74,6 +74,7 @@ final class InMemoryTableFilter
             limit: $query->limit,
             firstAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[0], $anchorFields),
             lastAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[count($window) - 1], $anchorFields),
+            rowsBefore: $rowsBefore,
         );
     }
 
@@ -130,37 +131,50 @@ final class InMemoryTableFilter
     }
 
     /**
-     * Cuts the window the query asked for out of the ordered rows.
+     * Cuts the window the query asked for out of the ordered rows, and says where it was cut from.
+     *
+     * The place is the index the cut started at, which is the same number whether the slice came
+     * back with rows or empty: a numbered page past the end of the set still starts where the
+     * pages before it end, and an anchor pointing past the last row starts at the end of the set.
+     * That is what the window reports as the rows standing before it, and nothing here costs an
+     * extra pass — the set is already in hand, ordered and counted.
      *
      * @param list<array<string, mixed>> $rows Ordered rows of the whole filtered set
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under
-     * @return list<array<string, mixed>> Rows of the window, in the set's own order
+     * @return array{list<array<string, mixed>>, int} Rows of the window in the set's own order,
+     *     and how many rows of the set stand before them
      */
     private static function window(array $rows, TableQueryDTO $query, string $keyField): array
     {
         if ($query->limit === TableConstants::NO_LIMIT) {
-            return $rows;
+            return [$rows, 0];
         }
         if ($query->pageIndex !== null) {
-            return array_slice($rows, max(0, $query->pageIndex) * $query->limit, $query->limit);
+            $start = max(0, $query->pageIndex) * $query->limit;
+
+            return [array_slice($rows, $start, $query->limit), $start];
         }
 
         $takesFromEnd = $query->anchorDirection === TableAnchorDirection::Before;
         if ($query->anchor === null) {
-            return $takesFromEnd
-                ? array_slice($rows, max(0, count($rows) - $query->limit), $query->limit)
-                : array_slice($rows, 0, $query->limit);
+            if (!$takesFromEnd) {
+                return [array_slice($rows, 0, $query->limit), 0];
+            }
+
+            $start = max(0, count($rows) - $query->limit);
+
+            return [array_slice($rows, $start, $query->limit), $start];
         }
 
         $boundary = self::boundary($rows, $query->anchor, $query->sort, $keyField, $takesFromEnd);
         if (!$takesFromEnd) {
-            return array_slice($rows, $boundary, $query->limit);
+            return [array_slice($rows, $boundary, $query->limit), $boundary];
         }
 
         $start = max(0, $boundary - $query->limit);
 
-        return array_slice($rows, $start, $boundary - $start);
+        return [array_slice($rows, $start, $boundary - $start), $start];
     }
 
     /**

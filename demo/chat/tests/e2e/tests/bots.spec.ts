@@ -6,6 +6,7 @@ import { clickSubmit, typeInto } from '../helpers/session'
 import {
   expectTableTotal,
   goToLastPage,
+  pageBackOnce,
   tableFirstRowTop,
   tableRowKeyByText,
   tableRowKeys,
@@ -315,6 +316,67 @@ test('a bot created above the window is announced, and Show brings the window le
   // Cleanup: A shows the bot it made.
   await tabB.close()
   await deleteBot(page, key)
+})
+
+test('after Show the footer names the tail, Next is off, and Back reaches the first row', async ({
+  page,
+}) => {
+  const name = nameBeforeAll(Date.now())
+
+  await signUpAdmin(page)
+
+  const tabB = await page.context().newPage()
+  const tableWindowsOfB = countTableWindows(tabB)
+  await openBots(page)
+  await openBots(tabB)
+  // Two full pages of ten from the seed, so B stands on the last one and the row A is
+  // about to create takes the count over a page boundary: this is the shape the defect
+  // was found in (HIL-1093).
+  await goToLastPage(tabB)
+  const base = await tableTotal(tabB)
+  const keysBefore = await tableRowKeys(tabB)
+  const caption = tabB.getByTestId('hilos-table-page')
+  const next = tabB.getByTestId('hilos-table-next')
+  const prev = tabB.getByTestId('hilos-table-prev')
+  // Read off what the table was found holding, never written as literals: a retry runs
+  // against the same database, and a bot an earlier attempt left behind would otherwise
+  // make the arithmetic below wrong rather than the behavior.
+  const lastPage = Math.ceil(base / WINDOW)
+  const pagesAfter = Math.ceil((base + 1) / WINDOW)
+
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+  const strip = tabB.getByTestId('hilos-table-announce')
+  await expect(strip).toContainText('1 new row above the window')
+  const windowsBeforeShow = tableWindowsOfB()
+  await tabB.getByTestId('hilos-table-announce-show').click()
+  await expect.poll(tableWindowsOfB).toBeGreaterThan(windowsBeforeShow)
+  await expect(strip).toHaveCount(0)
+
+  // The window kept its rows and moved through the set: it now ends the set, so the
+  // footer names the page its FIRST ROW sits on and Next has nothing to offer. Counting
+  // presses instead would read this as page two of three and offer a Next into nothing.
+  expect(await tableRowKeys(tabB)).toEqual(keysBefore)
+  await expectTableTotal(tabB, base + 1)
+  await expect(caption).toHaveText(
+    new RegExp(`^\\s*${lastPage} / ${pagesAfter}\\s*$`),
+  )
+  await expect(next).toBeDisabled()
+  await expect(prev).toBeEnabled()
+
+  // Back walks to the top of the set. The second step is the one a page counter could
+  // not take: less than a page stands to the left, so the window asked for is the START
+  // of the set rather than the ten rows before its own first one.
+  await pageBackOnce(tabB)
+  await expect(prev).toBeEnabled()
+  await pageBackOnce(tabB)
+  expect((await tableRowKeys(tabB))[0]).toBe(key)
+  await expect(prev).toBeDisabled()
+  await expect(caption).toHaveText(new RegExp(`^\\s*1 / ${pagesAfter}\\s*$`))
+
+  // Cleanup: B holds the bot A made.
+  await deleteBot(tabB, key)
+  await tabB.close()
 })
 
 test('a bot created inside the window moves nothing but the count', async ({

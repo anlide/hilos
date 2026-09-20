@@ -1941,3 +1941,198 @@ describe('TableViewportController', () => {
     expect(controller.selection.count.get()).toBe(0)
   })
 })
+
+/**
+ * Where the window sits in its set, and everything the reader reads out of that (HIL-1093).
+ *
+ * The scenario these are cut from is the one the ticket was opened on: a reader standing on
+ * the second page of twenty rows, a row created above the window by somebody else, Show
+ * pressed. The window that comes back holds the same rows it held — that is what Show is for
+ * — but they are now rows 12 through 21 of twenty-one, and a client counting presses of Next
+ * still calls that "page 2 of 3", offers a Next that leads nowhere, and leaves no way back.
+ */
+describe('TableViewportController window place', () => {
+  /** Page size every window below is served at, which is what makes 21 rows three pages. */
+  const PAGE_SIZE = 10
+
+  /** Rows of the tail window after Show: rows 12 through 21 of the set. */
+  const tail = (): readonly TableRow[] =>
+    Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 12}`,
+      slots: {},
+    }))
+
+  function makePlaced() {
+    const sent: TableViewportDescriptor[] = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+    })
+    const open = (
+      rows: readonly TableRow[],
+      totalCount: number,
+      rowsBefore: number | null,
+      firstAnchor: TableAnchor | null = null,
+      lastAnchor: TableAnchor | null = null,
+    ): void =>
+      controller.ingestSubscriptionWindow(
+        rows,
+        totalCount,
+        true,
+        firstAnchor,
+        lastAnchor,
+        PAGE_SIZE,
+        undefined,
+        [],
+        rowsBefore,
+      )
+
+    return { controller, sent, open }
+  }
+
+  it('reads the page number and the shown range out of the place, not out of presses', () => {
+    const { controller, open } = makePlaced()
+
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    const footer = controller.frame.footer.get()
+    expect(footer.page).toBe(1)
+    expect(footer.firstRow).toBe(12)
+    expect(footer.lastRow).toBe(21)
+    expect(footer.totalCount).toBe(21)
+  })
+
+  it('turns Next off on a window that ends the set, however it got there', () => {
+    const { controller, open } = makePlaced()
+
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    // Eleven before it and ten in it is the whole set: there is nothing behind this window,
+    // even though its place is not the last page number the count allows.
+    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
+  })
+
+  it('keeps Back on wherever anything stands to the left', () => {
+    const { controller, open } = makePlaced()
+
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    expect(controller.hasPreviousPage.get()).toBe(true)
+  })
+
+  it('pages back from the window standing between two pages by its own first row', () => {
+    const { controller, sent, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    controller.prevPage()
+
+    expect(sent.at(-1)?.anchor).toEqual({ id: 12 })
+    expect(sent.at(-1)?.anchorDirection).toBe('before')
+  })
+
+  it('asks for the start of the set when less than a page stands to the left', () => {
+    const { controller, sent, open } = makePlaced()
+    // The window one press back from the tail: rows 2 through 11, one row to its left.
+    open(tail(), 21, 1, { id: 2 }, { id: 11 })
+
+    controller.prevPage()
+
+    // Not "the rows before row 2", which would be a first page of one row while the row the
+    // reader came back for sits at the top of the set.
+    expect(sent.at(-1)?.anchor).toBeNull()
+    expect(sent.at(-1)?.anchorDirection).toBe('after')
+    expect(sent.at(-1)?.pageIndex).toBeNull()
+  })
+
+  it('pages back from an empty numbered page by number, that address having no anchor', () => {
+    const { controller, sent, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+    controller.setPage(2)
+    // The rows the third page held went away while it was being asked for, so what comes
+    // back is empty and sits where that page would have begun.
+    open([], 21, 20)
+
+    controller.prevPage()
+
+    expect(sent.at(-1)?.pageIndex).toBe(1)
+    expect(sent.at(-1)?.anchor).toBeNull()
+  })
+
+  it('pages back from an empty anchored window by reading its address the other way', () => {
+    const { controller, sent, open } = makePlaced()
+    const first = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 1}`,
+      slots: {},
+    }))
+    open(first, 21, 0, { id: 1 }, { id: 10 })
+    controller.nextPage()
+    // Asked for the rows after row 10 and given none: an address past the end of the set
+    // stands behind the whole of it.
+    open([], 21, 21)
+
+    controller.prevPage()
+
+    expect(sent.at(-1)?.anchor).toEqual({ id: 10 })
+    expect(sent.at(-1)?.anchorDirection).toBe('before')
+  })
+
+  it('offers a way on from an empty window that was asked for backwards', () => {
+    const { controller, sent, open } = makePlaced()
+    const second = Array.from({ length: PAGE_SIZE }, (_, index) => ({
+      rowKey: `row-${index + 11}`,
+      slots: {},
+    }))
+    open(second, 21, 10, { id: 11 }, { id: 20 })
+    controller.prevPage()
+    // Asked for the rows before row 11 and given none — somebody deleted the first page
+    // while it was being asked for. Nothing stands to the left of an address like that.
+    open([], 11, 0)
+
+    expect(controller.hasPreviousPage.get()).toBe(false)
+    expect(controller.hasNextPage.get()).toBe(true)
+
+    controller.nextPage()
+
+    expect(sent.at(-1)?.anchor).toEqual({ id: 11 })
+    expect(sent.at(-1)?.anchorDirection).toBe('after')
+  })
+
+  it('leaves the place where the window put it when a row is announced above it', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, 11, { id: 12 }, { id: 21 })
+
+    controller.ingestAnnounce('row-1', 'above', 22, true)
+
+    // The footer would otherwise travel under a reader who pressed nothing. The next window
+    // is what makes the place true again.
+    expect(controller.rowsBefore.get()).toBe(11)
+    expect(controller.frame.footer.get().firstRow).toBe(12)
+  })
+
+  it('leaves Next off on an empty window with nothing to page from', () => {
+    const { controller, sent, open } = makePlaced()
+    // The first window of the set came back empty while the count still says the set has
+    // rows — it raced a delete. Its address is the start of the set, so neither control has
+    // an anchor or a page number to move to, and an offer that cannot be taken is worse
+    // than no offer: the place says where this window sits, not what lies behind it.
+    open([], 4, 0)
+    const asked = sent.length
+
+    expect(controller.hasNextPage.get()).toBe(false)
+    expect(controller.hasPreviousPage.get()).toBe(false)
+
+    controller.nextPage()
+
+    expect(sent.length).toBe(asked)
+  })
+
+  it('counts presses where the window reports no place at all', () => {
+    const { controller, open } = makePlaced()
+    open(tail(), 21, null, { id: 12 }, { id: 21 })
+
+    expect(controller.rowsBefore.get()).toBeNull()
+    expect(controller.frame.footer.get().page).toBe(0)
+    expect(controller.frame.footer.get().firstRow).toBe(1)
+  })
+})

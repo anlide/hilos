@@ -408,6 +408,7 @@ abstract class TableDefinition implements ArrayAccess
             limit: $query->limit,
             firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
+            rowsBefore: $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
         );
     }
 
@@ -625,6 +626,7 @@ abstract class TableDefinition implements ArrayAccess
             limit: $result->limit,
             firstAnchor: $result->firstAnchor,
             lastAnchor: $result->lastAnchor,
+            rowsBefore: $result->rowsBefore,
         );
     }
 

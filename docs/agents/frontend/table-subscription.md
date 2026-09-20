@@ -70,6 +70,17 @@ at any depth and does not shift because somebody deleted a row above it. The
 price is the page number and the exact total, and the count section below says
 what the table shows instead.
 
+**The answer says where the window sits**, as `rowsBefore` — how many rows of the
+set stand before its first row — and the client reads the page number and the
+footer range out of that: `firstRow = rowsBefore + 1`, `page = floor(rowsBefore /
+limit)`. This is the other half of addressing by key. The address says which rows
+to serve and cannot say where they landed, and a client that counted its own
+presses of Next instead would be telling the reader about presses rather than
+about the set: a row created above a standing window moves it through the set
+with nobody touching anything, and no count of presses knows of it (HIL-1093).
+The place is a **report**, never an address — there is still no `offset` in the
+descriptor, and a window is never asked for by the place it should land at.
+
 `pageIndex` is the one address a key cannot express: page seven has no anchor
 until somebody has shown it. It exists because the mockup has numbered pages, and
 it lives exactly where the count is exact — the count section below is what
@@ -205,7 +216,8 @@ on a narrow screen is a fourth and has its own section below:
   filters that hold a value, not the size of the filter map: search rides that
   map and has its own field, and a route preset counts only when a control is
   declared for its key;
-- **the state of the body** — `loading`, `empty`, `empty_filtered`, or `rows`.
+- **the state of the body** — `loading`, `empty`, `empty_filtered`, `empty_page`,
+  or `rows`.
   Deciding this in the core is the point: three view layers deciding it apart
   would drift. `loading` holds while a window change has gone unanswered for
   longer than 400 ms (`WINDOW_SKELETON_MS`), or before any window has arrived —
@@ -217,7 +229,14 @@ on a narrow screen is a fourth and has its own section below:
   declared filters and resets through `resetFilters()`, while `empty` speaks
   the declared `empty` and `mainAction`, or the page's own words where nothing
   is declared — the `empty` slot in Vue, the `empty` prop in React, the `#empty`
-  template in Angular, each falling back to `emptyText`. A page that refuses altogether is none of these — that is
+  template in Angular, each falling back to `emptyText`.
+  `empty_page` is the fifth and the only one about the WINDOW rather than the
+  set: the window came back empty while the count says the set has rows — its
+  address landed past the end, or the rows moved out from under it. Saying
+  "nothing here yet" there tells the reader the set is gone beside a footer
+  counting it, and offering to create a row answers a question nobody asked; what
+  it offers instead is the way back to the rows, which is `prevPage()` — the same
+  thing Back does (HIL-1093). A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
 
 ### The card a row projects to
@@ -532,6 +551,19 @@ announcement is a count, not a list of rows.
 - **A dropped connection resolves the same way.** Filter, sort, and page come
   back, everything that accumulated before the break is gone, and the arriving
   window is the truth.
+- **After Show the page number names where the window sits, not how many times
+  Next was pressed.** The rows do not move — that is what Show is for — but the
+  set beneath them has grown, and the window that held rows 11 to 20 of twenty
+  now holds rows 12 to 21 of twenty-one. The footer says so, Next goes out on a
+  window that ends the set, and Back reaches the row Show was pressed for. The
+  window's place (`rowsBefore`, see *The viewport descriptor*) is what makes all
+  three true; a press counter made all three wrong at once (HIL-1093).
+
+**A live frame does not move the place.** A row announced above the window, a
+count that moved, a row appended at the tail — none of them rewrite `rowsBefore`,
+exactly as none of them rewrite the boundary anchors. Otherwise the footer would
+travel under a reader who pressed nothing. The next window is what makes the
+place true again.
 
 On the wire this is `table_viewport_announce` (page, tableKey, rowKey, placement,
 totalCount, totalExact, pageCount), where `placement` is `above` or `inside`.
@@ -574,6 +606,14 @@ The window reply carries `totalCount` and `totalExact`.
   ("1 – 20 of 128", pages 1 2 3).
 - **`totalExact: false`** — the count is a ceiling, shown as "500+", `pageCount`
   is not sent at all, and there are no page numbers: only Back and Next.
+
+**`rowsBefore` travels exactly where the page numbers do, and for the same
+reason.** With an exact count it is on every window; with a ceiling it is absent
+from the frame altogether rather than sent as zero, because "no place" and "the
+window starts the set" are two different things and a client told zero would draw
+the first page over a window that is nowhere near it. Where it is absent the
+client falls back to counting its presses — the only thing left, and no worse
+than what the whole table did before it existed.
 
 This is not a second mode of the table. It is the consequence of whether the
 number is known: "page 7 of 512" over a large set means nothing and costs a full
@@ -992,6 +1032,7 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-empty` with `hilos-table-empty-title`, `hilos-table-empty-hint`
   and `hilos-table-empty-action`; `hilos-table-no-matches` with
   `hilos-table-no-matches-terms` and `hilos-table-no-matches-reset`;
+  `hilos-table-empty-page` with `hilos-table-empty-page-back`;
   `hilos-table-unavailable` (HIL-943);
 - **a source that went quiet:** `hilos-table-stale` — the bar,
   `hilos-table-stale-column-<key>` — the snowflake in a header,
@@ -1009,10 +1050,10 @@ and everything below is addressed to the one connection it concerns:
 | Frame | Direction | Carries |
 |---|---|---|
 | `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address, `rendered` included — the windows this tab is already holding |
-| `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `progress` — the first window of each of the page's viewport tables, and the work running on it |
+| `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each of the page's viewport tables, and the work running on it |
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
-| `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` |
+| `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row`, `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |

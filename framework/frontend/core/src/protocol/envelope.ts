@@ -137,6 +137,12 @@ const tableRowFragmentSchema = z.looseObject({
  * `totalExact` says what the total is. A windowed query counts only up to a ceiling, so
  * past it the number is that ceiling and reads as "at least this many"; page numbers are
  * what stops following from it.
+ *
+ * `rowsBefore` is where the window sits: how many rows of the set stand before its first
+ * row. The page number and the footer range are read out of it rather than counted up by
+ * presses of Next, which is what keeps them true after a row appears above the window. It
+ * travels only under an exact total, and is absent otherwise for the same reason page
+ * numbers are.
  */
 export const tableWindowSignalDataSchema = z.looseObject({
   page: z.string(),
@@ -147,6 +153,7 @@ export const tableWindowSignalDataSchema = z.looseObject({
   limit: z.number().int(),
   firstAnchor: z.record(z.string(), z.unknown()).nullable(),
   lastAnchor: z.record(z.string(), z.unknown()).nullable(),
+  rowsBefore: z.number().int().optional(),
 })
 
 export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>

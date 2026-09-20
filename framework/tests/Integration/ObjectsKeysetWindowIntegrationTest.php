@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -19,12 +20,15 @@ use Hilos\Database\PhpType;
 use Hilos\Environment\Exception\EnvException;
 
 /**
- * Integration test: a window taken by anchor costs the same at any depth and does not drift (HIL-787).
+ * Integration test: a window taken by anchor costs the same at any depth, does not drift (HIL-787),
+ * and says where in the set it sits (HIL-1093).
  *
- * Both claims are about the server and only the server can answer them. What a deep window costs
- * is not visible from the rows it returns — the same ten rows come back either way — so the test
- * reads what the engine says it touched. And a window that drifts does so between two statements
- * with a delete in between, which a sorted PHP array has no way to reproduce.
+ * All three claims are about the server and only the server can answer them. What a deep window
+ * costs is not visible from the rows it returns — the same ten rows come back either way — so the
+ * test reads what the engine says it touched. A window that drifts does so between two statements
+ * with a delete in between, which a sorted PHP array has no way to reproduce. And the place a
+ * window sits at is the one answer here that is a second query: it is counted against the same
+ * set the window was cut from, so the set has to be a real one.
  */
 final class ObjectsKeysetWindowIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -52,6 +56,21 @@ final class ObjectsKeysetWindowIntegrationTest extends FrameworkIntegrationTestC
      * distance between the two anchors.
      */
     private const int READ_TOLERANCE = 50;
+
+    /**
+     * Label of the one row that puts the set past the ceiling its count stops at.
+     *
+     * The claim that a window costs the same at any depth is measured past that ceiling on
+     * purpose. Under an exact count the window also pays for its own place in the set (HIL-1093),
+     * and that price is a scan up to the window: bounded by the ceiling, but not flat in depth.
+     * Past the ceiling there is no place to report and the window pays for nothing but itself,
+     * which is the regime the claim was written for — it is deep sets a skipped prefix ruins.
+     *
+     * That the place costs nothing past the ceiling is what this measurement proves; that it is
+     * paid for under an exact count is left to the value tests, because a set that small has no
+     * price worth metering and a bound written as a number would only pin the meter.
+     */
+    private const string ROW_PAST_CEILING = 'row-past-ceiling';
 
     /**
      * Raises the scratch table with an unbroken run of rows.
@@ -97,6 +116,8 @@ final class ObjectsKeysetWindowIntegrationTest extends FrameworkIntegrationTestC
      */
     public function testADeepWindowReadsNoMoreThanAShallowOne(): void
     {
+        $this->pushSetPastTheCountCeiling();
+
         $shallowReads = $this->readsWhileTaking(self::SHALLOW_ANCHOR_ID);
         $deepReads = $this->readsWhileTaking(self::DEEP_ANCHOR_ID);
 
@@ -136,6 +157,121 @@ final class ObjectsKeysetWindowIntegrationTest extends FrameworkIntegrationTestC
         $after = $this->windowFrom(self::DEEP_ANCHOR_ID);
 
         self::assertSame($before, $after);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAWindowTakenAfterAnAnchorSaysHowManyRowsStandBeforeIt(): void
+    {
+        $page = $this->pageFrom(self::DEEP_ANCHOR_ID);
+
+        self::assertSame(self::DEEP_ANCHOR_ID, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testARowDeletedAboveTheWindowMovesThePlaceItReports(): void
+    {
+        Database::sql('DELETE FROM `' . self::TABLE . '` WHERE `id` = ?', [self::DEEP_ANCHOR_ID - 1]);
+
+        $page = $this->pageFrom(self::DEEP_ANCHOR_ID);
+
+        self::assertSame(self::DEEP_ANCHOR_ID - 1, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testTheFirstWindowOfTheSetStandsAtItsStartWithoutBeingCountedFor(): void
+    {
+        $page = KeysetWindowTestObjects::initEmpty()->queryPage(new TableQueryDTO(limit: self::PAGE_SIZE));
+
+        self::assertSame(0, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testANumberedPageStandsWhereThePagesBeforeItEnd(): void
+    {
+        $page = KeysetWindowTestObjects::initEmpty()->queryPage(
+            new TableQueryDTO(limit: self::PAGE_SIZE, pageIndex: 3),
+        );
+
+        self::assertSame(3 * self::PAGE_SIZE, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAnEmptyWindowAskedForPastTheEndStandsBehindTheWholeSet(): void
+    {
+        $page = $this->pageFrom(self::ROW_COUNT);
+
+        self::assertSame([], $page[TableConstants::RESULT_KEY_OBJECTS]);
+        self::assertSame(self::ROW_COUNT, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAnEmptyWindowAskedForBeforeTheStartStandsAtTheStart(): void
+    {
+        $page = KeysetWindowTestObjects::initEmpty()->queryPage(new TableQueryDTO(
+            limit: self::PAGE_SIZE,
+            anchor: new TableAnchorDTO([KeysetWindowTestRow::id => 1]),
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+
+        self::assertSame([], $page[TableConstants::RESULT_KEY_OBJECTS]);
+        self::assertSame(0, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testASetPastTheCountCeilingReportsNoPlaceForItsWindow(): void
+    {
+        $this->pushSetPastTheCountCeiling();
+        $page = $this->pageFrom(self::DEEP_ANCHOR_ID);
+
+        self::assertFalse($page[TableConstants::RESULT_KEY_TOTAL_EXACT]);
+        self::assertNull($page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * Adds the one row that takes the set past the ceiling its count stops at.
+     *
+     * @throws DatabaseException When the insert fails
+     */
+    private function pushSetPastTheCountCeiling(): void
+    {
+        Database::sql('INSERT INTO `' . self::TABLE . '` (`label`) VALUES (?)', [self::ROW_PAST_CEILING]);
+    }
+
+    /**
+     * Takes one window anchored at the given row.
+     *
+     * @param int $anchorId Row the window is taken after
+     * @return array<string, mixed> Result of the page query, in the shape {@see Objects::queryPage()} answers
+     * @throws DatabaseException When the window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    private function pageFrom(int $anchorId): array
+    {
+        return KeysetWindowTestObjects::initEmpty()->queryPage(new TableQueryDTO(
+            limit: self::PAGE_SIZE,
+            anchor: new TableAnchorDTO([KeysetWindowTestRow::id => $anchorId]),
+        ));
     }
 
     /**

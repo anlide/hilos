@@ -93,6 +93,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
                 TableWindowSignalData::limit => 1,
                 TableWindowSignalData::firstAnchor => ['key' => 'b'],
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],
+                TableWindowSignalData::rowsBefore => 1,
             ],
             $signal->data->data->toArray(),
         );

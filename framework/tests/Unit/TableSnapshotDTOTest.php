@@ -25,6 +25,7 @@ final class TableSnapshotDTOTest extends TestCase
             limit: 0,
             firstAnchor: new TableAnchorDTO(['id' => 1]),
             lastAnchor: new TableAnchorDTO(['id' => 1]),
+            rowsBefore: 0,
         );
 
         $this->assertSame([
@@ -34,7 +35,37 @@ final class TableSnapshotDTOTest extends TestCase
             'limit' => 0,
             'firstAnchor' => ['id' => 1],
             'lastAnchor' => ['id' => 1],
+            'rowsBefore' => 0,
         ], $snapshot->toArray());
+    }
+
+    public function testTheWindowsPlaceSurvivesTheRoundTrip(): void
+    {
+        $snapshot = TableSnapshotDTO::fromArray(
+            new TableSnapshotDTO(
+                rows: [],
+                totalCount: 21,
+                totalExact: true,
+                limit: 10,
+                rowsBefore: 11,
+            )->toArray(),
+        );
+
+        $this->assertSame(11, $snapshot->rowsBefore);
+    }
+
+    public function testASetCountedOnlyToItsCeilingReportsNoPlaceForItsWindow(): void
+    {
+        $snapshot = TableSnapshotDTO::fromArray(
+            new TableSnapshotDTO(
+                rows: [],
+                totalCount: TableConstants::COUNT_CEILING,
+                totalExact: false,
+                limit: 10,
+            )->toArray(),
+        );
+
+        $this->assertNull($snapshot->rowsBefore);
     }
 
     public function testFromArrayRebuildsGenericRows(): void

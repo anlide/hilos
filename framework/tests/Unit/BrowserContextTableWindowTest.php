@@ -104,12 +104,37 @@ final class BrowserContextTableWindowTest extends TestCase
                 TableWindowSignalData::limit => 1,
                 TableWindowSignalData::firstAnchor => ['key' => 'b'],
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],
+                TableWindowSignalData::rowsBefore => 1,
             ],
             $signal->data->data->toArray(),
         );
 
         $this->assertSame(['b'], $viewport->rowIds());
         $this->assertSame(3, $viewport->totalCount());
+    }
+
+    public function testAWindowAskedForPastTheEndOfTheSetSaysTheWholeSetStandsBeforeIt(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new TableWindowUnitTableContext([
+            new TableWindowUnitRow('a', 'Alpha'),
+            new TableWindowUnitRow('b', 'Beta'),
+            new TableWindowUnitRow('c', 'Gamma'),
+        ]);
+        Hilos::$table->configure();
+
+        new TableWindowUnitBrowserContext()->sendTableWindow(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 2, anchor: new TableAnchorDTO(['key' => 'c'])),
+        );
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal?->data);
+        $this->assertInstanceOf(TableWindowSignalData::class, $signal->data->data);
+        $this->assertSame([], $signal->data->data->rows);
+        $this->assertSame(3, $signal->data->data->rowsBefore);
     }
 
     public function testSendTableWindowIgnoresAMissingTable(): void

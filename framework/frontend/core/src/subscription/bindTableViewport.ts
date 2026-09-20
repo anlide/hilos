@@ -81,6 +81,7 @@ export function bindTableViewport(
       data.firstAnchor,
       data.lastAnchor,
       data.limit,
+      data.rowsBefore ?? null,
     )
   })
 
@@ -115,6 +116,7 @@ export function bindTableViewport(
       window.limit,
       toSortOrder(window.sort),
       toProgressFrames(window.progress),
+      window.rowsBefore ?? null,
     )
   })
 

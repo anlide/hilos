@@ -1,5 +1,5 @@
 // The Angular port of vue/src/HilosTableEmptyState.test.ts, under the same case
-// names the Vue reference and the React port run, for the two worded states of
+// names the Vue reference and the React port run, for the three worded states of
 // the body of a table. Every case mounts a host that binds the inputs and hands
 // the page's own words over as a template, the way the table does.
 import { Component } from '@angular/core'
@@ -25,7 +25,7 @@ import { HilosTableEmptyState } from '../src/HilosTableEmptyState.js'
 })
 class EmptyStateHost {
   controller!: TableViewportController<unknown>
-  kind: 'empty' | 'empty_filtered' = 'empty'
+  kind: 'empty' | 'empty_filtered' | 'empty_page' = 'empty'
 }
 
 function makeController(frame?: HilosTableFrame): {
@@ -46,7 +46,7 @@ function makeController(frame?: HilosTableFrame): {
 
 function mountState(
   controller: TableViewportController<unknown>,
-  kind: 'empty' | 'empty_filtered',
+  kind: 'empty' | 'empty_filtered' | 'empty_page',
 ): ComponentFixture<EmptyStateHost> {
   const fixture = TestBed.createComponent(EmptyStateHost)
   fixture.componentInstance.controller = controller
@@ -152,6 +152,36 @@ describe('HilosTableEmptyState', () => {
     expect(
       byId(fixture, 'hilos-table-no-matches-terms')?.textContent,
     ).toContain('Period: from 2026-08-01')
+  })
+
+  it('offers the way back to the rows when the window is empty over a set that is not', () => {
+    const { controller, sent } = makeController(FILTERED_FRAME)
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: {} }],
+      21,
+      true,
+      null,
+      null,
+      10,
+      0,
+    )
+    controller.setPage(2)
+    // The third page came back holding nothing while the set holds twenty-one rows: the
+    // rows under that address moved while the page was open.
+    controller.ingestWindow([], 21, true, null, null, 10, 20)
+    const fixture = mountState(controller, 'empty_page')
+
+    const state = byId(fixture, 'hilos-table-empty-page')
+    expect(state?.getAttribute('role')).toBe('status')
+    expect(state?.textContent).toContain('Nothing on this page')
+    expect(state?.textContent).toContain(
+      'These rows moved while the page was open.',
+    )
+
+    byId(fixture, 'hilos-table-empty-page-back')?.click()
+
+    // The same thing Back in the footer does, and it asks for a place rather than a filter.
+    expect(sent.at(-1)?.pageIndex).toBe(1)
   })
 
   it('resets the search and the filters back to the ones the table opened with', () => {

@@ -22,6 +22,9 @@ const PAGE_CAPTION = 'hilos-table-page'
 /** The control that turns to the next page, disabled exactly when there is none. */
 const NEXT = 'hilos-table-next'
 
+/** The control that turns one page back, disabled exactly when there is none. */
+const PREV = 'hilos-table-prev'
+
 /** What every row of the window carries in `data-id`, followed by its row key. */
 const ROW_PREFIX = 'hilos-table-row-'
 
@@ -152,6 +155,34 @@ async function captionPage(page: Page): Promise<number> {
   await expect(caption).toHaveText(/^\s*\d+ \/ \d+\s*$/)
 
   return Number.parseInt(((await caption.textContent()) ?? '').trim(), 10)
+}
+
+/**
+ * Turn one page back, waiting for the window to arrive rather than for the number.
+ *
+ * The same discipline {@link goToLastPage} keeps for Next, and for the same reason:
+ * the number moves on the press while the rows of the window before stay on screen
+ * until the answer comes. So this waits for a first row that is not the one this
+ * window began with — two windows of one order that share a first row are one window.
+ *
+ * The page number is deliberately not waited on here. Where a window is taken from
+ * a place rather than from a page boundary, two neighbouring windows can sit on one
+ * page number (HIL-1093): the window at rows 2-11 of a page of ten and the window at
+ * rows 1-10 both read as page one, and waiting for the number to change would wait
+ * for something that never happens.
+ *
+ * @param page The Playwright page showing the table.
+ */
+export async function pageBackOnce(page: Page): Promise<void> {
+  const firstKeyBefore = (await tableRowKeys(page))[0]
+  await page.getByTestId(PREV).click()
+  await expect
+    .poll(async () => {
+      const keys = await tableRowKeys(page)
+
+      return keys.length > 0 && keys[0] !== firstKeyBefore
+    })
+    .toBe(true)
 }
 
 /**

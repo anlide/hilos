@@ -540,6 +540,28 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(wrapper.find('caption').exists()).toBe(false)
   })
 
+  it('keeps Back live while rows stand to the left, page number or no page number', () => {
+    const { controller } = makeController()
+    // The window one press back from the tail after Show: rows 2 through 11 of twenty-one,
+    // one row standing to its left. Its page number is the first, and a footer that read
+    // the number alone would switch Back off over the very row the reader is going back for.
+    controller.ingestWindow(
+      [{ rowKey: 'b', slots: { name: 'Bob' } }],
+      21,
+      true,
+      null,
+      null,
+      10,
+      1,
+    )
+    const wrapper = mountTable(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-page"]').text()).toBe('1 / 3')
+    expect(
+      wrapper.find('[data-id="hilos-table-prev"]').attributes('disabled'),
+    ).toBeUndefined()
+  })
+
   it('draws the declared footer instead of the one built from props', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(

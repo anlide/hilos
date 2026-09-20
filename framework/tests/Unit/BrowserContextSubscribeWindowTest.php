@@ -94,6 +94,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
                 TableWindowSignalData::totalExact => true,
                 TableWindowSignalData::firstAnchor => ['key' => 'a'],
                 TableWindowSignalData::lastAnchor => ['key' => 'b'],
+                TableWindowSignalData::rowsBefore => 0,
             ],
             self::windowOf(self::answer(), SubscribeWindowUnitTable::TABLE),
         );
