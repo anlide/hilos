@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Backup\Ship;
 
+use Hilos\Backup\BackupHistoryScanner;
+
 /**
  * LocalBackupShipper - copies backups into a directory on this machine.
  *
@@ -42,17 +44,24 @@ final class LocalBackupShipper implements BackupShipperInterface
     /**
      * @param string $localScopeDir Absolute path of the local scope directory
      * @param string $scope Scope value being mirrored
+     * @param non-empty-list<string> $bases Base names whose pair is owed a delete on the receiver
      * @return BackupShipCommand Ready-to-spawn mirror command
      */
-    public function mirrorCommand(string $localScopeDir, string $scope): BackupShipCommand
+    public function mirrorCommand(string $localScopeDir, string $scope, array $bases): BackupShipCommand
     {
+        $includes = [];
+        foreach ($bases as $base) {
+            $includes[] = '--include=/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION;
+            $includes[] = '--include=/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION;
+        }
+
         return new BackupShipCommand(self::BINARY, [
             '-r',
             '--delete',
             '--existing',
             '--ignore-existing',
-            self::EXCLUDE_TEMP,
-            self::EXCLUDE_PARTIAL_DIR,
+            ...$includes,
+            '--exclude=*',
             rtrim($localScopeDir, '/') . '/',
             $this->destination($scope),
         ]);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupDeletionMarker;
 use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
@@ -229,30 +230,58 @@ final class BackupShipperIntegrationTest extends TestCase
     {
         $archiveStep = $this->shipStoredBackup();
         $sidecarStep = new BackupShipPlanner()->sidecarStep($archiveStep);
+        $deletedBase = basename($archiveStep->localPath, BackupHistoryScanner::ARCHIVE_EXTENSION);
 
+        // A pair this node never deleted: archives of a dead node, or history from before a
+        // disk replacement. The mirror must leave it. Pushed onto the receiver, kept locally,
+        // and not named by a marker.
+        $keptId = '2026-08-16_04-00-00';
+        $keptBase = BackupCreator::archiveBaseName($keptId, self::BACKUP_ENV, BackupScope::FULL);
+        $keptDir = $this->storeRoot . '/' . BackupScope::FULL->value;
+        $keptArchive = $keptDir . '/' . $keptBase . BackupHistoryScanner::ARCHIVE_EXTENSION;
+        $keptSidecar = $keptDir . '/' . $keptBase . BackupHistoryScanner::SIDECAR_EXTENSION;
+        file_put_contents($keptArchive, 'kept-archive');
+        file_put_contents($keptSidecar, '{}');
+        $shipper = $this->shipper();
+        $this->runToSuccess($shipper->pushCommand($keptArchive, BackupScope::FULL->value));
+        $this->runToSuccess($shipper->pushCommand($keptSidecar, BackupScope::FULL->value));
+
+        BackupDeletionMarker::write(dirname($archiveStep->localPath), $deletedBase);
         unlink($archiveStep->localPath);
         unlink($sidecarStep->localPath);
 
         // With the archive gone the backup is no longer owed a copy, so the queue falls through
-        // to the mirror the deletion marked dirty - the agent's own order of business.
+        // to the mirror the marker still owes - the agent's own order of business.
         $mirror = new BackupShipPlanner()->plan(
             [$this->row()],
             $this->storeRoot,
             [],
-            mirrorDirty: true,
             now: microtime(true),
             encryption: null,
         );
         self::assertNotNull($mirror, 'a local deletion left nothing for the mirror to do');
         self::assertSame(BackupShipStep::MIRROR, $mirror->step);
+        self::assertSame([$deletedBase], $mirror->bases);
 
-        $this->runToSuccess($this->shipper()->mirrorCommand($mirror->localPath, $mirror->scope));
+        $this->runToSuccess($this->shipper()->mirrorCommand(
+            $mirror->localPath,
+            $mirror->scope,
+            $mirror->bases,
+        ));
 
-        self::assertSame(
-            [],
-            $this->remoteNames(BackupScope::FULL->value),
+        $remote = $this->remoteNames(BackupScope::FULL->value);
+        self::assertNotContains(
+            $deletedBase . BackupHistoryScanner::ARCHIVE_EXTENSION,
+            $remote,
             'the deleted pair is still on the receiver',
         );
+        self::assertNotContains($deletedBase . BackupHistoryScanner::SIDECAR_EXTENSION, $remote);
+        self::assertContains(
+            $keptBase . BackupHistoryScanner::ARCHIVE_EXTENSION,
+            $remote,
+            'a pair this node did not delete was taken off the receiver',
+        );
+        self::assertContains($keptBase . BackupHistoryScanner::SIDECAR_EXTENSION, $remote);
     }
 
     /**
@@ -290,9 +319,11 @@ final class BackupShipperIntegrationTest extends TestCase
         self::assertSame(file_get_contents($archivePath), file_get_contents($landed));
 
         unlink($archivePath);
+        $base = basename($archivePath, BackupHistoryScanner::ARCHIVE_EXTENSION);
         $this->runToSuccess($shipper->mirrorCommand(
             $this->storeRoot . '/' . BackupScope::FULL->value,
             BackupScope::FULL->value,
+            [$base],
         ));
         self::assertFileDoesNotExist($landed, 'the mirror left a copy of a locally deleted archive');
 
@@ -335,7 +366,6 @@ final class BackupShipperIntegrationTest extends TestCase
             [$this->row()],
             $this->storeRoot,
             [],
-            false,
             microtime(true),
             $encryptor->fingerprint(),
         );
@@ -417,7 +447,7 @@ final class BackupShipperIntegrationTest extends TestCase
         $shipper = $this->shipper();
 
         $planner = new BackupShipPlanner();
-        $archiveStep = $planner->plan([$this->row()], $this->storeRoot, [], false, microtime(true), null);
+        $archiveStep = $planner->plan([$this->row()], $this->storeRoot, [], microtime(true), null);
         self::assertNotNull($archiveStep, 'the stored backup was not offered for shipping');
         self::assertSame(BackupShipStep::PUSH_ARCHIVE, $archiveStep->step);
 

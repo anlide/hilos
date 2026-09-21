@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup\Ship;
 
 use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupDeletionMarker;
 use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupShipOutcome;
@@ -35,16 +36,14 @@ final class BackupShipPlanner
 
     /**
      * Prefix under which a mirror step records its attempt, keeping it clear of the backup ids
-     * sharing the map. It is what makes a mirror pass terminate: a scope that carries this mark
-     * has already been re-stated since the last local delete, so the next call moves on to the
-     * next scope and then to null.
+     * sharing the map. A successful pass DROPS the markers it covered, and a scope with none
+     * does not return to the queue, so the sweep ends by exhausting the debt rather than by
+     * the mark's presence.
      *
-     * A mark is read by PRESENCE and not by age, unlike the push retries sharing the map. The
-     * two are paced by different things: a push is re-tried on a clock, while a mirror is owed
-     * exactly one pass per delete - and a sweep of every scope can outlast any interval on a
-     * narrow link, which under an aged mark would make the first scope due again before the
-     * last one is reached and re-state the receiver forever. What arms the pass again is a
-     * local delete, which drops these marks together with raising the dirty flag.
+     * The mark is now read by AGE, the same way push retries sharing the map are: a mirror
+     * that did not go through is retried after {@see RETRY_SECONDS}. That is deliberate - the
+     * debt no longer waits for the next local delete. A just-written marker is armed at once
+     * by dropping these marks rather than by waiting out the interval.
      */
     public const string MIRROR_ATTEMPT_PREFIX = 'mirror:';
 
@@ -58,8 +57,7 @@ final class BackupShipPlanner
      * @param list<BackupHistory> $rows Current backup index rows (all scopes and statuses)
      * @param string $root Local storage root (`BACKUP_DIR`)
      * @param array<string, float> $lastAttemptAt When each backup id was last attempted, and
-     *     which {@see MIRROR_ATTEMPT_PREFIX} scopes have had their pass
-     * @param bool $mirrorDirty Whether something was deleted locally since the last mirror pass
+     *     when each {@see MIRROR_ATTEMPT_PREFIX} scope was last mirrored
      * @param float $now Current time as a unix timestamp
      * @param ?string $encryption Fingerprint of the recipient set copies are encrypted to now;
      *     null when this installation ships in the clear
@@ -69,7 +67,6 @@ final class BackupShipPlanner
         array $rows,
         string $root,
         array $lastAttemptAt,
-        bool $mirrorDirty,
         float $now,
         ?string $encryption,
     ): ?BackupShipPlan {
@@ -78,11 +75,7 @@ final class BackupShipPlanner
             return $candidate;
         }
 
-        if (!$mirrorDirty) {
-            return null;
-        }
-
-        return $this->nextMirror($root, $lastAttemptAt);
+        return $this->nextMirror($root, $lastAttemptAt, $now);
     }
 
     /**
@@ -192,31 +185,34 @@ final class BackupShipPlanner
     /**
      * The next scope directory owed a mirror pass.
      *
-     * Scopes are walked in declaration order and a scope with no local directory is skipped: an
-     * empty source would ask rsync to delete the whole remote scope, which is a different
-     * operation than mirroring what rotation removed.
+     * Scopes are walked in declaration order. A scope with no markers is skipped: there is
+     * nothing to delete by name, and a missing directory globbing empty is the same case -
+     * no separate existence check.
      *
-     * A scope is owed a pass while it carries no mark, however old the marks of its neighbours
-     * are ({@see MIRROR_ATTEMPT_PREFIX}), so the sweep ends after one look per scope no matter
-     * how long the link takes over it.
+     * A scope whose last attempt is still inside {@see RETRY_SECONDS} waits, the same way a
+     * push does. A successful pass drops the markers, so a scope that went through does not
+     * return even after the interval; one that failed is retried then, rather than waiting
+     * for another local delete.
      *
      * @param string $root Local storage root
      * @param array<string, float> $lastAttemptAt When each scope was last mirrored
-     * @return ?BackupShipPlan Mirror step, or null when every scope has had its pass
+     * @param float $now Current time as a unix timestamp
+     * @return ?BackupShipPlan Mirror step carrying the owed base names, or null when none is due
      */
-    private function nextMirror(string $root, array $lastAttemptAt): ?BackupShipPlan
+    private function nextMirror(string $root, array $lastAttemptAt, float $now): ?BackupShipPlan
     {
         foreach (BackupScope::cases() as $scope) {
-            if (isset($lastAttemptAt[self::MIRROR_ATTEMPT_PREFIX . $scope->value])) {
+            if ($this->tooSoon($lastAttemptAt, self::MIRROR_ATTEMPT_PREFIX . $scope->value, $now)) {
                 continue;
             }
 
             $scopeDir = $root . '/' . $scope->value;
-            if (!is_dir($scopeDir)) {
+            $bases = BackupDeletionMarker::owed($scopeDir);
+            if ($bases === []) {
                 continue;
             }
 
-            return new BackupShipPlan(BackupShipStep::MIRROR, null, $scope->value, $scopeDir);
+            return new BackupShipPlan(BackupShipStep::MIRROR, null, $scope->value, $scopeDir, $bases);
         }
 
         return null;
@@ -224,7 +220,7 @@ final class BackupShipPlanner
 
     /**
      * @param array<string, float> $lastAttemptAt When each key was last attempted
-     * @param string $key Backup id whose retry interval is being read
+     * @param string $key Backup id or prefixed mirror-scope whose retry interval is being read
      * @param float $now Current time as a unix timestamp
      * @return bool Whether the retry interval has yet to elapse for this key
      */

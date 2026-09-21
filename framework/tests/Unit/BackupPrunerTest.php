@@ -8,6 +8,9 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Backup\BackupCeilingGuard;
 use Hilos\Backup\BackupCeilingSpare;
+use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupDeletionMarker;
+use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
@@ -20,7 +23,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the pure rotation planners {@see BackupPruner::selectForDeletion()} and
- * {@see BackupPruner::selectForCeiling()}.
+ * {@see BackupPruner::selectForCeiling()}, and for the shared physical-delete path
+ * {@see BackupPruner::deleteStored()}.
  *
  * Neither planner reads the clock or the filesystem, so every case is a fixed set of index
  * rows plus a policy, a timezone, and the instant ages are measured from, asserting exactly
@@ -30,6 +34,9 @@ use PHPUnit\Framework\TestCase;
  *
  * The ceiling cases are read differently: they carry byte sizes and no clock at all, because the
  * pass runs over whatever the ladder already kept and only asks which rows are oldest.
+ *
+ * The delete-stored cases do touch the filesystem: they assert the marker left beside a shipped
+ * pair, and that a backup never shipped leaves none.
  */
 final class BackupPrunerTest extends TestCase
 {
@@ -411,6 +418,131 @@ final class BackupPrunerTest extends TestCase
             $this->shippingRows(),
             350,
         );
+    }
+
+    public function testDeleteStoredWritesAMarkerBesideAShippedPairAndTakesThePairAway(): void
+    {
+        $row = $this->row(
+            'a',
+            '2026-07-19T10:00:00+00:00',
+            BackupScope::FULL,
+            shipOutcome: BackupShipOutcome::OK,
+        );
+        [$root, $scopeDir, $base, $archive, $sidecar] = $this->storePair($row);
+
+        try {
+            $this->assertTrue(new BackupPruner()->deleteStored($row, $root));
+            $this->assertFileDoesNotExist($archive);
+            $this->assertFileDoesNotExist($sidecar);
+            $this->assertFileExists(BackupDeletionMarker::path($scopeDir, $base));
+            $this->assertSame([$base], BackupDeletionMarker::owed($scopeDir));
+        } finally {
+            $this->removeStoreRoot($root);
+        }
+    }
+
+    public function testDeleteStoredWritesAMarkerWhenTheLastCopyFailed(): void
+    {
+        // A failed last attempt still describes a copy that is over there: the marker is owed
+        // whenever shipping was attempted, not only when it last succeeded.
+        $row = $this->row(
+            'a',
+            '2026-07-19T10:00:00+00:00',
+            BackupScope::FULL,
+            shipOutcome: BackupShipOutcome::FAILED,
+        );
+        [$root, $scopeDir, $base] = $this->storePair($row);
+
+        try {
+            $this->assertTrue(new BackupPruner()->deleteStored($row, $root));
+            $this->assertSame([$base], BackupDeletionMarker::owed($scopeDir));
+        } finally {
+            $this->removeStoreRoot($root);
+        }
+    }
+
+    public function testDeleteStoredWritesNoMarkerWhenTheBackupWasNeverShipped(): void
+    {
+        $row = $this->row('a', '2026-07-19T10:00:00+00:00', BackupScope::FULL);
+        [$root, $scopeDir, $base, $archive, $sidecar] = $this->storePair($row);
+
+        try {
+            $this->assertTrue(new BackupPruner()->deleteStored($row, $root));
+            $this->assertFileDoesNotExist($archive);
+            $this->assertFileDoesNotExist($sidecar);
+            $this->assertFileDoesNotExist(BackupDeletionMarker::path($scopeDir, $base));
+            $this->assertSame([], BackupDeletionMarker::owed($scopeDir));
+        } finally {
+            $this->removeStoreRoot($root);
+        }
+    }
+
+    public function testDeleteStoredReturnsFalseWhenTheMarkerCannotBeWritten(): void
+    {
+        $root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-pruner-missing-' . uniqid('', true);
+        if (!mkdir($root, 0755, true) && !is_dir($root)) {
+            $this->fail("Could not create fixture directory: {$root}");
+        }
+
+        try {
+            $row = $this->row(
+                'a',
+                '2026-07-19T10:00:00+00:00',
+                BackupScope::FULL,
+                shipOutcome: BackupShipOutcome::OK,
+            );
+            $this->assertFalse(new BackupPruner()->deleteStored($row, $root));
+        } finally {
+            rmdir($root);
+        }
+    }
+
+    /**
+     * Lays a stored archive/sidecar pair under a fresh temp root for {@see BackupPruner::deleteStored()}.
+     *
+     * @param BackupHistory $row Index row whose files to place
+     * @return array{string, string, string, string, string} Root, scope directory, base name, archive path, sidecar path
+     */
+    private function storePair(BackupHistory $row): array
+    {
+        $scope = BackupScope::fromString($row->scope);
+        $this->assertNotNull($scope);
+        $root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hilos-pruner-store-' . uniqid('', true);
+        $scopeDir = $root . '/' . $scope->value;
+        if (!mkdir($scopeDir, 0755, true) && !is_dir($scopeDir)) {
+            $this->fail("Could not create fixture directory: {$scopeDir}");
+        }
+
+        $base = BackupCreator::archiveBaseName($row->getId(), $row->env, $scope);
+        $archive = $scopeDir . '/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION;
+        $sidecar = $scopeDir . '/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION;
+        file_put_contents($archive, 'archive');
+        file_put_contents($sidecar, '{}');
+
+        return [$root, $scopeDir, $base, $archive, $sidecar];
+    }
+
+    /**
+     * Removes a temp store created by {@see storePair()}.
+     *
+     * @param string $root Absolute path of the temp backup root
+     */
+    private function removeStoreRoot(string $root): void
+    {
+        foreach (glob($root . '/*') ?: [] as $scopeDir) {
+            if (!is_dir($scopeDir)) {
+                continue;
+            }
+            foreach (glob($scopeDir . '/{,.}*', GLOB_BRACE) ?: [] as $entry) {
+                if (is_file($entry)) {
+                    unlink($entry);
+                }
+            }
+            rmdir($scopeDir);
+        }
+        if (is_dir($root)) {
+            rmdir($root);
+        }
     }
 
     /**

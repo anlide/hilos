@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupDeletionMarker;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupShipOutcome;
@@ -53,7 +54,7 @@ final class BackupShipPlannerTest extends TestCase
             $this->row('middle', createdAt: '2026-08-10T00:00:00+00:00'),
         ];
 
-        $plan = new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null);
+        $plan = new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null);
 
         $this->assertNotNull($plan);
         $this->assertSame('new', $plan->backupId);
@@ -73,7 +74,7 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'owed',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null)?->backupId,
         );
     }
 
@@ -85,25 +86,25 @@ final class BackupShipPlannerTest extends TestCase
         // and no state beyond the mark the last copy left.
         $rows = [$this->row('done', shipOutcome: BackupShipOutcome::OK)];
 
-        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null));
+        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null));
         $this->assertSame(
             'done',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, 'a1b2c3d4e5f6')?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, 'a1b2c3d4e5f6')?->backupId,
         );
 
         $encrypted = [$this->row('done', shipOutcome: BackupShipOutcome::OK, shipEncryption: 'a1b2c3d4e5f6')];
         $this->assertNull(
-            new BackupShipPlanner()->plan($encrypted, $this->root, [], false, 1_000_000.0, 'a1b2c3d4e5f6'),
+            new BackupShipPlanner()->plan($encrypted, $this->root, [], 1_000_000.0, 'a1b2c3d4e5f6'),
         );
         // A rotated key: the copy over there is ciphertext the new key cannot open, so it goes again.
         $this->assertSame(
             'done',
-            new BackupShipPlanner()->plan($encrypted, $this->root, [], false, 1_000_000.0, '0f1e2d3c4b5a')?->backupId,
+            new BackupShipPlanner()->plan($encrypted, $this->root, [], 1_000_000.0, '0f1e2d3c4b5a')?->backupId,
         );
         // And a key turned off sends the store back in the clear.
         $this->assertSame(
             'done',
-            new BackupShipPlanner()->plan($encrypted, $this->root, [], false, 1_000_000.0, null)?->backupId,
+            new BackupShipPlanner()->plan($encrypted, $this->root, [], 1_000_000.0, null)?->backupId,
         );
     }
 
@@ -115,10 +116,10 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             BackupShipStep::PUSH_ARCHIVE,
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->step,
+            new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null)?->step,
         );
 
-        $encrypted = new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, 'a1b2c3d4e5f6');
+        $encrypted = new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, 'a1b2c3d4e5f6');
         $this->assertSame(BackupShipStep::ENCRYPT_ARCHIVE, $encrypted?->step);
         // The plan keeps naming the STORED archive whichever step it is: the staged ciphertext is
         // the agent's business, and the sidecar half is derived from this path.
@@ -132,7 +133,7 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'retried',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null)?->backupId,
         );
     }
 
@@ -141,7 +142,7 @@ final class BackupShipPlannerTest extends TestCase
         // An error record has a sidecar and no archive: there is nothing to copy.
         $rows = [$this->row('failed-run', status: BackupStatus::ERROR, withArchive: false)];
 
-        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null));
+        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null));
     }
 
     public function testARowWhoseArchiveIsGoneIsSkipped(): void
@@ -155,7 +156,7 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'present',
-            new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null)?->backupId,
         );
     }
 
@@ -170,14 +171,14 @@ final class BackupShipPlannerTest extends TestCase
 
         $this->assertSame(
             'older',
-            new BackupShipPlanner()->plan($rows, $this->root, $lastAttemptAt, false, $now, null)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, $lastAttemptAt, $now, null)?->backupId,
         );
 
         // Once the interval has elapsed the newest backup takes the link back.
         $elapsed = ['just-tried' => $now - BackupShipPlanner::RETRY_SECONDS];
         $this->assertSame(
             'just-tried',
-            new BackupShipPlanner()->plan($rows, $this->root, $elapsed, false, $now, null)?->backupId,
+            new BackupShipPlanner()->plan($rows, $this->root, $elapsed, $now, null)?->backupId,
         );
     }
 
@@ -186,7 +187,7 @@ final class BackupShipPlannerTest extends TestCase
         // The remote publish order mirrors the local one: an interrupted transfer can leave a
         // remote archive without a sidecar, never a sidecar without its archive.
         $planner = new BackupShipPlanner();
-        $archive = $planner->plan([$this->row('paired')], $this->root, [], false, 1_000_000.0, null);
+        $archive = $planner->plan([$this->row('paired')], $this->root, [], 1_000_000.0, null);
         $this->assertNotNull($archive);
 
         $sidecar = $planner->sidecarStep($archive);
@@ -217,12 +218,13 @@ final class BackupShipPlannerTest extends TestCase
         ]);
         $rows = [new BackupHistory($state)];
 
-        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], false, 1_000_000.0, null));
+        $this->assertNull(new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null));
     }
 
     public function testAnIdleQueueWithNothingDeletedPlansNothing(): void
     {
-        $this->assertNull(new BackupShipPlanner()->plan([], $this->root, [], false, 1_000_000.0, null));
+        // Markers on disk are the flag: a scope directory with none does not ask for a mirror.
+        $this->assertNull(new BackupShipPlanner()->plan([], $this->root, [], 1_000_000.0, null));
     }
 
     public function testAMirrorRunsOnlyOnceTheQueueIsEmpty(): void
@@ -230,26 +232,32 @@ final class BackupShipPlannerTest extends TestCase
         // A mirror deletes remotely; running it while pushes are outstanding would spend the link
         // removing files in the same pass that is trying to add them.
         $rows = [$this->row('owed')];
+        BackupDeletionMarker::write($this->root . '/full', 'deleted-one');
 
-        $withWork = new BackupShipPlanner()->plan($rows, $this->root, [], true, 1_000_000.0, null);
+        $withWork = new BackupShipPlanner()->plan($rows, $this->root, [], 1_000_000.0, null);
         $this->assertSame(BackupShipStep::PUSH_ARCHIVE, $withWork?->step);
 
-        $idle = new BackupShipPlanner()->plan([], $this->root, [], true, 1_000_000.0, null);
+        $idle = new BackupShipPlanner()->plan([], $this->root, [], 1_000_000.0, null);
         $this->assertSame(BackupShipStep::MIRROR, $idle?->step);
         $this->assertNull($idle->backupId);
         $this->assertSame($this->root . '/full', $idle->localPath);
+        $this->assertSame(['deleted-one'], $idle->bases);
     }
 
     public function testTheMirrorPassWalksEveryScopeAndThenStops(): void
     {
-        // One bool says "something was deleted"; the attempt map is what sequences the scopes and
-        // ends the pass, so a dirty mirror cannot loop on the first scope forever.
+        // Markers in every scope are what the pass walks; the attempt map sequences them so
+        // a owed sweep cannot loop on the first scope forever.
+        foreach (BackupScope::cases() as $scope) {
+            BackupDeletionMarker::write($this->root . '/' . $scope->value, $scope->value . '-owed');
+        }
+
         $planner = new BackupShipPlanner();
         $now = 1_000_000.0;
         $lastAttemptAt = [];
 
         $mirrored = [];
-        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, true, $now, null)) !== null) {
+        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, $now, null)) !== null) {
             $mirrored[] = $plan->scope;
             $lastAttemptAt[BackupShipPlanner::MIRROR_ATTEMPT_PREFIX . $plan->scope] = $now;
         }
@@ -259,17 +267,22 @@ final class BackupShipPlannerTest extends TestCase
 
     public function testASweepSlowerThanTheRetryIntervalStillEnds(): void
     {
-        // The mark of a mirrored scope is read by presence, not by age: on a narrow link one pass
-        // can outlast any interval, and an aged mark would make the first scope due again before
-        // the last one is reached - a receiver re-stated forever, with mirrorDirty never clearing.
+        // Completion holds on dropping the debt, not on a presence mark: an aged attempt stamp
+        // would make the first scope due again before the last one is reached, and without
+        // clearing the markers the loop would never end. The agent drops them after a success.
+        foreach (BackupScope::cases() as $scope) {
+            BackupDeletionMarker::write($this->root . '/' . $scope->value, $scope->value . '-owed');
+        }
+
         $planner = new BackupShipPlanner();
         $now = 1_000_000.0;
         $lastAttemptAt = [];
 
         $mirrored = [];
-        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, true, $now, null)) !== null) {
+        while (($plan = $planner->plan([], $this->root, $lastAttemptAt, $now, null)) !== null) {
             $mirrored[] = $plan->scope;
             $lastAttemptAt[BackupShipPlanner::MIRROR_ATTEMPT_PREFIX . $plan->scope] = $now;
+            BackupDeletionMarker::clear($plan->localPath, $plan->bases);
             // Every scope takes longer to send than the interval a failing push is re-tried on.
             $now += BackupShipPlanner::RETRY_SECONDS * 2;
         }
@@ -279,15 +292,29 @@ final class BackupShipPlannerTest extends TestCase
 
     public function testAScopeWithNoLocalDirectoryIsNotMirrored(): void
     {
-        // An empty source would ask rsync to delete the whole remote scope, which is a different
-        // operation than mirroring what rotation removed.
+        // A missing directory globbing empty is the same as a present one with no markers:
+        // the scope is skipped because nothing is owed, not because the path exists.
         rmdir($this->root . '/full');
+        BackupDeletionMarker::write($this->root . '/schema-seed', 'seed-owed');
 
-        $plan = new BackupShipPlanner()->plan([], $this->root, [], true, 1_000_000.0, null);
+        $plan = new BackupShipPlanner()->plan([], $this->root, [], 1_000_000.0, null);
 
         $this->assertSame('schema-seed', $plan?->scope);
 
         mkdir($this->root . '/full');
+    }
+
+    public function testAMarkerOnDiskIsAMirrorPlanEvenWithNoAttemptMap(): void
+    {
+        // The in-memory dirty flag is gone: markers on disk are the debt, so a restart
+        // between the local delete and the pass still owes the receiver that name.
+        BackupDeletionMarker::write($this->root . '/full', 'survived');
+
+        $plan = new BackupShipPlanner()->plan([], $this->root, [], 1_000_000.0, null);
+
+        $this->assertSame(BackupShipStep::MIRROR, $plan?->step);
+        $this->assertSame(['survived'], $plan->bases);
+        $this->assertSame($this->root . '/full', $plan->localPath);
     }
 
     /**

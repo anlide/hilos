@@ -19,19 +19,6 @@ use Hilos\Backup\BackupCreator;
 interface BackupShipperInterface
 {
     /**
-     * Keeps the store's unpublished artifacts out of a mirror.
-     *
-     * A scope directory is not quiet while a backup is being taken: the create child writes its
-     * work directory and its temp archive right there, under
-     * {@see BackupCreator::TEMP_PREFIX}. Shipping owns a process slot of its own and rotation
-     * raises the mirror flag before the create child is even spawned, so a mirror running beside
-     * a live backup is the ordinary order of a scheduled run rather than a race - and without
-     * this, every such pass would send a raw uncompressed dump across the link and then fail when
-     * the temps it was copying vanished under it.
-     */
-    public const string EXCLUDE_TEMP = '--exclude=' . BackupCreator::TEMP_PREFIX . '*';
-
-    /**
      * Where a push parks the part of a file that has arrived, until all of it has.
      *
      * A bare `--partial` keeps the fragment UNDER THE REAL NAME, which was harmless while a push
@@ -43,16 +30,6 @@ interface BackupShipperInterface
     public const string PARTIAL_DIR = '.tmp-ship-partial';
 
     /**
-     * Keeps the receiver's own resume directory out of a mirror.
-     *
-     * Spelled beside {@see EXCLUDE_TEMP} rather than left to it: today the resume directory
-     * happens to start with the store's temp prefix and would be covered by accident, and an
-     * accident is not what protects the one directory a pass must never delete out from under a
-     * transfer that is still using it.
-     */
-    public const string EXCLUDE_PARTIAL_DIR = '--exclude=' . self::PARTIAL_DIR;
-
-    /**
      * Builds the command copying one local file into the destination's directory for a scope.
      *
      * @param string $localPath Absolute path of the archive or sidecar to copy
@@ -62,11 +39,17 @@ interface BackupShipperInterface
     public function pushCommand(string $localPath, string $scope): BackupShipCommand;
 
     /**
-     * Builds the command deleting from the destination's scope directory what the local one lost.
+     * Builds the command deleting named pairs from the destination's scope directory.
      *
      * The deletion half of the mirror, and nothing but: what rotation and the delete action
-     * removed here has to leave the receiver too, and naming the local directory as the source is
-     * how the receiver is told which files those were, without keeping a list of them.
+     * removed here has to leave the receiver too, named in the include list, never "everything
+     * this directory lacks". Rules are read top to bottom and the first match wins; files
+     * excluded from the transfer are protected from `--delete` (there is no `--delete-excluded`),
+     * so one `--exclude=*` after the includes is the whole of that protection. That is what
+     * keeps unpublished store artifacts a live backup is still writing under
+     * {@see BackupCreator::TEMP_PREFIX}, the resume directory {@see self::PARTIAL_DIR} a
+     * concurrent push still uses, copies this node never deleted, and the marker files
+     * themselves.
      *
      * It writes NOTHING. The copying half is the push steps, which the index repeats until they
      * succeed, so a mirror that also re-stated the directory would be a second, weaker copier: it
@@ -75,11 +58,13 @@ interface BackupShipperInterface
      * {@see BackupShipStep} says the read path never has to face. With a copy that may be
      * ciphertext of one recipient set and a receiver holding ciphertext of another, re-stating
      * would also be wrong rather than merely redundant: the two files carry the same name and
-     * differ in nothing rsync's quick check looks at.
+     * differ in nothing rsync's quick check looks at. `--existing` and `--ignore-existing` are
+     * what hold this when a marker is already written and the local file is still there.
      *
      * @param string $localScopeDir Absolute path of the local scope directory
      * @param string $scope Scope value being mirrored; names its directory on the receiver
+     * @param non-empty-list<string> $bases Base names whose pair is owed a delete on the receiver
      * @return BackupShipCommand Ready-to-spawn mirror command
      */
-    public function mirrorCommand(string $localScopeDir, string $scope): BackupShipCommand;
+    public function mirrorCommand(string $localScopeDir, string $scope, array $bases): BackupShipCommand;
 }

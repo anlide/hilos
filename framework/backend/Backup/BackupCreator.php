@@ -10,7 +10,7 @@ use DateTimeInterface;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Exception\BackupDumpFailedException;
 use Hilos\Backup\Exception\BackupException;
-use Hilos\Backup\Ship\BackupShipperInterface;
+use Hilos\Backup\Ship\BackupArchiveEncryptor;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
 use Hilos\Database\Database;
@@ -87,8 +87,8 @@ final class BackupCreator
     /**
      * Prefix every unpublished artifact of this engine carries, work directories included.
      *
-     * Public because it is read from outside the store as well: a mirror re-stating a scope
-     * directory has to leave these behind ({@see BackupShipperInterface::mirrorCommand()}), and a
+     * Public because it is read from outside the store as well: an encrypted copy's staging
+     * directory is named under this prefix ({@see BackupArchiveEncryptor::stageDirPrefix()}), and a
      * second spelling of the prefix over there is one waiting to drift away from this one.
      */
     public const string TEMP_PREFIX = '.tmp-';

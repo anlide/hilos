@@ -46,7 +46,9 @@ use Throwable;
  * so the caller reports why the store still does not fit instead of guessing at the reason.
  *
  * {@see deleteStored()} is the shared physical-delete path (archive + sidecar) reused by manual
- * delete (HIL-333); the agent owns removing the matching runtime index row.
+ * delete (HIL-333); the agent owns removing the matching runtime index row. When the backup
+ * was ever shipped, that path also leaves a deletion marker so the receiver can drop that
+ * named pair without treating this directory as the whole of what lives there.
  */
 final class BackupPruner
 {
@@ -154,22 +156,36 @@ final class BackupPruner
      * The shared physical-delete path: rotation and manual delete (HIL-333) both route here.
      * A missing archive (e.g. an error record) or already-removed file is not an error.
      *
+     * A backup that was ever shipped — {@see BackupHistory::$shipOutcome} not null, including
+     * a failed last attempt — leaves a {@see BackupDeletionMarker} before the pair is unlinked,
+     * so a crash between the two still owes the receiver that name. The unlinks themselves
+     * always run: a marker that could not be written must not stop rotation from freeing disk.
+     * The bool is that debt, not whether the files left: true when nothing is owed or the
+     * marker was written, false when a marker was needed and could not be created.
+     *
      * @param BackupHistory $row Index row identifying the backup to remove
      * @param string $root Backup storage root; a blank root is a no-op
+     * @return bool True when the receiver owes nothing, or the marker was written
      */
-    public function deleteStored(BackupHistory $row, string $root): void
+    public function deleteStored(BackupHistory $row, string $root): bool
     {
         $scope = BackupScope::fromString($row->scope);
         if ($scope === null || $root === '') {
-            return;
+            return true;
         }
 
         $base = BackupCreator::archiveBaseName($row->getId(), $row->env, $scope);
         $scopeDir = $root . '/' . $scope->value;
+        $recorded = true;
+        if ($row->shipOutcome !== null) {
+            $recorded = BackupDeletionMarker::write($scopeDir, $base);
+        }
         // warning-suppressed: an absent archive is legitimate here (error records carry none), no-op
         @unlink($scopeDir . '/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION);
         // warning-suppressed: an absent sidecar is legitimate here, no-op
         @unlink($scopeDir . '/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION);
+
+        return $recorded;
     }
 
     /**

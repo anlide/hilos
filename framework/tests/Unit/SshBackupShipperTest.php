@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\SshBackupShipper;
 use PHPUnit\Framework\TestCase;
@@ -36,7 +36,8 @@ final class SshBackupShipperTest extends TestCase
 
     public function testMirrorOnlyDeletesAndSendsTheDirectoryItself(): void
     {
-        $command = $this->shipper()->mirrorCommand('/var/backups/full', 'full');
+        $base = '2026-09-20_14-30-05-prod-full';
+        $command = $this->shipper()->mirrorCommand('/var/backups/full', 'full', [$base]);
 
         $this->assertSame('rsync', $command->binary);
         $this->assertSame([
@@ -44,8 +45,9 @@ final class SshBackupShipperTest extends TestCase
             '--delete',
             '--existing',
             '--ignore-existing',
-            '--exclude=.tmp-*',
-            '--exclude=.tmp-ship-partial',
+            '--include=/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION,
+            '--include=/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION,
+            '--exclude=*',
             '-e',
             'ssh -i /etc/hilos/ship.key -o UserKnownHostsFile=/etc/hilos/known_hosts '
             . '-o StrictHostKeyChecking=yes -p 2222',
@@ -56,21 +58,11 @@ final class SshBackupShipperTest extends TestCase
         ], $command->args);
     }
 
-    public function testAMirrorLeavesTheStoresUnpublishedArtifactsAtHome(): void
-    {
-        // A scope directory is not quiet while a backup is being taken, and shipping has its own
-        // process slot: without this the pass would send a raw uncompressed dump across the link.
-        $this->assertContains(
-            '--exclude=' . BackupCreator::TEMP_PREFIX . '*',
-            $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args,
-        );
-    }
-
     public function testAMirrorKeepsNothingPartialWhereTheReceiverCanSeeIt(): void
     {
         // A mirror walks names, so '.json' crosses before '.tar.gz': kept partial data would put a
         // complete sidecar beside a truncated archive. A push may resume; a mirror may not.
-        $mirror = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+        $mirror = $this->shipper()->mirrorCommand('/var/backups/full', 'full', ['owed'])->args;
         $push = $this->shipper()->pushCommand('/var/backups/full/a.tar.gz', 'full')->args;
 
         $this->assertNotContains('--partial-dir=' . SshBackupShipper::PARTIAL_DIR, $mirror);
@@ -79,6 +71,10 @@ final class SshBackupShipperTest extends TestCase
         // replaces: a push now overwrites a copy whose sidecar is already there, so an interrupted
         // one would leave a truncated archive wearing a complete passport.
         $this->assertNotContains('--partial', $push);
+        // The resume directory is not named as a private exclude: everything outside the include
+        // list is protected by --exclude=*, including .tmp-ship-partial on the receiver.
+        $this->assertContains('--exclude=*', $mirror);
+        $this->assertNotContains('--exclude=' . SshBackupShipper::PARTIAL_DIR, $mirror);
     }
 
     public function testAMirrorWritesNothingAtAll(): void
@@ -87,7 +83,7 @@ final class SshBackupShipperTest extends TestCase
         // than merely redundant now: a receiver holding ciphertext of one recipient set and a
         // local archive in the clear share a name, and rsync's quick check looks at nothing that
         // tells them apart.
-        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full', ['owed'])->args;
 
         $this->assertContains('--existing', $args);
         $this->assertContains('--ignore-existing', $args);
@@ -114,7 +110,7 @@ final class SshBackupShipperTest extends TestCase
 
     public function testASourceDirectoryAlreadyEndingInASlashIsNotDoubled(): void
     {
-        $command = $this->shipper()->mirrorCommand('/var/backups/full/', 'full');
+        $command = $this->shipper()->mirrorCommand('/var/backups/full/', 'full', ['owed']);
 
         $this->assertContains('/var/backups/full/', $command->args);
         $this->assertNotContains('/var/backups/full//', $command->args);

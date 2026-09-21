@@ -251,11 +251,14 @@ also registers those. Generate, in any order:
    empty or unparseable destination leaves the subsystem behaving exactly as it
    does without one, and the admin list says so in its Copy column. The
    destination root itself has to exist on the receiving side — rsync creates the
-   per-scope directory under it and nothing above that. The copy leaves
+   per-scope directory under it and nothing above that.    The copy leaves
    *after* the run, in the agent's own second process slot, so a broken link never
-   turns a valid archive into an error row; the destination is a mirror, so both
-   deletion paths — rotation and the row's delete action — take the remote pair
-   away too.
+   turns a valid archive into an error row. The receiver loses only what was
+   deleted here, and only by name: a local delete of a shipped backup leaves an
+   empty `<base>.deleted` marker beside the pair, the mirror pass includes those
+   names, and a successful pass drops the markers it covered. Copies no marker
+   points at — archives of a dead node, history from before a disk replacement —
+   stay on the receiver until the operator removes them by hand.
 
    **Encryption is one behaviour, not a switch.** An empty
    `BACKUP_SHIP_ENCRYPT_RECIPIENTS` — the default — is the *absence* of encryption:

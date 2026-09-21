@@ -27,6 +27,7 @@ use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
 use Hilos\Backup\BackupCeilingSpare;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupDeletionMarker;
 use Hilos\Backup\BackupEstimator;
 use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupPhase;
@@ -297,14 +298,6 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      *     as well try everything again.
      */
     private array $shipAttemptAt = [];
-
-    /**
-     * Whether something was deleted locally since the receiver was last brought in line.
-     *
-     * The remote is a mirror, so both deletion paths raise this through {@see markMirrorDirty()};
-     * the mirror pass itself lowers it once every scope has been re-stated since.
-     */
-    private bool $mirrorDirty = false;
 
     /** Whether an unusable shipping destination has already been reported; it is a standing state. */
     private bool $shipTargetReported = false;
@@ -923,7 +916,6 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     {
         $shipped = 0;
         $failed = 0;
-        $mirrorFailed = false;
         $root = Hilos::$env[EnvConstants::BACKUP_DIR]->string();
         $shipper = $this->shipper();
 
@@ -939,7 +931,6 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                     $this->indexRows(),
                     $root,
                     $attempts,
-                    $this->mirrorDirty,
                     $now,
                     $this->shipEncryption,
                 );
@@ -951,8 +942,6 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 $error = $this->shipStepNow($shipper, $planner, $plan, $encryptor);
 
                 if ($plan->step === BackupShipStep::MIRROR) {
-                    $mirrorFailed = $mirrorFailed || $error !== null;
-
                     continue;
                 }
                 if ($error === null) {
@@ -960,13 +949,6 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 } else {
                     $failed++;
                 }
-            }
-
-            // A mirror that did not go through leaves the deletion owed, so the flag stays up for
-            // the ticking agent to carry: clearing it here would drop the deletion on the floor
-            // because a test-only pass happened to run while the receiver was down.
-            if (!$mirrorFailed) {
-                $this->mirrorDirty = false;
             }
         }
 
@@ -1000,9 +982,21 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $timeout = (float)Hilos::$env[EnvConstants::BACKUP_SHIP_TIMEOUT]->int();
 
         if ($plan->step === BackupShipStep::MIRROR) {
-            $error = $this->runToCompletion($shipper->mirrorCommand($plan->localPath, $plan->scope), $timeout);
+            $error = $this->runToCompletion(
+                $shipper->mirrorCommand($plan->localPath, $plan->scope, $plan->bases),
+                $timeout,
+            );
             if ($error !== null) {
                 $this->logAgentWarning("Backup mirror of scope {$plan->scope} failed: {$error}");
+            } else {
+                try {
+                    BackupDeletionMarker::clear($plan->localPath, $plan->bases);
+                } catch (FsException $e) {
+                    $this->logAgentWarning(
+                        "Backup mirror of scope {$plan->scope} succeeded but could not drop "
+                        . 'deletion markers: ' . $e->getMessage(),
+                    );
+                }
             }
 
             return $error;
@@ -1666,7 +1660,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
 
         try {
-            new BackupPruner()->deleteStored($row, Hilos::$env[EnvConstants::BACKUP_DIR]->string());
+            $recorded = new BackupPruner()->deleteStored(
+                $row,
+                Hilos::$env[EnvConstants::BACKUP_DIR]->string(),
+            );
             // Stamp the requester as the origin of the index write so its own row
             // removal applies at once while other tabs keep the pending gate.
             ExecutionContext::withOrigin(
@@ -1674,10 +1671,16 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 null,
                 fn () => $histories->actions->forget($id),
             );
-            // The receiver is a mirror: what left here has to leave there too. Raised after the
-            // local delete succeeded, so a failure above never schedules a remote one.
-            $this->markMirrorDirty();
+            // Markers on disk are the debt; the attempt stamps are dropped so the pass
+            // is planned on the next tick rather than after the retry interval.
+            $this->armMirrorPass();
             $this->logAgentInfo("Backup deleted: {$id}");
+            if (!$recorded) {
+                $this->logAgentWarning(
+                    "Backup {$id} deleted locally but the receiver still holds a copy: "
+                    . 'the deletion marker could not be written',
+                );
+            }
         } catch (Throwable $e) {
             $this->logAgentError("Failed to delete backup {$id}: " . $e->getMessage());
             $this->answerBulkDelete($data, BackupDeleteDoneSignalData::REASON_FAILED);
@@ -2274,8 +2277,18 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         if ($plan->step === BackupShipStep::MIRROR) {
             if ($error !== null) {
                 // Never fatal, by design: an unreachable receiver must not stop rotation from
-                // freeing the disk it protects.
+                // freeing the disk it protects. Markers stay: the debt is recorded and survives
+                // a restart.
                 $this->logAgentWarning("Backup mirror of scope {$plan->scope} failed: {$error}");
+            } else {
+                try {
+                    BackupDeletionMarker::clear($plan->localPath, $plan->bases);
+                } catch (FsException $e) {
+                    $this->logAgentWarning(
+                        "Backup mirror of scope {$plan->scope} succeeded but could not drop "
+                        . 'deletion markers: ' . $e->getMessage(),
+                    );
+                }
             }
 
             return;
@@ -2343,19 +2356,14 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     }
 
     /**
-     * Records that something was deleted locally and owes the receiver a mirror pass.
+     * Drops the age stamps of every mirror scope so owed markers leave on the next tick.
      *
-     * Clearing the mirror marks is the half that is easy to leave out and impossible to notice:
-     * a scope carrying its mark is one the planner reads as already re-stated, and a delete
-     * landing after that pass would be told "this scope was just mirrored" - true, and about a
-     * directory that still held the file. Dropping the marks says instead that every scope is
-     * owed a fresh look, which is what a delete means, and the pass still ends by itself once
-     * each has had one.
+     * The markers on disk are the debt; this only clears {@see BackupShipPlanner::MIRROR_ATTEMPT_PREFIX}
+     * stamps so a just-written marker is planned immediately instead of waiting out
+     * {@see BackupShipPlanner::RETRY_SECONDS}.
      */
-    private function markMirrorDirty(): void
+    private function armMirrorPass(): void
     {
-        $this->mirrorDirty = true;
-
         foreach (array_keys($this->shipAttemptAt) as $key) {
             if (str_starts_with($key, BackupShipPlanner::MIRROR_ATTEMPT_PREFIX)) {
                 unset($this->shipAttemptAt[$key]);
@@ -2392,16 +2400,11 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             $this->indexRows(),
             $root,
             $this->shipAttemptAt,
-            $this->mirrorDirty,
             microtime(true),
             $this->shipEncryption,
         );
 
         if ($plan === null) {
-            // Nothing to push and every scope re-stated since the last delete: the receiver is
-            // in line, and the next local delete is what raises the flag again.
-            $this->mirrorDirty = false;
-
             return;
         }
 
@@ -2434,7 +2437,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             }
         } else {
             $command = match ($plan->step) {
-                BackupShipStep::MIRROR => $shipper->mirrorCommand($plan->localPath, $plan->scope),
+                BackupShipStep::MIRROR => $shipper->mirrorCommand($plan->localPath, $plan->scope, $plan->bases),
                 // The archive that goes across is the staged ciphertext when there is one, while
                 // the plan keeps naming the STORED archive: that is what the sidecar step is
                 // derived from, and what the record is written against.
@@ -4083,8 +4086,11 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 new DateTimeImmutable(),
             );
             $pruned = [];
+            $unmarked = [];
             foreach ($doomed as $row) {
-                $pruner->deleteStored($row, $root);
+                if (!$pruner->deleteStored($row, $root)) {
+                    $unmarked[] = $row->getId();
+                }
                 $histories->actions->forget($row->getId());
                 $pruned[$row->getId()] = true;
             }
@@ -4093,6 +4099,13 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                     'Backup rotation pruned %d entries: %s',
                     count($pruned),
                     implode(', ', array_keys($pruned)),
+                ));
+            }
+            if ($unmarked !== []) {
+                $this->logAgentWarning(sprintf(
+                    'Backup rotation left extra copies on the receiver '
+                    . '(deletion marker could not be written): %s',
+                    implode(', ', $unmarked),
                 ));
             }
 
@@ -4115,8 +4128,11 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             $freed = $pruner->occupiedBytes($overflow);
             $stored = $pruner->occupiedBytes($survivors) - $freed;
             $evicted = [];
+            $unmarked = [];
             foreach ($overflow as $row) {
-                $pruner->deleteStored($row, $root);
+                if (!$pruner->deleteStored($row, $root)) {
+                    $unmarked[] = $row->getId();
+                }
                 $histories->actions->forget($row->getId());
                 $evicted[$row->getId()] = true;
             }
@@ -4130,6 +4146,13 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                     implode(', ', array_keys($evicted)),
                 ));
             }
+            if ($unmarked !== []) {
+                $this->logAgentWarning(sprintf(
+                    'Backup ceiling left extra copies on the receiver '
+                    . '(deletion marker could not be written): %s',
+                    implode(', ', $unmarked),
+                ));
+            }
             if ($policy->maxTotalBytes > 0 && $stored > $policy->maxTotalBytes) {
                 $this->logAgentError($this->ceilingOverflowLine($stored, $policy->maxTotalBytes, $plan->spared));
             }
@@ -4138,7 +4161,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
                 // Same reason as the manual delete: rotation is mirrored, which is also why `keep`
                 // needs no remote meaning - it protects from rotation, and rotation travels. The
                 // ceiling rides the same wire, so what it thins here it thins on the receiver too.
-                $this->markMirrorDirty();
+                $this->armMirrorPass();
             }
 
             return count($pruned) + count($evicted);

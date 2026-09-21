@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\LocalBackupShipper;
 use PHPUnit\Framework\TestCase;
@@ -33,15 +33,17 @@ final class LocalBackupShipperTest extends TestCase
 
     public function testMirrorOnlyDeletesAndSendsTheDirectoryItself(): void
     {
-        $command = $this->shipper()->mirrorCommand('/var/backups/schema-only', 'schema-only');
+        $base = '2026-09-20_14-30-05-prod-full';
+        $command = $this->shipper()->mirrorCommand('/var/backups/schema-only', 'schema-only', [$base]);
 
         $this->assertSame([
             '-r',
             '--delete',
             '--existing',
             '--ignore-existing',
-            '--exclude=.tmp-*',
-            '--exclude=.tmp-ship-partial',
+            '--include=/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION,
+            '--include=/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION,
+            '--exclude=*',
             '/var/backups/schema-only/',
             '/mnt/nas/backups/schema-only/',
         ], $command->args);
@@ -49,14 +51,15 @@ final class LocalBackupShipperTest extends TestCase
 
     public function testMirrorLeavesUnpublishedArtifactsAtHomeAndKeepsNothingPartial(): void
     {
-        // The same two rules as the ssh driver, and for the same reasons: a mirror running beside
-        // a live backup must not carry its work directory, and must not leave a half-written file
-        // where the receiver can read it.
-        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+        // One --exclude=* after the includes is the protection that used to be two private
+        // excludes: a live backup's work directory never matches an include, and neither does
+        // the resume directory a concurrent push still uses.
+        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full', ['owed'])->args;
 
-        $this->assertContains('--exclude=' . BackupCreator::TEMP_PREFIX . '*', $args);
+        $this->assertContains('--exclude=*', $args);
         $this->assertNotContains('--partial', $args);
         $this->assertNotContains('--partial-dir=' . LocalBackupShipper::PARTIAL_DIR, $args);
+        $this->assertNotContains('--exclude=' . LocalBackupShipper::PARTIAL_DIR, $args);
     }
 
     public function testMirrorWritesNothingAtAll(): void
@@ -65,7 +68,7 @@ final class LocalBackupShipperTest extends TestCase
         // repeats them until they land. A pass that also re-stated the directory would overwrite
         // ciphertext with the plaintext of the same name, which rsync's quick check cannot tell
         // apart - same name, same mtime, and a size that need not differ enough to notice.
-        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full')->args;
+        $args = $this->shipper()->mirrorCommand('/var/backups/full', 'full', ['owed'])->args;
 
         $this->assertContains('--existing', $args);
         $this->assertContains('--ignore-existing', $args);
