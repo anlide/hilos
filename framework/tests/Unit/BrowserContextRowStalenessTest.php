@@ -20,7 +20,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\RtStates;
@@ -250,7 +250,7 @@ final class RowStalenessBrowserContext extends BrowserContext
  * A database context whose one collection is a plain row set: the browser reads it the same
  * way, and the row it produces is what matters here rather than the query behind it.
  */
-final class RowStalenessDbContext extends DbContext
+final class RowStalenessDbContext extends HilosDbContext
 {
     public const string NOTES = 'stalenessNotes';
 

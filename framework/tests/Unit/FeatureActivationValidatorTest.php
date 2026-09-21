@@ -17,7 +17,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos as HilosFacade;
 use PHPUnit\Framework\TestCase;
@@ -472,9 +472,9 @@ class FeatureActivationValidHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new FeatureActivationTestDbContext();
     }
@@ -483,7 +483,7 @@ class FeatureActivationValidHilos extends HilosFacade
 /**
  * DB context the activation test facades hand back; never configured, never queried.
  */
-final class FeatureActivationTestDbContext extends DbContext
+final class FeatureActivationTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for activation tests.

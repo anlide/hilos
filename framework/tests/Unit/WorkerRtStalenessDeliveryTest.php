@@ -20,7 +20,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
 use Hilos\Runtime\RtStaleness;
@@ -473,9 +473,9 @@ final class WorkerRtStalenessDeliveryTestHilos extends Hilos
     ];
 
     /**
-     * @return DbContext Test DB context, for the abstract facade contract alone
+     * @return HilosDbContext Test DB context, for the abstract facade contract alone
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new WorkerRtStalenessDeliveryTestDbContext();
     }
@@ -484,7 +484,7 @@ final class WorkerRtStalenessDeliveryTestHilos extends Hilos
 /**
  * No-op DB configuration: these cases touch no database.
  */
-final class WorkerRtStalenessDeliveryTestDbContext extends DbContext
+final class WorkerRtStalenessDeliveryTestDbContext extends HilosDbContext
 {
     public function configure(): void
     {

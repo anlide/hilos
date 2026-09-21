@@ -24,7 +24,7 @@ use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Hilos;
@@ -374,7 +374,7 @@ final class SourceOutcomeGuardedContext extends SourceOutcomeContext
 /**
  * A database context whose every read answers with the injected failure.
  */
-final class SourceOutcomeDbContext extends DbContext
+final class SourceOutcomeDbContext extends HilosDbContext
 {
     /**
      * @param CollectionNotFoundException|DbCollectionNotReadableException $failure Answer to every read

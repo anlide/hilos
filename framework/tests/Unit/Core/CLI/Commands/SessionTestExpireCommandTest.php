@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Core\CLI\Commands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\SessionTestExpireCommand;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;

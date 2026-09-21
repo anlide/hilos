@@ -65,7 +65,6 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
-use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
@@ -330,7 +329,7 @@ final class Hilos extends HilosFacade
      *
      * @return PollsDbContext Polls database context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PollsDbContext();
     }

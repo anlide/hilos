@@ -14,7 +14,7 @@ use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -444,9 +444,9 @@ class DeferredRequirementsValidHilos extends HilosFacade
     /**
      * Creates a no-op DB context; the deferred check never builds a layer.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new DeferredRequirementsTestDbContext();
     }
@@ -466,7 +466,7 @@ final class DeferredRequirementsPagedHilos extends DeferredRequirementsValidHilo
 /**
  * DB context the synthetic facade hands back; never configured, never queried.
  */
-final class DeferredRequirementsTestDbContext extends DbContext
+final class DeferredRequirementsTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for deferred requirement tests.
@@ -490,7 +490,7 @@ final class DeferredRequirementsBlockHilos extends DeferredRequirementsValidHilo
 /**
  * Database context whose users collection reports blocks and is read in every process.
  */
-class DeferredRequirementsBlockReadDbContext extends DbContext
+class DeferredRequirementsBlockReadDbContext extends HilosDbContext
 {
     public const string users = 'deferredBlockUsers';
 
@@ -529,7 +529,7 @@ final class DeferredRequirementsBlockUnreadDbContext extends DeferredRequirement
 /**
  * Database context whose users collection says nothing about blocks.
  */
-final class DeferredRequirementsBlockAbsentDbContext extends DbContext
+final class DeferredRequirementsBlockAbsentDbContext extends HilosDbContext
 {
     public const string users = 'deferredBlockUsers';
 

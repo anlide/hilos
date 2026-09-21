@@ -26,7 +26,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
@@ -609,7 +609,7 @@ final class DbSyncPeerTestAgentManagerDaemon extends AgentManagerDaemon
  * Database context with nothing mounted: the transport is the subject here, and where the row
  * lands is the applicator's.
  */
-final class DbSyncPeerTestDbContext extends DbContext
+final class DbSyncPeerTestDbContext extends HilosDbContext
 {
     public function configure(): void
     {

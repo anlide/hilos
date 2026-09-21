@@ -8,7 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use PHPUnit\Framework\TestCase;
@@ -98,15 +98,15 @@ final class TestOnlyRegistryHilos extends HilosFacade
     /**
      * Creates a DB context the fixture never touches.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TestOnlyRegistryDbContext();
     }
 }
 
-final class TestOnlyRegistryDbContext extends DbContext
+final class TestOnlyRegistryDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the registry fixture.

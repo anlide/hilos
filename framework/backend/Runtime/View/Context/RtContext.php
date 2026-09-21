@@ -41,13 +41,17 @@ use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
+use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosClusterNodes;
+use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 use Hilos\Runtime\View\Collection\HilosSessionToastStacks;
+use Hilos\Runtime\View\Collection\RecoveryWaiters;
+use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
@@ -65,6 +69,10 @@ use OutOfBoundsException;
  * @property-read HilosClusterNodes $hilosClusterNodes Cluster as this node's master sees it, mounted for every project
  * @property-read HilosSessionRotations $hilosSessionRotations Pending login token rotations, mounted for every project
  * @property-read HilosSessionToastStacks $hilosSessionToastStacks Toasts a browser session is being shown, mounted for every project
+ * @property-read RegistrationWaiters $hilosRegistrationWaiters Browser sessions parked on a pending registration, mounted for every project
+ * @property-read RecoveryWaiters $hilosRecoveryWaiters Browser sessions parked on a pending password recovery, mounted for every project
+ * @property-read HilosCodeSendAttempts $hilosCodeSendAttempts Per-identifier code send attempts, mounted for every project
+ * @property-read AuthAttempts $hilosAuthAttempts Sign-in attempt counters, mounted for a project that declares HilosFeature::AUTH_THROTTLE
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted

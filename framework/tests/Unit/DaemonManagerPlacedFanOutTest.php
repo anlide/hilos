@@ -25,7 +25,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -548,7 +548,7 @@ final class PlacedFanOutFallbackAgentDaemon extends TopologyTestAgentDaemon
     public const string AGENT_TYPE = 'placed_fan_out_fallback_agent';
 }
 
-final class PlacedFanOutTestDbContext extends DbContext
+final class PlacedFanOutTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for placed fan-out tests.
@@ -574,9 +574,9 @@ final class PlacedFanOutTestHilos extends Hilos
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PlacedFanOutTestDbContext();
     }

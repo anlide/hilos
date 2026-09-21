@@ -382,9 +382,9 @@ final class ProjectTablesWithoutEntityHilos extends Hilos
     protected const ?string BACKUP_CATALOG = ProjectTablesWithoutEntityCatalog::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new FrameworkPiiTestDbContext();
     }
@@ -398,9 +398,9 @@ final class ContradictoryTablesWithoutEntityHilos extends Hilos
     protected const ?string BACKUP_CATALOG = ContradictoryTablesWithoutEntityCatalog::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new FrameworkPiiTestDbContext();
     }
@@ -414,9 +414,9 @@ final class NotAProviderHilos extends Hilos
     protected const ?string BACKUP_CATALOG = NotAProviderCatalog::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new FrameworkPiiTestDbContext();
     }

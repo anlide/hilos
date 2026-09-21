@@ -21,7 +21,7 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
@@ -649,7 +649,7 @@ final class BackupAgentTestRtContext extends RtContext
 /**
  * DB context recording whose identities the admission asked for.
  */
-final class BackupAgentIdentityTestDbContext extends DbContext
+final class BackupAgentIdentityTestDbContext extends HilosDbContext
 {
     /** @var list<int> User ids the agent asked the identities of, in order */
     public array $askedFor = [];

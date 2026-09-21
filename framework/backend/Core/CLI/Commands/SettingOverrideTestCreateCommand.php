@@ -6,13 +6,21 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\CallbackNotSetException;
+use Hilos\Database\Actions\Exception\DuplicateIdException;
+use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
+use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * SCAFFOLD/EXAMPLE of the test-only command mechanism (see docs/agents/cli/commands.md).
@@ -70,9 +78,17 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
+     * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
+     * @throws CreateNotAllowedException When the truth source rejects settings collection creation
+     * @throws DatabaseException When the settings write fails
+     * @throws DuplicateIdException When the created setting id already exists in the collection
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
+     * @throws LogicException When the settings object collection entity class is not configured
+     * @throws SettingInvalidValueException When the value is null, or the catalog names a rule that is not one
      * @throws SettingNotInCatalogException When the example key is not in the settings catalog
      * @throws SettingValueRefusedException When the example key declares a catalog rule the value fails
-     * @throws DatabaseException When the settings write fails
+     * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
+     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      */
     protected function run(array $options, array $args): int
     {

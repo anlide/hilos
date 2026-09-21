@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\Method\Fixtures;
 
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 
 /**
@@ -46,9 +46,9 @@ final class AuthMethodTestHilos extends Hilos
     /**
      * Creates a no-op DB context for the abstract facade contract.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new AuthMethodTestDbContext();
     }

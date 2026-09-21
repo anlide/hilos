@@ -13,6 +13,7 @@ use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;

@@ -8,6 +8,10 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -106,9 +110,13 @@ HELP;
      * @param array<string, mixed> $options Parsed options: --prefix, --password
      * @param list<string> $args Positional args: [0] count
      * @return int Exit code (0 on success)
-     * @throws EmptyValueException When a generated identifier is empty (unreachable: built here)
-     * @throws DuplicateValueException When an identity for a generated email already exists
      * @throws DatabaseException When the user or identity write fails
+     * @throws DuplicateValueException When an identity for a generated email already exists
+     * @throws EmptyValueException When a generated identifier is empty (unreachable: built here)
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     protected function run(array $options, array $args): int
     {

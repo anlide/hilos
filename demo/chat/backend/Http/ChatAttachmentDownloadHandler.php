@@ -10,7 +10,10 @@ use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Database\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -37,7 +40,10 @@ final class ChatAttachmentDownloadHandler
      *
      * @param array{request: array<string, mixed>, params: array<int|string, string>} $args Router handler args
      * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
+     * @throws DatabaseException When the token lookup or lazy session load fails
      * @throws EnvException When an environment value the request needs cannot be read
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws LogicException When the collection class constants are not configured
      */
     public static function handle(array $args): array
     {

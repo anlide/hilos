@@ -28,7 +28,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -763,15 +763,15 @@ final class BrowserContextRegistryTopologyTestHilos extends Hilos
     /**
      * Creates a no-op DB context for the abstract facade contract.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new BrowserContextRegistryTopologyTestDbContext();
     }
 }
 
-final class BrowserContextRegistryTopologyTestDbContext extends DbContext
+final class BrowserContextRegistryTopologyTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for browser topology tests.

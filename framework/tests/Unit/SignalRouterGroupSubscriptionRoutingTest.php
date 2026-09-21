@@ -13,7 +13,7 @@ use Hilos\Core\Group\GroupSubscriptionDispatcher;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -337,7 +337,7 @@ final class SignalRouterAdmittingTestGroupPayload implements SignalDataInterface
     }
 }
 
-final class SignalRouterGroupTopologyTestDbContext extends DbContext
+final class SignalRouterGroupTopologyTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for router topology tests.
@@ -357,9 +357,9 @@ final class SignalRouterGroupTopologyTestHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new SignalRouterGroupTopologyTestDbContext();
     }

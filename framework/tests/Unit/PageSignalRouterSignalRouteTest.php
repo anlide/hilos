@@ -25,7 +25,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -446,9 +446,9 @@ final class PageSignalRouterTestHilos extends HilosFacade
     /**
      * Creates a no-op DB context for page signal router tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }

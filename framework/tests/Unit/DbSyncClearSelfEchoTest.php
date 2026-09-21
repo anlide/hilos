@@ -10,6 +10,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Entity\Item\Entity;
@@ -302,7 +303,7 @@ final class ClearEchoDbCollection extends DbCollection
 /**
  * Test context holding a single registered collection without a real DB.
  */
-final class ClearEchoDbContext extends DbContext
+final class ClearEchoDbContext extends HilosDbContext
 {
     public static function create(string $name, Objects $objectCollection, DbCollection $dbCollection): self
     {

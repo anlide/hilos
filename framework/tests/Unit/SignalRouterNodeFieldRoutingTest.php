@@ -20,7 +20,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Utils\Logger;
@@ -304,7 +304,7 @@ final class NodeFieldTestAgentDaemon extends TopologyTestAgentDaemon
     public const string AGENT_TYPE = 'node_field_test_agent';
 }
 
-final class NodeFieldTestDbContext extends DbContext
+final class NodeFieldTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for node-addressed agent signal tests.
@@ -326,9 +326,9 @@ final class NodeFieldTestHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new NodeFieldTestDbContext();
     }

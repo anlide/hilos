@@ -24,7 +24,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -341,7 +341,7 @@ final class PerInstanceFallbackAgentDaemon extends TopologyTestAgentDaemon
     public const string AGENT_TYPE = 'per_instance_fallback_agent';
 }
 
-final class PerInstanceTestDbContext extends DbContext
+final class PerInstanceTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for per-instance routing tests.
@@ -369,9 +369,9 @@ final class PerInstanceTestHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PerInstanceTestDbContext();
     }

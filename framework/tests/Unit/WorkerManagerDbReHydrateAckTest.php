@@ -12,6 +12,7 @@ use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Hilos;
@@ -355,7 +356,7 @@ final class WorkerManagerDbReHydrateAckTestDaemonClient extends WorkerDaemonClie
 /**
  * Database context whose re-read either returns or fails, without a database behind it.
  */
-final class WorkerManagerDbReHydrateAckTestDbContext extends DbContext
+final class WorkerManagerDbReHydrateAckTestDbContext extends HilosDbContext
 {
     /**
      * @param ?DatabaseException $failure Failure the re-read raises, or null when it succeeds

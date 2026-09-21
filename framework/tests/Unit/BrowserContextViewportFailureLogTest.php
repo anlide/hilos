@@ -27,7 +27,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -328,7 +328,7 @@ final class ViewportFailureLogUnitContext extends BrowserContext
 /**
  * A database context that refuses every collection, the way a worker nobody addressed does.
  */
-final class ViewportFailureLogRefusingDbContext extends DbContext
+final class ViewportFailureLogRefusingDbContext extends HilosDbContext
 {
     public const string COLLECTION = 'viewportFailureLogGuardSource';
 

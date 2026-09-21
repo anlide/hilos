@@ -7,13 +7,21 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\CallbackNotSetException;
+use Hilos\Database\Actions\Exception\DuplicateIdException;
+use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
+use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Test-only: seed a TRUE orphan settings row for a key that is NOT in the catalog.
@@ -76,10 +84,18 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args: key, type, [value]
      * @return int Exit code (0 on success)
+     * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
+     * @throws CreateNotAllowedException When the truth source rejects settings collection creation
+     * @throws DatabaseException When the settings write fails
+     * @throws DuplicateIdException When the created setting id already exists in the collection
+     * @throws DuplicateValueException When a setting row for the key already exists
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
+     * @throws LogicException When the settings object collection entity class is not configured
+     * @throws SettingInvalidValueException When the value is null
      * @throws SettingKeyInCatalogException When the key is in the catalog (would be an override)
      * @throws SettingTypeMismatchException When the type is not a supported setting type
-     * @throws DuplicateValueException When a setting row for the key already exists
-     * @throws DatabaseException When the settings write fails
+     * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
+     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      */
     protected function run(array $options, array $args): int
     {

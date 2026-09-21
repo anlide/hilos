@@ -7,7 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Item\Object_;
@@ -307,7 +307,7 @@ final class DbReadGuardDbItem extends DbItem
 /**
  * DB context mounting the one collection these cases read.
  */
-final class DbReadGuardDbContext extends DbContext
+final class DbReadGuardDbContext extends HilosDbContext
 {
     public const string COLLECTION = 'unitDbReadGuardRows';
 

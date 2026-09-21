@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Feature\HilosFeature;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -297,9 +297,9 @@ final class VerifierCircleTestHilos extends Hilos
      * The cases run against the context the session base mounts; this exists only because the
      * facade is abstract, and is never the one asked a question.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new HilosSessionTestDbContext();
     }

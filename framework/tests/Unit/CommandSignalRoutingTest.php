@@ -14,7 +14,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -88,7 +88,7 @@ final class CommandRoutingTestHilos extends Hilos
         return [CliCommands::COMMAND_TEST_ECHO => HilosAgentType::HILOS_INDEX];
     }
 
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         throw new LogicException('createDb is not used in the routing test');
     }

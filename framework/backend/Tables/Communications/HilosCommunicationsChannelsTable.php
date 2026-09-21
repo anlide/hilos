@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tables\Communications;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
@@ -80,8 +82,10 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
      * @param SourceChange $change Source change
      * @return ?TableRowMutationDTO Channel row mutation, or null when the change does not affect this table
      * @throws DatabaseException When persisted settings cannot be read
-     * @throws SettingException When settings catalog metadata or value is invalid
      * @throws EnvException When an env-backed field value is invalid for its type
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
+     * @throws SettingException When settings catalog metadata or value is invalid
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -125,8 +129,10 @@ class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSn
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Channels table snapshot
      * @throws DatabaseException When persisted settings cannot be read
-     * @throws SettingException When settings catalog metadata or value is invalid
      * @throws EnvException When an env-backed field value is invalid for its type
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
+     * @throws SettingException When settings catalog metadata or value is invalid
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */

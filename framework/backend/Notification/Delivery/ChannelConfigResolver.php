@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
@@ -37,8 +39,10 @@ final class ChannelConfigResolver
      * @param ChannelConfigField $field Field descriptor to resolve
      * @return ResolvedChannelConfig Effective value and its source (value null for a secret field)
      * @throws DatabaseException When a persisted settings lookup fails
-     * @throws SettingException When the settings catalog metadata or value is invalid
      * @throws EnvException When the env variable value is invalid for its type
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
+     * @throws SettingException When the settings catalog metadata or value is invalid
      */
     public function resolve(string $channel, ChannelConfigField $field): ResolvedChannelConfig
     {

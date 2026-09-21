@@ -967,9 +967,9 @@ final class PiiRestoreTestHilos extends Hilos
      * Creates a no-op DB context for the abstract facade contract; the restore engine
      * talks to the live connection the integration base already opened.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PiiRestoreTestDbContext();
     }
@@ -983,9 +983,9 @@ final class PartialPiiRestoreTestHilos extends Hilos
     protected const ?string BACKUP_CATALOG = PartialPiiRestoreTestCatalog::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PiiRestoreTestDbContext();
     }
@@ -999,9 +999,9 @@ final class MigratedPiiRestoreTestHilos extends Hilos
     protected const ?string BACKUP_CATALOG = MigratedPiiRestoreTestCatalog::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PiiRestoreTestDbContext();
     }
@@ -1015,9 +1015,9 @@ final class TightenedPiiRestoreTestHilos extends Hilos
     protected const ?string BACKUP_CATALOG = TightenedPiiRestoreTestCatalog::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PiiRestoreTestDbContext();
     }
@@ -1026,7 +1026,7 @@ final class TightenedPiiRestoreTestHilos extends Hilos
 /**
  * No-op DB context so the facade fixtures are instantiable.
  */
-final class PiiRestoreTestDbContext extends DbContext
+final class PiiRestoreTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the restore fixtures.
@@ -1256,9 +1256,9 @@ final class RestoreAnnouncementTestHilos extends Hilos
     protected const string ADMIN_AUDIENCE = RestoreAnnouncementTestAudience::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new RestoreAnnouncementTestDbContext();
     }

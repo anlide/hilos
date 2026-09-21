@@ -6,8 +6,13 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingKeyInCatalogException;
@@ -69,9 +74,14 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args: key
      * @return int Exit code (0 on success)
-     * @throws SettingKeyInCatalogException When the key is in the catalog (its row is an override)
-     * @throws ItemNotFoundForDeleteException When no orphan row for the key exists
      * @throws DatabaseException When the settings delete fails
+     * @throws InvalidArgumentException When a row the settings collection holds is of another object type
+     * @throws ItemNotFoundForDeleteException When no orphan row for the key exists
+     * @throws LogicException When the settings object collection entity class is not configured
+     * @throws SettingKeyInCatalogException When the key is in the catalog (its row is an override)
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
+     * @throws WriteNotAllowedException When the truth source rejects the setting delete
      */
     protected function run(array $options, array $args): int
     {

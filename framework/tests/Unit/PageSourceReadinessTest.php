@@ -30,7 +30,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -488,9 +488,9 @@ final class PageSourceReadinessTestHilos extends Hilos
     ];
 
     /**
-     * @return DbContext Test DB context, for the abstract facade contract alone
+     * @return HilosDbContext Test DB context, for the abstract facade contract alone
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PageSourceReadinessTestDbContext();
     }
@@ -512,9 +512,9 @@ final class PageSourceReadinessTestTablesHilos extends Hilos
     ];
 
     /**
-     * @return DbContext Test DB context, for the abstract facade contract alone
+     * @return HilosDbContext Test DB context, for the abstract facade contract alone
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new PageSourceReadinessTestDbContext();
     }
@@ -558,7 +558,7 @@ final class PageSourceReadinessTestRegisteredTable extends TableDefinition
 /**
  * No-op DB configuration: these cases touch no database.
  */
-final class PageSourceReadinessTestDbContext extends DbContext
+final class PageSourceReadinessTestDbContext extends HilosDbContext
 {
     public function configure(): void
     {

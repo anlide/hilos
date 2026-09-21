@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Environment\Exception\EnvException;
@@ -85,6 +86,7 @@ abstract class AbstractDeliveryChannel
      * @return ?string Channel address, or null when the recipient has none
      * @throws DatabaseException When the channel's address store cannot be read
      * @throws DbCollectionNotReadableException When nothing here reads the channel's address store, or its readiness is on its way
+     * @throws InvalidArgumentException When the recipient address lookup is given an invalid query order
      */
     abstract public function resolveAddress(int $userId): ?string;
 
@@ -120,6 +122,7 @@ abstract class AbstractDeliveryChannel
      * @return ?int Positive shard key for a pooled channel, or null for a singleton
      * @throws DatabaseException When the channel reads the shard dimension from the database
      * @throws EnvException When the channel reads its pool width from the environment
+     * @throws InvalidArgumentException When the channel reads its shard dimension with an invalid query order
      */
     public function shardKeyFor(int $userId, int $notificationId): ?int
     {

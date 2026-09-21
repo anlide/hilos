@@ -7,7 +7,7 @@ namespace Hilos\Tests\Unit\Auth\CodeChannel;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -100,9 +100,9 @@ final class CodeChannelLsbTestHilos extends Hilos
     /**
      * Creates a no-op DB context for the abstract facade contract.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new CodeChannelLsbTestDbContext();
     }
@@ -111,7 +111,7 @@ final class CodeChannelLsbTestHilos extends Hilos
 /**
  * No-op DB context so the abstract facade fixture is instantiable.
  */
-final class CodeChannelLsbTestDbContext extends DbContext
+final class CodeChannelLsbTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the LSB resolution fixture.

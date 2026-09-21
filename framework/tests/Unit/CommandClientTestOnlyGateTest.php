@@ -10,7 +10,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Client\CommandClient;
@@ -332,15 +332,15 @@ final class GateFixtureHilos extends Hilos
     /**
      * Creates a DB context the fixture never touches.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new GateFixtureDbContext();
     }
 }
 
-final class GateFixtureDbContext extends DbContext
+final class GateFixtureDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the gate fixture.

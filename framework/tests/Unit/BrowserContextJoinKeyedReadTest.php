@@ -26,7 +26,7 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
@@ -307,7 +307,7 @@ final class JoinReadBrowserContext extends BrowserContext
  * Database context mounting the three fixture collections, all key-lazy - the strategy the
  * identities collection is declared with, and the one the defect needs.
  */
-final class JoinReadDbContext extends DbContext
+final class JoinReadDbContext extends HilosDbContext
 {
     public const string owners = 'joinReadOwners';
     public const string notes = 'joinReadNotes';

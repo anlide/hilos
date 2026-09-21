@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Users;
 
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Item\Object_;
@@ -261,7 +261,7 @@ final class AccountBlockReaderDbItem extends DbItem
 /**
  * DB context mounting one users collection under the project's own key.
  */
-final class AccountBlockReaderDbContext extends DbContext
+final class AccountBlockReaderDbContext extends HilosDbContext
 {
     public const string USERS = 'unitAccountBlockReaderUsers';
 

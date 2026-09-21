@@ -8,7 +8,7 @@ use Hilos\Auth\Session\SessionIdentityRef;
 use Hilos\Backup\BackupNotificationType;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreNotifier;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
@@ -313,9 +313,9 @@ final class RestoreNotifierTestHilos extends Hilos
     protected const string ADMIN_AUDIENCE = RestoreNotifierTestAudience::class;
 
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new RestoreNotifierTestDbContext();
     }
@@ -327,9 +327,9 @@ final class RestoreNotifierTestHilos extends Hilos
 final class RestoreNotifierSilentTestHilos extends Hilos
 {
     /**
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new RestoreNotifierTestDbContext();
     }
@@ -352,7 +352,7 @@ final class RestoreNotifierTestAudience extends AdminAudience
 /**
  * DB context answering identity lookups from a fixture map.
  */
-final class RestoreNotifierTestDbContext extends DbContext
+final class RestoreNotifierTestDbContext extends HilosDbContext
 {
     /**
      * @param array<string, int> $userIdsByIdentity User id keyed by "type:identifier"

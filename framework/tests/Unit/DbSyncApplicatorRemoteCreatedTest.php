@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
@@ -163,7 +163,7 @@ final class RemoteCreatedObjects extends Objects
 /**
  * Database context holding the one collection these cases create into.
  */
-final class RemoteCreatedDbContext extends DbContext
+final class RemoteCreatedDbContext extends HilosDbContext
 {
     /**
      * @param string $name Key the collection is mounted under

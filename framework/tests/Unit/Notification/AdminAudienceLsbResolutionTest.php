@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Notification;
 
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Users\AdminAudience;
 use PHPUnit\Framework\TestCase;
@@ -57,9 +57,9 @@ final class AdminAudienceTestHilos extends Hilos
     /**
      * Creates a no-op DB context for the abstract facade contract.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new AdminAudienceTestDbContext();
     }
@@ -68,7 +68,7 @@ final class AdminAudienceTestHilos extends Hilos
 /**
  * No-op DB context so the abstract facade fixture is instantiable.
  */
-final class AdminAudienceTestDbContext extends DbContext
+final class AdminAudienceTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the LSB resolution fixture.

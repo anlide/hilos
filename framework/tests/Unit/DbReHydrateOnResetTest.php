@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -142,7 +143,7 @@ final class ReHydrateDbActions extends DbActions
 /**
  * Test context that drives the DB generation marker without a real DB.
  */
-final class ReHydrateDbContext extends DbContext
+final class ReHydrateDbContext extends HilosDbContext
 {
     private ?string $generation = null;
 

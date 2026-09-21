@@ -16,7 +16,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
@@ -236,7 +236,7 @@ final class WorkerSourcedAgentSignalTestPage extends AbstractPage
     ];
 }
 
-final class WorkerSourcedAgentSignalTestDbContext extends DbContext
+final class WorkerSourcedAgentSignalTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for worker-sourced agent signal tests.
@@ -274,9 +274,9 @@ final class WorkerSourcedAgentSignalTestHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new WorkerSourcedAgentSignalTestDbContext();
     }

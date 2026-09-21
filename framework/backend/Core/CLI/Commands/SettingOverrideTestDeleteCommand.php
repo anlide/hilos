@@ -6,6 +6,8 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -64,6 +66,8 @@ HELP;
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException When the settings delete fails
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
      */
     protected function run(array $options, array $args): int
     {

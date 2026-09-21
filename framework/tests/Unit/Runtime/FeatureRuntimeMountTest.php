@@ -10,7 +10,7 @@ use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRegistry;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -142,9 +142,9 @@ final class FeatureRuntimeContextlessHilos extends HilosFacade
     /**
      * Creates a no-op DB context; the fixture never reaches a layer.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new FeatureRuntimeTestDbContext();
     }
@@ -153,7 +153,7 @@ final class FeatureRuntimeContextlessHilos extends HilosFacade
 /**
  * DB context the context-less fixture hands back; never configured, never queried.
  */
-final class FeatureRuntimeTestDbContext extends DbContext
+final class FeatureRuntimeTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for runtime mount tests.

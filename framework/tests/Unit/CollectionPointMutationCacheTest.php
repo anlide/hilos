@@ -11,6 +11,7 @@ use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionNotFoundException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\View\Collection\DirectUnsetException;
@@ -473,7 +474,7 @@ final class PointMutationDbCollection extends DbCollection
 /**
  * DB context mounting the one mirror these cases mutate.
  */
-final class PointMutationDbContext extends DbContext
+final class PointMutationDbContext extends HilosDbContext
 {
     public const string COLLECTION = 'unit-point-mutation-db';
 

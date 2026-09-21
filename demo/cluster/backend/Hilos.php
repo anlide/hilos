@@ -19,7 +19,7 @@ use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\TruthSource\SharedOwnersKey;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\View\Context\RtContext;
@@ -107,7 +107,7 @@ final class Hilos extends HilosFacade
      *
      * @return ClusterDbContext Cluster demo database context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new ClusterDbContext();
     }

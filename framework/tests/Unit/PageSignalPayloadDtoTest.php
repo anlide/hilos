@@ -15,7 +15,7 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use InvalidArgumentException;
 use LogicException;
@@ -267,7 +267,7 @@ final class PageSignalPayloadTestHilos extends HilosFacade
         ];
     }
 
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         throw new LogicException('createDb is not used in the page signal payload test');
     }

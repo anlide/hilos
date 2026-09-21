@@ -6,6 +6,8 @@ namespace Hilos\Database\Settings;
 
 use ArrayAccess;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingDefaultReferenceCycleException;
@@ -159,6 +161,8 @@ class SettingsAccessor implements ArrayAccess
      * @param string $key Setting key
      * @return mixed Resolved catalog default value
      * @throws DatabaseException When a referenced setting persisted lookup fails
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
      * @throws SettingException When the key or default reference is invalid
      */
     public function defaultValueFor(string $key): mixed
@@ -172,6 +176,8 @@ class SettingsAccessor implements ArrayAccess
      * @param string $key Setting key
      * @return mixed Persisted value when not null, otherwise resolved catalog default
      * @throws DatabaseException When persisted setting lookup fails
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws LogicException When collection class constants are not configured
      * @throws SettingException When the key or default reference is invalid
      */
     public function effectiveValueFor(string $key): mixed

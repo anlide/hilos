@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Database\Schema;
 
-use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\UndeclaredSetOwnershipException;
@@ -162,7 +161,7 @@ final class SetGuardFrameworkDbContext extends HilosDbContext
 /**
  * DB context fixture mounting whichever collections a case names, and nothing else.
  */
-final class SetGuardDbContext extends DbContext
+final class SetGuardDbContext extends HilosDbContext
 {
     /**
      * @param list<class-string<Objects>> $collectionClasses Collections to mount, in the given order

@@ -45,7 +45,7 @@ use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
@@ -347,8 +347,8 @@ abstract class Hilos implements TruthSourceOwner
     /** @var ?EnvAccessor Catalog-backed environment accessor */
     public static ?EnvAccessor $env = null;
 
-    /** @var ?DbContext Database layer singleton */
-    public static ?DbContext $db = null;
+    /** @var ?HilosDbContext Database layer singleton */
+    public static ?HilosDbContext $db = null;
 
     /** @var ?SettingsAccessor Catalog-backed settings accessor */
     public static ?SettingsAccessor $setting = null;
@@ -1146,7 +1146,7 @@ abstract class Hilos implements TruthSourceOwner
      * @param string $migrationsPath Directory holding this project's schema migrations
      * @param class-string<CliManager> $cliManagerClass CLI manager this project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
-     * @param ?class-string<DbContext> $dbContextClass Database context this project builds, or null when it builds none
+     * @param ?class-string<HilosDbContext> $dbContextClass Database context this project builds, or null when it builds none
      * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command, a presence
      *     source or a process-wide block source, or when a project that serves pages keeps its connections off the
      *     framework base
@@ -1292,9 +1292,9 @@ abstract class Hilos implements TruthSourceOwner
     /**
      * Creates database context instance.
      *
-     * @return DbContext Database context instance
+     * @return HilosDbContext Database context instance
      */
-    abstract protected static function createDb(): DbContext;
+    abstract protected static function createDb(): HilosDbContext;
 
     /**
      * Creates the durable notification emit seam.

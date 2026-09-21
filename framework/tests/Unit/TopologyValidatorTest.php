@@ -41,7 +41,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
@@ -1287,7 +1287,7 @@ final class TopologyValidatorTest extends TestCase
     }
 }
 
-final class TopologyTestDbContext extends DbContext
+final class TopologyTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for topology tests.
@@ -1618,9 +1618,9 @@ final class TopologyPageSignalDtoHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1635,9 +1635,9 @@ final class TopologyInvalidPageSignalDtoHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1674,9 +1674,9 @@ final class TopologyValidHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1695,9 +1695,9 @@ final class TopologyPerNodeAgentHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1716,9 +1716,9 @@ final class TopologyPolicyPlacedAgentHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1737,9 +1737,9 @@ final class TopologyScopeNotACaseHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1758,9 +1758,9 @@ final class TopologyPlacementNotACaseHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1780,9 +1780,9 @@ final class TopologyIdleWindowedAgentHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1801,9 +1801,9 @@ final class TopologyIdleTimeoutWithoutIndexHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1823,9 +1823,9 @@ final class TopologyIdleTimeoutNotAnIntHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1845,9 +1845,9 @@ final class TopologyIdleTimeoutNotPositiveHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1867,9 +1867,9 @@ final class TopologyPerNodeIndexedHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1889,9 +1889,9 @@ final class TopologyPerNodePlacedHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1908,9 +1908,9 @@ final class TopologyInvalidPagesHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1925,9 +1925,9 @@ final class TopologyMissingSubscriptionOwnerHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1942,9 +1942,9 @@ final class TopologyInvalidActionHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1960,9 +1960,9 @@ final class TopologyDuplicateActionHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1977,9 +1977,9 @@ final class TopologyInvalidPageSignalHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -1995,9 +1995,9 @@ final class TopologyDuplicatePageSignalHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2019,9 +2019,9 @@ final class TopologyInvalidAgentsHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2039,9 +2039,9 @@ final class TopologyInvalidAgentSignalHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2063,9 +2063,9 @@ final class TopologyDuplicateAgentSignalHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2083,9 +2083,9 @@ final class TopologyInvalidAgentCommandHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2107,9 +2107,9 @@ final class TopologyDuplicateAgentCommandHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2127,9 +2127,9 @@ final class TopologyBadCommandDtoHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2147,9 +2147,9 @@ final class TopologyUnknownCommandConfigKeyHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2171,9 +2171,9 @@ final class TopologyPageAgentSignalConflictHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2192,9 +2192,9 @@ final class TopologyUnknownPageTableReferenceHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2215,9 +2215,9 @@ final class TopologyUnknownTableReferenceHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2232,9 +2232,9 @@ final class TopologyInvalidRegisteredTableHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2249,9 +2249,9 @@ final class TopologyInvalidBrowserTableHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2266,9 +2266,9 @@ final class TopologyInitInvalidHilos extends HilosFacade
     /**
      * This must not run before topology validation.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         throw new RuntimeException('Topology validation did not run before DB initialization');
     }
@@ -2302,9 +2302,9 @@ final class TopologyIndexedAgentSignalHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2335,9 +2335,9 @@ final class TopologyNodeAddressedAgentSignalHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2366,9 +2366,9 @@ final class TopologyNodeAddressedAgentEmptyNodeFieldHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2395,9 +2395,9 @@ final class TopologyIndexedAgentMissingIndexFieldHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2426,9 +2426,9 @@ final class TopologyIndexedAgentEmptyIndexFieldHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2458,9 +2458,9 @@ final class TopologyIndexedAgentUnknownConfigKeyHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2504,9 +2504,9 @@ final class TopologyAgentSignalDtoHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2524,9 +2524,9 @@ final class TopologyInvalidAgentSignalDtoHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2644,9 +2644,9 @@ final class TopologyProtectedModeStubMissingDefaultHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2665,9 +2665,9 @@ final class TopologyProtectedModeStubBrokenEntryHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2688,9 +2688,9 @@ final class TopologyProtectedModeStubNoBannerHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2710,9 +2710,9 @@ final class TopologyProtectedModeStubUnknownFieldHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2736,9 +2736,9 @@ final class TopologyProtectedModeStubNumericKeyHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -2769,9 +2769,9 @@ final class TopologyProtectedModeStubOverrideHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3038,9 +3038,9 @@ final class TopologyBrowserValidHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3062,9 +3062,9 @@ final class TopologyBrowserBrokenPageHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3086,9 +3086,9 @@ final class TopologyBrowserGuardKeyHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3103,9 +3103,9 @@ final class TopologyBrowserBrokenListHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3131,9 +3131,9 @@ final class TopologyBrowserNonArrayHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3237,9 +3237,9 @@ final class TopologyBrowserBrokenBindingHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3274,7 +3274,7 @@ final class TopologyTestObjects extends Objects
     public const string OBJECT_CLASS = TopologyTestObject::class;
 }
 
-final class TopologyMountedDbContext extends DbContext
+final class TopologyMountedDbContext extends HilosDbContext
 {
     /**
      * Mounts the two empty object collections the reference fixtures name.
@@ -3396,9 +3396,9 @@ final class TopologyBrowserUnmountedHilos extends HilosFacade
     /**
      * Creates a DB context that mounts nothing, so a source key names no collection.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3440,9 +3440,9 @@ final class TopologyBrowserUnindexedJoinHilos extends HilosFacade
     /**
      * Creates a DB context mounting the collections the fixtures name.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyMountedDbContext();
     }
@@ -3486,9 +3486,9 @@ final class TopologyBrowserIndexedJoinHilos extends HilosFacade
     /**
      * Creates a DB context mounting the collections the fixtures name.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyMountedDbContext();
     }
@@ -3524,7 +3524,7 @@ final class TopologyTestFulltextObjects extends Objects
     public const string OBJECT_CLASS = TopologyTestFulltextObject::class;
 }
 
-final class TopologyMountedFulltextDbContext extends DbContext
+final class TopologyMountedFulltextDbContext extends HilosDbContext
 {
     public function configure(): void
     {
@@ -3561,7 +3561,7 @@ final class TopologyBrowserFulltextIndexedJoinHilos extends HilosFacade
         TopologyBrowserFulltextIndexedJoinTable::TABLE => TopologyBrowserFulltextIndexedJoinTable::class,
     ];
 
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyMountedFulltextDbContext();
     }
@@ -3580,9 +3580,9 @@ final class TopologyBrowserMountedHilos extends HilosFacade
     /**
      * Creates a DB context mounting the collections the fixtures name.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyMountedDbContext();
     }
@@ -3640,9 +3640,9 @@ final class TopologyPageCatalogBrokenHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3692,9 +3692,9 @@ final class TopologyPageCatalogCycleHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3740,9 +3740,9 @@ final class TopologyPageCatalogSectionHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3755,9 +3755,9 @@ final class TopologyPageCatalogNotAProviderHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3829,9 +3829,9 @@ final class TopologyPerInstancePageHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3853,9 +3853,9 @@ final class TopologyPerInstanceMissingParamHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3877,9 +3877,9 @@ final class TopologyPerInstanceUnknownFallbackHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -3901,9 +3901,9 @@ final class TopologyPerInstancePublicSessionUserHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4012,9 +4012,9 @@ final class TopologyThrottleNoVerdictHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4036,9 +4036,9 @@ final class TopologyThrottlePageHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4060,9 +4060,9 @@ final class TopologyThrottleVerdictElsewhereHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4080,9 +4080,9 @@ final class TopologyThrottleUntypedVerdictHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4101,9 +4101,9 @@ final class TopologyThrottleIndexedHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4121,9 +4121,9 @@ final class TopologyThrottleVerdictHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4230,9 +4230,9 @@ final class TopologyUnrecordedSharedDbOwnersHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4261,9 +4261,9 @@ final class TopologyRecordedSharedDbOwnersHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4285,9 +4285,9 @@ final class TopologyUnrecordedSharedRtOwnersHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4309,9 +4309,9 @@ final class TopologyRtRowOwnersHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4333,9 +4333,9 @@ final class TopologyNarrowDbCoOwnerHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4364,9 +4364,9 @@ final class TopologyStaleSharedOwnersHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4403,9 +4403,9 @@ final class TopologyUninvolvedOwnerRecordHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4434,9 +4434,9 @@ final class TopologyLoneOwnerRecordHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4469,9 +4469,9 @@ final class TopologyUnregisteredOwnerRecordHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4499,9 +4499,9 @@ final class TopologyDebtlessRecordHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4519,9 +4519,9 @@ final class TopologyReadingItsOwnClaimHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }
@@ -4539,9 +4539,9 @@ final class TopologyReadingItsOwnRowsHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }

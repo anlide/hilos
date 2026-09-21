@@ -6,6 +6,7 @@ namespace Hilos\Sms\Delivery;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
@@ -93,6 +94,7 @@ class SmsDeliveryChannel extends AbstractDeliveryChannel
      * @param int $userId Recipient user id
      * @return ?string Verified E.164 number, or null when the recipient has none (or no DB context)
      * @throws DatabaseException When the identity lookup fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function resolveAddress(int $userId): ?string
     {
@@ -115,6 +117,7 @@ class SmsDeliveryChannel extends AbstractDeliveryChannel
      * @return ?int Positive pool shard key for the recipient number, or null when it no longer resolves
      * @throws DatabaseException When the identity lookup fails
      * @throws EnvException When SMS_WORKER_COUNT is unreadable
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function shardKeyFor(int $userId, int $notificationId): ?int
     {

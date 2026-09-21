@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Core\CLI\Commands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;

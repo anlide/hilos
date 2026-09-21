@@ -9,6 +9,7 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\CollectionNotFoundException;
@@ -676,7 +677,7 @@ final class WalkRtActions extends RtActions
 /**
  * DB context mounting the one mirror the database view cases walk.
  */
-final class WalkDbContext extends DbContext
+final class WalkDbContext extends HilosDbContext
 {
     public const string COLLECTION = 'unit-collection-walk-safety-db';
 

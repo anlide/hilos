@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Exception\SettingDefaultReferenceCycleException;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;

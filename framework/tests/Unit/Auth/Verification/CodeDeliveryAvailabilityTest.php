@@ -9,7 +9,7 @@ use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Constants\EnvConstants;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -234,9 +234,9 @@ final class DeliveryAvailabilityTestHilos extends Hilos
     /**
      * Creates a no-op DB context for the abstract facade contract.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new DeliveryAvailabilityTestDbContext();
     }
@@ -245,7 +245,7 @@ final class DeliveryAvailabilityTestHilos extends Hilos
 /**
  * No-op DB context so the facade fixture is instantiable.
  */
-final class DeliveryAvailabilityTestDbContext extends DbContext
+final class DeliveryAvailabilityTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the availability fixture.

@@ -7,7 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\TopologyAgentFactory;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use PHPUnit\Framework\TestCase;
 
@@ -74,9 +74,9 @@ final class TopologyIndexedAgentFactoryHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
     }

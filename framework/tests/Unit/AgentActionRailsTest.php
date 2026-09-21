@@ -29,7 +29,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos as HilosFacade;
@@ -408,7 +408,7 @@ final class AgentRailsTestAgent extends AbstractAgent
 /**
  * DB context the fixture facade must return; no test here reaches the database.
  */
-final class AgentRailsTestDbContext extends DbContext
+final class AgentRailsTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the agent-action rails tests.
@@ -430,9 +430,9 @@ final class AgentRailsTestHilos extends HilosFacade
     /**
      * Creates the no-op DB context the fixture facade is built with.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new AgentRailsTestDbContext();
     }

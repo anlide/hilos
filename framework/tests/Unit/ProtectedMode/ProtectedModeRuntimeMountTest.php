@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -70,7 +70,7 @@ final class ProtectedModeMountTestRtContext extends RtContext
     }
 }
 
-final class ProtectedModeMountTestDbContext extends DbContext
+final class ProtectedModeMountTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for mount tests.
@@ -83,9 +83,9 @@ final class ProtectedModeMountTestDbContext extends DbContext
 class ProtectedModeMountTestHilos extends HilosFacade
 {
     /**
-     * @return DbContext No-op test DB context
+     * @return HilosDbContext No-op test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new ProtectedModeMountTestDbContext();
     }

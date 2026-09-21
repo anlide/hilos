@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
-use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
@@ -77,9 +77,9 @@ final class ProtectedModeStubLsbTestHilos extends Hilos
     /**
      * Creates a no-op DB context for the abstract facade contract.
      *
-     * @return DbContext Test DB context
+     * @return HilosDbContext Test DB context
      */
-    protected static function createDb(): DbContext
+    protected static function createDb(): HilosDbContext
     {
         return new ProtectedModeStubLsbTestDbContext();
     }
@@ -88,7 +88,7 @@ final class ProtectedModeStubLsbTestHilos extends Hilos
 /**
  * No-op DB context so the abstract facade fixture is instantiable.
  */
-final class ProtectedModeStubLsbTestDbContext extends DbContext
+final class ProtectedModeStubLsbTestDbContext extends HilosDbContext
 {
     /**
      * No-op DB configuration for the stub registry resolution fixture.
