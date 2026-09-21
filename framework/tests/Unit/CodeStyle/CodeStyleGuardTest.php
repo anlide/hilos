@@ -19,6 +19,7 @@ use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PageReachRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
+use Hilos\Tests\CodeStyle\Rule\ProcessForkRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
@@ -218,6 +219,7 @@ final class CodeStyleGuardTest extends TestCase
             new FsSeamRule(),
             new RandomSourceRule(),
             new BlockingResolutionRule(),
+            new ProcessForkRule($root),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
             new SecretInQueryRule(),

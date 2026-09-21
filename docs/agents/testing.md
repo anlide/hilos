@@ -393,15 +393,18 @@ ticket for the entries that are genuinely foreign.
   `framework/tests/Unit/BackupRestoreCommandTest.php:547`,
   `framework/tests/Integration/BackupRestorerIntegrationTest.php:677`.
 
-  A fork is a form of its own. The child inherits the live PHPUnit run, so: an
-  immediate `exit()` at the end of the child's branch; not one assertion on the
-  child's path — a red one there does not fail the test, it carries the child to
-  the end of the run and prints a second PHPUnit report; and the wait in
-  `finally`, through `pcntl_waitpid()`. The suite carries no fork today: its only
-  one, the regression of HIL-732, left with HIL-929 once a scenario on the stand
-  turned red on the defect every time. History keeps the form —
-  `serveTlsResponseInChild()` in `framework/tests/Unit/AsyncHttpClientTest.php`
-  as of `c32457783` (`:441`; the `exit` at `:494`, the wait at `:155`).
+  A fork is a form of its own. Forking is banned by the `PROCESS-FORK` guard
+  (see [process-fork.md](code-style/process-fork.md)) and admitted only by an
+  allow-list entry backed by the owner's decision. The child inherits the live
+  PHPUnit run, so: an immediate `exit()` at the end of the child's branch; not
+  one assertion on the child's path — a red one there does not fail the test, it
+  carries the child to the end of the run and prints a second PHPUnit report;
+  and the wait in `finally`, through `pcntl_waitpid()`. The suite carries no fork
+  today: its only one, the regression of HIL-732, left with HIL-929 once a
+  scenario on the stand turned red on the defect every time. History keeps the
+  form — `serveTlsResponseInChild()` in
+  `framework/tests/Unit/AsyncHttpClientTest.php` as of `c32457783` (`:441`; the
+  `exit` at `:494`, the wait at `:155`).
 
   Two samples, and what picks between them. `framework/tests/Unit/OrphanReaperTest.php`
   (HIL-450) is the sample of **structure**: real children through the

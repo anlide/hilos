@@ -37,6 +37,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/wiring-refusals.md` | writing a `catch` around a read of `Hilos::$db` or `Hilos::$rt`, or deciding what an accessor answers to a collection it cannot read |
 | `docs/agents/code-style/random-source.md` | drawing a random value — minting a token, id or name — or judging a `RandomHelper` call |
 | `docs/agents/code-style/blocking-resolution.md` | turning a host name into an address, or judging a call that waits on a nameserver |
+| `docs/agents/code-style/process-fork.md` | forking the PHP process, or judging a pcntl_fork call |
 | `docs/agents/code-style/catalog-backed-accessors.md` | reading a value out of `Hilos::$env` or `Hilos::$setting`, adding a method to either accessor, or building a new accessor backed by a catalog |
 | `docs/agents/code-style/automated-checks.md` | a style guard failed, a rule should stop depending on memory, or the known-debt baseline needs a record |
 | `docs/agents/code-style/cross-layer-field-names.md` | naming a data field that crosses DB → PHP → wire → TypeScript |

@@ -16,6 +16,7 @@ use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
+use Hilos\Tests\CodeStyle\Rule\ProcessForkRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateMutationRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
@@ -245,6 +246,30 @@ final class RuleFixtureTest extends TestCase
                     . 'relative to the current namespace (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:51 — {@see} references Baseline, which is neither '
                     . 'imported nor declared in this namespace (see docs/agents/code-style/phpdoc.md)',
+                'CODE-FQN Bad/ProcessForkSamples.php:26 — \pcntl_fork is written out in code; a global '
+                    . 'function or constant takes the short name and no import '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                // Line 28 is the userland function wearing a builtin's name: CODE-FQN judges how it is
+                // written and PROCESS-FORK says nothing, which is the whole point of seeding it.
+                'CODE-FQN Bad/ProcessForkSamples.php:28 — '
+                    . '\Hilos\Tests\CodeStyle\Fixtures\Bad\Forker\pcntl_fork is written out in code; '
+                    . 'import it and use the short name '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'PROCESS-FORK Bad/ProcessForkSamples.php:25 — pcntl_fork() forks the PHP process, and the '
+                    . 'child inherits everything this one holds — the live PHPUnit run, the daemon sockets, '
+                    . 'the database connection; start a process of its own through Hilos\Core\Process, '
+                    . 'or name this file in the rule\'s list with the leaf where the owner allowed it '
+                    . '(see docs/agents/code-style/process-fork.md)',
+                'PROCESS-FORK Bad/ProcessForkSamples.php:26 — pcntl_fork() forks the PHP process, and the '
+                    . 'child inherits everything this one holds — the live PHPUnit run, the daemon sockets, '
+                    . 'the database connection; start a process of its own through Hilos\Core\Process, '
+                    . 'or name this file in the rule\'s list with the leaf where the owner allowed it '
+                    . '(see docs/agents/code-style/process-fork.md)',
+                'PROCESS-FORK Bad/ProcessForkSamples.php:27 — pcntl_rfork() forks the PHP process, and the '
+                    . 'child inherits everything this one holds — the live PHPUnit run, the daemon sockets, '
+                    . 'the database connection; start a process of its own through Hilos\Core\Process, '
+                    . 'or name this file in the rule\'s list with the leaf where the owner allowed it '
+                    . '(see docs/agents/code-style/process-fork.md)',
                 'CODE-FQN Bad/RandomSourceSamples.php:25 — \Hilos\Utils\Helpers\RandomHelper is written out '
                     . 'in code; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
                 'RANDOM-SOURCE Bad/RandomSourceSamples.php:23 — RandomHelper::bytes() falls back to '
@@ -575,6 +600,7 @@ final class RuleFixtureTest extends TestCase
             new FsSeamRule(),
             new RandomSourceRule(),
             new BlockingResolutionRule(),
+            new ProcessForkRule('framework/tests/CodeStyle/Fixtures'),
             new MalformedInputMarkerRule(),
             new TruthSourceClaimRule(),
             new SecretInQueryRule(),

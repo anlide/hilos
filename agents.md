@@ -181,6 +181,7 @@ the rule away.
 | [code-style/error-suppression.md](docs/agents/code-style/error-suppression.md) | PHP | writing `@` in front of a PHP call in production, or deciding how a failing builtin reports |
 | [code-style/random-source.md](docs/agents/code-style/random-source.md) | PHP | drawing a random value in backend PHP — which axis of `RandomHelper` a token, id or name comes from |
 | [code-style/blocking-resolution.md](docs/agents/code-style/blocking-resolution.md) | PHP | turning a host name into an address in backend PHP — the six builtins that block the loop on a nameserver, and why `gethostname()` is not one of them |
+| [code-style/process-fork.md](docs/agents/code-style/process-fork.md) | PHP | forking the PHP process in backend PHP — why children inherit parent state, and why `pcntl_fork()` is banned |
 | [code-style/catalog-backed-accessors.md](docs/agents/code-style/catalog-backed-accessors.md) | PHP | reading a value out of `Hilos::$env` or `Hilos::$setting` in backend PHP, or building a third accessor of that kind — the one way in, what is not a second one, and how the catalog is asked |
 | [code-style/magic-values.md](docs/agents/code-style/magic-values.md) | PHP | writing a bare number or a bare string into production PHP, or judging whether a literal is magic or data |
 
