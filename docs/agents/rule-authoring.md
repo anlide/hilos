@@ -200,6 +200,14 @@ A Hilos skill wrapper should stay small:
   every canonical doc;
 - examples are included only when they are needed for correct routing.
 
+A `SKILL.md` header must parse as strict YAML. Cursor reads it strictly and
+has no fallback parse: a crooked header prints `Failed to parse skill
+frontmatter`, the skill is shown without a description, and the autotrigger
+never picks it. Quote a value that carries a colon and a space. The check is
+`SKILL-HEADER` in the unit suite, not the installer: an installer failure
+stops the whole line, and one colon in a description must not cost every
+executor a spawn.
+
 Do not copy full canonical rule files into `SKILL.md`.
 
 ## Choosing The Wrapper: By Language, Then By Framework
@@ -225,26 +233,37 @@ file under `demo/*/frontend/vue/**` fires `$hilos-code-style-vue`.
   subject; express the language boundary with the *Applies to* column in
   [code-style/README.md](code-style/README.md), not with folders.
 
-## Every Rule File Is Reachable From A Wrapper
+## Every Rule File Is Listed In The Index That Owns It
 
-A new or moved rule file under `docs/agents/` must be reachable from at least one
-`hilos-*` skill wrapper, and listed in the index table that owns it (`agents.md`,
-or the catalog `README.md` for a code-style rule). An unrouted rule file is
-unreachable at code time: it is canonical, correct, and never read.
-Checked automatically: `DOC-ROUTE`, but only the first half of that — that a
-wrapper routes to the file, and only for the `docs/agents/code-style/` catalog.
-Listing the file in the index table that owns it stays yours to do.
+Every file under `docs/agents/` must be listed, with a "read when" line, in the
+index that owns it — `agents.md`, or the catalog `README.md` of its directory.
+That listing is what every executor receives: Claude through `CLAUDE.md`, Codex
+and Cursor through `AGENTS.md`, Gemini through `GEMINI.md`. A route from at
+least one `hilos-*` skill wrapper is mandatory only inside
+`docs/agents/code-style/`, where `DOC-ROUTE` checks it. Outside `code-style` a
+route from a wrapper is desirable when a skill covers the topic, and a refusal
+line is not needed. The boundary sits there because `code-style` has an owning
+mechanism — the language wrappers — so the route requirement holds without
+exceptions; the rest of `docs/agents/` has no such mechanism, and a file's
+subject is often already routed elsewhere. The subject of
+[antipatterns/action-outside-its-lock.md](antipatterns/action-outside-its-lock.md)
+lives as a section in
+[architecture/entity-libraries.md](architecture/entity-libraries.md), which five
+wrappers already reach (`hilos-signals`, `hilos-admin-features`,
+`hilos-architecture`, `hilos-app-data-access`, `hilos-agent-system`); a sixth
+pointer at the antipattern file itself would open nothing new.
 
-A file that needs no route by design says so in itself, on a line of its own
-reading `Routed from: none — <reason>`. The reason is not optional: without it
-the line is a silent mute, and the next reader — the one deciding whether to
-route the file or delete it — learns that it stands apart but not why. The
-refusal lives in the file rather than in a list inside the checker, because that
-is where the person weighing it is already looking; and it is not a baseline
-record, because a baseline record means "debt some leaf will pay", which a
-deliberate decision never becomes. A file carrying both a route and the refusal
-is reported like an unrouted one: a refusal that outlived its truth misleads the
-reader exactly as much as no route at all.
+Inside `docs/agents/code-style/`, a file that needs no route by design says so
+in itself, on a line of its own reading `Routed from: none — <reason>`. The
+reason is not optional: without it the line is a silent mute, and the next
+reader — the one deciding whether to route the file or delete it — learns that
+it stands apart but not why. The refusal lives in the file rather than in a
+list inside the checker, because that is where the person weighing it is
+already looking; and it is not a baseline record, because a baseline record
+means "debt some leaf will pay", which a deliberate decision never becomes. A
+file carrying both a route and the refusal is reported like an unrouted one: a
+refusal that outlived its truth misleads the reader exactly as much as no
+route at all.
 
 When adding a rule file, walk the route the way an agent would — from the task
 shape to the wrapper, from the wrapper to the file — and confirm no `.md` link on

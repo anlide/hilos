@@ -58,9 +58,11 @@ final class AiToolingInstallerTest extends TestCase
         self::assertSame(0, $run->exitCode, "a clean sandbox must install cleanly:\n{$run->output}");
         self::assertStringContainsString('[created ] .claude/skills/hilos-demo', $run->output);
         self::assertStringContainsString('[created ] .agents/skills/hilos-demo', $run->output);
+        self::assertStringContainsString('[created ] .cursor/skills/hilos-demo', $run->output);
         self::assertStringContainsString('[created ] GEMINI.md', $run->output);
-        self::assertStringContainsString('Done: 5 change(s) applied.', $run->output);
+        self::assertStringContainsString('Done: 6 change(s) applied.', $run->output);
         self::assertFileExists($sandbox . '/.claude/skills/hilos-demo/references/notes.md');
+        self::assertFileExists($sandbox . '/.cursor/skills/hilos-demo/references/notes.md');
     }
 
     public function testRefusesASkillWhoseFileCannotBeWrittenAndLeavesTheTreeUntouched(): void

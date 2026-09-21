@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\Markdown\DocLinkRule;
 use Hilos\Tests\CodeStyle\Markdown\DocRouteRule;
 use Hilos\Tests\CodeStyle\Markdown\MarkdownSources;
+use Hilos\Tests\CodeStyle\Markdown\SkillHeaderRule;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -43,6 +44,18 @@ final class AgentDocGuardTest extends TestCase
             iterator_to_array($rule->check(), false),
             'A reference that leads nowhere breaks the route as surely as a missing one. Fix the target, or drop'
                 . ' the reference:',
+        );
+    }
+
+    public function testEverySkillHeaderParsesAsStrictYaml(): void
+    {
+        $rule = new SkillHeaderRule(MarkdownSources::forRepository($this->repositoryRoot()));
+
+        $this->assertSame(
+            [],
+            iterator_to_array($rule->check(), false),
+            'A skill header a strict YAML parse cannot read costs the skill its autotrigger in Cursor, and Cursor'
+                . ' is silent about it:',
         );
     }
 

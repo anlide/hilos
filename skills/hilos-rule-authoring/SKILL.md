@@ -52,3 +52,5 @@ skill wrappers. Start with `agents.md`, then read
 - Do not use `Never` unless the rule has no local exception.
 - Do not hand a marker removal to another leaf: the leaf that lands the behavior
   clears it, in the same commit.
+- Do not leave `: ` in an unquoted header value: Cursor parses a SKILL.md
+  header strictly and silently drops the skill.

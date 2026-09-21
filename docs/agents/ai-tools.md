@@ -64,10 +64,16 @@ walks skip symlinks).
 | Tool(s) | Artifact | Strategy | Source |
 |---|---|---|---|
 | Claude Code | `.claude/skills/hilos-*` | copy | `skills/hilos-*` |
-| Codex, Cursor, Windsurf | `.agents/skills/hilos-*` | per-skill symlink (real root dir) | `skills/hilos-*` |
+| Cursor | `.cursor/skills/hilos-*` | copy | `skills/hilos-*` |
+| Codex, Windsurf | `.agents/skills/hilos-*` | per-skill symlink (real root dir) | `skills/hilos-*` |
 | Codex, Cursor, Windsurf, Aider | `AGENTS.md` | symlink | `agents.md` |
 | Gemini CLI | `GEMINI.md` | generate (imports `agents.md`) | `agents.md` |
 | Aider | `.aider.conf.yml` | generate (reads `agents.md`) | `agents.md` |
+
+Cursor walks a directory, and those walks skip symlinks, so its skills are
+copies — the same rule the installer header and the paragraph above the table
+already state. It can still see `.agents/skills` and `.claude/skills`; which of
+the three it picks is its own search order.
 
 On a case-insensitive filesystem `AGENTS.md` is skipped because `agents.md`
 already resolves under that name.

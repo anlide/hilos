@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-vue
-description: Apply Hilos code style to Vue single-file components — the shared TypeScript rules plus the Vue specifics: an SFC carries no `<style>` block, and styling is Bootstrap classes only. Use when writing, reviewing, or refactoring a `.vue` file under `framework/frontend/vue/**` or `demo/*/frontend/vue/**`, or when tempted to add CSS to a component.
+description: "Apply Hilos code style to Vue single-file components — the shared TypeScript rules plus the Vue specifics: an SFC carries no `<style>` block, and styling is Bootstrap classes only. Use when writing, reviewing, or refactoring a `.vue` file under `framework/frontend/vue/**` or `demo/*/frontend/vue/**`, or when tempted to add CSS to a component."
 ---
 
 # Hilos Code Style — Vue

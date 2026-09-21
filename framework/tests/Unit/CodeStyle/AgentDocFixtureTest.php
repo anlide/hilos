@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\Markdown\DocLinkRule;
 use Hilos\Tests\CodeStyle\Markdown\DocRouteRule;
 use Hilos\Tests\CodeStyle\Markdown\MarkdownSources;
+use Hilos\Tests\CodeStyle\Markdown\SkillHeaderRule;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -65,6 +66,41 @@ final class AgentDocFixtureTest extends TestCase
         );
     }
 
+    public function testSkillHeaderRuleReportsExactlyTheSeededCases(): void
+    {
+        $this->assertSame(
+            [
+                'SKILL-HEADER headers/colon-space/SKILL.md:3 — an unquoted value carries ": ", which ends the '
+                    . 'scalar and opens a mapping (see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/empty-description/SKILL.md:3 — description has an empty value '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/empty-name/SKILL.md:2 — name has an empty value '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/hash/SKILL.md:3 — an unquoted value carries " #", which opens a comment '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/indicator/SKILL.md:3 — an unquoted value opens with the YAML indicator [ '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/no-close/SKILL.md — the header is not closed by a --- line '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/no-description/SKILL.md — the header carries no description key '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/no-name/SKILL.md — the header carries no name key '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/no-open/SKILL.md — the file does not open with a --- line '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/stray-line/SKILL.md:4 — this line is neither a key: value pair nor the '
+                    . 'body of a block scalar (see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/trailing-colon/SKILL.md:3 — an unquoted value ends with a colon '
+                    . '(see docs/agents/rule-authoring.md)',
+                'SKILL-HEADER headers/unclosed-quote/SKILL.md:3 — a quoted value is not closed on its line '
+                    . '(see docs/agents/rule-authoring.md)',
+            ],
+            iterator_to_array((new SkillHeaderRule($this->headerSources()))->check(), false),
+            'Fixture report drifted: SKILL-HEADER either stopped catching a seeded case or started reporting a '
+                . 'legitimate one.',
+        );
+    }
+
     /**
      * @return MarkdownSources The toy tree, read by the very same code the live scan uses
      */
@@ -74,6 +110,21 @@ final class AgentDocFixtureTest extends TestCase
             dirname(__DIR__, 2) . '/CodeStyle/Fixtures/AgentDocs',
             ['skill/SKILL.md'],
             ['catalog/*.md', 'doc/*.md'],
+            self::TOP_LEVEL_ENTRIES,
+        );
+    }
+
+    /**
+     * Own pattern, so these SKILL.md files do not move the DOC-ROUTE / DOC-LINK pins.
+     *
+     * @return MarkdownSources Header fixtures only; documents are empty because this rule reads none
+     */
+    private function headerSources(): MarkdownSources
+    {
+        return new MarkdownSources(
+            dirname(__DIR__, 2) . '/CodeStyle/Fixtures/AgentDocs',
+            ['headers/*/SKILL.md'],
+            [],
             self::TOP_LEVEL_ENTRIES,
         );
     }

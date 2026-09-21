@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-angular
-description: Apply Hilos code style to Angular components — the shared TypeScript rules plus the Angular specifics: a static hyphenated attribute such as `data-id` belongs in the template, never on the component `host`. Use when writing, reviewing, or refactoring a `.component.ts` or `.component.html` file under `framework/frontend/angular/**` or `demo/*/frontend/angular/**`.
+description: "Apply Hilos code style to Angular components — the shared TypeScript rules plus the Angular specifics: a static hyphenated attribute such as `data-id` belongs in the template, never on the component `host`. Use when writing, reviewing, or refactoring a `.component.ts` or `.component.html` file under `framework/frontend/angular/**` or `demo/*/frontend/angular/**`."
 ---
 
 # Hilos Code Style — Angular

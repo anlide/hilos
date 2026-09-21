@@ -148,8 +148,15 @@ final class AiToolingInstaller
                 sourceGlob: 'skills/' . self::MANAGED_CHILD_PREFIX . '*',
             ),
             new ArtifactSpec(
+                label: 'Cursor skills',
+                tools: 'Cursor',
+                strategy: InstallStrategy::CopySkillTrees,
+                target: '.cursor/skills',
+                sourceGlob: 'skills/' . self::MANAGED_CHILD_PREFIX . '*',
+            ),
+            new ArtifactSpec(
                 label: 'Shared skill tree',
-                tools: 'Codex, Cursor, Windsurf',
+                tools: 'Codex, Windsurf',
                 strategy: InstallStrategy::LinkSkillTrees,
                 target: '.agents/skills',
                 sourceGlob: 'skills/' . self::MANAGED_CHILD_PREFIX . '*',
