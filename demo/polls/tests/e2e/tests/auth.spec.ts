@@ -222,9 +222,21 @@ function returnPath(url: string): string {
   return `${parsed.pathname}${parsed.search}`
 }
 
+/**
+ * How far past the suite's own cap the sign-in link walk may run.
+ *
+ * Three sign-ins, each waiting on its own letter, take about 31 s on an idle box,
+ * above the 30 s base cap, so the test passed only when parallel lanes stretched
+ * that cap and was red on every serial run (P-379). The factor multiplies the
+ * configured cap rather than replacing it, so the host-pressure scale still
+ * applies on top: 45 s serial, more under load.
+ */
+const SIGN_IN_LINK_TIMEOUT_FACTOR = 1.5
+
 test('walks both halves of the sign-in link, and turns a tampered one down', async ({
   page,
 }) => {
+  test.setTimeout(test.info().timeout * SIGN_IN_LINK_TIMEOUT_FACTOR)
   // Every step asks for its own letter: the send gate holds a second letter to
   // the same address for a minute, so a shared address would leave a step
   // waiting for mail nobody sent. And every step starts from a guest, which is
