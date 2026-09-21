@@ -5,9 +5,9 @@
 // and any project signals.
 //
 // The endpoint defaults to the same-origin /ws route, which nginx proxies to the
-// daemon in the test and production environments. The local dev stack overrides
-// it with VITE_WS_URL, because there the page is served by the Vite dev server
-// while the daemon publishes its own WebSocket port.
+// daemon in test and production, and the Vite dev server proxies in local dev.
+// VITE_WS_URL is kept for environments where the WebSocket lives on a separate
+// hostname, such as the preview stack (docker/docker-compose.preview.yml).
 //
 // `actions` is the requestId-correlated reply lifecycle: a modal submit calls
 // `actions.dispatch(...)` and closes on the returned handle's resolved `done`.

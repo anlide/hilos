@@ -300,10 +300,6 @@ services:
     working_dir: /hilos/demo/chat/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
-      # The dev page is served by Vite, not nginx, so the app's same-origin
-      # /ws default cannot reach the daemon; point it at the published
-      # WebSocket port instead (see frontend/src/connection.ts).
-      VITE_WS_URL: "ws://localhost:${WEBSOCKET_HOST_PORT:-8092}"
       # Attachment downloads proxy same-origin (Vite → daemon) so the session
       # cookie rides along; in-network the daemon's HTTP router is chat-local:8090.
       VITE_ATTACHMENT_TARGET: "http://chat-local:8090"

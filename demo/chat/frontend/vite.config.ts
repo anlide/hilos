@@ -49,6 +49,13 @@ export default defineConfig(({ mode }) => {
       // localhost-dev default.
       hmr: env.VITE_DISABLE_HMR ? false : undefined,
       proxy: {
+        // Same-origin WebSocket: serving the page and the socket from the same
+        // origin lets the session cookie (SameSite=Strict) and rotation ticket
+        // ride the connection without cross-site issues; in test/prod nginx does the same.
+        '/ws': {
+          target: env.VITE_WS_TARGET || 'http://chat-local:8092',
+          ws: true,
+        },
         '/chat/attachment': {
           target: env.VITE_ATTACHMENT_TARGET || 'http://chat-local:8090',
           changeOrigin: true,

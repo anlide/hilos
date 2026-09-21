@@ -19,8 +19,8 @@ Common ground (containers, connection, e2e, stable ids) is in
 
 ## SDK wiring
 
-- `src/connection.ts`: identical shape to the Vue part (`VITE_WS_URL ??
-  same-origin /ws`, `buildMismatch` → reload).
+- `src/connection.ts`: identical shape to the Vue part (same-origin `/ws`,
+  `buildMismatch` → reload).
 - State in components via `useConnectionState(connection)` from
   `@hilos/react` (implemented over `useSyncExternalStore`).
 
@@ -42,8 +42,8 @@ The `dedupe` config below is what lets the component's hooks
 
 ## Dev-mode WebSocket
 
-Same as Vue: the compose dev service sets `VITE_WS_URL` to the published WS
-host port; `env.d.ts` augments `ImportMetaEnv`.
+Same as Vue: the dev server proxies `/ws` to the daemon via `server.proxy` in
+`vite.config.ts` (`ws: true`), so the app uses the same-origin `/ws` default.
 
 ## Module duplication — REQUIRED config
 

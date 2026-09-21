@@ -56,6 +56,12 @@ export default defineConfig(({ mode }) => {
       // preview sets VITE_DISABLE_HMR to turn it off. Undefined keeps the normal
       // localhost-dev default.
       hmr: env.VITE_DISABLE_HMR ? false : undefined,
+      proxy: {
+        '/ws': {
+          target: env.VITE_WS_TARGET || 'http://tasks-daemon-local:8092',
+          ws: true,
+        },
+      },
       fs: {
         // Serve the SDK's bundled assets in dev. @hilos/react is a file:
         // dependency symlinked from framework/frontend, whose node_modules (the

@@ -53,8 +53,9 @@ say what to do next.
    `angular.json` `browser` (Angular). Put no application logic here, ever.
 2. **`bootstrap/connection.ts`** owns the connection singleton from
    `createHilosConnection(...)`. State only the project's endpoint policy
-   (`url: import.meta.env.VITE_WS_URL` for Vite; Angular passes nothing and uses
-   same-origin) and any extra project signal schemas. Export `connection`, and
+   (defaults to same-origin `/ws`; pass `url: import.meta.env.VITE_WS_URL` when
+   supporting environments with a separate WebSocket hostname like preview stacks)
+   and any extra project signal schemas. Export `connection`, and
    `actionErrors` only when the project reads action errors.
 3. **`bootstrap/session.ts`** owns the `ScopeManager` singleton, mints the
    session-token cookie at module load with `ensureSessionTokenCookie()` (so it
@@ -100,6 +101,7 @@ src/
 import { createHilosConnection } from '@hilos/core'
 
 export const { connection } = createHilosConnection({
+  // Optional override; defaults to same-origin /ws (proxied in dev and prod)
   url: import.meta.env.VITE_WS_URL,
 })
 ```

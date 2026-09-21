@@ -20,8 +20,8 @@ Common ground (containers, connection, e2e, stable ids) is in
 ## SDK wiring
 
 - `src/connection.ts`: one module-level `HilosConnection`; URL =
-  `import.meta.env.VITE_WS_URL ?? sameOrigin /ws`; `buildMismatch` →
-  `location.reload()`.
+  same-origin `/ws` (pass `import.meta.env.VITE_WS_URL` only for environments
+  with a separate WebSocket hostname); `buildMismatch` → `location.reload()`.
 - `main.ts`: `connection.connect()` before `createApp(App).mount('#app')`.
 - State in components via `useConnectionState(connection)` from `@hilos/vue`
   (a `Readonly<Ref<ConnectionState>>`; unsubscribes on scope dispose).
@@ -43,11 +43,21 @@ step; the component owns the spinner timing, the disabled state, and its a11y.
 
 ## Dev-mode WebSocket
 
-The dev page is served by Vite, so the same-origin `/ws` default cannot reach
-the daemon. The compose dev service sets
-`VITE_WS_URL: "ws://localhost:<published WS host port>"` (plain `ws://` — TLS
-terminates at nginx, the daemon port itself is not TLS). `env.d.ts` augments
-`ImportMetaEnv` with the optional `VITE_WS_URL`.
+The dev server proxies the app's same-origin `/ws` to the daemon: `vite.config.ts`
+
+```ts
+server: {
+  proxy: {
+    '/ws': {
+      target: env.VITE_WS_TARGET || 'http://<daemon-local-service>:8092',
+      ws: true,
+    },
+  },
+}
+```
+
+The proxy target uses the compose service name — the dev container and the
+daemon share the local network.
 
 ## Module duplication
 

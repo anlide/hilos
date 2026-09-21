@@ -58,9 +58,9 @@ Re-run `composer run frontend:build` after every frontend change: there is no
 HMR in this stack, and nginx serves whatever is in `frontend/dist`.
 
 The dev stack (`composer run daemon-start`, Vite on :5173) stays available for
-frontend iteration, but it points the socket at the published port via
-`VITE_WS_URL` instead of proxying — so a socket or asset problem seen there does
-not necessarily match production, and vice versa.
+frontend iteration with HMR (the Vite dev server proxies `/ws` to the daemon,
+matching the same-origin behavior of production nginx). The difference is HMR
+versus the static compiled dist served by nginx.
 
 ### Three things that bite in the build stack
 

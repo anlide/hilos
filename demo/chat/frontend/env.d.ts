@@ -13,10 +13,10 @@ declare module '*.vue' {
 // augmentable interface).
 interface ImportMetaEnv {
   /**
-   * WebSocket endpoint override for the local dev stack, where the page is
-   * served by Vite and the same-origin /ws default cannot reach the daemon
-   * (set in docker/docker-compose.local.yml). Unset in test and production:
-   * there the app uses same-origin /ws through nginx.
+   * WebSocket endpoint override for environments where the WebSocket lives on a
+   * separate hostname, such as the preview stack (docker/docker-compose.preview.yml).
+   * Unset in local dev (proxied by Vite), test, and production (proxied by nginx),
+   * where the app uses the same-origin /ws default.
    */
   readonly VITE_WS_URL?: string
 }

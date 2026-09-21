@@ -29,8 +29,9 @@ import {
 export interface CreateHilosConnectionOptions {
   /**
    * WebSocket endpoint. Defaults to the same-origin `/ws` route, which nginx
-   * proxies to the daemon. A Vite dev stack passes `import.meta.env.VITE_WS_URL`
-   * (which may be undefined, falling back to same-origin).
+   * proxies in test and production, and the dev server proxies in local dev.
+   * `url` allows overriding this for environments where the WebSocket lives on
+   * a separate hostname (e.g. preview stacks).
    */
   url?: string
   /**
