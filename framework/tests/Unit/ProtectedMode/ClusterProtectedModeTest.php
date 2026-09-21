@@ -302,7 +302,7 @@ final class ClusterProtectedModeTest extends TestCase
         ], $this->mesh->calls);
     }
 
-    public function testLeaderReentersActiveAndSignalsReadyWhenEnableArrivesUnderVerifyingWindow(): void
+    public function testLeaderEntersAgainFromTheVerificationWindowAndAnswersOnlyOnceEveryNodeQuiesced(): void
     {
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
@@ -324,13 +324,52 @@ final class ClusterProtectedModeTest extends TestCase
         );
         $this->coordinator->onEnable('node-b', $secondEnable);
 
-        $this->assertSame(['reenterActiveForNewOperation'], $this->executor->calls);
-        $this->assertSame('accept-second', $this->executor->reenteredAcceptKey);
-        $this->assertSame('session-second', $this->executor->reenteredSessionTokenHash);
-        $this->assertSame([
-            ['broadcastRefreeze', null],
-            ['sendReady', 'node-b'],
-        ], $this->mesh->calls);
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame('accept-second', $this->executor->activatingAcceptKey);
+        $this->assertSame('session-second', $this->executor->activatingSessionTokenHash);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
+
+        $this->stopTheRoster();
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
+
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
+    }
+
+    public function testLeaderEnteringAgainWaitsForItsOwnRoster(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-b', new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-second',
+            initiatorSessionTokenHash: 'session-second',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+            initiatorNodeId: 'node-b',
+        ));
+
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
+
+        $this->stopTheRoster();
+
+        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', 'node-b']], $this->mesh->calls);
     }
 
     public function testLeaderRefusesEnableUnderVerifyingWindowFromDifferentInitiatorNode(): void
@@ -469,6 +508,55 @@ final class ClusterProtectedModeTest extends TestCase
     {
         $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
         $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-x', $freeze);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAFollowerInsideTheWindowEntersAgainOnItsLeadersQuiesceAndReportsOnceStopped(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->stopTheRoster();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-x', $freeze);
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertNull($this->executor->activatingAcceptKey);
+
+        $this->stopTheRoster();
+
+        $this->assertSame([['sendQuiesced', 'node-x']], $this->mesh->calls);
+    }
+
+    public function testAFollowerInsideTheWindowIgnoresAQuiesceFromAnotherNode(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->stopTheRoster();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-y', $freeze);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAFollowerClosedBackIgnoresARepeatQuiesceFromItsLeader(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->stopTheRoster();
+        $this->settleTheFreezeOnTheRuntimeRow();
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
@@ -1199,19 +1287,6 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function reenterActive(): void
     {
         $this->calls[] = 'reenterActive';
-    }
-
-    /** @var ?string Accept key passed to the most recent reenterActiveForNewOperation call */
-    public ?string $reenteredAcceptKey = null;
-
-    /** @var ?string Session token hash passed to the most recent reenterActiveForNewOperation call */
-    public ?string $reenteredSessionTokenHash = null;
-
-    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
-    {
-        $this->calls[] = 'reenterActiveForNewOperation';
-        $this->reenteredAcceptKey = $initiatorAcceptKey;
-        $this->reenteredSessionTokenHash = $initiatorSessionTokenHash;
     }
 
     public function enterInactive(): void

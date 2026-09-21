@@ -186,7 +186,7 @@ final class StandaloneProtectedModeTest extends TestCase
         ], $this->relay->refusedCalls);
     }
 
-    public function testEnableInsideTheVerificationWindowReentersActiveForNewOperationAndSignalsReady(): void
+    public function testEnableInsideTheVerificationWindowEntersAgainAndWaitsForTheRoster(): void
     {
         $this->mode->requestEnable($this->enableData());
         $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
@@ -203,9 +203,52 @@ final class StandaloneProtectedModeTest extends TestCase
         );
         $this->mode->requestEnable($enable);
 
-        $this->assertSame(['reenterActiveForNewOperation', 'notifyInitiatorReady'], $this->executor->calls);
-        $this->assertSame('accept-second', $this->executor->reenteredAcceptKey);
-        $this->assertSame('session-hash-second', $this->executor->reenteredSessionTokenHash);
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame('accept-second', $this->executor->activatingAcceptKey);
+        $this->assertSame('session-hash-second', $this->executor->activatingSessionTokenHash);
+        $this->assertSame('restore', $this->executor->freeze?->operation);
+    }
+
+    public function testTheRosterStoppedAfterEnteringAgainSignalsTheInitiatorReady(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->mode->requestEnable(new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-second',
+            initiatorSessionTokenHash: 'session-hash-second',
+            initiatorAgentType: self::INITIATOR_TYPE,
+            initiatorAgentIndex: self::INITIATOR_INDEX,
+            initiatorNodeId: null,
+        ));
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->executor->calls = [];
+
+        $this->mode->onRosterStopped();
+
+        $this->assertSame(['enterActive', 'notifyInitiatorReady'], $this->executor->calls);
+    }
+
+    public function testAReleaseDuringTheRepeatWalkLeavesTheReadyUnsent(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->mode->requestEnable(new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-second',
+            initiatorSessionTokenHash: 'session-hash-second',
+            initiatorAgentType: self::INITIATOR_TYPE,
+            initiatorAgentIndex: self::INITIATOR_INDEX,
+            initiatorNodeId: null,
+        ));
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+        $this->mode->onRosterStopped();
+
+        $this->assertSame(['enterActivating', 'enterDeactivating', 'enterInactive'], $this->executor->calls);
     }
 
     public function testEnableInsideTheVerificationWindowFromAnotherAgentIsRefused(): void
@@ -691,19 +734,6 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function reenterActive(): void
     {
         $this->calls[] = 'reenterActive';
-    }
-
-    /** @var ?string Accept key passed to the most recent reenterActiveForNewOperation call */
-    public ?string $reenteredAcceptKey = null;
-
-    /** @var ?string Session token hash passed to the most recent reenterActiveForNewOperation call */
-    public ?string $reenteredSessionTokenHash = null;
-
-    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
-    {
-        $this->calls[] = 'reenterActiveForNewOperation';
-        $this->reenteredAcceptKey = $initiatorAcceptKey;
-        $this->reenteredSessionTokenHash = $initiatorSessionTokenHash;
     }
 
     public function enterInactive(): void

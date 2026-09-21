@@ -479,7 +479,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         );
     }
 
-    public function testReenteringActiveForNewOperationRebindsInitiatorAndAnnouncesState(): void
+    public function testEnteringAgainFromTheWindowRebindsTheInitiatorVoidsThePassesAndAnnouncesTheStub(): void
     {
         $this->executor->enterActivating($this->freeze(), 'accept-old', 'session-hash-old');
         $this->executor->enterActive();
@@ -487,10 +487,10 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->finishVerifying();
         $this->notifier->frames = [];
 
-        $this->executor->reenterActiveForNewOperation('accept-new', 'session-hash-new');
+        $this->executor->enterActivating($this->freeze(), 'accept-new', 'session-hash-new');
 
         $row = Hilos::$rt?->hilosProtectedModeRuntime;
-        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $row?->phase);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $row?->phase);
         $this->assertSame('accept-new', $row?->initiatorAcceptKey);
         $this->assertSame('session-hash-new', $row?->initiatorSessionTokenHash);
         $this->assertSame('backup', $row?->initiatorAgentType);

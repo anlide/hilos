@@ -88,9 +88,10 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * A new freeze starts with no passes, nobody admitted and nobody named, and that is written
      * rather than assumed: {@see ViewProtectedModeRuntime::admits()} reads the frozen phases as
-     * empty by construction, and one path can arrive here holding an abandoned window's hashes -
-     * a demoted leader still on verifying, quiesced again by whoever took leadership. Every other
-     * way in passes through a clear already, so this costs three assignments and closes the one
+     * empty by construction, and two paths can arrive here holding an abandoned window's hashes -
+     * a demoted leader still on verifying, quiesced again by whoever took leadership, and a repeat
+     * entry from the verification window (HIL-1057). Every other way in passes through a clear
+     * already, so this costs three assignments and closes the one
      * hole where a voided pass, or a circle photographed for the previous operation, could admit
      * its holder to the next one.
      *
@@ -150,23 +151,6 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->admittedSessionTokenHashes = [];
         $this->state->circleSessionTokenHashes = [];
         $this->state->circleNamedCount = 0;
-        $this->sync();
-    }
-
-    /**
-     * Rebinds the initiator connection to a new browser session when starting a new operation.
-     *
-     * @param ?string $initiatorAcceptKey Accept key of the new initiator connection
-     * @param ?string $initiatorSessionTokenHash Hash of the new initiator session token
-     * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     */
-    public function rebindInitiator(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
-    {
-        $this->ensureCanWrite();
-
-        $this->state->initiatorAcceptKey = $initiatorAcceptKey;
-        $this->state->initiatorSessionTokenHash = $initiatorSessionTokenHash;
         $this->sync();
     }
 

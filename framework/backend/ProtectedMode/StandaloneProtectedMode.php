@@ -32,10 +32,13 @@ use Hilos\Utils\Logger;
  * agents - so a project sees identical behavior whether or not it clusters, which is the whole
  * point of this class existing.
  *
- * Two guards mirror the cluster's for the same reasons. A repeat enable is never re-run, because
- * re-entering the freeze re-rolls the stopped-agent roster the release resumes against and would
- * strand agents; the initiator of a freeze that already stands is answered ready instead of
- * dropped, and anyone else is refused with a reason ({@see answerFreezeAlreadyHeld()}, HIL-909).
+ * Two guards mirror the cluster's for the same reasons. A repeat enable is never re-run while the
+ * roster is still standing, because re-entering the freeze re-rolls the stopped-agent roster the
+ * release resumes against and would strand agents. From the verification window, where that roster
+ * has been returned, a repeat enable is an entry again under the initiator the enable names, and
+ * ready comes from {@see onRosterStopped()} (HIL-1057). The initiator of a freeze that already
+ * stands on active is answered ready instead of dropped, and anyone else is refused with a reason
+ * ({@see answerFreezeAlreadyHeld()}, HIL-909).
  * A release is honored only for the agent recorded as the initiator: on one node the cluster's
  * node-id check compares a node against itself and authorizes nothing, so the agent identity is
  * the only thing left that distinguishes the initiator from any other agent that might resume the
@@ -206,7 +209,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * unasked, so a stranger agent able to send one could name whoever it liked.
      *
      * Fail-closed on {@see StateProtectedModeRuntime::PHASE_ACTIVE} because that is the phase the
-     * photograph is taken from - the initiator is told ready at the end of {@see requestEnable()},
+     * photograph is taken from - the initiator is told ready from {@see onRosterStopped()},
      * having quiesced - and a circle written outside a settled freeze would sit on the row waiting
      * for a window whose entry clears it anyway.
      *
@@ -250,10 +253,11 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     /**
      * Marks the freeze active and tells the initiator it may run, now that the roster has stopped.
      *
-     * Only for the walk that enters a freeze - the row still says activating. The walk that closes
-     * the verification window back runs on a row already written active and answers nobody: that
-     * initiator was told ready when the freeze first took hold. A walk that a lift overtook never
-     * gets here at all ({@see ProtectedModeAgentFreezer::resumeAgentsForProtectedMode()}).
+     * Only for the walk that enters a freeze - the row still says activating. That walk is the first
+     * entry or a repeat from the verification window (HIL-1057); both sit on activating. The walk
+     * that closes the verification window back runs on a row already written active and answers
+     * nobody: that initiator was told ready when the freeze first took hold. A walk that a lift
+     * overtook never gets here at all ({@see ProtectedModeAgentFreezer::resumeAgentsForProtectedMode()}).
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -290,9 +294,9 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * come. So the initiator the row records is told ready once more - the node is quiesced, which
      * is all a ready ever asserted.
      *
-     * An enable arriving from inside the verification window re-enters active for the new operation
-     * without reopening the application: the new initiator browser session is rebound, existing
-     * passes are voided, agents are stopped, and the initiator is told ready.
+     * An enable arriving from inside the verification window is an entry again under the initiator
+     * the enable names (HIL-1057): the row goes back to activating on the freeze already held, and
+     * ready is told from {@see onRosterStopped()} once that walk has finished.
      *
      * Any other phase, or an enable naming another initiator agent, is refused immediately with an
      * operator-facing reason so the caller does not wait out the 60-second freeze timeout.
@@ -342,8 +346,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
                     . "'{$freeze->operation}' freeze — the stub keeps naming the operation it was entered for"
                 );
             }
-            $this->executor->reenterActiveForNewOperation($data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
-            $this->executor->notifyInitiatorReady();
+            $this->executor->enterActivating($freeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
             return;
         }
 

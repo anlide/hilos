@@ -15,7 +15,9 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  *
  * The cluster-wide half of the two-phase freeze: once an initiator has asked over
  * {@see PeerProtectedModeEnableDTO}, the leader sends this to each follower with
- * {@see PeerServer::broadcastToMasters}. The follower quiesces its own agents (leaving the
+ * {@see PeerServer::broadcastToMasters}. The same leader sends it again for a repeat
+ * entry from the verification window (HIL-1057); a follower already frozen accepts that
+ * frame only while its row is still verifying. The follower quiesces its own agents (leaving the
  * initiator agent named in the carried {@see ProtectedModeQuiesceData} running), writes the
  * freeze onto {@see ProtectedModeRuntime} locally, and answers with a
  * {@see PeerProtectedModeQuiescedDTO}. The frame is a thin transport envelope; the freeze

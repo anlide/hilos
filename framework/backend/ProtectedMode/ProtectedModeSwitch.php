@@ -138,8 +138,9 @@ interface ProtectedModeSwitch
      *
      * The roster is stopped one agent per master pass ({@see ProtectedModeAgentFreezer}), so the
      * moment the node may say "frozen" is no longer the moment the stop was asked for: it is this
-     * one. Whatever a switch says about the freeze taking hold - ready to the initiator, quiesced to
-     * the leader, the leader counting itself - is said from here. Heard for every stop walk,
+     * one. Whatever a switch says about the freeze taking hold - ready to the initiator, quiesced
+     * to the leader, the leader counting itself - is said from here, including a repeat enable from
+     * the verification window whose row is activating again (HIL-1057). Heard for every stop walk,
      * including the one that closes the verification window back; a switch tells those apart by the
      * phase its row already carries, and a walk that closes a window back owes nobody an answer.
      *

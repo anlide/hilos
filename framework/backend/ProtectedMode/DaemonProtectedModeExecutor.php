@@ -291,26 +291,6 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
-        $this->performReenterActive($view);
-    }
-
-    /**
-     * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
-     */
-    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void
-    {
-        $view = $this->runtimeView();
-        if ($view === null) {
-            return;
-        }
-
-        $view->actions->rebindInitiator($initiatorAcceptKey, $initiatorSessionTokenHash);
-        $this->performReenterActive($view);
-    }
-
-    private function performReenterActive(ProtectedModeRuntime $view): void
-    {
         // Stop the agents the verification window brought back, naming the same initiator the row
         // still records - it is the one identity that keeps working through the freeze. A row that
         // names nobody would stop the initiator along with everything else, leaving no agent able

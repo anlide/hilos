@@ -26,6 +26,8 @@ interface ProtectedModeExecutor
      * stopped, leaving the initiator agent named in the descriptor running. The roster stops over
      * several master passes; the switch hears the end of it through
      * {@see ProtectedModeSwitch::onRosterStopped()}, and only from there says the node is frozen.
+     * The same path takes a node back into the freeze from the verification window for a new
+     * operation (HIL-1057).
      *
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
@@ -119,16 +121,6 @@ interface ProtectedModeExecutor
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function reenterActive(): void;
-
-    /**
-     * Closes this node back from the verification window for a new operation: rebinds the initiator, writes phase active and stops agents again.
-     *
-     * @param ?string $initiatorAcceptKey Accept key of the new initiator connection
-     * @param ?string $initiatorSessionTokenHash Hash of the new initiator session token
-     * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
-     */
-    public function reenterActiveForNewOperation(?string $initiatorAcceptKey, ?string $initiatorSessionTokenHash): void;
 
     /**
      * Releases this node: writes phase inactive locally and asks for the agents that were stopped.

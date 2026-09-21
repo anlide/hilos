@@ -37,7 +37,8 @@ use Hilos\Utils\Logger;
  * - Leader side: an initiator's {@see onEnable()} records the freeze, freezes the leader's own
  *   node, broadcasts quiesce to the followers, and tracks whom it still awaits - itself included,
  *   until its own roster has stopped. Each {@see onQuiesced()} clears one follower; when none remain
- *   the leader marks the mode active and signals the initiator ready. The initiator's {@see onDisable()} deactivates, broadcasts lift,
+ *   the leader marks the mode active and signals the initiator ready. A repeat enable from the
+ *   verification window runs that round again (HIL-1057). The initiator's {@see onDisable()} deactivates, broadcasts lift,
  *   and releases the leader's own node. The leader role is gated on holding leadership, driven by
  *   {@see onBecameLeader()} / {@see onLostLeadership()}.
  * - Follower side: {@see onQuiesce()} freezes this node and, once its roster has stopped
@@ -426,15 +427,7 @@ final class ClusterProtectedMode implements
             $data->initiatorAgentIndex,
             $data->initiatorNodeId,
         );
-        // The leader waits for itself as it waits for any follower: its own roster stops over
-        // several master passes, and a follower with a shorter one reports back before it has.
-        // Counted only among the followers, that report would activate a freeze the leader's own
-        // node was still serving clients under (HIL-1012).
-        $this->pendingNodes = array_fill_keys([...$this->mesh->followerMasterNodeIds(), $this->selfNodeId], true);
-        $this->active = false;
-
-        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
-        $this->mesh->broadcastQuiesce($this->activeFreeze);
+        $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
     }
 
     /**
@@ -483,6 +476,11 @@ final class ClusterProtectedMode implements
      * re-rolls the stopped-agent set the lift will resume against an already-emptied roster, so the second
      * pass would shrink it and strand agents. Mirrors the in-flight guard on {@see onEnable()}.
      *
+     * The exception is a quiesce from this node's freezing leader while the row is still verifying
+     * (HIL-1057): the window has returned the roster, so a second stop is safe, and that is how a
+     * repeat entry from the window reaches a follower. On activating or active the same frame is
+     * still dropped, because those phases hold a standing or unfinished stop list.
+     *
      * A node that holds no runtime state refuses the quiesce and answers nothing, mirroring the
      * leader's entry guard: silence keeps the leader in activating, which is the safe half of the
      * trade, while a quiesced report would unfreeze the whole operation's premise.
@@ -494,7 +492,13 @@ final class ClusterProtectedMode implements
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
-        if ($this->freezingLeaderId !== null) {
+        if (
+            $this->freezingLeaderId !== null
+            && !(
+                $this->frozenByThisLeader($fromNodeId)
+                && $this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)
+            )
+        ) {
             Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
                 . " — node '{$this->selfNodeId}' is already frozen by '{$this->freezingLeaderId}'");
             return;
@@ -526,8 +530,9 @@ final class ClusterProtectedMode implements
      * The leader counts itself quiesced and activates if no follower is outstanding; a follower
      * reports quiesced to the leader that froze it. A node is only ever one of the two for a given
      * freeze, so what the class already holds decides which. Both answers belong to the walk that
-     * ENTERS a freeze, and the row says so by still reading activating: the walk that closes the
-     * verification window back runs on a row already written active, and nobody is waiting on it.
+     * ENTERS a freeze - the first entry or a repeat from the verification window (HIL-1057) - and
+     * the row says so by still reading activating: the walk that closes the verification window
+     * back runs on a row already written active, and nobody is waiting on it.
      *
      * Said here and not when the stop was asked for, because that is the promise {@see onQuiesce()}
      * makes: a quiesced report for a freeze this node has not entered lets the leader hand ready to
@@ -772,19 +777,47 @@ final class ClusterProtectedMode implements
     }
 
     /**
+     * Starts a quiesce round for the freeze already held: this node plus every follower.
+     *
+     * Shared by the first entry and a repeat enable from the verification window (HIL-1057). The
+     * leader waits for itself as it waits for any follower: its own roster stops over several
+     * master passes, and a follower with a shorter one reports back before it has. Counted only
+     * among the followers, that report would activate a freeze the leader's own node was still
+     * serving clients under (HIL-1012).
+     *
+     * @param ProtectedModeQuiesceData $freeze Freeze this round is entering
+     * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
+     *                                    freezes itself; null when the initiator sits on another node
+     * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    private function enterRound(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash,
+    ): void {
+        $this->pendingNodes = array_fill_keys([...$this->mesh->followerMasterNodeIds(), $this->selfNodeId], true);
+        $this->active = false;
+
+        $this->executor->enterActivating($freeze, $initiatorAcceptKey, $initiatorSessionTokenHash);
+        $this->mesh->broadcastQuiesce($freeze);
+    }
+
+    /**
      * Answers an enable raised against the freeze this leader is already driving.
      *
      * The leader half of {@see StandaloneProtectedMode::answerFreezeAlreadyHeld()}, and it exists
      * for the same operator: closing the verification window leaves the whole cluster frozen on
      * active so another attempt can run, and that attempt's enable would otherwise be refused as a
      * freeze in flight, leaving its initiator waiting for a ready nobody was going to send. The
-     * quiesce round is not replayed - the followers are still frozen, and re-ordering it would
-     * re-roll the stopped-agent roster each of them resumes against - so what the initiator gets
-     * is the ready the settled freeze already earns it.
+     * quiesce round is not replayed for a freeze that already stands on active - the followers
+     * are still frozen, and re-ordering it would re-roll the stopped-agent roster each of them
+     * resumes against - so what the initiator gets is the ready the settled freeze already earns it.
      *
-     * An enable that arrives while the verification window is open closes it back for the new
-     * operation (HIL-909): the freeze is re-entered under the initiator the enable names, the
-     * followers are told to refreeze, and the initiator is answered. Any other asker is refused
+     * An enable that arrives while the verification window is open is an entry again (HIL-1057):
+     * the quiesce round runs once more, and ready comes from {@see activateWhenAllQuiesced()} once
+     * this node and every follower have reported. Any other asker is refused
      * with a stated reason ({@see ProtectedModeRefusalCopy}) instead of being left to its timeout.
      *
      * Authorized by initiator node id AND by the agent identity the freeze records, which is one
@@ -830,9 +863,7 @@ final class ClusterProtectedMode implements
         }
 
         if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
-            $this->executor->reenterActiveForNewOperation($data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
-            $this->mesh->broadcastRefreeze();
-            $this->signalInitiatorReady($freeze);
+            $this->enterRound($freeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
             return;
         }
 
