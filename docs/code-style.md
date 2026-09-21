@@ -14,6 +14,7 @@ catalog stays the single place a rule is routed from.
 ## Baseline
 
 - PHP follows PSR-12 style with 4-space indentation.
+  - Checked automatically for the member lines of a class body: `MEMBER-INDENT`, see [automated-checks.md](agents/code-style/automated-checks.md).
 - Every project PHP file starts with `declare(strict_types=1);`.
 - Repository text files use LF line endings; `.gitattributes` enforces this
   with `* text=auto eol=lf`.

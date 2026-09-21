@@ -12,6 +12,7 @@ use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
+use Hilos\Tests\CodeStyle\Rule\MemberIndentRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
@@ -66,6 +67,7 @@ final class ScannedRootsTest extends TestCase
         PayloadSentinelRule::ID,
         WireKeyCaseRule::ID,
         LineLengthRule::ID,
+        MemberIndentRule::ID,
     ];
 
     public function testCodeThatRunsIsDeclaredProductionWhateverItsDirectoryIsCalled(): void

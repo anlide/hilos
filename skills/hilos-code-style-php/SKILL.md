@@ -79,6 +79,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 - A line is at most 150 characters wide, counted in characters and not in bytes;
   the `LINE-LENGTH` guard fails `test:framework:unit` on a wider one, and only a
   heredoc body is outside it (`line-length.md`).
+- A class member line is indented by exactly four spaces relative to the line
+  that opened the class body; the `MEMBER-INDENT` guard fails
+  `test:framework:unit` on any other indentation (`docs/code-style.md`).
 - Do not alias `$this->_state` in a concrete `Runtime/View/Item/*`, and do not
   add a pass-through local for a single immediate member call
   (`local-variables.md`).

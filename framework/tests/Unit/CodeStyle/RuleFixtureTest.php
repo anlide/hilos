@@ -13,6 +13,7 @@ use Hilos\Tests\CodeStyle\Rule\FsSeamRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
+use Hilos\Tests\CodeStyle\Rule\MemberIndentRule;
 use Hilos\Tests\CodeStyle\Rule\ObjectStoreMutationRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
@@ -197,6 +198,26 @@ final class RuleFixtureTest extends TestCase
                     . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
                 'MAGIC-REPEAT Bad/MagicRepeatSamples.php:62 — 4000 occurs 2 times in this file; name it '
                     . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:21 — member line is indented 2 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:32 — member line is indented 2 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:34 — member line is indented with a tab; '
+                    . 'the class body it sits in asks for 4 spaces (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:36 — member line is indented 2 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:38 — member line is indented 6 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:45 — member line is indented 2 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:53 — member line is indented 8 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:57 — member line is indented 2 spaces; '
+                    . 'the class body it sits in asks for 4 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:67 — member line is indented 16 spaces; '
+                    . 'the class body it sits in asks for 12 (see docs/code-style.md)',
+                'MEMBER-INDENT Bad/MemberIndentSamples.php:79 — member line is indented 16 spaces; '
+                    . 'the class body it sits in asks for 12 (see docs/code-style.md)',
                 'PAYLOAD-SENTINEL Bad/PayloadMarkerWithoutReason.php:28 — the `// external-boundary:` '
                     . 'marker above the fallback names no reason '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -610,6 +631,7 @@ final class RuleFixtureTest extends TestCase
             new PayloadSentinelRule(),
             new WireKeyCaseRule(),
             new LineLengthRule(),
+            new MemberIndentRule(),
             new SpellingRule(),
         ];
     }
