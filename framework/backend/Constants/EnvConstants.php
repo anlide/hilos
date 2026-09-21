@@ -120,10 +120,19 @@ enum EnvConstants
      */
     case HILOS_PROTECTED_MODE_ALERT_EMAILS;
 
-    /** @var string Daemon log file path */
+    /**
+     * Daemon log file path. The directory of this file belongs to one daemon:
+     * two environments of the same project never share it, and two nodes of one
+     * environment never share it either. `LogRootOwnershipGuard` claims the
+     * directory at start and refuses a foreign or unreadable owner marker.
+     */
     case DAEMON_LOG_FILE;
 
-    /** @var string Daemon error log file path */
+    /**
+     * Daemon error log file path. Lives in the same directory as
+     * `DAEMON_LOG_FILE` and is covered by the same one-daemon-per-directory
+     * claim.
+     */
     case DAEMON_ERROR_LOG_FILE;
 
     /** @var string Docker network subnet */
@@ -375,7 +384,11 @@ enum EnvConstants
 
     /**
      * Root directory of the backup storage tree. Backups live under
-     * `<BACKUP_DIR>/<scope>/`. Empty disables the storage scan.
+     * `<BACKUP_DIR>/<scope>/`. Empty disables the storage scan. Environments of
+     * one project share this directory: an archive belongs to the project, not
+     * the environment, so a copy taken in one environment can be restored in
+     * another without moving files. A deployment that wants a private tree sets
+     * this as an override; that is a lawful choice, not an error.
      */
     case BACKUP_DIR;
 

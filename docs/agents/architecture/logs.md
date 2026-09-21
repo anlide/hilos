@@ -36,6 +36,33 @@ the same node: `LogCarrierAgent` moves batches from `staging/` into the archive
 (HIL-870, below). It touches nothing else — no live file, no marker, no batch the
 owner has not already put there — and answers no question about any of it.
 
+## One Daemon Per Log Directory (HIL-1083)
+
+A log directory belongs to one daemon, and two daemons never share one.
+Environments of the same project — local, dev, test, prod — are the usual way a
+machine gets a second daemon; they are not the only way. Six nodes of one
+clustered environment have six directories. The owner is the pair (environment,
+node).
+
+The cost of a shared directory is three facts. The directory holds
+`protected-mode.state.json`, which the daemon reads on start before any server
+binds, and which can refuse that start: a shared directory means one
+environment's freeze comes up in another. Live stream names (`daemon.log`,
+`daemon-error.log`, `worker-<type>-<n>.log`, `agent-<id>.log`) do not carry the
+environment, so two daemons write the same files. Rotation, staging and the
+archive walk the directory as a whole: one environment's carrier takes the
+other's batches.
+
+Inside the container the path is always the same
+(`DAEMON_LOG_FILE=/var/log/hilos/daemon.log`), so only the compose mount can
+separate directories, and a marker in the directory is what guarantees it. The
+file is `.hilos-log-root-owner.json`. Deleting it is the only lawful way to hand
+the directory to another environment; there is no switch that turns the claim
+off. `LogRootOwnershipGuard::claimLogRoot()` publishes the marker at daemon
+start and refuses a foreign or unreadable one, before `Logger::setLogFile()`, so
+the refusal lands in `docker logs` rather than in the journal of the directory
+it is being turned away from.
+
 ## The Node Agent Owns The Directory, Not The Lines (HIL-753)
 
 The ownership is of the **directory**. The lines reach their files without the

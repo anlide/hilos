@@ -227,7 +227,14 @@ also registers those. Generate, in any order:
    chat demo computes `demo/chat/data/backup`, keeping the env value an override),
    or the feature activates into a state where nothing can ever be written.
    `BACKUP_DIR` is a local directory, so an archive belongs to the node that took
-   it and lives on that node's disk. In a cluster the monopoly agent is pinned to
+   it and lives on that node's disk. Environments of one project share that one
+   directory: an archive belongs to the project, not the environment. The
+   environment rides in the archive name and is decided by the restore matrix, so
+   a copy taken in one environment can be restored in another (prod onto a stand,
+   through anonymization) without moving files. The computed project-directory
+   default (`ChatEnvCatalog::defaultBackupDir()`, and the same shape in tasks)
+   gives that by construction; `BACKUP_DIR` remains an override for a deployment
+   that wants otherwise. In a cluster the monopoly agent is pinned to
    its node by `AgentPlacement::POLICY`, so a change of leadership — every master
    restart is one — no longer moves it away from its archives. A dead node still
    moves it, and that is wanted: the agent comes up elsewhere and goes on taking

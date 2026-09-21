@@ -19,15 +19,27 @@
    `docker.php` is the watchdog and runs `daemon.php` as its child, so the containerized
    start passes through here anyway, and the worker comes up under a daemon that already
    answered.
-2. `SetOwnershipGuard::assertMountedSetsDeclared()` refuses the start of a node whose
+2. `LogRootOwnershipGuard::claimLogRoot()` claims this daemon as the owner of the log
+   directory, or refuses the start when a marker already names another environment or
+   node, or cannot be read. It runs after the required-environment check — `APP_ENV` and
+   `DAEMON_LOG_FILE` are present — and **ahead of** `Logger::setLogFile()`. A refusal
+   that the directory belongs to another daemon cannot be written into that daemon's
+   journal; `Logger` without a file writes to stdout/stderr, which is `docker logs`,
+   and that is where this refusal has to land. That is the opposite of
+   `AnonymizationStartupGuard` below, which stands **after** `setLogFile()` on purpose:
+   its reader is the author of a migration, and the refusal belongs in the daemon log
+   where that author will look for it. Here the reader is the operator of the stand.
+   Only the daemon carries it: the worker inherits the decision, and the CLI is where
+   a stand is repaired.
+3. `SetOwnershipGuard::assertMountedSetsDeclared()` refuses the start of a node whose
    mounted tables do not declare whose set their rows belong to. It reads class constants
    only and stands before the other guards, so the cheapest and most basic wiring question
    is answered first.
-3. `SessionStageStartupGuard::assertRosterCarriesSessions()` refuses the start of a node
+4. `SessionStageStartupGuard::assertRosterCarriesSessions()` refuses the start of a node
    whose browser connections roster stands on the presence stage instead of carrying
    session tokens. It reads only the in-memory map of mounted runtime collections and
    stands between the constant-only set-ownership guard and the live-schema query.
-4. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
+5. `AnonymizationStartupGuard::assertLiveSchemaClassified()` refuses the start of a node
    whose live schema is not classified for anonymization. Only a project declaring
    `HilosFeature::BACKUP` is asked at all — such a node keeps copies of a database it
    promises to be able to anonymize, and the promise is only as good as the verdict on the
@@ -38,10 +50,10 @@
    seen by no peer; and after `Logger::setLogFile()`, so the refusal lands in the daemon
    log where that author will look for it. In a container it therefore speaks on the very
    start whose migrations opened the gap — `docker.php` applies them before this runs.
-5. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
-6. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
-7. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-8. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+6. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
+7. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
+8. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
+9. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
 
 ## Container watchdog and crash recovery (HIL-450)
 

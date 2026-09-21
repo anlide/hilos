@@ -60,3 +60,6 @@ Thumbs.db
 # repository is ever meant to carry this file.
 protected-mode.state.json
 protected-mode.state.json.tmp
+# Owner claim a daemon leaves in its log directory (HIL-1083); ignored by name, not per demo.
+.hilos-log-root-owner.json
+.tmp-log-root-owner-*

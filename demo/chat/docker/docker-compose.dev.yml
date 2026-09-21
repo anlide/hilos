@@ -20,7 +20,7 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
-      - ../data/logs:/var/log/hilos
+      - ../data/logs-dev:/var/log/hilos
     working_dir: /app
     environment:
       - APP_ENV=dev

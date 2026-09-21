@@ -12,6 +12,7 @@ use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
+use Hilos\Log\LogRootOwnershipGuard;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\SessionStageStartupGuard;
 use Hilos\Utils\Logger;
@@ -24,7 +25,8 @@ use Throwable;
  * A daemon.php collapses to a single {@see run()} call naming its Hilos facade, its
  * manager class, and its persistence init. The spine runs the env prelude, checks the
  * environment against the project catalog and refuses to start naming every required value
- * that has no answer, points the logger at the daemon log, refuses a table that does not declare
+ * that has no answer, claims the log directory so another daemon cannot share it, points the
+ * logger at the daemon log, refuses a table that does not declare
  * whose set it is part of, refuses a browser connections roster without its session stage, lets
  * a node carrying backup refuse a schema it could not anonymize, constructs the manager, hands it
  * a {@see DaemonContext} to
@@ -71,6 +73,11 @@ final class DaemonApplication
             if ($missing !== []) {
                 throw MissingRequiredEnvironmentException::forNames($hilosClass, $missing);
             }
+
+            // A refusal that the log directory belongs to another daemon cannot be written into
+            // that daemon's journal. Logger without a file writes to stdout/stderr, which is
+            // `docker logs` — that is where this refusal has to land.
+            LogRootOwnershipGuard::claimLogRoot();
 
             Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]->string());
             Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]->string());
