@@ -80,7 +80,9 @@ The daemon applies migrations on startup. Endpoints (defaults):
 Every channel of the stand ends in that inbox: mail goes to Mailpit over SMTP,
 and an SMS or Telegram message is caught by the stand gateway and forwarded
 there as a letter to `<number>@sms.stand` or `<number>@telegram.stand`, with
-the message text as its subject. There is no file with the code on disk.
+the message text as its subject. There is no file with the code on disk;
+the dev stack (`docker-compose.dev.yml`) publishes its own Mailpit on
+http://localhost:8030.
 
 The nginx certificate is self-signed, so the browser warns once. Only HTTPS is
 published locally: the container's plain-HTTP vhost redirects to `https://$host`

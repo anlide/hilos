@@ -1,4 +1,4 @@
-# Docker Compose configuration for the DEV stack of the chat demo.
+# Docker Compose configuration for the DEV stack of the tasks demo.
 # Load environment variables from .env file in project root
 #
 # Every reference demo - chat, tasks and polls - carries a dev stack of this one shape
@@ -11,15 +11,69 @@
 # subnet is the demo's own, shared with its local and prod stacks: this stack runs
 # instead of them, not beside them.
 
-name: hilos-chat-dev
+name: hilos-tasks-dev
 
 services:
-  chat-dev:
+  # Mail interceptor for the dev stack, kept identical across the three demos so
+  # a stack is never a special case (P-062). Its web UI is published on the host,
+  # so a message is read where a person can see it. This demo mails nothing today
+  # — it activates NOTIFICATIONS without NOTIFICATION_DELIVERY — so the catcher is
+  # here for the day it does, and meanwhile it gives a stray message somewhere to
+  # land other than the work tree.
+  tasks-mailpit-dev:
+    image: axllent/mailpit:v1.21
+    container_name: tasks-mailpit-dev
+    environment:
+      # A local relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    ports:
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MAILPIT_HTTP_PORT:-8029}:8025"
+    restart: unless-stopped
+    networks:
+      - hilos-tasks-dev-network
+
+  # The stack's gateway for every non-mail channel (HIL-492, HIL-653): the daemon
+  # points its SMS and Telegram transports here, and everything the gateway catches
+  # it forwards to tasks-mailpit-dev as a letter. That is the whole point - a code
+  # sent to a phone is read in the browser beside the mailed ones, instead of being
+  # unreachable on a dev stack. Not published on the host: it is talked to by the
+  # daemon, and read through Mailpit's UI above.
+  tasks-stand-gateway-dev:
+    build:
+      context: ../../../framework/docker/stand-gateway
+    container_name: tasks-stand-gateway-dev
+    # The gateway runs on the framework's own TLS server (HIL-921) and loads the
+    # classes it needs from the framework itself, so there is still no composer here.
+    volumes:
+      - ../../../framework:/hilos/framework:ro
+    environment:
+      MAILPIT_SMTP_HOST: tasks-mailpit-dev
+      MAILPIT_SMTP_PORT: 1025
+      TZ: UTC
+    depends_on:
+      - tasks-mailpit-dev
+    restart: unless-stopped
+    networks:
+      # One name in every stack, and the name the gateway's certificate is issued
+      # for (HIL-921): the daemon checks the name of the peer it reaches, so the
+      # service name, which differs from stack to stack, cannot be the address.
+      hilos-tasks-dev-network:
+        aliases:
+          - stand-gateway
+
+  # The Hilos daemon. It has no database of its own: ../.env names one, or the
+  # container retries the connection, gives up and restarts (see the header).
+  tasks-daemon-dev:
     build: .
     env_file:
       - path: ../.env
         required: false
-    container_name: chat-daemon-dev
+    container_name: tasks-daemon-dev
     volumes:
       - ..:/app
       # Mount framework package to /hilos for composer path repository
@@ -45,17 +99,16 @@ services:
       # in this container (admin:create / admin:grant / admin:revoke /
       # protected-mode:open) reaches the command channel over loopback.
       - HILOS_DAEMON_HOST=127.0.0.1
-      # Mail goes to the stand's own interceptor, whose UI is published below, so
-      # a message can be read with the eyes instead of dug out of a .eml file. The
-      # transport is pinned rather than auto-selected: a stand that loses the
-      # catcher should fail loudly, not fall back to writing files nobody opens.
-      # The sender identity is NOT restated here — ../.env already carries it, and
-      # a value written here would shadow that one without saying so.
+      # Mail goes to the stack's own interceptor, whose UI is published above. The
+      # transport is pinned rather than auto-selected: a stack that loses the
+      # catcher should fail loudly, not fall back to writing .eml files nobody opens.
       - MAIL_TRANSPORT=smtp
-      - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-mailpit-dev}
+      - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-tasks-mailpit-dev}
       - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-1025}
       - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
-      # SMS and Telegram go to the stand's own gateway, which mails them on to the
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-notifications@tasks.local}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME:-Hilos Tasks}
+      # SMS and Telegram go to the stack's own gateway, which mails them on to the
       # same interceptor (HIL-653). A non-empty SMS endpoint is what picks the
       # generic HTTP provider over the stub, so the message really travels; the
       # Telegram token is fake but non-empty, because the gateway refuses a call
@@ -63,85 +116,40 @@ services:
       - SMS_ENDPOINT_URL=${SMS_ENDPOINT_URL:-https://stand-gateway:18000/sms/send}
       - TELEGRAM_GATEWAY_ENDPOINT_URL=${TELEGRAM_GATEWAY_ENDPOINT_URL:-https://stand-gateway:18000/telegram}
       - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN:-stand-gateway-token}
-      - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosChat}
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=${TELEGRAM_GATEWAY_SENDER_USERNAME:-HilosTasks}
       # The gateway answers over TLS with the stand's own certificate (HIL-921), and the
       # daemon verifies it the way it verifies a provider in production: the trust comes
       # from the environment, not from a switch in the client. OpenSSL reads this file
       # beside the system's certificate directory, so every other peer stays trusted.
       - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
+      # Where a mailed sign-in link comes back to (HIL-417). This stack serves no
+      # frontend, but the framework default names port 5173 - the chat demo's - so
+      # the link names this demo's own local dev server instead of another application.
+      - HILOS_MAGIC_LINK_URL=${HILOS_MAGIC_LINK_URL:-http://localhost:5174/auth/magic}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
+    depends_on:
+      - tasks-mailpit-dev
+      - tasks-stand-gateway-dev
     expose:
       - "8090"
       - "8091"
     restart: unless-stopped
     networks:
-      hilos-demo-chat-dev-network:
-        ipv4_address: ${DOCKER_DAEMON_IP:-10.196.0.11}
+      hilos-tasks-dev-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-10.197.0.11}
 
-  # Mail interceptor for the dev stand: the daemon sends over SMTP to it and its
-  # web UI is published on the host, so a verification code or a notification is
-  # read where a person can see it (P-062). Development mail never leaves the box
-  # — the catcher accepts everything and forwards nothing.
-  mailpit-dev:
-    image: axllent/mailpit:v1.21
-    container_name: chat-mailpit-dev
-    environment:
-      # A development relay authenticates nobody and encrypts nothing; the daemon
-      # connects with MAIL_SMTP_SECURITY=none and no credentials.
-      MP_SMTP_AUTH_ACCEPT_ANY: "1"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
-      TZ: UTC
-    ports:
-      # Host-side of every publish binds to loopback by default; set
-      # HILOS_BIND_HOST to expose this stack to a LAN/tailnet.
-      - "${HILOS_BIND_HOST:-127.0.0.1}:${MAILPIT_HTTP_PORT:-8028}:8025"
-    restart: unless-stopped
-    networks:
-      - hilos-demo-chat-dev-network
-
-  # The stand's gateway for every non-mail channel (HIL-653): the daemon points
-  # its SMS and Telegram transports here, and everything the gateway catches it
-  # forwards to mailpit-dev as a letter. That is the whole point — a code sent to
-  # a phone is read in the browser beside the mailed ones, instead of being
-  # unreachable on this stand. Not published on the host: it is talked to by the
-  # daemon, and read through Mailpit's UI above.
-  stand-gateway-dev:
-    build:
-      context: ../../../framework/docker/stand-gateway
-    container_name: chat-stand-gateway-dev
-    # The gateway runs on the framework's own TLS server (HIL-921) and loads the
-    # classes it needs from the framework itself, so there is still no composer here.
-    volumes:
-      - ../../../framework:/hilos/framework:ro
-    environment:
-      MAILPIT_SMTP_HOST: mailpit-dev
-      MAILPIT_SMTP_PORT: 1025
-      TZ: UTC
-    depends_on:
-      - mailpit-dev
-    restart: unless-stopped
-    networks:
-      # One name in every stack, and the name the gateway's certificate is issued
-      # for (HIL-921): the daemon checks the name of the peer it reaches, so the
-      # service name, which differs from stack to stack, cannot be the address.
-      hilos-demo-chat-dev-network:
-        aliases:
-          - stand-gateway
-
-  chat-cli-dev:
+  tasks-cli-dev:
     build: .
     env_file:
       - path: ../.env
         required: false
-    container_name: chat-cli-dev
+    container_name: tasks-cli-dev
     volumes:
       - ..:/app
-      # Mount framework package to /hilos for composer path repository
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
-      - ../../../scripts:/hilos/scripts:ro
     working_dir: /app
     environment:
       - APP_ENV=dev
@@ -149,42 +157,41 @@ services:
       # that reaches the gateway from here verifies it the same way.
       - SSL_CERT_FILE=/hilos/framework/docker/stand-gateway/tls/ca.pem
       - TERM=xterm-256color
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}
+      - DOCKER=true
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.197.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
       - COMMAND_PORT=8094
     profiles:
-      - composer
+      - cli
     networks:
-      - hilos-demo-chat-dev-network
+      - hilos-tasks-dev-network
 
-  chat-monitor-dev:
+  tasks-monitor-dev:
     build: .
     env_file:
       - path: ../.env
         required: false
-    container_name: chat-monitor-dev
+    container_name: tasks-monitor-dev
     volumes:
       - ..:/app
-      # Mount framework package to /hilos for composer path repository
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
     working_dir: /app
     environment:
       - APP_ENV=dev
-      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.196.0.11}
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-10.197.0.11}
       - HTTP_STATUS_PORT=8090
       - WORKER_COMM_PORT=8091
       - COMMAND_PORT=8094
     profiles:
       - monitor
-    restart: unless-stopped
     networks:
-      - hilos-demo-chat-dev-network
+      - hilos-tasks-dev-network
 
 networks:
-  hilos-demo-chat-dev-network:
+  hilos-tasks-dev-network:
     driver: bridge
     ipam:
       config:
@@ -196,4 +203,4 @@ networks:
         # fails to start with "Pool overlaps with other one on this address space".
         # 10.0.0.0/8 is never auto-assigned
         # (demo/cluster/docker/docker-compose.cluster.yml).
-        - subnet: ${DOCKER_NETWORK_SUBNET:-10.196.0.0/16}
+        - subnet: ${DOCKER_NETWORK_SUBNET:-10.197.0.0/16}
