@@ -1,12 +1,13 @@
 import { mount } from '@vue/test-utils'
 import type { HilosLicenseEntry } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import HilosLicensePage from './HilosLicensePage.vue'
 
 // The modal teleports to <body>, so its assertions query the document rather
 // than the wrapper — the same as HilosModal's own test.
 afterEach(() => {
+  vi.unstubAllGlobals()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -24,6 +25,7 @@ function entry(over: Partial<HilosLicenseEntry> = {}): HilosLicenseEntry {
 }
 
 const inventory = {
+  project: 'demo-chat',
   entries: [
     entry(),
     entry({ name: 'bootstrap', version: '5.3.3', licenseText: null }),
@@ -150,5 +152,29 @@ describe('HilosLicensePage', () => {
     expect(status.attributes('role')).toBe('status')
     expect(status.attributes('aria-live')).toBe('polite')
     expect(status.text()).toBe('')
+  })
+
+  it("hands the list over under the project's own file name", async () => {
+    const wrapper = mountPage()
+
+    const anchor = {
+      href: '',
+      download: '',
+      click: vi.fn(),
+      remove: vi.fn(),
+    }
+    vi.stubGlobal('document', {
+      createElement: vi.fn(() => anchor),
+      body: { appendChild: vi.fn() },
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:hilos/test'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    await wrapper.find('[data-id="license-download"]').trigger('click')
+
+    expect(anchor.download).toBe('demo-chat-license-hilos-framework.csv')
+    expect(anchor.click).toHaveBeenCalledOnce()
   })
 })

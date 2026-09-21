@@ -26,6 +26,7 @@ import {
   copyToClipboard,
   downloadTextFile,
   filterLicenseEntries,
+  licenseCsvFileName,
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,
@@ -40,8 +41,7 @@ const props = defineProps<{
   inventory: HilosLicenseInventory
 }>()
 
-/** The file the list is handed over as, and the type it is offered under. */
-const DOWNLOAD_FILE_NAME = 'licenses.csv'
+/** The type the export is offered under. */
 const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 
 const search = ref('')
@@ -93,7 +93,7 @@ async function onCopy(): Promise<void> {
 
 function onDownload(): void {
   downloadTextFile(
-    DOWNLOAD_FILE_NAME,
+    licenseCsvFileName(props.inventory.project),
     renderLicenseCsv(visible.value),
     DOWNLOAD_MIME_TYPE,
   )

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   filterLicenseEntries,
   type HilosLicenseEntry,
+  licenseCsvFileName,
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,
@@ -152,5 +153,31 @@ describe('renderLicenseCsv', () => {
     const csv = renderLicenseCsv([entry({ licenseText: 'Copyright Evan You' })])
 
     expect(csv).not.toContain('Copyright')
+  })
+})
+
+describe('licenseCsvFileName', () => {
+  it('builds a hyphenated file name for an ordinary project name', () => {
+    expect(licenseCsvFileName('demo-chat')).toBe(
+      'demo-chat-license-hilos-framework.csv',
+    )
+  })
+
+  it('normalizes npm scope characters and uppercase letters to a clean slug', () => {
+    expect(licenseCsvFileName('@acme/Shop')).toBe(
+      'acme-shop-license-hilos-framework.csv',
+    )
+  })
+
+  it('falls back to the base file name when nothing remains after sanitization', () => {
+    expect(licenseCsvFileName('')).toBe('license-hilos-framework.csv')
+    expect(licenseCsvFileName('///')).toBe('license-hilos-framework.csv')
+  })
+
+  it('preserves full length for a maximal 214-character npm package name', () => {
+    const longName = 'a'.repeat(214)
+    expect(licenseCsvFileName(longName)).toBe(
+      `${longName}-license-hilos-framework.csv`,
+    )
   })
 })

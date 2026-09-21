@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { HilosLicenseEntry } from '@hilos/core'
 
@@ -10,6 +10,7 @@ import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
 // its assertions query the document rather than the render — the same as
 // HilosModal's own test.
 afterEach(() => {
+  vi.unstubAllGlobals()
   cleanup()
   document.body.classList.remove('modal-open')
 })
@@ -27,6 +28,7 @@ function entry(over: Partial<HilosLicenseEntry> = {}): HilosLicenseEntry {
 }
 
 const inventory = {
+  project: 'demo-tasks',
   entries: [
     entry(),
     entry({ name: 'bootstrap', version: '5.3.3', licenseText: null }),
@@ -176,5 +178,31 @@ describe('HilosLicensePage', () => {
     expect(status?.getAttribute('role')).toBe('status')
     expect(status?.getAttribute('aria-live')).toBe('polite')
     expect(status?.textContent).toBe('')
+  })
+
+  it("hands the list over under the project's own file name", () => {
+    mountPage()
+    const button = byId('license-download')
+    expect(button).not.toBeNull()
+
+    const anchor = {
+      href: '',
+      download: '',
+      click: vi.fn(),
+      remove: vi.fn(),
+    }
+    vi.stubGlobal('document', {
+      createElement: vi.fn(() => anchor),
+      body: { appendChild: vi.fn() },
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:hilos/test'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    fireEvent.click(button!)
+
+    expect(anchor.download).toBe('demo-tasks-license-hilos-framework.csv')
+    expect(anchor.click).toHaveBeenCalledOnce()
   })
 })

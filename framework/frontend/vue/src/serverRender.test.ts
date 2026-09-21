@@ -8,6 +8,7 @@ import HilosModal from './HilosModal.vue'
 import HilosLicensePage from './public/HilosLicensePage.vue'
 
 const inventory = {
+  project: 'demo-chat',
   entries: [
     {
       name: 'vue',

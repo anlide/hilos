@@ -186,6 +186,7 @@ export {
   type HilosLicenseEntry,
   type HilosLicenseFilter,
   type HilosLicenseInventory,
+  licenseCsvFileName,
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,

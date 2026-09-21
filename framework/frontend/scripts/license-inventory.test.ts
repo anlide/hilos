@@ -10,6 +10,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 
 import {
   collectLicenseEntries,
+  readProjectName,
   renderInventoryModule,
 } from './license-inventory.mjs'
 
@@ -225,8 +226,14 @@ it('reads the license text out of the installed package', () => {
 it('orders the rows by name, so two runs over one tree agree byte for byte', () => {
   writeTree()
 
-  const first = renderInventoryModule(collectLicenseEntries(frontendDir()))
-  const second = renderInventoryModule(collectLicenseEntries(frontendDir()))
+  const first = renderInventoryModule(
+    collectLicenseEntries(frontendDir()),
+    'demo-chat',
+  )
+  const second = renderInventoryModule(
+    collectLicenseEntries(frontendDir()),
+    'demo-chat',
+  )
 
   expect(first).toBe(second)
   expect(names()).toEqual([...names()].sort((a, b) => a.localeCompare(b, 'en')))
@@ -270,7 +277,10 @@ it('goes on when the SDK workspace is not installed, since its rows stay truthfu
 it('renders a module the demo can import and typecheck', () => {
   writeTree()
 
-  const module = renderInventoryModule(collectLicenseEntries(frontendDir()))
+  const module = renderInventoryModule(
+    collectLicenseEntries(frontendDir()),
+    'demo-chat',
+  )
 
   expect(module).toContain(
     "import type { HilosLicenseInventory } from '@hilos/core'",
@@ -278,6 +288,7 @@ it('renders a module the demo can import and typecheck', () => {
   expect(module).toContain(
     'export const hilosLicenseInventory: HilosLicenseInventory = {',
   )
+  expect(module).toContain("  project: 'demo-chat',")
   expect(module).toContain("name: 'anlide/hilos',")
   expect(module).toContain('licenseText: null,')
 })
@@ -289,9 +300,43 @@ it('escapes a license text that carries quotes and newlines', () => {
     'a \'quoted\' line\nand a "double" one\n',
   )
 
-  const module = renderInventoryModule(collectLicenseEntries(frontendDir()))
+  const module = renderInventoryModule(
+    collectLicenseEntries(frontendDir()),
+    'demo-chat',
+  )
 
   expect(module).toContain(
     "licenseText: 'a \\'quoted\\' line\\nand a \"double\" one\\n',",
   )
+})
+
+it("reads the project's root name from its npm lockfile", () => {
+  writeTree()
+  writeJsonAt('project/frontend/package-lock.json', {
+    name: 'demo-chat',
+    lockfileVersion: 3,
+    packages: {},
+  })
+
+  expect(readProjectName(frontendDir())).toBe('demo-chat')
+})
+
+it('falls back to the project directory name when the lockfile has no name', () => {
+  writeTree()
+  writeJsonAt('project/frontend/package-lock.json', {
+    lockfileVersion: 3,
+    packages: {},
+  })
+
+  expect(readProjectName(frontendDir())).toBe('project')
+})
+
+it('renders the project name as the first property of the snapshot and escapes it', () => {
+  const module = renderInventoryModule([], "demo's-chat\nsecond")
+
+  expect(module).toContain("  project: 'demo\\'s-chat\\nsecond',")
+  const projectIdx = module.indexOf("  project: 'demo\\'s-chat\\nsecond',")
+  const entriesIdx = module.indexOf('  entries: [')
+  expect(projectIdx).toBeGreaterThan(-1)
+  expect(entriesIdx).toBeGreaterThan(projectIdx)
 })

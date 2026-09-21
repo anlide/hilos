@@ -7,6 +7,7 @@ import { HilosModal } from '../src/HilosModal.js'
 import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
 
 const inventory = {
+  project: 'demo-tasks',
   entries: [
     {
       name: 'react',

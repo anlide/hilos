@@ -26,6 +26,7 @@ import {
   copyToClipboard,
   downloadTextFile,
   filterLicenseEntries,
+  licenseCsvFileName,
   licenseFilterOptions,
   licenseLanguageLabel,
   renderLicenseCsv,
@@ -35,8 +36,7 @@ import { HilosLongText } from '../HilosLongText.js'
 import { HilosModal } from '../HilosModal.js'
 import { HilosStaticPage } from '../HilosStaticPage.js'
 
-/** The file the list is handed over as, and the type it is offered under. */
-const DOWNLOAD_FILE_NAME = 'licenses.csv'
+/** The type the export is offered under. */
 const DOWNLOAD_MIME_TYPE = 'text/csv;charset=utf-8'
 
 /** Props for {@link HilosLicensePage}. */
@@ -93,7 +93,7 @@ export function HilosLicensePage({
 
   function onDownload(): void {
     downloadTextFile(
-      DOWNLOAD_FILE_NAME,
+      licenseCsvFileName(inventory.project),
       renderLicenseCsv(visible),
       DOWNLOAD_MIME_TYPE,
     )

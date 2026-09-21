@@ -28,6 +28,8 @@ export interface HilosLicenseEntry {
 
 /** The whole snapshot, as the page receives it in one prop. */
 export interface HilosLicenseInventory {
+  /** The name of the project this snapshot was taken of, as its own lockfile writes it. */
+  readonly project: string
   readonly entries: readonly HilosLicenseEntry[]
 }
 
@@ -167,4 +169,22 @@ export function renderLicenseCsv(
   }
 
   return `${lines.join(CSV_LINE_END)}${CSV_LINE_END}`
+}
+
+/** The tail every export carries, so a file in a downloads folder says what built it. */
+const CSV_FILE_NAME_TAIL = 'license-hilos-framework.csv'
+
+/**
+ * Build the download file name for a project's license inventory export.
+ *
+ * @param project The name of the project, typically from the snapshot's project field.
+ * @returns `<slug>-license-hilos-framework.csv`, or `'license-hilos-framework.csv'` when empty.
+ */
+export function licenseCsvFileName(project: string): string {
+  const slug = project
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return slug === '' ? CSV_FILE_NAME_TAIL : `${slug}-${CSV_FILE_NAME_TAIL}`
 }

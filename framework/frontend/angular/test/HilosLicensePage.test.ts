@@ -7,9 +7,13 @@
 // its dialog alike.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import type { HilosLicenseEntry } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosLicensePage } from '../src/public/HilosLicensePage.js'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function entry(over: Partial<HilosLicenseEntry> = {}): HilosLicenseEntry {
   return {
@@ -24,6 +28,7 @@ function entry(over: Partial<HilosLicenseEntry> = {}): HilosLicenseEntry {
 }
 
 const inventory = {
+  project: 'demo-polls',
   entries: [
     entry(),
     entry({ name: 'bootstrap', version: '5.3.3', licenseText: null }),
@@ -230,5 +235,31 @@ describe('HilosLicensePage', () => {
     expect(status?.getAttribute('role')).toBe('status')
     expect(status?.getAttribute('aria-live')).toBe('polite')
     expect(status?.textContent).toBe('')
+  })
+
+  it("hands the list over under the project's own file name", () => {
+    const fixture = mountPage()
+    const button = byId(fixture, 'license-download')
+    expect(button).not.toBeNull()
+
+    const anchor = {
+      href: '',
+      download: '',
+      click: vi.fn(),
+      remove: vi.fn(),
+    }
+    vi.stubGlobal('document', {
+      createElement: vi.fn(() => anchor),
+      body: { appendChild: vi.fn() },
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:hilos/test'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    button!.click()
+
+    expect(anchor.download).toBe('demo-polls-license-hilos-framework.csv')
+    expect(anchor.click).toHaveBeenCalledOnce()
   })
 })

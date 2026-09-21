@@ -19,6 +19,7 @@ import process from 'node:process'
 
 import {
   collectLicenseEntries,
+  readProjectName,
   renderInventoryModule,
 } from './license-inventory.mjs'
 
@@ -53,8 +54,9 @@ const outFile =
     : resolve(out)
 
 const entries = collectLicenseEntries(frontendDir)
+const project = readProjectName(frontendDir)
 
 mkdirSync(dirname(outFile), { recursive: true })
-writeFileSync(outFile, renderInventoryModule(entries))
+writeFileSync(outFile, renderInventoryModule(entries, project))
 
 console.log(`license inventory: ${entries.length} packages -> ${outFile}`)
