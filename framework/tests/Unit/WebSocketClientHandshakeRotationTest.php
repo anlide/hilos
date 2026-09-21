@@ -8,13 +8,21 @@ use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Unit tests for the rotation ticket the master trades on the 101 (HIL-582).
@@ -47,8 +55,12 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
 
     private ?RtContext $previousRt = null;
 
+    private string $logFile = '';
+
     protected function setUp(): void
     {
+        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-rotation-burn-log');
+        Logger::setLogFile($this->logFile);
         $this->previousSignalRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
         $this->previousEnv = Hilos::$env;
@@ -64,6 +76,11 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
 
     protected function tearDown(): void
     {
+        Logger::resetLogFile();
+        if (is_file($this->logFile)) {
+            unlink($this->logFile);
+        }
+        SourceChangeBus::reset();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
@@ -191,6 +208,28 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
         $this->assertSame(1, substr_count($outbound, 'Set-Cookie:'));
     }
 
+    public function testABurnASubscriberRefusesStillSendsTheRotatedCookie(): void
+    {
+        Hilos::$rt?->bindStateCollectionNames();
+        SourceChangeBus::reset();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        SourceChangeBus::subscribe(new RefusingRotationBurnSubscriber());
+        $this->announceRotation(['ak-second-tab']);
+        $dropper = new RecordingConnectionDropper();
+        $probe = $this->handshakenProbe(SessionToken::mint(), self::TICKET, $dropper);
+
+        $this->assertFalse($probe->shouldClose());
+        $this->assertSame(self::ROTATED_TOKEN, $this->issuedToken($probe->outboundBytes()));
+        $probe->flushOutbound();
+        $this->assertSame(['ak-second-tab'], $dropper->dropped);
+        $this->assertNull(Hilos::$rt?->hilosSessionRotations->claimable(self::TICKET));
+        $lines = $this->writtenLines();
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('Session rotation could not be burned', $lines[0]);
+        $this->assertStringContainsString(RefusingRotationBurnSubscriber::REFUSAL, $lines[0]);
+        $this->assertStringNotContainsString(self::TICKET, $lines[0]);
+    }
+
     /**
      * Announces a rotation the way the session seam does from its worker.
      *
@@ -276,6 +315,25 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
 
         return $matches[1];
     }
+
+    /**
+     * Reads back the journal lines written since the test started.
+     *
+     * @return list<string> Written lines, empty when the journal stayed silent
+     */
+    private function writtenLines(): array
+    {
+        if (!is_file($this->logFile)) {
+            return [];
+        }
+
+        $written = rtrim((string)file_get_contents($this->logFile), "\n");
+        if ($written === '') {
+            return [];
+        }
+
+        return explode("\n", $written);
+    }
 }
 
 /**
@@ -308,5 +366,24 @@ final class RecordingConnectionDropper implements ConnectionDropper
         $this->dropped[] = $acceptKey;
 
         return true;
+    }
+}
+
+/**
+ * Bus subscriber standing in for OutboundRtSyncSubscriber, the only bus subscriber today
+ * that can refuse the burn of a session rotation.
+ */
+final class RefusingRotationBurnSubscriber implements SourceChangeSubscriberInterface
+{
+    public const string REFUSAL = 'the burn could not be carried on';
+
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        if ($change->isRt()
+            && $change->sourceKey === StateHilosSessionRotation::RT_COLLECTION
+            && $change->mutationType === TableMutationType::Delete
+        ) {
+            throw new RuntimeException(self::REFUSAL);
+        }
     }
 }

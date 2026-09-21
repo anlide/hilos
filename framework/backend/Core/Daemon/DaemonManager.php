@@ -6535,9 +6535,10 @@ abstract class DaemonManager extends BaseManager implements
      * master writes its own - so it is nobody's to announce and is refused as any other write of
      * a collection this node writes itself. The rotation store is the opposite: one cluster-wide
      * store, written by the agent that owns the session seam and by whichever master trades a
-     * ticket on a 101 (HIL-582). That second writer is a master, on any node, so the burn has to
-     * travel and has to be applied where the agent lives - or the spent ticket survives there and
-     * buys a second handshake inside its TTL.
+     * ticket on a 101 (HIL-582). That second writer is a master, on any node, so the burn travels
+     * and is applied where the agent lives. That is bookkeeping, not the guard of the one-time
+     * property: a ticket whose burn did not travel can be presented again only by the browser that
+     * did not receive its 101, the person it was issued to (HIL-1047).
      *
      * @param string $collectionKey Runtime collection a write belongs to
      * @return bool True for the collection masters co-write with its owner

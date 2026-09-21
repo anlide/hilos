@@ -144,6 +144,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var int Byte length of the minted connection identifier (128-bit) */
     private const int ACCEPT_KEY_RANDOM_BYTES = 16;
 
+    /**
+     * Replacement for the rotation ticket in the burn refusal log line. The ticket is still live
+     * at the sessions agent and on peer nodes during this moment, while the log is visible to
+     * readers beyond the single browser the ticket was issued to (HIL-1047).
+     */
+    private const string LOGGED_TICKET_MASK = '[ticket]';
+
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
 
@@ -217,7 +224,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     protected function processReadBuffer(): void
     {
@@ -520,6 +526,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Contained for the same reason as the lookup, and the failure is benign: the row that
      * was not burned is swept by the owning agent when its moment passes.
      *
+     * Two species are contained, and no wider one: a runtime refusal, and a bus subscriber's
+     * refusal to carry the burn on - the sync to the sessions agent and to the other nodes'
+     * masters. The line is an error because the second one means that sync is broken. The
+     * ticket is masked in it: while the burn has not traveled the ticket is still live there,
+     * and a log has more readers than the one browser the ticket was issued to (HIL-1047).
+     *
      * @param HilosSessionRotation $rotation Rotation this handshake traded its ticket for
      */
     private function spendRotation(HilosSessionRotation $rotation): void
@@ -530,8 +542,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         try {
             Hilos::$rt?->hilosSessionRotations->actions->forget($rotation->ticket);
-        } catch (RtBaseException $exception) {
-            Logger::error('Session rotation could not be burned', ['error' => $exception->getMessage()]);
+        } catch (RtBaseException | SourceChangeSubscriberException $exception) {
+            Logger::error('Session rotation could not be burned', [
+                'error' => str_replace($rotation->ticket, self::LOGGED_TICKET_MASK, $exception->getMessage()),
+            ]);
         }
     }
 
