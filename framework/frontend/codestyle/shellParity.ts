@@ -5,9 +5,11 @@
 // This is deliberately a lexical sieve, not a conformance proof. It cannot see
 // a data-id assembled wholly from a variable or call, a surface first added
 // outside Vue, or a behavioral difference behind equal handles (HIL-902 is the
-// known example). Angular templateUrl is not followed either: the tree carries
-// no external Angular template today, and following one would make the reader
-// a second traversal rather than the single walk this rule promises.
+// known example). A name React or Angular hands an SDK component as its dataId
+// prop is taken on trust: nothing checks that the component renders it. Angular
+// templateUrl is not followed either: the tree carries no external Angular
+// template today, and following one would make the reader a second traversal
+// rather than the single walk this rule promises.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
@@ -46,9 +48,12 @@ const SKIPPED_DIRECTORIES = [
 /** Broken checker fixtures are judged only by their own focused tests. */
 const EXCLUDED_PATHS = ['framework/frontend/codestyle/fixtures']
 
-/** Every spelling in which the three view layers author a data-id. */
+/** Every spelling in which the three view layers author or pass a data-id. */
 const DATA_ID_ATTRIBUTE =
-  /(^|\s)(data-id|:data-id|v-bind:data-id|\[attr\.data-id\])\s*=\s*/g
+  /(^|\s)(data-id|dataId|:data-id|v-bind:data-id|\[attr\.data-id\]|\[dataId\])\s*=\s*/g
+
+/** Spellings whose quoted value is the handle itself rather than an expression. */
+const LITERAL_SPELLINGS = ['data-id', 'dataId']
 
 /** A public re-export block in a package's root index. */
 const EXPORT_BLOCK =
@@ -367,7 +372,7 @@ function exportedName(entry: string): string | null {
 }
 
 /**
- * @param attribute Attribute spelling as authored by its view layer
+ * @param attribute Attribute or prop spelling as authored by its view layer
  * @param value Lexical value after its equals sign
  * @returns Literal handle or readable dynamic prefix, null when opaque
  */
@@ -375,7 +380,7 @@ function normalizeDataId(
   attribute: string,
   value: AttributeValue,
 ): string | null {
-  if (attribute === 'data-id' && !value.expression) {
+  if (LITERAL_SPELLINGS.includes(attribute) && !value.expression) {
     return value.text
   }
 

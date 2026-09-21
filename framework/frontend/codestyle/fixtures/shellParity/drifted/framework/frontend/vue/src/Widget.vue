@@ -10,6 +10,7 @@
   <div data-id="repeated" />
   <div data-id="repeated" />
   <div :data-id="dataId" />
+  <HilosChild data-id="react-prop-only" />
   <!-- <div data-id="commented-out" /> -->
   <span>{{ example }}</span>
 </template>

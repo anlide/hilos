@@ -2,12 +2,6 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
-SHELL-PARITY framework/frontend/vue/src/HilosActionError.vue 1 # HIL-597
-SHELL-PARITY framework/frontend/vue/src/admin/backup/HilosBackupPage.vue 6 # HIL-597
-SHELL-PARITY framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.vue 2 # HIL-597
-SHELL-PARITY framework/frontend/vue/src/admin/users/HilosUserPage.vue 1 # HIL-597
-SHELL-PARITY framework/frontend/vue/src/auth/HilosAuthSurface.vue 6 # HIL-597
-SHELL-PARITY framework/frontend/vue/src/public/HilosLicensePage.vue 1 # HIL-597
 STYLE-INLINE demo/chat/frontend/src/views/AdminBots/AdminBots.vue 1 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/AdminModerator/AdminModerator.vue 1 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 8 # HIL-449

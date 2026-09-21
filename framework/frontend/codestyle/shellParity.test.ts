@@ -40,6 +40,7 @@ it('reports exactly the surfaces and exports the drifted tree seeds', () => {
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:9 — the surface 'repeated' has no counterpart in react, angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:10 — the surface 'repeated' has no counterpart in react, angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:11 — the surface 'repeated' has no counterpart in react, angular ${DOC}`,
+    `SHELL-PARITY framework/frontend/vue/src/Widget.vue:13 — the surface 'react-prop-only' has no counterpart in angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/index.ts:2 — the component 'VueOnlyComponent' is exported by vue and not by angular ${DOC}`,
   ])
 })
