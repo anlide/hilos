@@ -152,6 +152,14 @@ describe('HilosLicensePage', () => {
     )
   })
 
+  it('opens the license text in a wide dialog', () => {
+    mountPage()
+    clickRow(0)
+    expect(
+      document.querySelector('.modal-dialog')?.classList.contains('modal-lg'),
+    ).toBe(true)
+  })
+
   it('opens a package that ships no license file on the second state', () => {
     mountPage()
     clickRow(1)

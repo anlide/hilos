@@ -64,6 +64,18 @@ class DialogFocusHost {}
 })
 class ConfirmFocusHost {}
 
+/** A guarded modal whose width the opening surface can choose. */
+@Component({
+  selector: 'test-modal-size-host',
+  imports: [HilosModal],
+  template: `
+    <hilos-modal [open]="true" [confirmOnClose]="true" [size]="size()" />
+  `,
+})
+class SizeHost {
+  readonly size = signal<'' | 'wide'>('')
+}
+
 /**
  * Mount the host and render its modal effects.
  *
@@ -150,6 +162,27 @@ describe('HilosModal', () => {
     fixture.detectChanges()
 
     expect(layerDepths('[data-id="modal-confirm"]')).toEqual(['1'])
+  })
+
+  it('stands wide when the surface asks for it, and keeps the confirm step narrow', () => {
+    const fixture = TestBed.createComponent(SizeHost)
+    fixture.detectChanges()
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    fixture.detectChanges()
+
+    let dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs).toHaveLength(2)
+    dialogs.forEach((dialog) => {
+      expect(dialog.classList.contains('modal-lg')).toBe(false)
+    })
+
+    fixture.componentInstance.size.set('wide')
+    fixture.detectChanges()
+    dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs[0]?.classList.contains('modal-lg')).toBe(true)
+    expect(dialogs[1]?.classList.contains('modal-lg')).toBe(false)
   })
 
   it('opens the next modal over a lone one on layer 1 again after the upper closed', () => {

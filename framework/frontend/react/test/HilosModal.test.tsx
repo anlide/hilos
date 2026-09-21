@@ -278,6 +278,22 @@ describe('HilosModal', () => {
     })
   })
 
+  it('stands wide when the surface asks for it, and keeps the confirm step narrow', () => {
+    const view = render(<HilosModal open confirmOnClose />)
+    fireEvent.click(byId('modal-close') as Element)
+
+    let dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs).toHaveLength(2)
+    dialogs.forEach((dialog) => {
+      expect(dialog.classList.contains('modal-lg')).toBe(false)
+    })
+
+    view.rerender(<HilosModal open confirmOnClose size="wide" />)
+    dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs[0]?.classList.contains('modal-lg')).toBe(true)
+    expect(dialogs[1]?.classList.contains('modal-lg')).toBe(false)
+  })
+
   it('draws a footer with just the copy button when there are no actions', () => {
     recordingClipboard()
     render(<HilosModal open copyText="hilos restore --archive x" />)

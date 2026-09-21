@@ -209,6 +209,16 @@ describe('HilosLicensePage', () => {
     )
   })
 
+  it('opens the license text in a wide dialog', () => {
+    const fixture = mountPage()
+    clickRow(fixture, 0)
+    expect(
+      byId(fixture, 'modal')
+        ?.querySelector('.modal-dialog')
+        ?.classList.contains('modal-lg'),
+    ).toBe(true)
+  })
+
   it('opens a package that ships no license file on the second state', () => {
     const fixture = mountPage()
     clickRow(fixture, 1)

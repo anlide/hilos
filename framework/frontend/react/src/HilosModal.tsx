@@ -10,6 +10,9 @@
 // dialog is not changed by it at all. On a narrow screen the dialog becomes a
 // sheet at the bottom edge and its buttons a full-width column, main action on
 // top — inside the modal, so no surface that opens one is touched.
+// The dialog stays narrow by default; `size='wide'` applies Bootstrap's modal-lg
+// when the opening surface knows its content is a table or an analysis
+// (mockups/components/modal, the Sizes node).
 // Copy is the modal's own button: pass `copyText` and it draws one first in the
 // footer, because a long technical text almost always has to be carried
 // somewhere else, and the rule for showing such a text belongs here rather than
@@ -88,6 +91,12 @@ export interface HilosModalProps {
    * is drawn by another component and the mark lives there.
    */
   initialFocus?: '' | 'dialog' | 'inner'
+  /**
+   * The width the content asks for. Empty keeps the narrow default; `'wide'`
+   * applies the mockup's wide size for a table or an analysis. The opening
+   * surface owns this choice because it knows what the dialog contains.
+   */
+  size?: '' | 'wide'
   /** Close on the Escape key (through the confirm guard). Defaults to true. */
   closeOnEsc?: boolean
   /** Close on a backdrop click (through the confirm guard). Defaults to true. */
@@ -130,6 +139,7 @@ export function HilosModal({
   ariaLabel = '',
   ariaLabelledby = '',
   initialFocus = '',
+  size = '',
   closeOnEsc = true,
   closeOnBackdrop = true,
   confirmOnClose = false,
@@ -258,7 +268,9 @@ export function HilosModal({
           }
         }}
       >
-        <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet">
+        <div
+          className={`modal-dialog modal-dialog-centered modal-dialog-scrollable hilos-modal-sheet${size === 'wide' ? ' modal-lg' : ''}`}
+        >
           <div className="modal-content">
             <div className="modal-header">
               {header ??

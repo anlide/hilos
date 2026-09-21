@@ -126,6 +126,14 @@ describe('HilosLicensePage', () => {
     ).toBe('https://github.com/vuejs/core')
   })
 
+  it('opens the license text in a wide dialog', async () => {
+    const wrapper = mountPage()
+    await wrapper.findAll('[data-id="license-row"]')[0].trigger('click')
+    expect(
+      document.querySelector('.modal-dialog')?.classList.contains('modal-lg'),
+    ).toBe(true)
+  })
+
   it('opens a package that ships no license file on the second state', async () => {
     const wrapper = mountPage()
     await wrapper.findAll('[data-id="license-row"]')[1].trigger('click')

@@ -232,6 +232,27 @@ describe('HilosModal', () => {
     })
   })
 
+  it('stands wide when the surface asks for it, and keeps the confirm step narrow', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await wrapper.vm.$nextTick()
+
+    let dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs).toHaveLength(2)
+    dialogs.forEach((dialog) => {
+      expect(dialog.classList.contains('modal-lg')).toBe(false)
+    })
+
+    await wrapper.setProps({ size: 'wide' })
+    dialogs = document.querySelectorAll('.modal-dialog')
+    expect(dialogs[0]?.classList.contains('modal-lg')).toBe(true)
+    expect(dialogs[1]?.classList.contains('modal-lg')).toBe(false)
+  })
+
   it('draws a footer with just the copy button when there are no actions', () => {
     recordingClipboard()
     mount(HilosModal, {
