@@ -14,6 +14,7 @@
 // type import is erased before any of that happens; everything a helper needs at
 // runtime arrives through the `Page` it is handed.
 
+export { watchFirstRowTop, watchHeight, watchTop, Watched } from './geometry.js'
 export { dismissToasts } from './toasts.js'
 export {
   clearCustomSetting,
@@ -21,4 +22,10 @@ export {
   openSettingEdit,
   setCustomSetting,
 } from './settings.js'
-export { shownByTestId, sidewaysOverflow } from './table.js'
+export {
+  ROW_PREFIX,
+  ROWS,
+  TABLE,
+  shownByTestId,
+  sidewaysOverflow,
+} from './table.js'

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { watchFirstRowTop } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
@@ -7,7 +8,6 @@ import {
   expectTableTotal,
   goToLastPage,
   pageBackOnce,
-  tableFirstRowTop,
   tableRowKeyByText,
   tableRowKeys,
   tableTotal,
@@ -284,7 +284,7 @@ test('a bot created above the window is announced, and Show brings the window le
   const keysBefore = await tableRowKeys(tabB)
   // Where B's first row stands before anything is said: the strip comes into room
   // the table already held, so neither its arrival nor its leaving moves a row.
-  const firstRowTop = await tableFirstRowTop(tabB)
+  const rowTop = await watchFirstRowTop(tabB)
 
   // A creates a bot that sorts before every other: first on A's own window, and
   // on a page above the one B is standing on.
@@ -299,7 +299,7 @@ test('a bot created above the window is announced, and Show brings the window le
   await expectTableTotal(tabB, base + 1)
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  expect(await tableFirstRowTop(tabB)).toBe(firstRowTop)
+  await rowTop.unchanged()
 
   // Show asks for the window again at the place B stands, the same answer a
   // reload of that window gives: the strip goes, and a window arrives holding the
@@ -309,7 +309,7 @@ test('a bot created above the window is announced, and Show brings the window le
   await expect.poll(tableWindowsOfB).toBeGreaterThan(tableWindowsBeforeShow)
   await expect(strip).toHaveCount(0)
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
-  expect(await tableFirstRowTop(tabB)).toBe(firstRowTop)
+  await rowTop.unchanged()
   await expectTableTotal(tabB, base + 1)
   await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
 

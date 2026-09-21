@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test'
+import { ROW_PREFIX, ROWS, TABLE } from '../../../../../framework/frontend/e2e/index.js'
 
 // What a spec reads off a live viewport table (HilosViewportTable) and how it
 // moves the table's window. Every handle is one the table's own registry names
@@ -9,9 +10,6 @@ import { expect, type Locator, type Page } from '@playwright/test'
 // here asserts with `expect`, a value import from @playwright/test that the
 // shared folder refuses (its index.ts), and a helper that drives Playwright stays
 // with the demo that runs it (HIL-954).
-
-/** The root the table draws under; a page with one table keeps the default. */
-const TABLE = 'hilos-viewport-table'
 
 /** The footer's count: `${N} total` while it is exact, `${N}+ total` at the ceiling. */
 const COUNT = 'hilos-table-count'
@@ -24,16 +22,6 @@ const NEXT = 'hilos-table-next'
 
 /** The control that turns one page back, disabled exactly when there is none. */
 const PREV = 'hilos-table-prev'
-
-/** What every row of the window carries in `data-id`, followed by its row key. */
-const ROW_PREFIX = 'hilos-table-row-'
-
-/**
- * The rows of the window in the order they are drawn. The detail an expanded row
- * opens shares the prefix without being a row, and the card branch names its rows
- * differently, so reading the table's own body leaves exactly the rows.
- */
-const ROWS = `tbody [data-id^="${ROW_PREFIX}"]:not([data-id^="${ROW_PREFIX}detail-"])`
 
 /**
  * The rows of the window as a locator.
@@ -91,36 +79,6 @@ export async function tableRowKeys(page: Page): Promise<string[]> {
   )
 
   return ids.map((id) => id.slice(ROW_PREFIX.length))
-}
-
-/**
- * Read how far below the top of the table's root its first row stands.
- *
- * A live message over the table takes room that was held before it arrived, so
- * this number is the same before a message comes and after it goes
- * (styling-rules.md, "The room a live message takes"): the room stands between
- * the root's top and the rows, and any change of its height changes the number.
- *
- * It is read against the root rather than against the screen or the document:
- * the shell scrolls its own main container (HilosLayout), a click scrolls its
- * target into view there, and a row that stood still would read as moved
- * (HIL-1032, a 22px drift after Show). Both edges are read in one pass, so no
- * scroll can fall between them.
- *
- * @param page The Playwright page showing the table.
- * @returns The distance from the root's top edge to the first row's, in CSS pixels.
- */
-export async function tableFirstRowTop(page: Page): Promise<number> {
-  return page
-    .getByTestId(TABLE)
-    .evaluate((root, selector) => {
-      const row = root.querySelector(selector)
-      if (row === null) {
-        throw new Error('the table shows no row to measure')
-      }
-
-      return row.getBoundingClientRect().top - root.getBoundingClientRect().top
-    }, ROWS)
 }
 
 /**

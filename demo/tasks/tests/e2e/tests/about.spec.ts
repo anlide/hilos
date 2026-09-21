@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { watchHeight, watchTop } from '../../../../../framework/frontend/e2e/index.js'
 import { gotoPage } from '../helpers/page'
 
 // The support block at the end of /about (HIL-840), as a guest: no session is
@@ -23,10 +24,8 @@ test('a tier can be chosen and Subscribe answers with the honest refusal', async
 
   const slot = page.getByTestId('hilos-about-refusal-slot')
   await expect(slot).toBeVisible()
-  const slotBefore = await slot.boundingBox()
-  const coffeeBefore = await coffee.boundingBox()
-  expect(slotBefore).not.toBeNull()
-  expect(coffeeBefore).not.toBeNull()
+  const slotRoom = await watchHeight(slot)
+  const coffeeTop = await watchTop(coffee)
 
   await page.getByTestId('hilos-about-subscribe').click()
 
@@ -35,10 +34,8 @@ test('a tier can be chosen and Subscribe answers with the honest refusal', async
   await expect(refusal).toContainText('The payment system is not built yet.')
   await expect(refusal).toContainText('no subscription was created')
 
-  const slotAfter = await slot.boundingBox()
-  const coffeeAfter = await coffee.boundingBox()
-  expect(slotAfter?.height).toBe(slotBefore?.height)
-  expect(coffeeAfter?.y).toBe(coffeeBefore?.y)
+  await slotRoom.unchanged()
+  await coffeeTop.unchanged()
 
   // The plate shows and the region speaks: the sentence also reaches the live
   // region that stood in the dialog before there was anything to announce.

@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
+import { watchHeight, watchTop } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../helpers/adminGrant'
 import {
   mailsTo,
@@ -388,20 +389,14 @@ test('answers a wrong password inline, and an unknown address with the registrat
   // and so does the button they just pressed - the node the old block used to
   // shove down, because it stood between the two.
   await enterIdentifierAndPassword(page, email, 'a different password')
-  const slotIdle = await page.getByTestId('auth-error-slot').boundingBox()
-  const passwordIdle = await page.getByTestId('auth-password').boundingBox()
-  const submitIdle = await page.getByTestId('auth-submit').boundingBox()
+  const slotRoom = await watchHeight(page.getByTestId('auth-error-slot'))
+  const passwordTop = await watchTop(page.getByTestId('auth-password'))
+  const submitTop = await watchTop(page.getByTestId('auth-submit'))
   await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
-  expect(
-    (await page.getByTestId('auth-error-slot').boundingBox())?.height,
-  ).toBe(slotIdle?.height)
-  expect((await page.getByTestId('auth-password').boundingBox())?.y).toBe(
-    passwordIdle?.y,
-  )
-  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
-    submitIdle?.y,
-  )
+  await slotRoom.unchanged()
+  await passwordTop.unchanged()
+  await submitTop.unchanged()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
   // An address with no account is never given a sign-in to fail: the lookup in
@@ -436,17 +431,13 @@ test('holds the refusal to one line on a narrow screen', async ({ page }) => {
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   await enterIdentifierAndPassword(page, email, 'a different password')
-  const slotIdle = await page.getByTestId('auth-error-slot').boundingBox()
-  const submitIdle = await page.getByTestId('auth-submit').boundingBox()
+  const slotRoom = await watchHeight(page.getByTestId('auth-error-slot'))
+  const submitTop = await watchTop(page.getByTestId('auth-submit'))
   await clickSubmit(page.getByTestId('auth-submit'))
   await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
 
-  expect(
-    (await page.getByTestId('auth-error-slot').boundingBox())?.height,
-  ).toBe(slotIdle?.height)
-  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
-    submitIdle?.y,
-  )
+  await slotRoom.unchanged()
+  await submitTop.unchanged()
 })
 
 test('keeps the main button still while the field answers, on a narrow screen', async ({
@@ -473,16 +464,13 @@ test('keeps the main button still while the field answers, on a narrow screen', 
   await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
     'No account yet — this creates one.',
   )
-  const roomTaken = (await page.getByTestId('auth-submit').boundingBox())?.y
-  expect(roomTaken).toBeDefined()
+  const submitTop = await watchTop(page.getByTestId('auth-submit'))
 
   // An account that signs in with a password: the reveal, which is the tallest
   // thing this slot ever holds and therefore what its room was measured on.
   await typeInto(page.getByTestId('auth-identifier'), member)
   await expect(page.getByTestId('auth-password')).toBeVisible()
-  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
-    roomTaken,
-  )
+  await submitTop.unchanged()
 
   // And back. The room was taken with the first character and never given up,
   // so no reply the lookup brings moves what sits under it (HIL-1008).
@@ -490,9 +478,7 @@ test('keeps the main button still while the field answers, on a narrow screen', 
   await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
     'No account yet — this creates one.',
   )
-  expect((await page.getByTestId('auth-submit').boundingBox())?.y).toBe(
-    roomTaken,
-  )
+  await submitTop.unchanged()
 })
 
 test('gates sending behind the surface, and returns the identity line to anonymous on logout', async ({
@@ -770,11 +756,10 @@ test('says how the letter is going, to every tab of the browser and across a rel
   // nor its changes move what is under it (HIL-977).
   const codeField = page.getByTestId('auth-code')
   await expect(codeField).toBeVisible()
-  const before = await codeField.boundingBox()
+  const codeTop = await watchTop(codeField)
   const sent = `Sent to ${email}`
   await expect(page.getByTestId('auth-send-progress')).toContainText(sent)
-  const after = await codeField.boundingBox()
-  expect(after?.y).toBe(before?.y)
+  await codeTop.unchanged()
 
   // The whole line sits behind a button in every state, not only on a refusal.
   await expect(page.getByTestId('auth-send-progress-details')).toBeVisible()

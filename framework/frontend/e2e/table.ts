@@ -15,6 +15,19 @@ import type { Locator, Page } from '@playwright/test'
 // while the hidden one still stands, so `toHaveCount(0)` is asserted on the plain
 // `getByTestId`, where it means both copies.
 
+/** The root the table draws under; a page with one table keeps the default. */
+export const TABLE = 'hilos-viewport-table'
+
+/** What every row of the window carries in `data-id`, followed by its row key. */
+export const ROW_PREFIX = 'hilos-table-row-'
+
+/**
+ * The rows of the window in the order they are drawn. The detail an expanded row
+ * opens shares the prefix without being a row, and the card branch names its rows
+ * differently, so reading the table's own body leaves exactly the rows.
+ */
+export const ROWS = `tbody [data-id^="${ROW_PREFIX}"]:not([data-id^="${ROW_PREFIX}detail-"])`
+
 /**
  * The copies of an element that are on screen, for an element a declared table
  * draws in both its branches.

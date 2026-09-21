@@ -193,6 +193,39 @@ assert on an unsaved value or a refusal. Keep table moves such as isolating a ro
 and all assertions in the demo: those describe what the spec is proving, not how
 the shared framework form is driven.
 
+### Geometry — take a bookmark and ask whether it moved
+
+Measure boxes through `watchTop(element)`, `watchHeight(element)` or
+`watchFirstRowTop(page)` from the shared toolbox. The first two take a Locator;
+the third reads the first table row's top relative to the table root in one
+pass, so scrolling the page cannot masquerade as a move inside the table.
+
+Each returns a `Watched` bookmark with an `unchanged()` method and a description
+of what it watches. Its constructor and readings are private: the spec keeps
+one bookmark and asks it to measure again, even when checking several later
+states. Do not compare bookmarks or take a second one for the same check.
+
+```ts
+const submitTop = await watchTop(page.getByTestId('auth-submit'))
+// Trigger the action and wait for the state the spec is proving.
+await submitTop.unchanged()
+```
+
+`unchanged()` compares against the original reading with **one CSS pixel of
+slack**, inclusive. A repaint can round a box differently; a larger move fails
+with both readings and the bookmark's description. A missing box fails both
+when taking the bookmark and when checking it. Measurements are single reads,
+with no polling for the layout to return: wait for the expected state in the
+spec before measuring or checking, as for any other assertion.
+
+**Never call `boundingBox()` or `getBoundingClientRect()` in a demo spec or its
+helpers.** `E2E-BOX-MEASURE` (`framework/frontend/codestyle/boxMeasure.ts`)
+reports direct calls throughout `demo/*/tests/e2e`, with no file exceptions.
+The shared toolbox owns those calls and lies outside that scan. Exact counters,
+remaining scroll distance and document height read through
+`scrollHeight` / `clientHeight` / `scrollTop` remain valid: this rule governs
+boxes, not every numeric assertion.
+
 ## Opening a page — `gotoPage`, never `goto`
 
 A spec opens a page through the demo's **`gotoPage(page, path)`** wrapper, which

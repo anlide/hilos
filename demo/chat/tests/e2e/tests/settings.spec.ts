@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 import {
   clearCustomSetting,
@@ -7,6 +7,8 @@ import {
   setCustomSetting,
   shownByTestId,
   sidewaysOverflow,
+  watchHeight,
+  watchTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
@@ -36,23 +38,6 @@ async function openSettings(page: Page): Promise<void> {
 async function isolate(page: Page, key: string): Promise<void> {
   await page.getByTestId('hilos-table-search').fill(key)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
-}
-
-/**
- * The box of an element that has to be on screen. A geometry test comparing two
- * absent boxes passes on nothing, so an absent one stops the test right here.
- *
- * @param locator The element to measure
- * @returns Its box, whose y and height are what the geometry cases compare
- * @throws Error When the element is not rendered, and so cannot be measured
- */
-async function boxOf(locator: Locator): Promise<{ y: number; height: number }> {
-  const box = await locator.boundingBox()
-  if (box === null) {
-    throw new Error('the element is not on screen and cannot be measured')
-  }
-
-  return box
 }
 
 test('lists settings in the server window and filters from the search box', async ({
@@ -515,8 +500,8 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   await save.scrollIntoViewIfNeeded()
   await expect(save).toBeVisible()
   await expect(save).toBeEnabled()
-  const roomIdle = await boxOf(slot)
-  const fieldIdle = await boxOf(value)
+  const slotRoom = await watchHeight(slot)
+  const valueTop = await watchTop(value)
 
   await save.focus()
   await save.click()
@@ -531,8 +516,8 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   // The plate landed in room that was already taken: the region is the height it
   // stood at while empty, and the field under it did not move. That is what the
   // invisible twin is for.
-  expect((await boxOf(slot)).height).toBe(roomIdle.height)
-  expect((await boxOf(value)).y).toBe(fieldIdle.y)
+  await slotRoom.unchanged()
+  await valueTop.unchanged()
 
   // No detail badge: a sentence written for a person is shown in full, so there
   // is nothing the framework held back to reveal.
@@ -576,8 +561,8 @@ test('a refusal too long for the line still moves nothing under it', async ({
   await save.scrollIntoViewIfNeeded()
   await expect(save).toBeVisible()
   await expect(save).toBeEnabled()
-  const roomIdle = await boxOf(slot)
-  const fieldIdle = await boxOf(value)
+  const slotRoom = await watchHeight(slot)
+  const valueTop = await watchTop(value)
 
   await save.focus()
   await save.click()
@@ -586,8 +571,8 @@ test('a refusal too long for the line still moves nothing under it', async ({
   await expect(refusal).toBeVisible()
   await expect(refusal).toContainText('Value must be an integer of 0 or more')
 
-  expect((await boxOf(slot)).height).toBe(roomIdle.height)
-  expect((await boxOf(value)).y).toBe(fieldIdle.y)
+  await slotRoom.unchanged()
+  await valueTop.unchanged()
 
   await page.setViewportSize(desktop)
 })

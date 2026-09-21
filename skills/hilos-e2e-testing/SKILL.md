@@ -51,7 +51,10 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 9. When a toast raised by a previous step is only in the way, sweep the stack
    with `dismissToasts(page)` before the click it covers. A spec that is *about*
    a notice asserts on it instead and never sweeps.
-10. e2e runs the **built artifact** with a booted daemon — rebuild after a
+10. Measure geometry through the toolbox's `watchTop`, `watchHeight` or
+    `watchFirstRowTop`: keep the bookmark and call its `unchanged()` after
+    waiting for the expected state. Do not take or compare raw boxes.
+11. e2e runs the **built artifact** with a booted daemon — rebuild after a
     frontend change before the spec exercises it, and reset before re-running a
     data-mutating spec.
 
@@ -64,6 +67,8 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
   it to settle (success or error) first.
 - Never navigate a page the application is about to reload by itself — wait the
   reload out instead, and steer afterwards if a different address is wanted.
+- Never measure a box in a spec — take a bookmark from the toolbox and ask it
+  whether anything moved.
 - A file in `framework/frontend/e2e/` imports from `@playwright/test` with
   `import type` and nothing else — a value import loads a second Playwright and
   the runner refuses the run.

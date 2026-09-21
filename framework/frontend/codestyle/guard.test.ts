@@ -22,6 +22,7 @@ import {
   BASELINE_UPDATE_FLAG,
   type ReportedViolations,
 } from './baseline.js'
+import { checkRepository as checkE2eBoxMeasure } from './boxMeasure.js'
 import { checkRepository as checkBrowserValueDeclared } from './browserValueDeclared.js'
 import { checkRepository as checkDisabledTitle } from './disabledTitle.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
@@ -49,6 +50,7 @@ const REPOSITORY_ROOT = join(
 const RULES = [
   checkBrowserValueDeclared,
   checkDisabledTitle,
+  checkE2eBoxMeasure,
   checkE2ePageGoto,
   checkModalFocus,
   checkShellParity,
