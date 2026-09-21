@@ -408,6 +408,40 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
     }
 
+    public function testARowRemovedFromAFullAnchoredWindowDoesNotMakeItsBottomTheSetEnd(): void
+    {
+        $alpha = self::row('alpha', 'Alpha');
+        $mike = self::row('mike', 'Mike');
+        $zulu = self::row('zulu', 'Zulu');
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 3,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            anchor: self::anchorAt('before-alpha'),
+        );
+        $viewport->recordWindow(
+            self::deliveredWindow([$alpha, $mike, $zulu]),
+            5,
+            true,
+            self::anchorOf($alpha),
+            self::anchorOf($zulu),
+            self::deliveredAnchors([$alpha, $mike, $zulu]),
+        );
+        $context = $this->bootWithViewport([$mike, self::row('zulu', 'Zzz')], $viewport);
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
+        $context->flushToSignalRouter();
+        $this->nextCount();
+        $this->nextDelta();
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['label' => 'Zzz']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+    }
+
     public function testTheTopRowOfAPageInTheMiddleOfTheSetMovedUpStillLeavesTheWindow(): void
     {
         $context = $this->bootOrdered(
@@ -924,6 +958,45 @@ final class BrowserContextViewportDeltaTest extends TestCase
         // Room is not enough: four rows of the set are on later pages, so the row that sorts
         // below this window belongs to one of them and not to the empty slot at its tail.
         $this->assertSame(6, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testARowRemovedFromAFullAnchoredWindowDoesNotMakeRoomForALowerCreate(): void
+    {
+        $alpha = self::row('alpha', 'Alpha');
+        $mike = self::row('mike', 'Mike');
+        $zulu = self::row('zulu', 'Zulu');
+        $zeta = self::row('zeta', 'Zzz');
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 3,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            anchor: self::anchorAt('before-alpha'),
+        );
+        $viewport->recordWindow(
+            self::deliveredWindow([$alpha, $mike, $zulu]),
+            5,
+            true,
+            self::anchorOf($alpha),
+            self::anchorOf($zulu),
+            self::deliveredAnchors([$alpha, $mike, $zulu]),
+        );
+        $context = $this->bootWithViewport([$mike, $zulu, $zeta], $viewport);
+
+        $context->record(SourceChange::dbDeleted(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
+        $context->flushToSignalRouter();
+        $this->nextCount();
+        $this->nextDelta();
+
+        $context->record(SourceChange::dbCreated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'zeta',
+            ['key' => 'zeta', 'label' => 'Zzz'],
+        ));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(5, $this->nextCount()->totalCount);
         $this->assertFalse($viewport->hasRow('zeta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }

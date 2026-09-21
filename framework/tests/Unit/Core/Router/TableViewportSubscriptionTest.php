@@ -103,6 +103,115 @@ final class TableViewportSubscriptionTest extends TestCase
         $this->assertFalse($fromAnchor->reachesStart());
     }
 
+    public function testRemovingARowFromAFullAnchoredWindowDoesNotMakeItReachTheEnd(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, true, null, null);
+
+        $this->assertFalse($viewport->reachesEnd());
+
+        $viewport->forgetRow('a');
+
+        $this->assertFalse($viewport->reachesEnd());
+    }
+
+    public function testRemovingARowFromAFullWindowPagedBackDoesNotMakeItReachTheStart(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+            anchorDirection: TableAnchorDirection::Before,
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, true, null, null);
+
+        $this->assertFalse($viewport->reachesStart());
+
+        $viewport->forgetRow('a');
+
+        $this->assertFalse($viewport->reachesStart());
+    }
+
+    public function testAppendingToAShortAnchoredWindowDoesNotTakeAwayTheEnd(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 2, true, null, null);
+
+        $this->assertTrue($viewport->reachesEnd());
+
+        $viewport->recordRow('c', self::windowOf(['c'])['c']);
+
+        $this->assertTrue($viewport->reachesEnd());
+    }
+
+    public function testRemovingFromAShortAnchoredWindowDoesNotTakeAwayTheEnd(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 2, true, null, null);
+
+        $this->assertTrue($viewport->reachesEnd());
+
+        $viewport->forgetRow('a');
+
+        $this->assertTrue($viewport->reachesEnd());
+    }
+
+    public function testRebuildingAWindowReplacesWhetherItReachedTheEnd(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 2, true, null, null);
+
+        $this->assertTrue($viewport->reachesEnd());
+
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, true, null, null);
+
+        $this->assertFalse($viewport->reachesEnd());
+    }
+
+    public function testDeclaringRenderedFieldsCarriesWhetherTheWindowReachedTheEnd(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+        );
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 42, true, null, null);
+        $viewport->forgetRow('a');
+
+        $declared = $viewport->withRendered(['label'], []);
+
+        $this->assertFalse($declared->reachesEnd());
+    }
+
+    public function testANumberedPageReadsItsEndFromTheLiveRowsAndTotal(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: 3, pageIndex: 2);
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 9, true, null, null);
+
+        $this->assertTrue($viewport->reachesEnd());
+
+        $viewport->recordRow('d', self::windowOf(['d'])['d']);
+        $viewport->recordTotal(10, true);
+
+        $this->assertTrue($viewport->reachesEnd());
+    }
+
     public function testRecordingANewTotalCarriesTheWordOnItAlong(): void
     {
         $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: self::PAGE_SIZE);

@@ -52,6 +52,9 @@ final class TableViewportSubscription
     /** Whether that total is the size of the set rather than the ceiling the count stopped at. */
     private bool $totalExact = true;
 
+    /** Rows the last window build delivered, which the edges of the set are read off. */
+    private int $builtRowCount = 0;
+
     /** Place the first row of the last served window sits at, or null when that window was empty. */
     private ?TableAnchorDTO $firstAnchor = null;
 
@@ -105,6 +108,7 @@ final class TableViewportSubscription
         $this->rowAnchors = $rowAnchors;
         $this->totalCount = $totalCount;
         $this->totalExact = $totalExact;
+        $this->builtRowCount = count($wireRows);
         $this->firstAnchor = $firstAnchor;
         $this->lastAnchor = $lastAnchor;
     }
@@ -172,6 +176,7 @@ final class TableViewportSubscription
         $declared->rowAnchors = $this->rowAnchors;
         $declared->totalCount = $this->totalCount;
         $declared->totalExact = $this->totalExact;
+        $declared->builtRowCount = $this->builtRowCount;
         $declared->firstAnchor = $this->firstAnchor;
         $declared->lastAnchor = $this->lastAnchor;
         if ($rendered === []) {
@@ -340,8 +345,9 @@ final class TableViewportSubscription
      * from the edge of the set, or when it paged back and got fewer rows than it asked for:
      * nothing was left above it.
      *
-     * The answer is read rather than stored for the reason the end is: the delivered set moves
-     * after the window is served.
+     * For an anchored window the edge is a property of the last build: a row removed from the
+     * delivered set does not create an edge, and a row appended afterwards does not take one
+     * away. The build size is therefore kept apart from the live delivered rows.
      *
      * Unlike the end, the numbered-page reading does not need the total, so an inexact count
      * takes nothing away here: page zero is the start of the set however far the count got.
@@ -362,7 +368,7 @@ final class TableViewportSubscription
             return $this->anchor === null;
         }
 
-        return count($this->rowDigests) < $this->limit;
+        return $this->builtRowCount < $this->limit;
     }
 
     /**
@@ -374,14 +380,16 @@ final class TableViewportSubscription
      * last page is not recognized until the client asks once more and gets nothing. A window that
      * jumped to a numbered page does know its place, and a window with no limit holds the set.
      *
-     * The answer is read rather than stored because the delivered set moves after the window is
-     * served: a row appended to a window with room joins it, and a stored flag would still be
-     * describing the window before it.
+     * For an anchored window the edge is a property of the last build: a row removed from the
+     * delivered set does not create an edge, and a row appended afterwards does not take one
+     * away. The build size is therefore kept apart from the live delivered rows.
      *
      * The numbered-page reading is the one that needs the total, so it is the one an inexact
      * count takes away: past the ceiling the number is not where the set ends, and answering
      * yes off it would place the end of the set at 500 on every set larger than that. The
-     * anchored reading is untouched, because it reads the window's own size and not the total.
+     * numbered reading stays live for the same reason as its total: a row appended to the window
+     * and the matching increase of the total must move together in its arithmetic. The anchored
+     * reading does not use the total and keeps the build's answer instead.
      *
      * @return bool Whether the last row of the set is in the delivered window
      */
@@ -391,12 +399,12 @@ final class TableViewportSubscription
             return true;
         }
 
-        $windowSize = count($this->rowDigests);
         if ($this->pageIndex !== null) {
-            return $this->totalExact && $this->pageIndex * $this->limit + $windowSize >= $this->totalCount;
+            return $this->totalExact
+                && $this->pageIndex * $this->limit + count($this->rowDigests) >= $this->totalCount;
         }
 
-        return $this->anchorDirection === TableAnchorDirection::After && $windowSize < $this->limit;
+        return $this->anchorDirection === TableAnchorDirection::After && $this->builtRowCount < $this->limit;
     }
 
     /**
