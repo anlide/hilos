@@ -153,7 +153,8 @@ declares the icon package. SDK components use the icon font (`<i class="bi
 bi-…">`), not inline SVG — the application shell's gear and connection indicator
 are the reference. The icon font carries its own woff2/woff assets; the consumer
 build resolving the SDK to source emits and rewrites those font URLs, so no
-per-project font wiring is needed.
+per-project font wiring is needed. An icon name is required to exist in the set,
+and this is verified by machine (`ICON-NAME-EXISTS`).
 
 **Angular is the exception** to "the consumer never declares Bootstrap": the
 Angular CLI delivers global CSS through `angular.json` `styles`, with no

@@ -26,6 +26,7 @@ import { checkRepository as checkE2eBoxMeasure } from './boxMeasure.js'
 import { checkRepository as checkBrowserValueDeclared } from './browserValueDeclared.js'
 import { checkRepository as checkDisabledTitle } from './disabledTitle.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
+import { checkRepository as checkIconNameExists } from './iconNameExists.js'
 import { checkRepository as checkModalFocus } from './modalFocus.js'
 import { checkRepository as checkShellParity } from './shellParity.js'
 import { checkRepository as checkSpelling } from './spelling.js'
@@ -52,6 +53,7 @@ const RULES = [
   checkDisabledTitle,
   checkE2eBoxMeasure,
   checkE2ePageGoto,
+  checkIconNameExists,
   checkModalFocus,
   checkShellParity,
   checkSpelling,
