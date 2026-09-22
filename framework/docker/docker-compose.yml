@@ -117,8 +117,8 @@ services:
       - "--log-facility=-"   # log to stderr (visible via docker logs)
       - "--no-resolv"        # only answer the .hilos split zone, never forward
       - "--bind-dynamic"     # bind only the address below, not a 0.0.0.0 wildcard
-      - "--listen-address=${HILOS_DEV_DNS_IP:-100.111.250.126}"
-      - "--address=/hilos/${HILOS_DEV_DNS_IP:-100.111.250.126}"
+      - "--listen-address=${HILOS_DEV_DNS_IP:-}"
+      - "--address=/hilos/${HILOS_DEV_DNS_IP:-}"
     restart: unless-stopped
     profiles: [preview]
 
@@ -126,6 +126,10 @@ services:
     image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     container_name: hilos-preview-caddy
     network_mode: host
+    environment:
+      # Caddy reads the bind address from its own environment, so the value the
+      # preview script resolved has to reach the container, not just compose.
+      HILOS_PREVIEW_BIND: ${HILOS_PREVIEW_BIND:-}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv/preview:ro

@@ -5,10 +5,11 @@
 # (the names are private, so public ACME can't validate them) — install the CA
 # root on client devices once to get a green padlock. See the preview docs.
 #
-# Binds only the Tailscale IP so it never clashes with the hleb.studio proxy on
-# the public IP. Override HILOS_PREVIEW_BIND for a different host.
+# Binds only the Tailscale IP so it never clashes with anything on the public IP.
+# The address comes from the preview script, which reads it off this host; with
+# no value Caddy refuses to start rather than listen on another box's address.
 {
-	default_bind {$HILOS_PREVIEW_BIND:100.111.250.126}
+	default_bind {$HILOS_PREVIEW_BIND}
 }
 
 # Shared per-demo settings: private cert from the internal CA.

@@ -16,7 +16,8 @@
 #
 # demo is one of: chat tasks polls
 #
-# Host binding defaults to nova-lt's Tailscale IP; override for another host:
+# Host binding defaults to THIS host's Tailscale IP, so the lane follows the box
+# it runs on; override only to pin another address:
 #   HILOS_PREVIEW_BIND=<ip> HILOS_DEV_DNS_IP=<ip> preview up
 set -euo pipefail
 
@@ -25,7 +26,12 @@ repo="$(cd "$here/../.." && pwd)"
 
 ALL_DEMOS=(chat tasks polls)
 
-BIND="${HILOS_PREVIEW_BIND:-${HILOS_DEV_DNS_IP:-100.111.250.126}}"
+BIND="${HILOS_PREVIEW_BIND:-${HILOS_DEV_DNS_IP:-$(tailscale ip -4 2>/dev/null | head -n 1)}}"
+if [ -z "$BIND" ]; then
+  echo "preview: no Tailscale IP on this host and no HILOS_PREVIEW_BIND given" >&2
+  exit 1
+fi
+export HILOS_PREVIEW_BIND="$BIND" HILOS_DEV_DNS_IP="$BIND"
 
 dc() {
   if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
