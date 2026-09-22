@@ -26,6 +26,7 @@ import {
 import { useId } from 'vue'
 
 import HilosPushDeviceToggle from './HilosPushDeviceToggle.vue'
+import HilosSwitch from './HilosSwitch.vue'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -65,8 +66,7 @@ function pushKey(row: HilosNotificationChannelState): string | undefined {
 // and let the changed signal settle it. A send that never leaves (no live
 // connection) settles the loader here so the row snaps back to its last
 // confirmed state instead of hanging spinning.
-function toggle(row: HilosNotificationChannelState, event: Event): void {
-  const enabled = (event.target as HTMLInputElement).checked
+function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
   props.store.markPending(row.channel)
   const sent = props.connection.sendAction(NOTIFICATION_ACTION_CHANNEL_SET, {
     channel: row.channel,
@@ -100,35 +100,19 @@ function toggle(row: HilosNotificationChannelState, event: Event): void {
         :vapid-public-key="pushKey(row)!"
         :store="pushStore"
       />
-      <div
-        v-else
-        class="form-check form-switch mb-2"
-        :data-id="`hilos-notification-preference-${row.channel}`"
-      >
-        <input
-          :id="rowId(row.channel)"
-          class="form-check-input"
-          type="checkbox"
-          role="switch"
+      <div v-else :data-id="`hilos-notification-preference-${row.channel}`">
+        <HilosSwitch
+          class="mb-2"
           :checked="row.allowed"
-          :disabled="!row.hasAddress || pending.has(row.channel)"
-          :aria-describedby="
+          :busy="pending.has(row.channel)"
+          :disabled="!row.hasAddress"
+          :label="row.label"
+          :described-by="
             row.hasAddress ? undefined : `${rowId(row.channel)}-hint`
           "
-          :aria-busy="pending.has(row.channel)"
           :data-id="`hilos-notification-preference-toggle-${row.channel}`"
-          @change="toggle(row, $event)"
+          @toggle="toggle(row, $event)"
         />
-        <label class="form-check-label" :for="rowId(row.channel)">
-          {{ row.label }}
-        </label>
-        <span
-          v-if="pending.has(row.channel)"
-          class="spinner-border spinner-border-sm ms-2 align-middle"
-          role="status"
-          :data-id="`hilos-notification-preference-pending-${row.channel}`"
-          ><span class="visually-hidden">Saving…</span></span
-        >
         <div
           v-if="!row.hasAddress"
           :id="`${rowId(row.channel)}-hint`"

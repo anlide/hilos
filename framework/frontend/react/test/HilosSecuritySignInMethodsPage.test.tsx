@@ -201,8 +201,10 @@ describe('HilosSecuritySignInMethodsPage', () => {
 
     pushWindow(METHOD_ROWS)
 
-    expect(switchesOf(container, 'sms').length).toBeGreaterThan(0)
-    for (const box of switchesOf(container, 'sms')) {
+    const smsSwitches = switchesOf(container, 'sms')
+    expect(smsSwitches).toHaveLength(2)
+    expect(new Set(smsSwitches.map((box) => box.id)).size).toBe(2)
+    for (const box of smsSwitches) {
       expect(box.checked).toBe(true)
     }
     for (const box of switchesOf(container, 'passkey')) {

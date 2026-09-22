@@ -59,6 +59,7 @@ export {
   type HilosPrivacyPageProps,
 } from './public/HilosPrivacyPage.js'
 export { LoadingButton, type LoadingButtonProps } from './LoadingButton.js'
+export { HilosSwitch, type HilosSwitchProps } from './HilosSwitch.js'
 export {
   HilosBreadcrumb,
   type HilosBreadcrumbProps,

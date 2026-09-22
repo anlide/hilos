@@ -38,6 +38,7 @@ export { HilosAboutPage } from './public/HilosAboutPage.js'
 export { HilosLicensePage } from './public/HilosLicensePage.js'
 export { HilosPrivacyPage } from './public/HilosPrivacyPage.js'
 export { LoadingButton } from './LoadingButton.js'
+export { HilosSwitch } from './HilosSwitch.js'
 export { HilosBreadcrumb } from './HilosBreadcrumb.js'
 export { ConflictHeader } from './ConflictHeader.js'
 export {

@@ -20,10 +20,11 @@ import {
   type HilosSignInMethodRow,
   type HilosSignInMethodsContext,
 } from '@hilos/core'
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -44,6 +45,7 @@ onUnmounted(() => methods.dispose())
 // One tracked runner for every switch: a single in-flight guard across rows is
 // enough, and the busy flag disables every switch while one write is settling.
 const { busy: switchBusy, run: runSwitch } = useTrackedAction()
+const pendingMethodKey = ref<string | null>(null)
 
 /** Whether the method is on now, by the live set rather than the row. */
 function isOn(row: HilosSignInMethodRow): boolean {
@@ -57,14 +59,14 @@ function providerPath(providerKey: string): string {
   })
 }
 
-// Dispatch the switch as a tracked action. Nothing is set optimistically: on
-// success the switch follows the set when it arrives, and on a refusal the box
-// the person clicked is put back to what the set still says.
-async function toggle(row: HilosSignInMethodRow, event: Event): Promise<void> {
-  const box = event.target as HTMLInputElement
-  const ok = await runSwitch(sendMethodSet(row.methodKey, box.checked))
-  if (!ok) {
-    box.checked = isOn(row)
+// Dispatch the switch as a tracked action. Nothing is set optimistically: the
+// switch follows the live set on success and remains on it after a refusal.
+async function toggle(row: HilosSignInMethodRow, next: boolean): Promise<void> {
+  pendingMethodKey.value = row.methodKey
+  try {
+    await runSwitch(sendMethodSet(row.methodKey, next))
+  } finally {
+    pendingMethodKey.value = null
   }
 }
 </script>
@@ -77,18 +79,15 @@ async function toggle(row: HilosSignInMethodRow, event: Event): Promise<void> {
         <code class="small text-body-secondary">{{ row.methodKey }}</code>
       </template>
       <template #cell-enabled="{ row }">
-        <div class="form-check form-switch mb-0">
-          <input
-            type="checkbox"
-            class="form-check-input"
-            role="switch"
-            :checked="isOn(row)"
-            :disabled="switchBusy"
-            :aria-label="`Enable ${row.label}`"
-            :data-id="`hilos-sign-in-method-enabled-${row.methodKey}`"
-            @change="toggle(row, $event)"
-          />
-        </div>
+        <HilosSwitch
+          class="mb-0"
+          :checked="isOn(row)"
+          :busy="pendingMethodKey === row.methodKey"
+          :disabled="switchBusy"
+          :aria-label="`Enable ${row.label}`"
+          :data-id="`hilos-sign-in-method-enabled-${row.methodKey}`"
+          @toggle="toggle(row, $event)"
+        />
       </template>
       <template #cell-ready="{ row }">
         <span

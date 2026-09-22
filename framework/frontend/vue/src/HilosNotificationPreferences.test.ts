@@ -66,7 +66,7 @@ describe('HilosNotificationPreferences', () => {
 
     await wrapper
       .find('[data-id="hilos-notification-preference-toggle-email"]')
-      .setValue(false)
+      .trigger('click')
 
     expect(sendAction).toHaveBeenCalledWith(NOTIFICATION_ACTION_CHANNEL_SET, {
       channel: 'email',
@@ -75,11 +75,11 @@ describe('HilosNotificationPreferences', () => {
     // The row is pending until the changed signal fans back; state is untouched.
     expect(store.pending.get().has('email')).toBe(true)
     expect(store.channels.get()[0].allowed).toBe(true)
-    expect(
-      wrapper
-        .find('[data-id="hilos-notification-preference-pending-email"]')
-        .exists(),
-    ).toBe(true)
+    const email = wrapper.find(
+      '[data-id="hilos-notification-preference-toggle-email"]',
+    )
+    expect((email.element as HTMLInputElement).checked).toBe(true)
+    expect(email.attributes('aria-busy')).toBe('true')
   })
 
   it('clears the pending row when the send never leaves', async () => {
@@ -91,7 +91,7 @@ describe('HilosNotificationPreferences', () => {
 
     await wrapper
       .find('[data-id="hilos-notification-preference-toggle-email"]')
-      .setValue(false)
+      .trigger('click')
 
     expect(store.pending.get().has('email')).toBe(false)
   })

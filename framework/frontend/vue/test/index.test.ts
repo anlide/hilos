@@ -5,6 +5,7 @@ import {
   HilosLayout,
   HilosLink,
   HilosSkeleton,
+  HilosSwitch,
   HilosView,
   hilosRouterKey,
   useConnectionState,
@@ -18,5 +19,6 @@ it('exports the @hilos/vue public surface', () => {
   expect(HilosLink).toBeTypeOf('object')
   expect(HilosView).toBeTypeOf('object')
   expect(HilosSkeleton).toBeTypeOf('object')
+  expect(HilosSwitch).toBeTypeOf('object')
   expect(hilosRouterKey).toBeTypeOf('symbol')
 })

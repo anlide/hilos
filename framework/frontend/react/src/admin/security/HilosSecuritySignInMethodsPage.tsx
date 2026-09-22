@@ -11,7 +11,7 @@
 // row, is what says a method is on (the same set every sign-in surface reshapes
 // from). The screen is built from text: the mockup has no node for it yet (D-093).
 // Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
   HilosSignInMethodRowKey,
@@ -26,6 +26,7 @@ import type {
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
@@ -73,6 +74,7 @@ export function HilosSecuritySignInMethodsPage({
   // One tracked runner for every switch: a single in-flight guard across rows is
   // enough, and the busy flag disables every switch while one write is settling.
   const toggle = useTrackedAction()
+  const [pendingMethodKey, setPendingMethodKey] = useState<string | null>(null)
 
   /** Whether the method is on now, by the live set rather than the row. */
   function isOn(row: HilosSignInMethodRow): boolean {
@@ -80,11 +82,17 @@ export function HilosSecuritySignInMethodsPage({
   }
 
   // Dispatch the switch as a tracked action. Nothing is set optimistically: the
-  // box is controlled by the live set, so on success it follows the set when it
-  // arrives, and on a refusal it still says what the set says — React puts the
-  // clicked box back itself.
-  function toggleEnabled(row: HilosSignInMethodRow, next: boolean): void {
-    void toggle.run(actions.sendMethodSet(row.methodKey, next))
+  // switch follows the live set on success and remains on it after a refusal.
+  async function toggleEnabled(
+    row: HilosSignInMethodRow,
+    next: boolean,
+  ): Promise<void> {
+    setPendingMethodKey(row.methodKey)
+    try {
+      await toggle.run(actions.sendMethodSet(row.methodKey, next))
+    } finally {
+      setPendingMethodKey(null)
+    }
   }
 
   return (
@@ -99,18 +107,15 @@ export function HilosSecuritySignInMethodsPage({
             </>
           ),
           [HilosSignInMethodRowKey.enabled]: (row) => (
-            <div className="form-check form-switch mb-0">
-              <input
-                type="checkbox"
-                className="form-check-input"
-                role="switch"
-                checked={isOn(row)}
-                disabled={toggle.busy}
-                aria-label={`Enable ${row.label}`}
-                data-id={`hilos-sign-in-method-enabled-${row.methodKey}`}
-                onChange={(event) => toggleEnabled(row, event.target.checked)}
-              />
-            </div>
+            <HilosSwitch
+              className="mb-0"
+              checked={isOn(row)}
+              busy={pendingMethodKey === row.methodKey}
+              disabled={toggle.busy}
+              aria-label={`Enable ${row.label}`}
+              dataId={`hilos-sign-in-method-enabled-${row.methodKey}`}
+              onToggle={(next) => void toggleEnabled(row, next)}
+            />
           ),
           [HilosSignInMethodRowKey.ready]: (row) => (
             <>

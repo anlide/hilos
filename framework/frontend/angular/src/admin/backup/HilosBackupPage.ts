@@ -78,6 +78,7 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -107,6 +108,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
     HilosModal,
     HilosActionError,
     LoadingButton,
+    HilosSwitch,
   ],
   template: `
     <hilos-admin-page [page]="page">
@@ -390,21 +392,20 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
         <ng-template hilosTableCell="keep" let-row>
           <div [class.text-body-secondary]="isOutOfReach(row)">
             @if (isKeepable(row)) {
-              <div class="form-check form-switch d-inline-block m-0">
-                <input
-                  type="checkbox"
-                  class="form-check-input"
-                  role="switch"
+              <div class="d-inline-block">
+                <hilos-switch
+                  class="m-0"
                   [checked]="row.keep"
-                  [disabled]="keep.busy() && keepPendingId() === row.id"
-                  [attr.aria-label]="
+                  [busy]="keep.busy() && keepPendingId() === row.id"
+                  [disabled]="keep.busy()"
+                  [aria-label]="
                     row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
                   "
                   [attr.title]="
                     row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
                   "
-                  [attr.data-id]="'hilos-backup-keep-' + row.id"
-                  (change)="toggleKeep(row)"
+                  [dataId]="'hilos-backup-keep-' + row.id"
+                  (toggle)="toggleKeep(row, $event)"
                 />
               </div>
             } @else {
@@ -1079,12 +1080,15 @@ export class HilosBackupPage {
     await this.create.run(this.actions().sendBackupCreate(this.createScope()))
   }
 
-  protected async toggleKeep(row: HilosBackupRow): Promise<void> {
+  protected async toggleKeep(
+    row: HilosBackupRow,
+    next: boolean,
+  ): Promise<void> {
     if (this.keep.busy()) {
       return
     }
     this.keepPendingId.set(row.id)
-    await this.keep.run(this.actions().sendBackupSetKeep(row.id, !row.keep))
+    await this.keep.run(this.actions().sendBackupSetKeep(row.id, next))
     this.keepPendingId.set(null)
   }
 

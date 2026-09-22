@@ -28,6 +28,7 @@ import {
 
 import { hilosSignal } from './hilosSignal.js'
 import { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
+import { HilosSwitch } from './HilosSwitch.js'
 
 // Distinct id bases so two sections on one page never share a label `for`.
 let preferencesSeq = 0
@@ -39,7 +40,7 @@ let preferencesSeq = 0
 @Component({
   selector: 'hilos-notification-preferences',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosPushDeviceToggle],
+  imports: [HilosPushDeviceToggle, HilosSwitch],
   template: `
     <section
       [attr.aria-labelledby]="baseId + '-heading'"
@@ -66,39 +67,19 @@ let preferencesSeq = 0
             [store]="pushStore()"
           />
         } @else {
-          <div
-            class="form-check form-switch mb-2"
-            [attr.data-id]="'hilos-notification-preference-' + row.channel"
-          >
-            <input
-              [id]="rowId(row.channel)"
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
+          <div [attr.data-id]="'hilos-notification-preference-' + row.channel">
+            <hilos-switch
+              class="mb-2"
               [checked]="row.allowed"
-              [disabled]="!row.hasAddress || isPending(row.channel)"
-              [attr.aria-describedby]="
-                row.hasAddress ? null : rowId(row.channel) + '-hint'
+              [busy]="isPending(row.channel)"
+              [disabled]="!row.hasAddress"
+              [label]="row.label"
+              [describedBy]="
+                row.hasAddress ? undefined : rowId(row.channel) + '-hint'
               "
-              [attr.aria-busy]="isPending(row.channel)"
-              [attr.data-id]="
-                'hilos-notification-preference-toggle-' + row.channel
-              "
-              (change)="toggle(row, $event)"
+              [dataId]="'hilos-notification-preference-toggle-' + row.channel"
+              (toggle)="toggle(row, $event)"
             />
-            <label class="form-check-label" [attr.for]="rowId(row.channel)">
-              {{ row.label }}
-            </label>
-            @if (isPending(row.channel)) {
-              <span
-                class="spinner-border spinner-border-sm ms-2 align-middle"
-                role="status"
-                [attr.data-id]="
-                  'hilos-notification-preference-pending-' + row.channel
-                "
-                ><span class="visually-hidden">Saving…</span></span
-              >
-            }
             @if (!row.hasAddress) {
               <div
                 [id]="rowId(row.channel) + '-hint'"
@@ -156,8 +137,7 @@ export class HilosNotificationPreferences {
   // and let the changed signal settle it. A send that never leaves (no live
   // connection) settles the loader here so the row snaps back to its last
   // confirmed state instead of hanging spinning.
-  protected toggle(row: HilosNotificationChannelState, event: Event): void {
-    const enabled = (event.target as HTMLInputElement).checked
+  protected toggle(row: HilosNotificationChannelState, enabled: boolean): void {
     this.boundStore.markPending(row.channel)
     const sent = this.connection().sendAction(NOTIFICATION_ACTION_CHANNEL_SET, {
       channel: row.channel,

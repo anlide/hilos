@@ -1,7 +1,9 @@
 // The look-alikes in an Angular component template: a title that repeats the name
 // as written, the same name as a static value on one side and a quoted binding on
-// the other, a title on an element that cannot be disabled, and a disabled control
-// with a name and no title. DISABLED-TITLE must stay silent on every one of them.
+// the other, a title on an element that cannot be disabled, a disabled control
+// with a name and no title, and a shared component taking the name as an input
+// spelled like the attribute it carries. DISABLED-TITLE must stay silent on every
+// one of them.
 
 /** Stand-in for Angular's decorator: the fixture depends on nothing. */
 declare function Component(definition: object): ClassDecorator
@@ -34,6 +36,11 @@ declare function Component(definition: object): ClassDecorator
         [disabled]="busy"
         aria-label="Restore this backup"
       ></button>
+      <hilos-switch
+        [disabled]="busy"
+        [attr.title]="'Unpin from rotation'"
+        [aria-label]="'Unpin from rotation'"
+      ></hilos-switch>
     </div>
   `,
 })

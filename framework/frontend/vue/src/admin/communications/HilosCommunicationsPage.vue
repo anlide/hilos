@@ -21,10 +21,11 @@ import {
   type HilosChannelRow,
   type HilosCommunicationsContext,
 } from '@hilos/core'
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
+import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
@@ -46,6 +47,7 @@ onUnmounted(() => channels.dispose())
 // echoed row, so a single in-flight guard across rows is enough (and the busy
 // flag disables every switch while one write is settling).
 const { busy: toggleBusy, run: runToggle } = useTrackedAction()
+const pendingChannel = ref<string | null>(null)
 
 /** The channel's configuration page path (its {channelId} route param is the name). */
 function channelPath(row: HilosChannelRow): string {
@@ -56,9 +58,16 @@ function channelPath(row: HilosChannelRow): string {
 
 // Dispatch the enablement write as a tracked action; the toggled row redraws from
 // the table's snapshot delta, so nothing is set optimistically here.
-function toggleEnabled(row: HilosChannelRow, event: Event): void {
-  const next = (event.target as HTMLInputElement).checked
-  void runToggle(sendChannelSet(row.channel, CHANNEL_ENABLED_FIELD, next))
+async function toggleEnabled(
+  row: HilosChannelRow,
+  next: boolean,
+): Promise<void> {
+  pendingChannel.value = row.channel
+  try {
+    await runToggle(sendChannelSet(row.channel, CHANNEL_ENABLED_FIELD, next))
+  } finally {
+    pendingChannel.value = null
+  }
 }
 </script>
 
@@ -70,18 +79,15 @@ function toggleEnabled(row: HilosChannelRow, event: Event): void {
         <code class="small text-body-secondary">{{ row.channel }}</code>
       </template>
       <template #cell-enabled="{ row }">
-        <div class="form-check form-switch mb-0">
-          <input
-            type="checkbox"
-            class="form-check-input"
-            role="switch"
-            :checked="row.enabled"
-            :disabled="toggleBusy"
-            :aria-label="`Enable ${row.label}`"
-            :data-id="`hilos-channel-enabled-${row.channel}`"
-            @change="toggleEnabled(row, $event)"
-          />
-        </div>
+        <HilosSwitch
+          class="mb-0"
+          :checked="row.enabled"
+          :busy="pendingChannel === row.channel"
+          :disabled="toggleBusy"
+          :aria-label="`Enable ${row.label}`"
+          :data-id="`hilos-channel-enabled-${row.channel}`"
+          @toggle="toggleEnabled(row, $event)"
+        />
       </template>
       <template #cell-configured="{ row }">
         <span

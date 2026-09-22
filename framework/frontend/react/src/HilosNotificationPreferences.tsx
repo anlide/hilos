@@ -27,6 +27,7 @@ import {
 import { useId } from 'react'
 
 import { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
+import { HilosSwitch } from './HilosSwitch.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosNotificationPreferences}. */
@@ -61,11 +62,7 @@ export function HilosNotificationPreferences({
   // and let the changed signal settle it. A send that never leaves (no live
   // connection) settles the loader here so the row snaps back to its last
   // confirmed state instead of hanging spinning.
-  function toggle(
-    row: HilosNotificationChannelState,
-    event: React.ChangeEvent<HTMLInputElement>,
-  ): void {
-    const enabled = event.target.checked
+  function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
     store.markPending(row.channel)
     const sent = connection.sendAction(NOTIFICATION_ACTION_CHANNEL_SET, {
       channel: row.channel,
@@ -117,33 +114,18 @@ export function HilosNotificationPreferences({
         return (
           <div
             key={row.channel}
-            className="form-check form-switch mb-2"
             data-id={`hilos-notification-preference-${row.channel}`}
           >
-            <input
-              id={id}
-              className="form-check-input"
-              type="checkbox"
-              role="switch"
+            <HilosSwitch
+              className="mb-2"
               checked={row.allowed}
-              disabled={!row.hasAddress || isPending}
-              aria-describedby={row.hasAddress ? undefined : `${id}-hint`}
-              aria-busy={isPending}
-              data-id={`hilos-notification-preference-toggle-${row.channel}`}
-              onChange={(event) => toggle(row, event)}
+              busy={isPending}
+              disabled={!row.hasAddress}
+              label={row.label}
+              describedBy={row.hasAddress ? undefined : `${id}-hint`}
+              dataId={`hilos-notification-preference-toggle-${row.channel}`}
+              onToggle={(next) => toggle(row, next)}
             />
-            <label className="form-check-label" htmlFor={id}>
-              {row.label}
-            </label>
-            {isPending && (
-              <span
-                className="spinner-border spinner-border-sm ms-2 align-middle"
-                role="status"
-                data-id={`hilos-notification-preference-pending-${row.channel}`}
-              >
-                <span className="visually-hidden">Saving…</span>
-              </span>
-            )}
             {!row.hasAddress && (
               <div
                 id={`${id}-hint`}

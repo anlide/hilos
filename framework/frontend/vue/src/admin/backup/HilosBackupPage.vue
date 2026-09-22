@@ -66,6 +66,7 @@ import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
+import HilosSwitch from '../../HilosSwitch.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
@@ -214,12 +215,12 @@ async function submitCreate(): Promise<void> {
 const { busy: keepBusy, run: runKeepAction } = useTrackedAction()
 const keepPendingId = ref<string | null>(null)
 
-async function toggleKeep(row: HilosBackupRow): Promise<void> {
+async function toggleKeep(row: HilosBackupRow, next: boolean): Promise<void> {
   if (keepBusy.value) {
     return
   }
   keepPendingId.value = row.id
-  await runKeepAction(sendBackupSetKeep(row.id, !row.keep))
+  await runKeepAction(sendBackupSetKeep(row.id, next))
   keepPendingId.value = null
 }
 
@@ -725,22 +726,18 @@ function openOutcome(row: HilosBackupRow): void {
       </template>
       <template #cell-keep="{ row }">
         <div :class="outOfReachClass(row)">
-          <div
-            v-if="isBackupKeepable(row)"
-            class="form-check form-switch d-inline-block m-0"
-          >
-            <input
-              type="checkbox"
-              class="form-check-input"
-              role="switch"
+          <div v-if="isBackupKeepable(row)" class="d-inline-block">
+            <HilosSwitch
+              class="m-0"
               :checked="row.keep"
-              :disabled="keepBusy && keepPendingId === row.id"
+              :busy="keepBusy && keepPendingId === row.id"
+              :disabled="keepBusy"
               :aria-label="
                 row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
               "
               :title="row.keep ? 'Unpin from rotation' : 'Pin out of rotation'"
               :data-id="`hilos-backup-keep-${row.id}`"
-              @change.prevent="toggleKeep(row)"
+              @toggle="toggleKeep(row, $event)"
             />
           </div>
           <span v-else class="text-body-secondary">—</span>

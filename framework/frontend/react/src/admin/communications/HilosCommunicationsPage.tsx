@@ -11,7 +11,7 @@
 // fire-forget"): it dispatches the shared set action with the `enabled` field, the
 // outcome toasts, and the row redraws from the reactive table's snapshot signal —
 // there is no new server->client signal. Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CHANNEL_ENABLED_FIELD,
   HILOS_TABLE_ACTIONS_KEY,
@@ -25,6 +25,7 @@ import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
@@ -68,13 +69,22 @@ export function HilosCommunicationsPage({
   // echoed row, so a single in-flight guard across rows is enough (and the busy
   // flag disables every switch while one write is settling).
   const toggle = useTrackedAction()
+  const [pendingChannel, setPendingChannel] = useState<string | null>(null)
 
   // Dispatch the enablement write as a tracked action; the toggled row redraws from
   // the table's snapshot delta, so nothing is set optimistically here.
-  function toggleEnabled(row: HilosChannelRow, next: boolean): void {
-    void toggle.run(
-      actions.sendChannelSet(row.channel, CHANNEL_ENABLED_FIELD, next),
-    )
+  async function toggleEnabled(
+    row: HilosChannelRow,
+    next: boolean,
+  ): Promise<void> {
+    setPendingChannel(row.channel)
+    try {
+      await toggle.run(
+        actions.sendChannelSet(row.channel, CHANNEL_ENABLED_FIELD, next),
+      )
+    } finally {
+      setPendingChannel(null)
+    }
   }
 
   return (
@@ -89,18 +99,15 @@ export function HilosCommunicationsPage({
             </>
           ),
           [HilosChannelRowKey.enabled]: (row) => (
-            <div className="form-check form-switch mb-0">
-              <input
-                type="checkbox"
-                className="form-check-input"
-                role="switch"
-                checked={row.enabled}
-                disabled={toggle.busy}
-                aria-label={`Enable ${row.label}`}
-                data-id={`hilos-channel-enabled-${row.channel}`}
-                onChange={(event) => toggleEnabled(row, event.target.checked)}
-              />
-            </div>
+            <HilosSwitch
+              className="mb-0"
+              checked={row.enabled}
+              busy={pendingChannel === row.channel}
+              disabled={toggle.busy}
+              aria-label={`Enable ${row.label}`}
+              dataId={`hilos-channel-enabled-${row.channel}`}
+              onToggle={(next) => void toggleEnabled(row, next)}
+            />
           ),
           [HilosChannelRowKey.configured]: (row) =>
             row.configured ? (

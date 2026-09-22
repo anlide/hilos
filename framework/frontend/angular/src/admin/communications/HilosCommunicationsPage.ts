@@ -17,6 +17,7 @@ import {
   computed,
   effect,
   input,
+  signal,
 } from '@angular/core'
 import {
   CHANNEL_ENABLED_FIELD,
@@ -29,6 +30,7 @@ import type { HilosChannelRow, HilosCommunicationsContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
@@ -37,7 +39,13 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 @Component({
   selector: 'hilos-communications-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosTableCell, HilosViewportTable, HilosLink],
+  imports: [
+    HilosAdminPage,
+    HilosTableCell,
+    HilosViewportTable,
+    HilosLink,
+    HilosSwitch,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="channels().controller">
@@ -46,18 +54,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           <code class="small text-body-secondary">{{ row.channel }}</code>
         </ng-template>
         <ng-template hilosTableCell="enabled" let-row>
-          <div class="form-check form-switch mb-0">
-            <input
-              type="checkbox"
-              class="form-check-input"
-              role="switch"
-              [checked]="row.enabled"
-              [disabled]="toggle.busy()"
-              [attr.aria-label]="'Enable ' + row.label"
-              [attr.data-id]="'hilos-channel-enabled-' + row.channel"
-              (change)="onToggle(row, $event)"
-            />
-          </div>
+          <hilos-switch
+            class="mb-0"
+            [checked]="row.enabled"
+            [busy]="pendingChannel() === row.channel"
+            [disabled]="toggle.busy()"
+            [aria-label]="'Enable ' + row.label"
+            [dataId]="'hilos-channel-enabled-' + row.channel"
+            (toggle)="onToggle(row, $event)"
+          />
         </ng-template>
         <ng-template hilosTableCell="configured" let-row>
           @if (row.configured) {
@@ -107,6 +112,7 @@ export class HilosCommunicationsPage {
   // echoed row, so a single in-flight guard across rows is enough (and the busy
   // flag disables every switch while one write is settling).
   protected readonly toggle = createHilosTrackedAction()
+  protected readonly pendingChannel = signal<string | null>(null)
 
   constructor() {
     // Bind the server-windowed table to the connection and request the first
@@ -127,10 +133,14 @@ export class HilosCommunicationsPage {
 
   // Dispatch the enablement write as a tracked action; the toggled row redraws from
   // the table's snapshot delta, so nothing is set optimistically here.
-  protected onToggle(row: HilosChannelRow, event: Event): void {
-    const next = (event.target as HTMLInputElement).checked
-    void this.toggle.run(
-      this.actions().sendChannelSet(row.channel, CHANNEL_ENABLED_FIELD, next),
-    )
+  protected async onToggle(row: HilosChannelRow, next: boolean): Promise<void> {
+    this.pendingChannel.set(row.channel)
+    try {
+      await this.toggle.run(
+        this.actions().sendChannelSet(row.channel, CHANNEL_ENABLED_FIELD, next),
+      )
+    } finally {
+      this.pendingChannel.set(null)
+    }
   }
 }

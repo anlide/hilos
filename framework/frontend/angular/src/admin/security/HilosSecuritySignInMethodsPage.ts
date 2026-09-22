@@ -35,6 +35,7 @@ import type {
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
@@ -43,7 +44,13 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 @Component({
   selector: 'hilos-security-sign-in-methods-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
+  imports: [
+    HilosAdminPage,
+    HilosLink,
+    HilosSwitch,
+    HilosTableCell,
+    HilosViewportTable,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="methods().controller">
@@ -52,18 +59,15 @@ import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
           <code class="small text-body-secondary">{{ row.methodKey }}</code>
         </ng-template>
         <ng-template hilosTableCell="enabled" let-row>
-          <div class="form-check form-switch mb-0">
-            <input
-              type="checkbox"
-              class="form-check-input"
-              role="switch"
-              [checked]="isOn(row)"
-              [disabled]="toggle.busy()"
-              [attr.aria-label]="'Enable ' + row.label"
-              [attr.data-id]="'hilos-sign-in-method-enabled-' + row.methodKey"
-              (change)="onToggle(row, $event)"
-            />
-          </div>
+          <hilos-switch
+            class="mb-0"
+            [checked]="isOn(row)"
+            [busy]="pendingMethodKey() === row.methodKey"
+            [disabled]="toggle.busy()"
+            [aria-label]="'Enable ' + row.label"
+            [dataId]="'hilos-sign-in-method-enabled-' + row.methodKey"
+            (toggle)="onToggle(row, $event)"
+          />
         </ng-template>
         <ng-template hilosTableCell="ready" let-row>
           @if (row.ready) {
@@ -114,6 +118,7 @@ export class HilosSecuritySignInMethodsPage {
   // One tracked runner for every switch: a single in-flight guard across rows is
   // enough, and the busy flag disables every switch while one write is settling.
   protected readonly toggle = createHilosTrackedAction()
+  protected readonly pendingMethodKey = signal<string | null>(null)
 
   constructor() {
     // Bind the server-windowed table to the connection and request the first
@@ -145,19 +150,17 @@ export class HilosSecuritySignInMethodsPage {
     })
   }
 
-  // Dispatch the switch as a tracked action. Nothing is set optimistically: on
-  // success the switch follows the set when it arrives, and on a refusal the box
-  // the person clicked is put back to what the set still says.
+  // Dispatch the switch as a tracked action. Nothing is set optimistically: the
+  // switch follows the live set on success and remains on it after a refusal.
   protected async onToggle(
     row: HilosSignInMethodRow,
-    event: Event,
+    next: boolean,
   ): Promise<void> {
-    const box = event.target as HTMLInputElement
-    const ok = await this.toggle.run(
-      this.actions().sendMethodSet(row.methodKey, box.checked),
-    )
-    if (!ok) {
-      box.checked = this.isOn(row)
+    this.pendingMethodKey.set(row.methodKey)
+    try {
+      await this.toggle.run(this.actions().sendMethodSet(row.methodKey, next))
+    } finally {
+      this.pendingMethodKey.set(null)
     }
   }
 }

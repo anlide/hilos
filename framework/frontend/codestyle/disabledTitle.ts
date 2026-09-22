@@ -71,11 +71,20 @@ const TITLE_ATTRIBUTES = [
   '[attr.title]',
 ]
 
-/** Every spelling of an accessible name given as `aria-label` in a template. */
+/**
+ * Every spelling of an accessible name given as `aria-label` in a template.
+ *
+ * `[aria-label]` is here for the same reason the other three are: a shared SDK
+ * component takes the name as an input spelled like the attribute it carries, and
+ * Angular binds such an input by its plain name. Without this form the rule reads
+ * `<hilos-switch [aria-label]="…" [attr.title]="…">` as a title on a nameless
+ * control and reports a name that is right there.
+ */
 const NAME_ATTRIBUTES = [
   'aria-label',
   ':aria-label',
   'v-bind:aria-label',
+  '[aria-label]',
   '[attr.aria-label]',
 ]
 

@@ -82,7 +82,11 @@ describe('HilosNotificationPreferences', () => {
     // The row is pending until the changed signal fans back; state is untouched.
     expect(store.pending.get().has('email')).toBe(true)
     expect(store.channels.get()[0].allowed).toBe(true)
-    expect(byId('hilos-notification-preference-pending-email')).not.toBeNull()
+    expect(
+      byId('hilos-notification-preference-toggle-email')?.getAttribute(
+        'aria-busy',
+      ),
+    ).toBe('true')
   })
 
   it('clears the pending row when the send never leaves', () => {

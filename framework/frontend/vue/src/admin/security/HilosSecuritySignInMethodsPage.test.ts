@@ -211,8 +211,10 @@ describe('HilosSecuritySignInMethodsPage', () => {
     pushWindow(METHOD_ROWS)
     await nextTick()
 
-    expect(switchesOf(wrapper, 'sms').length).toBeGreaterThan(0)
-    for (const box of switchesOf(wrapper, 'sms')) {
+    const smsSwitches = switchesOf(wrapper, 'sms')
+    expect(smsSwitches).toHaveLength(2)
+    expect(new Set(smsSwitches.map((box) => box.id)).size).toBe(2)
+    for (const box of smsSwitches) {
       expect(box.checked).toBe(true)
     }
     for (const box of switchesOf(wrapper, 'passkey')) {
@@ -231,7 +233,7 @@ describe('HilosSecuritySignInMethodsPage', () => {
     }
   })
 
-  it('dispatches the one-method switch and puts it back when refused', async () => {
+  it('dispatches the one-method switch and stays on the set when refused', async () => {
     const { connection, pushWindow } = makeConnection()
     const { actions, dispatched } = makeActions()
     const wrapper = mountPage(connection, makeScopes(), actions)
@@ -240,7 +242,7 @@ describe('HilosSecuritySignInMethodsPage', () => {
     await nextTick()
     await wrapper
       .find('[data-id="hilos-sign-in-method-enabled-sms"]')
-      .setValue(false)
+      .trigger('click')
 
     expect(dispatched).toMatchObject([
       {
@@ -251,6 +253,9 @@ describe('HilosSecuritySignInMethodsPage', () => {
     // In flight: every switch waits for the answer.
     for (const box of switchesOf(wrapper, 'passkey')) {
       expect(box.disabled).toBe(true)
+    }
+    for (const box of switchesOf(wrapper, 'sms')) {
+      expect(box.checked).toBe(true)
     }
 
     dispatched[0]?.refuse(

@@ -79,6 +79,7 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
@@ -242,12 +243,12 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
   const keep = useTrackedAction()
   const [keepPendingId, setKeepPendingId] = useState<string | null>(null)
 
-  async function toggleKeep(row: HilosBackupRow): Promise<void> {
+  async function toggleKeep(row: HilosBackupRow, next: boolean): Promise<void> {
     if (keep.busy) {
       return
     }
     setKeepPendingId(row.id)
-    await keep.run(actions.sendBackupSetKeep(row.id, !row.keep))
+    await keep.run(actions.sendBackupSetKeep(row.id, next))
     setKeepPendingId(null)
   }
 
@@ -773,21 +774,20 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           [BACKUP_KEEP_FIELD]: (row) => (
             <div className={outOfReachClass(row)}>
               {isBackupKeepable(row) ? (
-                <div className="form-check form-switch d-inline-block m-0">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    role="switch"
+                <div className="d-inline-block">
+                  <HilosSwitch
+                    className="m-0"
                     checked={row.keep}
-                    disabled={keep.busy && keepPendingId === row.id}
+                    busy={keep.busy && keepPendingId === row.id}
+                    disabled={keep.busy}
                     aria-label={
                       row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
                     }
                     title={
                       row.keep ? 'Unpin from rotation' : 'Pin out of rotation'
                     }
-                    data-id={`hilos-backup-keep-${row.id}`}
-                    onChange={() => void toggleKeep(row)}
+                    dataId={`hilos-backup-keep-${row.id}`}
+                    onToggle={(next) => void toggleKeep(row, next)}
                   />
                 </div>
               ) : (

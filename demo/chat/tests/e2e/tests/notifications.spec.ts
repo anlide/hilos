@@ -133,17 +133,9 @@ async function enableEmailChannel(page: Page): Promise<void> {
     return
   }
 
-  await toggle.check()
-  // The switch redraws from the table's own snapshot, which looks the same before
-  // and after the write, and the enablement action answers with no sentence of
-  // its own (the switch flipping is the answer, HIL-770) — so what says the write
-  // landed is the hub re-read from the server reporting the channel on.
-  await expect(async () => {
-    await gotoPage(page, '/hilos/communications')
-    await expect(
-      shownByTestId(page, 'hilos-channel-enabled-email'),
-    ).toBeChecked()
-  }).toPass()
+  await toggle.click()
+  // The server's table update moves this same switch; no page re-read is needed.
+  await expect(toggle).toBeChecked()
 }
 
 /**
@@ -345,7 +337,7 @@ test('muting the email channel keeps the next emit off it', async ({
   await gotoPage(tabB, '/profile')
   await expect(emailPreference(tabB)).toBeChecked()
 
-  await toggle.uncheck()
+  await toggle.click()
   await expect(emailPreference(tabB)).not.toBeChecked()
 
   // Durable, not merely live: a cold load reads the preference back from the DB.
