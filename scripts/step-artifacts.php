@@ -225,6 +225,21 @@ const STAND_DATABASE_LABEL = 'hilos.role=database';
  */
 const STAND_APP_LABEL = 'hilos.role=app';
 
+/** At least one container of this stand is in State running. */
+const STAND_STATE_UP = 'up';
+
+/** Docker holds containers of this stand, and none of them is running. */
+const STAND_STATE_STOPPED = 'stopped';
+
+/** Docker holds none of this stand, or the probe could not answer — the reason is in missing. */
+const STAND_STATE_DOWN = 'down';
+
+/** The step named no stand. */
+const STAND_STATE_NONE = 'none';
+
+/** The `State` field of a `docker compose ps` row that is running. */
+const CONTAINER_STATE_RUNNING = 'running';
+
 /**
  * Take one step's snapshot, and report where it went and what it says.
  *
@@ -290,16 +305,16 @@ function collectStepArtifacts(
     $probe = artifactBudgetLeft($deadline)
         ? probeStand($root, $stand)
         : [
-            'state' => 'down',
+            'state' => STAND_STATE_DOWN,
             'command' => null,
             'raw' => '',
             'containers' => [],
             'missing' => ['docker: the snapshot ran out of its budget'],
         ];
     $missing = [...$missing, ...$probe['missing']];
-    if ($probe['state'] === 'up' && $stand !== null) {
+    if ($stand !== null && standKeepsContainers($probe['state'])) {
         $missing = [...$missing, ...collectDockerArtifacts($root, $stand, $probe, $path, $deadline)];
-        if (standHoldsDatabase($stand)) {
+        if (standAnswersDatabase($probe['state'], $stand)) {
             $missing = [...$missing, ...collectDatabaseArtifacts($root, $stand, $probe, $path, $deadline)];
         }
     }
@@ -333,9 +348,7 @@ function collectStepArtifacts(
     return [
         'path' => $path,
         'reason' => $reason,
-        'standCommand' => $probe['state'] === 'up' && $stand !== null
-            ? $probe['command'] . ' (from ' . $stand['cwd'] . ')'
-            : null,
+        'standCommand' => standEntryCommand($probe, $stand),
         'missing' => $missing,
     ];
 }
@@ -372,6 +385,21 @@ function artifactReason(int $rc, array $unstable): string
 function artifactReasonNeedsTriage(string $reason): bool
 {
     return $reason !== ARTIFACT_REASON_GREEN;
+}
+
+/**
+ * The command that opens a stand still up, or nothing: a stopped stand cannot
+ * be entered.
+ *
+ * @param array{state: string, command: string|null} $probe What {@see probeStand()} answered.
+ * @param array{cwd: string}|null $stand The registry record, or none.
+ * @return string|null The probe's command with the stand's cwd, or null.
+ */
+function standEntryCommand(array $probe, ?array $stand): ?string
+{
+    return $probe['state'] === STAND_STATE_UP && $stand !== null
+        ? $probe['command'] . ' (from ' . $stand['cwd'] . ')'
+        : null;
 }
 
 /**
@@ -599,7 +627,7 @@ function unhealthyStandContainers(array $containers): array
         if (!is_string($service)) {
             continue;
         }
-        if (($container['State'] ?? null) !== 'running' || ($container['Health'] ?? null) === 'unhealthy') {
+        if (($container['State'] ?? null) !== CONTAINER_STATE_RUNNING || ($container['Health'] ?? null) === 'unhealthy') {
             $wrong[] = $service;
         }
     }
@@ -657,14 +685,44 @@ function artifactTriageText(string $id, string $reason, array $matched): string
 }
 
 /**
+ * Which of up, stopped or down docker's container list is.
+ *
+ * Empty is down: docker holds nothing of this stand. One running container is
+ * up, mixed included. Everything present and none running is stopped — the
+ * collector then keeps those containers' logs rather than treating the stand
+ * as gone.
+ *
+ * @param array<int, array<string, mixed>> $containers What `docker compose ps` listed.
+ * @return string One of STAND_STATE_UP, STAND_STATE_STOPPED, STAND_STATE_DOWN.
+ */
+function standStateOfContainers(array $containers): string
+{
+    if ($containers === []) {
+        return STAND_STATE_DOWN;
+    }
+    foreach ($containers as $row) {
+        if (($row['State'] ?? null) === CONTAINER_STATE_RUNNING) {
+            return STAND_STATE_UP;
+        }
+    }
+
+    return STAND_STATE_STOPPED;
+}
+
+/**
  * Whether docker is holding anything for this step, and what it is holding.
  *
  * The state is asked of docker rather than deduced from the outcome, because "the
  * stack never came up" and "the stack came up and the tests failed" are the two
  * answers a red e2e step is most often between, and only docker can tell them
- * apart. A probe that cannot answer leaves the stand called `down`: the collector
- * may not claim a stand it did not see, and the reason it could not see one is
- * written into `missing` beside it.
+ * apart.
+ *
+ * The word is one of four. `up` — at least one container of this stand is in
+ * State running. `stopped` — docker holds containers of this stand and none of
+ * them is running, so their output is kept. `down` — docker holds none of them.
+ * `none` — the step named no stand. A probe that cannot answer leaves the stand
+ * called `down`: the collector may not claim a stand it did not see, and the
+ * reason it could not see one is written into `missing` beside it.
  *
  * The command it ran comes back with the answer, because the pointer line under the
  * verdict prints that command verbatim and the two must not be built twice.
@@ -678,12 +736,12 @@ function artifactTriageText(string $id, string $reason, array $matched): string
 function probeStand(string $root, ?array $stand): array
 {
     if ($stand === null) {
-        return ['state' => 'none', 'command' => null, 'raw' => '', 'containers' => [], 'missing' => []];
+        return ['state' => STAND_STATE_NONE, 'command' => null, 'raw' => '', 'containers' => [], 'missing' => []];
     }
 
     $services = standPsServices($root, $stand);
     if ($services['missing'] !== []) {
-        return ['state' => 'down', 'command' => null, 'raw' => '', 'containers' => [], 'missing' => $services['missing']];
+        return ['state' => STAND_STATE_DOWN, 'command' => null, 'raw' => '', 'containers' => [], 'missing' => $services['missing']];
     }
 
     $command = standPsCommand($stand, $services['services']);
@@ -694,10 +752,9 @@ function probeStand(string $root, ?array $stand): array
         ARTIFACT_COMMAND_TIMEOUT_SECONDS,
     );
     $containers = $ran['missing'] === [] ? decodeComposePs($ran['output']) : [];
-    $running = array_filter($containers, static fn(array $container): bool => ($container['State'] ?? null) === 'running');
 
     return [
-        'state' => $running === [] ? 'down' : 'up',
+        'state' => standStateOfContainers($containers),
         'command' => $command,
         'raw' => $ran['output'],
         'containers' => $containers,
@@ -780,13 +837,26 @@ function standPsServices(string $root, array $stand): array
 }
 
 /**
+ * Docker is holding something of this stand, so its containers' output answers
+ * why one of them stopped — a PHP fatal prints into the container's stream
+ * (HIL-1015).
+ *
+ * @param string $state The probe's stand word.
+ * @return bool True for a stand that is up or stopped.
+ */
+function standKeepsContainers(string $state): bool
+{
+    return in_array($state, [STAND_STATE_UP, STAND_STATE_STOPPED], true);
+}
+
+/**
  * Keep what docker is holding: its own answer about the containers, and the tail of
  * each one's output.
  *
- * Only reachable while the stand still stands, which on a full run means a step that
- * went red before its chain reached `down`. On a green step there is nothing here to
- * take, and the stand is NOT raised again to get it — a stand the collector put up is
- * no longer the stand the run failed on.
+ * Reachable whenever docker holds a container of this stand, running or stopped.
+ * `docker logs` returns a stopped container's output without starting anything.
+ * The stand is NOT raised to get the evidence — a stand the collector put up is
+ * no longer the stand the step failed on.
  *
  * @param string $root Repository root.
  * @param array{cwd: string} $stand The record of the stand out of the registry.
@@ -872,6 +942,18 @@ function containerLogFileName(array $containers, array $container): ?string
 function standHoldsDatabase(?array $stand): bool
 {
     return $stand !== null && ($stand['holdsDatabase'] ?? true) === true;
+}
+
+/**
+ * A stopped stand cannot be asked for its database.
+ *
+ * @param string $state The probe's stand word.
+ * @param array<string, mixed>|null $stand The registry record, or none when the step named no stand.
+ * @return bool True only while the stand is up and holds a database.
+ */
+function standAnswersDatabase(string $state, ?array $stand): bool
+{
+    return $state === STAND_STATE_UP && standHoldsDatabase($stand);
 }
 
 /**

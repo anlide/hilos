@@ -214,6 +214,50 @@ final class StepArtifactsTest extends TestCase
         $this->assertTrue(standHoldsDatabase(self::DEMO_STAND));
     }
 
+    /** A mixed stand is up: one running container is enough. */
+    public function testCallsAStandUpWhileOneOfItsContainersRuns(): void
+    {
+        $containers = [
+            ['Service' => 'chat-test', 'State' => 'exited', 'Health' => ''],
+            ['Service' => 'mysql-test', 'State' => 'running', 'Health' => ''],
+        ];
+
+        $this->assertSame('up', standStateOfContainers($containers));
+    }
+
+    /** Docker holding only stopped containers is stopped, not down. */
+    public function testCallsAStandWhoseEveryContainerStoppedStopped(): void
+    {
+        $containers = [
+            ['Service' => 'chat-test', 'State' => 'exited', 'Health' => ''],
+            ['Service' => 'mysql-test', 'State' => 'exited', 'Health' => ''],
+        ];
+
+        $this->assertSame('stopped', standStateOfContainers($containers));
+    }
+
+    /** An empty list is down: docker holds nothing of this stand. */
+    public function testCallsAStandDockerHoldsNothingDown(): void
+    {
+        $this->assertSame('down', standStateOfContainers([]));
+    }
+
+    /** Docker artifacts are taken for a stand that is up or stopped, and for no other word. */
+    public function testKeepsTheContainersOfAStandThatIsUpOrStopped(): void
+    {
+        $this->assertTrue(standKeepsContainers('up'));
+        $this->assertTrue(standKeepsContainers('stopped'));
+        $this->assertFalse(standKeepsContainers('down'));
+        $this->assertFalse(standKeepsContainers('none'));
+    }
+
+    /** A stopped stand is not asked for its database; an up demo stand still is. */
+    public function testAsksNoDatabaseOfAStoppedStand(): void
+    {
+        $this->assertFalse(standAnswersDatabase('stopped', self::DEMO_STAND));
+        $this->assertTrue(standAnswersDatabase('up', self::DEMO_STAND));
+    }
+
     /** A service that appears once keeps the log name the collector has always used. */
     public function testNamesAContainerLogByItsServiceWhenItIsTheOnlyOne(): void
     {
@@ -279,6 +323,19 @@ final class StepArtifactsTest extends TestCase
                 . ' — stand is UP: docker compose -f \'docker/docker-compose.test.yml\''
                 . ' --profile "*" ps (from demo/chat)',
             artifactPointerLine('chat-e2e', $result),
+        );
+    }
+
+    /** A stopped stand has no way in; an up one still does. */
+    public function testOffersNoWayIntoAStoppedStand(): void
+    {
+        $command = 'docker compose -f \'docker/docker-compose.test.yml\' --profile "*" ps';
+        $probe = ['state' => 'stopped', 'command' => $command];
+
+        $this->assertNull(standEntryCommand($probe, self::DEMO_STAND));
+        $this->assertSame(
+            $command . ' (from demo/chat)',
+            standEntryCommand(['state' => 'up', 'command' => $command], self::DEMO_STAND),
         );
     }
 
@@ -390,6 +447,27 @@ final class StepArtifactsTest extends TestCase
 
         $this->assertStringContainsString('never came up', $matched[0]);
         $this->assertStringContainsString('mysql-test', $matched[0]);
+    }
+
+    /**
+     * The triage of a waited-for stand whose every container has exited sends the
+     * reader to docker/logs/, which the collector now keeps under stopped.
+     */
+    public function testSendsTheReaderOfAStoppedStandToLogsTheSnapshotKeeps(): void
+    {
+        $containers = [
+            ['Service' => 'chat-test', 'State' => 'exited', 'Health' => ''],
+            ['Service' => 'mysql-test', 'State' => 'exited', 'Health' => ''],
+        ];
+
+        $this->assertSame('stopped', standStateOfContainers($containers));
+        $this->assertTrue(standKeepsContainers('stopped'));
+        $matched = matchTriageSignatures($this->collected([
+            'stepLog' => 'gave up: did not become ready within 60000ms',
+            'containers' => $containers,
+        ]));
+
+        $this->assertStringContainsString('docker/logs/', $matched[0]);
     }
 
     /** A worker's error is quoted into the triage, because quoting it is what found HIL-717. */
