@@ -8,6 +8,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\NotificationTestSeedCommand;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Utils\Helpers\RandomHelper;
 use Random\RandomException;
 
@@ -89,6 +90,55 @@ final class NotificationTestSeedCommandTest extends IntegrationTestCase
     }
 
     /**
+     * @throws HilosException When the fixture user, notifications, or deliveries cannot be written or read
+     * @throws RandomException When the fixture identifier cannot be generated
+     */
+    public function testSeedsDeliveriesWhenDeliveredChannelIsGiven(): void
+    {
+        [$userId, $email] = $this->createRecipient();
+
+        self::assertSame(
+            ExitCode::SUCCESS,
+            $this->runSeed($email, self::SEED_COUNT, 0, 'email'),
+        );
+
+        $notifications = Hilos::$db->notifications->objectCollection->listForUser($userId, self::SEED_COUNT + 1);
+        self::assertCount(self::SEED_COUNT, $notifications);
+
+        $deliveries = Hilos::$db->notificationDeliveries->objectCollection;
+        foreach ($notifications as $notification) {
+            self::assertNotNull($notification->id);
+            $delivery = $deliveries->findFor($notification->id, 'email');
+            self::assertNotNull($delivery);
+            self::assertSame(DeliveryStatus::SENT, $delivery->status);
+            self::assertSame(1, $delivery->attempts);
+            self::assertNotNull($delivery->deliveredAt);
+        }
+    }
+
+    /**
+     * @throws HilosException When resolving the recipient fails
+     * @throws RandomException When the fixture identifier cannot be generated
+     */
+    public function testRejectsUnknownDeliveryChannelBeforeWritingAnyNotification(): void
+    {
+        [$userId, $email] = $this->createRecipient();
+
+        $this->expectOutputRegex('/Unknown delivery channel/');
+        $exitCode = new NotificationTestSeedCommand()->execute(
+            [
+                'user' => $email,
+                'delivered' => 'unregistered-channel-name',
+                'prefix' => 'Integration notification',
+            ],
+            [(string)self::SEED_COUNT],
+        );
+
+        self::assertSame(ExitCode::INVALID_ARGUMENT, $exitCode);
+        self::assertSame([], Hilos::$db->notifications->objectCollection->listForUser($userId, 1));
+    }
+
+    /**
      * Creates a fixture account with a password identity the command can resolve.
      *
      * @return array{int, string} User id and email
@@ -113,15 +163,25 @@ final class NotificationTestSeedCommandTest extends IntegrationTestCase
      * @param string $email Recipient email
      * @param int $count Number of notifications to seed
      * @param int $read Number of oldest notifications to mark read
+     * @param ?string $delivered Optional delivery channel name
      * @return int Command exit code
      * @throws HilosException When the command's lookup or write fails
      */
-    private function runSeed(string $email, int $count, int $read): int
+    private function runSeed(string $email, int $count, int $read, ?string $delivered = null): int
     {
+        $options = [
+            'user' => $email,
+            'read' => (string)$read,
+            'prefix' => 'Integration notification',
+        ];
+        if ($delivered !== null) {
+            $options['delivered'] = $delivered;
+        }
+
         ob_start();
         try {
             return new NotificationTestSeedCommand()->execute(
-                ['user' => $email, 'read' => (string)$read, 'prefix' => 'Integration notification'],
+                $options,
                 [(string)$count],
             );
         } finally {

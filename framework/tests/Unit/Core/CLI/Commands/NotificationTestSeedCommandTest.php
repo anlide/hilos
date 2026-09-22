@@ -76,6 +76,24 @@ final class NotificationTestSeedCommandTest extends TestCase
         );
     }
 
+    public function testRejectsEmptyDeliveredChannelOption(): void
+    {
+        $this->expectOutputRegex('/Usage/');
+        self::assertSame(
+            ExitCode::INVALID_ARGUMENT,
+            new NotificationTestSeedCommand()->execute(['delivered' => ''], ['5']),
+        );
+    }
+
+    public function testRejectsBooleanDeliveredChannelOption(): void
+    {
+        $this->expectOutputRegex('/Usage/');
+        self::assertSame(
+            ExitCode::INVALID_ARGUMENT,
+            new NotificationTestSeedCommand()->execute(['delivered' => true], ['5']),
+        );
+    }
+
     public function testRefusesOnProductionBeforeReadingTheDatabase(): void
     {
         putenv('APP_ENV=prod');

@@ -23,6 +23,7 @@ import {
 } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
 import { login, signUp, signUpWithVerifiedEmail } from '../helpers/session'
+import { tableRowKeys } from '../helpers/table'
 
 // Notification-center e2e (HIL-558): the first browser coverage of the
 // notification subsystem. A notification is emitted through the live daemon over
@@ -435,6 +436,43 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
   await page.getByTestId('hilos-table-sort-createdAt').click()
   await expect(row).toBeVisible()
   await expect(panel).toHaveCount(0)
+})
+
+// Table pager on an inexact count (HIL-1077): composer test:db-prepare seeds 501
+// notifications with email delivery rows for seed-002 (501 = TableConstants::COUNT_CEILING + 1),
+// crossing the count ceiling where the total stops being exact. When the count is
+// inexact, the pager draws no page numbers and walks page-by-page via Next and Previous.
+test('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/communications/email/deliveries')
+
+  const count = page.getByTestId('hilos-table-count')
+  const prev = page.getByTestId('hilos-table-prev')
+  const next = page.getByTestId('hilos-table-next')
+  const pageNumbers = page.locator('[data-id^="hilos-table-page-"]')
+
+  await expect(count).toHaveText('1 – 25 of 500+')
+  await expect(pageNumbers).toHaveCount(0)
+  await expect(prev).toBeDisabled()
+  await expect(next).toBeEnabled()
+
+  const pageOneKeys = await tableRowKeys(page)
+
+  await next.click()
+  await expect(count).toHaveText('26 – 50 of 500+')
+  await expect(prev).toBeEnabled()
+  await expect(pageNumbers).toHaveCount(0)
+
+  const pageTwoKeys = await tableRowKeys(page)
+  for (const key of pageOneKeys) {
+    expect(pageTwoKeys).not.toContain(key)
+  }
+
+  await prev.click()
+  await expect(count).toHaveText('1 – 25 of 500+')
+  await expect(prev).toBeDisabled()
 })
 
 // The product half of the line (HIL-557): until now every row in this suite was

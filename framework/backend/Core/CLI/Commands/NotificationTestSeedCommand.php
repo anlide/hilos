@@ -9,7 +9,9 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Exception\TableNotActivatedException;
+use Hilos\Database\Schema\Schema;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
@@ -23,11 +25,18 @@ use Hilos\Utils\Helpers\TimeHelper;
  * router and dispatches delivery channels, while this fixture prepares durable rows for
  * the daemon to read when the stand comes up. A recipient with any existing notification
  * is refused so a stale database cannot silently double the fixture.
+ *
+ * With --delivered=<channel>, each notification also receives one delivery journal row on
+ * that channel, written directly in terminal sent state without dispatching, to prepare a
+ * delivery journal exceeding the table count ceiling on the test stand (HIL-1077).
  */
 final class NotificationTestSeedCommand extends TestOnlyCommand
 {
     /** @var array<string, list<TruthSourceOperation>> Notification rows this command seeds, claimed by its runner */
-    public const array OWNS_DB = [HilosDbContext::notifications => TruthSourceOperation::BY_KIND];
+    public const array OWNS_DB = [
+        HilosDbContext::notifications => TruthSourceOperation::BY_KIND,
+        HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND,
+    ];
 
     /** @var string Default fixture recipient when --user is not given */
     private const string DEFAULT_USER = 'seed-001@example.test';
@@ -57,7 +66,7 @@ final class NotificationTestSeedCommand extends TestOnlyCommand
     public function execution(): CommandExecution
     {
         return CommandExecution::cliOfflineWrite(
-            'seeds stand notifications from composer test:db-prepare, which runs before the stand daemon comes up',
+            'seeds stand notifications and their delivery journal rows from composer test:db-prepare, which runs before the stand daemon comes up',
         );
     }
 
@@ -85,15 +94,16 @@ Seeds <count> deterministic notification rows for one fixture user. The oldest
 notifications before this command runs.
 
 Usage:
-  php cli.php test:notification:seed <count> [--user=<email>] [--read=<k>] [--prefix=<p>]
+  php cli.php test:notification:seed <count> [--user=<email>] [--read=<k>] [--prefix=<p>] [--delivered=<channel>]
 
 Arguments:
   <count>       Positive integer: how many notifications to seed
 
 Options:
-  --user=<email> Recipient address (default: {$defaultUser})
-  --read=<k>     Number of oldest rows to stamp read (default: 0)
-  --prefix=<p>   Notification title prefix (default: {$defaultPrefix})
+  --user=<email>        Recipient address (default: {$defaultUser})
+  --read=<k>            Number of oldest rows to stamp read (default: 0)
+  --prefix=<p>          Notification title prefix (default: {$defaultPrefix})
+  --delivered=<channel> Journal one sent delivery per notification on this registered channel
 HELP;
     }
 
@@ -117,7 +127,7 @@ HELP;
     /**
      * Seeds deterministic notifications for one existing fixture user.
      *
-     * @param array<string, mixed> $options Parsed options: --user, --read, --prefix
+     * @param array<string, mixed> $options Parsed options: --user, --read, --prefix, --delivered
      * @param list<string> $args Positional args: [0] count
      * @return int Exit code
      * @throws HilosException When a database lookup or notification write fails
@@ -155,21 +165,45 @@ HELP;
             return ExitCode::INVALID_ARGUMENT;
         }
 
-        $userId = Hilos::$db->identities->findUserIdByEmail($user);
-        if ($userId === null) {
-            echo "No user found for {$user}; run test:user:seed first.\n";
+        $channel = null;
+        if (array_key_exists('delivered', $options)) {
+            $deliveredOption = $options['delivered'];
+            if (!is_string($deliveredOption) || $deliveredOption === '') {
+                $this->printUsage();
 
-            return ExitCode::CONFIG_ERROR;
+                return ExitCode::INVALID_ARGUMENT;
+            }
+            $channel = $deliveredOption;
+
+            $registeredChannels = array_keys(Hilos::notificationChannelRegistryClass()::all());
+            if (!in_array($channel, $registeredChannels, true)) {
+                echo "Unknown delivery channel {$channel}; registered: " . implode(', ', $registeredChannels) . "\n";
+
+                return ExitCode::INVALID_ARGUMENT;
+            }
         }
 
-        $notifications = Hilos::$db->notifications->objectCollection;
-
         try {
+            if ($channel !== null) {
+                Schema::requireTable(EntityNotificationDelivery::_table);
+            }
+
+            $userId = Hilos::$db->identities->findUserIdByEmail($user);
+            if ($userId === null) {
+                echo "No user found for {$user}; run test:user:seed first.\n";
+
+                return ExitCode::CONFIG_ERROR;
+            }
+
+            $notifications = Hilos::$db->notifications->objectCollection;
+
             if ($notifications->listForUser($userId, 1) !== []) {
                 echo "Recipient {$user} already has notifications; run test:db:reset first.\n";
 
                 return ExitCode::ERROR;
             }
+
+            $deliveries = $channel !== null ? Hilos::$db->notificationDeliveries->objectCollection : null;
 
             $firstId = 0;
             $lastId = 0;
@@ -192,6 +226,12 @@ HELP;
                 if ($index === 1) {
                     $firstId = $lastId;
                 }
+
+                if ($deliveries !== null) {
+                    $delivery = $deliveries->createPending($lastId, $channel);
+                    $deliveries->beginAttempt($delivery);
+                    $deliveries->markSent($delivery);
+                }
             }
         } catch (TableNotActivatedException $exception) {
             echo "Cannot seed notifications: {$exception->getMessage()}\n";
@@ -199,7 +239,11 @@ HELP;
             return ExitCode::CONFIG_ERROR;
         }
 
-        echo "Seeded {$count} notifications for {$user} (ids {$firstId}..{$lastId}, {$read} read)\n";
+        $summary = "Seeded {$count} notifications for {$user} (ids {$firstId}..{$lastId}, {$read} read)";
+        if ($channel !== null) {
+            $summary .= ", each delivered via {$channel}";
+        }
+        echo "{$summary}\n";
 
         return ExitCode::SUCCESS;
     }
@@ -207,7 +251,7 @@ HELP;
     /** Prints the command usage after an argument refusal. */
     private function printUsage(): void
     {
-        echo "Usage: {$this->getName()} <count> [--user=<email>] [--read=<k>] [--prefix=<p>]"
+        echo "Usage: {$this->getName()} <count> [--user=<email>] [--read=<k>] [--prefix=<p>] [--delivered=<channel>]"
             . "  (count: positive integer; read: 0..count)\n";
     }
 }
