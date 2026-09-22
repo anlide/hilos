@@ -181,10 +181,20 @@ const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
  * once gave green on the broken client five times out of five, one that held for 50 ms
  * gave red five out of five — and HIL-929 measured that the stand keeps the signature at
  * the same number. It stays far below the agent's request deadline (AbstractOAuthAgent
- * DEFAULT_HTTP_TIMEOUT_MS, 5 s): a hold that outlasts the deadline is another defect and
- * another scenario (HIL-1043).
+ * DEFAULT_HTTP_TIMEOUT_MS, 5 s). A hold that outlasts the deadline lives in the
+ * neighboring HIL-1043 scenario.
  */
 const PROVIDER_HOLD_MS = 50
+
+/**
+ * How long the provider holds the connection in the HIL-1043 scenario. It is above the
+ * agent's request deadline (AbstractOAuthAgent DEFAULT_HTTP_TIMEOUT_MS, 5 s) — otherwise
+ * the scenario would be green before the fix — and below the exchange TTL
+ * (OAuthPendingLogin EXCHANGE_TTL_MS, 15 s) and the browser trip
+ * (OAUTH_EXCHANGE_TIMEOUT_MS, 20 s), or a different clock would fail the run and lie
+ * about the cause.
+ */
+const PROVIDER_HOLD_PAST_DEADLINE_MS = 6000
 
 /**
  * Start a sign-in with a provider from the gated profile and see the person through
@@ -358,6 +368,28 @@ test('signs in when the provider keeps the connection open after its answer (HIL
   })
   await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
     holdMs: PROVIDER_HOLD_MS,
+  })
+
+  await signInThroughProvider(page, account)
+
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+})
+
+/**
+ * Unlike the HIL-732 neighbor, which holds 50 ms to expose an empty TLS read, this
+ * hold outlasts the agent's request deadline and exposes waiting for close.
+ */
+test('signs in when the provider holds the connection past the request deadline (HIL-1043)', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
+  await dictateGatewayBehavior('/oauth/google/token', account.subject, {
+    holdMs: PROVIDER_HOLD_PAST_DEADLINE_MS,
+  })
+  await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
+    holdMs: PROVIDER_HOLD_PAST_DEADLINE_MS,
   })
 
   await signInThroughProvider(page, account)

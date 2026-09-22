@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpBusyException;
+use Hilos\API\Exception\AsyncHttpMalformedResponseException;
 use Hilos\API\Exception\AsyncHttpStatusException;
 use Hilos\API\Exception\AsyncHttpTlsHandshakeException;
 use Hilos\Constants\HttpConstants;
@@ -200,6 +201,170 @@ final class AsyncHttpClientTest extends TestCase
     }
 
     /**
+     * A response that meets its Content-Length is complete while the peer still holds the connection.
+     */
+    public function testCompletesOnDeclaredLengthWhilePeerHoldsConnection(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+            $this->serveResponseUntilFinished(
+                $server,
+                $client,
+                $this->response(200, 'hello'),
+                closeAfterAnswer: false,
+            );
+
+            $this->assertTrue($client->hasResult());
+            $this->assertSame('hello', $client->consumeResult()->body);
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
+     * A chunked response is complete on the terminating zero-size chunk while the peer holds the connection.
+     */
+    public function testCompletesOnFinalChunkWhilePeerHoldsConnection(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+            $this->serveResponseUntilFinished(
+                $server,
+                $client,
+                $this->chunkedResponse(200, ['hello'], true),
+                closeAfterAnswer: false,
+            );
+
+            $this->assertTrue($client->hasResult());
+            $this->assertSame('hello', $client->consumeResult()->body);
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
+     * Closing before the declared length is a malformed response, not a success with a short body.
+     */
+    public function testBodyShorterThanDeclaredLengthIsRefused(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+
+            $this->expectException(AsyncHttpMalformedResponseException::class);
+            $this->expectExceptionMessageMatches('/body cut short: \d+ of \d+ declared bytes/');
+            $this->serveResponseUntilFinished(
+                $server,
+                $client,
+                $this->responseWithRawContentLength(200, str_repeat('a', 40), '128'),
+            );
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
+     * Closing a chunked body without its terminating zero-size chunk is a malformed response.
+     */
+    public function testChunkedBodyWithoutFinalChunkIsRefused(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+
+            $this->expectException(AsyncHttpMalformedResponseException::class);
+            $this->expectExceptionMessageMatches('/ended without its final chunk/');
+            $this->serveResponseUntilFinished(
+                $server,
+                $client,
+                $this->chunkedResponse(200, ['hello'], false),
+            );
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
+     * A Content-Length that is not a number is refused immediately.
+     */
+    public function testNonNumericContentLengthIsRefused(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+
+            $this->expectException(AsyncHttpMalformedResponseException::class);
+            $this->expectExceptionMessageMatches('/Content-Length is not a number/');
+            $this->serveResponseUntilFinished(
+                $server,
+                $client,
+                $this->responseWithRawContentLength(200, 'x', 'abc'),
+            );
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
+     * Content-Length 0 is a completed empty body, not a wait for the peer to close.
+     */
+    public function testDeclaredLengthZeroCompletesWithEmptyBody(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+            $this->serveResponseUntilFinished(
+                $server,
+                $client,
+                $this->responseWithRawContentLength(200, '', '0'),
+                closeAfterAnswer: false,
+            );
+
+            $this->assertTrue($client->hasResult());
+            $this->assertSame('', $client->consumeResult()->body);
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
+     * A response with neither Content-Length nor chunked encoding still ends when the peer closes.
+     */
+    public function testResponseWithoutDeclaredEndStillEndsOnClose(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $client = new AsyncHttpClient('127.0.0.1', $port, '/status');
+            $client->startNewRequest(microtime(true) * 1000);
+            $response = 'HTTP/1.1 200 Test' . HttpConstants::HTTP_LINE_SEPARATOR
+                . HttpConstants::HEADER_CONNECTION . ': close'
+                . HttpConstants::HTTP_DELIMITER
+                . 'until-close';
+            $this->serveResponseUntilFinished($server, $client, $response);
+
+            $this->assertTrue($client->hasResult());
+            $this->assertSame('until-close', $client->consumeResult()->body);
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /**
      * Removes the PEM files the TLS tests issued for themselves.
      */
     protected function tearDown(): void
@@ -322,11 +487,17 @@ final class AsyncHttpClientTest extends TestCase
      * @param resource $server Server socket
      * @param AsyncHttpClient $client Client under test
      * @param string $response Raw HTTP response to send
+     * @param bool $closeAfterAnswer Whether to close the connection after writing the response
      */
-    private function serveResponseUntilFinished($server, AsyncHttpClient $client, string $response): void
-    {
+    private function serveResponseUntilFinished(
+        $server,
+        AsyncHttpClient $client,
+        string $response,
+        bool $closeAfterAnswer = true,
+    ): void {
         $connection = null;
         $requestBuffer = '';
+        $answered = false;
         $deadline = microtime(true) + 2.0;
 
         try {
@@ -352,10 +523,13 @@ final class AsyncHttpClientTest extends TestCase
                         $requestBuffer .= $chunk;
                     }
 
-                    if (str_contains($requestBuffer, HttpConstants::HTTP_DELIMITER)) {
+                    if (!$answered && str_contains($requestBuffer, HttpConstants::HTTP_DELIMITER)) {
                         fwrite($connection, $response);
-                        fclose($connection);
-                        $connection = null;
+                        $answered = true;
+                        if ($closeAfterAnswer) {
+                            fclose($connection);
+                            $connection = null;
+                        }
                     }
                 }
 
@@ -494,6 +668,50 @@ final class AsyncHttpClientTest extends TestCase
     {
         return "HTTP/1.1 {$statusCode} Test" . HttpConstants::HTTP_LINE_SEPARATOR
             . HttpConstants::HEADER_CONTENT_LENGTH . ': ' . strlen($body) . HttpConstants::HTTP_LINE_SEPARATOR
+            . HttpConstants::HEADER_CONNECTION . ': close'
+            . HttpConstants::HTTP_DELIMITER
+            . $body;
+    }
+
+    /**
+     * Builds a chunked HTTP response, optionally omitting the terminating zero-size chunk.
+     *
+     * @param int $statusCode HTTP status code
+     * @param list<string> $chunks Body pieces to encode, in order
+     * @param bool $terminated Whether to append the final zero-size chunk
+     * @return string Raw HTTP response
+     */
+    private function chunkedResponse(int $statusCode, array $chunks, bool $terminated): string
+    {
+        $body = '';
+        foreach ($chunks as $chunk) {
+            $body .= dechex(strlen($chunk)) . HttpConstants::HTTP_LINE_SEPARATOR
+                . $chunk
+                . HttpConstants::HTTP_LINE_SEPARATOR;
+        }
+        if ($terminated) {
+            $body .= '0' . HttpConstants::HTTP_LINE_SEPARATOR . HttpConstants::HTTP_LINE_SEPARATOR;
+        }
+
+        return "HTTP/1.1 {$statusCode} Test" . HttpConstants::HTTP_LINE_SEPARATOR
+            . HttpConstants::HEADER_TRANSFER_ENCODING . ': chunked' . HttpConstants::HTTP_LINE_SEPARATOR
+            . HttpConstants::HEADER_CONNECTION . ': close'
+            . HttpConstants::HTTP_DELIMITER
+            . $body;
+    }
+
+    /**
+     * Builds an HTTP response whose Content-Length is written exactly as supplied.
+     *
+     * @param int $statusCode HTTP status code
+     * @param string $body Response body as sent
+     * @param string $declaredLength Content-Length value written on the wire
+     * @return string Raw HTTP response
+     */
+    private function responseWithRawContentLength(int $statusCode, string $body, string $declaredLength): string
+    {
+        return "HTTP/1.1 {$statusCode} Test" . HttpConstants::HTTP_LINE_SEPARATOR
+            . HttpConstants::HEADER_CONTENT_LENGTH . ': ' . $declaredLength . HttpConstants::HTTP_LINE_SEPARATOR
             . HttpConstants::HEADER_CONNECTION . ': close'
             . HttpConstants::HTTP_DELIMITER
             . $body;

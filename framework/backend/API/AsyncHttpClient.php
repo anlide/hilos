@@ -548,8 +548,18 @@ class AsyncHttpClient
             // An empty read on a non-blocking socket means "no data yet", never "the peer is
             // done": on TLS the socket is announced readable as soon as protocol bytes arrive,
             // while the decrypted application bytes are not there yet. The end of the response is
-            // declared by feof() below, and by nothing else.
+            // declared by a Content-Length, a terminating chunk, or a close — an empty read is
+            // none of those.
             $this->responseBuffer .= $chunk;
+        }
+
+        $completion = $this->responseCompletion();
+        if ($completion === AsyncHttpResponseCompletion::MALFORMED) {
+            $this->failRequest(new AsyncHttpMalformedResponseException($this->malformedResponseReason()));
+        }
+        if ($completion === AsyncHttpResponseCompletion::COMPLETE) {
+            $this->parseResponse();
+            return;
         }
 
         $closed = $this->runStreamOperation(
@@ -558,6 +568,9 @@ class AsyncHttpClient
         );
 
         if ($closed) {
+            if ($completion === AsyncHttpResponseCompletion::INCOMPLETE) {
+                $this->failRequest(new AsyncHttpMalformedResponseException($this->incompleteResponseReason()));
+            }
             $this->parseResponse();
         }
     }
@@ -580,6 +593,10 @@ class AsyncHttpClient
 
         $headersRaw = $parts[0];
         $body = $parts[1];
+        $declared = $this->headerValue($headersRaw, HttpConstants::HEADER_CONTENT_LENGTH);
+        if ($declared !== null && ctype_digit($declared) && !$this->isChunkedEncoding($headersRaw)) {
+            $body = substr($body, 0, (int)$declared);
+        }
         try {
             $statusCode = $this->parseStatusCode($headersRaw);
         } catch (AsyncHttpMalformedResponseException $e) {
@@ -587,7 +604,8 @@ class AsyncHttpClient
         }
 
         if ($this->isChunkedEncoding($headersRaw)) {
-            $body = $this->decodeChunkedBody($body);
+            $terminated = false;
+            $body = $this->decodeChunkedBody($body, $terminated);
             if ($body === null) {
                 $this->failRequest(new AsyncHttpMalformedResponseException('invalid chunked transfer body'));
             }
@@ -618,6 +636,105 @@ class AsyncHttpClient
     }
 
     /**
+     * Judges how far the current receive buffer has gone toward a complete response.
+     *
+     * The verdict is computed from the buffer on every call; nothing is remembered between ticks.
+     *
+     * @return AsyncHttpResponseCompletion Completion of the buffered response
+     */
+    private function responseCompletion(): AsyncHttpResponseCompletion
+    {
+        if (!str_contains($this->responseBuffer, HttpConstants::HTTP_DELIMITER)) {
+            return AsyncHttpResponseCompletion::UNTIL_CLOSE;
+        }
+
+        $parts = explode(HttpConstants::HTTP_DELIMITER, $this->responseBuffer, 2);
+        $headersRaw = $parts[0];
+        $body = $parts[1];
+
+        if ($this->isChunkedEncoding($headersRaw)) {
+            $terminated = false;
+            $decoded = $this->decodeChunkedBody($body, $terminated);
+            if ($decoded === null) {
+                return AsyncHttpResponseCompletion::MALFORMED;
+            }
+
+            return $terminated
+                ? AsyncHttpResponseCompletion::COMPLETE
+                : AsyncHttpResponseCompletion::INCOMPLETE;
+        }
+
+        $value = $this->headerValue($headersRaw, HttpConstants::HEADER_CONTENT_LENGTH);
+        if ($value === null) {
+            return AsyncHttpResponseCompletion::UNTIL_CLOSE;
+        }
+        if (!ctype_digit($value)) {
+            return AsyncHttpResponseCompletion::MALFORMED;
+        }
+
+        return strlen($body) >= (int)$value
+            ? AsyncHttpResponseCompletion::COMPLETE
+            : AsyncHttpResponseCompletion::INCOMPLETE;
+    }
+
+    /**
+     * Reads one header value from a raw header block, matching the name case-insensitively.
+     *
+     * @param string $headersRaw Raw HTTP headers
+     * @param string $name Header name to match
+     * @return ?string Trimmed value, or null when the header is absent
+     */
+    private function headerValue(string $headersRaw, string $name): ?string
+    {
+        foreach (explode(HttpConstants::HTTP_LINE_SEPARATOR, $headersRaw) as $line) {
+            $separator = strpos($line, ':');
+            if ($separator === false) {
+                continue;
+            }
+            if (strcasecmp(substr($line, 0, $separator), $name) === 0) {
+                return trim(substr($line, $separator + 1));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Reason a closed incomplete response is refused.
+     *
+     * @return string Cut-short reason for AsyncHttpMalformedResponseException
+     */
+    private function incompleteResponseReason(): string
+    {
+        $parts = explode(HttpConstants::HTTP_DELIMITER, $this->responseBuffer, 2);
+        $headersRaw = $parts[0];
+        $body = $parts[1];
+        if ($this->isChunkedEncoding($headersRaw)) {
+            return 'chunked body ended without its final chunk';
+        }
+        $declared = $this->headerValue($headersRaw, HttpConstants::HEADER_CONTENT_LENGTH);
+
+        return 'body cut short: ' . strlen($body) . ' of ' . (string)$declared . ' declared bytes';
+    }
+
+    /**
+     * Reason an unreadable end-declaration is refused.
+     *
+     * @return string Malformed-declaration reason for AsyncHttpMalformedResponseException
+     */
+    private function malformedResponseReason(): string
+    {
+        $parts = explode(HttpConstants::HTTP_DELIMITER, $this->responseBuffer, 2);
+        $headersRaw = $parts[0];
+        if ($this->isChunkedEncoding($headersRaw)) {
+            return 'invalid chunked transfer body';
+        }
+        $value = $this->headerValue($headersRaw, HttpConstants::HEADER_CONTENT_LENGTH);
+
+        return 'Content-Length is not a number: ' . (string)$value;
+    }
+
+    /**
      * Checks whether response uses chunked transfer encoding.
      *
      * @param string $headersRaw Raw HTTP headers
@@ -625,24 +742,24 @@ class AsyncHttpClient
      */
     private function isChunkedEncoding(string $headersRaw): bool
     {
-        foreach (explode(HttpConstants::HTTP_LINE_SEPARATOR, $headersRaw) as $line) {
-            if (stripos($line, HttpConstants::HEADER_TRANSFER_ENCODING . ':') === 0) {
-                $value = trim(substr($line, strlen(HttpConstants::HEADER_TRANSFER_ENCODING) + 1));
-                return strtolower($value) === 'chunked';
-            }
-        }
+        $value = $this->headerValue($headersRaw, HttpConstants::HEADER_TRANSFER_ENCODING);
 
-        return false;
+        return $value !== null && strtolower($value) === 'chunked';
     }
 
     /**
      * Decodes HTTP chunked transfer encoding body.
      *
+     * A missing size line or a chunk that has not arrived whole is not a parse
+     * error: those return the bytes decoded so far with $terminated left false.
+     *
      * @param string $chunkedBody Raw chunked body
-     * @return ?string Decoded body or null on parse error
+     * @param bool $terminated Set true when the terminating zero-size chunk was seen
+     * @return ?string Decoded body so far, or null on parse error
      */
-    private function decodeChunkedBody(string $chunkedBody): ?string
+    private function decodeChunkedBody(string $chunkedBody, bool &$terminated): ?string
     {
+        $terminated = false;
         $result = '';
         $offset = 0;
         $len = strlen($chunkedBody);
@@ -650,7 +767,7 @@ class AsyncHttpClient
         while ($offset < $len) {
             $lineEnd = strpos($chunkedBody, "\r\n", $offset);
             if ($lineEnd === false) {
-                return null;
+                return $result;
             }
 
             $sizeLine = substr($chunkedBody, $offset, $lineEnd - $offset);
@@ -663,11 +780,12 @@ class AsyncHttpClient
             $offset = $lineEnd + 2;
 
             if ($chunkSize === 0) {
+                $terminated = true;
                 break;
             }
 
             if ($offset + $chunkSize > $len) {
-                return null;
+                return $result;
             }
 
             $result .= substr($chunkedBody, $offset, $chunkSize);
