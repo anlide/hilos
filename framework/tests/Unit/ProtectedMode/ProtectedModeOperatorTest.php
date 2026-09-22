@@ -296,6 +296,67 @@ final class ProtectedModeOperatorTest extends TestCase
         $this->assertNull($this->nextExitRequest(), 'A refused close must queue no refreeze.');
     }
 
+    public function testACloseWithdrawsTheLiftTheCarrierIsHolding(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new HoldingOperatorTestAgent(null);
+
+        $agent->reopen();
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_CLOSE));
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_REFREEZE, $this->nextExitRequest());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent->onTick();
+
+        $reply = $this->singleReply();
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+
+        $agent->letReleaseGo();
+        $this->assertNull($this->nextExitRequest());
+    }
+
+    public function testARefusedCloseLeavesTheHeldLiftStanding(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent = new HoldingOperatorTestAgent(null);
+
+        $agent->reopen();
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_CLOSE));
+
+        $this->assertRefused($this->singleReply(), StateProtectedModeRuntime::PHASE_VERIFYING);
+
+        $agent->letReleaseGo();
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextExitRequest());
+    }
+
+    public function testOnlyAnAcceptedCloseCountsAsInFlight(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $this->assertFalse($agent->isCloseInFlight());
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_OPEN));
+        $this->assertFalse($agent->isCloseInFlight());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null, []);
+        $agent->onTick();
+        $this->assertFalse($agent->isCloseInFlight());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_CLOSE));
+        $this->assertTrue($agent->isCloseInFlight());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);
+        $agent->onTick();
+        $this->assertFalse($agent->isCloseInFlight());
+    }
+
     public function testTheTestNameClosesThroughTheVerySamePath(): void
     {
         // The same bargain the test mint struck: a driven freeze is initiated by an agent the
@@ -582,6 +643,16 @@ final class OperatorTestAgent extends AbstractAgent
     }
 
     /**
+     * Public test wrapper checking whether a close command is in flight.
+     *
+     * @return bool True while a close is awaited
+     */
+    public function isCloseInFlight(): bool
+    {
+        return $this->isProtectedModeCloseInFlight();
+    }
+
+    /**
      * Backdates the wait so the next tick sees the window as expired.
      *
      * Reaches the trait's own property directly - a trait's private members are flattened into
@@ -608,8 +679,11 @@ final class HoldingOperatorTestAgent extends AbstractAgent
     /** @var string Agent type identifier */
     public const string AGENT_TYPE = 'operator-test-initiator';
 
-    /** @var bool True while the lift is parked */
+    /** @var bool True while the carrier holds the lift */
     private bool $releaseHeld = true;
+
+    /** @var bool True while a release request is parked */
+    private bool $releaseParked = false;
 
     /**
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -634,6 +708,16 @@ final class HoldingOperatorTestAgent extends AbstractAgent
     }
 
     /**
+     * Simulates a reopen request from a browser, invoking the lift path without arming operator correlation.
+     *
+     * @throws InvalidArgumentException When the queued protected-mode release cannot be named
+     */
+    public function reopen(): void
+    {
+        $this->requestProtectedModeRelease();
+    }
+
+    /**
      * Lets the parked lift go, as the sessions receipt does on the real carrier.
      *
      * @throws InvalidArgumentException When the queued protected-mode release cannot be named
@@ -641,7 +725,18 @@ final class HoldingOperatorTestAgent extends AbstractAgent
     public function letReleaseGo(): void
     {
         $this->releaseHeld = false;
-        $this->requestProtectedModeRelease();
+        if ($this->releaseParked) {
+            $this->releaseParked = false;
+            $this->requestProtectedModeDisable();
+        }
+    }
+
+    /**
+     * Drops any parked lift when an operator's close refreezes the node.
+     */
+    protected function withdrawProtectedModeRelease(): void
+    {
+        $this->releaseParked = false;
     }
 
     /**
@@ -652,6 +747,8 @@ final class HoldingOperatorTestAgent extends AbstractAgent
     protected function requestProtectedModeRelease(): void
     {
         if ($this->releaseHeld) {
+            $this->releaseParked = true;
+
             return;
         }
 

@@ -282,6 +282,28 @@ trait ProtectedModeOperatorTrait
     }
 
     /**
+     * Drops a held protected-mode release.
+     *
+     * A carrier holding a parked lift drops it when an operator command closes the window again,
+     * so that a lift requested before the close does not reopen a node frozen after it (HIL-1058).
+     * The default drops nothing.
+     */
+    protected function withdrawProtectedModeRelease(): void
+    {
+    }
+
+    /**
+     * Whether an operator's close command has been accepted and is waiting for the row to reach active.
+     *
+     * @return bool True while a close command is in flight
+     */
+    protected function isProtectedModeCloseInFlight(): bool
+    {
+        return $this->protectedModeOperatorCorrelationId !== null
+            && $this->protectedModeOperatorAwaitedPhase === StateProtectedModeRuntime::PHASE_ACTIVE;
+    }
+
+    /**
      * The refusal a pass that has not landed in time gets, which is not the same as one that failed.
      *
      * A mint travels agent -> worker -> daemon and is written to the row there, so a wait that runs
@@ -366,6 +388,7 @@ trait ProtectedModeOperatorTrait
 
         try {
             $this->requestProtectedModeRefreeze();
+            $this->withdrawProtectedModeRelease();
         } catch (InvalidArgumentException $e) {
             $this->clearProtectedModeOperator();
             $this->refuseProtectedModeOperator($data->correlationId, 'refreeze request failed: ' . $e->getMessage());

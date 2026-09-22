@@ -1199,10 +1199,10 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      *
      * The page already checked the row and told the browser its request was taken, so this is the
      * backstop half: between that answer and this frame a terminal may have run
-     * `protected-mode:open`, or the operator may have refrozen the node. Both re-checks are the
+     * `protected-mode:open`, or the operator may have refrozen the node. All three re-checks are the
      * ones {@see ProtectedModeOperatorTrait} makes for the command channel - the row stands in the
-     * verification window, and this very agent is the initiator the row names - because the lever
-     * pulled is literally the same one.
+     * verification window, this very agent is the initiator the row names, and no operator close is
+     * in flight - because an accepted close wins over a reopen in both arrival orders (HIL-1058).
      *
      * A refusal ends in the log and nowhere else. The browser has its ack already, and the only
      * honest report of an open that did not happen is that the system did not open: every tab
@@ -1234,6 +1234,14 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             return;
         }
 
+        if ($this->isProtectedModeCloseInFlight()) {
+            $this->logAgentWarning(
+                "Ignoring reopen from {$data->acceptKey}: a close back into the freeze is in flight",
+            );
+
+            return;
+        }
+
         $this->logAgentInfo("Reopening the system on request from {$data->acceptKey}");
         $this->requestProtectedModeRelease();
     }
@@ -1253,6 +1261,14 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
 
         $this->requestProtectedModeDisable();
+    }
+
+    /**
+     * Drops any parked freeze-lift and clears the restored login debt when an operator's close refreezes the node.
+     */
+    protected function withdrawProtectedModeRelease(): void
+    {
+        $this->restoreReleaseGate->forgetSessionsOwed();
     }
 
     /**

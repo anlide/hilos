@@ -31,7 +31,8 @@ use Hilos\Utils\Logger;
  * **A debt nobody will answer is not waited for.** {@see holdRelease()} parks only when an owner
  * in this project can still receive the batch; otherwise the caller sends the lift at once.
  *
- * **The debt is per freeze.** {@see forgetSessionsOwed()} runs when a freeze begins, so a debt no
+ * **The debt is per freeze.** {@see forgetSessionsOwed()} runs when a freeze begins — on an accepted
+ * restore or an operator's close back from the verification window (HIL-1058) — so a debt no
  * one ever answered for cannot make the NEXT lift wait for a restore that has been over for days.
  *
  * Kept out of the agent so the mechanism runs without one: a unit of this class does not raise a
@@ -113,12 +114,20 @@ final class RestoreReleaseGate
      *
      * The one thing that must not be inherited: a restore whose library never reported would
      * otherwise make every later lift on this node pause and complain about logins nobody is
-     * waiting for. A freeze beginning is the moment the question resets, because the only writer
-     * of the debt runs inside the freeze that follows. A request parked for that forgotten debt
-     * is dropped rather than sent: the new freeze is the one that owns the node now.
+     * waiting for. A freeze beginning is the moment the question resets — whether via an accepted
+     * restore or an operator's close back from the verification window (HIL-1058) — because the
+     * only writer of the debt runs inside the freeze that follows. A request parked for that
+     * forgotten debt is dropped rather than sent: the new freeze is the one that owns the node now.
      */
     public function forgetSessionsOwed(): void
     {
+        if ($this->releaseHeld) {
+            Logger::logAgentInfo(
+                self::LOG_AGENT_ID,
+                'Release held for the restored logins dropped: the node was frozen again before it went out',
+            );
+        }
+
         $this->sessionsOwed = 0;
         $this->clearHold();
     }

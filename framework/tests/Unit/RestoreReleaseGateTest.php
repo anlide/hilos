@@ -83,10 +83,22 @@ final class RestoreReleaseGateTest extends TestCase
         $gate = new RestoreReleaseGate();
         $gate->noteSessionsDeferred(3);
         $this->quietly(fn() => $gate->holdRelease(self::NOW, true));
-        $gate->forgetSessionsOwed();
+        $this->quietly(fn() => $gate->forgetSessionsOwed());
 
         $this->assertFalse($gate->releaseDue(self::NOW + self::PAST_THE_WAIT));
         $this->assertFalse($gate->holdRelease(self::NOW, true));
+    }
+
+    public function testAHoldDroppedByANewFreezeGoesOutNeitherOnTheAnswerNorOnTheDeadline(): void
+    {
+        $gate = new RestoreReleaseGate();
+        $gate->noteSessionsDeferred(3);
+        $this->quietly(fn() => $gate->holdRelease(self::NOW, true));
+        $this->quietly(fn() => $gate->forgetSessionsOwed());
+        $gate->noteSessionsCarriedOver(3, 0, 0);
+
+        $this->assertFalse($gate->releaseDue(self::NOW));
+        $this->assertFalse($gate->releaseDue(self::NOW + self::PAST_THE_WAIT));
     }
 
     public function testAnAnswerNobodyWasWaitingForIsHarmless(): void

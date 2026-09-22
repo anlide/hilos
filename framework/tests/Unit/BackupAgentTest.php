@@ -7,11 +7,13 @@ namespace Hilos\Tests\Unit;
 use DateTimeImmutable;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\HilosSignalConstants;
@@ -29,12 +31,14 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
 use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RestoreRuntime;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -441,6 +445,42 @@ final class BackupAgentTest extends TestCase
         $this->assertSame(100, $this->restoreRow()->estimatedSeconds);
     }
 
+    public function testAReopenInTheWindowAsksForTheLiftAtOnceWhenNoLoginsAreOwed(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent = new BackupAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData(new BackupReopenSignalData('accept-key-of-the-tab')),
+            'test',
+            HilosSignalConstants::BACKUP_AGENT_REOPEN,
+        );
+
+        $this->assertNotNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_DISABLE));
+    }
+
+    public function testAReopenArrivingWhileACloseIsInFlightLeavesTheFreezeStanding(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent = new BackupAgent();
+
+        $agent->onSignalCommand(
+            new CommandRequestDTO(correlationId: 'corr-1', command: CliCommands::PROTECTED_MODE_CLOSE, payload: []),
+            'test',
+            'test',
+        );
+
+        $this->assertNotNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_REFREEZE));
+
+        $agent->onSignalAgent(
+            new AgentSignalData(new BackupReopenSignalData('accept-key-of-the-tab')),
+            'test',
+            HilosSignalConstants::BACKUP_AGENT_REOPEN,
+        );
+
+        $this->assertNull($this->nextSignalOfType(SignalTypeConstants::PROTECTED_MODE_DISABLE));
+    }
+
     /**
      * Mounts the backup index holding the given rows, and the restore runtime row beside it.
      *
@@ -531,6 +571,27 @@ final class BackupAgentTest extends TestCase
         );
 
         return $agent;
+    }
+
+    /**
+     * Mounts the freeze row as if placed by a restore or operator command.
+     *
+     * @param string $phase Freeze phase to mount
+     * @param list<string> $passHashes Pass hashes the window is holding
+     */
+    private function freeze(string $phase, array $passHashes = []): void
+    {
+        Hilos::$rt = new BackupAgentTestRtContext();
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
+            StateProtectedModeRuntime::phase => $phase,
+            StateProtectedModeRuntime::operation => 'restore',
+            StateProtectedModeRuntime::initiatorAgentType => BackupAgent::AGENT_TYPE,
+            StateProtectedModeRuntime::initiatorAgentIndex => null,
+            StateProtectedModeRuntime::passHashes => $passHashes,
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+        ]));
     }
 
     /**
