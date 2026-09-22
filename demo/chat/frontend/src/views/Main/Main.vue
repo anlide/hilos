@@ -326,6 +326,7 @@ onUnmounted(() => {
                         object-fit: contain;
                       "
                       loading="lazy"
+                      data-id="event-attachment-image"
                     />
                   </a>
                   <!-- Everything else is a download link (Content-Disposition: attachment). -->

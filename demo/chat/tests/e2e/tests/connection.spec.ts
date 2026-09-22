@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   clickSubmit,
   isSessionCookie,
+  orphanSessionToken,
   SESSION_COOKIE_PREFIX,
   signUp,
   typeInto,
@@ -42,27 +43,6 @@ test('renders the anonymous identity line for a visitor with no account', async 
   )
   await expect(page.getByTestId('self-user')).toHaveCount(0)
 })
-
-/**
- * A session token of the minted shape (32 lowercase hex, SessionToken::isValid)
- * that names no session on the server.
- *
- * Well-formed on purpose: a malformed value is simply replaced by a freshly minted
- * one on the 101, which would make the browser arrive as if it had carried no
- * cookie at all — the case the test above already covers. Unique per run for the
- * reason uniqueEmail() is: the stand is shared across specs and retries, and a
- * repeated value could name a session another test really holds.
- *
- * @returns The orphan token.
- */
-function orphanSessionToken(): string {
-  const noise = (): string =>
-    Math.floor(Math.random() * 0x100000000)
-      .toString(16)
-      .padStart(8, '0')
-
-  return Date.now().toString(16).padStart(16, '0') + noise() + noise()
-}
 
 // The case that opened HIL-625: an anonymized restore purged hilos_session while
 // the browser kept its cookie, so the jar names a session the server has never

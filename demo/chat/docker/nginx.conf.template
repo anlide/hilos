@@ -78,7 +78,7 @@ http {
 
         # Internal target for the daemon's X-Accel-Redirect; never reached
         # directly. The published attachments directory is mounted here read-only.
-        location /__chat_published/ {
+        location ^~ /__chat_published/ {
             internal;
             alias /published/;
         }

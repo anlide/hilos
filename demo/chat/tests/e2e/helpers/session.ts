@@ -45,6 +45,27 @@ export function isRotateCookie(name: string): boolean {
   return name.startsWith(SESSION_COOKIE_PREFIX) && name.endsWith(ROTATE_COOKIE_SUFFIX)
 }
 
+/**
+ * A session token of the minted shape (32 lowercase hex, SessionToken::isValid)
+ * that names no session on the server.
+ *
+ * Well-formed on purpose: a malformed value is simply replaced by a freshly minted
+ * one on the 101, which would make the browser arrive as if it had carried no
+ * cookie at all. Unique per run for the reason uniqueEmail() is: the stand is
+ * shared across specs and retries, and a repeated value could name a session
+ * another test really holds.
+ *
+ * @returns The orphan token.
+ */
+export function orphanSessionToken(): string {
+  const noise = (): string =>
+    Math.floor(Math.random() * 0x100000000)
+      .toString(16)
+      .padStart(8, '0')
+
+  return Date.now().toString(16).padStart(16, '0') + noise() + noise()
+}
+
 /** A fresh, globally-unique email so parallel specs and retries never collide on
  * the shared test database (registration rejects a taken email). */
 export function uniqueEmail(): string {
