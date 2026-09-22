@@ -13,6 +13,9 @@
 // refused by the runner itself ("Requiring @playwright/test second time"). A
 // type import is erased before any of that happens; everything a helper needs at
 // runtime arrives through the `Page` it is handed.
+// ESLint holds the rule: eslint.config.mjs refuses a value import or re-export
+// of @playwright/test anywhere under e2e/, so `npm run lint` goes red before
+// any demo runner does.
 
 export { watchFirstRowTop, watchHeight, watchTop, Watched } from './geometry.js'
 export { dismissToasts } from './toasts.js'

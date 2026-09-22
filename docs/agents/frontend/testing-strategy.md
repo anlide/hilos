@@ -153,6 +153,9 @@ Two rules keep it working:
   second copy out of this folder is refused by the runner itself — *Requiring
   @playwright/test second time*. A type import is erased before that can happen;
   everything a helper needs at runtime arrives through the `Page` it is handed.
+  ESLint holds the rule: `framework/frontend/eslint.config.mjs` refuses a value
+  import of `@playwright/test` under `e2e/`, so the `fe-checks` lint goes red
+  before any demo runner does.
 - **Demos reach it by relative path**, the way their Playwright configs already
   reach `framework/frontend/scripts/timeout-scale.mjs`. The runner mounts the
   whole repository, so no package boundary stands in between, and no install step

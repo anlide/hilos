@@ -38,5 +38,28 @@ export default tseslint.config(
     // DOM globals used as types (e.g. MouseEvent) are false-flagged.
     rules: { 'no-undef': 'off' },
   },
+  // framework/frontend/e2e is loaded by every demo's Playwright runner, which
+  // carries its own installed Playwright. A value import of @playwright/test
+  // here resolves this workspace's copy instead, a second one, and the runner
+  // refuses it for every demo at once. `import type` is erased before that and
+  // stays allowed (docs/agents/frontend/testing-strategy.md, "The shared toolbox").
+  {
+    files: ['e2e/**'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/test',
+              allowTypeImports: true,
+              message:
+                'Only `import type` here: each demo suite runs its own installed Playwright, a value import loads a second copy from the SDK workspace, and the runner refuses it (Requiring @playwright/test second time) for the e2e of every demo at once. Take runtime needs from the Page the helper is handed.',
+            },
+          ],
+        },
+      ],
+    },
+  },
   configPrettier,
 )

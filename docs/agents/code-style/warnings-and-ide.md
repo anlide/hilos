@@ -10,6 +10,20 @@ Every change keeps the toolchain green. Frontend: `tsc` / `vue-tsc` / `eslint` /
 container. A new warning is a defect to fix, not to tolerate — most of all in the
 framework core, where a pristine toolchain is part of the product.
 
+In the frontend SDK (`framework/frontend`) the bar is held by machine, in the
+`fe-checks` step (`composer run test:framework:frontend`). `npm run lint` runs
+`eslint . --max-warnings 0`, so any ESLint warning fails it — a preset rule at
+`warn` level and an unused `eslint-disable` directive alike. `@hilos/angular`
+compiles with `extendedDiagnostics.defaultCategory: "error"` in
+`framework/frontend/angular/tsconfig.build.json`, so an Angular extended template
+diagnostic (`NG8xxx`) fails `check:templates` and the ng-packagr build, which
+read that one config. Fix the warning where it appears. Do not raise the
+threshold, lower the category, or mute a check for the whole package; a confirmed
+false positive goes by the priority order below. A toolchain upgrade that brings
+a new diagnostic turns the step red on the leaf that brought it, and is fixed
+there. The demo frontends keep their own lint and build settings and are not held
+by this.
+
 ## Resolving IDE friction — the priority order
 
 When an IDE (PhpStorm) flags something the real toolchain accepts, resolve it in
