@@ -55,4 +55,19 @@ enum PlacementState: string
     {
         return $this === self::Unplaced || $this === self::Refused;
     }
+
+    /**
+     * Whether a node currently hosts an agent in this state, as an address a frame may travel to.
+     *
+     * Only a start that is under way or has been reported occupies a node. Failed used to read
+     * as an address because it is neither unplaced nor refused, so a frame for an agent the
+     * node tried and could not start was sent to that same node (HIL-1041). Stopped is the
+     * same kind of leftover: the node that last ran it is not a host any more.
+     *
+     * @return bool True when this state is an address
+     */
+    public function hostsAgent(): bool
+    {
+        return $this === self::Placing || $this === self::Started;
+    }
 }

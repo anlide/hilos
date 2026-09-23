@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Placement;
 
 use Hilos\Cluster\Exception\PlacementCapabilityException;
+use Hilos\Cluster\PlacementVerdictSink;
 use Hilos\Cluster\WorkerPlacement;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -12,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Constants\AgentConstants;
@@ -94,17 +96,6 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var int Default placement-ack timeout in ms when none is configured */
     private const int DEFAULT_PLACEMENT_ACK_TIMEOUT_MS = 16000;
 
-    /**
-     * @var float Seconds a placement accepted without a worker waits for one before it is answered
-     *     failed (HIL-998): the agent's own wait plus a second, so the answer meets the agent's
-     *     verdict rather than racing it - the same arithmetic the master's frame hold uses. Well
-     *     inside {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS}, so the leader never gives up first.
-     */
-    private const float DEFERRED_PLACEMENT_WAIT_SEC = AgentConstants::START_DEADLINE_SECONDS + 1.0;
-
-    /** @var string Reason a deferred placement is answered failed with when no worker came up */
-    private const string DEFERRED_PLACEMENT_FAILED_REASON = 'no monopolistic worker came up within the start deadline';
-
     /** @var float Seconds one agent's placement ask silences the next one for */
     private const float PLACEMENT_ASK_INTERVAL_SEC = 5.0;
 
@@ -177,12 +168,17 @@ final class ClusterPlacement implements WorkerPlacement
     private array $placementAsks = [];
 
     /**
+     * @var array<string, list<string>> Node ids owed a verdict for an agent, by agent id
+     */
+    private array $placementVerdictWaiters = [];
+
+    /**
      * Placements this node accepted while the agent waits for a monopolistic worker raised for it
-     * (HIL-998), keyed by agent id. The answer is owed once the agent is seated or the wait is
-     * over: to the placing leader when `nodeId` names one, and to nobody but this node's own view
+     * (HIL-998), keyed by agent id. The answer is owed once the agent is seated or the start
+     * fails: to the placing leader when `nodeId` names one, and to nobody but this node's own view
      * when it is null - a placement the leader made on itself.
      *
-     * @var array<string, array{nodeId: ?string, agentType: string, agentIndex: ?string, deadline: float}>
+     * @var array<string, array{nodeId: ?string, agentType: string, agentIndex: ?string}>
      */
     private array $deferredPlacementAnswers = [];
 
@@ -356,10 +352,10 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Asking is remembered for {@see self::PLACEMENT_ASK_INTERVAL_SEC} per agent, because the
      * address is asked once per FRAME: a page opening sends several in a row, and each one would
-     * otherwise repeat the ask before the first placement could have landed. The memory is the whole of the
-     * bookkeeping — an ask is never confirmed or retried on a schedule, since the next frame to
-     * the same agent is the retry, and a placement that succeeded is answered by {@see locate()}
-     * from then on.
+     * otherwise repeat the ask before the first placement could have landed. The leader answers
+     * each ask with a {@see PeerPlacementVerdictDTO}: placed, or not, with the record's state.
+     * The interval is also the retry: a holder that is still waiting asks again, so an ask that
+     * met no leader is not silent forever.
      *
      * The frame that provoked this is held by its caller until the agent is up - here, or on the
      * node the placement names - and answered as undelivered if it is not up in time (HIL-629).
@@ -388,6 +384,7 @@ final class ClusterPlacement implements WorkerPlacement
         $this->placementAsks[$agentId] = $now + self::PLACEMENT_ASK_INTERVAL_SEC;
 
         if ($this->isLeader) {
+            $this->rememberPlacementAsker($agentId, $this->selfNodeId);
             $this->placeOnDemand($agentType, $agentIndex);
 
             return;
@@ -457,8 +454,12 @@ final class ClusterPlacement implements WorkerPlacement
     private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
     {
         if ($nodeId === $this->selfNodeId) {
+            $agentId = $this->agentId($agentType, $agentIndex);
+            // Drop the deferred answer before the revoke: stopping a waiting agent reports the
+            // start failed on this same stack, and that callback must not rewrite this record.
+            unset($this->deferredPlacementAnswers[$agentId]);
             $this->executor->revokePlacement($agentType, $agentIndex);
-            unset($this->hosted[$this->agentId($agentType, $agentIndex)]);
+            unset($this->hosted[$agentId]);
 
             return;
         }
@@ -513,6 +514,77 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Answers a placement this node accepted while the agent waited for a worker, now that it is seated.
+     *
+     * The start report is the fact the wait was sitting on: the placing leader is told started, or
+     * a placement the leader made on itself is marked Started. A start of an agent this node did
+     * not defer is not news here.
+     *
+     * @param string $agentType Agent type that started
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    public function noteAgentStarted(string $agentType, ?string $agentIndex): void
+    {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $deferred = $this->deferredPlacementAnswers[$agentId] ?? null;
+        if ($deferred === null) {
+            return;
+        }
+
+        unset($this->deferredPlacementAnswers[$agentId]);
+        $nodeId = $deferred['nodeId'];
+        if ($nodeId !== null) {
+            $workerId = $this->executor->placedWorkerId($agentType, $agentIndex);
+            if ($workerId !== null) {
+                $this->answerPlacementStarted($nodeId, $agentType, $agentIndex, $workerId);
+            }
+
+            return;
+        }
+
+        $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
+        $this->hosted[$agentId] = $record;
+        $this->registry->put($record);
+        unset($this->placementVerdictWaiters[$agentId]);
+    }
+
+    /**
+     * Answers a placement this node accepted while the agent waited for a worker, now that the start
+     * did not finish.
+     *
+     * The reason is the one the start failed with, not a clock: the placing leader is told failed,
+     * or a placement the leader made on itself is marked Failed and the nodes that asked are
+     * answered. A failure of an agent this node did not defer is not news here.
+     *
+     * @param string $agentType Agent type whose start failed
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param string $reason Why the start did not finish
+     */
+    public function noteAgentStartFailed(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $deferred = $this->deferredPlacementAnswers[$agentId] ?? null;
+        if ($deferred === null) {
+            return;
+        }
+
+        unset($this->deferredPlacementAnswers[$agentId]);
+        Logger::warning("Placement of '{$agentId}' failed: {$reason}");
+        $nodeId = $deferred['nodeId'];
+        if ($nodeId !== null) {
+            $this->mesh->sendToNode($nodeId, PeerAgentStatusDTO::failed($agentType, $agentIndex, $reason));
+
+            return;
+        }
+
+        $this->registry->put(new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Failed));
+        $this->answerPlacementAskers(
+            $agentId,
+            PeerPlacementVerdictDTO::notPlaced($agentType, $agentIndex, PlacementState::Failed, $reason),
+        );
+    }
+
+    /**
      * Node side: launches a leader-requested agent locally and reports the outcome.
      *
      * Reuses the local start path — no new spawn logic — and answers the leader with a
@@ -521,10 +593,10 @@ final class ClusterPlacement implements WorkerPlacement
      * tears down the daemon loop.
      *
      * A placement accepted while a monopolistic worker is raised for the agent is answered later,
-     * by {@see answerDeferredPlacements()}, and nothing is sent now (HIL-998): refusing a node a
-     * second away from ready would send the agent looking elsewhere, and the leader already waits
-     * {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS} for the answer, with the record in
-     * {@see PlacementState::Placing} read as ordinary travel time.
+     * by {@see noteAgentStarted()} or {@see noteAgentStartFailed()}, and nothing is sent now
+     * (HIL-998): refusing a node a second away from ready would send the agent looking elsewhere,
+     * and the leader already waits {@see DEFAULT_PLACEMENT_ACK_TIMEOUT_MS} for the answer, with
+     * the record in {@see PlacementState::Placing} read as ordinary travel time.
      *
      * @param string $fromNodeId Id of the leader node that requested the placement
      * @param PeerPlaceAgentDTO $frame Received place-agent frame
@@ -575,64 +647,25 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Remembers a placement accepted while the agent waits for a worker raised for it (HIL-998).
      *
+     * A remote leader is remembered as the placing leader here, not only when the agent is later
+     * seated: until then the agent is not in the hosted set, and losing that leader must still
+     * arm the self-fence.
+     *
      * @param ?string $fromNodeId Leader owed the answer, or null for a placement the leader made on itself
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      */
     private function deferPlacementAnswer(?string $fromNodeId, string $agentType, ?string $agentIndex): void
     {
+        if ($fromNodeId !== null) {
+            $this->placingLeaderId = $fromNodeId;
+        }
+
         $this->deferredPlacementAnswers[$this->agentId($agentType, $agentIndex)] = [
             'nodeId' => $fromNodeId,
             'agentType' => $agentType,
             'agentIndex' => $agentIndex,
-            'deadline' => microtime(true) + self::DEFERRED_PLACEMENT_WAIT_SEC,
         ];
-    }
-
-    /**
-     * Answers the placements accepted while their agent waited for a worker, once there is an
-     * answer to give (HIL-998).
-     *
-     * Seated - the agent is hosted here and the placement is started; the wait is over without a
-     * worker - the placement failed, with the reason the agent gave up for. A placement the leader
-     * made on itself has nobody to wire the answer to and only finishes its record.
-     *
-     * @param float $now Current microtime
-     */
-    private function answerDeferredPlacements(float $now): void
-    {
-        foreach ($this->deferredPlacementAnswers as $agentId => $deferred) {
-            ['nodeId' => $nodeId, 'agentType' => $agentType, 'agentIndex' => $agentIndex] = $deferred;
-            $workerId = $this->executor->placedWorkerId($agentType, $agentIndex);
-            if ($workerId === null && $now < $deferred['deadline']) {
-                continue;
-            }
-
-            unset($this->deferredPlacementAnswers[$agentId]);
-
-            if ($workerId !== null) {
-                if ($nodeId !== null) {
-                    $this->answerPlacementStarted($nodeId, $agentType, $agentIndex, $workerId);
-                    continue;
-                }
-
-                $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
-                $this->hosted[$agentId] = $record;
-                $this->registry->put($record);
-                continue;
-            }
-
-            Logger::warning("Placement of '{$agentId}' failed: " . self::DEFERRED_PLACEMENT_FAILED_REASON);
-            if ($nodeId !== null) {
-                $this->mesh->sendToNode(
-                    $nodeId,
-                    PeerAgentStatusDTO::failed($agentType, $agentIndex, self::DEFERRED_PLACEMENT_FAILED_REASON),
-                );
-                continue;
-            }
-
-            $this->registry->put(new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Failed));
-        }
     }
 
     /**
@@ -644,9 +677,11 @@ final class ClusterPlacement implements WorkerPlacement
     public function onStopAgent(string $fromNodeId, PeerStopAgentDTO $frame): void
     {
         $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
+        // Drop the deferred answer before the revoke: stopping a waiting agent reports the start
+        // failed on this same stack, and `stopped` below is the only answer that stop owes.
+        unset($this->deferredPlacementAnswers[$agentId]);
         $this->executor->revokePlacement($frame->agentType, $frame->agentIndex);
-        // A stop answers a placement still waiting for its worker too: `stopped` below is its answer
-        unset($this->hosted[$agentId], $this->deferredPlacementAnswers[$agentId]);
+        unset($this->hosted[$agentId]);
         $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::stopped($frame->agentType, $frame->agentIndex));
     }
 
@@ -690,10 +725,31 @@ final class ClusterPlacement implements WorkerPlacement
 
         if ($frame->state === PlacementState::Stopped) {
             $this->registry->forget($agentId);
+            unset($this->placementVerdictWaiters[$agentId]);
             return;
         }
 
         $this->registry->put(new PlacementRecord($frame->agentType, $frame->agentIndex, $fromNodeId, $frame->state));
+
+        if ($frame->state === PlacementState::Failed) {
+            $reason = $frame->error;
+            if ($reason === null || $reason === '') {
+                $reason = 'the node reported a failed placement';
+            }
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::notPlaced(
+                    $frame->agentType,
+                    $frame->agentIndex,
+                    PlacementState::Failed,
+                    $reason,
+                ),
+            );
+
+            return;
+        }
+
+        unset($this->placementVerdictWaiters[$agentId]);
     }
 
     /**
@@ -725,6 +781,7 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
+        $this->rememberPlacementAsker($this->agentId($frame->agentType, $frame->agentIndex), $fromNodeId);
         $this->placeOnDemand($frame->agentType, $frame->agentIndex);
     }
 
@@ -838,6 +895,51 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Follower side: applies a leader's verdict on a placement this node asked for.
+     *
+     * Ignored on the leader: it already applied the outcome to the registry. A started
+     * verdict writes the node into this node's copy of the view so a parked frame can
+     * leave before the next published view arrives. Any other state is a not-placed
+     * verdict and goes to the master through {@see PlacementVerdictSink}.
+     *
+     * @param string $fromNodeId Id of the node the verdict arrived from
+     * @param PeerPlacementVerdictDTO $frame Received placement-verdict frame
+     */
+    public function onPlacementVerdict(string $fromNodeId, PeerPlacementVerdictDTO $frame): void
+    {
+        if ($this->isLeader) {
+            return;
+        }
+
+        if ($fromNodeId === '') {
+            Logger::warning('Dropping placement verdict with a blank sender node id');
+
+            return;
+        }
+
+        $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
+        if ($frame->state === PlacementState::Started) {
+            $nodeId = $frame->nodeId;
+            if ($nodeId !== null) {
+                $this->placementView[$agentId] = $nodeId;
+            }
+
+            return;
+        }
+
+        $reason = $frame->reason;
+        if ($reason === null) {
+            return;
+        }
+
+        Hilos::$cluster?->placementVerdictSink()?->onAgentNotPlaced(
+            $frame->agentType,
+            $frame->agentIndex,
+            "{$frame->state->value}: {$reason}",
+        );
+    }
+
+    /**
      * Node side: reports what this node hosts when the leader's view gives one of its agents to
      * another node (HIL-976).
      *
@@ -905,8 +1007,9 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * The node keeps hosting the agents it was placed with — they are data-plane and run
      * on regardless of who leads — but it no longer owns the cluster-wide view, which the
-     * next leader rebuilds from the mesh. Any pending failover timers and placement-ack waits
-     * drop with the view; the next leader re-derives them from its own rebuilt placements.
+     * next leader rebuilds from the mesh. Any pending failover timers, placement-ack waits, and
+     * placement-ask waiters drop with the view; the next leader re-derives them from its own
+     * rebuilt placements.
      */
     public function onLostLeadership(): void
     {
@@ -914,6 +1017,7 @@ final class ClusterPlacement implements WorkerPlacement
         $this->registry->clear();
         $this->failoverDeadlines = [];
         $this->placementAckDeadlines = [];
+        $this->placementVerdictWaiters = [];
         // Publishing is the leader's duty, so this node stops; what it published stays true
         // until the next leader publishes its own, which it does within a tick of winning.
         $this->publishedViewFingerprint = null;
@@ -946,9 +1050,12 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
-        if ($nodeId === $this->placingLeaderId && $this->hosted !== [] && $this->selfFenceDeadline === null) {
+        if ($nodeId === $this->placingLeaderId
+            && ($this->hosted !== [] || $this->deferredPlacementAnswers !== [])
+            && $this->selfFenceDeadline === null) {
             $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
-            Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, " . count($this->hosted)
+            $placedCount = count($this->hosted) + count($this->deferredPlacementAnswers);
+            Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, {$placedCount}"
                 . ' placed agent(s) stop in ' . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless it returns');
         }
     }
@@ -1015,8 +1122,6 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function tick(float $now): void
     {
-        $this->answerDeferredPlacements($now);
-
         foreach ($this->failoverDeadlines as $agentId => ['nodeId' => $lostNodeId, 'deadline' => $deadline]) {
             if ($now >= $deadline) {
                 unset($this->failoverDeadlines[$agentId]);
@@ -1169,10 +1274,10 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Groups the placements worth forwarding to by the node hosting them.
      *
-     * An agent that runs nowhere — degraded for want of a node, or refused an RT claim — is left
-     * out under the same rule {@see hostingNode()} applies on this node: it has no node to
-     * forward to. Because both sides read this one rule, a copy answers exactly what the
-     * original would.
+     * An agent no node hosts — failed to start, stopped, degraded for want of a node, or
+     * refused an RT claim — is left out under the same rule {@see hostingNode()} applies on
+     * this node: it has no node to forward to. Because both sides read this one rule, a copy
+     * answers exactly what the original would.
      *
      * @return array<string|int, list<PeerPlacedAgentEntry>> Hosted agent entries, by node id
      */
@@ -1180,7 +1285,7 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $agents = [];
         foreach ($this->registry->all() as $record) {
-            if ($record->state->runsNowhere()) {
+            if (!$record->state->hostsAgent()) {
                 continue;
             }
 
@@ -1224,7 +1329,8 @@ final class ClusterPlacement implements WorkerPlacement
      * the signal into its own empty floor.
      *
      * The two cannot disagree in a way that matters, because the copy is built from these very
-     * records under the rule applied here — an agent that runs nowhere is left out of both.
+     * records under the rule applied here — an agent no node hosts is left out of both,
+     * including Failed, which used to read as an address (HIL-1041).
      *
      * @param string $agentId Agent id to look up
      * @return ?string Hosting node id, or null when nothing places it
@@ -1232,7 +1338,7 @@ final class ClusterPlacement implements WorkerPlacement
     private function hostingNode(string $agentId): ?string
     {
         $record = $this->registry->get($agentId);
-        if ($record !== null && !$record->state->runsNowhere()) {
+        if ($record !== null && $record->state->hostsAgent()) {
             return $record->nodeId;
         }
 
@@ -1521,19 +1627,25 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function selfFence(): void
     {
-        if ($this->hosted === []) {
+        if ($this->hosted === [] && $this->deferredPlacementAnswers === []) {
             return;
         }
 
+        $placedCount = count($this->hosted) + count($this->deferredPlacementAnswers);
         Logger::warning(
-            "Self-fence: isolated from placing leader '{$this->placingLeaderId}', stopping " . count($this->hosted) . ' placed agent(s)',
+            "Self-fence: isolated from placing leader '{$this->placingLeaderId}', stopping {$placedCount} placed agent(s)",
         );
         foreach ($this->hosted as $record) {
             $this->executor->revokePlacement($record->agentType, $record->agentIndex);
         }
 
         $this->hosted = [];
+        $deferredAnswers = $this->deferredPlacementAnswers;
+        $this->deferredPlacementAnswers = [];
         $this->placingLeaderId = null;
+        foreach ($deferredAnswers as $deferred) {
+            $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex']);
+        }
     }
 
     /**
@@ -1603,7 +1715,10 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Errors are caught and written rather than raised: both callers are on the master loop,
      * where an escaping exception ends run() and takes the node down, and a placement that cannot
-     * run is the same non-event as one no capable node fits.
+     * run is the same non-event as one no capable node fits. Either way the nodes that asked are
+     * answered with a {@see PeerPlacementVerdictDTO} — immediately when the record is already
+     * started or refused, when no node fits, or when the attempt throws; later when a placing
+     * record fails.
      *
      * @param string $agentType Agent type to place
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -1612,17 +1727,126 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $agentId = $this->agentId($agentType, $agentIndex);
         $record = $this->registry->get($agentId);
-        if ($record !== null
-            && ($record->state === PlacementState::Placing
-                || $record->state === PlacementState::Started
-                || $record->state === PlacementState::Refused)) {
+        if ($record !== null && $record->state === PlacementState::Started) {
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::placed($agentType, $agentIndex, $record->nodeId),
+            );
+
+            return;
+        }
+        if ($record !== null && $record->state === PlacementState::Refused) {
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::notPlaced(
+                    $agentType,
+                    $agentIndex,
+                    PlacementState::Refused,
+                    'the agent was refused an RT claim another node already holds',
+                ),
+            );
+
+            return;
+        }
+        if ($record !== null && $record->state === PlacementState::Placing) {
             return;
         }
 
         try {
-            $this->placeAgentOnBestNode($agentType, $agentIndex);
+            $target = $this->placeAgentOnBestNode($agentType, $agentIndex);
         } catch (Throwable $e) {
             Logger::warning("On-demand placement of '{$agentId}' failed: {$e->getMessage()}");
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::notPlaced(
+                    $agentType,
+                    $agentIndex,
+                    PlacementState::Failed,
+                    $e->getMessage(),
+                ),
+            );
+
+            return;
+        }
+
+        if ($target === null) {
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::notPlaced(
+                    $agentType,
+                    $agentIndex,
+                    PlacementState::Unplaced,
+                    'no capable and online node fits the agent',
+                ),
+            );
+
+            return;
+        }
+
+        $placed = $this->registry->get($agentId);
+        if ($placed?->state === PlacementState::Started) {
+            $this->answerPlacementAskers(
+                $agentId,
+                PeerPlacementVerdictDTO::placed($agentType, $agentIndex, $placed->nodeId),
+            );
+        }
+    }
+
+    /**
+     * Remembers a node that is owed a verdict for this agent's placement ask.
+     *
+     * A repeated ask from the same node does not double the entry: the verdict is one event.
+     *
+     * @param string $agentId Agent id the ask is for
+     * @param string $nodeId Node id owed the verdict
+     */
+    private function rememberPlacementAsker(string $agentId, string $nodeId): void
+    {
+        $waiters = $this->placementVerdictWaiters[$agentId] ?? [];
+        if (in_array($nodeId, $waiters, true)) {
+            return;
+        }
+
+        $waiters[] = $nodeId;
+        $this->placementVerdictWaiters[$agentId] = $waiters;
+    }
+
+    /**
+     * Sends the verdict to every node that asked for this agent's placement, then forgets them.
+     *
+     * A remote waiter gets the frame. This node itself is told through
+     * {@see PlacementVerdictSink} on a not-placed verdict; a placed one is already in the
+     * registry this leader reads.
+     *
+     * @param string $agentId Agent id the verdict is for
+     * @param PeerPlacementVerdictDTO $verdict Verdict to send
+     */
+    private function answerPlacementAskers(string $agentId, PeerPlacementVerdictDTO $verdict): void
+    {
+        $waiters = $this->placementVerdictWaiters[$agentId] ?? [];
+        unset($this->placementVerdictWaiters[$agentId]);
+        if ($waiters === []) {
+            return;
+        }
+
+        $reason = $verdict->reason;
+        $suffix = $reason !== null && $reason !== '' ? " - {$reason}" : '';
+        Logger::info("Answering the placement ask of '{$agentId}': {$verdict->state->value}{$suffix}");
+
+        foreach ($waiters as $nodeId) {
+            if ($nodeId === $this->selfNodeId) {
+                if ($verdict->state !== PlacementState::Started && $reason !== null) {
+                    Hilos::$cluster?->placementVerdictSink()?->onAgentNotPlaced(
+                        $verdict->agentType,
+                        $verdict->agentIndex,
+                        "{$verdict->state->value}: {$reason}",
+                    );
+                }
+
+                continue;
+            }
+
+            $this->mesh->sendToNode($nodeId, $verdict);
         }
     }
 

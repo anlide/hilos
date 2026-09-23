@@ -16,10 +16,11 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * decide where it runs.
  *
  * Carries the agent alone and no node id: naming a target would be this sender picking the host,
- * which is the leader's placement policy to decide. There is no reply frame either — the
- * placement it triggers reaches the asking node as an ordinary view update, and the frame that
- * provoked the request waits in that node's master until the view names a node running the
- * agent (HIL-629).
+ * which is the leader's placement policy to decide. The reply is a {@see PeerPlacementVerdictDTO}
+ * on this ask — placed, or not, with the record's state — because a second failure of the same
+ * agent does not change the published view, and a waiter would never learn of it from a view
+ * update alone (HIL-1041). The frame that provoked the request waits in that node's master
+ * until the view names a node running the agent, or until the verdict answers it.
  */
 final class PeerPlacementRequestDTO extends PeerDTO
 {

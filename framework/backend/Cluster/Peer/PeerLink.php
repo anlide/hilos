@@ -22,6 +22,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
@@ -358,6 +359,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerPlacementViewDTO => $this->onPlacementView($frame),
             $frame instanceof PeerPlacementRequestDTO => $this->onPlacementRequest($frame),
+            $frame instanceof PeerPlacementVerdictDTO => $this->onPlacementVerdict($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
@@ -719,6 +721,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('placement view');
         $this->server->onPlacementViewReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received placement verdict to the server for this node to answer a waiting ask.
+     *
+     * @param PeerPlacementVerdictDTO $frame Incoming placement-verdict frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlacementVerdict(PeerPlacementVerdictDTO $frame): void
+    {
+        $this->requireHandshaked('placement verdict');
+        $this->server->onPlacementVerdictReceived($this, $frame);
     }
 
     /**

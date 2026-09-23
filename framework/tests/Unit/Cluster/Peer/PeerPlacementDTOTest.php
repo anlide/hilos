@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\PeerProtocol;
@@ -27,8 +28,8 @@ final class PeerPlacementDTOTest extends TestCase
 {
     public function testProtocolVersionBumpedForPlacementFrames(): void
     {
-        // The placement frames extend the peer channel, so the version moved to at least 3.
-        $this->assertGreaterThanOrEqual(3, PeerProtocol::VERSION);
+        // The placement-verdict frame extends the peer channel, so the version moved to at least 7.
+        $this->assertGreaterThanOrEqual(7, PeerProtocol::VERSION);
     }
 
     public function testPlaceAgentFrameRoundTrips(): void
@@ -91,6 +92,61 @@ final class PeerPlacementDTOTest extends TestCase
             PeerAgentStatusDTO::TYPE => PeerAgentStatusDTO::MESSAGE_TYPE,
             PeerAgentStatusDTO::FIELD_AGENT_TYPE => 'chat',
             PeerAgentStatusDTO::FIELD_STATE => 'exploded',
+        ]);
+    }
+
+    public function testAPlacedVerdictRoundTripsWithTheNodeId(): void
+    {
+        $parsed = PeerDTO::fromWire(PeerPlacementVerdictDTO::placed('chat', '7', 'node-b')->toJson());
+
+        $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $parsed);
+        $this->assertSame(PlacementState::Started, $parsed->state);
+        $this->assertSame('node-b', $parsed->nodeId);
+        $this->assertNull($parsed->reason);
+        $this->assertSame('chat', $parsed->agentType);
+        $this->assertSame('7', $parsed->agentIndex);
+    }
+
+    public function testANotPlacedVerdictRoundTripsWithTheReason(): void
+    {
+        $parsed = PeerDTO::fromWire(
+            PeerPlacementVerdictDTO::notPlaced('chat', null, PlacementState::Unplaced, 'no capable node')->toJson(),
+        );
+
+        $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $parsed);
+        $this->assertSame(PlacementState::Unplaced, $parsed->state);
+        $this->assertNull($parsed->nodeId);
+        $this->assertSame('no capable node', $parsed->reason);
+        $this->assertNull($parsed->agentIndex);
+    }
+
+    public function testAPlacementVerdictRejectsAnInvalidState(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        PeerPlacementVerdictDTO::fromArray([
+            PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
+            PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerPlacementVerdictDTO::FIELD_STATE => 'placing',
+        ]);
+    }
+
+    public function testAPlacedVerdictRejectsAMissingNodeId(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        PeerPlacementVerdictDTO::fromArray([
+            PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
+            PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerPlacementVerdictDTO::FIELD_STATE => PlacementState::Started->value,
+        ]);
+    }
+
+    public function testANotPlacedVerdictRejectsAMissingReason(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        PeerPlacementVerdictDTO::fromArray([
+            PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
+            PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerPlacementVerdictDTO::FIELD_STATE => PlacementState::Failed->value,
         ]);
     }
 

@@ -10,8 +10,10 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\PlacementVerdictSink;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -144,6 +146,93 @@ final class ClusterPlacementRequestTest extends TestCase
     }
 
     /**
+     * Nowhere to put the agent is a verdict, not silence: the asking node has a frame waiting
+     * and must hear that the ask ended, even though no Unplaced record is written (HIL-1041).
+     */
+    public function testTheLeaderAnswersUnplacedWhenNoNodeFits(): void
+    {
+        $mesh = $this->incapableMesh();
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onBecameLeader();
+        $mesh->sent = [];
+
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+
+        [$nodeId, $frame] = $this->lastSent($mesh);
+        $this->assertSame('node-c', $nodeId);
+        $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $frame);
+        $this->assertSame(PlacementState::Unplaced, $frame->state);
+        $this->assertSame('no capable and online node fits the agent', $frame->reason);
+        $this->assertNull($frame->nodeId);
+    }
+
+    /**
+     * Two asks for the same agent while it is still placing are one waiter: the verdict is an
+     * event, and sending it twice would answer a frame that is no longer waiting.
+     */
+    public function testANodeThatAsksTwiceGetsOneVerdict(): void
+    {
+        $mesh = $this->mesh();
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onBecameLeader();
+
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $mesh->sent = [];
+
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+
+        $verdicts = $this->verdictFrames($mesh);
+        $this->assertCount(1, $verdicts);
+        $this->assertSame('node-c', $verdicts[0][0]);
+        $this->assertSame(PlacementState::Failed, $verdicts[0][1]->state);
+        $this->assertSame('no worker', $verdicts[0][1]->reason);
+    }
+
+    /**
+     * The leader asking itself has no peer hop: the verdict reaches the master through the
+     * sink, not as a frame sent to this node.
+     */
+    public function testTheLeaderAnswersItsOwnAskThroughTheSink(): void
+    {
+        $mesh = $this->incapableMesh();
+        $sink = new FakePlacementVerdictSink();
+        $context = new ClusterContext();
+        $context->registerPlacementVerdictSink($sink);
+        Hilos::$cluster = $context;
+
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onBecameLeader();
+        $mesh->sent = [];
+
+        $placement->requirePlacement('render', '9');
+
+        $this->assertSame([], $mesh->sent);
+        $this->assertCount(1, $sink->notPlaced);
+        $this->assertSame('render', $sink->notPlaced[0][0]);
+        $this->assertSame('9', $sink->notPlaced[0][1]);
+        $this->assertSame('unplaced: no capable and online node fits the agent', $sink->notPlaced[0][2]);
+    }
+
+    /**
+     * Waiters belong to this term. A deposed leader must not answer an ask it is no longer
+     * the one to decide; the nodes will ask the next leader themselves.
+     */
+    public function testLostLeadershipForgetsPlacementAskers(): void
+    {
+        $mesh = $this->mesh();
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onBecameLeader();
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onLostLeadership();
+        $mesh->sent = [];
+
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+
+        $this->assertSame([], $this->verdictFrames($mesh));
+    }
+
+    /**
      * The asking node's ignorance is not the leader's: a published view lags by a tick, so an
      * agent placed a moment ago is still unknown to a node that has not been handed the new
      * picture. Placing it again would start a SECOND copy of it.
@@ -251,6 +340,20 @@ final class ClusterPlacementRequestTest extends TestCase
     }
 
     /**
+     * Builds a mesh whose online nodes do not advertise the worker tag the agent requires.
+     *
+     * @return FakePlacementMesh Mesh with no capable host
+     */
+    private function incapableMesh(): FakePlacementMesh
+    {
+        return new FakePlacementMesh(
+            capabilities: [self::SELF => ['cpu=4']],
+            linked: [],
+            online: [self::SELF],
+        );
+    }
+
+    /**
      * Builds a coordinator on a node that has never taken a term, with leadership answering a
      * fixed id.
      *
@@ -288,5 +391,40 @@ final class ClusterPlacementRequestTest extends TestCase
             array_map(static fn(array $sent): PeerDTO => $sent[1], $mesh->sent),
             static fn(PeerDTO $frame): bool => $frame instanceof PeerPlaceAgentDTO,
         ));
+    }
+
+    /**
+     * @param FakePlacementMesh $mesh Mesh the coordinator sent through
+     * @return list<array{0: string, 1: PeerPlacementVerdictDTO}> Verdict frames, with the node each went to
+     */
+    private function verdictFrames(FakePlacementMesh $mesh): array
+    {
+        $verdicts = [];
+        foreach ($mesh->sent as $sent) {
+            if ($sent[1] instanceof PeerPlacementVerdictDTO) {
+                $verdicts[] = $sent;
+            }
+        }
+
+        return $verdicts;
+    }
+}
+
+/**
+ * Fake sink that records not-placed verdicts the leader applied to itself.
+ */
+final class FakePlacementVerdictSink implements PlacementVerdictSink
+{
+    /** @var list<array{0: string, 1: ?string, 2: string}> Not-placed calls, as [type, index, reason] */
+    public array $notPlaced = [];
+
+    /**
+     * @param string $agentType Agent type that was not placed
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param string $reason Why the agent was not placed
+     */
+    public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $this->notPlaced[] = [$agentType, $agentIndex, $reason];
     }
 }

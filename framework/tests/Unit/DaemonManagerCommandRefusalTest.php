@@ -10,7 +10,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
-use Hilos\Core\Daemon\ParkedAgentSignal;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
@@ -104,7 +104,8 @@ final class DaemonManagerCommandRefusalTest extends TestCase
      * fixed apart: one is a placement that never happened, the other a link that broke.
      *
      * The unplaced one is refused when its wait ends rather than at once: the command is held for
-     * the agent while the placement it asked for can still bring it up (HIL-629).
+     * the agent while the placement it asked for can still bring it up (HIL-629). A not-placed
+     * verdict is what ends that wait (HIL-1041).
      */
     public function testACommandWhoseAgentNothingPlacedIsRefusedAsUnplaced(): void
     {
@@ -114,7 +115,7 @@ final class DaemonManagerCommandRefusalTest extends TestCase
         $manager->drainQueue();
         $this->assertNull($manager->refusalMessage());
 
-        $manager->expireHeldFrames();
+        $manager->reportNotPlaced(DaemonManagerCommandRefusalTestRouter::AGENT_TYPE);
         $manager->drainQueue();
 
         $this->assertSame(
@@ -201,20 +202,14 @@ final class DaemonManagerCommandRefusalTestManager extends DaemonManager
     }
 
     /**
-     * Moves every frame that has a deadline past it, so the next drain answers it.
+     * Answers the frames held for an agent the leader could not place.
      *
-     * A frame held for a start under way here has none to move (HIL-1040): it waits on a fact,
-     * and handing it a deadline would test a clock the code no longer keeps over it.
+     * @param string $agentType Agent that was not placed
+     * @throws InvalidArgumentException When a refusal answering a command cannot be named
      */
-    public function expireHeldFrames(): void
+    public function reportNotPlaced(string $agentType): void
     {
-        $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
-        $held->setValue($this, array_map(
-            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => $parked->deadline === null
-                ? $parked
-                : new ParkedAgentSignal($parked->signal, $parked->agentId, $parked->parkedAt, 0.0, $parked->localOnly),
-            $held->getValue($this),
-        ));
+        $this->onAgentNotPlaced($agentType, null, 'unplaced: no capable node');
     }
 
     /**

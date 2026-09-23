@@ -428,6 +428,13 @@ final class PoolGrowthTestStartSink implements AgentStartSink
     {
         $this->failedAgentIds[] = $agentId;
     }
+
+    /**
+     * @param string $agentId Agent that stopped; unused here
+     */
+    public function onAgentStopped(string $agentId): void
+    {
+    }
 }
 
 /**

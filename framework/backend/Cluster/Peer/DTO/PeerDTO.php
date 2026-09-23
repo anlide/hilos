@@ -22,7 +22,8 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * {@see PeerPlacementViewDTO}) launch, stop, and track agents placed on a named node, the last
  * of them handing the leader's whole picture back down so any node can tell where an agent
  * runs, and the request frame ({@see PeerPlacementRequestDTO}) travels the other way, a node
- * asking the leader to place an agent somebody just addressed; the signal-forward frame
+ * asking the leader to place an agent somebody just addressed, and the verdict frame
+ * ({@see PeerPlacementVerdictDTO}) is the leader's answer to that ask; the signal-forward frame
  * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
  * RT replication frames ({@see PeerRtSyncDTO}, {@see PeerRtSnapshotDTO}) carry one RT sync
  * fact, and one whole collection to a node that just joined, from the node that owns it to
@@ -94,6 +95,7 @@ abstract class PeerDTO extends BaseDTO
             PeerPlacementReportDTO::MESSAGE_TYPE => PeerPlacementReportDTO::fromArray($data),
             PeerPlacementViewDTO::MESSAGE_TYPE => PeerPlacementViewDTO::fromArray($data),
             PeerPlacementRequestDTO::MESSAGE_TYPE => PeerPlacementRequestDTO::fromArray($data),
+            PeerPlacementVerdictDTO::MESSAGE_TYPE => PeerPlacementVerdictDTO::fromArray($data),
             PeerSignalDTO::MESSAGE_TYPE => PeerSignalDTO::fromArray($data),
             PeerRtSyncDTO::MESSAGE_TYPE => PeerRtSyncDTO::fromArray($data),
             PeerDbSyncDTO::MESSAGE_TYPE => PeerDbSyncDTO::fromArray($data),

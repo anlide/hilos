@@ -20,6 +20,7 @@ use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Daemon\AgentDeliveryOutcome;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ParkedAgentSignal;
+use Hilos\Core\Exception\InvalidArgumentException as CoreInvalidArgumentException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -36,6 +37,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -57,10 +59,10 @@ use ReflectionClass;
  * Now the master holds it: for the start report of an agent coming up here, or for an address
  * that does not exist yet. It goes to that one agent once the agent is up.
  *
- * The two holds end differently (HIL-1040). A start under way here is going to be reported one way
- * or the other, so that hold has no deadline and outlasts however long the start takes. An agent
- * nobody could place has no report coming, so that hold keeps the ceiling it always had - and
- * loses it the moment the agent does turn up starting here.
+ * The two holds end differently (HIL-1041). A start under way here is going to be reported one way
+ * or the other, so that hold lasts as long as the start does. An agent nobody could place waits
+ * on a placement verdict, not a clock: the leader names a node, or it answers that it could not.
+ * The wait becomes a start-under-way wait the moment the agent turns up starting here.
  *
  * The drain is driven the way {@see DaemonManagerAgentStartRefusedTest} drives it; Reflection
  * reaches the private members because the code-style rule grants tests that exception.
@@ -155,8 +157,9 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 
     /**
      * A page whose agent is starting here waits as long as the start runs and is answered by the
-     * report, never by a clock: the hold carries no deadline at all, so simulated waiting far past
-     * the ceiling the master used to give itself changes nothing about it (HIL-1040).
+     * report, never by a clock: the hold is not waiting on a placement verdict, so simulated
+     * waiting far past the ceiling the master used to give itself changes nothing about it
+     * (HIL-1040).
      */
     public function testAFrameForAStartUnderWayOutlastsTheOldCeilingAndGoesOutOnTheReport(): void
     {
@@ -166,7 +169,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 
         $held = $manager->heldFrames();
         $this->assertCount(1, $held);
-        $this->assertNull($held[0]->deadline);
+        $this->assertFalse($held[0]->awaitingPlacement);
 
         $manager->ageHeldFrames(self::LONG_START_SECONDS);
         $manager->drainQueue();
@@ -185,22 +188,22 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
-     * The one hold left with a clock loses it the moment its agent turns up starting here: from
-     * then on there IS a report coming, and the frame waits on it like any other. Otherwise the
-     * ceiling meant for "no node has this agent" would cut short a start that is running.
+     * The one hold that waits on a placement verdict stops doing so the moment its agent turns
+     * up starting here: from then on there IS a report coming, and the frame waits on it like
+     * any other. Otherwise a missing address would keep asking for a placement while a start
+     * is already running here.
      */
-    public function testAnAddresslessHoldLosesItsDeadlineOnceTheStartBeginsHere(): void
+    public function testAnAddresslessHoldStopsWaitingOnPlacementOnceTheStartBeginsHere(): void
     {
         $manager = new HeldAgentSignalTestManager();
         $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
         $manager->drainQueue();
-        $this->assertNotNull($manager->heldFrames()[0]->deadline);
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
 
         $manager->workerServer->ensureAgentUp(HeldAgentSignalTestRouter::COLD_AGENT, null);
         $manager->drainQueue();
-        $this->assertNull($manager->heldFrames()[0]->deadline);
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacement);
 
-        $manager->expireHeldFrames();
         $manager->ageHeldFrames(self::LONG_START_SECONDS);
         $manager->drainQueue();
         $this->assertSame([], $manager->pageErrorFrames());
@@ -298,9 +301,9 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
-     * An agent no node is known to host is waited for too, instead of answered at once - and it is
-     * the only wait a deadline still ends. The answer is the one a dropped subscribe always got,
-     * only later, and the frame is not held a second time.
+     * An agent no node is known to host is waited for too, instead of answered at once - and it
+     * is the one wait a placement verdict ends. The answer is the one a dropped subscribe always
+     * got, only later, and the frame is not held a second time.
      */
     public function testAFrameForAnAgentWithNoAddressIsHeldAndAnsweredOnlyWhenTheWaitEnds(): void
     {
@@ -310,9 +313,9 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->drainQueue();
         $this->assertSame([], $manager->pageErrorFrames());
         $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
 
-        $manager->expireHeldFrames();
-        $manager->drainQueue();
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
 
         $frames = $manager->pageErrorFrames();
         $this->assertCount(1, $frames);
@@ -321,6 +324,72 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertSame('node_unreachable', $error->errorCode);
         $this->assertSame([], $manager->heldFrames());
         $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * A missing address is not a six-second wait: the old ceiling passing leaves the frame held,
+     * and a placed verdict is what lets it go - the view names a node, and the frame leaves
+     * through the placing door (HIL-1041).
+     */
+    public function testAnAddresslessHoldOutlastsTheOldCeilingAndLeavesWhenANodeIsNamed(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $manager->drainQueue();
+        $manager->placedReleases = [];
+
+        $manager->ageHeldFrames(self::LONG_START_SECONDS);
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
+
+        $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $manager->placedReleases);
+    }
+
+    /**
+     * A not-placed verdict answers the waiting page at once, in the words a dropped subscribe
+     * always got. There is no clock left to stand in for that answer.
+     */
+    public function testANotPlacedVerdictAnswersTheWaitingFrameAtOnce(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $manager->drainQueue();
+
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT, 'failed: no worker');
+
+        $frames = $manager->pageErrorFrames();
+        $this->assertCount(1, $frames);
+        $error = $frames[0]->data;
+        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        $this->assertSame('node_unreachable', $error->errorCode);
+        $this->assertSame([], $manager->heldFrames());
+    }
+
+    /**
+     * While the frame waits on a verdict, every release pass asks for a placement again. The
+     * five-second cap already lives inside the ask, so the master repeating the call is what a
+     * missing leader is waited out by (HIL-1041).
+     */
+    public function testAWaitingFrameAsksForPlacementAgainEachReleasePass(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $manager->drainQueue();
+        $asksAfterPark = $manager->placementAsks;
+
+        $manager->drainQueue();
+        $manager->drainQueue();
+
+        $this->assertSame($asksAfterPark + 2, $manager->placementAsks);
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertSame([], $manager->pageErrorFrames());
     }
 
     /**
@@ -376,6 +445,71 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 
         $this->assertCount(1, $manager->heldFrames());
         $this->assertSame([], $manager->pageErrorFrames());
+    }
+
+    /**
+     * A stop of the agent whose start is still running is the fifth end of the hold: the frames
+     * are let go, not answered. The ordinary door then starts the agent again, and the frame waits
+     * for that start the way it waited for the first (HIL-1041).
+     */
+    public function testStoppingAnAgentWhoseStartIsUnderWayLetsTheFrameAskAgain(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+
+        $manager->reportStopped(HeldAgentSignalTestRouter::COLD_AGENT);
+
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertFalse($manager->holdsRecordOf(HeldAgentSignalTestRouter::COLD_AGENT));
+
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::COLD_AGENT, HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->startedAgentTypes,
+        );
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::COLD_PAGE . '@' . HeldAgentSignalTestRouter::COLD_AGENT],
+            $manager->workerServer->deliveries,
+        );
+    }
+
+    /**
+     * A stop that leaves the agent with no address is not a refusal: the frame asks for a
+     * placement and waits on the verdict, the way the walk already does for a first delivery
+     * that met nobody (HIL-1041).
+     */
+    public function testStoppingAnAgentWithNoAddressLetsTheFrameWaitOnAVerdict(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacement);
+
+        $manager->reportStopped(HeldAgentSignalTestRouter::COLD_AGENT);
+        $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        $asks = $manager->placementAsks;
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->pageErrorFrames());
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
+        $this->assertSame($asks + 1, $manager->placementAsks);
+
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        $this->assertCount(1, $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
     }
 
     /**
@@ -477,26 +611,27 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
-     * The one hold with a clock keeps it when its agent is not starting but already RUNNING here.
+     * The one hold that waits on a placement verdict keeps waiting when its agent is not
+     * starting but already RUNNING here.
      *
      * Nothing is coming for an agent that reported its start long ago, so a release that read the
-     * worker link alone would call this a start under way, take the clock off and hold the frame
-     * for the life of the process. The address can be missing for an agent running right here: a
-     * follower with no placement view yet, a cluster mid-election.
+     * worker link alone would call this a start under way, stop waiting on placement and hold the
+     * frame for the life of the process. The address can be missing for an agent running right
+     * here: a follower with no placement view yet, a cluster mid-election. A verdict is what
+     * ends that wait.
      */
-    public function testAnAddresslessHoldKeepsItsDeadlineWhenItsAgentIsAlreadyUpHere(): void
+    public function testAnAddresslessHoldKeepsWaitingOnPlacementWhenItsAgentIsAlreadyUpHere(): void
     {
         $manager = new HeldAgentSignalTestManager();
         $manager->workerServer->ensureAgentUp(HeldAgentSignalTestRouter::UP_AGENT, null);
         $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_UP_PAGE);
         $manager->drainQueue();
-        $this->assertNotNull($manager->heldFrames()[0]->deadline);
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
 
         $manager->drainQueue();
-        $this->assertNotNull($manager->heldFrames()[0]->deadline);
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
 
-        $manager->expireHeldFrames();
-        $manager->drainQueue();
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::UP_AGENT);
 
         $this->assertCount(1, $manager->pageErrorFrames());
         $this->assertSame([], $manager->heldFrames());
@@ -553,6 +688,40 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->drainQueue();
 
         $this->assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $manager->placedReleases);
+    }
+
+    /**
+     * Registers a placement lookup that names no host for one agent.
+     *
+     * @param string $agentId Agent the lookup reports running nowhere
+     */
+    private function leaveUnplaced(string $agentId): void
+    {
+        $context = new ClusterContext();
+        $context->registerWorkerPlacement(new class ($agentId) implements WorkerPlacement {
+            /**
+             * @param string $unplacedAgentId Agent id this lookup answers as unknown
+             */
+            public function __construct(private readonly string $unplacedAgentId)
+            {
+            }
+
+            /**
+             * @param string $agentType Agent type to look up
+             * @param ?string $agentIndex Agent index, or null for a singleton agent
+             * @return AgentLocation Unknown for the unplaced agent, here for any other
+             */
+            public function locate(string $agentType, ?string $agentIndex): AgentLocation
+            {
+                $agentId = $agentIndex !== null ? "{$agentType}:{$agentIndex}" : $agentType;
+
+                return $agentId === $this->unplacedAgentId
+                    ? AgentLocation::unknown()
+                    : AgentLocation::here();
+            }
+        });
+
+        Hilos::$cluster = $context;
     }
 
     /**
@@ -649,6 +818,12 @@ final class HeldAgentSignalTestManager extends DaemonManager
     /** The stand-in worker server the drain delivers through */
     public HeldAgentSignalTestWorkerServer $workerServer;
 
+    /** @var list<string> Agent types the placing door was asked to reach, in order */
+    public array $placedReleases = [];
+
+    /** @var int Placement asks the release repeated while a frame waited on a verdict */
+    public int $placementAsks = 0;
+
     public function __construct()
     {
         parent::__construct();
@@ -656,9 +831,6 @@ final class HeldAgentSignalTestManager extends DaemonManager
         $this->workerServer = new HeldAgentSignalTestWorkerServer($this->agentManagerDaemon);
         $this->registerServer($this->workerServer);
     }
-
-    /** @var list<string> Agent types the placing door was asked to reach, in order */
-    public array $placedReleases = [];
 
     /**
      * Runs the private queue drain the daemon loop runs at the end of each iteration.
@@ -691,6 +863,19 @@ final class HeldAgentSignalTestManager extends DaemonManager
     }
 
     /**
+     * Counts every ask the release repeats while a frame waits on a verdict.
+     *
+     * @param string $agentType Agent type that could not be addressed
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex): void
+    {
+        $this->placementAsks++;
+        parent::requireOnDemandPlacement($agentType, $agentIndex);
+    }
+
+    /**
      * Delivers the report a worker sends once the agent's onStart() has returned.
      *
      * @param string $agentType Agent that finished starting
@@ -713,6 +898,17 @@ final class HeldAgentSignalTestManager extends DaemonManager
     }
 
     /**
+     * Delivers the report a worker-bound stop makes after the roster has forgotten the agent.
+     *
+     * @param string $agentType Agent that was stopped while its start was still running
+     */
+    public function reportStopped(string $agentType): void
+    {
+        $this->agentManagerDaemon->removeAgent($agentType);
+        $this->agentManagerDaemon->reportAgentStopped($agentType);
+    }
+
+    /**
      * @param string $agentType Agent to look up
      * @return bool Whether the master's roster still holds a record of the agent
      */
@@ -722,20 +918,15 @@ final class HeldAgentSignalTestManager extends DaemonManager
     }
 
     /**
-     * Moves every frame that has a deadline past it, so the next drain answers it.
+     * Answers the frames held for an agent the leader could not place.
      *
-     * A frame held for a start under way here has none to move (HIL-1040): it waits on a fact,
-     * and handing it a deadline would test a clock the code no longer keeps over it.
+     * @param string $agentType Agent that was not placed
+     * @param string $reason Why it was not placed, including the record state
+     * @throws CoreInvalidArgumentException When a refusal answering a page or a command cannot be named
      */
-    public function expireHeldFrames(): void
+    public function reportNotPlaced(string $agentType, string $reason = 'unplaced: no capable node'): void
     {
-        $held = new ReflectionClass(DaemonManager::class)->getProperty('parkedAgentSignals');
-        $held->setValue($this, array_map(
-            static fn(ParkedAgentSignal $parked): ParkedAgentSignal => $parked->deadline === null
-                ? $parked
-                : new ParkedAgentSignal($parked->signal, $parked->agentId, $parked->parkedAt, 0.0, $parked->localOnly),
-            $held->getValue($this),
-        ));
+        $this->onAgentNotPlaced($agentType, null, $reason);
     }
 
     /**
@@ -751,10 +942,9 @@ final class HeldAgentSignalTestManager extends DaemonManager
     /**
      * Rewinds every held frame by the given seconds, so the next drain sees it as that much older.
      *
-     * Time passes for the whole record - the moment the hold began and the deadline it carries, if
-     * it carries one - which is what lets a case say "this much waiting went by" without waiting.
-     * A frame holding for a start under way carries no deadline, so all that changes is its age,
-     * and that is the point of the helper (HIL-1040).
+     * Time passes for the moment the hold began, which is what lets a case say "this much
+     * waiting went by" without waiting. A frame waiting on a verdict carries no clock, so all
+     * that changes is its age (HIL-1041).
      *
      * @param float $seconds Seconds of waiting to simulate
      */
@@ -766,7 +956,7 @@ final class HeldAgentSignalTestManager extends DaemonManager
                 $parked->signal,
                 $parked->agentId,
                 $parked->parkedAt - $seconds,
-                $parked->deadline === null ? null : $parked->deadline - $seconds,
+                $parked->awaitingPlacement,
                 $parked->localOnly,
             ),
             $held->getValue($this),

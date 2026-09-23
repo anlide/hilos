@@ -165,7 +165,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * Its own seam beside the stop sink rather than a second meaning inside it: the stop sink is the
      * freeze watchdog's alone, while this one lets the master release frames it holds for an agent
-     * that was coming up (HIL-629).
+     * that was coming up (HIL-629) and lets them go unanswered when a stop ends that wait (HIL-1041).
      */
     private ?AgentStartSink $agentStartSink = null;
 
@@ -214,7 +214,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * One sink and not a list, for the same reason as the stop sink above.
      *
-     * @param AgentStartSink $sink Who to tell when an agent's start is reported
+     * @param AgentStartSink $sink Who to tell when an agent's start is reported, or a stop ends the wait
      */
     public function registerAgentStartSink(AgentStartSink $sink): void
     {
@@ -475,6 +475,19 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $this->removeAgent($agentId);
 
         $this->agentStartSink?->onAgentStartFailed($agentId, $reason);
+    }
+
+    /**
+     * Tells the start sink that an agent stopped before its start was reported.
+     *
+     * The caller has already taken the agent off the roster: this method does not. A stop is not
+     * a failed start - the frames held for it are let go, not answered (HIL-1041).
+     *
+     * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
+     */
+    public function reportAgentStopped(string $agentId): void
+    {
+        $this->agentStartSink?->onAgentStopped($agentId);
     }
 
     /**

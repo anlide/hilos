@@ -113,6 +113,9 @@ final class ClusterContext
     /** @var ?AgentSignalSink Local delivery port for cross-node signals, registered by the daemon at start. */
     private ?AgentSignalSink $agentSignalSink = null;
 
+    /** @var ?PlacementVerdictSink Local port for a not-placed verdict, registered by the daemon at start. */
+    private ?PlacementVerdictSink $placementVerdictSink = null;
+
     /** @var ?RtSyncSink Local apply port for cross-node RT replicas, registered by the daemon at start. */
     private ?RtSyncSink $rtSyncSink = null;
 
@@ -656,6 +659,29 @@ final class ClusterContext
     public function agentSignalSink(): ?AgentSignalSink
     {
         return $this->agentSignalSink;
+    }
+
+    /**
+     * Registers the local port that answers frames held for an agent the leader could not place.
+     *
+     * The daemon registers itself here at start so a verdict for this node's own ask reaches
+     * the master without a peer hop. Symmetric to {@see registerAgentSignalSink()}.
+     *
+     * @param PlacementVerdictSink $sink Local port for a not-placed verdict
+     */
+    public function registerPlacementVerdictSink(PlacementVerdictSink $sink): void
+    {
+        $this->placementVerdictSink = $sink;
+    }
+
+    /**
+     * Returns the local port for a not-placed verdict, or null when none is set.
+     *
+     * @return ?PlacementVerdictSink Verdict port, or null
+     */
+    public function placementVerdictSink(): ?PlacementVerdictSink
+    {
+        return $this->placementVerdictSink;
     }
 
     /**

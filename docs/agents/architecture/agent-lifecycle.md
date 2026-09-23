@@ -119,24 +119,25 @@ monopolistic worker raised for it — the frame waits with it, because every way
 that start can end reaches the master: `agent_started` delivers the frame,
 `agent_start_failed` answers it as a start refused here, the death of the worker
 hosting the agent answers it as a host that went down — never redelivers it,
-because a start that killed one worker would kill the next — and the departure of
-whoever asked drops it unanswered, whether that is a browser closing its socket
-or an operator's command giving up on its own window. One hold keeps a deadline,
-and it is the one with no report coming: a frame that met an empty address is
-answered after `AgentConstants::START_DEADLINE_SECONDS` plus one second the way
-a dropped frame always was — a page with its subscription error, an operator
-with a refusal, a push with a log line — because nothing anywhere reports "this
-agent could not be placed". That deadline comes off the moment the agent does
-turn up starting here. The hold lives in the master's memory and dies with it:
-delivery across a node that fell over is HIL-347.
+because a start that killed one worker would kill the next — a stop of that
+agent while its start is still running lets the frame go so it asks the address
+again (HIL-1041), and the departure of whoever asked drops it unanswered, whether
+that is a browser closing its socket or an operator's command giving up on its
+own window. A frame that met an empty address waits on a placement verdict: the
+leader names a node, or it answers that it could not place the agent — a page
+with its subscription error, an operator with a refusal, a push with a log
+line. The wait becomes a start-under-way wait the moment the agent does turn up
+starting here. The hold lives in the master's memory and dies with it: delivery
+across a node that fell over is HIL-347.
 
 The price of ending on a fact is that a start which ends without one strands its
-frames: a worker wedged in `onStart()` forever, and an agent stopped in the
-middle of a start that a live worker was still running. A page and a command are
-taken off the hold when whoever asked goes away; a push has nobody to leave and
-simply accumulates. What a stop should mean for a frame held for the agent being
-stopped is not decided — nobody has been asked yet, and the freeze, which stops
-every agent at once, is where the question really belongs.
+frames: a worker wedged in `onStart()` forever. A page and a command are taken
+off the hold when whoever asked goes away; a push has nobody to leave and simply
+accumulates. A stop of the agent whose start is under way is not such a gap: the
+frames held for it are let go and go through the ordinary door again — the agent
+running elsewhere is forwarded to, the agent here is started again, no address
+asks for a placement and waits on its verdict. The freeze, a placement revoke
+and a lost singleton host all stop through that same door.
 
 **Three things must agree before an agent is stopped**, and the count is on the
 worker side, where the agent lives:

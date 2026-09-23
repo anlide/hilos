@@ -1671,6 +1671,8 @@ abstract class WorkerServer extends AbstractServer implements
      * Sends agent_stop signal to worker and removes agent from agent manager.
      * No-op if agent is not running. An agent still waiting for a worker raised for it has none
      * to be stopped on: the stop takes it out of the wait, and its record with it (HIL-998).
+     * An agent already linked to a worker is taken off the roster the same way, and the master
+     * is told so frames held for its start are let go rather than left waiting (HIL-1041).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
@@ -1702,6 +1704,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         $workerClient->sendAgentStop($agentType, $agentIndex);
         $this->agentManager->removeAgent($agentId);
+        $this->agentManager->reportAgentStopped($agentId);
     }
 
     /**

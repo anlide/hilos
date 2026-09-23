@@ -31,6 +31,7 @@ use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
@@ -1099,6 +1100,20 @@ final class PeerServer extends AbstractTlsServer implements
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
             $this->placement?->onPlacementView($from, $frame);
+        }
+    }
+
+    /**
+     * Routes a received placement verdict to the placement coordinator to answer a waiting ask.
+     *
+     * @param PeerLink $link Link the verdict arrived on
+     * @param PeerPlacementVerdictDTO $frame Received placement-verdict frame
+     */
+    public function onPlacementVerdictReceived(PeerLink $link, PeerPlacementVerdictDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlacementVerdict($from, $frame);
         }
     }
 
