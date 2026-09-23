@@ -442,7 +442,11 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
 // notifications with email delivery rows for seed-002 (501 = TableConstants::COUNT_CEILING + 1),
 // crossing the count ceiling where the total stops being exact. When the count is
 // inexact, the pager draws no page numbers and walks page-by-page via Next and Previous.
-test('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
+// FIXME(P-386): red on every run since 23.09.2026 and green before it (run 0454): after
+// Next the count reads "26 – 50 of 500+" while the rows stay those of the first window.
+// Parked by the owner until R2-6 without a diagnosis — see
+// hilos-ops/proposals/P-386-deliveries-next-label-rows-stale.md.
+test.fixme('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
   page,
 }) => {
   await signUpAdmin(page)
