@@ -9,6 +9,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
@@ -49,6 +50,9 @@ final class InMemoryTableFilter
      * {@see TableDefinition::filterInMemory()} is what holds a declaration against the set before
      * the search runs, so an unreachable field is refused rather than quietly searched past.
      *
+     * The places framing the window are read off the same ordered set and travel in the snapshot
+     * beside it, in the fields its anchors use; they are never rows of the window.
+     *
      * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under, used to settle the sort
@@ -64,8 +68,8 @@ final class InMemoryTableFilter
         }
 
         $totalCount = count($rows);
-        [$window, $rowsBefore] = self::window($rows, $query, $keyField);
         $anchorFields = self::anchorFields($order, $keyField);
+        [$window, $rowsBefore, $frame] = self::window($rows, $query, $keyField, $anchorFields);
 
         return new TableSnapshotDTO(
             rows: $window,
@@ -75,6 +79,7 @@ final class InMemoryTableFilter
             firstAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[0], $anchorFields),
             lastAnchor: $window === [] ? null : TableAnchorDTO::fromRow($window[count($window) - 1], $anchorFields),
             rowsBefore: $rowsBefore,
+            frame: $frame,
         );
     }
 
@@ -139,42 +144,67 @@ final class InMemoryTableFilter
      * That is what the window reports as the rows standing before it, and nothing here costs an
      * extra pass — the set is already in hand, ordered and counted.
      *
+     * The frame is read by the same rule the SQL paths follow ({@see TableWindowPlan}): the side of
+     * an anchored window that faces its anchor is framed by the anchor itself, every other side by
+     * the row standing next to the window, and a side with no such row is the edge of the set. An
+     * empty window reports no frame, so a page past the end does not call itself the edge.
+     *
      * @param list<array<string, mixed>> $rows Ordered rows of the whole filtered set
      * @param TableQueryDTO $query Query parameters
      * @param string $keyField Payload field the row key travels under
-     * @return array{list<array<string, mixed>>, int} Rows of the window in the set's own order,
-     *     and how many rows of the set stand before them
+     * @param list<string> $anchorFields Fields a place in this order is named by
+     * @return array{list<array<string, mixed>>, int, ?TableWindowFrameDTO} Rows of the window in the set's
+     *     own order, how many rows of the set stand before them, and the places framing them
      */
-    private static function window(array $rows, TableQueryDTO $query, string $keyField): array
+    private static function window(array $rows, TableQueryDTO $query, string $keyField, array $anchorFields): array
     {
         if ($query->limit === TableConstants::NO_LIMIT) {
-            return [$rows, 0];
-        }
-        if ($query->pageIndex !== null) {
-            $start = max(0, $query->pageIndex) * $query->limit;
-
-            return [array_slice($rows, $start, $query->limit), $start];
+            return [$rows, 0, $rows === [] ? null : new TableWindowFrameDTO()];
         }
 
         $takesFromEnd = $query->anchorDirection === TableAnchorDirection::Before;
-        if ($query->anchor === null) {
-            if (!$takesFromEnd) {
-                return [array_slice($rows, 0, $query->limit), 0];
-            }
-
-            $start = max(0, count($rows) - $query->limit);
-
-            return [array_slice($rows, $start, $query->limit), $start];
+        if ($query->pageIndex !== null) {
+            $start = max(0, $query->pageIndex) * $query->limit;
+            $window = array_slice($rows, $start, $query->limit);
+        } elseif ($takesFromEnd) {
+            $end = $query->anchor === null
+                ? count($rows)
+                : self::boundary($rows, $query->anchor, $query->sort, $keyField, true);
+            $start = max(0, $end - $query->limit);
+            $window = array_slice($rows, $start, $end - $start);
+        } else {
+            $start = $query->anchor === null ? 0 : self::boundary($rows, $query->anchor, $query->sort, $keyField, false);
+            $window = array_slice($rows, $start, $query->limit);
         }
 
-        $boundary = self::boundary($rows, $query->anchor, $query->sort, $keyField, $takesFromEnd);
-        if (!$takesFromEnd) {
-            return [array_slice($rows, $boundary, $query->limit), $boundary];
+        if ($window === []) {
+            return [$window, $start, null];
         }
 
-        $start = max(0, $boundary - $query->limit);
+        $before = self::placeAt($rows, $start - 1, $anchorFields);
+        $after = self::placeAt($rows, $start + count($window), $anchorFields);
+        if ($query->pageIndex !== null) {
+            return [$window, $start, new TableWindowFrameDTO($before, $after)];
+        }
 
-        return [array_slice($rows, $start, $boundary - $start), $start];
+        return [
+            $window,
+            $start,
+            $takesFromEnd ? new TableWindowFrameDTO($before, $query->anchor) : new TableWindowFrameDTO($query->anchor, $after),
+        ];
+    }
+
+    /**
+     * Reads the place the row at one index of the ordered set sits at.
+     *
+     * @param list<array<string, mixed>> $rows Ordered rows of the whole filtered set
+     * @param int $index Index of the row, which may lie outside the set
+     * @param list<string> $anchorFields Fields a place in this order is named by
+     * @return ?TableAnchorDTO Place of that row, or null when the set holds no row there
+     */
+    private static function placeAt(array $rows, int $index, array $anchorFields): ?TableAnchorDTO
+    {
+        return isset($rows[$index]) ? TableAnchorDTO::fromRow($rows[$index], $anchorFields) : null;
     }
 
     /**

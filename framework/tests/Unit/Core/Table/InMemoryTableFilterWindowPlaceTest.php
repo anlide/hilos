@@ -8,6 +8,7 @@ use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
@@ -21,6 +22,10 @@ use PHPUnit\Framework\TestCase;
  * counting presses of Next drifts the moment a row appears above the window. Here the set is
  * already in hand, so the place costs nothing — it is the index the slice was cut at — and the
  * cases worth pinning are the ones where there is no first row to read it off.
+ *
+ * The same windows are held for the places framing them (HIL-1037): the side facing an anchor is
+ * the anchor itself, every other side the row standing next to the window, and a side with no
+ * such row is the edge of the set.
  */
 final class InMemoryTableFilterWindowPlaceTest extends TestCase
 {
@@ -126,6 +131,90 @@ final class InMemoryTableFilterWindowPlaceTest extends TestCase
 
         self::assertSame(5, $snapshot->rowsBefore);
         self::assertSame([5, 6, 7], array_column($snapshot->rows, self::KEY_FIELD));
+    }
+
+    public function testTheFirstWindowOfASetIsFramedByTheStartAndTheRowAfterIt(): void
+    {
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $this->window(), self::KEY_FIELD);
+
+        $this->assertFrame(null, 4, $snapshot->frame);
+    }
+
+    public function testAWindowTakenAfterAnAnchorIsFramedBeforeByThatAnchor(): void
+    {
+        $query = $this->window(anchor: 2);
+
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $query, self::KEY_FIELD);
+
+        self::assertSame([3, 4, 5], array_column($snapshot->rows, self::KEY_FIELD));
+        self::assertNotNull($snapshot->frame);
+        self::assertSame($query->anchor, $snapshot->frame->before);
+        self::assertSame([self::KEY_FIELD => 6], $snapshot->frame->after?->values);
+    }
+
+    public function testAWindowTakenBackFromAnAnchorIsFramedAfterByThatAnchor(): void
+    {
+        $query = $this->window(anchor: 5, direction: TableAnchorDirection::Before);
+
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $query, self::KEY_FIELD);
+
+        self::assertNotNull($snapshot->frame);
+        self::assertSame([self::KEY_FIELD => 1], $snapshot->frame->before?->values);
+        self::assertSame($query->anchor, $snapshot->frame->after);
+    }
+
+    public function testANumberedPageInTheMiddleIsFramedByTheRowsOnEitherSide(): void
+    {
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $this->window(pageIndex: 1), self::KEY_FIELD);
+
+        self::assertSame([4, 5, 6], array_column($snapshot->rows, self::KEY_FIELD));
+        $this->assertFrame(3, 7, $snapshot->frame);
+    }
+
+    public function testTheFirstNumberedPageHasNothingBeforeIt(): void
+    {
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $this->window(pageIndex: 0), self::KEY_FIELD);
+
+        $this->assertFrame(null, 4, $snapshot->frame);
+    }
+
+    public function testTheLastNumberedPageHasNothingAfterIt(): void
+    {
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $this->window(pageIndex: 2), self::KEY_FIELD);
+
+        $this->assertFrame(6, null, $snapshot->frame);
+    }
+
+    public function testAWindowHoldingTheWholeSetIsFramedByBothEdges(): void
+    {
+        $snapshot = InMemoryTableFilter::apply(
+            $this->rows(),
+            new TableQueryDTO(sort: $this->order(), limit: TableConstants::NO_LIMIT),
+            self::KEY_FIELD,
+        );
+
+        $this->assertFrame(null, null, $snapshot->frame);
+    }
+
+    public function testAnEmptyWindowPastTheEndReportsNoFrame(): void
+    {
+        $snapshot = InMemoryTableFilter::apply($this->rows(), $this->window(pageIndex: 5), self::KEY_FIELD);
+
+        self::assertNull($snapshot->frame);
+    }
+
+    /**
+     * Asserts the places a frame holds, by the key of the row each one stands at.
+     *
+     * @param ?int $before Key standing right before the window, or null for the start of the set
+     * @param ?int $after Key standing right after the window, or null for the end of the set
+     * @param ?TableWindowFrameDTO $frame Frame the snapshot carries
+     */
+    private function assertFrame(?int $before, ?int $after, ?TableWindowFrameDTO $frame): void
+    {
+        self::assertNotNull($frame);
+        self::assertSame($before === null ? null : [self::KEY_FIELD => $before], $frame->before?->values);
+        self::assertSame($after === null ? null : [self::KEY_FIELD => $after], $frame->after?->values);
     }
 
     /**

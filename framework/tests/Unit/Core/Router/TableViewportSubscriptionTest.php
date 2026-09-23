@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Core\Router;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
@@ -14,6 +15,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for what a viewport descriptor knows about the edges of its set, and what it still knows once its count has
  * stopped at a ceiling, and for the two ways it compares a delivered row: whole, and cut down to what the tab draws.
+ *
+ * A window whose source reported its frame reads both edges off it (HIL-1037); the cases without a frame are the
+ * fallback reading every window used before, and they stay as its guard.
  */
 final class TableViewportSubscriptionTest extends TestCase
 {
@@ -220,6 +224,119 @@ final class TableViewportSubscriptionTest extends TestCase
 
         $this->assertSame(TableConstants::COUNT_CEILING, $viewport->totalCount());
         $this->assertFalse($viewport->totalExact());
+    }
+
+    public function testAnAnchoredWindowInTheMiddleOfTheSetReadsBothEdgesOffItsFrame(): void
+    {
+        $anchor = new TableAnchorDTO(['id' => 7]);
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: 3, anchor: $anchor);
+        $viewport->recordWindow(
+            self::windowOf(['a', 'b']),
+            42,
+            true,
+            null,
+            null,
+            frame: new TableWindowFrameDTO($anchor, new TableAnchorDTO(['id' => 11])),
+        );
+
+        // The build came back short, which read alone says the set ends here; the frame says a
+        // row stands right after it.
+        $this->assertFalse($viewport->reachesStart());
+        $this->assertFalse($viewport->reachesEnd());
+    }
+
+    public function testAWindowFramedByNothingOnASideHoldsThatEdge(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: 'deliveries',
+            limit: 3,
+            anchor: new TableAnchorDTO(['id' => 7]),
+            anchorDirection: TableAnchorDirection::Before,
+        );
+        $viewport->recordWindow(
+            self::windowOf(['a', 'b', 'c']),
+            42,
+            true,
+            null,
+            null,
+            frame: new TableWindowFrameDTO(null, new TableAnchorDTO(['id' => 7])),
+        );
+
+        // A full window paged back is not recognized as the start by its size; the frame knows.
+        $this->assertTrue($viewport->reachesStart());
+        $this->assertFalse($viewport->reachesEnd());
+    }
+
+    public function testANumberedPagePastTheCountCeilingReadsItsEndOffItsFrame(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: self::PAGE_SIZE, pageIndex: 24);
+        $viewport->recordWindow(
+            self::windowOf(['a', 'b']),
+            TableConstants::COUNT_CEILING,
+            false,
+            null,
+            null,
+            frame: new TableWindowFrameDTO(new TableAnchorDTO(['id' => 480]), null),
+        );
+
+        $this->assertTrue($viewport->reachesEnd());
+        $this->assertFalse($viewport->reachesStart());
+    }
+
+    public function testAFramedWindowThatLostARowKeepsItsEdges(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: 3, pageIndex: 1);
+        $viewport->recordWindow(
+            self::windowOf(['a', 'b', 'c']),
+            42,
+            true,
+            null,
+            null,
+            frame: new TableWindowFrameDTO(new TableAnchorDTO(['id' => 3]), new TableAnchorDTO(['id' => 7])),
+        );
+
+        $viewport->forgetRow('c');
+
+        $this->assertFalse($viewport->reachesStart());
+        $this->assertFalse($viewport->reachesEnd());
+    }
+
+    public function testAWindowRecordedWithoutAFrameReadsItsEdgesAsBefore(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: self::PAGE_SIZE, pageIndex: 2);
+        $viewport->recordWindow(self::windowOf(['a', 'b']), 42, true, null, null);
+
+        $this->assertNull($viewport->frame());
+        $this->assertTrue($viewport->reachesEnd());
+        $this->assertFalse($viewport->reachesStart());
+    }
+
+    public function testDeclaringRenderedFieldsCarriesTheFrame(): void
+    {
+        $frame = new TableWindowFrameDTO(new TableAnchorDTO(['id' => 3]), null);
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: 3, pageIndex: 1);
+        $viewport->recordWindow(self::windowOf(['a']), 4, true, null, null, frame: $frame);
+
+        $declared = $viewport->withRendered(['label'], []);
+
+        $this->assertSame($frame, $declared->frame());
+    }
+
+    public function testRebuildingAWindowReplacesItsFrame(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: 'deliveries', limit: 3, pageIndex: 1);
+        $viewport->recordWindow(
+            self::windowOf(['a']),
+            4,
+            true,
+            null,
+            null,
+            frame: new TableWindowFrameDTO(new TableAnchorDTO(['id' => 3]), null),
+        );
+
+        $viewport->recordWindow(self::windowOf(['a', 'b', 'c']), 9, true, null, null);
+
+        $this->assertNull($viewport->frame());
     }
 
     public function testAWindowDeclaringNoDrawnFieldsComparesTheRowWhole(): void

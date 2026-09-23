@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
@@ -37,6 +38,24 @@ final class TableSnapshotDTOTest extends TestCase
             'lastAnchor' => ['id' => 1],
             'rowsBefore' => 0,
         ], $snapshot->toArray());
+    }
+
+    public function testTheFrameOfTheWindowNeverReachesTheWire(): void
+    {
+        $snapshot = new TableSnapshotDTO(
+            rows: [GenericTableRow::fromArray(['id' => 2])],
+            totalCount: 3,
+            limit: 1,
+            firstAnchor: new TableAnchorDTO(['id' => 2]),
+            lastAnchor: new TableAnchorDTO(['id' => 2]),
+            rowsBefore: 1,
+            frame: new TableWindowFrameDTO(new TableAnchorDTO(['id' => 1]), new TableAnchorDTO(['id' => 3])),
+        );
+
+        $payload = $snapshot->toArray();
+
+        $this->assertArrayNotHasKey(TableConstants::RESULT_KEY_FRAME, $payload);
+        $this->assertNull(TableSnapshotDTO::fromArray($payload)->frame);
     }
 
     public function testTheWindowsPlaceSurvivesTheRoundTrip(): void

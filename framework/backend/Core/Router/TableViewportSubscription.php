@@ -7,6 +7,7 @@ namespace Hilos\Core\Router;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 
@@ -29,9 +30,16 @@ use Hilos\Core\Table\TableConstants;
  * seen, the drawn part says whether the screen would show it. A row can leave its set or move in
  * the order over a field nobody draws, so only the second question is ever answered by the cut.
  *
+ * The window also keeps the places standing right outside it, as its source reported them at
+ * the build (HIL-1037). They never reach the client: they are what lets an edit that moved a row
+ * past its outermost neighbour be told apart from one that moved it off the page, and what says
+ * whether the window holds an edge of the set. A source that reports no frame - a snapshot a
+ * project table builds by hand - leaves the window to read its edges off its address and the
+ * size of the build, as it did before the frame existed.
+ *
  * The descriptor is immutable; the delivered rows, the total count with the word on how exact
- * it is, and the two places the window sits between are updated as windows are served and as
- * rows leave the set.
+ * it is, the two places the window sits between and the two framing it are updated as windows
+ * are served and as rows leave the set.
  */
 final class TableViewportSubscription
 {
@@ -52,7 +60,7 @@ final class TableViewportSubscription
     /** Whether that total is the size of the set rather than the ceiling the count stopped at. */
     private bool $totalExact = true;
 
-    /** Rows the last window build delivered, which the edges of the set are read off. */
+    /** Rows the last window build delivered, which the edges of the set are read off when no frame was reported. */
     private int $builtRowCount = 0;
 
     /** Place the first row of the last served window sits at, or null when that window was empty. */
@@ -60,6 +68,9 @@ final class TableViewportSubscription
 
     /** Place the last row of the last served window sits at, or null when that window was empty. */
     private ?TableAnchorDTO $lastAnchor = null;
+
+    /** Places standing right outside the last served window, or null when its source did not report them. */
+    private ?TableWindowFrameDTO $frame = null;
 
     /**
      * @param string $tableKey Table the viewport scopes
@@ -86,6 +97,10 @@ final class TableViewportSubscription
     /**
      * Records the rows and total count of a freshly served window.
      *
+     * Every build replaces the frame along with the boundary anchors, a build whose source did not
+     * report one included: a frame is a snapshot of the build it came with, and one left over from
+     * an earlier build would frame a window that is no longer there.
+     *
      * @param array<string, array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>}> $wireRows Wire rows
      *     delivered in the window, keyed by row-id key, in display order
      * @param int $totalCount Total rows matching the filter
@@ -94,6 +109,8 @@ final class TableViewportSubscription
      * @param ?TableAnchorDTO $lastAnchor Place the last delivered row sits at, or null when none was
      * @param array<string, ?TableAnchorDTO> $rowAnchors Place each delivered row stands at, keyed by row-id key,
      *     empty when the table was not asked or could not say
+     * @param ?TableWindowFrameDTO $frame Places standing right outside the window, or null when its source did not
+     *     report them
      */
     public function recordWindow(
         array $wireRows,
@@ -102,6 +119,7 @@ final class TableViewportSubscription
         ?TableAnchorDTO $firstAnchor,
         ?TableAnchorDTO $lastAnchor,
         array $rowAnchors = [],
+        ?TableWindowFrameDTO $frame = null,
     ): void {
         $this->rowDigests = array_map(self::digest(...), $wireRows);
         $this->renderedDigests = $this->rendered === [] ? [] : array_map($this->renderedDigest(...), $wireRows);
@@ -111,6 +129,7 @@ final class TableViewportSubscription
         $this->builtRowCount = count($wireRows);
         $this->firstAnchor = $firstAnchor;
         $this->lastAnchor = $lastAnchor;
+        $this->frame = $frame;
     }
 
     /**
@@ -179,6 +198,7 @@ final class TableViewportSubscription
         $declared->builtRowCount = $this->builtRowCount;
         $declared->firstAnchor = $this->firstAnchor;
         $declared->lastAnchor = $this->lastAnchor;
+        $declared->frame = $this->frame;
         if ($rendered === []) {
             return $declared;
         }
@@ -337,9 +357,29 @@ final class TableViewportSubscription
     }
 
     /**
+     * Places standing right outside the last served window.
+     *
+     * A snapshot of that build, like the boundary anchors: an edit, a removal or a creation at the
+     * edge of the window since then is not in it. A side without a place is the edge of the set.
+     *
+     * @return ?TableWindowFrameDTO Frame of the window, or null when its source did not report one
+     */
+    public function frame(): ?TableWindowFrameDTO
+    {
+        return $this->frame;
+    }
+
+    /**
      * Whether the delivered window runs from the start of the filtered set.
      *
-     * The twin of {@see reachesEnd()}, read off the same three ways a window is addressed. A
+     * A window whose source reported its frame holds the start exactly when nothing frames it
+     * from above: the source looked one place further and found the edge of the set. That answer
+     * is the build's, like the frame itself, and it is the same for every address.
+     *
+     * A window without a frame - its snapshot built by hand, or empty - reads the start off its
+     * address and the size of its build, which is what every window did before the frame existed
+     * and what keeps such a window from counting as the edge on every side. It is the twin of
+     * {@see reachesEnd()}, read off the same three ways a window is addressed. A
      * window with no limit holds the set, and a window that jumped to a numbered page holds the
      * start on page zero. A window addressed by anchor holds the start when it was asked forward
      * from the edge of the set, or when it paged back and got fewer rows than it asked for:
@@ -360,6 +400,10 @@ final class TableViewportSubscription
             return true;
         }
 
+        if ($this->frame !== null) {
+            return $this->frame->before === null;
+        }
+
         if ($this->pageIndex !== null) {
             return $this->pageIndex === 0;
         }
@@ -374,7 +418,15 @@ final class TableViewportSubscription
     /**
      * Whether the delivered window runs to the end of the filtered set.
      *
-     * A window addressed by anchor has no position to report, so the end is read off the one
+     * A window whose source reported its frame holds the end exactly when nothing frames it from
+     * below. That reading is exact where the others are not: it answers a full last page paged
+     * back to, and a numbered page past the count's ceiling, both of which the readings below
+     * cannot tell from the middle of the set. It is the build's answer, so a row created into the
+     * window afterwards does not take the end away and a row removed from it does not create one.
+     *
+     * A window without a frame - its snapshot built by hand, or empty - falls back on the readings
+     * below, which are what every window did before the frame existed. A window addressed by
+     * anchor has no position to report, so the end is read off the one
      * thing that does say: a window shorter than what it asked for ran out of rows. That answers
      * only while it is paging forward - paging back the window stops at the anchor, and a full
      * last page is not recognized until the client asks once more and gets nothing. A window that
@@ -397,6 +449,10 @@ final class TableViewportSubscription
     {
         if ($this->limit === TableConstants::NO_LIMIT) {
             return true;
+        }
+
+        if ($this->frame !== null) {
+            return $this->frame->after === null;
         }
 
         if ($this->pageIndex !== null) {

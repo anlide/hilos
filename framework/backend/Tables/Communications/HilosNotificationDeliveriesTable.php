@@ -246,7 +246,8 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * The window is placed by the same keyset condition the ORM path uses, so a deep page of
      * this unbounded journal costs what a shallow one does. A jump to a numbered page still
      * skips rows, counted from whichever end of the set is nearer, and the far half comes back
-     * turned over - which is why the rows are put back in the journal's own order below.
+     * turned over - which is why the rows are put back in the journal's own order below. The same
+     * cut takes off the rows framing the window, which leave only as the snapshot's frame.
      *
      * The count stops at {@see TableConstants::COUNT_CEILING} for the same reason the ORM path
      * does: this journal is the one table here with no bound at all, so counting it whole is the
@@ -271,6 +272,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             return new TableSnapshotDTO(rows: [], totalCount: $totalCount, totalExact: $totalExact, limit: $limit);
         }
 
+        $anchorColumns = array_keys($orderColumns);
         $keyset = $plan->keyset;
         if ($keyset !== null) {
             $condition = $keyset->toSql(self::DELIVERY_TABLE, self::DELIVERY_ALIAS);
@@ -294,12 +296,11 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             . self::renderOrderBy($plan->orderBy)
             . " LIMIT {$plan->limit} OFFSET {$plan->offset}";
 
-        $rows = Database::sql($sql, $params)->rows();
-        if ($plan->reversed) {
-            $rows = array_reverse($rows);
-        }
-
-        $anchorColumns = array_keys($orderColumns);
+        [$rows, $frame] = $plan->cut(
+            Database::sql($sql, $params)->rows(),
+            static fn(array $row): TableAnchorDTO => TableAnchorDTO::fromRow($row, $anchorColumns),
+        );
+        $rows = array_values($rows);
 
         return new TableSnapshotDTO(
             rows: array_map(fn(array $row): HilosNotificationDeliveryTableRow => $this->rowFromSql($row), $rows),
@@ -308,6 +309,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             limit: $limit,
             firstAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns),
             lastAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[count($rows) - 1], $anchorColumns),
+            frame: $frame,
         );
     }
 

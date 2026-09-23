@@ -204,6 +204,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
             firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
             rowsBefore: $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
+            frame: $result[TableConstants::RESULT_KEY_FRAME],
         );
     }
 

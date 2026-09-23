@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\TableAnchorDirection;
@@ -474,10 +475,14 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * window of the set starts at nothing, and past the ceiling there are no page numbers for a
      * place to be read into.
      *
+     * The places framing the window are answered beside it too, and never become objects: the
+     * query takes the rows standing right outside the window, and they are cut off before the
+     * window, its anchors and its place are built, so those stay what they are without them.
+     *
      * @param TableQueryDTO $query Query parameters
      * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int),
      *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO),
-     *     rowsBefore (?int)
+     *     rowsBefore (?int), frame (?TableWindowFrameDTO)
      * @throws DatabaseException If database query fails
      * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      * @throws TableSearchNotSupportedException When a term arrives with no searchable fields declared
@@ -544,6 +549,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
                 TableConstants::RESULT_KEY_ROWS_BEFORE => $totalExact
                     ? $this->rowsBeforeWindow($query, $orderBy, null, $totalCount, $filters, $filtersParam)
                     : null,
+                TableConstants::RESULT_KEY_FRAME => null,
             ];
         }
 
@@ -553,6 +559,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             [$windowFilters, $windowFiltersParam] = self::narrowedByKeyset($filters, $filtersParam, $plan->keyset, $entityClass::_table);
         }
 
+        $anchorColumns = array_keys($orderBy);
         $entityCollection = $entityClass::get(
             filters: $windowFilters,
             filtersParam: $windowFiltersParam,
@@ -565,9 +572,10 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         foreach ($entityCollection as $key => $entity) {
             $entities[$key] = $entity;
         }
-        if ($plan->reversed) {
-            $entities = array_reverse($entities, preserve_keys: true);
-        }
+        [$entities, $frame] = $plan->cut(
+            $entities,
+            static fn(Entity $entity): TableAnchorDTO => TableAnchorDTO::fromRow($entity->toArray(), $anchorColumns),
+        );
 
         $pageObjects = [];
         foreach ($entities as $key => $entity) {
@@ -580,7 +588,6 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             }
         }
 
-        $anchorColumns = array_keys($orderBy);
         $firstKey = array_key_first($entities);
         $lastKey = array_key_last($entities);
         $firstAnchor = $firstKey === null
@@ -598,6 +605,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
             TableConstants::RESULT_KEY_ROWS_BEFORE => $totalExact
                 ? $this->rowsBeforeWindow($query, $orderBy, $firstAnchor, $totalCount, $filters, $filtersParam)
                 : null,
+            TableConstants::RESULT_KEY_FRAME => $frame,
         ];
     }
 

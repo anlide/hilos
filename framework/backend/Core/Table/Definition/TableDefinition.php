@@ -409,6 +409,7 @@ abstract class TableDefinition implements ArrayAccess
             firstAnchor: $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             lastAnchor: $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
             rowsBefore: $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
+            frame: $result[TableConstants::RESULT_KEY_FRAME],
         );
     }
 
@@ -627,6 +628,7 @@ abstract class TableDefinition implements ArrayAccess
             firstAnchor: $result->firstAnchor,
             lastAnchor: $result->lastAnchor,
             rowsBefore: $result->rowsBefore,
+            frame: $result->frame,
         );
     }
 

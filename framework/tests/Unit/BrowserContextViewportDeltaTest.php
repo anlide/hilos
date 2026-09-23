@@ -36,6 +36,7 @@ use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
@@ -453,8 +454,8 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
         $context->flushToSignalRouter();
 
-        // The window does not know what lies above it, so it does not go on showing a row this
-        // page may no longer have (owner's decision, HIL-987).
+        // The source reported no frame, so the window does not know what lies above it and does
+        // not go on showing a row this page may no longer have (owner's decision, HIL-987).
         $delta = $this->nextDelta();
         $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
         $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
@@ -477,10 +478,135 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Zulu']));
         $context->flushToSignalRouter();
 
-        // No neighbour to judge by and no edge of the set in hand: the window cannot say.
+        // No neighbour to judge by, no edge of the set in hand and no frame reported by the
+        // source: the window cannot say.
         $delta = $this->nextDelta();
         $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
         $this->assertNull($delta->position);
+    }
+
+    public function testTheTopRowOfAFramedPageThatStaysBelowThePageAboveIsUpdatedInPlace(): void
+    {
+        $context = $this->bootFramed([self::row('bob', 'Ben'), self::row('carol', 'Carol'), self::row('dave', 'Dave')]);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Ben']));
+        $context->flushToSignalRouter();
+
+        // 'Ben' sorts above 'Carol' but still below 'Alice', where the page above ends.
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+    }
+
+    public function testARowOfAFramedPageMovedAboveItsNeighboursMovesToTheTopSlot(): void
+    {
+        $context = $this->bootFramed([self::row('bob', 'Bob'), self::row('carol', 'Ben'), self::row('dave', 'Dave')]);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'carol', ['label' => 'Ben']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertSame(0, $delta->position);
+    }
+
+    public function testTheTopRowOfAFramedPageMovedAboveThePageAboveLeavesIt(): void
+    {
+        $context = $this->bootFramed([self::row('bob', 'Aaron'), self::row('carol', 'Carol'), self::row('dave', 'Dave')]);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+    }
+
+    public function testTheBottomRowOfAFramedPageThatStaysAboveThePageBelowIsUpdatedInPlace(): void
+    {
+        $context = $this->bootFramed([self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dora')]);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'dave', ['label' => 'Dora']));
+        $context->flushToSignalRouter();
+
+        // 'Dora' sorts below 'Carol' but still above 'Erin', where the page below begins.
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+    }
+
+    public function testTheBottomRowOfAFramedPageMovedBelowThePageBelowLeavesIt(): void
+    {
+        $context = $this->bootFramed([self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Zed')]);
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'dave', ['label' => 'Zed']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+    }
+
+    public function testARowLandingExactlyOnThePlaceFramingThePageLeavesIt(): void
+    {
+        $context = $this->bootFramed(
+            [self::row('bob', 'Aaron'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            new TableWindowFrameDTO(self::anchorOf(self::row('bob', 'Aaron')), self::anchorOf(self::row('erin', 'Erin'))),
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Aaron']));
+        $context->flushToSignalRouter();
+
+        // A window taken from that place would hold the rows strictly after it, and not this one.
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
+    }
+
+    public function testAFramedWindowOfOneRowKeepsARowThatStaysWithinItsFrame(): void
+    {
+        $context = $this->bootFramed(
+            [self::row('bob', 'Ben')],
+            new TableWindowFrameDTO(self::anchorOf(self::row('alice', 'Alice')), self::anchorOf(self::row('carol', 'Carol'))),
+            [self::row('bob', 'Bob')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Ben']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $this->nextDelta()->kind);
+    }
+
+    public function testAFramedWindowOfOneRowCannotSayWhereARowPastItsFrameWent(): void
+    {
+        $context = $this->bootFramed(
+            [self::row('bob', 'Zed')],
+            new TableWindowFrameDTO(self::anchorOf(self::row('alice', 'Alice')), self::anchorOf(self::row('carol', 'Carol'))),
+            [self::row('bob', 'Bob')],
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Zed']));
+        $context->flushToSignalRouter();
+
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_MOVED, $delta->kind);
+        $this->assertNull($delta->position);
+    }
+
+    public function testAFrameInKeysTheRowDoesNotCarryProvesNothing(): void
+    {
+        $context = $this->bootFramed(
+            [self::row('bob', 'Ben'), self::row('carol', 'Carol'), self::row('dave', 'Dave')],
+            new TableWindowFrameDTO(
+                new TableAnchorDTO(['name' => 'Alice', 'id' => 'alice']),
+                new TableAnchorDTO(['name' => 'Erin', 'id' => 'erin']),
+            ),
+        );
+
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'bob', ['label' => 'Ben']));
+        $context->flushToSignalRouter();
+
+        // The table cannot compare the row with the frame, so there is no proof it stayed and the
+        // answer is the one a window without a frame gives (HIL-987).
+        $delta = $this->nextDelta();
+        $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        $this->assertSame(TableViewportDeltaDTO::REASON_MOVED_OUT, $delta->reason);
     }
 
     public function testARowThatLeftANarrowedSetOverAnUnrenderedFieldLeavesWithTheCount(): void
@@ -957,6 +1083,65 @@ final class BrowserContextViewportDeltaTest extends TestCase
 
         // Room is not enough: four rows of the set are on later pages, so the row that sorts
         // below this window belongs to one of them and not to the empty slot at its tail.
+        $this->assertSame(6, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('zeta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testAFramedPagePastTheCountCeilingWithNothingAfterItTakesACreatedRowAtItsTail(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 3,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+            pageIndex: 200,
+        );
+        // Past the ceiling the page number says nothing about where the set ends; the frame does.
+        $viewport->recordWindow(
+            self::windowOf(['yankee']),
+            TableConstants::COUNT_CEILING,
+            false,
+            self::anchorAt('yankee'),
+            self::anchorAt('yankee'),
+            frame: new TableWindowFrameDTO(self::anchorAt('xray'), null),
+        );
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('yankee', 'Yankee'), new ViewportDeltaUnitRow('zulu', 'Zulu')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zulu', ['key' => 'zulu', 'label' => 'Zulu']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame('zulu', $this->nextAppend()->row[PagePayload::rowKey]);
+        $this->assertTrue($viewport->hasRow('zulu'));
+    }
+
+    public function testAFramedWindowWithAPlaceAfterItOnlyCountsARowCreatedBelowIt(): void
+    {
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            limit: 10,
+            sort: self::byKey(TableConstants::ORDER_ASC),
+        );
+        // The build came back short, which read alone says the set ends here; the frame, read
+        // first, says a row stands right after it.
+        $viewport->recordWindow(
+            self::windowOf(['alpha']),
+            5,
+            true,
+            self::anchorAt('alpha'),
+            self::anchorAt('alpha'),
+            frame: new TableWindowFrameDTO(null, self::anchorAt('beta')),
+        );
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('zeta', 'Zeta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'zeta', ['key' => 'zeta', 'label' => 'Zeta']));
+        $context->flushToSignalRouter();
+
         $this->assertSame(6, $this->nextCount()->totalCount);
         $this->assertFalse($viewport->hasRow('zeta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
@@ -1729,6 +1914,41 @@ final class BrowserContextViewportDeltaTest extends TestCase
         );
 
         return $this->bootWithViewport($rows, $viewport, $inSet, $setQuestionFails);
+    }
+
+    /**
+     * Boots a connection holding page one of a set ordered by label, framed by the places its source reported.
+     *
+     * The page above ends on 'Alice' and the page below begins with 'Erin' unless the frame says
+     * otherwise; the set holds nine rows, so the page stands in the middle of it.
+     *
+     * @param list<ViewportDeltaUnitRow> $rows Table rows the fixture owns, as they are AFTER the edit
+     * @param ?TableWindowFrameDTO $frame Places framing the page, or null for 'Alice' above and 'Erin' below
+     * @param list<ViewportDeltaUnitRow> $windowRows Rows the connection was delivered, or empty for Bob, Carol and Dave
+     * @return ViewportDeltaUnitContext Booted browser context
+     */
+    private function bootFramed(array $rows, ?TableWindowFrameDTO $frame = null, array $windowRows = []): ViewportDeltaUnitContext
+    {
+        if ($windowRows === []) {
+            $windowRows = [self::row('bob', 'Bob'), self::row('carol', 'Carol'), self::row('dave', 'Dave')];
+        }
+        $viewport = new TableViewportSubscription(
+            tableKey: ViewportDeltaUnitTable::TABLE,
+            sort: self::byLabel(TableConstants::ORDER_ASC),
+            limit: count($windowRows),
+            pageIndex: 1,
+        );
+        $viewport->recordWindow(
+            self::deliveredWindow($windowRows),
+            9,
+            true,
+            self::anchorOf($windowRows[0]),
+            self::anchorOf($windowRows[count($windowRows) - 1]),
+            self::deliveredAnchors($windowRows),
+            $frame ?? new TableWindowFrameDTO(self::anchorOf(self::row('alice', 'Alice')), self::anchorOf(self::row('erin', 'Erin'))),
+        );
+
+        return $this->bootWithViewport($rows, $viewport);
     }
 
     /**

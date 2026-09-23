@@ -137,6 +137,9 @@ final class TableConstants
     /** Result key for the place the last row of the window sits at. */
     public const string RESULT_KEY_LAST_ANCHOR = 'lastAnchor';
 
+    /** Result key for the places standing right outside the window, which never leave the server. */
+    public const string RESULT_KEY_FRAME = 'frame';
+
     /** Result key for limit. */
     public const string RESULT_KEY_LIMIT = 'limit';
 

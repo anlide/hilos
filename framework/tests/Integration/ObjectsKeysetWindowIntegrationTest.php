@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
@@ -21,7 +22,7 @@ use Hilos\Environment\Exception\EnvException;
 
 /**
  * Integration test: a window taken by anchor costs the same at any depth, does not drift (HIL-787),
- * and says where in the set it sits (HIL-1093).
+ * says where in the set it sits (HIL-1093), and knows the places framing it (HIL-1037).
  *
  * All three claims are about the server and only the server can answer them. What a deep window
  * costs is not visible from the rows it returns — the same ten rows come back either way — so the
@@ -29,6 +30,10 @@ use Hilos\Environment\Exception\EnvException;
  * with a delete in between, which a sorted PHP array has no way to reproduce. And the place a
  * window sits at is the one answer here that is a second query: it is counted against the same
  * set the window was cut from, so the set has to be a real one.
+ *
+ * The frame is taken by the same query as the window, one row further on each side it has to
+ * be read for, so the frame cases also hold that those extra rows never leak into the window:
+ * its rows, its boundary anchors and its place stay what they were before the frame existed.
  */
 final class ObjectsKeysetWindowIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -246,6 +251,193 @@ final class ObjectsKeysetWindowIntegrationTest extends FrameworkIntegrationTestC
 
         self::assertFalse($page[TableConstants::RESULT_KEY_TOTAL_EXACT]);
         self::assertNull($page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAWindowTakenAfterAnAnchorIsFramedBeforeByThatAnchor(): void
+    {
+        $anchor = new TableAnchorDTO([KeysetWindowTestRow::id => self::DEEP_ANCHOR_ID]);
+
+        $page = KeysetWindowTestObjects::initEmpty()->queryPage(new TableQueryDTO(limit: self::PAGE_SIZE, anchor: $anchor));
+
+        $this->assertWindow($page, self::DEEP_ANCHOR_ID + 1, self::DEEP_ANCHOR_ID + self::PAGE_SIZE);
+        self::assertSame(self::DEEP_ANCHOR_ID, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+        self::assertSame($anchor, $this->frameOf($page)->before);
+        self::assertSame(self::DEEP_ANCHOR_ID + self::PAGE_SIZE + 1, $this->placeId($this->frameOf($page)->after));
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAWindowTakenBackFromAnAnchorIsFramedAfterByThatAnchor(): void
+    {
+        $anchor = new TableAnchorDTO([KeysetWindowTestRow::id => self::DEEP_ANCHOR_ID + 1]);
+
+        $page = KeysetWindowTestObjects::initEmpty()->queryPage(new TableQueryDTO(
+            limit: self::PAGE_SIZE,
+            anchor: $anchor,
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+
+        $this->assertWindow($page, self::DEEP_ANCHOR_ID - self::PAGE_SIZE + 1, self::DEEP_ANCHOR_ID);
+        self::assertSame(self::DEEP_ANCHOR_ID - self::PAGE_SIZE, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+        self::assertSame(self::DEEP_ANCHOR_ID - self::PAGE_SIZE, $this->placeId($this->frameOf($page)->before));
+        self::assertSame($anchor, $this->frameOf($page)->after);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testANumberedPageInTheNearHalfIsFramedByTheRowsOnEitherSide(): void
+    {
+        $page = $this->numberedPage(3);
+
+        $this->assertWindow($page, 3 * self::PAGE_SIZE + 1, 4 * self::PAGE_SIZE);
+        self::assertSame(3 * self::PAGE_SIZE, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+        $this->assertFrame(3 * self::PAGE_SIZE, 4 * self::PAGE_SIZE + 1, $page);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testANumberedPageCountedFromTheEndIsFramedByTheRowsOnEitherSide(): void
+    {
+        $page = $this->numberedPage(40);
+
+        $this->assertWindow($page, 40 * self::PAGE_SIZE + 1, 41 * self::PAGE_SIZE);
+        self::assertSame(40 * self::PAGE_SIZE, $page[TableConstants::RESULT_KEY_ROWS_BEFORE]);
+        $this->assertFrame(40 * self::PAGE_SIZE, 41 * self::PAGE_SIZE + 1, $page);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testTheFirstNumberedPageHasNothingBeforeIt(): void
+    {
+        $page = $this->numberedPage(0);
+
+        $this->assertWindow($page, 1, self::PAGE_SIZE);
+        $this->assertFrame(null, self::PAGE_SIZE + 1, $page);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testTheLastNumberedPageHasNothingAfterIt(): void
+    {
+        $lastPage = intdiv(self::ROW_COUNT, self::PAGE_SIZE) - 1;
+
+        $page = $this->numberedPage($lastPage);
+
+        $this->assertWindow($page, self::ROW_COUNT - self::PAGE_SIZE + 1, self::ROW_COUNT);
+        $this->assertFrame(self::ROW_COUNT - self::PAGE_SIZE, null, $page);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAWindowWithoutALimitIsFramedByBothEdgesOfTheSet(): void
+    {
+        $page = KeysetWindowTestObjects::initEmpty()->queryPage(new TableQueryDTO());
+
+        $this->assertWindow($page, 1, self::ROW_COUNT);
+        $this->assertFrame(null, null, $page);
+    }
+
+    /**
+     * @throws DatabaseException When a window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    public function testAnEmptyWindowReportsNoFrame(): void
+    {
+        self::assertNull($this->pageFrom(self::ROW_COUNT)[TableConstants::RESULT_KEY_FRAME]);
+        self::assertNull($this->numberedPage(self::ROW_COUNT)[TableConstants::RESULT_KEY_FRAME]);
+    }
+
+    /**
+     * Takes one numbered page of the set.
+     *
+     * @param int $pageIndex Zero-based page to jump to
+     * @return array<string, mixed> Result of the page query, in the shape {@see Objects::queryPage()} answers
+     * @throws DatabaseException When the window query fails
+     * @throws InvalidArgumentException When an order direction is rejected
+     */
+    private function numberedPage(int $pageIndex): array
+    {
+        return KeysetWindowTestObjects::initEmpty()->queryPage(
+            new TableQueryDTO(limit: self::PAGE_SIZE, pageIndex: $pageIndex),
+        );
+    }
+
+    /**
+     * Asserts that a window holds exactly one unbroken run of rows, and that its anchors stand on that run.
+     *
+     * @param array<string, mixed> $page Result of the page query
+     * @param int $firstId Row the window has to start with
+     * @param int $lastId Row the window has to end with
+     */
+    private function assertWindow(array $page, int $firstId, int $lastId): void
+    {
+        self::assertSame(
+            range($firstId, $lastId),
+            array_map(intval(...), array_keys($page[TableConstants::RESULT_KEY_OBJECTS])),
+        );
+        self::assertSame($firstId, $this->placeId($page[TableConstants::RESULT_KEY_FIRST_ANCHOR]));
+        self::assertSame($lastId, $this->placeId($page[TableConstants::RESULT_KEY_LAST_ANCHOR]));
+    }
+
+    /**
+     * Asserts the places framing a window, by the row each one stands at.
+     *
+     * @param ?int $beforeId Row standing right before the window, or null for the start of the set
+     * @param ?int $afterId Row standing right after the window, or null for the end of the set
+     * @param array<string, mixed> $page Result of the page query
+     */
+    private function assertFrame(?int $beforeId, ?int $afterId, array $page): void
+    {
+        $frame = $this->frameOf($page);
+
+        self::assertSame($beforeId, $this->placeId($frame->before));
+        self::assertSame($afterId, $this->placeId($frame->after));
+    }
+
+    /**
+     * Reads the frame a page query reported, failing the test when it reported none.
+     *
+     * @param array<string, mixed> $page Result of the page query
+     * @return TableWindowFrameDTO Places framing the window
+     */
+    private function frameOf(array $page): TableWindowFrameDTO
+    {
+        $frame = $page[TableConstants::RESULT_KEY_FRAME];
+        self::assertInstanceOf(TableWindowFrameDTO::class, $frame);
+
+        return $frame;
+    }
+
+    /**
+     * Reads the row a place stands at in the id order.
+     *
+     * @param mixed $place Place reported for the window, or null
+     * @return ?int Id of the row it names, or null when there is no place
+     */
+    private function placeId(mixed $place): ?int
+    {
+        if ($place === null) {
+            return null;
+        }
+        self::assertInstanceOf(TableAnchorDTO::class, $place);
+
+        return (int) $place->values[KeysetWindowTestRow::id];
     }
 
     /**

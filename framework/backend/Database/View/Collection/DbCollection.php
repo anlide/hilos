@@ -9,6 +9,7 @@ use Countable;
 use Generator;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -545,7 +546,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int),
      *     totalExact (bool), firstAnchor (?TableAnchorDTO), lastAnchor (?TableAnchorDTO),
-     *     rowsBefore (?int)
+     *     rowsBefore (?int), frame (?TableWindowFrameDTO)
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -568,6 +569,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
             TableConstants::RESULT_KEY_ROWS_BEFORE => $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
+            TableConstants::RESULT_KEY_FRAME => $result[TableConstants::RESULT_KEY_FRAME],
         ];
     }
 
@@ -605,9 +607,10 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param TableQueryDTO $query Query parameters
      *
      * @return array{rows: list<T>, totalCount: int, totalExact: bool, firstAnchor: ?TableAnchorDTO,
-     *     lastAnchor: ?TableAnchorDTO, rowsBefore: ?int} Window rows, how many the set holds and whether
-     *     that number is the whole of it, the two places the window sits between, and how many rows of
-     *     the set stand before it
+     *     lastAnchor: ?TableAnchorDTO, rowsBefore: ?int, frame: ?TableWindowFrameDTO} Window rows, how many
+     *     the set holds and whether that number is the whole of it, the two places the window sits between,
+     *     how many rows of the set stand before it, and the places standing right outside it (null for a
+     *     manual collection, which has no set to be framed in)
      * @throws DatabaseException On query or connection error
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
@@ -625,6 +628,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
                 TableConstants::RESULT_KEY_FIRST_ANCHOR => null,
                 TableConstants::RESULT_KEY_LAST_ANCHOR => null,
                 TableConstants::RESULT_KEY_ROWS_BEFORE => 0,
+                TableConstants::RESULT_KEY_FRAME => null,
             ];
         }
 
@@ -645,6 +649,7 @@ abstract class DbCollection implements ArrayAccess, Countable, IteratorAggregate
             TableConstants::RESULT_KEY_FIRST_ANCHOR => $result[TableConstants::RESULT_KEY_FIRST_ANCHOR],
             TableConstants::RESULT_KEY_LAST_ANCHOR => $result[TableConstants::RESULT_KEY_LAST_ANCHOR],
             TableConstants::RESULT_KEY_ROWS_BEFORE => $result[TableConstants::RESULT_KEY_ROWS_BEFORE],
+            TableConstants::RESULT_KEY_FRAME => $result[TableConstants::RESULT_KEY_FRAME],
         ];
     }
 

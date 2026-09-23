@@ -74,6 +74,7 @@ use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableRowPlacement;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -708,6 +709,7 @@ abstract class BrowserContext
             $snapshot->firstAnchor,
             $snapshot->lastAnchor,
             $rowAnchors,
+            $snapshot->frame,
         );
 
         return new BrowserTableWindow($rows, $snapshot);
@@ -2526,6 +2528,7 @@ abstract class BrowserContext
             $snapshot->firstAnchor,
             $snapshot->lastAnchor,
             $rowAnchors,
+            $snapshot->frame,
         );
 
         $this->queueAddressedTableSignal(
@@ -2838,17 +2841,21 @@ abstract class BrowserContext
      * collects rows after it was served — an appended tail row, a row re-sent by an earlier
      * delta — and the snapshot's boundaries stop describing it.
      *
-     * A row past a boundary only claims to leave the window, and the claim is settled by the
-     * SET: a window holding the start of the set ({@see TableViewportSubscription::reachesStart()})
-     * has nowhere above it for the row to go, so the row stays inside and takes the top slot, and
-     * the same holds below for a window holding the end. A window standing in the middle of the
-     * set does not know what lies past its edges and answers the removal, so it never goes on
-     * showing a row this page no longer has (owner's decision, HIL-987).
+     * A row past a boundary only claims to leave the window, and the claim is settled by what
+     * lies past that edge ({@see self::viewportRowStaysWithinFrame()}): a window holding the start
+     * of the set ({@see TableViewportSubscription::reachesStart()}) has nowhere above it for the
+     * row to go, and a window framed from above by the place of the row standing right before it
+     * keeps a row that stays strictly below that place. Either way the row stays inside and takes
+     * the top slot, and the same holds below. The frame and the edge of the set only PROVE that
+     * the row stayed: a window whose source reported no frame, or whose table could not compare
+     * the row with it, does not know what lies past its edges and answers the removal, so it
+     * never goes on showing a row this page no longer has (owner's decision, HIL-987, which stays
+     * exactly where there is no proof).
      *
      * "Cannot say" is answered wherever a place would be a guess: a window with no order, a
      * window whose rows were recorded without their places, a boundary the table could not name,
-     * a comparison the table refused, and a window of one row that does not hold both ends of the
-     * set. The caller sends the row as moved without a position then, which is honest in both
+     * a comparison the table refused, and a window of one row that cannot prove on both sides that
+     * the row stayed. The caller sends the row as moved without a position then, which is honest in both
      * directions — the row is not claimed to have stayed, and it is not put at an index computed
      * from nothing.
      *
@@ -2876,7 +2883,10 @@ abstract class BrowserContext
 
         unset($anchors[(string) $mutation->rowKey]);
         if ($anchors === []) {
-            return $viewport->reachesStart() && $viewport->reachesEnd() ? TableRowPlacement::Inside : null;
+            return $this->viewportRowStaysWithinFrame($table, $viewport, $row, $query, TableAnchorDirection::Before)
+                && $this->viewportRowStaysWithinFrame($table, $viewport, $row, $query, TableAnchorDirection::After)
+                ? TableRowPlacement::Inside
+                : null;
         }
 
         $firstAnchor = reset($anchors);
@@ -2890,7 +2900,9 @@ abstract class BrowserContext
             return null;
         }
         if ($againstFirst < 0) {
-            return $viewport->reachesStart() ? TableRowPlacement::Inside : TableRowPlacement::Above;
+            return $this->viewportRowStaysWithinFrame($table, $viewport, $row, $query, TableAnchorDirection::Before)
+                ? TableRowPlacement::Inside
+                : TableRowPlacement::Above;
         }
 
         $againstLast = $table->placeRowAgainst($row, $lastAnchor, $query);
@@ -2898,10 +2910,61 @@ abstract class BrowserContext
             return null;
         }
         if ($againstLast > 0) {
-            return $viewport->reachesEnd() ? TableRowPlacement::Inside : TableRowPlacement::Below;
+            return $this->viewportRowStaysWithinFrame($table, $viewport, $row, $query, TableAnchorDirection::After)
+                ? TableRowPlacement::Inside
+                : TableRowPlacement::Below;
         }
 
         return TableRowPlacement::Inside;
+    }
+
+    /**
+     * Whether a shown row that moved past its outermost neighbour on one side PROVABLY stayed on the page.
+     *
+     * Two things prove it. A window holding the edge of the set on that side has nowhere past it
+     * for the row to go. Otherwise the place framing the window on that side is where the next
+     * page begins, and a row standing strictly inside it is still on this one.
+     *
+     * The frame only proves, it never disproves: a window whose source reported no frame, and a
+     * table that cannot compare the row with the frame's place - which is written in the keys of
+     * the row source, and a table whose row fields are named otherwise does not carry them - have
+     * no proof, and the row is answered as leaving, as it was before the frame existed (HIL-987).
+     *
+     * A row standing exactly at the framing place is outside: a window taken from an anchor holds
+     * the rows strictly after (or before) it, so asking for the window again would not return the
+     * row here either.
+     *
+     * @param ViewportTable $table Table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param AbstractTableRow $row Row as the edit left it
+     * @param TableQueryDTO $query Query this window was served by
+     * @param TableAnchorDirection $side Side of the window the row moved out towards: Before above it, After below
+     * @return bool Whether the row is proven to stay on the page on that side
+     */
+    private function viewportRowStaysWithinFrame(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        AbstractTableRow $row,
+        TableQueryDTO $query,
+        TableAnchorDirection $side,
+    ): bool {
+        if ($side === TableAnchorDirection::Before ? $viewport->reachesStart() : $viewport->reachesEnd()) {
+            return true;
+        }
+
+        $frame = $viewport->frame();
+        if ($frame === null) {
+            return false;
+        }
+
+        $place = $side === TableAnchorDirection::Before ? $frame->before : $frame->after;
+        if ($place === null) {
+            return false;
+        }
+
+        $against = $table->placeRowAgainst($row, $place, $query);
+
+        return $against !== null && ($side === TableAnchorDirection::Before ? $against > 0 : $against < 0);
     }
 
     /**

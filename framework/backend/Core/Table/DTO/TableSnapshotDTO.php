@@ -19,6 +19,11 @@ use Hilos\Core\Table\TableConstants;
  * forward, the first one carries it back. They are how the next window is addressed, and the
  * rows standing before this one are where it sits: a page number is read out of that place
  * rather than counted up by the presses that led to it.
+ *
+ * The frame - the places standing right outside the window - is the one part of the snapshot
+ * that never leaves the server: the subscription judges edits against it, the client has no use
+ * for it. So neither the wire form nor the payload reader carries it, and a snapshot read out
+ * of a payload does not know its frame.
  */
 class TableSnapshotDTO extends BaseDTO
 {
@@ -32,6 +37,8 @@ class TableSnapshotDTO extends BaseDTO
      * @param ?TableAnchorDTO $firstAnchor Place the first row sits at, or null when the window is empty
      * @param ?TableAnchorDTO $lastAnchor Place the last row sits at, or null when the window is empty
      * @param ?int $rowsBefore Rows of the set standing before the window, or null when the total is not exact
+     * @param ?TableWindowFrameDTO $frame Places standing right outside the window, or null when the source did not
+     *     report them
      */
     public function __construct(
         public readonly array $rows = [],
@@ -41,6 +48,7 @@ class TableSnapshotDTO extends BaseDTO
         public readonly ?TableAnchorDTO $firstAnchor = null,
         public readonly ?TableAnchorDTO $lastAnchor = null,
         public readonly ?int $rowsBefore = null,
+        public readonly ?TableWindowFrameDTO $frame = null,
     ) {
     }
 
