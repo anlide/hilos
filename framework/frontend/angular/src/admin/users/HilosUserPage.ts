@@ -4,9 +4,12 @@
 // conflict-resolution.md); the modal hosts the rename form. The detail selector
 // and the rename action are the core headless's (createHilosUserDetail /
 // createHilosUserRename); this view owns only the markup, so a project mounts it
-// by passing its HilosUsersContext. Success is state-driven (the committed name
-// reaches the draft over the live table, closing the modal); a failure surfaces
-// from the backend fail ack inside the modal. The context arrives via input and
+// by passing its HilosUsersContext. The modal merges against the live row
+// through the shared row-edit helper (rowEdit.ts, conflict-resolution.md) and
+// says what happened elsewhere on one line of room held in advance
+// (HilosEditNotice). Success is state-driven (the committed name reaches the
+// draft over the live table, closing the modal); a failure surfaces from the
+// backend fail ack inside the modal. The context arrives via input and
 // carries core signals, so — like HilosTable — an effect builds the selectors
 // once it binds and mirrors them into Angular signals. Bootstrap classes only
 // (styling-rules.md).
@@ -23,24 +26,61 @@ import {
   HilosPages,
   createHilosUserDetail,
   createHilosUserRename,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
   subscribeSignal,
+  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
   HilosUserRename,
   HilosUserRow,
   HilosUsersContext,
+  RowEditBaseline,
+  RowEditState,
+  RowEditStep,
 } from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
+
+/** The one field the modal edits: the display name. */
+interface UserEditFields {
+  name: string
+}
+
+/** The one line the modal says about the other side, for what the helper found. */
+function noticeText(live: RowEditState<UserEditFields>): string {
+  switch (live.notice?.kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return `Changed elsewhere to "${live.fields.name.incoming}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
 
 /** The framework user-detail admin page: profile, presence, and a modal rename. */
 @Component({
   selector: 'hilos-user-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosFormError, HilosModal, LoadingButton],
+  imports: [
+    HilosAdminPage,
+    HilosEditNotice,
+    HilosFormError,
+    HilosModal,
+    LoadingButton,
+    ConflictActions,
+    ConflictHeader,
+  ],
   template: `
     <hilos-admin-page [page]="page">
       @if (detail(); as detail) {
@@ -93,9 +133,14 @@ import { LoadingButton } from '../../LoadingButton.js'
       <hilos-modal
         [open]="editing()"
         (openChange)="onEditOpenChange($event)"
-        [title]="editTitle()"
         [confirmOnClose]="dirty()"
       >
+        <h5
+          hilosConflictHeader
+          modalHeader
+          [title]="editTitle()"
+          [conflict]="live().conflict"
+        ></h5>
         <!-- The refusal is announced from here and not from the row that shows
         it: a role arriving together with its text is not announced at all
         (accessibility.md). The region lives inside the dialog because the dialog
@@ -130,6 +175,11 @@ import { LoadingButton } from '../../LoadingButton.js'
           <div class="form-text">
             Between {{ nameMin }} and {{ nameMax }} characters.
           </div>
+          <hilos-edit-notice
+            [kind]="editNotice()"
+            [text]="editNoticeText()"
+            dataId="hilos-user-edit-notice"
+          />
         </form>
         <ng-template #modalActions let-requestClose="requestClose">
           <button
@@ -141,16 +191,33 @@ import { LoadingButton } from '../../LoadingButton.js'
           >
             Cancel
           </button>
-          <button
-            hilosLoadingButton
-            class="btn-primary"
-            [loading]="loading()"
-            [disabled]="!valid() || !dirty()"
-            data-id="hilos-user-save"
-            (click)="submit()"
+          <div
+            hilosConflictActions
+            [conflict]="live().conflict"
+            [disableSave]="!valid() || !dirty() || loading() || live().gone"
+            [mergeable]="false"
+            [saveLabel]="saveLabel()"
+            (save)="submit()"
+            (acceptMine)="acceptMine()"
+            (acceptTheirs)="acceptTheirs()"
           >
-            Save
-          </button>
+            <ng-template
+              #saveButton
+              let-disabled="disabled"
+              let-onSave="onSave"
+            >
+              <button
+                hilosLoadingButton
+                class="btn-primary"
+                [loading]="loading()"
+                [disabled]="disabled"
+                data-id="hilos-user-save"
+                (click)="onSave()"
+              >
+                {{ saveLabel() }}
+              </button>
+            </ng-template>
+          </div>
         </ng-template>
       </hilos-modal>
     </hilos-admin-page>
@@ -172,21 +239,38 @@ export class HilosUserPage {
   protected readonly editing = signal(false)
   protected readonly draft = signal('')
   protected readonly loading = signal(false)
+  protected readonly editBaseline = signal<RowEditBaseline<UserEditFields>>(
+    openRowEdit<UserEditFields>({ name: '' }),
+  )
   protected readonly valid = computed(() => {
     const trimmed = this.draft().trim()
 
     return trimmed.length >= this.nameMin && trimmed.length <= this.nameMax
   })
-  protected readonly dirty = computed(() => {
+  // The live row is the card's own detail row, projected onto the name; gone
+  // once the card has no row any more.
+  protected readonly live = computed(() => {
     const current = this.detail()
 
-    return !!current && this.draft().trim() !== current.name
+    return resolveRowEdit(
+      current ? { name: current.name } : undefined,
+      this.editBaseline(),
+      { name: this.draft().trim() },
+    )
   })
+  protected readonly dirty = computed(() => this.live().dirty)
   protected readonly editTitle = computed(() => {
     const current = this.detail()
 
     return current ? `Rename · ${current.name}` : 'Rename user'
   })
+  protected readonly editNotice = computed(
+    () => this.live().notice?.kind ?? null,
+  )
+  protected readonly editNoticeText = computed(() => noticeText(this.live()))
+  protected readonly saveLabel = computed(() =>
+    this.live().gone ? 'Deleted' : 'Save',
+  )
 
   constructor() {
     // The context arrives via input and carries core signals; build the detail
@@ -232,13 +316,45 @@ export class HilosUserPage {
         this.loading.set(false)
       }
     })
+
+    // The helper hands a step whenever the other side moved the name while the
+    // person left it alone, or both arrived at the same one; the modal applies
+    // it at once.
+    effect(() => {
+      const settle = this.live().settle
+      const editing = this.editing()
+      untracked(() => {
+        if (editing && settle) {
+          this.applyStep(settle)
+        }
+      })
+    })
   }
 
   protected openEdit(): void {
     this.rename?.clearRenameError()
-    this.draft.set(this.detail()?.name ?? '')
+    const name = this.detail()?.name ?? ''
+    this.draft.set(name)
+    this.editBaseline.set(openRowEdit<UserEditFields>({ name }))
     this.loading.set(false)
     this.editing.set(true)
+  }
+
+  // Put a step of the helper into the modal: the snapshot moves, and a name
+  // the step takes lands in the input.
+  private applyStep(step: RowEditStep<UserEditFields>): void {
+    this.editBaseline.set(step.baseline)
+    if (step.take.name !== undefined) {
+      this.draft.set(step.take.name)
+    }
+  }
+
+  protected acceptMine(): void {
+    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+  }
+
+  protected acceptTheirs(): void {
+    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
   }
 
   // The modal's close path (Cancel / Esc / backdrop, through the discard guard).
@@ -254,12 +370,12 @@ export class HilosUserPage {
   protected submit(event?: Event): void {
     event?.preventDefault()
     const current = this.detail()
-    if (!current || !this.valid() || this.loading()) {
+    if (!current || !this.valid() || this.loading() || this.live().gone) {
       return
     }
     // No change: close without a round-trip (also keeps the state-driven success
     // watch from waiting on a name that will never change).
-    if (this.draft().trim() === current.name) {
+    if (!this.live().dirty) {
       this.onEditOpenChange(false)
 
       return

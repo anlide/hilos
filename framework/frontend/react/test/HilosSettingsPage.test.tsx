@@ -288,6 +288,14 @@ describe('HilosSettingsPage', () => {
       ) as Element,
     )
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    // Nothing happened elsewhere yet: the message line stands empty, its room
+    // held by the twin, so a message later moves nothing.
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice"]'),
+    ).toBeNull()
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice-idle"]'),
+    ).not.toBeNull()
   })
 
   it('reloads a pristine edit when the live row changes elsewhere', () => {
@@ -324,12 +332,72 @@ describe('HilosSettingsPage', () => {
     expect(input.value).toBe('Elsewhere')
     expect(document.querySelector('[data-id="conflict-badge"]')).toBeNull()
     expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice"]')
+        ?.textContent,
+    ).toContain('Updated just now')
+    expect(
       (
         document.querySelector(
           '[data-id="hilos-settings-edit-save"]',
         ) as HTMLButtonElement
       ).disabled,
     ).toBe(true)
+
+    // The person types over the taken value: the note about it goes out.
+    fireEvent.change(input, { target: { value: 'Mine' } })
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice"]'),
+    ).toBeNull()
+  })
+
+  it('leaves the effective value under the switch after a reset elsewhere', () => {
+    const { context, pushUpdate } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+        defaultValue: 'Default',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+
+    // The other side reset the key: the switch goes off and the dialog says so.
+    act(() => {
+      pushUpdate(
+        slot({
+          key: 'site_name',
+          valueSource: 'default',
+          value: 'Default',
+          overrideValue: null,
+          defaultValue: 'Default',
+        }),
+      )
+    })
+    const custom = document.querySelector(
+      '[data-id="hilos-settings-edit-custom"]',
+    ) as HTMLInputElement
+    expect(custom.checked).toBe(false)
+    expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice"]')
+        ?.textContent,
+    ).toContain('Updated just now')
+
+    // Turning the switch back on starts from the value now in effect, not from
+    // the override the other side just removed.
+    fireEvent.click(custom)
+    expect(
+      (
+        document.querySelector(
+          '[data-id="hilos-settings-edit-value"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe('Default')
   })
 
   it('surfaces a conflict on a dirty edit and hides merge', () => {
@@ -366,9 +434,9 @@ describe('HilosSettingsPage', () => {
 
     expect(document.querySelector('[data-id="conflict-badge"]')).not.toBeNull()
     expect(
-      document.querySelector('[data-id="hilos-settings-edit-conflict"]')
+      document.querySelector('[data-id="hilos-settings-edit-notice"]')
         ?.textContent,
-    ).toContain('The value changed elsewhere to "Theirs"')
+    ).toContain('Changed elsewhere to "Theirs"')
     expect(document.querySelector('[data-id="conflict-merge"]')).toBeNull()
     expect(
       (
@@ -415,6 +483,10 @@ describe('HilosSettingsPage', () => {
     expect(input.value).toBe('Theirs')
     expect(document.querySelector('[data-id="conflict-badge"]')).toBeNull()
     expect(
+      document.querySelector('[data-id="hilos-settings-edit-notice"]')
+        ?.textContent,
+    ).toContain('Updated just now')
+    expect(
       (
         document.querySelector(
           '[data-id="hilos-settings-edit-save"]',
@@ -444,8 +516,9 @@ describe('HilosSettingsPage', () => {
     })
 
     expect(
-      document.querySelector('[data-id="hilos-settings-edit-gone"]'),
-    ).not.toBeNull()
+      document.querySelector('[data-id="hilos-settings-edit-notice"]')
+        ?.textContent,
+    ).toContain('Deleted elsewhere')
     const save = document.querySelector(
       '[data-id="hilos-settings-edit-save"]',
     ) as HTMLButtonElement

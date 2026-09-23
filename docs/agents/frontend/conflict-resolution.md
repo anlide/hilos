@@ -50,6 +50,40 @@ present both values (theirs and the incoming) and let the user pick. The merge i
 per field, so non-conflicting fields stay merged while the user resolves the one
 that conflicts.
 
+### The shared row-edit helper
+
+Every edit modal is built on `framework/frontend/core/src/conflict/rowEdit.ts`,
+not on a copy of another modal's merge. The helper is pure data: the view keeps
+two things — its own form and one `RowEditBaseline`, taken with `openRowEdit`
+when the modal opens — and projects both the form and the live row into one
+shape of edited fields (for a modal over a table window, `findLiveRow` reads the
+live row out of the window; a row that is missing, a placeholder, or waiting on
+a removal counts as gone).
+
+`resolveRowEdit(live, baseline, draft)` returns the whole verdict: `gone`,
+`conflict`, `dirty`, every field's merge, the `notice` to show, and a `settle`
+step. The view applies a step whenever there is one — the snapshot moves, and a
+field only the other side changed lands in the form silently — and answers a
+conflict with `keepMineRowEdit` or `takeTheirsRowEdit`, which move the snapshot
+the same way. The snapshot always holds the last value the person saw as saved,
+so a second change after a choice compares against that, not against the value
+the modal opened with.
+
+- **Save** is locked while `!dirty`, while a save is in flight, while a conflict
+  stands, and when the row is gone; when it is gone the button reads "Deleted".
+- The modal's messages share **one line of room** under the fields, taken
+  before there is anything to say (`HilosEditNotice`, per
+  [styling-rules.md](styling-rules.md), "The room a live message takes"), and
+  show one thing by precedence: deleted › conflict › updated. "Updated just
+  now" stays exactly while the form shows the value the other side put there
+  — typing over it takes the note away, and closing the modal resets it; there
+  is no timer.
+- **Merge** is offered only on a surface where splicing two values makes sense
+  (`mergeable`); a typed value — a setting, a channel field, a name — has no
+  Merge, only Keep mine and Take theirs.
+- The worked examples are the settings pages,
+  `framework/frontend/{vue,react,angular}/src/admin/settings/HilosSettingsPage.*`.
+
 ## Save is authoritative-backend, not Apply
 
 A modal save is **submit → loading → backend echo**, not the tables' pending /

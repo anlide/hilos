@@ -16,6 +16,7 @@ rules below. Every edit surface is a modal — never an inline form.
   `docs/agents/frontend/table-subscription.md`
 - Editing and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
 - The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`
+- The shared row-edit helper every edit modal is built on: `framework/frontend/core/src/conflict/rowEdit.ts` (`conflict-resolution.md`, "The shared row-edit helper")
 - The `HilosModal` primitive and per-framework view adapters: `docs/agents/frontend/multiframework-core.md` (component: `framework/frontend/{vue,react,angular}/src/HilosModal.*`)
 - Where the edit view and its files live: `docs/agents/frontend/page-module-structure.md`
 - Row-payload key ownership — the constant a field is read and rendered by:

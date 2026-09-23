@@ -230,6 +230,10 @@ describe('HilosSettingsPage', () => {
     editButton('site_name').click()
     await nextTick()
     expect(modalEl('modal')).not.toBeNull()
+    // Nothing happened elsewhere yet: the message line stands empty, its room
+    // held by the twin, so a message later moves nothing.
+    expect(modalEl('hilos-settings-edit-notice')).toBeNull()
+    expect(modalEl('hilos-settings-edit-notice-idle')).not.toBeNull()
   })
 
   it('reloads a pristine edit when the live row changes elsewhere', async () => {
@@ -260,9 +264,59 @@ describe('HilosSettingsPage', () => {
 
     expect(input.value).toBe('Elsewhere')
     expect(modalEl('conflict-badge')).toBeNull()
+    expect(modalEl('hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
     expect(
       (modalEl('hilos-settings-edit-save') as HTMLButtonElement).disabled,
     ).toBe(true)
+
+    // The person types over the taken value: the note about it goes out.
+    input.value = 'Mine'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(modalEl('hilos-settings-edit-notice')).toBeNull()
+  })
+
+  it('leaves the effective value under the switch after a reset elsewhere', async () => {
+    const { context, pushUpdate } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+        defaultValue: 'Default',
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await nextTick()
+
+    // The other side reset the key: the switch goes off and the dialog says so.
+    pushUpdate(
+      slot({
+        key: 'site_name',
+        valueSource: 'default',
+        value: 'Default',
+        overrideValue: null,
+        defaultValue: 'Default',
+      }),
+    )
+    await nextTick()
+    await nextTick()
+    const custom = modalEl('hilos-settings-edit-custom') as HTMLInputElement
+    expect(custom.checked).toBe(false)
+    expect(modalEl('hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+
+    // Turning the switch back on starts from the value now in effect, not from
+    // the override the other side just removed.
+    custom.click()
+    await nextTick()
+    expect(
+      (modalEl('hilos-settings-edit-value') as HTMLInputElement).value,
+    ).toBe('Default')
   })
 
   it('surfaces a conflict on a dirty edit and hides merge', async () => {
@@ -294,8 +348,8 @@ describe('HilosSettingsPage', () => {
     await nextTick()
 
     expect(modalEl('conflict-badge')).not.toBeNull()
-    expect(modalEl('hilos-settings-edit-conflict')?.textContent).toContain(
-      'The value changed elsewhere to "Theirs"',
+    expect(modalEl('hilos-settings-edit-notice')?.textContent).toContain(
+      'Changed elsewhere to "Theirs"',
     )
     expect(modalEl('conflict-merge')).toBeNull()
     expect(
@@ -369,6 +423,9 @@ describe('HilosSettingsPage', () => {
     await nextTick()
     expect(input.value).toBe('Theirs')
     expect(modalEl('conflict-badge')).toBeNull()
+    expect(modalEl('hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
     expect(
       (modalEl('hilos-settings-edit-save') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -391,7 +448,9 @@ describe('HilosSettingsPage', () => {
     await nextTick()
     await nextTick()
 
-    expect(modalEl('hilos-settings-edit-gone')).not.toBeNull()
+    expect(modalEl('hilos-settings-edit-notice')?.textContent).toContain(
+      'Deleted elsewhere',
+    )
     const save = modalEl('hilos-settings-edit-save') as HTMLButtonElement
     expect(save.disabled).toBe(true)
     expect(save.textContent?.trim()).toBe('Deleted')

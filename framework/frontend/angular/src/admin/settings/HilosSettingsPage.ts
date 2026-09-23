@@ -8,6 +8,9 @@
 // round-trips are the core headless's (createHilosSettingsTable /
 // createHilosSettingsActions); this view owns only the markup, so a project mounts
 // it by passing its HilosSettingsContext and declares the catalog on its backend.
+// The edit dialog merges against the live row through the shared row-edit helper
+// (rowEdit.ts, conflict-resolution.md) and says what happened elsewhere on one
+// line of room held in advance (HilosEditNotice).
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
 // closes on its `::success` reply (createHilosTrackedAction, step 7.4); a failure
 // surfaces as a toast and leaves the dialog open with the entered value
@@ -25,14 +28,21 @@ import {
   HilosPages,
   createHilosSettingsActions,
   createHilosSettingsTable,
+  findLiveRow,
   hasCustomValue,
   isOrphanSetting,
-  resolveSettingEdit,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
   subscribeSignal,
+  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
   HilosSettingRow,
   HilosSettingsContext,
+  RowEditBaseline,
+  RowEditState,
+  RowEditStep,
   TableViewportRow,
 } from '@hilos/core'
 
@@ -40,6 +50,7 @@ import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -63,6 +74,27 @@ function inputStep(type: string | undefined): 'any' | undefined {
   return type === 'float' ? 'any' : undefined
 }
 
+/** The one field the dialog edits: the row's own value, null for the catalog default. */
+interface SettingEditFields {
+  overrideValue: string | null
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(live: RowEditState<SettingEditFields>): string {
+  switch (live.notice?.kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return live.fields.overrideValue.incoming === null
+        ? 'Reset elsewhere to the catalog default.'
+        : `Changed elsewhere to "${live.fields.overrideValue.incoming}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 /** The framework settings admin page: the cataloged table with edit / delete dialogs. */
 @Component({
   selector: 'hilos-settings-page',
@@ -73,6 +105,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
     HilosViewportTable,
     HilosModal,
     HilosActionError,
+    HilosEditNotice,
     LoadingButton,
     HilosSettingValueCell,
     ConflictActions,
@@ -211,23 +244,11 @@ function inputStep(type: string | undefined): 'any' | undefined {
                 }
               </div>
             }
-            @if (live().conflict) {
-              <div
-                class="alert alert-warning mt-2 mb-0"
-                data-id="hilos-settings-edit-conflict"
-              >
-                {{ editConflictNote() }}
-              </div>
-            }
-            @if (live().gone) {
-              <div
-                class="alert alert-warning mt-2 mb-0"
-                data-id="hilos-settings-edit-gone"
-              >
-                This setting was deleted elsewhere. Your text stays here to copy
-                - it can no longer be saved.
-              </div>
-            }
+            <hilos-edit-notice
+              [kind]="editNotice()"
+              [text]="editNoticeText()"
+              dataId="hilos-settings-edit-notice"
+            />
           </form>
         }
         <ng-template #modalActions let-requestClose="requestClose">
@@ -287,7 +308,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
             <code>{{ row.key }}</code>
           </p>
         }
-        @if (deleteLive().gone) {
+        @if (deleteGone()) {
           <p
             class="mb-0 mt-2 text-body-secondary"
             data-id="hilos-settings-delete-gone"
@@ -308,7 +329,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
             hilosLoadingButton
             class="btn-danger"
             [loading]="del.loading()"
-            [disabled]="del.busy() || deleteLive().gone"
+            [disabled]="del.busy() || deleteGone()"
             data-id="hilos-settings-delete-confirm"
             (click)="submitDelete()"
           >
@@ -337,7 +358,9 @@ export class HilosSettingsPage {
   // Edit dialog: one row's custom value (or a reset back to the catalog default).
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosSettingRow | null>(null)
-  protected readonly editBaseline = signal<string | null>(null)
+  protected readonly editBaseline = signal<RowEditBaseline<SettingEditFields>>(
+    openRowEdit<SettingEditFields>({ overrideValue: null }),
+  )
   protected readonly editValue = signal('')
   protected readonly editUseCustom = signal(false)
   protected readonly edit = createHilosTrackedAction()
@@ -360,39 +383,33 @@ export class HilosSettingsPage {
   protected readonly editOverride = computed<string | null>(() =>
     this.editUseCustom() ? String(this.editValue()) : null,
   )
-  protected readonly live = computed(() =>
-    resolveSettingEdit(
-      this.viewportRows(),
-      this.editRow()?.key ?? '',
-      this.editBaseline(),
-      this.editOverride(),
-    ),
+  // The live row the dialog edits, projected onto its one field; gone once the
+  // table no longer has it.
+  private readonly liveRow = computed(() =>
+    findLiveRow(this.viewportRows(), this.editRow()?.key ?? ''),
   )
-  protected readonly deleteLive = computed(() =>
-    resolveSettingEdit(
-      this.viewportRows(),
-      this.deleteRow()?.key ?? '',
-      null,
-      null,
-    ),
+  protected readonly live = computed(() => {
+    const row = this.liveRow()
+
+    return resolveRowEdit(
+      row ? { overrideValue: row.overrideValue } : undefined,
+      this.editBaseline(),
+      { overrideValue: this.editOverride() },
+    )
+  })
+  protected readonly deleteGone = computed(
+    () =>
+      findLiveRow(this.viewportRows(), this.deleteRow()?.key ?? '') ===
+      undefined,
   )
   protected readonly editDirty = computed(() => this.live().dirty)
   protected readonly editSaveLabel = computed(() =>
     this.live().gone ? 'Deleted' : 'Save',
   )
-  protected readonly editConflictNote = computed(() => {
-    if (this.live().incoming === null) {
-      return (
-        'The custom value was removed elsewhere and the key is back on ' +
-        'its catalog default. Choose how to resolve.'
-      )
-    }
-
-    return (
-      `The value changed elsewhere to "${this.live().incoming}". ` +
-      'Choose how to resolve.'
-    )
-  })
+  protected readonly editNotice = computed(
+    () => this.live().notice?.kind ?? null,
+  )
+  protected readonly editNoticeText = computed(() => noticeText(this.live()))
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
 
@@ -421,12 +438,15 @@ export class HilosSettingsPage {
         settings.dispose()
       })
     })
+    // The helper hands a step whenever the other side moved a field the person
+    // left alone, or both arrived at the same value; the dialog applies it at
+    // once.
     effect(() => {
-      const status = this.live().status
+      const settle = this.live().settle
       const open = this.editOpen()
       untracked(() => {
-        if (open && (status === 'incoming' || status === 'converged')) {
-          this.rechargeFromIncoming()
+        if (open && settle) {
+          this.applyStep(settle)
         }
       })
     })
@@ -446,27 +466,34 @@ export class HilosSettingsPage {
     // carries a value of its own.
     this.editUseCustom.set(isOrphanSetting(fresh) || hasCustomValue(fresh))
     this.editValue.set(fresh.overrideValue ?? fresh.value ?? '')
-    this.editBaseline.set(fresh.overrideValue)
+    this.editBaseline.set(openRowEdit({ overrideValue: fresh.overrideValue }))
     this.editOpen.set(true)
   }
 
-  private rechargeFromIncoming(): void {
+  // Put a step of the helper into the dialog: the snapshot moves, and a value
+  // the step takes lands in the switch and the text the way the dialog opened
+  // with it. A reset taken from the other side leaves the text on the value now
+  // in effect — the live row's, not the one the dialog opened on, which is the
+  // override the other side just removed.
+  private applyStep(step: RowEditStep<SettingEditFields>): void {
     const row = this.editRow()
     if (!row) {
       return
     }
-    const incoming = this.live().incoming
-    this.editUseCustom.set(incoming !== null || isOrphanSetting(row))
-    this.editValue.set(incoming ?? row.value ?? '')
-    this.editBaseline.set(incoming)
+    this.editBaseline.set(step.baseline)
+    const taken = step.take.overrideValue
+    if (taken !== undefined) {
+      this.editUseCustom.set(taken !== null || isOrphanSetting(row))
+      this.editValue.set(taken ?? this.liveRow()?.value ?? row.value ?? '')
+    }
   }
 
   protected acceptMine(): void {
-    this.editBaseline.set(this.live().incoming)
+    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
   }
 
   protected acceptTheirs(): void {
-    this.rechargeFromIncoming()
+    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
@@ -477,12 +504,12 @@ export class HilosSettingsPage {
     if (!row || this.edit.busy() || this.live().gone) {
       return
     }
-    const next = this.editOverride()
-    if (next === this.live().incoming) {
+    if (!this.live().dirty) {
       this.editOpen.set(false)
 
       return
     }
+    const next = this.editOverride()
     // The switch turned off means "back to the catalog default", which resets the key
     // by dropping its row. With a value, an orphan updates in place and a cataloged
     // key adds by key (the add is idempotent, so the row need not exist yet).
@@ -512,7 +539,7 @@ export class HilosSettingsPage {
 
   protected async submitDelete(): Promise<void> {
     const row = this.deleteRow()
-    if (!row || this.del.busy() || this.deleteLive().gone) {
+    if (!row || this.del.busy() || this.deleteGone()) {
       return
     }
     if (await this.del.run(this.actions().sendSettingDelete(row.key))) {

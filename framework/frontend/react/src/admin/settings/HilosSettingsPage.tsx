@@ -8,6 +8,9 @@
 // round-trips are the core headless's (createHilosSettingsTable /
 // createHilosSettingsActions); this view owns only the markup, so a project mounts
 // it by passing its HilosSettingsContext and declares the catalog on its backend.
+// The edit dialog merges against the live row through the shared row-edit helper
+// (rowEdit.ts, conflict-resolution.md) and says what happened elsewhere on one
+// line of room held in advance (HilosEditNotice).
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
 // closes on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces
 // as a toast and leaves the dialog open with the entered value (toasts.md).
@@ -20,16 +23,27 @@ import {
   SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
+  findLiveRow,
   hasCustomValue,
   isOrphanSetting,
-  resolveSettingEdit,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
 } from '@hilos/core'
-import type { HilosSettingRow, HilosSettingsContext } from '@hilos/core'
+import type {
+  HilosSettingRow,
+  HilosSettingsContext,
+  RowEditBaseline,
+  RowEditState,
+  RowEditStep,
+} from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -59,6 +73,27 @@ function inputStep(type: string | undefined): 'any' | undefined {
   return type === 'float' ? 'any' : undefined
 }
 
+/** The one field the dialog edits: the row's own value, null for the catalog default. */
+interface SettingEditFields {
+  overrideValue: string | null
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(live: RowEditState<SettingEditFields>): string {
+  switch (live.notice?.kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return live.fields.overrideValue.incoming === null
+        ? 'Reset elsewhere to the catalog default.'
+        : `Changed elsewhere to "${live.fields.overrideValue.incoming}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 /**
  * The framework settings admin page: the cataloged table with per-row edit /
  * reset / delete dialogs.
@@ -80,7 +115,9 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // Edit dialog: one row's custom value (or a reset back to the catalog default).
   const [editOpen, setEditOpen] = useState(false)
   const [editRow, setEditRow] = useState<HilosSettingRow | null>(null)
-  const [editBaseline, setEditBaseline] = useState<string | null>(null)
+  const [editBaseline, setEditBaseline] = useState<
+    RowEditBaseline<SettingEditFields>
+  >(() => openRowEdit<SettingEditFields>({ overrideValue: null }))
   const [editValue, setEditValue] = useState('')
   const [editUseCustom, setEditUseCustom] = useState(false)
   const edit = useTrackedAction()
@@ -97,45 +134,47 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // un-normalized value would never match the echoed row. Null leaves the default.
   const editOverride: string | null = editUseCustom ? String(editValue) : null
   const viewportRows = useSignal(settings.controller.rows)
-  const live = resolveSettingEdit(
-    viewportRows,
-    editRow?.key ?? '',
+  // The live row the dialog edits, projected onto its one field; gone once the
+  // table no longer has it.
+  const liveRow = findLiveRow(viewportRows, editRow?.key ?? '')
+  const live = resolveRowEdit(
+    liveRow ? { overrideValue: liveRow.overrideValue } : undefined,
     editBaseline,
-    editOverride,
+    { overrideValue: editOverride },
   )
-  const deleteLive = resolveSettingEdit(
-    viewportRows,
-    deleteRow?.key ?? '',
-    null,
-    null,
-  )
+  const deleteGone =
+    findLiveRow(viewportRows, deleteRow?.key ?? '') === undefined
   const editDirty = live.dirty
   const editTitle = editRow ? `Edit · ${editRow.key}` : 'Edit setting'
   const editSaveLabel = live.gone ? 'Deleted' : 'Save'
-  const editConflictNote =
-    live.incoming === null
-      ? 'The custom value was removed elsewhere and the key is back on its catalog default. Choose how to resolve.'
-      : `The value changed elsewhere to "${live.incoming}". Choose how to resolve.`
+  const editNotice = live.notice?.kind ?? null
+  const editNoticeText = noticeText(live)
 
-  function rechargeFromIncoming(row: HilosSettingRow): void {
-    const incoming = live.incoming
-    setEditUseCustom(incoming !== null || isOrphanSetting(row))
-    setEditValue(incoming ?? row.value ?? '')
-    setEditBaseline(incoming)
+  // Put a step of the helper into the dialog: the snapshot moves, and a value
+  // the step takes lands in the switch and the text the way the dialog opened
+  // with it. A reset taken from the other side leaves the text on the value now
+  // in effect — the live row's, not the one the dialog opened on, which is the
+  // override the other side just removed.
+  function applyStep(
+    row: HilosSettingRow,
+    step: RowEditStep<SettingEditFields>,
+  ): void {
+    setEditBaseline(step.baseline)
+    const taken = step.take.overrideValue
+    if (taken !== undefined) {
+      setEditUseCustom(taken !== null || isOrphanSetting(row))
+      setEditValue(taken ?? liveRow?.value ?? row.value ?? '')
+    }
   }
 
+  // The helper hands a step whenever the other side moved a field the person
+  // left alone, or both arrived at the same value; the dialog applies it at once.
+  const settle = live.settle
   useEffect(() => {
-    if (!editOpen || !editRow) {
-      return
+    if (editOpen && editRow && settle) {
+      applyStep(editRow, settle)
     }
-    if (live.status !== 'incoming' && live.status !== 'converged') {
-      return
-    }
-    const incoming = live.incoming
-    setEditUseCustom(incoming !== null || isOrphanSetting(editRow))
-    setEditValue(incoming ?? editRow.value ?? '')
-    setEditBaseline(incoming)
-  }, [editOpen, editRow, live.status, live.incoming])
+  }, [editOpen, editRow, settle])
 
   function openEdit(row: HilosSettingRow): void {
     // Flush pending so the dialog edits the latest committed row; a row removed
@@ -151,7 +190,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     // carries a value of its own.
     setEditUseCustom(isOrphanSetting(fresh) || hasCustomValue(fresh))
     setEditValue(fresh.overrideValue ?? fresh.value ?? '')
-    setEditBaseline(fresh.overrideValue)
+    setEditBaseline(openRowEdit({ overrideValue: fresh.overrideValue }))
     setEditOpen(true)
   }
 
@@ -165,12 +204,12 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
     if (!editRow || edit.busy || live.gone) {
       return
     }
-    const next = editOverride
-    if (next === live.incoming) {
+    if (!live.dirty) {
       closeEdit()
 
       return
     }
+    const next = editOverride
     // The switch turned off means "back to the catalog default", which resets the key
     // by dropping its row. With a value, an orphan updates in place and a cataloged
     // key adds by key (the add is idempotent, so the row need not exist yet).
@@ -203,7 +242,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   async function submitDelete(): Promise<void> {
-    if (!deleteRow || del.busy || deleteLive.gone) {
+    if (!deleteRow || del.busy || deleteGone) {
       return
     }
     if (await del.run(actions.sendSettingDelete(deleteRow.key))) {
@@ -212,12 +251,12 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   function acceptMine(): void {
-    setEditBaseline(live.incoming)
+    setEditBaseline(keepMineRowEdit(live, editBaseline))
   }
 
   function acceptTheirs(): void {
     if (editRow) {
-      rechargeFromIncoming(editRow)
+      applyStep(editRow, takeTheirsRowEdit(live, editBaseline))
     }
   }
 
@@ -400,23 +439,11 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                 )}
               </div>
             ) : null}
-            {live.conflict ? (
-              <div
-                className="alert alert-warning mt-2 mb-0"
-                data-id="hilos-settings-edit-conflict"
-              >
-                {editConflictNote}
-              </div>
-            ) : null}
-            {live.gone ? (
-              <div
-                className="alert alert-warning mt-2 mb-0"
-                data-id="hilos-settings-edit-gone"
-              >
-                This setting was deleted elsewhere. Your text stays here to copy
-                - it can no longer be saved.
-              </div>
-            ) : null}
+            <HilosEditNotice
+              kind={editNotice}
+              text={editNoticeText}
+              dataId="hilos-settings-edit-notice"
+            />
           </form>
         ) : null}
       </HilosModal>
@@ -441,7 +468,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             <LoadingButton
               className="btn-danger"
               loading={del.loading}
-              disabled={del.busy || deleteLive.gone}
+              disabled={del.busy || deleteGone}
               data-id="hilos-settings-delete-confirm"
               onClick={() => void submitDelete()}
             >
@@ -460,7 +487,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             <code>{deleteRow.key}</code>
           </p>
         ) : null}
-        {deleteLive.gone ? (
+        {deleteGone ? (
           <p
             className="mb-0 mt-2 text-body-secondary"
             data-id="hilos-settings-delete-gone"

@@ -130,6 +130,32 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
         self::assertSame(MailDeliveryChannel::FIELD_FROM_ADDRESS, $mutation->row->field);
     }
 
+    public function testFieldSettingValueChangeResolvesTheKeyByRowId(): void
+    {
+        // An update fact carries the changed columns only: a value written over an
+        // existing override names no key, and the row id is all the table has.
+        $fieldKey = DeliveryChannelSettings::fieldKey(MailDeliveryChannel::NAME, MailDeliveryChannel::FIELD_FROM_ADDRESS);
+
+        $mutation = $this->tableOver([7 => $fieldKey], new MailDeliveryChannel())->buildMutationForSourceEvent(
+            SourceChange::dbUpdated(HilosDbContext::settings, '7', [ObjectSetting::value => 'sender@example.test']),
+        );
+
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertSame($fieldKey, $mutation->rowKey);
+        self::assertInstanceOf(HilosCommunicationsChannelFieldsTableRow::class, $mutation->row);
+        self::assertSame(MailDeliveryChannel::FIELD_FROM_ADDRESS, $mutation->row->field);
+    }
+
+    public function testUnknownSettingRowIdIsIgnored(): void
+    {
+        self::assertNull(
+            $this->tableOver([], new MailDeliveryChannel())->buildMutationForSourceEvent(
+                SourceChange::dbUpdated(HilosDbContext::settings, '9', [ObjectSetting::value => 'x']),
+            ),
+        );
+    }
+
     public function testUnrelatedSourceIsIgnored(): void
     {
         self::assertNull(
@@ -166,17 +192,36 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
     }
 
     /**
-     * Builds a fields table bound to an in-memory set of channel descriptors.
+     * Builds a fields table bound to an in-memory set of channel descriptors and no
+     * persisted settings: an update fact that names no key resolves to nothing.
      *
      * @param AbstractDeliveryChannel ...$channels Channel descriptors to expose
      * @return HilosCommunicationsChannelFieldsTable Table over the bound channels
      */
     private function table(AbstractDeliveryChannel ...$channels): HilosCommunicationsChannelFieldsTable
     {
-        return new class($channels) extends HilosCommunicationsChannelFieldsTable {
-            /** @param list<AbstractDeliveryChannel> $channelsFixture */
-            public function __construct(private readonly array $channelsFixture)
-            {
+        return $this->tableOver([], ...$channels);
+    }
+
+    /**
+     * Builds a fields table bound to an in-memory set of channel descriptors and an
+     * in-memory map of persisted settings, row id to key.
+     *
+     * @param array<int, string> $settingKeys Persisted settings, row id to setting key
+     * @param AbstractDeliveryChannel ...$channels Channel descriptors to expose
+     * @return HilosCommunicationsChannelFieldsTable Table over the bound channels and settings
+     */
+    private function tableOver(array $settingKeys, AbstractDeliveryChannel ...$channels): HilosCommunicationsChannelFieldsTable
+    {
+        return new class($channels, $settingKeys) extends HilosCommunicationsChannelFieldsTable {
+            /**
+             * @param list<AbstractDeliveryChannel> $channelsFixture
+             * @param array<int, string> $settingKeysFixture
+             */
+            public function __construct(
+                private readonly array $channelsFixture,
+                private readonly array $settingKeysFixture,
+            ) {
                 parent::__construct();
             }
 
@@ -188,6 +233,11 @@ final class HilosCommunicationsChannelFieldsTableTest extends TestCase
                 }
 
                 return $keyed;
+            }
+
+            protected function settingKeyById(int $id): ?string
+            {
+                return $this->settingKeysFixture[$id] ?? null;
             }
         };
     }

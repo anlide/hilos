@@ -4,19 +4,33 @@
 // conflict-resolution.md); the modal hosts the rename form. The detail selector
 // and the rename action are the core headless's (createHilosUserDetail /
 // createHilosUserRename); this view owns only the markup, so a project mounts it
-// by passing its HilosUsersContext. Success is state-driven (the committed name
-// reaches the draft over the live table, closing the modal); a failure surfaces
-// from the backend fail ack inside the modal. Bootstrap classes only
-// (styling-rules.md).
+// by passing its HilosUsersContext. The modal merges against the live row
+// through the shared row-edit helper (rowEdit.ts, conflict-resolution.md) and
+// says what happened elsewhere on one line of room held in advance
+// (HilosEditNotice). Success is state-driven (the committed name reaches the
+// draft over the live table, closing the modal); a failure surfaces from the
+// backend fail ack inside the modal. Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
   createHilosUserDetail,
   createHilosUserRename,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
 } from '@hilos/core'
-import type { HilosUsersContext } from '@hilos/core'
+import type {
+  HilosUsersContext,
+  RowEditBaseline,
+  RowEditState,
+  RowEditStep,
+} from '@hilos/core'
 
+import { ConflictActions } from '../../ConflictActions.js'
+import { ConflictHeader } from '../../ConflictHeader.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -30,6 +44,25 @@ export interface HilosUserPageProps {
 
 const NAME_MIN = 2
 const NAME_MAX = 64
+
+/** The one field the modal edits: the display name. */
+interface UserEditFields {
+  name: string
+}
+
+/** The one line the modal says about the other side, for what the helper found. */
+function noticeText(live: RowEditState<UserEditFields>): string {
+  switch (live.notice?.kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return `Changed elsewhere to "${live.fields.name.incoming}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
 
 /**
  * The framework user-detail admin page: profile, presence, and a modal rename.
@@ -46,16 +79,59 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
+  const [editBaseline, setEditBaseline] = useState<
+    RowEditBaseline<UserEditFields>
+  >(() => openRowEdit<UserEditFields>({ name: '' }))
 
   const trimmed = draft.trim()
   const valid = trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
-  const dirty = !!detail && trimmed !== detail.name
+  // The live row is the card's own detail row, projected onto the name; gone
+  // once the card has no row any more.
+  const live = resolveRowEdit(
+    detail ? { name: detail.name } : undefined,
+    editBaseline,
+    { name: trimmed },
+  )
+  const dirty = live.dirty
+  const editTitle = detail ? `Rename · ${detail.name}` : 'Rename user'
+  const editNotice = live.notice?.kind ?? null
+  const editNoticeText = noticeText(live)
+  const saveLabel = live.gone ? 'Deleted' : 'Save'
 
   function openEdit(): void {
     rename.clearRenameError()
-    setDraft(detail?.name ?? '')
+    const name = detail?.name ?? ''
+    setDraft(name)
+    setEditBaseline(openRowEdit<UserEditFields>({ name }))
     setLoading(false)
     setEditing(true)
+  }
+
+  // Put a step of the helper into the modal: the snapshot moves, and a name
+  // the step takes lands in the input.
+  function applyStep(step: RowEditStep<UserEditFields>): void {
+    setEditBaseline(step.baseline)
+    if (step.take.name !== undefined) {
+      setDraft(step.take.name)
+    }
+  }
+
+  // The helper hands a step whenever the other side moved the name while the
+  // person left it alone, or both arrived at the same one; the modal applies
+  // it at once.
+  const settle = live.settle
+  useEffect(() => {
+    if (editing && settle) {
+      applyStep(settle)
+    }
+  }, [editing, settle])
+
+  function acceptMine(): void {
+    setEditBaseline(keepMineRowEdit(live, editBaseline))
+  }
+
+  function acceptTheirs(): void {
+    applyStep(takeTheirsRowEdit(live, editBaseline))
   }
 
   // The modal's close path (Cancel / Esc / backdrop, through the discard guard).
@@ -66,12 +142,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }
 
   function submit(): void {
-    if (!detail || !valid || loading) {
+    if (!detail || !valid || loading || live.gone) {
       return
     }
     // No change: close without a round-trip (also keeps the state-driven success
     // watch from waiting on a name that will never change).
-    if (trimmed === detail.name) {
+    if (!live.dirty) {
       closeEdit()
 
       return
@@ -151,9 +227,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
 
       <HilosModal
         open={editing}
-        title={detail ? `Rename · ${detail.name}` : 'Rename user'}
         confirmOnClose={dirty}
         onClose={closeEdit}
+        header={<ConflictHeader title={editTitle} conflict={live.conflict} />}
         actions={({ requestClose }) => (
           <>
             <button
@@ -165,15 +241,26 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             >
               Cancel
             </button>
-            <LoadingButton
-              className="btn-primary"
-              loading={loading}
-              disabled={!valid || !dirty}
-              data-id="hilos-user-save"
-              onClick={submit}
-            >
-              Save
-            </LoadingButton>
+            <ConflictActions
+              conflict={live.conflict}
+              disableSave={!valid || !dirty || loading || live.gone}
+              mergeable={false}
+              saveLabel={saveLabel}
+              onSave={submit}
+              onAcceptMine={acceptMine}
+              onAcceptTheirs={acceptTheirs}
+              saveButton={({ disabled, onSave }) => (
+                <LoadingButton
+                  className="btn-primary"
+                  loading={loading}
+                  disabled={disabled}
+                  data-id="hilos-user-save"
+                  onClick={onSave}
+                >
+                  {saveLabel}
+                </LoadingButton>
+              )}
+            />
           </>
         )}
       >
@@ -214,6 +301,11 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           <div className="form-text">
             Between {NAME_MIN} and {NAME_MAX} characters.
           </div>
+          <HilosEditNotice
+            kind={editNotice}
+            text={editNoticeText}
+            dataId="hilos-user-edit-notice"
+          />
         </form>
       </HilosModal>
     </HilosAdminPage>

@@ -75,6 +75,7 @@ export { HilosModal, type ModalActionsContext } from './HilosModal.js'
 export { HilosLongText } from './HilosLongText.js'
 export { HilosActionError } from './HilosActionError.js'
 export { HilosFormError } from './HilosFormError.js'
+export { HilosEditNotice } from './HilosEditNotice.js'
 export { HilosToastHost } from './HilosToastHost.js'
 export type { HilosToastCorner } from './hilosToastCorner.js'
 export {

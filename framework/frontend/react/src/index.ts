@@ -162,6 +162,10 @@ export {
   type HilosActionErrorProps,
 } from './HilosActionError.js'
 export { HilosFormError, type HilosFormErrorProps } from './HilosFormError.js'
+export {
+  HilosEditNotice,
+  type HilosEditNoticeProps,
+} from './HilosEditNotice.js'
 export { HilosToastHost, type HilosToastHostProps } from './HilosToastHost.js'
 export type { HilosToastCorner } from './hilosToastCorner.js'
 export {

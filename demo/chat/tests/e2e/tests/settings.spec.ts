@@ -360,6 +360,11 @@ test('an open pristine edit reloads when the other tab saves', async ({
     'elsewhere-url',
   )
   await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+  // The value arrived on its own, and the modal says so on its message line —
+  // the line that was standing there, empty, before the value arrived.
+  await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
+    'Updated just now',
+  )
   await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
   await tabB.getByTestId('modal-close').click()
 
@@ -386,8 +391,8 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
   )
 
   await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
-  await expect(tabB.getByTestId('hilos-settings-edit-conflict')).toContainText(
-    'The value changed elsewhere to "theirs-model"',
+  await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
+    'Changed elsewhere to "theirs-model"',
   )
   await expect(tabB.getByTestId('conflict-merge')).toHaveCount(0)
   await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
@@ -397,6 +402,9 @@ test('a dirty open edit conflicts when the other tab saves, with no Merge', asyn
     'theirs-model',
   )
   await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
+    'Updated just now',
+  )
   await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
   await tabB.getByTestId('modal-close').click()
 

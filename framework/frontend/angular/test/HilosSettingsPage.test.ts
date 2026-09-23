@@ -1,5 +1,5 @@
 // The Angular peer of the Vue/React settings-page live-merge tests (HIL-986).
-// The merge itself lives in resolveSettingEdit; this file covers the thin view:
+// The merge itself lives in the core row-edit helper; this file covers the thin view:
 // that a live row update reloads a pristine modal, that a dirty one shows the
 // conflict chrome without Merge, and that Take theirs adopts the incoming value.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
@@ -262,9 +262,77 @@ describe('HilosSettingsPage', () => {
 
     expect(input.value).toBe('Elsewhere')
     expect(el(root, 'conflict-badge')).toBeNull()
+    expect(el(root, 'hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
     expect(
       (el(root, 'hilos-settings-edit-save') as HTMLButtonElement).disabled,
     ).toBe(true)
+
+    // The person types over the taken value: the note about it goes out.
+    input.value = 'Mine'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    fixture.detectChanges()
+    expect(el(root, 'hilos-settings-edit-notice')).toBeNull()
+  })
+
+  it('holds the room for the message line while nothing happened elsewhere', () => {
+    const { context } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    el(root, 'hilos-settings-edit-site_name')?.click()
+    fixture.detectChanges()
+
+    expect(el(root, 'hilos-settings-edit-notice')).toBeNull()
+    expect(el(root, 'hilos-settings-edit-notice-idle')).not.toBeNull()
+  })
+
+  it('leaves the effective value under the switch after a reset elsewhere', () => {
+    const { context, pushUpdate } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+        defaultValue: 'Default',
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    el(root, 'hilos-settings-edit-site_name')?.click()
+    fixture.detectChanges()
+
+    // The other side reset the key: the switch goes off and the dialog says so.
+    pushUpdate(
+      slot({
+        key: 'site_name',
+        valueSource: 'default',
+        value: 'Default',
+        overrideValue: null,
+        defaultValue: 'Default',
+      }),
+    )
+    fixture.detectChanges()
+    const custom = el(root, 'hilos-settings-edit-custom') as HTMLInputElement
+    expect(custom.checked).toBe(false)
+    expect(el(root, 'hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
+
+    // Turning the switch back on starts from the value now in effect, not from
+    // the override the other side just removed.
+    custom.click()
+    fixture.detectChanges()
+    expect(
+      (el(root, 'hilos-settings-edit-value') as HTMLInputElement).value,
+    ).toBe('Default')
   })
 
   it('surfaces a conflict on a dirty edit and hides merge', () => {
@@ -295,8 +363,8 @@ describe('HilosSettingsPage', () => {
     fixture.detectChanges()
 
     expect(el(root, 'conflict-badge')).not.toBeNull()
-    expect(el(root, 'hilos-settings-edit-conflict')?.textContent).toContain(
-      'The value changed elsewhere to "Theirs"',
+    expect(el(root, 'hilos-settings-edit-notice')?.textContent).toContain(
+      'Changed elsewhere to "Theirs"',
     )
     expect(el(root, 'conflict-merge')).toBeNull()
     expect(
@@ -335,6 +403,9 @@ describe('HilosSettingsPage', () => {
 
     expect(input.value).toBe('Theirs')
     expect(el(root, 'conflict-badge')).toBeNull()
+    expect(el(root, 'hilos-settings-edit-notice')?.textContent).toContain(
+      'Updated just now',
+    )
     expect(
       (el(root, 'hilos-settings-edit-save') as HTMLButtonElement).disabled,
     ).toBe(true)
@@ -357,7 +428,9 @@ describe('HilosSettingsPage', () => {
     pushRemove('legacy')
     fixture.detectChanges()
 
-    expect(el(root, 'hilos-settings-edit-gone')).not.toBeNull()
+    expect(el(root, 'hilos-settings-edit-notice')?.textContent).toContain(
+      'Deleted elsewhere',
+    )
     const save = el(root, 'hilos-settings-edit-save') as HTMLButtonElement
     expect(save.disabled).toBe(true)
     expect(save.textContent?.trim()).toBe('Deleted')

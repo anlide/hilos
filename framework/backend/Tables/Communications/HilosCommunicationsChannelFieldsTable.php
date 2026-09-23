@@ -98,7 +98,7 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
         }
 
         $key = $this->settingKeyFromSourceChange($change);
-        if ($key === '') {
+        if ($key === null) {
             return null;
         }
 
@@ -220,6 +220,25 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
     }
 
     /**
+     * The key of a persisted setting, by its row id.
+     *
+     * A seam the framework reads from the settings collection; tests bind an in-memory map.
+     *
+     * @param int $id Settings row id
+     * @return ?string Setting key, or null when no persisted setting carries this id
+     * @throws DatabaseException When persisted settings cannot be read
+     */
+    protected function settingKeyById(int $id): ?string
+    {
+        $db = Hilos::$db;
+        if (!$db instanceof HilosDbContext) {
+            return null;
+        }
+
+        return $db->settings[$id]?->key;
+    }
+
+    /**
      * Projects a channel config field and its resolved value into a table row.
      *
      * @param AbstractDeliveryChannel $descriptor Owning channel descriptor
@@ -289,14 +308,24 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
     /**
      * Resolves the settings key carried by a settings source change.
      *
+     * A create fact carries the whole row, key included. An update fact carries the changed
+     * columns only, and a value written over an existing override changes no key - so the row
+     * id names the setting, and the settings collection says which key that is (the settings
+     * table resolves the same case the same way). Without this an override updated over an
+     * existing one never redrew its field row, while the first write (an insert) did.
+     *
      * @param SourceChange $change Settings source change
-     * @return string Setting key, or an empty string when it cannot be resolved
+     * @return ?string Setting key, or null when the change names no persisted setting
+     * @throws DatabaseException When persisted settings cannot be read
      */
-    private function settingKeyFromSourceChange(SourceChange $change): string
+    private function settingKeyFromSourceChange(SourceChange $change): ?string
     {
         $key = $change->row[ObjectSetting::key] ?? null;
         if (is_string($key) || is_int($key)) {
             return (string) $key;
+        }
+        if (ctype_digit($change->sourceId)) {
+            return $this->settingKeyById((int) $change->sourceId);
         }
 
         return $change->sourceId;

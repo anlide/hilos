@@ -11,21 +11,34 @@ exercises the real delivery path (HIL-201). Writes are tracked actions
 (createHilosCommunicationsActions): the value redraws from the reactive table's
 snapshot signal after the backend echo, never optimistically, and a validation
 failure surfaces as a toast with the backend's domain phrase. Editing happens in a
-modal — inline forms are forbidden (rules-and-violations.md section E). Bootstrap
-classes only (styling-rules.md). -->
+modal — inline forms are forbidden (rules-and-violations.md section E) — and the
+modal merges against the live row through the shared row-edit helper (rowEdit.ts,
+conflict-resolution.md), saying what happened elsewhere on one line of room held
+in advance (HilosEditNotice). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computedSignal,
   createHilosChannelFields,
   createHilosCommunicationsActions,
+  findLiveRow,
   HilosPages,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
   type HilosChannelFieldRow,
   type HilosCommunicationsContext,
+  type RowEditBaseline,
+  type RowEditNoticeKind,
+  type RowEditStep,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
+import ConflictActions from '../../ConflictActions.vue'
+import ConflictHeader from '../../ConflictHeader.vue'
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -102,9 +115,49 @@ const SOURCE_LABEL: Record<string, string> = {
   default: 'Default',
 }
 
+/** The one field the dialog edits: the field's typed value. */
+interface ChannelEditFields {
+  value: boolean | number | string | null
+}
+
+/**
+ * The text the dialog's input shows for a typed value: a switch reads '1' /
+ * '0', an empty value reads as nothing, anything else as itself.
+ */
+function formText(
+  type: string,
+  value: boolean | number | string | null,
+): string {
+  if (type === 'boolean') {
+    return value === true ? '1' : '0'
+  }
+
+  return value === null ? '' : String(value)
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(
+  kind: RowEditNoticeKind | null,
+  liveRow: HilosChannelFieldRow | undefined,
+): string {
+  switch (kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 // Edit dialog: one field's override value.
 const editOpen = ref(false)
 const editRow = ref<HilosChannelFieldRow | null>(null)
+const editBaseline = ref<RowEditBaseline<ChannelEditFields>>(
+  openRowEdit<ChannelEditFields>({ value: null }),
+)
 const editValue = ref('')
 const editAction = useTrackedAction()
 const {
@@ -123,21 +176,9 @@ const editValueBool = computed({
     editValue.value = on ? '1' : '0'
   },
 })
-
-function openEdit(row: HilosChannelFieldRow): void {
-  clearEditError()
-  editRow.value = row
-  editValue.value =
-    row.value === null || row.value === undefined ? '' : String(row.value)
-  if (row.type === 'boolean') {
-    editValue.value = row.value === true ? '1' : '0'
-  }
-  editOpen.value = true
-}
-
-function closeEdit(): void {
-  editOpen.value = false
-}
+const editTitle = computed(() =>
+  editRow.value ? `Edit · ${editRow.value.label}` : 'Edit field',
+)
 
 /** Coerce the edited string to the field's typed value for the set action. */
 function editedValue(row: HilosChannelFieldRow): boolean | number | string {
@@ -151,9 +192,84 @@ function editedValue(row: HilosChannelFieldRow): boolean | number | string {
   return editValue.value
 }
 
+const viewportRows = useSignal(fields.controller.rows)
+// The live row the dialog edits, projected onto its one field; gone once the
+// table no longer has it.
+const liveRow = computed(() =>
+  findLiveRow(viewportRows.value, editRow.value?.key ?? ''),
+)
+const live = computed(() =>
+  resolveRowEdit(
+    liveRow.value ? { value: liveRow.value.value } : undefined,
+    editBaseline.value,
+    { value: editRow.value ? editedValue(editRow.value) : null },
+  ),
+)
+const editNotice = computed(() => live.value.notice?.kind ?? null)
+const editNoticeText = computed(() =>
+  noticeText(editNotice.value, liveRow.value),
+)
+const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
+
+function openEdit(row: HilosChannelFieldRow): void {
+  // Flush pending so the dialog edits the latest committed row; a row removed by
+  // someone else (now a placeholder) declines to open.
+  const fresh = fields.controller.applyAndResolve(row.key)
+  if (!fresh) {
+    return
+  }
+  clearEditError()
+  editRow.value = fresh
+  editValue.value = formText(fresh.type, fresh.value)
+  editBaseline.value = openRowEdit<ChannelEditFields>({ value: fresh.value })
+  editOpen.value = true
+}
+
+function closeEdit(): void {
+  editOpen.value = false
+}
+
+// Put a step of the helper into the dialog: the snapshot moves, and a value the
+// step takes lands in the input the way the dialog opened with it.
+function applyStep(step: RowEditStep<ChannelEditFields>): void {
+  const row = editRow.value
+  if (!row) {
+    return
+  }
+  editBaseline.value = step.baseline
+  const taken = step.take.value
+  if (taken !== undefined) {
+    editValue.value = formText(row.type, taken)
+  }
+}
+
+// The helper hands a step whenever the other side moved a field the person
+// left alone, or both arrived at the same value; the dialog applies it at once.
+watch(
+  () => live.value.settle,
+  (settle) => {
+    if (editOpen.value && settle) {
+      applyStep(settle)
+    }
+  },
+)
+
+function acceptMine(): void {
+  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+}
+
+function acceptTheirs(): void {
+  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+}
+
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value) {
+  if (!row || editBusy.value || live.value.gone) {
+    return
+  }
+  if (!live.value.dirty) {
+    closeEdit()
+
     return
   }
   if (
@@ -228,9 +344,12 @@ async function submitEdit(): Promise<void> {
 
     <HilosModal
       v-model="editOpen"
-      :title="editRow ? `Edit · ${editRow.label}` : 'Edit field'"
+      :confirm-on-close="live.dirty"
       @cancel="closeEdit"
     >
+      <template #header>
+        <ConflictHeader :title="editTitle" :conflict="live.conflict" />
+      </template>
       <HilosActionError :action="editAction" />
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="editInputType === 'checkbox'" class="form-check form-switch">
@@ -261,6 +380,11 @@ async function submitEdit(): Promise<void> {
             data-autofocus
           />
         </template>
+        <HilosEditNotice
+          :kind="editNotice"
+          :text="editNoticeText"
+          data-id="hilos-channel-edit-notice"
+        />
       </form>
       <template #actions="{ requestClose }">
         <button
@@ -271,15 +395,27 @@ async function submitEdit(): Promise<void> {
         >
           Cancel
         </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="editLoading"
-          :disabled="editBusy"
-          data-id="hilos-channel-edit-save"
-          @click="submitEdit"
+        <ConflictActions
+          :conflict="live.conflict"
+          :disable-save="!live.dirty || editBusy || live.gone"
+          :mergeable="false"
+          :save-label="editSaveLabel"
+          @save="submitEdit"
+          @accept-mine="acceptMine"
+          @accept-theirs="acceptTheirs"
         >
-          Save
-        </LoadingButton>
+          <template #save-button="{ disabled, onSave }">
+            <LoadingButton
+              class="btn-primary"
+              :loading="editLoading"
+              :disabled="disabled"
+              data-id="hilos-channel-edit-save"
+              @click="onSave"
+            >
+              {{ editSaveLabel }}
+            </LoadingButton>
+          </template>
+        </ConflictActions>
       </template>
     </HilosModal>
   </HilosAdminPage>

@@ -1,7 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
+import { clickSubmit, typeInto } from '../helpers/session'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -97,6 +98,81 @@ test('renames a user from the detail page and re-renders live', async ({
   await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
   await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
 })
+
+// HIL-1050: the rename modal merges against the live row. Two tabs of one
+// context on the card of the user this test registers itself: a pristine open
+// modal follows the other tab's rename and says so, a typed one conflicts and
+// locks Save, and Take theirs adopts the other tab's name.
+test('an open rename follows the other tab, then conflicts and takes theirs', async ({
+  page,
+}) => {
+  const userId = await signUpAdmin(page)
+  const tabB = await page.context().newPage()
+  await gotoPage(page, `/hilos/user/${userId}`)
+  await gotoPage(tabB, `/hilos/user/${userId}`)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+  await expect(tabB.getByTestId('hilos-user-detail')).toBeVisible()
+
+  // Tab A opens the modal and does not type; tab B renames.
+  await page.getByTestId('hilos-user-edit').click()
+  await expect(page.getByTestId('hilos-user-name-input')).toBeVisible()
+  await renameUser(tabB, 'E2E Elsewhere One')
+
+  // A pristine modal follows the live row and says so on its message line.
+  await expect(page.getByTestId('hilos-user-name-input')).toHaveValue(
+    'E2E Elsewhere One',
+  )
+  await expect(page.getByTestId('hilos-user-edit-notice')).toContainText(
+    'Updated just now',
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
+
+  // Tab A types; tab B renames again: a conflict, Save locked, no Merge.
+  await typeInto(page.getByTestId('hilos-user-name-input'), 'E2E Mine')
+  await renameUser(tabB, 'E2E Elsewhere Two')
+  await expect(page.getByTestId('conflict-badge')).toBeVisible()
+  await expect(page.getByTestId('hilos-user-edit-notice')).toContainText(
+    'Changed elsewhere to "E2E Elsewhere Two"',
+  )
+  await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
+
+  // Take theirs puts the other tab's name into the input; nothing is left to
+  // save, so the modal closes without a question.
+  await page.getByTestId('conflict-accept-theirs').click()
+  await expect(page.getByTestId('hilos-user-name-input')).toHaveValue(
+    'E2E Elsewhere Two',
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-user-edit-notice')).toContainText(
+    'Updated just now',
+  )
+  await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
+  await page.getByTestId('modal-close').click()
+  await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-user-name')).toHaveText(
+    'E2E Elsewhere Two',
+  )
+  await tabB.close()
+})
+
+/**
+ * Rename the user on the card through its modal, and settle when the modal
+ * closes on the committed name.
+ *
+ * @param tab The tab on the user's card.
+ * @param name The new display name.
+ */
+async function renameUser(tab: Page, name: string): Promise<void> {
+  await tab.getByTestId('hilos-user-edit').click()
+  await typeInto(tab.getByTestId('hilos-user-name-input'), name)
+  await clickSubmit(tab.getByTestId('hilos-user-save'))
+  await expect(tab.getByTestId('hilos-user-name-input')).toHaveCount(0)
+  await expect(tab.getByTestId('hilos-user-name')).toHaveText(name)
+}
 
 test('shows the connected user as online with a live session', async ({
   page,
