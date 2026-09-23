@@ -960,8 +960,10 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // Mount and unmount, in one effect. Its dependencies are the memos above, so
   // it runs once per context and not once per render. demo/tasks mounts
   // under StrictMode, so in dev it runs twice — safe precisely because every
-  // action here is local (machine + subscriptions) and the cleanup is complete;
-  // nothing on mount touches the wire.
+  // action here is local (machine + subscriptions) and the cleanup is complete:
+  // an ordinary mount never touches the wire, while a mount where the session
+  // names the identifier step (a lost race) asks address detection, safe under
+  // StrictMode because the second mount's reset() orphans the first reply (HIL-1027).
   useEffect(() => {
     /**
      * Whether a converge is about the identifier this surface is waiting on.

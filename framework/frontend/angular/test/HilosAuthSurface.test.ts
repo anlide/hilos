@@ -61,6 +61,9 @@ function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
 // `sessionPendingAck`, which is what the surface asks for (sessionScope.ts).
 const PENDING_ACK_SLOT = 'pendingAck'
 
+// The session slot carrying the authentication step this session stands on (sessionScope.ts).
+const PENDING_AUTH_STEP_SLOT = 'pendingAuthStep'
+
 /**
  * A surface's world: the context it draws, a gate that records dismiss, and a
  * connection that can replay a handshake_response into the listener it registered.
@@ -676,5 +679,23 @@ describe('HilosAuthSurface', () => {
     expect(byId(fixture, 'auth-error')).toBeNull()
     expect(byId(fixture, 'auth-notice')).toBeNull()
     expect(byId(fixture, 'auth-identifier')).not.toBeNull()
+  })
+
+  it('a tab that came back by reload after losing the race can sign in', async () => {
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      identifier: 'someone@example.com',
+      kind: 'email',
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: 'identifier_taken',
+    })
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-password')).not.toBeNull()
+    expect(byId(fixture, 'auth-submit')).not.toBeNull()
   })
 })

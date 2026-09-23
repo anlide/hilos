@@ -1850,6 +1850,55 @@ describe('applyExternal — the converge entry', () => {
     flow.applyExternal({ step: 'done' })
     expect(flow.screenKey.get()).toBe('done_registered')
   })
+
+  it('a converge onto the identifier field asks the address again and drops the answer it had', async () => {
+    let status: IdentifierDetection['status'] = 'pending'
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          status,
+          methods: status === 'active' ? ['password'] : [],
+        }),
+    })
+    await typeAndDetect(flow, 'reserved@b.com')
+    expect(flow.flow.get().step).toBe('code')
+
+    status = 'active'
+    flow.applyExternal({ step: 'identifier', intent: 'login' })
+    expect(flow.detection.get()).toEqual({ status: 'pending', result: null })
+    await settleRefresh()
+    expect(flow.screenKey.get()).toBe('sign_in')
+    expect(flow.primaryAction.get()).toMatchObject({ kind: 'submit' })
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('a converge that stays on the identifier field still asks again', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier }),
+    )
+    const flow = setup({ onDetect })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(onDetect).toHaveBeenCalledTimes(1)
+
+    flow.applyExternal({ step: 'identifier' })
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledTimes(2)
+  })
+
+  it('a converge onto another step asks nothing', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier }),
+    )
+    const flow = setup({ onDetect })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(onDetect).toHaveBeenCalledTimes(1)
+
+    flow.applyExternal({ step: 'done' })
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('input preservation', () => {
@@ -1906,15 +1955,24 @@ describe('failure surface', () => {
   })
 
   it('a refusal that names a step moves the surface and keeps the reason on screen', async () => {
+    let status: IdentifierDetection['status'] = 'none'
     const flow = setup({
-      onSubmit: async () => ({
-        ok: false,
-        code: 'identifier_taken',
-        message: 'That address is already registered.',
-        next: { step: 'identifier' as const, intent: 'login' as const },
-      }),
+      onSubmit: async () => {
+        status = 'active'
+
+        return {
+          ok: false,
+          code: 'identifier_taken',
+          message: 'That address is already registered.',
+          next: { step: 'identifier' as const, intent: 'login' as const },
+        }
+      },
       onDetect: async (identifier) =>
-        detected({ identifier, status: 'none', methods: [] }),
+        detected({
+          identifier,
+          status,
+          methods: status === 'active' ? ['password'] : [],
+        }),
     })
     await typeAndDetect(flow, 'new@b.com')
     await flow.submit()
@@ -1994,6 +2052,39 @@ describe('failure surface', () => {
     expect(flow.error.get()).toEqual({
       message: 'That link is no longer good.',
       code: 'magic_link_invalid',
+    })
+  })
+
+  it('a refusal that sends the person back to the address asks it again and keeps the refusal', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier, status: 'none', methods: [] }),
+    )
+    const flow = setup({
+      onDetect,
+      onSubmit: async () => ({
+        ok: false,
+        code: 'reservation_expired',
+        next: { step: 'identifier', intent: 'register' },
+      }),
+    })
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'set_password',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
+    })
+    flow.setField('newPassword', 'long-enough-1')
+    await flow.submit()
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledWith('ada@b.com', 'email')
+    expect(flow.screenKey.get()).toBe('create_account')
+    expect(flow.primaryAction.get()).toMatchObject({ kind: 'submit' })
+    expect(flow.error.get()).toEqual({
+      message: null,
+      code: 'reservation_expired',
     })
   })
 })
@@ -2317,6 +2408,47 @@ describe('resuming an unfinished auth step', () => {
     // do with it and retyping it is not part of being told.
     expect(flow.form.get().identifier).toBe('ada@b.com')
     expect(flow.expiresAt.get()).toBeNull()
+  })
+
+  it('a session that lost the race while away can sign in on the screen it comes back to (HIL-1027)', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier }),
+    )
+    const flow = setup({ onDetect })
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: 'identifier_taken',
+    })
+    expect(flow.detection.get()).toEqual({ status: 'pending', result: null })
+    await settleRefresh()
+    expect(onDetect).toHaveBeenCalledWith('ada@b.com', 'email')
+    expect(flow.screenKey.get()).toBe('sign_in')
+    expect(flow.primaryAction.get()).toMatchObject({ kind: 'submit' })
+    flow.setField('password', 'secret-1')
+    expect(flow.submittable.get()).toBe(true)
+  })
+
+  it('an ordinary resume onto a code screen asks nothing', async () => {
+    const onDetect = vi.fn(async (identifier: string) =>
+      detected({ identifier }),
+    )
+    const flow = setup({ onDetect })
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      intent: 'register',
+      step: 'code',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+      code: null,
+    })
+    await settleRefresh()
+    expect(onDetect).not.toHaveBeenCalled()
   })
 
   it('takes the old countdown down when the step it lands on has no code in play', async () => {

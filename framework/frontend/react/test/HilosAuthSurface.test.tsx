@@ -1041,6 +1041,16 @@ describe('HilosAuthSurface', () => {
     )
   })
 
+  it('a tab that came back by reload after losing the race can sign in', async () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, LOST_RACE_STEP)
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-password')).not.toBeNull()
+    expect(byId('auth-submit')).not.toBeNull()
+  })
+
   it('tells a tab whose socket only blinked, with no reload under it', async () => {
     const { context } = contextAnswering([PASSWORD_METHOD_KEY])
     render(<HilosAuthSurface context={context} />)

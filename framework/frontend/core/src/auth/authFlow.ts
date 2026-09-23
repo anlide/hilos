@@ -523,6 +523,8 @@ export interface AuthFlow {
    * identifier step under the sign-in intent, and restoring it is how a tab that
    * missed the live converge is told at all. That step carries no moment, so
    * nothing is armed for it and any countdown standing from before is taken down.
+   * On this step detection is asked immediately, otherwise the form stands
+   * without a password field and without a button (HIL-1027).
    *
    * A `null` pending step does NOTHING, deliberately: a reconnect that lands
    * while somebody is halfway through typing an identifier must not wipe what
@@ -686,7 +688,8 @@ export interface AuthFlow {
    * Apply an EXTERNAL flow transition (a ceremony's redirect landing, a
    * cross-tab converge) with the same merge as a backend `next`: clears the
    * shown error, never touches the form. Every step must survive being rebuilt
-   * under the user's hands.
+   * under the user's hands. An identifier step in next asks detection again,
+   * and the reply does not move the step (HIL-1027).
    *
    * @param next The partial flow state to merge.
    */
@@ -1634,16 +1637,38 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   }
 
   /**
+   * Merge the server's partial state onto the flow and, when it names the
+   * identifier step, ask the lookup again (HIL-1027).
+   *
+   * The server putting the form back on the address field is news about the
+   * address itself, so the lookup is asked immediately, without debounce and
+   * without holding the previous verdict, and its reply never moves the step —
+   * exactly what {@link endMethod} and {@link backToIdentifier} do (HIL-651).
+   * The condition is `next.step === 'identifier'` rather than "the step moved":
+   * a converge onto an already standing identifier (e.g. an aborted registration
+   * in another tab) must take down the stale 'code is on its way' answer.
+   *
+   * @param next The partial flow state to merge.
+   */
+  function mergeNext(next: Partial<AuthFlowState>): void {
+    flow.set({ ...flow.get(), ...next })
+    if (next.step === 'identifier') {
+      refreshDetect()
+    }
+  }
+
+  /**
    * Apply one outcome — the single place a dispatch's answer reaches the surface.
    *
    * A REFUSAL moves the flow too (HIL-672): the backend answers 'this did not
    * work AND here is where you should be' with `rejectTo()`, and dropping the
    * second half stranded the person on a screen whose only way out was editing
    * the identifier. The error is set BEFORE the merge so the sentence and the
-   * screen it belongs to land in one paint. The two moments stay success-only:
-   * a refusal sent no code, so arming a countdown off it would time a letter
-   * nobody received — while countdowns ALREADY running are left alone, the
-   * refusal having canceled nothing.
+   * screen it belongs to land in one paint. An answer that sends the person to
+   * the identifier field asks detection again (mergeNext). The two moments stay
+   * success-only: a refusal sent no code, so arming a countdown off it would
+   * time a letter nobody received — while countdowns ALREADY running are left
+   * alone, the refusal having canceled nothing.
    */
   function applyOutcome(outcome: AuthFlowSubmitOutcome): void {
     if (!outcome.ok) {
@@ -1653,7 +1678,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       })
     }
     if (outcome.next !== undefined) {
-      flow.set({ ...flow.get(), ...outcome.next })
+      mergeNext(outcome.next)
     }
     if (!outcome.ok) {
       return
@@ -1904,6 +1929,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       // step a lost race sends a session back to stands on no code, and a timer
       // left running there would expire a screen that is not counting.
       armExpiry(pending.expiresAt)
+      // The lost race is the only handshake step naming the identifier
+      // (lostRegistrationStepFor()); unlike an ordinary resume (code,
+      // set_password, recovery) which never touches the wire, it asks detection
+      // immediately so the screen is not left without password and button (HIL-1027).
+      if (pending.step === 'identifier') {
+        refreshDetect()
+      }
     },
     setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void {
       if (field === 'identifier') {
@@ -2208,9 +2240,10 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     applyExternal(next: Partial<AuthFlowState>): void {
       // The converge entry: an external transition lands with the same merge as
       // a backend `next` — clears the shown error, never touches the form, and
-      // any step must survive being rebuilt under the user's hands.
+      // any step must survive being rebuilt under the user's hands. Just like a
+      // server answer, the identifier step asks detection again (HIL-1027).
       error.set(null)
-      flow.set({ ...flow.get(), ...next })
+      mergeNext(next)
     },
     reset(): void {
       cancelDetect()

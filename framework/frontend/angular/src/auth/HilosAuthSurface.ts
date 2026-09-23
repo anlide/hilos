@@ -1688,8 +1688,9 @@ export class HilosAuthSurface {
 
     // Mount and unmount, in one effect over the computed machine: it runs once
     // per context, never per change detection. Everything it does is local (the
-    // machine and two subscriptions) and the cleanup is complete — nothing on
-    // mount touches the wire.
+    // machine and two subscriptions) and the cleanup is complete — an ordinary
+    // mount never touches the wire, while a mount where the session names the
+    // identifier step (a lost race) asks address detection (HIL-1027).
     effect((onCleanup) => {
       const context = this.context()
       const auth = this.auth()
