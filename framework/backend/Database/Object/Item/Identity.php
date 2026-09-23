@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
@@ -263,10 +266,16 @@ final class Identity extends Object_
      * Marks this identity verified (idempotent), flipping the `verified` flag.
      *
      * Verify-flip write path of the identity layer, opened by the register-confirm
-     * leaf (HIL-365): a targeted UPDATE sets `verified = 1` and the loaded entity
-     * is mirrored so a re-read sees it. A no-op for an unpersisted identity.
+     * leaf (HIL-365). The flip goes through {@see sync()} like any other column of the
+     * row, so it is announced to every reader: registration creates the row unproven
+     * and flips it a moment later, and a flip written past the announcement left the
+     * other workers holding the created row - unproven - for good (HIL-299). A no-op
+     * for an unpersisted identity; flipping a row already verified writes nothing.
      *
      * @throws DatabaseException When the verified update query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When the sync would add the row rather than update it, and nothing here may
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function markVerified(): void
@@ -275,20 +284,8 @@ final class Identity extends Object_
             return;
         }
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            TruthSourceOperation::Update,
-        );
-
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::verified . '` = 1 WHERE `' . EntityIdentity::id . '` = ?',
-            $params,
-        );
-
         $this->entity->verified = true;
+        $this->sync();
     }
 
     /**

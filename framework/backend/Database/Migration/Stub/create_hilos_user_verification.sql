@@ -3,8 +3,8 @@
 --
 -- Framework-standardized verification challenge (HIL-365). One typed row backs
 -- both email-confirmation (register_confirm) and password-recovery
--- (password_reset); email_change is reserved for the Profile-cluster consumer
--- (HIL-298). This replaces the reference stack's four copy-pasted per-flow tables.
+-- (password_reset); email_change and email_change_current are the two codes of the
+-- profile change-email flow (HIL-299). This replaces the reference stack's four copy-pasted per-flow tables.
 --
 -- No DB-level foreign key to the project `user` table: framework stubs never FK
 -- across the framework/project boundary. `user_id` is nullable because a request
@@ -28,6 +28,9 @@
 -- `magic_link_code` sits at the END of the ENUM rather than beside `magic_link`: appending
 -- is the only widening MySQL performs in place, and a fresh table built from this stub has
 -- to end up with the same member order as one that got there by ALTER.
+-- `email_change_current` (HIL-299) is appended after it for the same reason: the change-email
+-- flow proves the address the account holds now before it mails the new one, and the two
+-- codes carry two letters with two different warnings.
 --
 -- `channel` is the delivery channel a phone code was explicitly sent over (HIL-492),
 -- and it is a free VARCHAR rather than an ENUM because the set of channels is a code
@@ -39,7 +42,7 @@
 CREATE TABLE `hilos_user_verification` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED DEFAULT NULL,
-    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link', 'sms_add', 'email_add', 'magic_link_code') NOT NULL,
+    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link', 'sms_add', 'email_add', 'magic_link_code', 'email_change_current') NOT NULL,
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `channel` VARCHAR(32) DEFAULT NULL,
     `code_hash` VARCHAR(255) DEFAULT NULL,

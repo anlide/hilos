@@ -14,8 +14,11 @@ use Hilos\Auth\Verification\VerificationService;
  * verification foundation (HIL-365) so per-flow leaves write into the existing
  * shape without touching the migration. `register_confirm` verifies a freshly
  * registered email identity (HIL-164); `password_reset` mints a new password on
- * an existing password identity; `email_change` is reserved (schema
- * forward-compat) — its flow lands as the Profile-cluster consumer HIL-298.
+ * an existing password identity; `email_change` mints the code to the NEW address
+ * of the profile change-email flow (HIL-299), and `email_change_current` the code to
+ * the address the account holds now, which the same flow asks for first. Both carry
+ * the owning `user_id` and are checked by {@see VerificationService::verify()} /
+ * {@see VerificationService::matchCode()}.
  * `sms_login` mints a one-time code for phone-identity sign-in (HIL-280) — its
  * `identifier` is a normalized E.164 phone rather than an email, and the code is
  * verified with {@see VerificationService::verifyCode()} (no owning user is known
@@ -55,6 +58,7 @@ final class VerificationType
     public const string MAGIC_LINK_CODE = 'magic_link_code';
     public const string SMS_ADD = 'sms_add';
     public const string EMAIL_ADD = 'email_add';
+    public const string EMAIL_CHANGE_CURRENT = 'email_change_current';
 
     /**
      * Returns the fixed set of verification type values in declaration order.
@@ -72,6 +76,7 @@ final class VerificationType
             self::MAGIC_LINK_CODE,
             self::SMS_ADD,
             self::EMAIL_ADD,
+            self::EMAIL_CHANGE_CURRENT,
         ];
     }
 

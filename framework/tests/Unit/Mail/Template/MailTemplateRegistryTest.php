@@ -8,6 +8,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Mail\EmailContent;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
 use Hilos\Mail\Template\AbstractVerificationCodeMailTemplate;
+use Hilos\Mail\Template\EmailChangedMailTemplate;
 use Hilos\Mail\Template\GenericNotificationMailTemplate;
 use Hilos\Mail\Template\MagicLinkMailTemplate;
 use Hilos\Mail\Template\MailTemplate;
@@ -36,6 +37,7 @@ final class MailTemplateRegistryTest extends TestCase
             MailTemplateCatalogConstants::AUTH_PASSWORD_RESET,
             MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE,
             MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
+            MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
         ] as $key) {
             $content = $registry->render($key, $params, null);
 
@@ -78,6 +80,22 @@ final class MailTemplateRegistryTest extends TestCase
         self::assertSame('Alice sent you a message.', $content->text);
     }
 
+    public function testEmailChangedNoticeNamesBothAddresses(): void
+    {
+        $content = new MailTemplateRegistry()->render(
+            MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
+            [
+                EmailChangedMailTemplate::PARAM_WAS => 'old@example.com',
+                EmailChangedMailTemplate::PARAM_NOW => 'new@example.com',
+            ],
+            null,
+        );
+
+        self::assertSame('Your email address was changed', $content->subject);
+        self::assertStringContainsString('from old@example.com to new@example.com', $content->text);
+        self::assertNull($content->html);
+    }
+
     public function testCatalogDeclaresEveryFrameworkKey(): void
     {
         $catalog = MailTemplateCatalogStub::getCatalog();
@@ -87,11 +105,13 @@ final class MailTemplateRegistryTest extends TestCase
                 MailTemplateCatalogConstants::AUTH_REGISTER_CONFIRM,
                 MailTemplateCatalogConstants::AUTH_PASSWORD_RESET,
                 MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE,
+                MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
                 MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
                 MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
                 MailTemplateCatalogConstants::PROTECTED_MODE_STUCK,
                 MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
+                MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
             ],
             array_keys($catalog),
         );
@@ -104,6 +124,7 @@ final class MailTemplateRegistryTest extends TestCase
         self::assertSame('auth.email_change', MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE);
         self::assertSame('auth.magic_link', MailTemplateCatalogConstants::AUTH_MAGIC_LINK);
         self::assertSame('auth.email_add', MailTemplateCatalogConstants::AUTH_EMAIL_ADD);
+        self::assertSame('auth.email_change_current', MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT);
     }
 
     public function testUnknownKeyThrowsDomainException(): void

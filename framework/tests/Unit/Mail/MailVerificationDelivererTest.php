@@ -96,6 +96,7 @@ final class MailVerificationDelivererTest extends TestCase
             VerificationType::PASSWORD_RESET => MailTemplateCatalogConstants::AUTH_PASSWORD_RESET,
             VerificationType::EMAIL_CHANGE => MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE,
             VerificationType::EMAIL_ADD => MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
+            VerificationType::EMAIL_CHANGE_CURRENT => MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
         ];
 
         foreach ($expected as $type => $templateKey) {

@@ -54,6 +54,7 @@ import {
   profileIdentities,
 } from './profilePage'
 import { type IdentityItem } from './types/lists/IdentityItem'
+import { useEmailChange } from './useEmailChange'
 import { PASSWORD_MODE_ADDED } from '../../auth/passwordSignals'
 
 defineOptions({ name: 'ProfilePage' })
@@ -307,6 +308,38 @@ async function submitSmsConfirm(): Promise<void> {
   }
 }
 
+// Change the account email (HIL-299): one modal walks five steps - a code to the
+// current address, that code, the new address, the code from it, the outcome. The
+// step machine lives in useEmailChange; the Email row that opens it shows only when
+// the account has a verified address, because without one there is no current
+// mailbox to prove (adding an address is the add-password flow above, HIL-406).
+const EMAIL_STEP_LABELS = [
+  'Code to your current address',
+  'Enter the code',
+  'New address',
+  'Code from the new address',
+  'Done',
+]
+// The step that shows the outcome instead of a form.
+const EMAIL_STEP_DONE = 5
+
+const {
+  open: changingEmail,
+  step: emailStep,
+  was: emailWas,
+  currentCode: emailCurrentCode,
+  newEmail: emailNew,
+  newCode: emailNewCode,
+  now: emailNow,
+  error: emailError,
+  loading: emailLoading,
+  canSubmit: emailCanSubmit,
+  asksBeforeClosing: emailAsksBeforeClosing,
+  start: startEmailChange,
+  submit: submitEmailStep,
+  again: changeEmailAgain,
+} = useEmailChange()
+
 // Password (HIL-402): a signed-in user adds or changes their own password. The
 // form mode comes from the loaded identities — Change when a password exists, Add
 // when a proven email exists but no password, otherwise a disabled hint (confirm
@@ -501,10 +534,10 @@ watch(editing, (open) => {
 // line keyed by the block it came from, the way the sign-in card keys its news.
 // The two-step add-password wizard gives one key: its two blocks are two steps of
 // one refusal, and exactly one of them is alive at a time.
-// The rename and add-a-phone refusals are NOT here. They are drawn inside
-// dialogs, and HilosModal is aria-modal: while a dialog is open the page under it
-// is not there for a screen reader to read, so each of those two announces from a
-// region of its own inside its dialog.
+// The rename, add-a-phone and change-email refusals are NOT here. They are drawn
+// inside dialogs, and HilosModal is aria-modal: while a dialog is open the page
+// under it is not there for a screen reader to read, so each of those announces
+// from a region of its own inside its dialog.
 const announcedRefusals = computed(() => {
   const refusals: { key: string; text: string }[] = []
 
@@ -588,6 +621,27 @@ function mergeBoth(): void {
           @click="openEdit"
         >
           Edit
+        </button>
+      </div>
+      <!-- The account's email (HIL-299): the address the change flow proves first,
+      shown only while the account has a verified one. -->
+      <div
+        v-if="password.verifiedEmail"
+        class="card-body d-flex align-items-center justify-content-between gap-3 border-top"
+      >
+        <dl class="row flex-grow-1 mb-0">
+          <dt class="col-sm-3">Email</dt>
+          <dd class="col-sm-9 mb-0" data-id="profile-email">
+            {{ password.verifiedEmail }} · verified
+          </dd>
+        </dl>
+        <button
+          type="button"
+          class="btn btn-outline-primary btn-sm flex-shrink-0"
+          data-id="profile-email-change"
+          @click="startEmailChange(password.verifiedEmail)"
+        >
+          Change
         </button>
       </div>
     </div>
@@ -1087,6 +1141,197 @@ function mergeBoth(): void {
         >
           Add phone
         </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <!-- Change-email wizard (HIL-299): one modal, five steps, the content changing
+    in place - never a second modal on top. Every step is one server-confirmed
+    submit; a refusal stays on the step in the room HilosFormError holds for it.
+    Closing on steps 2 to 4 asks first, because a code is already out; the address
+    moves only on step 4, so a flow abandoned anywhere changes nothing. -->
+    <HilosModal
+      v-model="changingEmail"
+      :title="
+        emailStep === EMAIL_STEP_DONE ? 'Email changed' : 'Change your email'
+      "
+      :confirm-on-close="emailAsksBeforeClosing"
+    >
+      <!-- This dialog's own voice, as for the two dialogs above; one region for
+      all the steps, since only one step is on screen at a time. -->
+      <div
+        class="visually-hidden"
+        role="alert"
+        aria-live="assertive"
+        data-id="profile-email-live-assertive"
+      >
+        {{ emailError }}
+      </div>
+
+      <ol
+        v-if="emailStep !== EMAIL_STEP_DONE"
+        class="list-unstyled d-flex flex-column gap-1 mb-3 small"
+        data-id="profile-email-steps"
+      >
+        <li
+          v-for="(label, index) in EMAIL_STEP_LABELS"
+          :key="label"
+          class="d-flex align-items-center gap-2"
+          :class="
+            index + 1 === emailStep ? 'fw-semibold' : 'text-body-secondary'
+          "
+          :aria-current="index + 1 === emailStep ? 'step' : undefined"
+        >
+          <span
+            class="badge rounded-pill"
+            :class="
+              index + 1 === emailStep ? 'text-bg-primary' : 'text-bg-secondary'
+            "
+            >{{ index + 1 }}</span
+          >
+          <span>{{ label }}</span>
+        </li>
+      </ol>
+
+      <form v-if="emailStep === 1" @submit.prevent="submitEmailStep">
+        <p class="small text-body-secondary mb-0">
+          We will send a code to <strong>{{ emailWas }}</strong> to make sure it
+          is you.
+        </p>
+        <HilosFormError :message="emailError" data-id="profile-email-error" />
+      </form>
+
+      <form v-else-if="emailStep === 2" @submit.prevent="submitEmailStep">
+        <label class="form-label" for="profile-email-code-current">Code</label>
+        <input
+          id="profile-email-code-current"
+          v-model="emailCurrentCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          class="form-control"
+          data-autofocus
+          data-id="profile-email-code-current"
+        />
+        <div class="form-text">Sent to {{ emailWas }}.</div>
+        <HilosFormError :message="emailError" data-id="profile-email-error" />
+      </form>
+
+      <form v-else-if="emailStep === 3" @submit.prevent="submitEmailStep">
+        <label class="form-label" for="profile-email-new">New email</label>
+        <input
+          id="profile-email-new"
+          v-model="emailNew"
+          type="email"
+          autocomplete="email"
+          class="form-control"
+          data-autofocus
+          data-id="profile-email-new"
+        />
+        <div class="form-text">
+          A notice of the change will go to your old address.
+        </div>
+        <HilosFormError :message="emailError" data-id="profile-email-error" />
+      </form>
+
+      <form v-else-if="emailStep === 4" @submit.prevent="submitEmailStep">
+        <label class="form-label" for="profile-email-code-new">Code</label>
+        <input
+          id="profile-email-code-new"
+          v-model="emailNewCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          class="form-control"
+          data-autofocus
+          data-id="profile-email-code-new"
+        />
+        <div class="form-text">Sent to {{ emailNew.trim() }}.</div>
+        <HilosFormError :message="emailError" data-id="profile-email-error" />
+      </form>
+
+      <div v-else class="text-center py-2" data-id="profile-email-outcome">
+        <i
+          class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"
+          aria-hidden="true"
+        ></i>
+        <div class="fw-semibold mb-1">Address changed</div>
+        <p class="small text-body-secondary mb-0">
+          Was <s data-id="profile-email-was">{{ emailWas }}</s
+          >, now <strong data-id="profile-email-now">{{ emailNow }}</strong
+          >. A notice went to both.
+        </p>
+      </div>
+
+      <template #actions="{ requestClose }">
+        <template v-if="emailStep !== EMAIL_STEP_DONE">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-id="profile-email-cancel"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            v-if="emailStep === 1"
+            class="btn-primary"
+            :loading="emailLoading"
+            data-autofocus
+            data-id="profile-email-send-current"
+            @click="submitEmailStep"
+          >
+            Send code
+          </LoadingButton>
+          <LoadingButton
+            v-else-if="emailStep === 2"
+            class="btn-primary"
+            :loading="emailLoading"
+            :disabled="!emailCanSubmit"
+            data-id="profile-email-confirm-current"
+            @click="submitEmailStep"
+          >
+            Continue
+          </LoadingButton>
+          <LoadingButton
+            v-else-if="emailStep === 3"
+            class="btn-primary"
+            :loading="emailLoading"
+            :disabled="!emailCanSubmit"
+            data-id="profile-email-send-new"
+            @click="submitEmailStep"
+          >
+            Send code
+          </LoadingButton>
+          <LoadingButton
+            v-else
+            class="btn-primary"
+            :loading="emailLoading"
+            :disabled="!emailCanSubmit"
+            data-id="profile-email-confirm-new"
+            @click="submitEmailStep"
+          >
+            Change email
+          </LoadingButton>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-id="profile-email-again"
+            @click="changeEmailAgain"
+          >
+            Change again
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-autofocus
+            data-id="profile-email-done"
+            @click="requestClose"
+          >
+            Done
+          </button>
+        </template>
       </template>
     </HilosModal>
   </section>

@@ -16,7 +16,8 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for where a profile submit lands and what still closes it (HIL-771).
  *
  * The seven submits that write a person left {@see ProfilePage} for {@see UsersLibraryAgent},
- * which owns those tables, and the move is made of two declarations that have to hold together:
+ * which owns those tables, and the four of the email change (HIL-299) were born there. Each is
+ * made of two declarations that have to hold together:
  * the name is routed to the library, and the library lists it as needing a session. Either one
  * alone is a defect with no symptom in the other's test - a name routed but not listed opens a
  * profile submit to a guest, because the page level that used to close it does not travel with
@@ -24,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProfileSubmitOwnershipTest extends TestCase
 {
-    /** @var list<string> The submits that write, by wire name - the whole of what moved. */
+    /** @var list<string> The submits that write, by wire name - what moved, and what was added beside it since. */
     private const array MOVED_SUBMITS = [
         ChatSignalConstants::RENAME,
         ChatSignalConstants::UNLINK_IDENTITY,
@@ -33,6 +34,10 @@ final class ProfileSubmitOwnershipTest extends TestCase
         ChatSignalConstants::ADD_SMS_CONFIRM,
         ChatSignalConstants::ADD_PASSWORD_REQUEST,
         ChatSignalConstants::ADD_PASSWORD_CONFIRM,
+        ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST,
+        ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM,
+        ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST,
+        ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM,
     ];
 
     public function testEveryMovedSubmitIsRoutedToTheUsersLibrary(): void

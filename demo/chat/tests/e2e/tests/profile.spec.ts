@@ -1,6 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test'
 
-import { PASSWORD, signUp, uniqueEmail } from '../helpers/session'
+import { waitForMailCode, waitForMailTo } from '../helpers/mail'
+import { PASSWORD, clickSubmit, signUp, uniqueEmail } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 import { modelKey } from '../helpers/model'
 import { dictateModerationVerdict } from '../helpers/moderation'
@@ -198,4 +199,43 @@ test('changes the current user password from the profile (HIL-402)', async ({
   ).toBeVisible()
   await expect(page.getByTestId('profile-set-password-error')).toHaveCount(0)
   await expect(page.getByTestId('profile-password-new')).toHaveValue('')
+})
+
+test('changes the account email in five steps (HIL-299)', async ({ page }) => {
+  // Registration proves the address it was made with, so a fresh account has the
+  // Email row and a current mailbox to prove. Both codes are read from the stand's
+  // mail interceptor, the way a person reads them out of two inboxes.
+  const { email: was } = await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('profile-email')).toContainText(was)
+
+  // Steps 1 and 2: the current address answers for itself first.
+  await page.getByTestId('profile-email-change').click()
+  await clickSubmit(page.getByTestId('profile-email-send-current'))
+  const currentCode = await waitForMailCode(
+    was,
+    'Confirm it is you to change your email address',
+  )
+  await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
+  await clickSubmit(page.getByTestId('profile-email-confirm-current'))
+
+  // Steps 3 and 4: the new address is proven before anything moves.
+  const now = uniqueEmail()
+  await typeInto(page.getByTestId('profile-email-new'), now)
+  await clickSubmit(page.getByTestId('profile-email-send-new'))
+  const newCode = await waitForMailCode(now, 'Confirm your new email address')
+  await typeInto(page.getByTestId('profile-email-code-new'), newCode)
+  await clickSubmit(page.getByTestId('profile-email-confirm-new'))
+
+  // Step 5 says what changed; the card follows over the identities projection.
+  await expect(page.getByTestId('profile-email-was')).toHaveText(was)
+  await expect(page.getByTestId('profile-email-now')).toHaveText(now)
+  await page.getByTestId('profile-email-done').click()
+  await expect(page.getByTestId('modal')).toBeHidden()
+  await expect(page.getByTestId('profile-email')).toContainText(now)
+
+  // The notice went to both mailboxes.
+  await waitForMailTo(was, 'Your email address was changed')
+  await waitForMailTo(now, 'Your email address was changed')
 })

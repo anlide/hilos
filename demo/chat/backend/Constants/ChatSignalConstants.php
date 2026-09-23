@@ -52,6 +52,18 @@ final class ChatSignalConstants
     /** @var string Client → server: submit the email code and new password to add a password to the signed-in user (authenticated, HIL-406) */
     public const string ADD_PASSWORD_CONFIRM = 'profile_add_password_confirm';
 
+    /** @var string Client → server: send a code to the account's current email address to start changing it (authenticated, HIL-299) */
+    public const string CHANGE_EMAIL_CURRENT_REQUEST = 'profile_change_email_current_request';
+
+    /** @var string Client → server: check the code from the current address without spending it (authenticated, HIL-299) */
+    public const string CHANGE_EMAIL_CURRENT_CONFIRM = 'profile_change_email_current_confirm';
+
+    /** @var string Client → server: send a code to the new email address, carrying the current address's code (authenticated, HIL-299) */
+    public const string CHANGE_EMAIL_NEW_REQUEST = 'profile_change_email_new_request';
+
+    /** @var string Client → server: prove the new address and move the account onto it (authenticated, HIL-299) */
+    public const string CHANGE_EMAIL_NEW_CONFIRM = 'profile_change_email_new_confirm';
+
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 

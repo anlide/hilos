@@ -7,6 +7,11 @@ namespace Hilos\Tests\Integration;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -472,6 +477,142 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     }
 
     /**
+     * Marking a row verified is announced like any other write to it (HIL-299).
+     *
+     * Registration creates the password row unproven and flips it a moment later. The
+     * creation is announced, so a flip that is not leaves every other reader - the worker
+     * that draws the profile among them - holding the row as unproven for good: the
+     * account shows "Unverified" and no Email row, although the table says otherwise.
+     *
+     * @throws HilosException When an identity query or write fails
+     */
+    public function testMarkingARowVerifiedIsAnnouncedToItsReaders(): void
+    {
+        $identity = $this->identities()->createPasswordIdentity($this->nextUserId(), $this->uniqueEmail(), self::PASSWORD);
+
+        /** @var list<SourceChange> $announced */
+        $announced = [];
+        SourceChangeBus::subscribe(new class ($announced) implements SourceChangeSubscriberInterface {
+            /**
+             * @param list<SourceChange> $announced Sink the case reads
+             */
+            public function __construct(private array &$announced)
+            {
+            }
+
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                $this->announced[] = $change;
+            }
+        });
+
+        try {
+            $identity->markVerified();
+        } finally {
+            SourceChangeBus::reset();
+        }
+
+        $updates = array_values(array_filter(
+            $announced,
+            static fn (SourceChange $change): bool => $change->mutationType === TableMutationType::Update
+                && $change->sourceKey === HilosDbContext::identities
+                && $change->sourceId === (string)$identity->id,
+        ));
+        self::assertCount(1, $updates, 'the flip to verified must reach the readers of the row');
+        self::assertTrue((bool)($updates[0]->row[EntityIdentity::verified] ?? false));
+    }
+
+    /**
+     * An email change moves the password row and the link row of that address, both proven (HIL-299).
+     *
+     * The password row starts unproven on purpose: the new address has just answered its
+     * code, so whatever the old row said about the old address, the new one is proven.
+     *
+     * @throws HilosException When an identity query or write fails
+     */
+    public function testAnEmailChangeMovesThePasswordAndLinkRowsOfThatAddressAsProven(): void
+    {
+        $userId = $this->nextUserId();
+        $from = $this->uniqueEmail();
+        $to = $this->uniqueEmail();
+        $this->identities()->createPasswordIdentity($userId, $from, self::PASSWORD);
+        $this->seedMagicLinkRow($userId, $from);
+
+        self::assertSame(2, $this->identities()->changeEmail($userId, $from, $to));
+
+        self::assertSame(
+            [
+                [IdentityType::PASSWORD, $to, true],
+                [IdentityType::MAGIC_LINK, $to, true],
+            ],
+            self::rowsOf($userId),
+        );
+        self::assertTrue($this->identities()->findPasswordByUser($userId)?->verifyPassword(self::PASSWORD));
+    }
+
+    /**
+     * Rows of another address, and the rows that are not an email at all, stay as they were.
+     *
+     * @throws HilosException When an identity query or write fails
+     */
+    public function testAnEmailChangeLeavesOtherAddressesAndNonEmailRowsAlone(): void
+    {
+        $userId = $this->nextUserId();
+        $from = $this->uniqueEmail();
+        $to = $this->uniqueEmail();
+        $other = $this->uniqueEmail();
+        $this->seedMagicLinkRow($userId, $from);
+        $this->seedMagicLinkRow($userId, $other);
+        $this->seedRow($userId, '+48500100200', IdentityType::SMS, null);
+        $this->seedRow($userId, 'google:' . $from, IdentityType::OAUTH, null);
+
+        self::assertSame(1, $this->identities()->changeEmail($userId, $from, $to));
+
+        self::assertSame(
+            [
+                [IdentityType::MAGIC_LINK, $to, true],
+                [IdentityType::MAGIC_LINK, $other, true],
+                [IdentityType::SMS, '+48500100200', true],
+                [IdentityType::OAUTH, 'google:' . $from, true],
+            ],
+            self::rowsOf($userId),
+        );
+    }
+
+    /**
+     * An address another account holds is refused before any row of this account is written.
+     *
+     * The other account holds the address only as a link row, so the password row - checked
+     * first and free of any clash of its own - would already be rewritten by a method that
+     * wrote as it checked.
+     *
+     * @throws HilosException When an identity query or write fails
+     */
+    public function testAnAddressAnotherAccountHoldsIsRefusedBeforeAnyRowIsWritten(): void
+    {
+        $userId = $this->nextUserId();
+        $from = $this->uniqueEmail();
+        $to = $this->uniqueEmail();
+        $this->seedPasswordRow($userId, $from);
+        $this->seedMagicLinkRow($userId, $from);
+        $this->seedMagicLinkRow($this->nextUserId(), $to);
+
+        try {
+            $this->identities()->changeEmail($userId, $from, $to);
+            self::fail('an address another account holds must be refused');
+        } catch (DuplicateValueException) {
+        }
+
+        self::assertSame(
+            [
+                [IdentityType::PASSWORD, $from, true],
+                [IdentityType::MAGIC_LINK, $from, true],
+            ],
+            self::rowsOf($userId),
+        );
+    }
+
+    /**
      * @return string Everything written to the log so far in this case
      */
     private function log(): string
@@ -499,6 +640,31 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
         $secret = $row[EntityIdentity::secret] ?? null;
 
         return is_string($secret) ? $secret : null;
+    }
+
+    /**
+     * Reads an account's rows straight from the table, past the object cache the write went through.
+     *
+     * @param int $userId Owning user id
+     * @return list<array{0: string, 1: string, 2: bool}> Type, identifier and proven flag of each row, by id
+     * @throws HilosException When the query fails
+     */
+    private static function rowsOf(int $userId): array
+    {
+        Database::sql(
+            'SELECT `' . EntityIdentity::type . '`, `' . EntityIdentity::identifier . '`, `' . EntityIdentity::verified . '`'
+            . ' FROM `' . EntityIdentity::_table . '` WHERE `' . EntityIdentity::user_id . '` = ? ORDER BY `' . EntityIdentity::id . '`',
+            [$userId],
+        );
+
+        return array_map(
+            static fn (array $row): array => [
+                (string)$row[EntityIdentity::type],
+                (string)$row[EntityIdentity::identifier],
+                (bool)$row[EntityIdentity::verified],
+            ],
+            Database::rows(),
+        );
     }
 
     /**

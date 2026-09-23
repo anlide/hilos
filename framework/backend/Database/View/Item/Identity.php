@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
@@ -91,9 +95,14 @@ final class Identity extends DbItem
     /**
      * Marks this identity verified (register-confirm write path).
      *
-     * Delegates to the object layer's verify-flip primitive.
+     * Delegates to the object layer's verify-flip primitive, which announces the flip to
+     * every reader of the row (HIL-299).
      *
      * @throws DatabaseException When the verified update query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws CreateNotAllowedException When the sync would add the row rather than update it, and nothing here may
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
     public function markVerified(): void
     {

@@ -14,9 +14,13 @@ use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeCurrentCodeActionDTO;
+use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeNewCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeCurrentCodeActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeNewCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
@@ -25,6 +29,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\PasswordPolicy;
@@ -54,9 +59,15 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
+use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Mail\HilosMailer;
+use Hilos\Mail\Template\EmailChangedMailTemplate;
+use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Users\DTO\AdminRenameSignalData;
@@ -131,7 +142,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     /**
      * The chat's own profile submits, on top of every sign-in command the framework declares.
      *
-     * All seven write a person or their identities, which is what moved them off
+     * All eleven write a person or their identities, which is what moved them off
      * {@see ProfilePage} (HIL-771). The names are unchanged: an action's name IS its address,
      * so declaring it here is the whole of the move, and `hilos_link_oauth_start` is absent
      * because starting a provider link writes nothing and stayed on the page.
@@ -145,10 +156,14 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
         ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
         ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
+        ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST => RequestEmailChangeCurrentCodeActionDTO::class,
+        ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM => ConfirmEmailChangeCurrentCodeActionDTO::class,
+        ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST => RequestEmailChangeNewCodeActionDTO::class,
+        ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM => ConfirmEmailChangeNewCodeActionDTO::class,
     ];
 
     /**
-     * All seven, because all seven act on the submitter's own account.
+     * All eleven, because all eleven act on the submitter's own account.
      *
      * The page they came off was closed by {@see PageAccessLevel::AUTHENTICATED}, which gated
      * its actions along with the subscription. An agent action carries no page level to inherit,
@@ -164,6 +179,10 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         ChatSignalConstants::ADD_SMS_CONFIRM,
         ChatSignalConstants::ADD_PASSWORD_REQUEST,
         ChatSignalConstants::ADD_PASSWORD_CONFIRM,
+        ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST,
+        ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM,
+        ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST,
+        ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM,
     ];
 
     /**
@@ -189,9 +208,18 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     ];
 
     /**
+     * Refusal of an email-change step whose proof of the current address is gone (HIL-299).
+     *
+     * The proof is the unspent code of the current address, and it dies three ways: its
+     * fifteen minutes ran out, another tab spent it, or the account's address already moved.
+     * None of them is a typo the person can fix on the spot, so the answer is to start over.
+     */
+    private const string EMAIL_CHANGE_RESTART = 'Your confirmation has expired. Close this window and start again.';
+
+    /**
      * Runs one of the chat's own profile submits, or hands the name back to the framework.
      *
-     * None of the seven answers with a reply: each writes, and the browser learns of it from the
+     * None of the eleven answers with a reply: each writes, and the browser learns of it from the
      * projection that re-emits or from a signal fanned to the person's own sockets - exactly as
      * it did while these were page actions. The refusals are the same objects thrown in the same
      * order, so a bad payload reads the same on the client too.
@@ -263,6 +291,38 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
                     throw new InvalidActionPayloadException($action, ConfirmAddPasswordActionDTO::class, $dto);
                 }
                 $this->confirmAddPassword($acceptKey, $dto);
+
+                return null;
+
+            case ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST:
+                if (!$dto instanceof RequestEmailChangeCurrentCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestEmailChangeCurrentCodeActionDTO::class, $dto);
+                }
+                $this->requestEmailChangeCurrentCode($acceptKey);
+
+                return null;
+
+            case ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM:
+                if (!$dto instanceof ConfirmEmailChangeCurrentCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmEmailChangeCurrentCodeActionDTO::class, $dto);
+                }
+                $this->confirmEmailChangeCurrentCode($acceptKey, $dto);
+
+                return null;
+
+            case ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST:
+                if (!$dto instanceof RequestEmailChangeNewCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestEmailChangeNewCodeActionDTO::class, $dto);
+                }
+                $this->requestEmailChangeNewCode($acceptKey, $dto);
+
+                return null;
+
+            case ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM:
+                if (!$dto instanceof ConfirmEmailChangeNewCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmEmailChangeNewCodeActionDTO::class, $dto);
+                }
+                $this->confirmEmailChangeNewCode($acceptKey, $dto);
 
                 return null;
 
@@ -736,6 +796,230 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         $this->fanPasswordUpdated($userId, PasswordUpdatedSignalData::MODE_ADDED);
+    }
+
+    /**
+     * Step 1 of changing the account email: mails a code to the address it holds now (HIL-299).
+     *
+     * Proving the current mailbox comes first because the flow runs inside a signed-in
+     * session, and a session left open is exactly where somebody who is not the owner could
+     * start it. The address is read from the account, never from the client. The send gate's
+     * cooldown is a silent success - the code already waiting in the mailbox is the one to
+     * type - while the window cap is refused out loud, because the modal has a place for it.
+     *
+     * @param string $acceptKey Accept key
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the account has no verified email or the send cap is reached
+     * @throws EmptyValueException When the current address is empty
+     * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws HilosException When a verification or identity query fails
+     */
+    private function requestEmailChangeCurrentCode(string $acceptKey): void
+    {
+        $userId = $this->requireUserId($acceptKey);
+        $current = $this->requireCurrentEmail($userId);
+
+        if (new VerificationService()->issue(VerificationType::EMAIL_CHANGE_CURRENT, $current, $userId)->capReached) {
+            throw new ValidationException(AuthMessages::SEND_CAP);
+        }
+    }
+
+    /**
+     * Step 2 of changing the account email: checks the current address's code WITHOUT spending it (HIL-299).
+     *
+     * The server keeps nothing between the steps: the unspent code is itself the proof, the
+     * modal carries it into steps 3 and 4, and it is spent only when the address moves. A
+     * wrong code still costs an attempt, as it does everywhere, and a wrong and an expired
+     * one are answered alike.
+     *
+     * @param string $acceptKey Accept key
+     * @param ConfirmEmailChangeCurrentCodeActionDTO $dto Current-address confirm DTO (code)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the account has no verified email or the code does not match
+     * @throws HilosException When a verification or identity query fails
+     */
+    private function confirmEmailChangeCurrentCode(string $acceptKey, ConfirmEmailChangeCurrentCodeActionDTO $dto): void
+    {
+        $userId = $this->requireUserId($acceptKey);
+        $current = $this->requireCurrentEmail($userId);
+
+        if (!new VerificationService()->matchCode(VerificationType::EMAIL_CHANGE_CURRENT, $current, $dto->code)) {
+            throw new ValidationException(AuthMessages::INVALID_CODE);
+        }
+    }
+
+    /**
+     * Step 3 of changing the account email: mails a code to the new address (HIL-299).
+     *
+     * The new address is judged before anything else, and none of those refusals spends a
+     * code: a malformed address, the account's own, and one another account holds - which is
+     * never mailed at all (HIL-406: a stranger's address is not written to). The proof of the
+     * current address is checked next without spending it, and its absence asks the person to
+     * start over. Only then does the new address get the existing email-change code letter.
+     *
+     * @param string $acceptKey Accept key
+     * @param RequestEmailChangeNewCodeActionDTO $dto New-address request DTO (current code, email)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the address is refused, the proof is gone, or the send cap is reached
+     * @throws EmptyValueException When the new address is empty
+     * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws HilosException When a verification or identity query fails
+     */
+    private function requestEmailChangeNewCode(string $acceptKey, RequestEmailChangeNewCodeActionDTO $dto): void
+    {
+        $userId = $this->requireUserId($acceptKey);
+        $current = $this->requireCurrentEmail($userId);
+        $email = $this->acceptNewEmail($userId, $current, $dto->email);
+        $this->requireCurrentEmailProof($current, $dto->currentCode);
+
+        if (new VerificationService()->issue(VerificationType::EMAIL_CHANGE, $email, $userId)->capReached) {
+            throw new ValidationException(AuthMessages::SEND_CAP);
+        }
+    }
+
+    /**
+     * Step 4 of changing the account email: proves the new address and moves the account onto it (HIL-299).
+     *
+     * The order is the contract. The address checks of step 3 run again - the address may have
+     * gone to somebody else in between - and the proof of the current address is checked, both
+     * spending nothing. The new address's code is spent next, so a typo in it leaves the proof
+     * alive to try again. The proof is spent after it, and losing that race to another tab of
+     * the same account is the start-over answer. Then one transaction moves every password and
+     * sign-in-link row of the old address, and a unique-key clash there rolls it back.
+     *
+     * After the commit a notice goes to BOTH addresses, straight to each rather than through
+     * the notification system, which resolves an address at delivery and would reach only the
+     * new one. The change has happened by then, so a notice that cannot be queued is logged
+     * rather than turned into a refusal the modal would show for a change it did make.
+     *
+     * @param string $acceptKey Accept key
+     * @param ConfirmEmailChangeNewCodeActionDTO $dto New-address confirm DTO (current code, email, code)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the address is refused, a code does not match, or the proof is gone
+     * @throws HilosException When a verification, identity, or transaction query fails
+     */
+    private function confirmEmailChangeNewCode(string $acceptKey, ConfirmEmailChangeNewCodeActionDTO $dto): void
+    {
+        $userId = $this->requireUserId($acceptKey);
+        $current = $this->requireCurrentEmail($userId);
+        $email = $this->acceptNewEmail($userId, $current, $dto->email);
+        $this->requireCurrentEmailProof($current, $dto->currentCode);
+
+        $verifications = new VerificationService();
+        if ($verifications->verify(VerificationType::EMAIL_CHANGE, $email, $dto->code) !== $userId) {
+            throw new ValidationException(AuthMessages::INVALID_CODE);
+        }
+
+        if (!$verifications->consumeActive(VerificationType::EMAIL_CHANGE_CURRENT, $current)) {
+            throw new ValidationException(self::EMAIL_CHANGE_RESTART);
+        }
+
+        Database::transactionStart();
+        try {
+            Hilos::$db->identities->changeEmail($userId, $current, $email);
+            Database::transactionCommit();
+        } catch (DuplicateValueException | DuplicateEntryException) {
+            $this->rollBackEmailChange();
+            throw new ValidationException('That email is already in use');
+        } catch (HilosException $failure) {
+            $this->rollBackEmailChange();
+            throw $failure;
+        }
+
+        foreach ([$current, $email] as $address) {
+            try {
+                Hilos::$mail?->send(new MailSendSignalData(
+                    to: $address,
+                    shardKey: HilosMailer::shardKeyForAddress($address),
+                    templateKey: MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
+                    params: [EmailChangedMailTemplate::PARAM_WAS => $current, EmailChangedMailTemplate::PARAM_NOW => $email],
+                ));
+            } catch (HilosException $failure) {
+                $this->logAgentError("Email change notice for user {$userId} could not be queued: {$failure->getMessage()}");
+            }
+        }
+    }
+
+    /**
+     * Reads the address an email change starts from, or refuses the change.
+     *
+     * The same first verified email the profile draws in its Email row; an account without
+     * one has no current mailbox to prove, and adding an address is a different flow.
+     *
+     * @param int $userId Session user id
+     * @return string Lowercased current address
+     * @throws ValidationException When the account has no verified email
+     * @throws HilosException When the identity query fails
+     */
+    private function requireCurrentEmail(int $userId): string
+    {
+        $current = Hilos::$db->identities->findVerifiedEmailByUser($userId);
+        if ($current === null) {
+            throw new ValidationException('Confirm an email address first');
+        }
+
+        return $current;
+    }
+
+    /**
+     * Normalizes the new address of an email change and refuses one it cannot move to.
+     *
+     * Nothing here spends a code: none of these answers could have been changed by one.
+     *
+     * @param int $userId Session user id
+     * @param string $current Lowercased current address
+     * @param string $submitted Submitted new address (trimmed)
+     * @return string Lowercased new address
+     * @throws ValidationException When the address is malformed, already the account's, or another account's
+     * @throws HilosException When the identity query fails
+     */
+    private function acceptNewEmail(int $userId, string $current, string $submitted): string
+    {
+        $email = strtolower($submitted);
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            throw new ValidationException('Enter a valid email address');
+        }
+
+        $ownerId = Hilos::$db->identities->findAccountIdByEmail($email);
+        if ($email === $current || $ownerId === $userId) {
+            throw new ValidationException('That is already your address');
+        }
+        if ($ownerId !== null) {
+            throw new ValidationException('That email is already in use');
+        }
+
+        return $email;
+    }
+
+    /**
+     * Checks the proof of the current address a later step carries, without spending it.
+     *
+     * @param string $current Lowercased current address
+     * @param string $code Code of the current address proven on step 2
+     * @throws ValidationException When the proof is no longer alive or does not match
+     * @throws HilosException When a verification query fails
+     */
+    private function requireCurrentEmailProof(string $current, string $code): void
+    {
+        $verifications = new VerificationService();
+        if (
+            !$verifications->hasActive(VerificationType::EMAIL_CHANGE_CURRENT, $current)
+            || !$verifications->matchCode(VerificationType::EMAIL_CHANGE_CURRENT, $current, $code)
+        ) {
+            throw new ValidationException(self::EMAIL_CHANGE_RESTART);
+        }
+    }
+
+    /**
+     * Rolls back a failed email change without letting the cleanup replace the failure.
+     */
+    private function rollBackEmailChange(): void
+    {
+        try {
+            Database::transactionRollback();
+        } catch (HilosException) {
+            // Reporting the cleanup would replace the failure the caller is owed
+        }
     }
 
     /**

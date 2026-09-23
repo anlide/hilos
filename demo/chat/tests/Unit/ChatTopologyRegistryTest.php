@@ -17,9 +17,13 @@ use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeCurrentCodeActionDTO;
+use Demo\Chat\Pages\DTO\Profile\ConfirmEmailChangeNewCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeCurrentCodeActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeNewCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
@@ -670,6 +674,10 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_SMS_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::ADD_PASSWORD_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LOGOUT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_BROWSER_ERASE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -728,6 +736,10 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
             ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
+            ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST => RequestEmailChangeCurrentCodeActionDTO::class,
+            ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM => ConfirmEmailChangeCurrentCodeActionDTO::class,
+            ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST => RequestEmailChangeNewCodeActionDTO::class,
+            ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM => ConfirmEmailChangeNewCodeActionDTO::class,
             HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
             HilosSignalConstants::HILOS_BROWSER_ERASE => BrowserEraseActionDTO::class,
             HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,

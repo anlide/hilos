@@ -23,6 +23,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
+use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -445,6 +446,61 @@ final class Identities extends Objects
 
         $this->objects[$identityId]->delete();
         unset($this[$identityId]);
+    }
+
+    /**
+     * Moves an account's email sign-in rows from one address to another (HIL-299).
+     *
+     * The write of the profile change-email flow, reached only after both addresses
+     * were proven by a code: every `password` and `magic_link` row of the account that
+     * carries `$from` gets `$to` and is marked verified, because the new address has
+     * just answered its code. Rows of another address of the same account, and the
+     * `sms`/`oauth`/`passkey` rows, are not touched. Each write goes through the object,
+     * so a DB_SYNC event re-emits the profile's sign-in methods to every tab of the owner.
+     *
+     * The address is checked against the other accounts BEFORE anything is written, per
+     * type the account actually rewrites, so a refusal leaves every row as it was. The
+     * check is not the guarantee: a race between it and the write lands on the unique
+     * (type, identifier) key, and that failure is left to the caller, whose transaction
+     * rolls back the rows written before it. The method opens no transaction of its own.
+     *
+     * @param int $userId Owning user id (session user)
+     * @param string $from Lowercased address the account holds now
+     * @param string $to Lowercased address it moves to
+     * @return int Number of rows rewritten
+     * @throws DuplicateValueException When another account holds `$to` on a type this account rewrites
+     * @throws DuplicateEntryException When another row takes `$to` between the check and the write
+     * @throws DatabaseException If a lookup or update query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function changeEmail(int $userId, string $from, string $to): int
+    {
+        $rows = [];
+        foreach ($this->listByUser($userId) as $identity) {
+            if (
+                $identity->identifier === $from
+                && in_array($identity->type, [IdentityType::PASSWORD, IdentityType::MAGIC_LINK], true)
+            ) {
+                $rows[] = $identity;
+            }
+        }
+
+        foreach ($rows as $identity) {
+            $holder = $this->findByIdentity($identity->type, $to);
+            if ($holder !== null && $holder->userId !== $userId) {
+                throw new DuplicateValueException('email already used');
+            }
+        }
+
+        foreach ($rows as $identity) {
+            $identity->identifier = $to;
+            $identity->verified = true;
+            $identity->sync();
+        }
+
+        return count($rows);
     }
 
     /**

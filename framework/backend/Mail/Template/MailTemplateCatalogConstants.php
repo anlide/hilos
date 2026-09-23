@@ -30,6 +30,9 @@ final class MailTemplateCatalogConstants
     /** Template key: confirm a new email address for an existing user. */
     public const string AUTH_EMAIL_CHANGE = 'auth.' . VerificationType::EMAIL_CHANGE;
 
+    /** Template key: confirm it is the owner of the address on file who asks to change it. */
+    public const string AUTH_EMAIL_CHANGE_CURRENT = 'auth.' . VerificationType::EMAIL_CHANGE_CURRENT;
+
     /** Template key: a one-time passwordless sign-in link. */
     public const string AUTH_MAGIC_LINK = 'auth.' . VerificationType::MAGIC_LINK;
 
@@ -50,4 +53,12 @@ final class MailTemplateCatalogConstants
 
     /** Template key: the freeze an alert was raised about has been lifted (HIL-482). */
     public const string PROTECTED_MODE_CLEARED = 'protected-mode.cleared';
+
+    /**
+     * Template key: the account email moved from one address to another (HIL-299).
+     *
+     * A notice rather than a code letter, so the `'auth.' . $type` rule does not reach it: it
+     * is sent straight to the old and the new address, never through a verification type.
+     */
+    public const string ACCOUNT_EMAIL_CHANGED = 'account.email-changed';
 }

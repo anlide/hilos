@@ -25,6 +25,7 @@ final class VerificationTypeTest extends TestCase
         self::assertSame('magic_link_code', VerificationType::MAGIC_LINK_CODE);
         self::assertSame('sms_add', VerificationType::SMS_ADD);
         self::assertSame('email_add', VerificationType::EMAIL_ADD);
+        self::assertSame('email_change_current', VerificationType::EMAIL_CHANGE_CURRENT);
     }
 
     public function testValuesAreDistinct(): void
@@ -38,6 +39,7 @@ final class VerificationTypeTest extends TestCase
             VerificationType::MAGIC_LINK_CODE,
             VerificationType::SMS_ADD,
             VerificationType::EMAIL_ADD,
+            VerificationType::EMAIL_CHANGE_CURRENT,
         ];
 
         self::assertSame($values, array_values(array_unique($values)));
@@ -55,6 +57,7 @@ final class VerificationTypeTest extends TestCase
                 VerificationType::MAGIC_LINK_CODE,
                 VerificationType::SMS_ADD,
                 VerificationType::EMAIL_ADD,
+                VerificationType::EMAIL_CHANGE_CURRENT,
             ],
             VerificationType::values(),
         );
@@ -88,6 +91,7 @@ final class VerificationTypeTest extends TestCase
         self::assertFalse(VerificationType::isSms(VerificationType::MAGIC_LINK));
         self::assertFalse(VerificationType::isSms(VerificationType::MAGIC_LINK_CODE));
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_ADD));
+        self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_CHANGE_CURRENT));
     }
 
     public function testIsSmsRejectsUnknownAndEmptyType(): void

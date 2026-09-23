@@ -33,6 +33,9 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => EmailChangeMailTemplate::class,
             ],
+            MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => EmailChangeCurrentMailTemplate::class,
+            ],
             MailTemplateCatalogConstants::AUTH_MAGIC_LINK => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => MagicLinkMailTemplate::class,
             ],
@@ -47,6 +50,9 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             ],
             MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeClearedMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => EmailChangedMailTemplate::class,
             ],
         ];
     }

@@ -5,7 +5,11 @@
 // comes back as a framework action_error (the page no longer sends a bespoke
 // ack), handled by the core ActionErrorStore; success is state-driven — the
 // committed name arrives over the self-connection data (profilePage.ts).
-import { ActionError, type ProjectSignal, type ReadonlySignal } from '@hilos/core'
+import {
+  ActionError,
+  type ProjectSignal,
+  type ReadonlySignal,
+} from '@hilos/core'
 
 import {
   PASSWORD_UPDATED_SIGNAL,
@@ -125,7 +129,9 @@ const ADD_SMS_CONFIRM_ACTION = 'profile_add_sms_confirm'
  *
  * @param phone The phone number to attach.
  */
-export async function sendAddSmsRequest(phone: string): Promise<WizardStepOutcome> {
+export async function sendAddSmsRequest(
+  phone: string,
+): Promise<WizardStepOutcome> {
   return dispatchWizardStep(ADD_SMS_REQUEST_ACTION, { phone })
 }
 
@@ -186,7 +192,88 @@ export async function sendAddPasswordConfirm(
   code: string,
   newPassword: string,
 ): Promise<WizardStepOutcome> {
-  return dispatchWizardStep(ADD_PASSWORD_CONFIRM_ACTION, { email, code, newPassword })
+  return dispatchWizardStep(ADD_PASSWORD_CONFIRM_ACTION, {
+    email,
+    code,
+    newPassword,
+  })
+}
+
+/** Backend action name routed to the users library (PHP `ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST`). */
+const CHANGE_EMAIL_CURRENT_REQUEST_ACTION =
+  'profile_change_email_current_request'
+
+/** Backend action name routed to the users library (PHP `ChatSignalConstants::CHANGE_EMAIL_CURRENT_CONFIRM`). */
+const CHANGE_EMAIL_CURRENT_CONFIRM_ACTION =
+  'profile_change_email_current_confirm'
+
+/** Backend action name routed to the users library (PHP `ChatSignalConstants::CHANGE_EMAIL_NEW_REQUEST`). */
+const CHANGE_EMAIL_NEW_REQUEST_ACTION = 'profile_change_email_new_request'
+
+/** Backend action name routed to the users library (PHP `ChatSignalConstants::CHANGE_EMAIL_NEW_CONFIRM`). */
+const CHANGE_EMAIL_NEW_CONFIRM_ACTION = 'profile_change_email_new_confirm'
+
+/**
+ * Step 1 of changing the account email: ask for a code to the address the account
+ * holds now (HIL-299). The payload is empty on purpose — the server reads the address
+ * from the account. `ok` means "advance to the code step"; a repeat pressed inside the
+ * resend cooldown is a silent success, while the send cap rejects with its reason.
+ */
+export async function sendEmailChangeCurrentRequest(): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(CHANGE_EMAIL_CURRENT_REQUEST_ACTION, {})
+}
+
+/**
+ * Step 2 of changing the account email: check the code from the current address
+ * (HIL-299). The server does not spend it — the modal keeps it and sends it again
+ * with steps 3 and 4 as the proof that this flow already answered for the mailbox.
+ *
+ * @param code The code the current address received.
+ */
+export async function sendEmailChangeCurrentConfirm(
+  code: string,
+): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(CHANGE_EMAIL_CURRENT_CONFIRM_ACTION, { code })
+}
+
+/**
+ * Step 3 of changing the account email: ask for a code to the new address (HIL-299).
+ * A malformed address, the account's own, another account's, or a proof that died
+ * meanwhile rejects with its inline reason and mails nothing.
+ *
+ * @param currentCode The current address's code proven on step 2.
+ * @param email The new address.
+ */
+export async function sendEmailChangeNewRequest(
+  currentCode: string,
+  email: string,
+): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(CHANGE_EMAIL_NEW_REQUEST_ACTION, {
+    currentCode,
+    email,
+  })
+}
+
+/**
+ * Step 4 of changing the account email: prove the new address and move the account
+ * onto it (HIL-299). On `::success` the address has moved and the identities
+ * projection re-emits it to every tab; a wrong code keeps the proof alive for a
+ * retry, and a lost race asks to start again.
+ *
+ * @param currentCode The current address's code proven on step 2.
+ * @param email The new address.
+ * @param code The code the new address received.
+ */
+export async function sendEmailChangeNewConfirm(
+  currentCode: string,
+  email: string,
+  code: string,
+): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(CHANGE_EMAIL_NEW_CONFIRM_ACTION, {
+    currentCode,
+    email,
+    code,
+  })
 }
 
 /**

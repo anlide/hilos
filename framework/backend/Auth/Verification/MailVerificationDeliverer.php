@@ -87,6 +87,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
             VerificationType::REGISTER_CONFIRM => MailTemplateCatalogConstants::AUTH_REGISTER_CONFIRM,
             VerificationType::PASSWORD_RESET => MailTemplateCatalogConstants::AUTH_PASSWORD_RESET,
             VerificationType::EMAIL_CHANGE => MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE,
+            VerificationType::EMAIL_CHANGE_CURRENT => MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
             VerificationType::MAGIC_LINK => MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
             VerificationType::EMAIL_ADD => MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
             default => null,

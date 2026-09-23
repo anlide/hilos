@@ -15,6 +15,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -409,6 +410,8 @@ final class RegistrationReservationService
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
      * @throws EmptyValueException When the reservation holds an empty identifier
      * @throws DatabaseException When an identity or reservation query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the identity's store or update announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write the identity row
      * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
     private function land(

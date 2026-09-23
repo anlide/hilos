@@ -14,6 +14,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -488,6 +489,30 @@ final class Identities extends DbCollection
     public function deleteIdentity(int $userId, int $identityId): void
     {
         $this->objectCollection->deleteIdentity($userId, $identityId);
+    }
+
+    /**
+     * Moves an account's email sign-in rows from one address to another (HIL-299).
+     *
+     * Profile change-email write path: delegates to the object collection's
+     * {@see ObjectIdentities::changeEmail()} primitive, which owns the other-account
+     * check and the rewrite of every `password` and `magic_link` row carrying `$from`.
+     * The caller holds the transaction.
+     *
+     * @param int $userId Owning user id (session user)
+     * @param string $from Lowercased address the account holds now
+     * @param string $to Lowercased address it moves to
+     * @return int Number of rows rewritten
+     * @throws DuplicateValueException When another account holds `$to` on a type this account rewrites
+     * @throws DuplicateEntryException When another row takes `$to` between the check and the write
+     * @throws DatabaseException On database error while rewriting the identities
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function changeEmail(int $userId, string $from, string $to): int
+    {
+        return $this->objectCollection->changeEmail($userId, $from, $to);
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Mail\Template;
 
 use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\Mail\Template\AbstractVerificationCodeMailTemplate;
+use Hilos\Mail\Template\EmailChangedMailTemplate;
 use Hilos\Mail\Template\GenericNotificationMailTemplate;
 use Hilos\Mail\Template\MagicLinkMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
@@ -53,6 +54,17 @@ final class MailTemplateParamRefusalTest extends TestCase
             'notification without a title' => [
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
                 [GenericNotificationMailTemplate::PARAM_BODY => 'body only'],
+            ],
+            'email change notice without the old address' => [
+                MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
+                [EmailChangedMailTemplate::PARAM_NOW => 'new@example.com'],
+            ],
+            'email change notice with a blank new address' => [
+                MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
+                [
+                    EmailChangedMailTemplate::PARAM_WAS => 'old@example.com',
+                    EmailChangedMailTemplate::PARAM_NOW => '',
+                ],
             ],
         ];
     }
