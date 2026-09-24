@@ -131,7 +131,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     Authentication step the session stands on, or null when it stands on none
      * @param ?array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time
      *     code to, or null before the session context is stamped
-     * @param ?list<array{key: string, name: ?string}> $authMethods Enabled sign-in methods in button order,
+     * @param ?list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled sign-in methods in button order,
      *     or null before the session context is stamped
      */
     public function __construct(
@@ -190,7 +190,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     channel: ?string, expiresAt: ?int, code: ?string} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
-     * @param list<array{key: string, name: ?string}> $authMethods Enabled sign-in methods in button order
+     * @param list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled sign-in methods in button order
      * @return self The same response carrying that session context
      */
     public function withSessionContext(int $serverTimeMs, ?array $pendingAuthStep, array $codeDelivery, array $authMethods): self
@@ -368,7 +368,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * entry by entry the way the frame that later replaces it is ({@see AuthMethodsSignalData}).
      *
      * @param array<string, mixed> $section Plain data section of the response
-     * @return ?list<array{key: string, name: ?string}> Methods in button order, or null when absent
+     * @return ?list<array{key: string, name: ?string, ready: bool}> Methods in button order, or null when absent
      * @throws InvalidFormatException When a present entry is not a map or lacks its key
      */
     private static function readAuthMethods(array $section): ?array

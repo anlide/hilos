@@ -386,9 +386,10 @@ export type AuthSubmitAction = 'submit' | 'resend' | 'finish_without_password'
 /** Wiring for {@link createAuthFlow}. */
 export interface AuthFlowOptions {
   /**
-   * The installation's enabled sign-in methods, live and in button order
-   * (HIL-427) — what the handshake and the settings library's frame deliver
-   * ({@link sessionAuthMethods}). The machine builds its descriptors from it
+   * The sign-in methods the installation offers — enabled and ready (HIL-427,
+   * HIL-1080) — live and in button order: what the handshake and the frame of
+   * the settings library or the provider page deliver ({@link sessionAuthMethods}).
+   * The machine builds its descriptors from it
    * ({@link authFlowMethodsFor}) and reads every lookup reply through it, so a
    * method switched off while the surface is open drops out of the field, the
    * icons and the reveal without the lookup being asked again.

@@ -137,6 +137,20 @@ abstract class Object_
     }
 
     /**
+     * Apply an update from another process made outside ORM-mapped columns (DB_SYNC_UPDATED with an empty row).
+     *
+     * The other half of {@see announceUnmappedUpdate()}: no column moved, so there is nothing to
+     * apply, but an object that derived something from the unmapped column forgets it here and
+     * reads it again when next asked (HIL-1080). By default there is nothing to forget.
+     *
+     * Announces nothing on the bus: windows and agents of this process hear of the change from
+     * the worker, as they did before this hook existed.
+     */
+    public function applyDbSyncUnmappedUpdate(): void
+    {
+    }
+
+    /**
      * Debug info for var_dump/print_r.
      *
      * @return array<string, mixed> Entity data as array

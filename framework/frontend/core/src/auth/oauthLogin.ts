@@ -43,7 +43,10 @@ import {
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
 } from '../protocol/constants.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
-import { sessionAuthMethods, sessionUserId } from '../session/sessionScope.js'
+import {
+  sessionEnabledAuthMethods,
+  sessionUserId,
+} from '../session/sessionScope.js'
 import {
   createSignal,
   subscribeSignal,
@@ -412,15 +415,17 @@ function finishTrip(outcome: OAuthTripOutcome): void {
 
 /**
  * The provider's short name for the waiting copy, as the server named it in the
- * enabled set (HIL-427). An unknown key falls back to itself rather than to an
- * empty string: "Waiting for oauth:github" is ugly and says what is wrong, while
+ * enabled set (HIL-427). The enabled set and not the offered one: this is a
+ * label, not an offer, and a provider that became unready mid-trip keeps its
+ * name (HIL-1080). An unknown key falls back to itself rather than to an empty
+ * string: "Waiting for oauth:github" is ugly and says what is wrong, while
  * "Waiting for " says nothing at all.
  *
  * @param context The project auth context whose session scope holds the set.
  * @param provider The provider key a trip was started for.
  */
 function providerNameOf(context: HilosAuthContext, provider: string): string {
-  const entry = sessionAuthMethods(context.scopes)
+  const entry = sessionEnabledAuthMethods(context.scopes)
     .get()
     .find((method) => method.key === provider)
 

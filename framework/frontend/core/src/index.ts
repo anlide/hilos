@@ -234,6 +234,7 @@ export {
   sessionPendingAuthStep,
   sessionCodeDelivery,
   sessionAuthMethods,
+  sessionEnabledAuthMethods,
   SIGNAL_AUTH_METHODS,
   SIGNAL_HANDSHAKE_RESPONSE,
   SESSION_ACK_PASSWORD_CHANGED,

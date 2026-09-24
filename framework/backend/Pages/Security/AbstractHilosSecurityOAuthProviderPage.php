@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Security;
 
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
+use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\OAuth\OAuthConfigField;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
 use Hilos\Auth\OAuth\OAuthProviderDescriptor;
@@ -13,6 +15,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -40,6 +43,12 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
  *
  * The secret is write-only: it is accepted here and replaced, and nothing on the way back
  * carries it - the reply and the table row say only whether one is in force.
+ *
+ * A write can move the provider's readiness - completing or breaking its client pair - and
+ * with it the sign-in method set every sign-in surface offers from ({@see EnabledAuthMethods}).
+ * So the page reads the set before and after the write and, when they differ, sends the new
+ * one to every connection itself ({@see AuthMethodsSignalData}), as the settings library does
+ * after a setting write (HIL-1080).
  *
  * The route's provider is not read here. The tables are narrowed to it on the screen's
  * side, and a provider the project does not declare shows as an empty screen, not as a
@@ -122,7 +131,9 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
             throw new TableActionException("{$field->label()} cannot be longer than " . self::VALUE_MAX_LENGTH . ' characters.');
         }
 
+        $methodsBefore = $this->offeredMethods();
         $this->write($this->providerRow($descriptor) ?? $this->db()->oauthProviders->actions->add($descriptor->key), $field, $value);
+        $this->announceMethods($methodsBefore);
         $this->setActionSuccessMessage("{$descriptor->label} {$field->label()} saved.");
 
         return $this->reply($descriptor, $field);
@@ -145,7 +156,9 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
 
         $row = $this->providerRow($descriptor);
         if ($row !== null) {
+            $methodsBefore = $this->offeredMethods();
             $this->write($row, $field, null);
+            $this->announceMethods($methodsBefore);
         }
         $this->setActionSuccessMessage("{$descriptor->label} {$field->label()} is back to its default.");
 
@@ -167,6 +180,48 @@ abstract class AbstractHilosSecurityOAuthProviderPage extends AbstractHilosPage
             OAuthConfigField::SCOPE => $row->actions->updateScope($value),
             OAuthConfigField::CLIENT_SECRET => $row->actions->writeClientSecret($value),
         };
+    }
+
+    /**
+     * Reads the enabled sign-in method set in the shape a surface is handed it, or null when it cannot be read.
+     *
+     * A read that fails is logged and answered with null rather than thrown: the field write
+     * this page is serving is answered either way, and a set nobody could read is not a change
+     * anybody can announce.
+     *
+     * @return ?list<array{key: string, name: ?string, ready: bool}> Enabled methods in button order, or null when unread
+     */
+    private function offeredMethods(): ?array
+    {
+        try {
+            return EnabledAuthMethods::toWire();
+        } catch (HilosException $e) {
+            $this->logAgentError("Sign-in method set could not be read: {$e->getMessage()}");
+
+            return null;
+        }
+    }
+
+    /**
+     * Tells every connection the new method set when the field write changed it.
+     *
+     * A write moves a provider's readiness when it completes or breaks the client pair, and
+     * with it the entry the sign-in surfaces read. A set unread on either side of the write
+     * sends nothing.
+     *
+     * @param ?list<array{key: string, name: ?string, ready: bool}> $methodsBefore Method set before the write, or null when unread
+     * @throws InvalidArgumentException When the new method set cannot be named or queued
+     */
+    private function announceMethods(?array $methodsBefore): void
+    {
+        if ($methodsBefore === null) {
+            return;
+        }
+
+        $methodsAfter = $this->offeredMethods();
+        if ($methodsAfter !== null && $methodsAfter !== $methodsBefore) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, new AuthMethodsSignalData($methodsAfter));
+        }
     }
 
     /**

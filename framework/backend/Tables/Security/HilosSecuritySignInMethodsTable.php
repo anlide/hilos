@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tables\Security;
 
 use Hilos\Auth\AuthMethodKey;
-use Hilos\Auth\Detection\IdentifierDetection;
+use Hilos\Auth\Method\AuthMethodReadiness;
 use Hilos\Auth\Method\EnabledAuthMethods;
-use Hilos\Auth\OAuth\OAuthConfigField;
-use Hilos\Auth\OAuth\OAuthConfigResolver;
-use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -27,7 +24,6 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -35,9 +31,8 @@ use Hilos\Hilos;
  *
  * A self-snapshot table over the project's method directory and the one setting that
  * switches methods off, not a DB source. Each row says whether the method is on and whether
- * the installation can serve it at all: a provider needs its client pair
- * ({@see OAuthConfigResolver}), the mailed link and the phone code need somewhere to deliver
- * the code ({@see CodeDeliveryAvailability}), and a password or a passkey needs nothing.
+ * the installation can serve it at all ({@see AuthMethodReadiness}) - the same answer the
+ * sign-in surfaces and the rule on the list of switched-off methods get (HIL-1080).
  *
  * WHY A SWITCH DOES NOT REDRAW A ROW HERE. The switches write one setting, and one value of
  * it moves any number of rows at once, while a source change is answered with one row
@@ -85,9 +80,8 @@ class HilosSecuritySignInMethodsTable extends TableDefinition implements SelfSna
      * @return ?TableRowMutationDTO Provider method row mutation, or null when the change does not affect this table
      * @throws DatabaseException When a provider's row or the method setting cannot be read
      * @throws SettingException When the method setting's catalog entry or stored value is invalid
-     * @throws EnvException When an env value is invalid for its type, or a preset's endpoint base cannot be read
-     * @throws LogicException When the collection classes are misconfigured or a descriptor has no recipe
-     * @throws InvalidArgumentException When a row lookup is given an invalid query
+     * @throws LogicException When the collection classes are misconfigured
+     * @throws InvalidArgumentException When the provider row lookup is given an invalid query
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -103,7 +97,7 @@ class HilosSecuritySignInMethodsTable extends TableDefinition implements SelfSna
         return $this->mutation(
             TableMutationType::Update,
             $providerKey,
-            $this->rowForMethod($providerKey, EnabledAuthMethods::keys(), new CodeDeliveryAvailability()),
+            $this->rowForMethod($providerKey, EnabledAuthMethods::keys()),
         );
     }
 
@@ -129,21 +123,17 @@ class HilosSecuritySignInMethodsTable extends TableDefinition implements SelfSna
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Methods table snapshot
-     * @throws DatabaseException When a provider's row or the method setting cannot be read
+     * @throws DatabaseException When the method setting cannot be read
      * @throws SettingException When the method setting's catalog entry or stored value is invalid
-     * @throws EnvException When an env value is invalid for its type, or a preset's endpoint base cannot be read
-     * @throws LogicException When the collection classes are misconfigured or a descriptor has no recipe
-     * @throws InvalidArgumentException When a row lookup is given an invalid query
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $enabled = EnabledAuthMethods::keys();
-        $delivery = new CodeDeliveryAvailability();
         $rows = [];
         foreach ($this->methodKeys() as $methodKey) {
-            $rows[] = $this->rowForMethod($methodKey, $enabled, $delivery)->toArray();
+            $rows[] = $this->rowForMethod($methodKey, $enabled)->toArray();
         }
 
         return $this->filterInMemory($rows, $query);
@@ -187,47 +177,20 @@ class HilosSecuritySignInMethodsTable extends TableDefinition implements SelfSna
      *
      * @param string $methodKey Method to project
      * @param list<string> $enabled Enabled method keys, read once for the whole window
-     * @param CodeDeliveryAvailability $delivery What the installation can deliver a code to
      * @return HilosSecuritySignInMethodsTableRow Method table row
-     * @throws DatabaseException When the provider's row cannot be read
-     * @throws EnvException When an env value is invalid for its type, or a preset's endpoint base cannot be read
-     * @throws LogicException When the collection classes are misconfigured or the descriptor has no recipe
-     * @throws InvalidArgumentException When the row lookup is given an invalid query
      */
-    private function rowForMethod(
-        string $methodKey,
-        array $enabled,
-        CodeDeliveryAvailability $delivery,
-    ): HilosSecuritySignInMethodsTableRow {
-        $on = in_array($methodKey, $enabled, true);
-        if (!str_starts_with($methodKey, AuthMethodKey::OAUTH_PREFIX)) {
-            return new HilosSecuritySignInMethodsTableRow(
-                methodKey: $methodKey,
-                label: self::LABELS[$methodKey] ?? $methodKey,
-                enabled: $on,
-                ready: match ($methodKey) {
-                    AuthMethodKey::MAGIC_LINK => $delivery->canDeliverTo(IdentifierDetection::KIND_EMAIL),
-                    AuthMethodKey::SMS => $delivery->canDeliverTo(IdentifierDetection::KIND_PHONE),
-                    default => true,
-                },
-                providerKey: null,
-            );
-        }
-
-        $descriptor = Hilos::oauthProviderDirectoryClass()::get($methodKey);
-        $ready = false;
-        if ($descriptor !== null) {
-            $resolver = new OAuthConfigResolver();
-            $ready = $resolver->resolve($descriptor, OAuthConfigField::CLIENT_ID)->isSet
-                && $resolver->resolve($descriptor, OAuthConfigField::CLIENT_SECRET)->isSet;
-        }
+    private function rowForMethod(string $methodKey, array $enabled): HilosSecuritySignInMethodsTableRow
+    {
+        $isProvider = str_starts_with($methodKey, AuthMethodKey::OAUTH_PREFIX);
 
         return new HilosSecuritySignInMethodsTableRow(
             methodKey: $methodKey,
-            label: $descriptor->label ?? $methodKey,
-            enabled: $on,
-            ready: $ready,
-            providerKey: $methodKey,
+            label: $isProvider
+                ? Hilos::oauthProviderDirectoryClass()::get($methodKey)?->label ?? $methodKey
+                : self::LABELS[$methodKey] ?? $methodKey,
+            enabled: in_array($methodKey, $enabled, true),
+            ready: AuthMethodReadiness::isReady($methodKey),
+            providerKey: $isProvider ? $methodKey : null,
         );
     }
 }

@@ -156,7 +156,7 @@ export interface AvailableProvider {
   readonly label: string
 }
 
-/** The installation's enabled sign-in methods, live (HIL-427). */
+/** The sign-in methods the installation offers — enabled and ready — live (HIL-427, HIL-1080). */
 const enabledMethods = sessionAuthMethods(scopes)
 
 /**
@@ -165,10 +165,10 @@ const enabledMethods = sessionAuthMethods(scopes)
  * {@link profileIdentities} (a link landing), so the Profile "Link an account"
  * buttons reflect the live identity list without a bespoke ack.
  *
- * The set is the installation's enabled providers, live from the session scope
+ * The set is the installation's offered providers, live from the session scope
  * (HIL-427) — the same set the sign-in icons are drawn from, so a provider an
- * administrator switched off leaves this row too, and its link action would be
- * refused on the server anyway.
+ * administrator switched off, or one without its client pair (HIL-1080), leaves
+ * this row too, and its link action would be refused on the server anyway.
  */
 export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
   computedSignal(() => {

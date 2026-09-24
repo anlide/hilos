@@ -8,6 +8,7 @@ use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestHilos;
+use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestProviderDirectory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,6 +18,7 @@ final class EnabledAuthMethodsTest extends TestCase
 {
     protected function tearDown(): void
     {
+        AuthMethodTestProviderDirectory::forgetGitHub();
         AuthMethodTestHilos::unmount();
 
         parent::tearDown();
@@ -86,10 +88,24 @@ final class EnabledAuthMethodsTest extends TestCase
         AuthMethodTestHilos::mount(AuthMethodKey::MAGIC_LINK . ',' . AuthMethodKey::SMS);
 
         self::assertSame([
-            ['key' => AuthMethodKey::PASSWORD, 'name' => null],
-            ['key' => AuthMethodKey::PASSKEY, 'name' => null],
-            ['key' => OAuthProviderPreset::GITHUB->value, 'name' => 'GitHub'],
-            ['key' => OAuthProviderPreset::GOOGLE->value, 'name' => 'Google'],
+            ['key' => AuthMethodKey::PASSWORD, 'name' => null, 'ready' => true],
+            ['key' => AuthMethodKey::PASSKEY, 'name' => null, 'ready' => true],
+            ['key' => OAuthProviderPreset::GITHUB->value, 'name' => 'GitHub', 'ready' => false],
+            ['key' => OAuthProviderPreset::GOOGLE->value, 'name' => 'Google', 'ready' => false],
         ], EnabledAuthMethods::toWire());
+    }
+
+    /**
+     * Each entry says whether it is ready, and an unready one stays in the set (HIL-1080).
+     */
+    public function testTheWireFormSaysWhichMethodsAreReady(): void
+    {
+        AuthMethodTestHilos::mount(AuthMethodKey::MAGIC_LINK . ',' . AuthMethodKey::SMS);
+        AuthMethodTestProviderDirectory::configureGitHub();
+
+        $ready = array_column(EnabledAuthMethods::toWire(), 'ready', 'key');
+
+        self::assertTrue($ready[OAuthProviderPreset::GITHUB->value]);
+        self::assertFalse($ready[OAuthProviderPreset::GOOGLE->value]);
     }
 }

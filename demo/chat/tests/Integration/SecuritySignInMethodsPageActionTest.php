@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
+use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\EnabledAuthMethods;
+use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Router\AgentSignalData;
@@ -80,6 +82,26 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     }
 
     /**
+     * Leaving on only a provider without its client pair is refused: nobody could come in (HIL-1080).
+     */
+    public function testLeavingOnlyUnreadyMethodsOnIsRefused(): void
+    {
+        $this->withoutGooglePair(function (): void {
+            $this->withSettingsWriter(function (): void {
+                $wired = array_values(array_diff(Hilos::authMethodDirectoryClass()::keys(), [OAuthProviderPreset::GOOGLE->value]));
+                $last = array_pop($wired);
+                foreach ($wired as $methodKey) {
+                    $this->assertNull($this->submit('unready-ak', $methodKey, false));
+                }
+                $stored = Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value;
+
+                $this->assertSame('At least one sign-in method that is set up must stay on', $this->submit('unready-ak', $last, false));
+                $this->assertSame($stored, Hilos::$db->settings[AuthMethodSettings::DISABLED_KEY]?->value);
+            });
+        });
+    }
+
+    /**
      * A method the project never wired is refused by the page, before any write.
      */
     public function testAnUnwiredMethodIsRefusedByThePage(): void
@@ -135,6 +157,28 @@ final class SecuritySignInMethodsPageActionTest extends IntegrationTestCase
     private function page(): SecuritySignInMethodsPage
     {
         return new SecuritySignInMethodsPage(new DemoHilosAgent());
+    }
+
+    /**
+     * Runs a body with Google's client pair emptied in the process env, which wins over the stand's.
+     *
+     * @param callable():void $body Test body run while Google cannot sign anybody in
+     */
+    private function withoutGooglePair(callable $body): void
+    {
+        $previous = [];
+        foreach ([ChatEnvConstants::OAUTH_GOOGLE_CLIENT_ID, ChatEnvConstants::OAUTH_GOOGLE_CLIENT_SECRET] as $key) {
+            $previous[$key] = getenv($key);
+            putenv($key . '=');
+        }
+
+        try {
+            $body();
+        } finally {
+            foreach ($previous as $key => $value) {
+                putenv($value === false ? $key : $key . '=' . $value);
+            }
+        }
     }
 
     /**

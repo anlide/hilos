@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Collection\OAuthProviders;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Item\OAuthProvider;
 use Hilos\Environment\Exception\EnvException;
@@ -28,7 +29,10 @@ use Hilos\Hilos;
  * the exchange runs on ({@see providerConfig()}), which never travels to a browser.
  *
  * Nothing here is cached. A registry is built from the rows as they are at the moment of
- * the build, so a changed credential is in force on the next sign-in, on every node.
+ * the build, so a changed credential is in force on the next sign-in, on every node. The
+ * rows themselves the process holds in memory ({@see OAuthProviders}) and receives their
+ * changes by synchronization, so reading them costs no query and the answer is still
+ * current on every node.
  */
 final class OAuthConfigResolver
 {
@@ -68,6 +72,25 @@ final class OAuthConfigResolver
             OAuthConfigField::SCOPE => $this->layered($field->value, $row?->scope, null, $recipe->scope),
             OAuthConfigField::CLIENT_SECRET => $this->secretState($descriptor, $row, $recipe),
         };
+    }
+
+    /**
+     * Whether a provider can sign anybody in: its client id and client secret both resolve non-empty.
+     *
+     * The same answer {@see providerConfig()} gives by returning a configuration rather than
+     * null, asked without resolving the secret's value.
+     *
+     * @param OAuthProviderDescriptor $descriptor Provider to ask about
+     * @return bool True when the client pair is complete
+     * @throws DatabaseException When the provider's row cannot be read
+     * @throws EnvException When an env value is invalid for its type, or a preset's endpoint base cannot be read
+     * @throws LogicException When the collection classes are misconfigured or the descriptor has no recipe
+     * @throws InvalidArgumentException When the provider row lookup is given an invalid query
+     */
+    public function isReady(OAuthProviderDescriptor $descriptor): bool
+    {
+        return $this->resolve($descriptor, OAuthConfigField::CLIENT_ID)->isSet
+            && $this->resolve($descriptor, OAuthConfigField::CLIENT_SECRET)->isSet;
     }
 
     /**

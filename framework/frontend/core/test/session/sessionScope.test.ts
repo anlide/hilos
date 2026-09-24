@@ -11,6 +11,7 @@ import {
   sessionPendingAuthStep,
   sessionCodeDelivery,
   sessionAuthMethods,
+  sessionEnabledAuthMethods,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
   SESSION_SIGNAL_SCHEMAS,
@@ -318,6 +319,52 @@ describe('sessionScope', () => {
       { key: 'oauth:github', name: 'GitHub' },
     ])
     expect(SESSION_SIGNAL_SCHEMAS[SIGNAL_AUTH_METHODS]).toBeDefined()
+  })
+
+  it('offers only the ready methods and keeps the unready ones enabled (HIL-1080)', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const offered = sessionAuthMethods(scopes)
+    const enabled = sessionEnabledAuthMethods(scopes)
+
+    connection.emitHandshakeResponse({
+      data: {
+        authMethods: [
+          { key: 'password', name: null, ready: true },
+          { key: 'oauth:google', name: 'Google', ready: false },
+        ],
+      },
+    })
+    expect(offered.get()).toStrictEqual([{ key: 'password', name: null }])
+    expect(enabled.get()).toStrictEqual([
+      { key: 'password', name: null },
+      { key: 'oauth:google', name: 'Google' },
+    ])
+
+    // The administrator entered Google's pair: the provider page's frame says so.
+    connection.emit(SIGNAL_AUTH_METHODS, {
+      authMethods: [
+        { key: 'password', name: null, ready: true },
+        { key: 'oauth:google', name: 'Google', ready: true },
+      ],
+    })
+    expect(offered.get()).toStrictEqual(enabled.get())
+    expect(offered.get()).toContainEqual({
+      key: 'oauth:google',
+      name: 'Google',
+    })
+
+    // An entry that does not say whether it is ready is offered.
+    connection.emit(SIGNAL_AUTH_METHODS, {
+      authMethods: [{ key: 'oauth:google', name: 'Google' }],
+    })
+    expect(offered.get()).toStrictEqual([
+      { key: 'oauth:google', name: 'Google' },
+    ])
+    expect(enabled.get()).toStrictEqual([
+      { key: 'oauth:google', name: 'Google' },
+    ])
   })
 
   it('drops a method entry it cannot read rather than guessing at it', () => {

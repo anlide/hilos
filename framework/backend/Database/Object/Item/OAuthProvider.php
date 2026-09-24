@@ -27,6 +27,12 @@ use Hilos\Database\SqlParamCollection;
  * targeted queries here, the way the identity layer handles a password hash,
  * while the fact of its write travels as an empty diff.
  *
+ * Whether a secret is set is remembered on the object (HIL-1080), because a provider's
+ * readiness is asked on every handshake: a write in this process sets the answer, a write
+ * in another process or node forgets it through the empty diff
+ * ({@see applyDbSyncUnmappedUpdate()}), and the next question reads it again. The secret's
+ * value is never remembered.
+ *
  * @extends Object_<EntityOAuthProvider>
  *
  * @property-read ?int $id
@@ -41,6 +47,9 @@ final class OAuthProvider extends Object_
     public const string providerKey = 'providerKey';
     public const string clientId = 'clientId';
     public const string scope = 'scope';
+
+    /** Remembered answer of {@see hasClientSecret()}; null when never asked or forgotten. */
+    private ?bool $clientSecretSet = null;
 
     /**
      * Returns the database collection key.
@@ -97,12 +106,17 @@ final class OAuthProvider extends Object_
      * secret is read with a targeted query and only the boolean is returned. False for
      * an unpersisted row.
      *
+     * The answer is remembered on the object: a write of the secret in this process sets
+     * it, and one in another process forgets it through the empty diff that announces it
+     * ({@see applyDbSyncUnmappedUpdate()}), so only the first question after either reads
+     * the row.
+     *
      * @return bool True when the stored secret is a non-empty string
      * @throws DatabaseException When the secret lookup query fails
      */
     public function hasClientSecret(): bool
     {
-        return $this->readClientSecret() !== null;
+        return $this->clientSecretSet ??= $this->readClientSecret() !== null;
     }
 
     /**
@@ -175,8 +189,20 @@ final class OAuthProvider extends Object_
                 . '` = ? WHERE `' . EntityOAuthProvider::id . '` = ?',
             $params,
         );
+        $this->clientSecretSet = $secret !== null && $secret !== '';
 
         $this->announceUnmappedUpdate();
+    }
+
+    /**
+     * Forgets whether a secret is set, after another process wrote it.
+     *
+     * The secret's write travels as an empty diff, so this is the only news of it a process
+     * that did not write gets; the next {@see hasClientSecret()} reads the row again.
+     */
+    public function applyDbSyncUnmappedUpdate(): void
+    {
+        $this->clientSecretSet = null;
     }
 
     /**

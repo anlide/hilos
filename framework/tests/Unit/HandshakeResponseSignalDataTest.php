@@ -46,10 +46,10 @@ final class HandshakeResponseSignalDataTest extends TestCase
     /** A deployment that can mail a code but has no phone channel - the asymmetric case. */
     private const array CODE_DELIVERY = ['email' => true, 'phone' => false];
 
-    /** Enabled sign-in methods as the stamp hands them: a provider carries its name, the rest null. */
+    /** Enabled sign-in methods as the stamp hands them: a provider carries its name, the rest null; each says if it is ready. */
     private const array AUTH_METHODS = [
-        ['key' => 'password', 'name' => null],
-        ['key' => 'oauth:github', 'name' => 'GitHub'],
+        ['key' => 'password', 'name' => null, 'ready' => true],
+        ['key' => 'oauth:github', 'name' => 'GitHub', 'ready' => false],
     ];
 
     public function testImplementsSignalDataInterface(): void
@@ -368,6 +368,18 @@ final class HandshakeResponseSignalDataTest extends TestCase
             ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS)
             ->toArray();
         unset($payload['data']['authMethods'][1]['key']);
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    public function testRoundtripRejectsAMethodEntryWithoutItsReadiness(): void
+    {
+        $payload = new HandshakeResponseSignalData()
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->toArray();
+        unset($payload['data']['authMethods'][1]['ready']);
 
         $this->expectException(InvalidFormatException::class);
 

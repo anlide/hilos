@@ -27,7 +27,11 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\SqlParam;
+use Hilos\Database\SqlParamCollection;
 use Hilos\Database\View\Item\OAuthProvider;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
@@ -63,6 +67,9 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
 
     /** Env variable standing in for the shared return address. */
     public const EnvConstants REDIRECT_ENV = EnvConstants::MAIL_FROM_NAME;
+
+    /** A provider key whose row is written behind the collection's back. */
+    private const string UNHELD_PROVIDER_KEY = 'oauth:acme';
 
     /** The return address the env carries in this case. */
     private const string ENV_REDIRECT = 'https://env.example/auth/callback';
@@ -377,6 +384,91 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
     /**
      * @return OAuthConfigResolver Resolver over the directory below
      */
+    /**
+     * After the first lookup the rows are answered from memory: a row slipped into the table
+     * behind the collection's back is not found, one added through it is (HIL-1080).
+     *
+     * @throws HilosException When a row cannot be created or read
+     */
+    public function testAProviderRowIsAnsweredFromMemoryAfterTheFirstLookup(): void
+    {
+        $github = $this->row();
+        $this->assertSame($github->id, Hilos::$db->oauthProviders[OAuthProviderPreset::GITHUB->value]?->id);
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string(self::UNHELD_PROVIDER_KEY));
+        Database::sql('INSERT INTO `hilos_oauth_provider` (`provider_key`) VALUES (?)', $params);
+        $this->assertNull(Hilos::$db->oauthProviders[self::UNHELD_PROVIDER_KEY]);
+
+        $google = Hilos::$db->oauthProviders->actions->add(OAuthProviderPreset::GOOGLE->value);
+        $this->assertSame($google->id, Hilos::$db->oauthProviders[OAuthProviderPreset::GOOGLE->value]?->id);
+    }
+
+    /**
+     * Whether a secret is set is remembered, and forgotten by the empty diff another process
+     * sends when it writes the secret (HIL-1080).
+     *
+     * @throws HilosException When the row cannot be written, read or synchronized
+     */
+    public function testASecretChangedElsewhereIsForgottenOnTheEmptyUpdate(): void
+    {
+        $row = $this->row();
+        $row->actions->writeClientSecret('admin-secret');
+        $object = Hilos::$db->mountedObjectCollection(HilosDbContext::oauthProviders)[(string)$row->id];
+        $this->assertInstanceOf(ObjectOAuthProvider::class, $object);
+        $this->assertTrue($object->hasClientSecret());
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int((int)$row->id));
+        Database::sql('UPDATE `hilos_oauth_provider` SET `client_secret` = NULL WHERE `id` = ?', $params);
+        $this->assertTrue($object->hasClientSecret());
+
+        DbSyncApplicator::applyUpdated(
+            new DbSyncUpdatedSignalData(HilosDbContext::oauthProviders, (string)$row->id, []),
+            skipSelfBroadcastCheck: false,
+        );
+
+        $this->assertFalse($object->hasClientSecret());
+    }
+
+    /**
+     * An empty diff for a row this process does not hold is not a reason to read it.
+     *
+     * @throws HilosException When the diff cannot be applied
+     */
+    public function testAnEmptyUpdateOfARowNobodyHoldsDoesNothing(): void
+    {
+        DbSyncApplicator::applyUpdated(
+            new DbSyncUpdatedSignalData(HilosDbContext::oauthProviders, '999', []),
+            skipSelfBroadcastCheck: false,
+        );
+
+        $collection = Hilos::$db->mountedObjectCollection(HilosDbContext::oauthProviders);
+        $this->assertNotNull($collection);
+        $this->assertFalse($collection->isAllLoaded());
+        $this->assertFalse(isset($collection['999']));
+    }
+
+    /**
+     * A provider is ready exactly when its stored or env pair is complete.
+     *
+     * @throws HilosException When the row cannot be written or read
+     */
+    public function testProviderReadinessFollowsTheStoredPair(): void
+    {
+        putenv(self::CLIENT_ID_ENV->name);
+        putenv(self::CLIENT_SECRET_ENV->name);
+        $this->assertFalse($this->resolver()->isReady(self::github()));
+
+        $row = $this->row();
+        $row->actions->updateClientId('admin-client');
+        $row->actions->writeClientSecret('admin-secret');
+        $this->assertTrue($this->resolver()->isReady(self::github()));
+
+        $row->actions->writeClientSecret(null);
+        $this->assertFalse($this->resolver()->isReady(self::github()));
+    }
+
     private function resolver(): OAuthConfigResolver
     {
         return new OAuthConfigResolver(OAuthProviderConfigTestDirectory::class);

@@ -103,15 +103,19 @@ abstract class HilosDbContext extends DbContext
      * OAuth providers).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
-     * notification deliveries, notification preferences, push subscriptions, auth
-     * blocks and OAuth providers load by key (per-user / per-(type,identifier) /
-     * per-credential / per-token / per-recipient / per-(notification,channel) /
-     * per-(user,channel) / per-endpoint / per-(scope,identity,action) / per-provider
-     * lookups), never as a full set, so registering the collections stays inert for
-     * projects that do not activate the hilos_identity / hilos_user_verification /
-     * hilos_passkey_credential / hilos_session / hilos_notification /
-     * hilos_notification_delivery / hilos_notification_preference /
-     * hilos_push_subscription / hilos_auth_block / hilos_oauth_provider tables.
+     * notification deliveries, notification preferences, push subscriptions and auth
+     * blocks load by key (per-user / per-(type,identifier) / per-credential / per-token /
+     * per-recipient / per-(notification,channel) / per-(user,channel) / per-endpoint /
+     * per-(scope,identity,action) lookups), never as a full set, so registering the
+     * collections stays inert for projects that do not activate the hilos_identity /
+     * hilos_user_verification / hilos_passkey_credential / hilos_session /
+     * hilos_notification / hilos_notification_delivery / hilos_notification_preference /
+     * hilos_push_subscription / hilos_auth_block tables.
+     *
+     * OAuth providers are read whole on the first lookup of a provider in the process
+     * (HIL-1080) - a row per declared provider, asked on every handshake - and stay inert
+     * where nobody looks a provider up, so a project without hilos_oauth_provider never
+     * reads it.
      *
      * The verifier circle is the one collection here that IS read whole, and it stays
      * inert for a different reason: only an installation that declares the backup feature
@@ -191,7 +195,8 @@ abstract class HilosDbContext extends DbContext
      * OAuth providers (HIL-286) are read wherever a provider registry is built: the users
      * library that starts a sign-in, the OAuth agent that finishes one, and the seam that
      * names a project's sign-in methods. What the administrator entered takes effect on the
-     * next build in each of them, so each has to hold the rows as they are now.
+     * next build in each of them, so each has to hold the rows as they are now: they hold
+     * them in memory and receive their changes by synchronization.
      *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.

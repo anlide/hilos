@@ -304,7 +304,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
      * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
-     * @param ?list<array{key: string, name: ?string}> $methodsBefore Enabled method set before the write, or null when unread
+     * @param ?list<array{key: string, name: ?string, ready: bool}> $methodsBefore Enabled method set before the write, or null when unread
      * @throws InvalidArgumentException When the answer or the new method set cannot be named or queued
      */
     private function settle(HandoverAskInterface $ask, ?ActionRefusal $refusal, ?array $methodsBefore): void
@@ -327,7 +327,7 @@ final class SettingsLibraryAgent extends AbstractAgent
      * library is serving must be answered either way, and a set nobody could read is not a
      * change anybody can announce.
      *
-     * @return ?list<array{key: string, name: ?string}> Enabled methods in button order, or null when unread
+     * @return ?list<array{key: string, name: ?string, ready: bool}> Enabled methods in button order, or null when unread
      */
     private function offeredMethods(): ?array
     {

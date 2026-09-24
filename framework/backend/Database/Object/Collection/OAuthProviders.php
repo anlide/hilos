@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
-use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\OAuthProviders as EntityOAuthProviders;
-use Hilos\Database\Entity\Item\OAuthProvider as EntityOAuthProvider;
 use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
 use Hilos\Database\Object\Objects;
 
 /**
  * OAuth providers object collection (HIL-286).
  *
- * Loaded by key, never as a full set: the set of providers is the project's code, so
- * a reader asks for the rows of the providers it already knows.
+ * Read whole on the first lookup by provider key, and answered from memory after that
+ * (HIL-1080): the table holds one row per provider the project declares, so it is tiny, and
+ * whether a provider is ready to sign anybody in is asked on every handshake. Once read, the
+ * collection declares itself whole, so a row created by another process or node arrives by
+ * synchronization, and a reset reads it whole again. A process that never looks a provider
+ * up never reads the table, so a project without it stays inert.
  *
  * @extends Objects<ObjectOAuthProvider>
  * @method ObjectOAuthProvider|null current()
@@ -34,10 +37,13 @@ final class OAuthProviders extends Objects
     /**
      * Finds the row of one provider by its provider key.
      *
+     * The first lookup in the process reads the whole table; every lookup after it, a missing
+     * provider included, is answered from memory.
+     *
      * @param string $providerKey Provider key, e.g. 'oauth:github'
      * @return ?ObjectOAuthProvider Provider row object, or null when the provider has no row
      * @throws DatabaseException If the database query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws LogicException When the entity collection class is not configured
      */
     public function findByProviderKey(string $providerKey): ?ObjectOAuthProvider
     {
@@ -45,16 +51,13 @@ final class OAuthProviders extends Objects
             return null;
         }
 
-        $entityProvider = EntityOAuthProvider::get([EntityOAuthProvider::provider_key => $providerKey])->first();
-
-        if ($entityProvider === null) {
-            return null;
+        $this->preloadAll();
+        foreach ($this->objects as $provider) {
+            if ($provider->providerKey === $providerKey) {
+                return $provider;
+            }
         }
 
-        if (!isset($this->objects[$entityProvider->id])) {
-            $this->hydrate($entityProvider->id, ObjectOAuthProvider::fromEntity($entityProvider));
-        }
-
-        return $this->objects[$entityProvider->id];
+        return null;
     }
 }

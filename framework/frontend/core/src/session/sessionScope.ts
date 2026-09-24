@@ -58,21 +58,25 @@ const CODE_DELIVERY_KEY = 'codeDelivery'
 
 /**
  * Plain session-scope key carrying the installation's enabled sign-in methods
- * (HIL-427). Written by every handshake and again by {@link SIGNAL_AUTH_METHODS}
- * whenever an administrator changes the set, so one key holds the live answer.
+ * (HIL-427), each with whether the installation can serve it (HIL-1080).
+ * Written by every handshake and again by {@link SIGNAL_AUTH_METHODS} whenever
+ * the set changes, so one key holds the live answer.
  */
 const AUTH_METHODS_KEY = 'authMethods'
 
 /**
- * The settings library → every connection: the installation's enabled sign-in
- * methods, sent after a write that changed them (PHP `HILOS_AUTH_METHODS`).
+ * The settings library, and the OAuth provider page → every connection: the
+ * installation's enabled sign-in methods with their readiness, sent after a
+ * setting or provider write that changed them (PHP `HILOS_AUTH_METHODS`).
  */
 export const SIGNAL_AUTH_METHODS = 'hilos_auth_methods'
 
 /**
  * One enabled sign-in method (HIL-427): its key, and the name a provider's
  * button shows — null for a method that is not a provider, which the surface
- * names itself.
+ * names itself. The wire entry also says whether the method is ready
+ * (HIL-1080); that flag is read when the set is parsed and narrows
+ * {@link sessionAuthMethods}, and does not travel further.
  */
 export interface AuthMethodEntry {
   /** The method key: `password`, `passkey`, `magic_link`, `sms` or `oauth:<provider>`. */
@@ -84,7 +88,14 @@ export interface AuthMethodEntry {
 const authMethodEntrySchema = z.looseObject({
   key: z.string(),
   name: z.string().nullable(),
+  ready: z.boolean().optional(),
 })
+
+/** One parsed wire entry: the public entry plus whether the installation can serve it. */
+interface AuthMethodWireEntry extends AuthMethodEntry {
+  /** False only when the backend said so; an entry without the flag reads as ready. */
+  readonly ready: boolean
+}
 
 /** The payload of {@link SIGNAL_AUTH_METHODS}: the whole set, in button order. */
 export const authMethodsSchema = z.looseObject({
@@ -538,14 +549,18 @@ export function sessionCodeDelivery(
 }
 
 /**
- * The installation's enabled sign-in methods, in button order (HIL-427).
+ * The sign-in methods the installation OFFERS, in button order (HIL-427): the
+ * enabled ones it can also serve (HIL-1080) — a provider without its client
+ * pair is left out, so no icon is drawn whose click would be refused. The
+ * enabled but unready ones are in {@link sessionEnabledAuthMethods}.
  *
- * Live: the handshake writes the set and the settings library's frame rewrites
- * it whenever an administrator switches a method, so a surface built from this
- * reshapes itself without asking. Absent before the handshake, and read as no
- * method at all — a surface is not interactive before its handshake anyway, and
- * inventing a set here would draw buttons the installation may have switched
- * off. A malformed entry is dropped rather than guessed at.
+ * Live: the handshake writes the set, and the frame of the settings library or
+ * of the provider page rewrites it whenever a switch or a client pair moves it,
+ * so a surface built from this reshapes itself without asking. Absent before
+ * the handshake, and read as no method at all — a surface is not interactive
+ * before its handshake anyway, and inventing a set here would draw buttons the
+ * installation may have switched off. A malformed entry is dropped rather than
+ * guessed at; an entry that does not say whether it is ready is offered.
  *
  * @param scopes The application's scope-partitioned stores.
  */
@@ -554,7 +569,31 @@ export function sessionAuthMethods(
 ): ReadonlySignal<readonly AuthMethodEntry[]> {
   const slot = scopes.session.data.signal(AUTH_METHODS_KEY)
 
-  return computedSignal(() => readAuthMethods(slot.get()))
+  return computedSignal(() =>
+    readAuthMethods(slot.get())
+      .filter((entry) => entry.ready)
+      .map(publicEntry),
+  )
+}
+
+/**
+ * Every sign-in method the administrator has on, ready or not, in button order
+ * (HIL-1080).
+ *
+ * The same slot as {@link sessionAuthMethods}, answered without the readiness
+ * narrowing: two accessors over one set, because "on" and "offered" are two
+ * answers. The switches of the sign-in methods screen read this one — an
+ * unready provider an administrator switched on stays on there — and so does
+ * a label that names a provider rather than offering it.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionEnabledAuthMethods(
+  scopes: ScopeManager,
+): ReadonlySignal<readonly AuthMethodEntry[]> {
+  const slot = scopes.session.data.signal(AUTH_METHODS_KEY)
+
+  return computedSignal(() => readAuthMethods(slot.get()).map(publicEntry))
 }
 
 /**
@@ -562,19 +601,32 @@ export function sessionAuthMethods(
  *
  * @param value The raw session-scope slot.
  */
-function readAuthMethods(value: unknown): readonly AuthMethodEntry[] {
+function readAuthMethods(value: unknown): readonly AuthMethodWireEntry[] {
   if (!Array.isArray(value)) {
     return []
   }
-  const entries: AuthMethodEntry[] = []
+  const entries: AuthMethodWireEntry[] = []
   for (const item of value) {
     const parsed = authMethodEntrySchema.safeParse(item)
     if (parsed.success) {
-      entries.push({ key: parsed.data.key, name: parsed.data.name })
+      entries.push({
+        key: parsed.data.key,
+        name: parsed.data.name,
+        ready: parsed.data.ready !== false,
+      })
     }
   }
 
   return entries
+}
+
+/**
+ * Strip a parsed entry down to what leaves this module.
+ *
+ * @param entry The parsed wire entry.
+ */
+function publicEntry(entry: AuthMethodWireEntry): AuthMethodEntry {
+  return { key: entry.key, name: entry.name }
 }
 
 /**

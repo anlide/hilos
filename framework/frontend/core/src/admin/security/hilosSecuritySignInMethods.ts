@@ -10,8 +10,10 @@
 // ON is not read from the row, though. One setting switches every method, and a
 // change of it moves any number of rows while the table answers a change with one
 // row; so the switch reads the live enabled set every connection is sent
-// ({@link sessionAuthMethods}) — the same set the sign-in surface is drawn from —
-// and redraws when that set arrives, whichever door changed it.
+// ({@link sessionEnabledAuthMethods}) and redraws when that set arrives, whichever
+// door changed it. The ENABLED set, not the offered one the sign-in surface is
+// drawn from (HIL-1080): a provider an administrator switched on stays on here
+// even while it has no client pair, and its row says it is not ready.
 
 import {
   type ActionHandle,
@@ -19,7 +21,7 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { sessionAuthMethods } from '../../session/sessionScope.js'
+import { sessionEnabledAuthMethods } from '../../session/sessionScope.js'
 import {
   readBoolean,
   readString,
@@ -191,7 +193,7 @@ export function createHilosSignInMethodsTable(
       ),
     frame: METHODS_FRAME,
   })
-  const methods = sessionAuthMethods(context.scopes)
+  const methods = sessionEnabledAuthMethods(context.scopes)
   let teardown: Array<() => void> = []
 
   return {

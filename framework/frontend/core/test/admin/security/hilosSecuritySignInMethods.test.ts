@@ -73,6 +73,21 @@ describe('createHilosSignInMethodsTable', () => {
     scopes.session.data.set('authMethods', [{ key: 'password', name: null }])
     expect(table.enabledKeys.get()).toEqual(['password'])
   })
+
+  it('keeps an enabled provider on while it is not ready (HIL-1080)', () => {
+    const scopes = new ScopeManager()
+    const table = createHilosSignInMethodsTable({
+      connection: {},
+      scopes,
+      actions: {},
+    } as unknown as HilosSignInMethodsContext)
+
+    scopes.session.data.set('authMethods', [
+      { key: 'password', name: null, ready: true },
+      { key: 'oauth:github', name: 'GitHub', ready: false },
+    ])
+    expect(table.enabledKeys.get()).toEqual(['password', 'oauth:github'])
+  })
 })
 
 describe('createHilosSignInMethodsActions', () => {

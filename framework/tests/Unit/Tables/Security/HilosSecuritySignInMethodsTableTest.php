@@ -16,6 +16,7 @@ use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTableRow;
 use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestHilos;
+use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestProviderDirectory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,6 +33,7 @@ final class HilosSecuritySignInMethodsTableTest extends TestCase
     {
         putenv(EnvConstants::MAIL_TRANSPORT->name);
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
+        AuthMethodTestProviderDirectory::forgetGitHub();
         AuthMethodTestHilos::unmount();
 
         parent::tearDown();
@@ -110,6 +112,18 @@ final class HilosSecuritySignInMethodsTableTest extends TestCase
         putenv(EnvConstants::MAIL_TRANSPORT->name);
         putenv(EnvConstants::MAIL_SMTP_HOST->name . '=');
         self::assertFalse($this->row(AuthMethodKey::MAGIC_LINK)->ready);
+    }
+
+    /**
+     * A provider whose client pair resolves from the env is ready (HIL-1080).
+     */
+    public function testAProviderWithItsPairIsReady(): void
+    {
+        AuthMethodTestHilos::mount(null);
+        AuthMethodTestProviderDirectory::configureGitHub();
+
+        self::assertTrue($this->row(OAuthProviderPreset::GITHUB->value)->ready);
+        self::assertFalse($this->row(OAuthProviderPreset::GOOGLE->value)->ready);
     }
 
     /**

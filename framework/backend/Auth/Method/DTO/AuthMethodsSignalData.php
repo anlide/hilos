@@ -4,30 +4,37 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Method\DTO;
 
+use Hilos\Auth\Method\AuthMethodReadiness;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Pages\Security\AbstractHilosSecurityOAuthProviderPage;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 
 /**
  * AuthMethodsSignalData - the installation's enabled sign-in methods, sent to every connection (HIL-427).
  *
- * Sent by {@see SettingsLibraryAgent} after a write that changed the set, so every open
- * sign-in surface rebuilds itself without asking. The entries are the same ones the handshake
- * carries ({@see HandshakeResponseSignalData}): the method key, and the name a provider's
- * button shows, null for a method that is not a provider. The whole set travels rather than
- * the change, so a surface never has to know what it held before.
+ * Sent by {@see SettingsLibraryAgent} after a setting write that changed the set, and by the
+ * provider page ({@see AbstractHilosSecurityOAuthProviderPage}) after a provider field write
+ * that changed it, so every open sign-in surface rebuilds itself without asking. The entries
+ * are the same ones the handshake carries ({@see HandshakeResponseSignalData}): the method key,
+ * the name a provider's button shows (null for a method that is not a provider), and whether
+ * the installation can serve the method ({@see AuthMethodReadiness}, HIL-1080). The set is the
+ * ENABLED methods, the unready ones included, because the switches of the sign-in methods
+ * screen read this same set; a sign-in surface narrows it to the ready ones itself. The whole
+ * set travels rather than the change, so a surface never has to know what it held before.
  */
 final class AuthMethodsSignalData extends BaseDTO implements SignalDataInterface
 {
     public const string authMethods = 'authMethods';
     public const string key = 'key';
     public const string name = 'name';
+    public const string ready = 'ready';
 
     /**
-     * @param list<array{key: string, name: ?string}> $authMethods Enabled methods in button order
+     * @param list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled methods in button order
      *     (see {@see EnabledAuthMethods::toWire()})
      */
     public function __construct(public readonly array $authMethods)
@@ -38,8 +45,8 @@ final class AuthMethodsSignalData extends BaseDTO implements SignalDataInterface
      * Reads one list of method entries, the node this frame and the handshake carry alike.
      *
      * @param array<array-key, mixed> $node Entries as they arrived
-     * @return list<array{key: string, name: ?string}> Entries in the order they arrived
-     * @throws InvalidFormatException When an entry is not a map or lacks its key
+     * @return list<array{key: string, name: ?string, ready: bool}> Entries in the order they arrived
+     * @throws InvalidFormatException When an entry is not a map, or lacks its key or its readiness
      */
     public static function entriesFrom(array $node): array
     {
@@ -51,6 +58,7 @@ final class AuthMethodsSignalData extends BaseDTO implements SignalDataInterface
             $entries[] = [
                 self::key => self::requireString($entry, self::key),
                 self::name => self::optionalString($entry, self::name),
+                self::ready => self::requireBool($entry, self::ready),
             ];
         }
 
@@ -58,7 +66,7 @@ final class AuthMethodsSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * @return array{authMethods: list<array{key: string, name: ?string}>} DTO payload for transport
+     * @return array{authMethods: list<array{key: string, name: ?string, ready: bool}>} DTO payload for transport
      */
     public function toArray(): array
     {
@@ -70,7 +78,7 @@ final class AuthMethodsSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the list is missing or an entry lacks its key
+     * @throws InvalidFormatException When the list is missing or an entry lacks its key or its readiness
      */
     public static function fromArray(array $data): static
     {

@@ -19,6 +19,14 @@ use Hilos\Hilos;
  * sign-in actions ({@see AuthMethodGate}), and the set the handshake and the settings
  * library hand to every surface.
  *
+ * Enabled is the administrator's decision and nothing more: a method switched on that the
+ * installation cannot serve (a provider without its client pair) is still enabled here, and
+ * {@see keys()} and {@see isEnabled()} still name it - the gate and the detector read them. The
+ * set on the wire ({@see toWire()}) says of each entry whether it is ready
+ * ({@see AuthMethodReadiness}, HIL-1080), and a sign-in surface narrows it to the ready ones in
+ * the frontend core, because the switches of the sign-in methods screen read that same set and
+ * must go on showing an unready method as on.
+ *
  * Nothing is cached. Settings are a collection every process reads locally, so the set is
  * read again on every call and a switch takes effect on the next action on every node,
  * without anything having to be told to forget what it held.
@@ -63,9 +71,12 @@ final class EnabledAuthMethods
      * The enabled set in the shape a surface is handed it.
      *
      * A provider carries the name its button shows, taken from the project's provider
-     * directory; every other method carries null, because the surface names it itself.
+     * directory; every other method carries null, because the surface names it itself. Every
+     * entry says whether the installation can serve it ({@see AuthMethodReadiness}): the set
+     * is not narrowed to the ready methods here, since the switches of the sign-in methods
+     * screen read it too, and the sign-in surfaces narrow it themselves.
      *
-     * @return list<array{key: string, name: ?string}> Enabled methods in the order a surface shows them
+     * @return list<array{key: string, name: ?string, ready: bool}> Enabled methods in the order a surface shows them
      * @throws DatabaseException When the stored setting cannot be read
      * @throws SettingException When the setting's catalog entry or stored value is invalid
      */
@@ -76,6 +87,7 @@ final class EnabledAuthMethods
             $entries[] = [
                 AuthMethodsSignalData::key => $methodKey,
                 AuthMethodsSignalData::name => self::providerName($methodKey),
+                AuthMethodsSignalData::ready => AuthMethodReadiness::isReady($methodKey),
             ];
         }
 

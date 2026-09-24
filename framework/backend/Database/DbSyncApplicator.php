@@ -104,6 +104,12 @@ final class DbSyncApplicator
      * parameter is present so the four arms read alike and a caller cannot pass the origin to
      * some of them and forget the rest.
      *
+     * An empty row says the row changed outside its ORM-mapped columns (a secret written by a
+     * targeted query, {@see Object_::announceUnmappedUpdate()}): nothing to apply, so the held
+     * object is only told to forget what it derived from that column
+     * ({@see Object_::applyDbSyncUnmappedUpdate()}, HIL-1080). A row this process does not hold
+     * is left alone, and not read in to be told.
+     *
      * @param DbSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
@@ -115,6 +121,12 @@ final class DbSyncApplicator
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
     ): void {
+        if ($data->row === []) {
+            self::applyUnmappedUpdate($data, $skipSelfBroadcastCheck);
+
+            return;
+        }
+
         if (
             !self::shouldApplyDbSyncRow(
                 $data->collectionKey,
@@ -231,6 +243,29 @@ final class DbSyncApplicator
     public static function applyReHydrate(): void
     {
         Hilos::$db?->reHydrateDbBackedCollections();
+    }
+
+    /**
+     * Tells a held object that its row changed outside the ORM-mapped columns.
+     *
+     * @param DbSyncUpdatedSignalData $data Empty-row payload from another process
+     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     */
+    private static function applyUnmappedUpdate(DbSyncUpdatedSignalData $data, bool $skipSelfBroadcastCheck): void
+    {
+        if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $data->emitter, $skipSelfBroadcastCheck)) {
+            return;
+        }
+
+        $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
+        if (!$collection instanceof Objects) {
+            return;
+        }
+
+        $object = $collection[$data->idString] ?? null;
+        if ($object instanceof Object_) {
+            $object->applyDbSyncUnmappedUpdate();
+        }
     }
 
     /**

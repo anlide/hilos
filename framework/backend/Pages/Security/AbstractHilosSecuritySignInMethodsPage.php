@@ -14,6 +14,7 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\CLI\Commands\AdminCreateCommand;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
@@ -43,7 +44,11 @@ use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
  * what it can judge without writing - that the method is one the project wired - builds the
  * new list from the stored one, and the library writes. The rule every write of that key
  * passes ({@see AuthMethodsDisabledRule}) refuses the list that would switch the last method
- * off, and its sentence comes back here to be spoken as the refusal.
+ * off, and the list that would leave on only methods the installation cannot serve (HIL-1080);
+ * its sentence comes back here to be spoken as the refusal. An installation locked after the
+ * write - a secret cleared, an env value changed - is opened with `admin:create <session
+ * token>` ({@see AdminCreateCommand}), which makes a browser session an administrator, after
+ * which the methods are switched back on on this screen.
  *
  * The same write is what reshapes every open sign-in surface: the library sends the new set
  * to every connection when the set changed, whichever door changed it, so this page sends

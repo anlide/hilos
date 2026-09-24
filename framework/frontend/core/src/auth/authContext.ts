@@ -5,10 +5,10 @@
 // The shape mirrors `HilosSettingsContext`: the same {connection, scopes, actions}
 // triple, plus the declarations only the project can make. Which ways in the
 // surface offers is NOT one of them any more (HIL-427): the installation's set
-// arrives from the server in the session scope (`sessionAuthMethods`), an
-// administrator narrows it from the admin, and the machine builds the buttons
-// from it — a project that listed descriptors here would be a second opinion on
-// a set it no longer owns.
+// arrives from the server in the session scope (`sessionAuthMethods`, the enabled
+// methods it can serve — HIL-1080), an administrator narrows it from the admin,
+// and the machine builds the buttons from it — a project that listed descriptors
+// here would be a second opinion on a set it no longer owns.
 //
 // `pendingAck` and `pendingAuthStep` are deliberately NOT here either: the surface
 // derives both from `scopes` through the framework's own session factories, so a
@@ -35,11 +35,12 @@ export interface HilosOAuthProviderOption {
 }
 
 /**
- * The OAuth providers of an enabled method set, as options for a button row
+ * The OAuth providers of an offered method set, as options for a button row
  * (HIL-427) — the sign-in icons and the profile's "Link an account" read the
- * same set, so a provider switched off leaves both.
+ * same set, so a provider switched off or left without its client pair
+ * (HIL-1080) leaves both.
  *
- * @param entries The enabled methods, in button order.
+ * @param entries The offered methods, in button order.
  * @returns The providers among them, in the same order.
  */
 export function oauthProviderOptionsFor(
