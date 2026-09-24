@@ -249,6 +249,15 @@ Both default to no-ops and both run on the master loop, so overrides must stay
 non-blocking. The registry stays a pure data structure — there is no per-tick
 membership polling; transitions are pushed to the observer.
 
+Liveness is born of this node's own link and of nothing else (HIL-1059): its own
+handshake with a node puts it online (`onNodeJoined`), and the close of its last link
+to a node or the leave frame the node sends about itself puts it offline
+(`onNodeLeft`). `peer_roster` and `peer_announce` carry membership only — id, role,
+capabilities, address — so a node heard of only from a neighbour lies in the registry
+offline, known and not yet seen, until its own handshake. `onNodeJoined` also fires on
+a membership change of a node that is online here: the node announced its own new
+capability, and a leader retries what it could not place.
+
 ### Leadership hooks
 
 The daemon also registers itself as the cluster `LeadershipObserver` at start. The
@@ -482,7 +491,9 @@ replicated log or state machine.
 - **Quorum.** A static expected-master-set (`CLUSTER_MASTER_SET`) defines the
   quorum as a fixed majority (`floor(n/2)+1`). `hasQuorum()` counts master-set
   members currently online in the registry, including self, so a partition shrinks
-  one side below majority for free. A master that cannot see a quorum stops leading.
+  one side below majority for free. Online means reachable over this node's own link;
+  a neighbour's word about a master does not count (HIL-1059). A master that cannot
+  see a quorum stops leading.
 - **Election.** Followers hold a randomized election timeout
   (`CLUSTER_ELECTION_TIMEOUT_MIN_MS`..`MAX_MS`); the first to expire becomes a
   candidate, requests votes, and leads on a majority. Candidacy is gated on a live
@@ -696,12 +707,11 @@ alone, so a fleet of equal free agents does not pile onto one node.
 - **Failover re-placement (leader).** `onNodeLeft` arms a failover for each placed agent the
   lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs
   the `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node
-  (capability gate only). A node back before its grace cancels its own failover — and "back"
-  is a handshake with it as well as the registry reporting its return: when gossip puts the
-  node online a moment before the leader's own link to it completes, the registry takes the
-  handshake for no change and reports nothing, so `ClusterPlacement::onPeerHandshaked()`
-  calls the failover off itself and logs `Failover of <n> agent(s) on '<node>' called off`
-  (HIL-1034; a slave's self-fence against its placing leader the same way). The deadline
+  (capability gate only). A node back before its grace cancels its own failover: only the
+  leader's own handshake can put a node back online, the registry reports that return every
+  time, and `noteNodeOnline()` calls the failover off and logs `Failover of <n> agent(s) on
+  '<node>' called off` (HIL-1059; a slave's self-fence against its placing leader the same
+  way). The deadline
   carries the node whose loss armed it, and firing it re-places only an agent the registry
   still puts there: inside one grace period the fleet's own supervisor may restart the agent
   on a neighbour, and a deadline outliving that move would start a second copy on the node it

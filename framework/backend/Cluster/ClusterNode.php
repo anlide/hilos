@@ -12,9 +12,11 @@ use Hilos\Cluster\Peer\PeerAddress;
  * Held by the master-owned {@see ClusterRegistry} as a value object, replaced
  * wholesale on every membership change rather than mutated. `address` is the
  * endpoint peers dial to reach the node; `online` and `lastSeen` describe
- * liveness as the master observed it. Per-link keepalive detects a hung node and
- * marks it offline through the same close path (HIL-183); this snapshot's shape is
- * unchanged.
+ * liveness as this master observed it over its own link. Only three events set
+ * `online`: this node's own handshake with the node, the close of its last link to
+ * it, and the leave frame the node sends about itself; a neighbour's gossip never
+ * does (HIL-1059). Per-link keepalive detects a hung node and marks it offline
+ * through the same close path (HIL-183); this snapshot's shape is unchanged.
  */
 final class ClusterNode
 {
@@ -24,7 +26,8 @@ final class ClusterNode
      * @param list<string> $capabilities Declared capability tags
      * @param ?PeerAddress $address Advertised address peers dial to reach the node
      * @param bool $online Whether the node is currently connected
-     * @param float $lastSeen Microtime the node was last observed
+     * @param float $lastSeen Microtime the node was last observed; for a node known only from
+     *                        gossip, the moment this node learned of it
      */
     private function __construct(
         public readonly string $nodeId,
@@ -41,7 +44,8 @@ final class ClusterNode
      *
      * @param NodeIdentity $identity Node identity
      * @param bool $online Whether the node is currently connected
-     * @param float $lastSeen Microtime the node was last observed
+     * @param float $lastSeen Microtime the node was last observed; for a node known only from
+     *                        gossip, the moment this node learned of it
      * @return self Node record
      */
     public static function fromIdentity(NodeIdentity $identity, bool $online, float $lastSeen): self

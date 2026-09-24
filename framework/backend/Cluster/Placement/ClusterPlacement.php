@@ -1222,19 +1222,15 @@ final class ClusterPlacement implements WorkerPlacement
      * thing the per-tick publish cannot do for it: the publish speaks only on CHANGE, so a node
      * that linked into a quiet cluster would learn nothing until something moved.
      *
-     * Both sides first call off what the peer's loss armed here - the self-fence, the failover
-     * ({@see noteNodeOnline()} does the same on a return the registry reports). A handshake is
-     * this node seeing the peer alive with its own eyes, and it can be the only sign of the
-     * return: when gossip put the peer back online a moment before the handshake completed, the
-     * registry takes the handshake for no change and reports nothing, and a failover armed by the
-     * link that dropped would move a live node's agents (HIL-1034).
+     * What the peer's loss armed here - the self-fence, the failover - is called off by
+     * {@see noteNodeOnline()}, not here: a handshake after a lost link is always a return the
+     * registry reports, because nothing but this node's own handshake puts a node back online
+     * (HIL-1059).
      *
      * @param string $nodeId Node id of the peer that just handshaked
      */
     public function onPeerHandshaked(string $nodeId): void
     {
-        $this->callOffLossOf($nodeId);
-
         if ($this->isLeader) {
             $this->mesh->sendToNode($nodeId, new PeerPlacementViewDTO($this->selfNodeId, $this->placementViewAgents()));
         }

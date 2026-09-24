@@ -228,8 +228,6 @@ final class PeerServerRtHandOverTest extends TestCase
     /**
      * The freezing half of the same cue (HIL-711): the link is what carries deltas, so the link
      * closing is the moment this node's copies of that peer's rows stop being kept up to date.
-     * Membership would answer this wrong in the direction that matters — gossip from a third
-     * node keeps a peer online while nothing between these two reaches anything.
      *
      * @throws EnvException When the link cannot read its socket and keepalive settings
      * @throws HilosException When the hello refuses to become a frame
@@ -250,9 +248,10 @@ final class PeerServerRtHandOverTest extends TestCase
     }
 
     /**
-     * A peer already believed offline — marked so by a third node's gossip — losing its last
-     * link is exactly the case that must not go unnoticed: the roster changes nothing, so the
-     * branch that announces a departure stays silent, while replication has only now stopped.
+     * A peer already believed offline — marked so by its own leave frame while its link is still
+     * up — losing its last link is exactly the case that must not go unnoticed: the registry
+     * changes nothing, so the branch that reports a departure stays silent, while replication has
+     * only now stopped.
      *
      * @throws EnvException When the link cannot read its socket and keepalive settings
      * @throws HilosException When the hello refuses to become a frame

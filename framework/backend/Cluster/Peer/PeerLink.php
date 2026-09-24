@@ -240,8 +240,8 @@ final class PeerLink extends AbstractClient
      *
      * The peer is still reachable over the surviving link, so this must not look
      * like a departure: the remote identity is cleared first, which makes
-     * {@see onClose()} a no-op and keeps the registry entry and the leave gossip
-     * untouched. The link is then scheduled to close on the next tick.
+     * {@see onClose()} a no-op and keeps the registry entry untouched. The link is
+     * then scheduled to close on the next tick.
      */
     public function discardAsDuplicate(): void
     {
@@ -323,7 +323,7 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Notifies the server so it can mark the peer offline and announce the leave.
+     * Notifies the server so it can mark the peer offline.
      */
     protected function onClose(): void
     {

@@ -6205,8 +6205,11 @@ abstract class DaemonManager extends BaseManager implements
      * non-blocking.
      *
      * Handing that node this one's RT state is NOT done here, though a node that has just come
-     * up needs it: a join says the node is a member, not that this node can reach it. See
-     * {@see handOverRtSnapshots()}, which the transport calls off the handshake instead.
+     * up needs it. A join is born of this node's own handshake (HIL-1059), but not of every one
+     * and not only of one: the handshake of a node that is already online - a duplicate link -
+     * gives no join, and a join on a node announcing a new capability opens no new link. The
+     * hand-over belongs to the link, so see {@see handOverRtSnapshots()}, which the transport
+     * calls off the handshake instead.
      *
      * @param ClusterNode $node Node that joined
      */

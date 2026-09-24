@@ -117,14 +117,18 @@ use Throwable;
  * gossip membership. Every socket operation here is non-blocking, so the master
  * loop is never stalled. The server owns the membership side effects: it merges
  * peers into the master registry and fans out roster/announce gossip so every
- * node's registry converges. Knowing a peer (registry + gossip) stays separate
- * from dialing one (the policy): a later partial-mesh is a policy swap alone.
+ * node's registry converges. Gossip carries membership only - which nodes exist,
+ * their role, capabilities and address; whether a node is online is taken from
+ * this node's own link to it and from nothing else (HIL-1059). Knowing a peer
+ * (registry + gossip) stays separate from dialing one (the policy): a later
+ * partial-mesh is a policy swap alone.
  *
  * On a clustered master the server also hosts the {@see ClusterCoordinator}: it
  * builds it at start, drives its tick each onTick, routes the consensus frames
  * (request-vote, vote-reply, heartbeat) into it, and serves as its
- * {@see ConsensusMesh} — turning the master registry into a liveness view and the
- * live links into an outbound channel. A slave keeps no coordinator.
+ * {@see ConsensusMesh} — the registry's liveness, which is this node's own links,
+ * as the view of who is up, and the live links as an outbound channel. A slave
+ * keeps no coordinator.
  *
  * Every link, accepted or dialed, is mutual TLS verified against the cluster's authorities, and
  * the name in the peer's certificate binds the hello/welcome handshake (HIL-1034).
@@ -760,7 +764,7 @@ final class PeerServer extends AbstractTlsServer implements
 
         if ($changed) {
             $this->notifyJoined($remote, $now);
-            $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, true), $link);
+            $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote), $link);
         }
 
         // Reconcile-on-rejoin: report the agents this node still hosts so a leader on the
@@ -864,20 +868,14 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Merges a received roster and re-announces every entry that was new to us.
+     * Merges a received roster and re-announces every entry that changed the membership.
      *
-     * Liveness is observed, not relayed — the same rule {@see onAnnounceReceived()}
-     * states, and for the same reason: the mesh is full, so a peer speaks
-     * authoritatively only about itself. An entry describing a third node this one
-     * already holds a handshaked link to is dropped, because the local link is the
-     * better evidence. Without that, a roster is the one frame that can overwrite
-     * directly observed liveness: a node that was cut off still carries the view it
-     * had while it was away, hands it over on the handshake that heals the split,
-     * and every node it names offline is flipped offline here — while the links to
-     * them are alive and carrying frames. Nothing re-observes them afterwards
-     * (liveness is only stamped on a handshake), so the roster of the node they
-     * gossip through stays wrong until something restarts, which is what left the
-     * cluster scenarios waiting on a leader whose roster called half the mesh gone.
+     * A roster carries membership - which nodes exist, their role, capabilities and address -
+     * and no liveness: a node is online here only by this node's own link to it (HIL-1059). Each
+     * entry takes the one path {@see mergeEntry()} lays down, so an entry about a node this one
+     * is linked to is dropped: that node told its membership itself. An entry that changed the
+     * membership is announced to the other links, which is how a newcomer that came in through
+     * one seed becomes known to every node.
      *
      * @param PeerLink $link Link the roster arrived on
      * @param PeerRosterDTO $roster Received roster
@@ -890,28 +888,21 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         $now = microtime(true);
-        $sender = $link->remoteIdentity()?->nodeId;
         foreach ($roster->nodes as $entry) {
-            if ($entry->nodeId !== $sender && $this->hasHandshakedLinkToNode($entry->nodeId)) {
-                continue;
-            }
-
-            if ($this->mergeEntry($registry, $entry, $now)) {
+            if ($this->mergeEntry($registry, $link, $entry, $now)) {
                 $this->broadcastAnnounce($entry, $link);
             }
         }
     }
 
     /**
-     * Merges a received announcement about a node this one does not observe itself.
+     * Merges a received announcement and stops it there.
      *
-     * Liveness is observed, not relayed. The mesh is full (every node dials every
-     * other), so a peer speaks authoritatively only about itself: an announcement
-     * describing a third node this node already holds a handshaked link to is
-     * dropped, because the local link is the better evidence. The merged entry is
-     * also never re-announced onward — the observer already broadcast the change to
-     * every peer, so relaying only re-amplifies it, and two nodes holding opposite
-     * liveness views would echo the flip between them without ever converging.
+     * An announcement carries membership only - never liveness (HIL-1059) - and takes the one
+     * path {@see mergeEntry()} lays down. The merged entry is never re-announced onward: the
+     * node that made the change already told every peer it links to, so relaying only
+     * re-amplifies it, and two nodes holding opposite views would echo the flip between them
+     * without ever converging (HIL-746).
      *
      * @param PeerLink $link Link the announcement arrived on
      * @param PeerAnnounceDTO $announce Received announcement
@@ -923,20 +914,7 @@ final class PeerServer extends AbstractTlsServer implements
             return;
         }
 
-        if ($announce->node->nodeId !== $link->remoteIdentity()?->nodeId
-            && $this->hasHandshakedLinkToNode($announce->node->nodeId)) {
-            return;
-        }
-
-        $now = microtime(true);
-        if ($this->mergeEntry($registry, $announce->node, $now)) {
-            $identity = $announce->node->toIdentity();
-            if ($announce->node->online) {
-                $this->notifyJoined($identity, $now);
-            } else {
-                $this->notifyLeft($identity, $now);
-            }
-        }
+        $this->mergeEntry($registry, $link, $announce->node, microtime(true));
     }
 
     /**
@@ -977,11 +955,13 @@ final class PeerServer extends AbstractTlsServer implements
      * Reacts to a peer's announced graceful-leave.
      *
      * Marks the leaving node offline ahead of its link closing — a planned departure,
-     * so membership converges at once rather than waiting for the socket to drop — and
-     * fans the leave out to the other peers. When this node is the designated successor,
-     * triggers an immediate election so leadership transfers without the election-timeout
-     * wait; the other followers keep waiting theirs, avoiding a split vote. The ordinary
-     * HIL-339 election (driven by the link close's fast path) remains the fallback.
+     * so membership converges at once rather than waiting for the socket to drop. Nothing
+     * is fanned out: the leaving node sends this frame to every peer itself, so each peer
+     * hears the leave from the node and not from a neighbour (HIL-1059). When this node is
+     * the designated successor, triggers an immediate election so leadership transfers
+     * without the election-timeout wait; the other followers keep waiting theirs, avoiding
+     * a split vote. The ordinary HIL-339 election (driven by the link close's fast path)
+     * remains the fallback.
      *
      * @param PeerNodeLeavingDTO $frame Received graceful-leave frame
      */
@@ -994,7 +974,6 @@ final class PeerServer extends AbstractTlsServer implements
             if ($leaving !== null && $registry->markOffline($frame->nodeId, $now)) {
                 $identity = NodeIdentity::of($leaving->nodeId, $leaving->role, $leaving->capabilities, $leaving->address);
                 $this->notifyLeft($identity, $now);
-                $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($identity, false));
             }
         }
 
@@ -1633,7 +1612,7 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Marks the closed link's peer offline and announces the leave to the others.
+     * Marks the closed link's peer offline.
      *
      * A peer can briefly hold two links to us — during a simultaneous-bootstrap
      * collapse, or any transient reconnect overlap — so a close only means the peer
@@ -1663,14 +1642,13 @@ final class PeerServer extends AbstractTlsServer implements
 
         // The last link to that node is gone, so its RT deltas stop arriving here and the copies
         // this node holds of its rows stop being current (HIL-711). Told outside the branch
-        // below on purpose: that one is silent when the node was already marked offline by
-        // gossip, and a link dropping under a node believed offline is precisely the case where
-        // replication has just stopped and nothing else would say so.
+        // below on purpose: that one is silent when the node was already marked offline by its
+        // own graceful leave, and a link dropping under a node believed offline is precisely the
+        // case where replication has just stopped and nothing else would say so.
         Hilos::$cluster?->rtSyncSink()?->noteNodeUnreachable($remote->nodeId, $now);
 
         if ($registry->markOffline($remote->nodeId, $now)) {
             $this->notifyLeft($remote, $now);
-            $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, false), $link);
         }
 
         // Fast-path leader-loss: a dropped link marks the peer offline instantly, so
@@ -1715,23 +1693,43 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Merges one gossip entry, ignoring any entry that describes the local node.
+     * Merges what one gossip entry says a node is made of, the one path of a roster entry and
+     * an announcement alike (HIL-1059).
      *
-     * The local node is authoritative about itself, so its own record is never
-     * overwritten from a peer's view of it.
+     * An entry about the local node is ignored: this node is authoritative about itself. An
+     * entry a neighbour gives about a third node this one holds its own link to is ignored
+     * whole: that node told this one its membership itself, on the handshake or in its own
+     * announcement, and the retelling is older than its word (HIL-746). Anything else merges
+     * membership only, never liveness. A change to a node that is online here is a join the
+     * observer hears - and that node can only be the sender itself: online means this node's
+     * own link, and entries about linked third nodes never get this far.
      *
      * @param ClusterRegistry $registry Master registry
+     * @param PeerLink $source Link the entry arrived on
      * @param PeerNodeEntry $entry Received node entry
      * @param float $now Current microtime
-     * @return bool True when the entry changed the membership meaningfully
+     * @return bool True when the entry changed the membership
      */
-    private function mergeEntry(ClusterRegistry $registry, PeerNodeEntry $entry, float $now): bool
+    private function mergeEntry(ClusterRegistry $registry, PeerLink $source, PeerNodeEntry $entry, float $now): bool
     {
         if ($entry->nodeId === $this->localIdentity->nodeId) {
             return false;
         }
 
-        return $registry->merge($entry->toIdentity(), $entry->online, $now);
+        if ($entry->nodeId !== $source->remoteIdentity()?->nodeId && $this->hasHandshakedLinkToNode($entry->nodeId)) {
+            return false;
+        }
+
+        $identity = $entry->toIdentity();
+        if (!$registry->mergeMembership($identity, $now)) {
+            return false;
+        }
+
+        if ($this->onlineNodeById($registry, $entry->nodeId) !== null) {
+            $this->notifyJoined($identity, $now);
+        }
+
+        return true;
     }
 
     /**
@@ -1776,8 +1774,10 @@ final class PeerServer extends AbstractTlsServer implements
     /**
      * Returns the online master-role node ids from the registry, including self.
      *
-     * Backs the coordinator's quorum check. A registry hiccup yields an empty set,
-     * which the coordinator reads as no quorum — the safe, leadership-dropping side.
+     * Backs the coordinator's quorum check. Online means reachable over this node's
+     * own link; a neighbour's word about a master does not count (HIL-1059). A registry
+     * hiccup yields an empty set, which the coordinator reads as no quorum — the safe,
+     * leadership-dropping side.
      *
      * @return list<string> Online master node ids
      */
@@ -2670,9 +2670,10 @@ final class PeerServer extends AbstractTlsServer implements
     /**
      * Returns the ids of every currently-online node, including the local node.
      *
-     * Reads the master registry so failover can scan the online set for a capable host. A
-     * registry hiccup yields an empty set — the safe side, which simply degrades a re-placement
-     * to unplaced rather than risking a bad target.
+     * Reads the master registry so failover can scan the online set for a capable host. Online
+     * means reachable over this node's own link (HIL-1059). A registry hiccup yields an empty
+     * set — the safe side, which simply degrades a re-placement to unplaced rather than risking a
+     * bad target.
      *
      * @return list<string> Online node ids
      */
@@ -2696,10 +2697,10 @@ final class PeerServer extends AbstractTlsServer implements
     /**
      * Returns the ids of the nodes this one currently holds a handshaked link to.
      *
-     * Narrower than {@see onlineNodeIds()}, and a different question: membership says who is in
-     * the mesh - learned from gossip, and true of nodes this one has no link to - while this says
-     * who can be reached right now, which is what an addressed frame needs. The local node is
-     * never among them: a node holds no link to itself.
+     * The question an addressed frame asks: where will it arrive right now. Online in the registry
+     * implies such a link (HIL-1059), but the converse can fail in one window - a node whose leave
+     * frame has arrived is offline while its link is still up - so an addressed frame asks the
+     * links, not membership. The local node is never among them: a node holds no link to itself.
      *
      * @return list<string> Node ids behind a handshaked link, each named once
      */
@@ -2723,10 +2724,13 @@ final class PeerServer extends AbstractTlsServer implements
      * Reports whether membership knows this node and currently has it down.
      *
      * The threshold is "known AND offline" rather than "not among the online ones", and the two
-     * part company on the node the leader has not heard of YET: a frame can outrun gossip, and
-     * reading that as departure would throw away a claim nobody would restate until ownership
-     * next changed. A node that LEFT is not absent from the registry — it keeps its row and turns
-     * offline in it (HIL-337) — so the leader has something to tell the two apart by.
+     * part company on the node the leader has not heard of YET: reading that as departure would
+     * throw away a claim nobody would restate until ownership next changed. A node that LEFT is
+     * not absent from the registry — it keeps its row and turns offline in it (HIL-337) — so the
+     * leader has something to tell the two apart by. "Known AND offline" also covers a node heard
+     * of only from a neighbour and not yet seen (HIL-1059), and that is no departure either - but
+     * it never reaches this question: the claim report travels over the sender's own link
+     * ({@see announceRtClaims()}), and by that link's handshake the sender is already online here.
      *
      * An unavailable registry answers false, which judges the report the way it was judged before
      * this question existed. A registry hiccup turning into a silent loss of claims would be a

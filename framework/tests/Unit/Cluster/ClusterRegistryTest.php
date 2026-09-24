@@ -105,6 +105,66 @@ final class ClusterRegistryTest extends TestCase
         $this->assertSame($versionAfterOffline, $registry->version());
     }
 
+    public function testMergeMembershipRecordsAnUnknownNodeKnownButNotSeen(): void
+    {
+        $registry = new ClusterRegistry();
+
+        $this->assertTrue($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 100.0));
+
+        $nodeB = $this->findNode($registry, 'node-b');
+        $this->assertFalse($nodeB->online, 'A node heard of only from a neighbour is not seen yet (HIL-1059)');
+        $this->assertSame(['cpu'], $nodeB->capabilities);
+        $this->assertSame(100.0, $nodeB->lastSeen, 'The moment this node learned of it');
+        $this->assertSame(1, $registry->version());
+    }
+
+    public function testMergeMembershipOfAnUnchangedOnlineNodeChangesNothing(): void
+    {
+        $registry = new ClusterRegistry();
+        $registry->recordPeer(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 100.0);
+
+        $this->assertFalse($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 105.0));
+
+        $nodeB = $this->findNode($registry, 'node-b');
+        $this->assertTrue($nodeB->online);
+        $this->assertSame(100.0, $nodeB->lastSeen);
+        $this->assertSame(1, $registry->version());
+    }
+
+    public function testMergeMembershipTakesANewMakeUpAndKeepsTheLiveness(): void
+    {
+        $registry = new ClusterRegistry();
+        $registry->recordPeer(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 100.0);
+        $address = PeerAddress::fromString('10.0.0.2:9000');
+
+        $this->assertTrue($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Slave, ['gpu-local']), 101.0));
+        $this->assertTrue($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Slave, ['gpu-local'], $address), 102.0));
+        $this->assertTrue($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Master, ['gpu-local'], $address), 103.0));
+
+        $nodeB = $this->findNode($registry, 'node-b');
+        $this->assertSame(NodeRole::Master, $nodeB->role);
+        $this->assertSame(['gpu-local'], $nodeB->capabilities);
+        $this->assertSame('10.0.0.2:9000', $nodeB->address?->toString());
+        $this->assertTrue($nodeB->online, 'Gossip changes what a node is made of, never whether it is alive');
+        $this->assertSame(100.0, $nodeB->lastSeen);
+        $this->assertSame(4, $registry->version());
+    }
+
+    public function testMergeMembershipNeverBringsAnOfflineNodeOnline(): void
+    {
+        $registry = new ClusterRegistry();
+        $registry->recordPeer(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 100.0);
+        $registry->markOffline('node-b', 110.0);
+
+        $this->assertFalse($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 120.0));
+        $this->assertTrue($registry->mergeMembership(NodeIdentity::of('node-b', NodeRole::Slave, ['gpu-local']), 130.0));
+
+        $nodeB = $this->findNode($registry, 'node-b');
+        $this->assertFalse($nodeB->online);
+        $this->assertSame(['gpu-local'], $nodeB->capabilities);
+        $this->assertSame(110.0, $nodeB->lastSeen);
+    }
+
     private function findNode(ClusterRegistry $registry, string $nodeId): ClusterNode
     {
         foreach ($registry->snapshot() as $node) {

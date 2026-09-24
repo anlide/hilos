@@ -126,9 +126,9 @@ interface RtSyncSink
      *
      * The replicas this node holds of that node's rows stop being kept up to date at this
      * moment, and go on being served — so the one thing that must not happen is that they stay
-     * indistinguishable from rows that are current (HIL-711). The cue is the link closing and
-     * not the node leaving the roster: membership is gossip, and a third node's word can put a
-     * peer back online while nothing this node sends or receives reaches it.
+     * indistinguishable from rows that are current (HIL-711). The cue is the link closing,
+     * because the mark is about this node's last link to that one; the roster's liveness comes
+     * from the same links (HIL-1059), and a third node has no word left to trust about it.
      *
      * The replicas are not all of it. Every row whose SOURCE is that node stops being current,
      * and the node's own row in the node-local cluster router is one of those — this node wrote

@@ -11,7 +11,9 @@ namespace Hilos\Cluster;
  * daemon master — never in Hilos::$rt and never behind a worker agent: the peer
  * transport and the coordinator both run on the master, so membership lives with
  * them. The local node self-seeds; peers are recorded as their handshakes
- * complete and marked offline when their links close. `version()` bumps on every
+ * complete and marked offline when their links close. A node heard of only from a
+ * neighbour's gossip lies here offline, with its membership current, until this
+ * node's own handshake with it (HIL-1059). `version()` bumps on every
  * change so a future master->browser projection (HIL-337) can detect updates and
  * mirror snapshots downstream without the registry becoming a second source of
  * truth. Time is passed in by the caller so the registry stays testable without
@@ -48,11 +50,13 @@ final class ClusterRegistry
     }
 
     /**
-     * Upserts a node and reports whether it changed the membership meaningfully.
+     * Upserts an observed node and reports whether it changed the membership meaningfully.
      *
-     * A change of role, capabilities, address, or online status counts; a
-     * repeated identical record does not, so membership gossip converges instead
-     * of echoing forever. `lastSeen` alone is never a meaningful change.
+     * The path of observation: this node's own handshake with a peer, and the local
+     * node itself. Gossip about a node goes through {@see mergeMembership()} instead,
+     * which never touches liveness. A change of role, capabilities, address, or online
+     * status counts; a repeated identical record does not. `lastSeen` alone is never a
+     * meaningful change.
      *
      * @param NodeIdentity $node Node identity to upsert
      * @param bool $online Whether the node is currently online
@@ -65,6 +69,36 @@ final class ClusterRegistry
         $incoming = ClusterNode::fromIdentity($node, $online, $now);
 
         if ($existing !== null && !self::isMeaningfulChange($existing, $incoming)) {
+            return false;
+        }
+
+        $this->nodes[$node->nodeId] = $incoming;
+        $this->version++;
+
+        return true;
+    }
+
+    /**
+     * Merges what a neighbour's gossip says a node is made of, never whether it is alive.
+     *
+     * An unknown node is recorded offline - known, not yet seen - with `lastSeen` set to
+     * the moment this node learned of it. A known node takes the new role, capabilities
+     * or address and keeps the `online` and `lastSeen` it had: liveness is taken only
+     * from this node's own link (HIL-1059). A repeated identical record changes nothing,
+     * so membership gossip converges instead of echoing forever.
+     *
+     * @param NodeIdentity $node Node identity the gossip carries
+     * @param float $now Current microtime
+     * @return bool True when the node was new or its role, capabilities or address changed
+     */
+    public function mergeMembership(NodeIdentity $node, float $now): bool
+    {
+        $existing = $this->nodes[$node->nodeId] ?? null;
+        $incoming = $existing === null
+            ? ClusterNode::fromIdentity($node, false, $now)
+            : ClusterNode::fromIdentity($node, $existing->online, $existing->lastSeen);
+
+        if ($existing !== null && !self::isMembershipChange($existing, $incoming)) {
             return false;
         }
 
@@ -95,21 +129,6 @@ final class ClusterRegistry
     }
 
     /**
-     * Reports whether a gossip-relevant field differs between two node records.
-     *
-     * @param ClusterNode $existing Current node record
-     * @param ClusterNode $incoming Candidate node record
-     * @return bool True when role, capabilities, address, or online status differs
-     */
-    private static function isMeaningfulChange(ClusterNode $existing, ClusterNode $incoming): bool
-    {
-        return $existing->role !== $incoming->role
-            || $existing->online !== $incoming->online
-            || $existing->capabilities !== $incoming->capabilities
-            || $existing->address?->toString() !== $incoming->address?->toString();
-    }
-
-    /**
      * Returns the current membership snapshot.
      *
      * TODO(HIL-178): per docs/agents/code-style/internal-backend-api.md ("typed
@@ -120,7 +139,7 @@ final class ClusterRegistry
      * key-based accessor contracts, so a proper keyed collection is non-trivial
      * and out of this slice.
      *
-     * @return list<ClusterNode> Live and recently-offline nodes
+     * @return list<ClusterNode> Every known node, online or not
      */
     public function snapshot(): array
     {
@@ -133,5 +152,31 @@ final class ClusterRegistry
     public function version(): int
     {
         return $this->version;
+    }
+
+    /**
+     * Reports whether an observed node record differs from the one held.
+     *
+     * @param ClusterNode $existing Current node record
+     * @param ClusterNode $incoming Candidate node record
+     * @return bool True when role, capabilities, address, or online status differs
+     */
+    private static function isMeaningfulChange(ClusterNode $existing, ClusterNode $incoming): bool
+    {
+        return $existing->online !== $incoming->online || self::isMembershipChange($existing, $incoming);
+    }
+
+    /**
+     * Reports whether what a node is made of differs between two records, liveness aside.
+     *
+     * @param ClusterNode $existing Current node record
+     * @param ClusterNode $incoming Candidate node record
+     * @return bool True when role, capabilities, or address differs
+     */
+    private static function isMembershipChange(ClusterNode $existing, ClusterNode $incoming): bool
+    {
+        return $existing->role !== $incoming->role
+            || $existing->capabilities !== $incoming->capabilities
+            || $existing->address?->toString() !== $incoming->address?->toString();
     }
 }

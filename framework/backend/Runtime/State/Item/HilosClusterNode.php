@@ -27,6 +27,8 @@ use Hilos\Runtime\State\Collection\HilosClusterNodes;
  *
  * A node that left keeps its row, with `online` false and a fresh `lastSeen`, because that is
  * what the registry does: a node that was here and fell over is data, not the absence of it.
+ * `online` means reachable from here over this master's own link (HIL-1059), so a row can also
+ * be offline because its node is only heard of from a neighbour and not seen yet.
  *
  * With clustering off the collection is not empty either - the master publishes itself as the
  * single row - so a reader never needs a branch for the standalone case. `nodeId` is the empty

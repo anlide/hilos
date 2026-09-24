@@ -462,9 +462,10 @@ The mark is uniform across every RT collection and enumerates none of them. It i
 kept BESIDE the rows (`RtStaleness`) rather than in them, because a row is the
 owner's copy byte for byte and a housekeeping field inside it would travel into
 the browser's projection and into every snapshot diff. Reachability is measured by
-the LINK and not by membership: gossip from a third node keeps a peer online while
-nothing between these two reaches anything, so the cues are the last link closing
-and a completed handshake.
+the LINK, so the cues are the last link closing and a completed handshake. Since
+HIL-1059 membership's liveness comes from the same links, so the two agree; the mark
+still answers to the link, because a node whose leave frame has arrived is offline
+while its link is still up.
 
 **What a reader does with the mark is the reader's own decision.** One reader in
 the framework fails closed on it: `HilosSessionRotations::claimable()` refuses a

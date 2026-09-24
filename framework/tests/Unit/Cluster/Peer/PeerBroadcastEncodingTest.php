@@ -154,7 +154,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $first = $this->linkTo($server, 'node-b', NodeRole::Master);
         $second = $this->linkTo($server, 'node-c', NodeRole::Master);
         $this->clearQueued($first, $second);
-        $entry = new PeerNodeEntry('node-d', NodeRole::Slave, ['storage'], null, true);
+        $entry = new PeerNodeEntry('node-d', NodeRole::Slave, ['storage'], null);
 
         $server->broadcastToNodes(new PeerAnnounceDTO($entry));
 
@@ -209,10 +209,19 @@ final class PeerBroadcastEncodingTest extends TestCase
 
         $joining = $this->linkTo($server, 'node-c', NodeRole::Master);
 
+        $toStanding = $this->sentTo($standing);
         $this->assertSame(
             [PeerAnnounceDTO::MESSAGE_TYPE],
-            $this->frameTypesOf($this->sentTo($standing)),
+            $this->frameTypesOf($toStanding),
             'The peer that was already there hears who joined',
+        );
+        $announced = json_decode(trim($toStanding), true);
+        $this->assertIsArray($announced);
+        $this->assertIsArray($announced[PeerAnnounceDTO::FIELD_NODE] ?? null);
+        $this->assertArrayNotHasKey(
+            'online',
+            $announced[PeerAnnounceDTO::FIELD_NODE],
+            'It hears who joined and what that node is made of - whether it is alive, it sees for itself (HIL-1059)',
         );
         $this->assertNotContains(
             PeerAnnounceDTO::MESSAGE_TYPE,

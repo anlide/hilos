@@ -424,6 +424,7 @@ final class ClusterPlacementTest extends TestCase
 
     public function testAFlappedNodeBackBeforeGraceCancelsItsFailover(): void
     {
+        $logFile = $this->captureLog();
         $mesh = new FakePlacementMesh(
             capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
             linked: ['node-b', 'node-c'],
@@ -439,32 +440,6 @@ final class ClusterPlacementTest extends TestCase
         $placement->tick(1000.9);
 
         $this->assertSame([], $mesh->sent, 'A node back before its grace keeps its agents; no re-placement');
-        $this->assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
-    }
-
-    /**
-     * Gossip may put a node back online a moment before this leader's own link to it completes;
-     * the registry then takes the handshake for no change, and noteNodeOnline() is never called.
-     * The handshake alone calls the failover off (HIL-1034).
-     */
-    public function testAHandshakeCallsOffAFailoverTheRegistryNeverReportedAsAReturn(): void
-    {
-        $logFile = $this->captureLog();
-        $mesh = new FakePlacementMesh(
-            capabilities: ['node-b' => ['gpu', self::SLOTS], 'node-c' => ['gpu', self::SLOTS]],
-            linked: ['node-b', 'node-c'],
-            online: [self::SELF, 'node-b', 'node-c'],
-        );
-        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500);
-        $placement->onBecameLeader();
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-
-        $placement->noteNodeOffline('node-b', 1000.0);
-        $placement->onPeerHandshaked('node-b');
-        $mesh->sent = [];
-        $placement->tick(1000.9);
-
-        $this->assertSame([], $mesh->sent, 'A node this leader handshaked with keeps its agents; no re-placement');
         $this->assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
 
         $log = (string)file_get_contents($logFile);
@@ -591,24 +566,6 @@ final class ClusterPlacementTest extends TestCase
         $placement->tick(1000.9);
 
         $this->assertSame([], $executor->revoked, 'A leader back before the grace leaves the slave running');
-    }
-
-    /**
-     * The slave's mirror of the leader's case: a handshake with the placing leader disarms the
-     * self-fence even when the registry never reported the leader's return (HIL-1034).
-     */
-    public function testAHandshakeWithThePlacingLeaderDisarmsTheSelfFence(): void
-    {
-        $mesh = new FakePlacementMesh([], linked: ['leader']);
-        $executor = new FakePlacementExecutor(workerId: 5);
-        $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
-
-        $placement->noteNodeOffline('leader', 1000.0);
-        $placement->onPeerHandshaked('leader');
-        $placement->tick(1000.9);
-
-        $this->assertSame([], $executor->revoked, 'A leader this slave handshaked with leaves the slave running');
     }
 
     public function testArmingTheSelfFenceIsLoggedWithTheGraceAndTheAgentCount(): void

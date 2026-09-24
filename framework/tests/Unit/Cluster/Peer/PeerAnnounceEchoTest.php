@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\ClusterContext;
-use Hilos\Cluster\ClusterNode;
-use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
@@ -27,11 +25,11 @@ use Socket;
  * On a live five-node stand two nodes holding opposite views of a third node's
  * liveness flipped each other's record forever: every merged announcement was
  * re-announced onward, so each flip re-entered the mesh and came straight back,
- * saturating the peer links until the daemons died of exhausted memory. Liveness is
- * observed rather than relayed, and these tests hold that line: a peer is
- * authoritative only about itself, and a merged announcement is never forwarded.
- * Outbound frames are inspected by flushing a link and reading the far end of its
- * socket pair.
+ * saturating the peer links until the daemons died of exhausted memory. Gossip
+ * carries no liveness at all any more (HIL-1059), and these tests hold the rest of
+ * the line: a peer is authoritative only about itself, and a merged announcement is
+ * never forwarded. Outbound frames are inspected by flushing a link and reading the
+ * far end of its socket pair.
  */
 final class PeerAnnounceEchoTest extends TestCase
 {
@@ -88,11 +86,13 @@ final class PeerAnnounceEchoTest extends TestCase
         $server = $this->makeServer();
         [$linkB] = $this->makeHandshakedLink($server, 'node-b');
         $this->makeHandshakedLink($server, 'node-c');
+        $observer->joined = [];
 
-        // node-b claims node-c is gone while this node still holds its own link to node-c.
-        $server->onAnnounceReceived($linkB, new PeerAnnounceDTO($this->entry('node-c', false)));
+        // node-b retells node-c's make-up while this node holds its own link to node-c.
+        $server->onAnnounceReceived($linkB, new PeerAnnounceDTO($this->entry('node-c', ['gpu-local'])));
 
-        $this->assertSame([], $observer->left, 'A third node stays online while this node observes it over its own link');
+        $this->assertSame([], $server->nodeCapabilities('node-c'), 'A linked node told its make-up itself');
+        $this->assertSame([], $observer->joined);
     }
 
     public function testAnnouncementFromThePeerItDescribesIsAccepted(): void
@@ -100,11 +100,13 @@ final class PeerAnnounceEchoTest extends TestCase
         $observer = $this->registerObserver();
         $server = $this->makeServer();
         [$linkB] = $this->makeHandshakedLink($server, 'node-b');
+        $observer->joined = [];
 
-        // A peer speaks authoritatively about itself, so its own leave is merged.
-        $server->onAnnounceReceived($linkB, new PeerAnnounceDTO($this->entry('node-b', false)));
+        // A peer speaks authoritatively about itself, so its own new make-up is merged.
+        $server->onAnnounceReceived($linkB, new PeerAnnounceDTO($this->entry('node-b', ['gpu-local'])));
 
-        $this->assertSame(['node-b'], $observer->left, 'A peer announcing its own departure is believed');
+        $this->assertSame(['gpu-local'], $server->nodeCapabilities('node-b'));
+        $this->assertSame(['node-b'], $observer->joined, 'A peer online here announcing its own make-up is heard');
     }
 
     public function testMergedAnnouncementIsNotForwardedToTheOtherPeers(): void
@@ -114,38 +116,24 @@ final class PeerAnnounceEchoTest extends TestCase
         [$linkB] = $this->makeHandshakedLink($server, 'node-b');
         [$linkC, $farC] = $this->makeHandshakedLink($server, 'node-c');
         $this->flushAndRead($linkC, $farC);
+        $observer->joined = [];
 
         // node-d is unknown and unlinked, so the entry merges - and must stop there.
-        $server->onAnnounceReceived($linkB, new PeerAnnounceDTO($this->entry('node-d', true)));
+        $server->onAnnounceReceived($linkB, new PeerAnnounceDTO($this->entry('node-d')));
 
-        $this->assertContains('node-d', $observer->joined, 'An announcement about an unknown node is merged');
+        $this->assertTrue($server->nodeHasLeftTheMesh('node-d'), 'An announcement about an unknown node is merged, offline');
+        $this->assertSame([], $observer->joined, 'Known is not seen');
         $this->assertSame('', $this->flushAndRead($linkC, $farC), 'A merged announcement is not relayed onward');
     }
 
     /**
      * Registers a membership observer that records the reported transitions.
      *
-     * @return MembershipObserver Observer exposing `joined` and `left` node id lists
+     * @return RecordingMembershipObserver Observer exposing `joined` and `left` node id lists
      */
-    private function registerObserver(): MembershipObserver
+    private function registerObserver(): RecordingMembershipObserver
     {
-        $observer = new class implements MembershipObserver {
-            /** @var list<string> Node ids reported joined */
-            public array $joined = [];
-
-            /** @var list<string> Node ids reported left */
-            public array $left = [];
-
-            public function onNodeJoined(ClusterNode $node): void
-            {
-                $this->joined[] = $node->nodeId;
-            }
-
-            public function onNodeLeft(ClusterNode $node): void
-            {
-                $this->left[] = $node->nodeId;
-            }
-        };
+        $observer = new RecordingMembershipObserver();
         Hilos::$cluster->registerMembershipObserver($observer);
 
         return $observer;
@@ -203,12 +191,12 @@ final class PeerAnnounceEchoTest extends TestCase
 
     /**
      * @param string $nodeId Node id the entry describes
-     * @param bool $online Liveness the entry claims
-     * @return PeerNodeEntry Gossip entry for a master node without capabilities
+     * @param list<string> $capabilities Capability tags the entry carries
+     * @return PeerNodeEntry Gossip entry for a master node
      */
-    private function entry(string $nodeId, bool $online): PeerNodeEntry
+    private function entry(string $nodeId, array $capabilities = []): PeerNodeEntry
     {
-        return PeerNodeEntry::fromIdentity(NodeIdentity::of($nodeId, NodeRole::Master, []), $online);
+        return PeerNodeEntry::fromIdentity(NodeIdentity::of($nodeId, NodeRole::Master, $capabilities));
     }
 
     /**

@@ -7,11 +7,12 @@ namespace Hilos\Cluster\Peer\DTO;
 use Hilos\Cluster\Exception\PeerTransportException;
 
 /**
- * Gossip frame announcing a single membership change to peers.
+ * Gossip frame announcing what one node is made of to peers.
  *
- * Sent to connected peers when the sender's registry gains or changes a node
- * (or marks one offline); the receiver merges the entry and re-announces only
- * when it was a real change, so the gossip converges instead of echoing.
+ * Sent to connected peers when the sender's registry gains a node or a node's
+ * role, capabilities or address change; it carries membership only, never
+ * liveness (HIL-1059). The receiver merges the entry and never relays it onward,
+ * so the gossip converges instead of echoing.
  */
 final class PeerAnnounceDTO extends PeerDTO
 {

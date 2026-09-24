@@ -14,8 +14,10 @@ use Hilos\Cluster\Peer\PeerAddress;
 /**
  * Wire form of one known cluster node inside a gossip frame.
  *
- * Carries the fields peers exchange about a node — id, role, capabilities,
- * advertised address, and online flag — without the master-local `lastSeen`. It
+ * Carries what a node is made of — id, role, capabilities and advertised address —
+ * and deliberately nothing about whether it is alive: a node takes liveness only
+ * from its own link to the node it describes, so a neighbour has no liveness to
+ * hand over (HIL-1059). The master-local `lastSeen` stays off the wire as well. It
  * bridges the wire and the domain: {@see fromNode()} serializes a
  * {@see ClusterNode}, {@see toIdentity()} reads it back as a {@see NodeIdentity}
  * the registry can merge.
@@ -34,22 +36,17 @@ final class PeerNodeEntry extends BaseDTO
     /** @var string Payload key: advertised host:port address */
     public const string FIELD_ADDRESS = 'address';
 
-    /** @var string Payload key: whether the node is online */
-    public const string FIELD_ONLINE = 'online';
-
     /**
      * @param string $nodeId Node id
      * @param NodeRole $role Node role
      * @param list<string> $capabilities Declared capability tags
      * @param ?PeerAddress $address Advertised address peers dial to reach the node
-     * @param bool $online Whether the node is online
      */
     public function __construct(
         public readonly string $nodeId,
         public readonly NodeRole $role,
         public readonly array $capabilities,
         public readonly ?PeerAddress $address,
-        public readonly bool $online,
     ) {
     }
 
@@ -61,19 +58,18 @@ final class PeerNodeEntry extends BaseDTO
      */
     public static function fromNode(ClusterNode $node): self
     {
-        return new self($node->nodeId, $node->role, $node->capabilities, $node->address, $node->online);
+        return new self($node->nodeId, $node->role, $node->capabilities, $node->address);
     }
 
     /**
-     * Builds a wire entry from an identity plus an online flag.
+     * Builds a wire entry from an identity.
      *
      * @param NodeIdentity $identity Node identity
-     * @param bool $online Whether the node is online
      * @return self Wire entry
      */
-    public static function fromIdentity(NodeIdentity $identity, bool $online): self
+    public static function fromIdentity(NodeIdentity $identity): self
     {
-        return new self($identity->nodeId, $identity->role, $identity->capabilities, $identity->address, $online);
+        return new self($identity->nodeId, $identity->role, $identity->capabilities, $identity->address);
     }
 
     /**
@@ -98,7 +94,6 @@ final class PeerNodeEntry extends BaseDTO
             self::FIELD_NODE_ROLE => $this->role->value,
             self::FIELD_NODE_CAPABILITIES => $this->capabilities,
             self::FIELD_ADDRESS => $this->address?->toString(),
-            self::FIELD_ONLINE => $this->online,
         ];
     }
 
@@ -131,7 +126,6 @@ final class PeerNodeEntry extends BaseDTO
             role: $role,
             capabilities: PeerDTO::normalizeCapabilities($data[self::FIELD_NODE_CAPABILITIES] ?? []),
             address: is_string($address) ? PeerAddress::fromString($address) : null,
-            online: (bool)($data[self::FIELD_ONLINE] ?? false),
         );
     }
 }
