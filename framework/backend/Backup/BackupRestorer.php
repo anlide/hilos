@@ -691,10 +691,12 @@ final class BackupRestorer
         if (!is_dir($path)) {
             return;
         }
-        foreach (scandir($path) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
+        try {
+            $entries = FsPath::entries($path);
+        } catch (FsException) {
+            $entries = [];
+        }
+        foreach ($entries as $entry) {
             $child = $path . '/' . $entry;
             // warning-suppressed: best-effort removal, an undeletable child leaves the tree in place
             is_dir($child) ? $this->removeDirectory($child) : @unlink($child);

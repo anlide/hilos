@@ -296,6 +296,19 @@ final class EnvAccessorTest extends TestCase
         $this->assertSame([self::SECOND_REQUIRED_KEY], $env->missingRequired());
     }
 
+    public function testLoadOfAPathThatIsNotAFileLeavesTheEnvEmpty(): void
+    {
+        // file_exists() lets a directory through to the parser, whose read then fails: the
+        // failure is an empty env, not the end of the process that asked for it.
+        $root = $this->envRootWith([]);
+        $env = $this->env([
+            self::REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+        ]);
+        $env->load($root);
+
+        $this->assertSame([self::REQUIRED_KEY], $env->missingRequired());
+    }
+
     public function testMissingRequiredCountsAnEmptyProcessValueAsAbsent(): void
     {
         // A stack that exports the name with nothing in it has answered nothing, and the

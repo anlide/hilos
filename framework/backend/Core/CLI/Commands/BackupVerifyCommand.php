@@ -24,6 +24,8 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 
 /**
@@ -335,8 +337,12 @@ HELP;
             return null;
         }
 
-        $raw = file_get_contents($sidecarPath);
-        $decoded = $raw === false ? null : json_decode($raw, true);
+        try {
+            $raw = FsPath::read($sidecarPath);
+        } catch (FsException) {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
         if (!is_array($decoded)) {
             return null;
         }

@@ -2,6 +2,8 @@
 
 namespace Hilos\Database;
 
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -271,9 +273,10 @@ class Migration
             throw new DatabaseException("Migration file not found for index: {$index}");
         }
 
-        $content = file_get_contents($upFile);
-        if ($content === false) {
-            throw new DatabaseException("Failed to read migration file: {$upFile}");
+        try {
+            $content = FsPath::read($upFile);
+        } catch (FsException $failure) {
+            throw new DatabaseException("Failed to read migration file: {$upFile}", 0, $failure);
         }
 
         // Mark migration as started (failed)
@@ -309,9 +312,10 @@ class Migration
             throw new DatabaseException("Migration rollback file not found for index: {$index}");
         }
 
-        $content = file_get_contents($downFile);
-        if ($content === false) {
-            throw new DatabaseException("Failed to read migration file: {$downFile}");
+        try {
+            $content = FsPath::read($downFile);
+        } catch (FsException $failure) {
+            throw new DatabaseException("Failed to read migration file: {$downFile}", 0, $failure);
         }
 
         // Mark migration as failed (in case rollback fails)
@@ -405,8 +409,9 @@ class Migration
         }
 
         foreach ($files as $file) {
-            $content = file_get_contents($file);
-            if ($content === false) {
+            try {
+                $content = FsPath::read($file);
+            } catch (FsException) {
                 continue;
             }
 

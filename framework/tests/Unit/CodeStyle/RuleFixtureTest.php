@@ -27,6 +27,7 @@ use Hilos\Tests\CodeStyle\Rule\TruthSourceClaimRule;
 use Hilos\Tests\CodeStyle\Rule\ViewWrapperBindingRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
+use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use PHPUnit\Framework\TestCase;
 
@@ -176,6 +177,39 @@ final class RuleFixtureTest extends TestCase
                 'FS-SEAM Bad/FsSeamBypassSamples.php:76 — a suppressed unlink() turns its failure into an '
                     . 'exception outside the Fs seam; call Hilos\Fs\FsPath and catch its Fs exception '
                     . '(see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:29 — an unsuppressed mkdir() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:41 — an unsuppressed file_put_contents() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:54 — an unsuppressed fopen() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:67 — an unsuppressed scandir() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:76 — an unsuppressed filesize() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:85 — an unsuppressed unlink() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:98 — an unsuppressed mkdir() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:109 — an unsuppressed mkdir() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:121 — an unsuppressed touch() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:133 — an unsuppressed fopen() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
+                'FS-SEAM Bad/FsSeamUncheckedSamples.php:149 — an unsuppressed filesize() is checked for false, '
+                    . 'a branch no Hilos process reaches: its warning ends the process first; call Hilos\Fs\FsPath '
+                    . 'and catch its Fs exception (see docs/agents/code-style/error-suppression.md)',
                 'LINE-LENGTH Bad/LineLengthSamples.php:15 — line is 158 characters, limit 150 '
                     . '(see docs/agents/code-style/line-length.md)',
                 'LINE-LENGTH Bad/LineLengthSamples.php:21 — line is 154 characters, limit 150 '
@@ -549,6 +583,23 @@ final class RuleFixtureTest extends TestCase
     }
 
     /**
+     * The third sign is withheld from a standalone root by the rule itself: handed that
+     * kind, it reports nothing over the file every shape of the sign is seeded in, while
+     * the production kind reports each of them.
+     */
+    public function testAStandaloneRootIsNotJudgedByTheThirdSign(): void
+    {
+        $relativePath = 'Bad/FsSeamUncheckedSamples.php';
+        $tokens = token_get_all((string)file_get_contents($this->fixtureRoot() . '/' . $relativePath));
+
+        $standalone = iterator_to_array(new FsSeamRule(RootKind::Standalone)->check($relativePath, $tokens), false);
+        $production = iterator_to_array(new FsSeamRule(RootKind::Production)->check($relativePath, $tokens), false);
+
+        $this->assertSame([], $standalone);
+        $this->assertNotSame([], $production);
+    }
+
+    /**
      * Scans the fixture tree with the same scanner and rules the guard test uses.
      * The whole-root mode of the empty-string rule needs a root where nothing is
      * outside a zone, so it gets a fixture root of its own — judged separately and
@@ -618,7 +669,7 @@ final class RuleFixtureTest extends TestCase
             new ObjectStoreMutationRule(),
             new ViewWrapperBindingRule(),
             new ErrorSuppressionRule(),
-            new FsSeamRule(),
+            new FsSeamRule(RootKind::Production),
             new RandomSourceRule(),
             new BlockingResolutionRule(),
             new ProcessForkRule('framework/tests/CodeStyle/Fixtures'),

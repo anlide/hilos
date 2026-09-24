@@ -25,9 +25,10 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Pins how a root earns its rules: by the kind declared beside it, never by what its
- * directory is called. `scripts/` is the case that says so — it holds production code
+ * directory is called. `scripts/` is the case that says so — it holds code that runs
  * under a name no suffix rule would have recognized, and until it was declared it was
- * scanned by nobody at all.
+ * scanned by nobody at all. It is declared standalone: judged by every rule as
+ * production is, with the one sign that presumes a Hilos process withheld.
  *
  * The declaration is what this test pins; the behavior behind it is pinned by the
  * baseline, where `scripts/` now owes MAGIC-REPEAT records that only a production
@@ -70,12 +71,12 @@ final class ScannedRootsTest extends TestCase
         MemberIndentRule::ID,
     ];
 
-    public function testCodeThatRunsIsDeclaredProductionWhateverItsDirectoryIsCalled(): void
+    public function testCodeThatRunsIsDeclaredByItsKindWhateverItsDirectoryIsCalled(): void
     {
         $roots = ScannedRoots::all($this->repositoryRoot());
 
         $this->assertSame(RootKind::Production, $roots['framework/backend'] ?? null);
-        $this->assertSame(RootKind::Production, $roots['scripts'] ?? null);
+        $this->assertSame(RootKind::Standalone, $roots['scripts'] ?? null);
     }
 
     public function testTheFrameworkSuiteIsDeclaredSuite(): void
@@ -112,6 +113,13 @@ final class ScannedRootsTest extends TestCase
     {
         foreach ([...self::PRODUCTION_ONLY_RULE_IDS, ...self::EVERY_ROOT_RULE_IDS] as $ruleId) {
             $this->assertTrue(RootKind::Production->allows($ruleId), $ruleId . ' judges production code');
+        }
+    }
+
+    public function testStandaloneIsJudgedByEveryRuleAsProductionIs(): void
+    {
+        foreach ([...self::PRODUCTION_ONLY_RULE_IDS, ...self::EVERY_ROOT_RULE_IDS] as $ruleId) {
+            $this->assertTrue(RootKind::Standalone->allows($ruleId), $ruleId . ' judges standalone code');
         }
     }
 

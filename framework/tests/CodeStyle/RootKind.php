@@ -39,6 +39,16 @@ enum RootKind
     case Suite;
 
     /**
+     * Production code that runs as a PHP process of its own, outside every Hilos
+     * manager: it loads no framework class and installs no warning handler, so the
+     * false result of a failing path primitive reaches the code that checks it, and
+     * `Hilos\Fs` is not there to call. Judged by every rule, as production is; the
+     * one thing withheld is the third sign of FS-SEAM, which the rule itself withholds
+     * when handed this kind.
+     */
+    case Standalone;
+
+    /**
      * Rules that judge production code only. They are named here, beside the kinds,
      * rather than in the guard test: the kind is the property they are withheld by,
      * and a list kept anywhere else would be a second place to remember.
@@ -61,7 +71,7 @@ enum RootKind
     public function allows(string $ruleId): bool
     {
         return match ($this) {
-            self::Production => true,
+            self::Production, self::Standalone => true,
             self::Suite => !in_array($ruleId, self::PRODUCTION_ONLY_RULES, true),
         };
     }

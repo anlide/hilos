@@ -44,9 +44,10 @@ final readonly class FsDirectory implements ArrayAccess
     {
         $this->ensureDirectory();
         $safe = basename($filename);
-        $full = $this->path . DIRECTORY_SEPARATOR . $safe;
-        if (file_put_contents($full, '') === false) {
-            throw new FileWriteException("Cannot create file: {$safe} in {$this->name}");
+        try {
+            FsPath::write($this->path . DIRECTORY_SEPARATOR . $safe, '');
+        } catch (FileWriteException $unwritable) {
+            throw new FileWriteException("Cannot create file: {$safe} in {$this->name}", 0, $unwritable);
         }
 
         return new FsFile($this, $safe);
@@ -81,13 +82,12 @@ final readonly class FsDirectory implements ArrayAccess
      */
     public function deleteAll(): void
     {
-        if (!is_dir($this->path)) {
+        try {
+            $entries = FsPath::entries($this->path);
+        } catch (FsException) {
             return;
         }
-        foreach (scandir($this->path) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
+        foreach ($entries as $entry) {
             $full = $this->path . DIRECTORY_SEPARATOR . $entry;
             if (is_file($full)) {
                 try {
@@ -106,17 +106,21 @@ final readonly class FsDirectory implements ArrayAccess
      */
     public function size(): int
     {
-        if (!is_dir($this->path)) {
+        try {
+            $entries = FsPath::entries($this->path);
+        } catch (FsException) {
             return 0;
         }
         $total = 0;
-        foreach (scandir($this->path) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..') {
+        foreach ($entries as $entry) {
+            $full = $this->path . DIRECTORY_SEPARATOR . $entry;
+            if (!is_file($full)) {
                 continue;
             }
-            $full = $this->path . DIRECTORY_SEPARATOR . $entry;
-            if (is_file($full)) {
-                $total += filesize($full) ?: 0;
+            try {
+                $total += FsPath::size($full);
+            } catch (FsException) {
+                // a file gone or unreadable between the listing and the measure counts nothing
             }
         }
 

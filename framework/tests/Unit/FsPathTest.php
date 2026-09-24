@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
+use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
 use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsPath;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Unit tests for the FsPath primitives on a real temporary directory.
@@ -88,6 +91,63 @@ final class FsPathTest extends TestCase
         }
 
         $this->assertSame($openStreams, count(get_resources('stream')));
+    }
+
+    public function testReadWithReturnsWhatTheReaderReturns(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'jump.txt';
+        file_put_contents($path, 'head-tail');
+
+        $tail = FsPath::readWith($path, static function ($handle): string {
+            fseek($handle, -4, SEEK_END);
+
+            return (string)fread($handle, 4);
+        });
+
+        $this->assertSame('tail', $tail);
+    }
+
+    public function testReadWithClosesTheHandleWhenTheReaderReturns(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'closed.txt';
+        file_put_contents($path, 'payload');
+        $openStreams = count(get_resources('stream'));
+
+        FsPath::readWith($path, static fn ($handle): int => fstat($handle)['size']);
+
+        $this->assertSame($openStreams, count(get_resources('stream')));
+    }
+
+    public function testReadWithClosesTheHandleWhenTheReaderThrows(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'thrown.txt';
+        file_put_contents($path, 'payload');
+        $openStreams = count(get_resources('stream'));
+
+        try {
+            FsPath::readWith($path, static function (): never {
+                throw new RuntimeException('reader failed');
+            });
+            $this->fail('the reader\'s exception must pass through');
+        } catch (RuntimeException $failure) {
+            $this->assertSame('reader failed', $failure->getMessage());
+        }
+
+        $this->assertSame($openStreams, count(get_resources('stream')));
+    }
+
+    public function testReadWithThrowsFileNotFoundWithoutCallingTheReader(): void
+    {
+        $called = false;
+
+        try {
+            FsPath::readWith($this->root . DIRECTORY_SEPARATOR . 'absent.txt', static function () use (&$called): void {
+                $called = true;
+            });
+            $this->fail('a missing file must throw');
+        } catch (FileNotFoundException) {
+            $this->assertFalse($called);
+        }
     }
 
     public function testWriteOverwritesExistingContents(): void
@@ -229,6 +289,54 @@ final class FsPathTest extends TestCase
         FsPath::ensureDirectory($path);
     }
 
+    public function testEntriesListsNamesWithoutTheDots(): void
+    {
+        file_put_contents($this->root . DIRECTORY_SEPARATOR . 'b.txt', '');
+        file_put_contents($this->root . DIRECTORY_SEPARATOR . 'a.txt', '');
+        mkdir($this->root . DIRECTORY_SEPARATOR . 'sub');
+
+        $this->assertSame(['a.txt', 'b.txt', 'sub'], FsPath::entries($this->root));
+    }
+
+    public function testEntriesIsEmptyForAnEmptyDirectory(): void
+    {
+        $this->assertSame([], FsPath::entries($this->root));
+    }
+
+    public function testEntriesThrowsDirectoryNotFoundForAFilePath(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'file.txt';
+        file_put_contents($path, 'payload');
+
+        $this->expectException(DirectoryNotFoundException::class);
+
+        FsPath::entries($path);
+    }
+
+    public function testFreeSpaceAndTotalSpaceMeasureTheFilesystem(): void
+    {
+        $free = FsPath::freeSpace(sys_get_temp_dir());
+        $total = FsPath::totalSpace(sys_get_temp_dir());
+
+        $this->assertGreaterThan(0, $free);
+        $this->assertGreaterThan(0, $total);
+        $this->assertGreaterThanOrEqual($free, $total);
+    }
+
+    public function testFreeSpaceThrowsDirectoryNotFoundForMissingPath(): void
+    {
+        $this->expectException(DirectoryNotFoundException::class);
+
+        FsPath::freeSpace($this->root . DIRECTORY_SEPARATOR . 'absent');
+    }
+
+    public function testTotalSpaceThrowsDirectoryNotFoundForMissingPath(): void
+    {
+        $this->expectException(DirectoryNotFoundException::class);
+
+        FsPath::totalSpace($this->root . DIRECTORY_SEPARATOR . 'absent');
+    }
+
     public function testSizeReturnsByteCount(): void
     {
         $path = $this->root . DIRECTORY_SEPARATOR . 'size.txt';
@@ -242,6 +350,21 @@ final class FsPathTest extends TestCase
         $this->expectException(FileNotFoundException::class);
 
         FsPath::size($this->root . DIRECTORY_SEPARATOR . 'absent.txt');
+    }
+
+    public function testHashEqualsTheDigestOfTheFile(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'digest.txt';
+        file_put_contents($path, 'payload');
+
+        $this->assertSame(hash_file('sha256', $path), FsPath::hash('sha256', $path));
+    }
+
+    public function testHashThrowsFileNotFoundForMissingFile(): void
+    {
+        $this->expectException(FileNotFoundException::class);
+
+        FsPath::hash('sha256', $this->root . DIRECTORY_SEPARATOR . 'absent.txt');
     }
 
     public function testDeleteRemovesExistingFile(): void
@@ -261,6 +384,36 @@ final class FsPathTest extends TestCase
         FsPath::delete($path);
 
         $this->assertFileDoesNotExist($path);
+    }
+
+    public function testRemoveDirectoryRemovesAnEmptyDirectory(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'empty';
+        mkdir($path);
+
+        FsPath::removeDirectory($path);
+
+        $this->assertDirectoryDoesNotExist($path);
+    }
+
+    public function testRemoveDirectoryIsNoopForMissingDirectory(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'absent';
+
+        FsPath::removeDirectory($path);
+
+        $this->assertDirectoryDoesNotExist($path);
+    }
+
+    public function testRemoveDirectoryThrowsFileDeleteExceptionForANonEmptyDirectory(): void
+    {
+        $path = $this->root . DIRECTORY_SEPARATOR . 'occupied';
+        mkdir($path);
+        file_put_contents($path . DIRECTORY_SEPARATOR . 'file.txt', 'payload');
+
+        $this->expectException(FileDeleteException::class);
+
+        FsPath::removeDirectory($path);
     }
 
     private function removeTree(string $path): void

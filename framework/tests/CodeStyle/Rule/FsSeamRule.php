@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\CodeStyle\Rule;
 
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Violation;
 
 /**
@@ -12,19 +13,39 @@ use Hilos\Tests\CodeStyle\Violation;
  * is called through `Hilos\Fs`, and only the seam itself suppresses its failure.
  *
  * ERROR-SUPPRESSION judges whether a marker is there; this rule judges what the
- * marked call then does. The two are separate ids because their subject differs and
- * because a baseline record is keyed by id: a correct marker above a hand-rolled
- * `fopen` is exactly the shape that used to pass, and it is the shape this rule ends.
+ * marked call then does — and, by its third sign, what an unmarked call does. The
+ * two are separate ids because their subject differs and because a baseline record
+ * is keyed by id: a correct marker above a hand-rolled `fopen` is exactly the shape
+ * that used to pass, and it is the shape this rule ends.
  *
- * A hit is raised by two signs, at most one per suppressed call:
+ * A hit is raised by three signs, at most one per call:
  *
  * 1. Opening a file under `@` outside the seam, whatever the next line does. There is
  *    no legitimate reason to hold a handle the seam did not open — the caller that
- *    needs one line at a time takes `FsPath::readLines()`.
+ *    needs one line at a time takes `FsPath::readLines()`, and the one that jumps
+ *    inside a file takes `FsPath::readWith()`.
  * 2. A suppressed primitive addressed by PATH whose result is checked, where the
  *    checking branch throws. That is class C written by hand: the failure becomes an
  *    exception either way, so it belongs behind the seam, which raises a typed
  *    `Fs/Exception/*` the caller converts at its own boundary.
+ * 3. A primitive addressed by PATH called WITHOUT `@` whose false result is tested:
+ *    negated, compared to `false` on either side, the left of `?:`, the condition of
+ *    a ternary, the bare condition of an `if`, `elseif` or `while` alone or inside an
+ *    `&&` / `||` chain, or assigned to a variable whose first read after the statement,
+ *    within the enclosing block, is one of these. Inside a Hilos process the managers'
+ *    error handler turns the warning the primitive raises into an exception and ends
+ *    the process, and every primitive of the list raises it BEFORE returning `false` —
+ *    so the tested branch is dead, whatever it does. Leaving the `@` off buys nothing;
+ *    the way out is the seam. A result nobody tests is not this sign: its failure ends
+ *    the process by that policy, which is a different defect.
+ *
+ * Two primitives of the list are outside the third sign because they fail in silence
+ * (checked on PHP 8.4): `realpath()` and `glob()` answer `false` and `[]` with no
+ * warning, so the check after them is alive. Sign 2 keeps judging them when suppressed.
+ * And a root declared {@see RootKind::Standalone} is outside the third sign entirely:
+ * a script there runs as a PHP process of its own, loads no framework class and
+ * installs no warning handler, so its false branch runs, and `Hilos\Fs` is not there
+ * to call.
  *
  * The deliberate degrade and the teardown step (class D) stay legal by construction:
  * they do not open a file, and their result is either not examined at all — `@unlink`
@@ -38,9 +59,9 @@ use Hilos\Tests\CodeStyle\Violation;
  *
  * A suppression written over a whole assignment — `@$handle = fopen($path, 'rb');` — is
  * read by the call it covers, so moving the `@` one token left changes nothing: the rule
- * anchors every sign on the call rather than on the sign. List destructuring
- * (`@[$a, $b] = ...`) is deliberately not read — it carries no single covered call for
- * the two signs to be about.
+ * anchors every sign on the call rather than on the sign, and the third sign reads such
+ * a call as suppressed. List destructuring (`@[$a, $b] = ...`) is deliberately not
+ * read — it carries no single covered call for the signs to be about.
  *
  * Only real tokens are read, so `@fopen` inside a docblock or a string literal is not
  * a suppression and cannot be a hit.
@@ -67,8 +88,8 @@ final class FsSeamRule implements CodeStyleRule
     private const array OPENING_FUNCTIONS = ['fopen', 'tmpfile'];
 
     /**
-     * Sign 2: the primitives addressed by a path, whose failure the caller is expected
-     * to convert rather than to suppress.
+     * Signs 2 and 3: the primitives addressed by a path, whose failure the caller is
+     * expected to convert rather than to suppress or to test.
      *
      * @var array<int, string>
      */
@@ -87,14 +108,33 @@ final class FsSeamRule implements CodeStyleRule
         'chmod',
         'touch',
         'filesize',
+        'filemtime',
+        'fileperms',
+        'stat',
+        'lstat',
+        'readlink',
         'tempnam',
         'scandir',
+        'opendir',
         'symlink',
         'link',
         'realpath',
         'glob',
         'disk_free_space',
+        'disk_total_space',
+        'hash_file',
+        'md5_file',
+        'sha1_file',
+        'parse_ini_file',
     ];
+
+    /**
+     * The primitives of the list that fail without a warning, so the check after them
+     * is alive: sign 3 skips them, sign 2 keeps judging them.
+     *
+     * @var array<int, string>
+     */
+    private const array SILENT_PRIMITIVES = ['realpath', 'glob'];
 
     /**
      * The tokens an assignment target is made of, walked over on the way to its `=`.
@@ -115,6 +155,50 @@ final class FsSeamRule implements CodeStyleRule
     ];
 
     /**
+     * What may stand before a name that is NOT a call of the builtin: a method or a
+     * static member wearing its name, and a declaration of one.
+     *
+     * @var array<int, int>
+     */
+    private const array NOT_A_CALL_BEFORE = [
+        T_OBJECT_OPERATOR,
+        T_NULLSAFE_OBJECT_OPERATOR,
+        T_DOUBLE_COLON,
+        T_FUNCTION,
+        T_NEW,
+        T_CONST,
+    ];
+
+    /**
+     * The comparisons a false test is written with, on either side of `false`.
+     *
+     * @var array<int, int>
+     */
+    private const array FALSE_COMPARISONS = [T_IS_IDENTICAL, T_IS_NOT_IDENTICAL, T_IS_EQUAL, T_IS_NOT_EQUAL];
+
+    /**
+     * The operators a bare condition is chained with.
+     *
+     * @var array<int, int>
+     */
+    private const array CHAIN_OPERATORS = [T_BOOLEAN_AND, T_BOOLEAN_OR, T_LOGICAL_AND, T_LOGICAL_OR];
+
+    /**
+     * The keywords whose condition a bare test stands in for sign 3. Sign 2 reads only
+     * `if`: its subject is a branch that throws, and a loop has no such branch.
+     *
+     * @var array<int, int>
+     */
+    private const array CONDITION_KEYWORDS = [T_IF, T_ELSEIF, T_WHILE];
+
+    /**
+     * @param RootKind $kind What the code under the scanned root is: sign 3 is withheld from a standalone root
+     */
+    public function __construct(private readonly RootKind $kind)
+    {
+    }
+
+    /**
      * @return string Rule id
      */
     public function id(): string
@@ -133,7 +217,7 @@ final class FsSeamRule implements CodeStyleRule
     /**
      * @param string $relativePath File path relative to the scanned root
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @return iterable<Violation> One entry per suppressed call that goes around the seam
+     * @return iterable<Violation> One entry per call that goes around the seam
      */
     public function check(string $relativePath, array $tokens): iterable
     {
@@ -153,7 +237,7 @@ final class FsSeamRule implements CodeStyleRule
                 continue;
             }
 
-            $function = $this->suppressedFunction($tokens, $callIndex);
+            $function = $this->calledFunction($tokens, $callIndex);
             if ($function === null) {
                 continue;
             }
@@ -177,6 +261,25 @@ final class FsSeamRule implements CodeStyleRule
                         . ' call Hilos\Fs\FsPath and catch its Fs exception',
                 );
             }
+        }
+
+        if ($this->kind === RootKind::Standalone) {
+            return;
+        }
+
+        foreach ($tokens as $index => $token) {
+            $function = $this->unsuppressedPrimitive($tokens, $index);
+            if ($function === null || !$this->falseTested($tokens, $index)) {
+                continue;
+            }
+
+            yield new Violation(
+                self::ID,
+                $relativePath,
+                $lines[$index],
+                'an unsuppressed ' . $function . '() is checked for false, a branch no Hilos process reaches:'
+                    . ' its warning ends the process first; call Hilos\Fs\FsPath and catch its Fs exception',
+            );
         }
     }
 
@@ -263,14 +366,55 @@ final class FsSeamRule implements CodeStyleRule
     }
 
     /**
-     * Reads the function a suppression covers. A name written fully qualified is one
-     * token, so the tail after the separator is what names the builtin.
+     * The same walk as {@see assignmentOperator()} taken backwards from the `=`: steps
+     * over the target and says whether a `@` stands in front of it, which is the whole
+     * assignment written under a suppression.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $callIndex Index the covered call starts at
-     * @return string|null Lower-cased function name, or null when `@` covers something else than a call
+     * @param int $assignmentIndex Index of the `=`
+     * @return bool True when the assignment ending at that `=` is covered by `@`
      */
-    private function suppressedFunction(array $tokens, int $callIndex): ?string
+    private function assignmentUnderSuppression(array $tokens, int $assignmentIndex): bool
+    {
+        $depth = 0;
+
+        for ($cursor = $assignmentIndex - 1; $cursor >= 0; $cursor--) {
+            $token = $tokens[$cursor];
+            if ($token === ']') {
+                $depth++;
+                continue;
+            }
+
+            if ($token === '[') {
+                $depth--;
+                continue;
+            }
+
+            if ($depth > 0) {
+                continue;
+            }
+
+            if ($token === '@') {
+                return true;
+            }
+
+            if (!is_array($token) || !in_array($token[0], self::TARGET_TOKENS, true)) {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Reads the function a call names. A name written fully qualified is one token, so
+     * the tail after the separator is what names the builtin.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $callIndex Index the call starts at
+     * @return string|null Lower-cased function name, or null when the index holds something else than a call
+     */
+    private function calledFunction(array $tokens, int $callIndex): ?string
     {
         $name = $tokens[$callIndex];
         if (!is_array($name) || !in_array($name[0], [T_STRING, T_NAME_FULLY_QUALIFIED], true)) {
@@ -287,6 +431,174 @@ final class FsSeamRule implements CodeStyleRule
     }
 
     /**
+     * Reads a call of a sign-3 primitive that no `@` covers — neither in front of the
+     * call nor in front of the assignment it is the right side of. A method or a static
+     * member wearing the primitive's name, and a declaration of one, are not calls of it.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $index Index to read
+     * @return string|null Lower-cased primitive name, or null when this is not such a call
+     */
+    private function unsuppressedPrimitive(array $tokens, int $index): ?string
+    {
+        $function = $this->calledFunction($tokens, $index);
+        if (
+            $function === null
+            || !in_array($function, self::PATH_PRIMITIVES, true)
+            || in_array($function, self::SILENT_PRIMITIVES, true)
+        ) {
+            return null;
+        }
+
+        $before = $this->significantIndex($tokens, $index, -1);
+        $token = $before === null ? null : $tokens[$before];
+        if ($token === '@' || (is_array($token) && in_array($token[0], self::NOT_A_CALL_BEFORE, true))) {
+            return null;
+        }
+
+        if ($token === '=' && $this->assignmentUnderSuppression($tokens, $before)) {
+            return null;
+        }
+
+        return $function;
+    }
+
+    /**
+     * Decides sign 3: the call itself stands in a tested position, or it is assigned to
+     * a variable whose first read after the statement, within the enclosing block, does.
+     * "First read" rather than "next statement" because the check is written a statement
+     * or two later often enough — a size is taken, then the handle is tested.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $callIndex Index the call starts at
+     * @return bool True when the false result of this call is tested
+     */
+    private function falseTested(array $tokens, int $callIndex): bool
+    {
+        $openIndex = $this->significantIndex($tokens, $callIndex, 1);
+        $closeIndex = $openIndex === null ? null : $this->closingParen($tokens, $openIndex);
+        if ($closeIndex === null) {
+            return false;
+        }
+
+        if ($this->testedAt($tokens, $callIndex, $closeIndex)) {
+            return true;
+        }
+
+        $variable = $this->assignedVariable($tokens, $callIndex);
+        if ($variable === null) {
+            return false;
+        }
+
+        $readIndex = $this->firstReadInBlock($tokens, $callIndex, $variable);
+
+        return $readIndex !== null && $this->testedAt($tokens, $readIndex, $readIndex);
+    }
+
+    /**
+     * The tested positions of sign 3, read around an expression: a call from its name to
+     * its closing parenthesis, or a variable, which starts and ends on one token.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $from Index the expression starts at
+     * @param int $to Index the expression ends at
+     * @return bool True when the expression's false value is tested where it stands
+     */
+    private function testedAt(array $tokens, int $from, int $to): bool
+    {
+        $before = $this->significantIndex($tokens, $from, -1);
+        $after = $this->significantIndex($tokens, $to, 1);
+        $beforeToken = $before === null ? null : $tokens[$before];
+        $afterToken = $after === null ? null : $tokens[$after];
+
+        if ($beforeToken === '!' || $afterToken === '?') {
+            return true;
+        }
+
+        if ($this->comparesToFalse($tokens, $after, 1) || $this->comparesToFalse($tokens, $before, -1)) {
+            return true;
+        }
+
+        $bare = ($beforeToken === '(' || $this->isChainOperator($beforeToken))
+            && ($afterToken === ')' || $this->isChainOperator($afterToken));
+
+        return $bare && $this->enclosingConditionEnd($tokens, $from, self::CONDITION_KEYWORDS) !== null;
+    }
+
+    /**
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int|null $operatorIndex Index of the token next to the expression, or null at the file's edge
+     * @param int $step Direction the operand of the comparison lies in
+     * @return bool True when that token is a comparison whose other operand is `false`
+     */
+    private function comparesToFalse(array $tokens, ?int $operatorIndex, int $step): bool
+    {
+        if ($operatorIndex === null) {
+            return false;
+        }
+
+        $operator = $tokens[$operatorIndex];
+        if (!is_array($operator) || !in_array($operator[0], self::FALSE_COMPARISONS, true)) {
+            return false;
+        }
+
+        $operand = $this->significantToken($tokens, $operatorIndex, $step);
+
+        return is_array($operand) && $operand[0] === T_STRING && strtolower($operand[1]) === 'false';
+    }
+
+    /**
+     * @param string|array{0: int, 1: string, 2: int}|null $token Token to read
+     * @return bool True when the token is one of the operators a condition is chained with
+     */
+    private function isChainOperator(string|array|null $token): bool
+    {
+        return is_array($token) && in_array($token[0], self::CHAIN_OPERATORS, true);
+    }
+
+    /**
+     * Finds the first read of a variable after the statement that assigns it, and stops
+     * at the closing brace of the block the statement stands in: a read further out
+     * belongs to another life of the variable.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param int $callIndex Index the assigned call starts at
+     * @param string $variable Name of the variable the call is assigned to
+     * @return int|null Index of the first token reading that variable, or null when the block holds none
+     */
+    private function firstReadInBlock(array $tokens, int $callIndex, string $variable): ?int
+    {
+        $statementEnd = $this->statementEnd($tokens, $callIndex);
+        if ($statementEnd === null) {
+            return null;
+        }
+
+        $depth = 0;
+
+        for ($cursor = $statementEnd + 1; isset($tokens[$cursor]); $cursor++) {
+            $token = $tokens[$cursor];
+            if ($token === '{' || (is_array($token) && in_array($token[0], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true))) {
+                $depth++;
+                continue;
+            }
+
+            if ($token === '}') {
+                if ($depth === 0) {
+                    return null;
+                }
+                $depth--;
+                continue;
+            }
+
+            if (is_array($token) && $token[0] === T_VARIABLE && $token[1] === $variable) {
+                return $cursor;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Decides sign 2 by the two shapes that turn a suppressed failure into an
      * exception, and by no other: the call stands in the condition of an `if` whose
      * branch throws, or it is assigned and the next statement is such an `if` over
@@ -298,7 +610,7 @@ final class FsSeamRule implements CodeStyleRule
      */
     private function failureBecomesThrow(array $tokens, int $index): bool
     {
-        $condition = $this->enclosingConditionEnd($tokens, $index);
+        $condition = $this->enclosingConditionEnd($tokens, $index, [T_IF]);
         if ($condition !== null) {
             return $this->branchThrows($tokens, $condition);
         }
@@ -309,16 +621,18 @@ final class FsSeamRule implements CodeStyleRule
     }
 
     /**
-     * Finds the `if` whose condition the call stands inside. The walk looks for a
-     * parenthesis this call is nested in rather than for the keyword itself, so a call
-     * wrapped in another one — `if (strlen(@file_get_contents($p)) === 0)` — is not
-     * read as standing in the condition.
+     * Finds the condition the expression stands inside, opened by one of the given
+     * keywords. The walk looks for a parenthesis the expression is nested in rather than
+     * for the keyword itself, so a call wrapped in another one —
+     * `if (strlen(@file_get_contents($p)) === 0)` — is not read as standing in the
+     * condition.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index the covered call starts at
+     * @param int $index Index the expression starts at
+     * @param array<int, int> $keywords Keyword tokens whose condition counts
      * @return int|null Index of the closing parenthesis of the condition, or null when there is none
      */
-    private function enclosingConditionEnd(array $tokens, int $index): ?int
+    private function enclosingConditionEnd(array $tokens, int $index, array $keywords): ?int
     {
         $depth = 0;
 
@@ -344,7 +658,7 @@ final class FsSeamRule implements CodeStyleRule
 
             $keyword = $this->significantToken($tokens, $cursor, -1);
 
-            return is_array($keyword) && $keyword[0] === T_IF ? $this->closingParen($tokens, $cursor) : null;
+            return is_array($keyword) && in_array($keyword[0], $keywords, true) ? $this->closingParen($tokens, $cursor) : null;
         }
 
         return null;
@@ -357,7 +671,7 @@ final class FsSeamRule implements CodeStyleRule
      * spellings one shape rather than two.
      *
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index the covered call starts at
+     * @param int $index Index the call starts at
      * @return string|null Name of the variable the call is assigned to, or null when it is not assigned
      */
     private function assignedVariable(array $tokens, int $index): ?string

@@ -7,6 +7,8 @@ namespace Hilos\Database;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 
 /**
@@ -145,9 +147,10 @@ class Seed
             throw new DatabaseException("Seed not found: {$seedId}.{$availableStr}");
         }
 
-        $content = file_get_contents($targetFile);
-        if ($content === false) {
-            throw new DatabaseException("Failed to read seed file: {$targetFile}");
+        try {
+            $content = FsPath::read($targetFile);
+        } catch (FsException $failure) {
+            throw new DatabaseException("Failed to read seed file: {$targetFile}", 0, $failure);
         }
 
         self::runSqlWithDelimiter($content);
@@ -170,9 +173,10 @@ class Seed
         $applied = 0;
 
         foreach ($seeds as $file) {
-            $content = file_get_contents($file);
-            if ($content === false) {
-                throw new DatabaseException("Failed to read seed file: {$file}");
+            try {
+                $content = FsPath::read($file);
+            } catch (FsException $failure) {
+                throw new DatabaseException("Failed to read seed file: {$file}", 0, $failure);
             }
 
             self::runSqlWithDelimiter($content);

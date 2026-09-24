@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
+
 /**
  * Removes files and directory trees for the test-only reset commands, and remembers what it
  * could not remove.
@@ -49,12 +52,14 @@ final class TestPathSweeper
      */
     public function emptyDirectory(string $directory): void
     {
-        if (!is_dir($directory)) {
+        try {
+            $entries = FsPath::entries($directory);
+        } catch (FsException) {
             return;
         }
 
-        foreach (scandir($directory) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..' || in_array($entry, self::KEPT_NAMES, true)) {
+        foreach ($entries as $entry) {
+            if (in_array($entry, self::KEPT_NAMES, true)) {
                 continue;
             }
 
@@ -97,18 +102,28 @@ final class TestPathSweeper
     /**
      * Removes one path, and everything under it when it is a directory.
      *
+     * What counts as removed is a path that is gone after the call. The seam's delete leaves in
+     * place, without a word, what `is_file()` denies - a dangling symlink, a fifo - and a sweep
+     * that counted the call rather than the outcome would report such a path as removed.
+     *
      * @param string $path Path to remove
      */
     private function removeTree(string $path): void
     {
         if (!is_dir($path)) {
-            if (unlink($path)) {
-                $this->removed++;
+            try {
+                FsPath::delete($path);
+            } catch (FsException) {
+                $this->failed[] = $path;
 
                 return;
             }
+            if (file_exists($path) || is_link($path)) {
+                $this->failed[] = $path;
 
-            $this->failed[] = $path;
+                return;
+            }
+            $this->removed++;
 
             return;
         }
@@ -123,29 +138,31 @@ final class TestPathSweeper
             return;
         }
 
-        if (rmdir($path)) {
-            $this->removed++;
+        try {
+            FsPath::removeDirectory($path);
+        } catch (FsException) {
+            $this->failed[] = $path;
 
             return;
         }
-
-        $this->failed[] = $path;
+        $this->removed++;
     }
 
     /**
      * Says whether a directory holds nothing at all.
+     *
+     * A directory that cannot be listed reads as empty, as it did under `?: []`: the removal that
+     * follows is what reports it, and reporting it here as well would name one path twice.
      *
      * @param string $path Directory to look into
      * @return bool Whether the directory is empty
      */
     private static function isEmptyDirectory(string $path): bool
     {
-        foreach (scandir($path) ?: [] as $entry) {
-            if ($entry !== '.' && $entry !== '..') {
-                return false;
-            }
+        try {
+            return FsPath::entries($path) === [];
+        } catch (FsException) {
+            return true;
         }
-
-        return true;
     }
 }

@@ -37,9 +37,10 @@ final readonly class FsTmpDirectory implements ArrayAccess
     {
         $this->ensureDirectory();
         $index = RandomHelper::hex(16);
-        $path = $this->path . DIRECTORY_SEPARATOR . $index;
-        if (file_put_contents($path, '') === false) {
-            throw new FileWriteException("Cannot create tmp file: {$index}");
+        try {
+            FsPath::write($this->path . DIRECTORY_SEPARATOR . $index, '');
+        } catch (FileWriteException $unwritable) {
+            throw new FileWriteException("Cannot create tmp file: {$index}", 0, $unwritable);
         }
 
         return $index;

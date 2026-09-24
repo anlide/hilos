@@ -99,6 +99,25 @@ final class TestPathSweeperTest extends TestCase
         rmdir($path);
     }
 
+    public function testAPathTheDeleteLeavesInPlaceIsReportedAsFailedNotRemoved(): void
+    {
+        // A dangling symlink is what is_file() denies: the seam's delete leaves it without a word,
+        // and what counts as removed is a path that is gone after the call.
+        $link = $this->root . '/dangling';
+        symlink($this->root . '/never-made', $link);
+
+        try {
+            $sweeper = new TestPathSweeper();
+            $sweeper->emptyDirectory($this->root);
+
+            $this->assertSame([$link], $sweeper->failed());
+            $this->assertSame(2, $sweeper->removed(), 'the batch and the archive');
+            $this->assertTrue(is_link($link));
+        } finally {
+            unlink($link);
+        }
+    }
+
     public function testADirectoryThatIsNotThereIsNothingToDo(): void
     {
         $sweeper = new TestPathSweeper();

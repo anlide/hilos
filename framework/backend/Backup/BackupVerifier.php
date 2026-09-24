@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
+
 /**
  * BackupVerifier - checks a stored archive against the digest recorded when it was written.
  *
@@ -49,13 +52,14 @@ final class BackupVerifier
             return new BackupVerifyResult(BackupVerifyOutcome::ARCHIVE_MISSING, $metadata->sha256);
         }
         // Readability is checked before any read so an unreadable archive is reported as such
-        // instead of raising a warning from hash_file() on the way to the same conclusion.
+        // without paying for a read on the way to the same conclusion.
         if (!is_readable($archivePath)) {
             return new BackupVerifyResult(BackupVerifyOutcome::UNREADABLE, $metadata->sha256);
         }
 
-        $size = filesize($archivePath);
-        if ($size === false) {
+        try {
+            $size = FsPath::size($archivePath);
+        } catch (FsException) {
             return new BackupVerifyResult(BackupVerifyOutcome::UNREADABLE, $metadata->sha256);
         }
         // A size that already disagrees is a mismatch on its own: hashing gigabytes to reach
@@ -69,8 +73,9 @@ final class BackupVerifier
             );
         }
 
-        $actual = hash_file(self::DIGEST_ALGO, $archivePath);
-        if ($actual === false) {
+        try {
+            $actual = FsPath::hash(self::DIGEST_ALGO, $archivePath);
+        } catch (FsException) {
             return new BackupVerifyResult(BackupVerifyOutcome::UNREADABLE, $metadata->sha256);
         }
 

@@ -53,6 +53,20 @@ final class FileMailTransportTest extends TestCase
         $this->assertStringContainsString(base64_encode('Hello'), (string)$written);
     }
 
+    public function testADirectoryThatCannotBeCreatedFailsPermanently(): void
+    {
+        mkdir($this->dir);
+        file_put_contents($this->dir . '/occupied', 'not a directory');
+        $transport = new FileMailTransport($this->dir . '/occupied/mail', 'from@example.com');
+
+        $transport->start(new EmailMessage(to: 'user@example.com', subject: 'Hi', text: 'Hello'), 1000.0);
+
+        $outcome = $transport->consumeResult();
+        $this->assertFalse($outcome->delivered);
+        $this->assertTrue($outcome->permanent);
+        $this->assertSame('mail file directory is not writable', $outcome->errorDetail);
+    }
+
     public function testResultIsConsumedOnce(): void
     {
         $transport = new FileMailTransport($this->dir, 'from@example.com');

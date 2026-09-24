@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Mail;
 
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\FileWriteException;
+use Hilos\Fs\FsPath;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 
@@ -117,12 +120,16 @@ final class FileMailTransport implements MailTransportInterface
      */
     private function write(string $encoded, float $nowMs): MailSendOutcome
     {
-        if (!is_dir($this->directory) && !mkdir($this->directory, 0o775, true) && !is_dir($this->directory)) {
+        try {
+            FsPath::ensureDirectory($this->directory, 0o775);
+        } catch (DirectoryCreateException) {
             return MailSendOutcome::failed('mail file directory is not writable', true);
         }
 
         $path = $this->directory . '/' . (int)$nowMs . '-' . substr(hash('sha256', $encoded), 0, 16) . '.eml';
-        if (file_put_contents($path, $encoded) === false) {
+        try {
+            FsPath::write($path, $encoded);
+        } catch (FileWriteException) {
             return MailSendOutcome::failed('mail file could not be written', true);
         }
 

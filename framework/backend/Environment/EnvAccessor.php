@@ -14,6 +14,8 @@ use Hilos\Environment\Exception\EnvKeyInvalidException;
 use Hilos\Environment\Exception\EnvMutationNotSupportedException;
 use Hilos\Environment\Exception\EnvNotInCatalogException;
 use Hilos\Environment\Exception\MissingEnvironmentVariableException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 
 /**
  * Catalog-backed environment accessor: Hilos::$env[$key] hands back the typed reader that
@@ -313,28 +315,27 @@ class EnvAccessor implements ArrayAccess
      */
     private function parseEnvFile(string $filePath): array
     {
-        $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($lines === false) {
-            return [];
-        }
-
         $env = [];
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '' || str_starts_with($line, '#')) {
-                continue;
-            }
-            if (!str_contains($line, '=')) {
-                continue;
-            }
+        try {
+            foreach (FsPath::readLines($filePath) as $line) {
+                $line = trim($line);
+                if ($line === '' || str_starts_with($line, '#')) {
+                    continue;
+                }
+                if (!str_contains($line, '=')) {
+                    continue;
+                }
 
-            [$key, $value] = explode('=', $line, 2);
-            $key = trim($key);
-            if ($key === '') {
-                continue;
-            }
+                [$key, $value] = explode('=', $line, 2);
+                $key = trim($key);
+                if ($key === '') {
+                    continue;
+                }
 
-            $env[$key] = trim(trim($value), '"\'');
+                $env[$key] = trim(trim($value), '"\'');
+            }
+        } catch (FsException) {
+            return [];
         }
 
         return $env;

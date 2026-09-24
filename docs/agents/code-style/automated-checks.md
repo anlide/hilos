@@ -15,7 +15,7 @@ rule.
 | `DB-OBJECT-MUTATE` | Which rows a DB object store holds is changed only through the ArrayAccess door of `Objects`, which announces: `$this[$id] = $object` for a row that is born and `unset($this[$id])` for one that goes. The store's own row array is the road that bypasses the announcement, so `$this->objects` is written by two files only — `Objects`, which owns the door and the silent `hydrate()` seam, and `ObjectCollection`, which is no subclass of it and keeps a private array of its own under the same name. Five spellings are judged: a key write, an append, a replacement of the whole array, `unset()`, and a coalescing assignment of either a key or the whole array. Reading is not judged at all — `??` on its own stays a read — and neither is writing a field of a row already there. The receiver is read lexically as `$this->objects`, so a class that is no store but keeps an `$objects` property of its own is reported too — the way out of such a hit is to rename that property. No baseline and no in-comment marker: a third legal writer is a line in the rule, with its reason. Every root, tests included. | [object.md](../orm/object.md) |
 | `VIEW-WRAPPER-BIND` | A view wrapper holds the row it was built from, never the variable that row was handed over in. Two halves under one id: `$this-><name> = &$variable`, the binding itself, and a parameter declared by reference, the signature that makes a caller produce the variable to bind to. The first is judged on every root — the `readonly` on `DbItem::$_object` and `RtItem::$_state` already refuses it at runtime, but a new wrapper hierarchy has no such field yet; the second only under `Database/View/`, `Database/Actions/`, `Runtime/View/` and `Runtime/View/Actions/`, since outside the wrapper layer a reference parameter is an ordinary accumulator or out-parameter. A closure's `use (&$captured)` clause is out of scope by construction: the walk reads parameter lists, and a capture list is not one. No baseline and no in-comment marker: there is no legitimate case to admit. Every root for the property write; the View zones for the parameter. | [collection-iteration.md](../orm/collection-iteration.md) |
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
-| `FS-SEAM` | A file primitive that owes an exception is called through `Hilos\Fs\FsPath`, the one file the rule exempts, matched by the tail of its path. Two signs, at most one hit per suppressed call: a file opened under `@`, whatever the next line does, and a suppressed primitive addressed by a path whose checked failure reaches a `throw` — either the call stands in the condition of an `if`, or it is assigned and the next statement is such an `if` over that same variable. Both signs judge the call the `@` covers, an assignment target standing in between included, so `@$h = fopen(...)` reads as `$h = @fopen(...)` does; list destructuring under `@` is not read at all. A result nobody examines is class D and stays silent; stream and socket primitives are not judged, since class B lives there. Production roots only. | [error-suppression.md](error-suppression.md) |
+| `FS-SEAM` | A file primitive that owes an exception is called through `Hilos\Fs\FsPath`, the one file the rule exempts, matched by the tail of its path. Three signs, at most one hit per call: a file opened under `@`, whatever the next line does; a suppressed primitive addressed by a path whose checked failure reaches a `throw` — either the call stands in the condition of an `if`, or it is assigned and the next statement is such an `if` over that same variable; and a path primitive called without `@` whose `false` result is tested — negated, compared to `false` on either side, the left of `?:`, a ternary's condition, the bare condition of an `if`, `elseif` or `while` alone or in a chain, or a variable whose first read after the assignment, within the enclosing block, is such a test — a branch no Hilos process reaches, since the managers' handler ends the process on the warning first. The first two signs judge the call the `@` covers, an assignment target standing in between included, so `@$h = fopen(...)` reads as `$h = @fopen(...)` does, and the third reads such a call as suppressed; list destructuring under `@` is not read at all. `realpath()` and `glob()` fail silently and are outside the third sign; a root declared standalone is outside it too. A result nobody examines is class D and stays silent; stream and socket primitives are not judged, since class B lives there. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `RANDOM-SOURCE` | A secret is drawn from `RandomHelper::secureBytes()` / `secureHex()`, which throw when the entropy source refuses. The tolerant `bytes()`, `hex()` and `integer()`, which fall back to `mt_rand()`, are callable only from a file the rule itself lists — an inventory of every caller, not a guess at which zones hold secrets. Production roots only. | [random-source.md](random-source.md) |
 | `BLOCKING-RESOLUTION` | A host name is never turned into an address by a call that blocks the process: `gethostbyname`, `gethostbynamel`, `gethostbyaddr`, `dns_get_record`, `dns_get_mx`, `checkdnsrr`. Read in call position only, so one of these names in a string, in a comment, or worn by a method is not a hit; `gethostname()` is not in the family, being a `uname(2)` read with no resolver behind it. The list of allowed files is empty and is meant to stay so. Every root, tests included. | [blocking-resolution.md](blocking-resolution.md) |
 | `PROCESS-FORK` | The PHP process is never forked by a call to `pcntl_fork` or `pcntl_rfork`. Read in call position only, so one of these names in a string, in a comment, or worn by a method is not a hit; `pcntl_exec` is not in the family, replacing the image rather than forking, and `proc_open` is the canonical isolated-process primitive. The list of allowed files is empty and is meant to stay so: adding an entry owes a leaf ticket key and a reason, with no baseline and no in-comment marker. Every root, tests included. | [process-fork.md](process-fork.md) |
@@ -304,14 +304,15 @@ decides its rule set:
 | Root | Kind |
 |---|---|
 | `framework/backend` | production |
-| `scripts` | production |
+| `scripts` | standalone |
 | `framework/tests` | suite |
 | `demo/*/backend` | production |
 | `demo/*/tests` | suite |
 
 A root is read when it holds PHP this repository runs, or PHP that decides a run —
 which is what puts `scripts/` in the list: it carries the runner every Verify
-verdict comes out of, and the host-side installers. A demo contributes its two
+verdict comes out of, and the host-side installers, and it is the one root declared
+standalone (below). A demo contributes its two
 source directories rather than its whole tree, because `demo/<name>/data/` sits
 beside them and holds the root-owned MariaDB files no walk may descend into; a new
 demo arrives through the glob with no activation step, and a root that is not there
@@ -330,6 +331,15 @@ runs on the worker's start path. A rule
 cannot draw that line for itself: it is handed the path relative to the scanned
 root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and reads exactly like
 a backend file.
+
+A standalone root is judged as production is, by every rule, and withholds exactly
+one thing: the third sign of `FS-SEAM`, nothing else. The kind names production code
+that runs as a PHP process of its own, outside every Hilos manager — it loads no
+framework class and installs no warning handler, so the `false` a failing path
+primitive returns reaches the code that checks it, and `Hilos\Fs` is not there to
+call. `scripts/` is that root. The withholding is the rule's own: `FsSeamRule` is
+handed the kind and skips the sign, so the list in `RootKind` of what a suite may
+break stays what it is.
 
 Reading the kind off the directory name instead — a root ending in `/backend` is
 production, everything else a suite — is what this replaced, and `scripts/` is why:

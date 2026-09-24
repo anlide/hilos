@@ -205,12 +205,12 @@ final class BackupCreator
             if (!$this->digestFitsBudget($sizeBytes, $startedAt)) {
                 $warnings[] = self::WARNING_DIGEST_SKIPPED;
             } else {
-                $sha256 = hash_file(BackupVerifier::DIGEST_ALGO, $tmpArchive);
-                if ($sha256 === false) {
+                try {
+                    $sha256 = FsPath::hash(BackupVerifier::DIGEST_ALGO, $tmpArchive);
+                } catch (FsException) {
                     // A backup that exists without a digest beats no backup at all, so the failure
                     // is recorded as a warning rather than aborting an otherwise complete run.
                     $warnings[] = self::WARNING_DIGEST_FAILED;
-                    $sha256 = null;
                 }
             }
 
@@ -1088,10 +1088,12 @@ final class BackupCreator
         if (!is_dir($path)) {
             return;
         }
-        foreach (scandir($path) ?: [] as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
+        try {
+            $entries = FsPath::entries($path);
+        } catch (FsException) {
+            $entries = [];
+        }
+        foreach ($entries as $entry) {
             $child = $path . '/' . $entry;
             // warning-suppressed: best-effort removal, an undeletable child leaves the tree in place
             is_dir($child) ? $this->removeDirectory($child) : @unlink($child);

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Frontend;
 
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
+
 /**
  * In-memory cache for prerendered HTML files.
  *
@@ -55,8 +58,9 @@ final class HtmlCache
             return null;
         }
 
-        $content = file_get_contents($filePath);
-        if ($content === false) {
+        try {
+            $content = FsPath::read($filePath);
+        } catch (FsException) {
             return null;
         }
 

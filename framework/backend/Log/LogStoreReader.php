@@ -9,6 +9,8 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\LogStreamConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\FileSystemHelper;
 
@@ -178,9 +180,11 @@ final class LogStoreReader
             return null;
         }
 
-        $free = disk_free_space($directory);
-
-        return $free === false ? null : (int)$free;
+        try {
+            return (int)FsPath::freeSpace($directory);
+        } catch (FsException) {
+            return null;
+        }
     }
 
     /**
@@ -195,9 +199,11 @@ final class LogStoreReader
             return null;
         }
 
-        $total = disk_total_space($directory);
-
-        return $total === false ? null : (int)$total;
+        try {
+            return (int)FsPath::totalSpace($directory);
+        } catch (FsException) {
+            return null;
+        }
     }
 
     /**

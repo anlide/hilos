@@ -48,11 +48,15 @@ final readonly class FsTmpFile
     }
 
     /**
-     * @return int File size in bytes (0 when absent)
+     * @return int File size in bytes (0 when absent or unreadable)
      */
     public function size(): int
     {
-        return is_file($this->path) ? (filesize($this->path) ?: 0) : 0;
+        try {
+            return FsPath::size($this->path);
+        } catch (FsException) {
+            return 0;
+        }
     }
 
     /**

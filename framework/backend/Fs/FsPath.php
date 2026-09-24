@@ -6,6 +6,7 @@ namespace Hilos\Fs;
 
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
@@ -86,6 +87,45 @@ final class FsPath
             if (!feof($handle)) {
                 throw new FileReadException("Cannot read file to its end: {$path}");
             }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * Open the file for reading, hand the open handle to the reader for the length of the read, and close it here.
+     *
+     * The primitive for a read that jumps inside one file — a head, a tail, a search
+     * for an offset — where {@see readLines()} serves only a sequential pass. The
+     * handle is the seam's: the reader seeks and reads it with descriptor primitives
+     * (`fseek`, `fread`, `fgets`, `fstat`) and never closes it; the `finally` below
+     * closes it whether the reader returns or throws. An exception the reader raises
+     * passes through unchanged. The file stays pinned for the whole read, so a rename
+     * of the path in between (a rotation) does not change what is read — ask
+     * `fstat()` of the handle for the size of what is being read, not the path.
+     *
+     * @template T
+     *
+     * @param string $path Absolute file path
+     * @param callable(resource): T $reader Reads the open handle and returns the result of the read
+     * @return T Whatever the reader returned
+     *
+     * @throws FileNotFoundException If the file does not exist
+     * @throws FileReadException If the file exists but cannot be opened
+     */
+    public static function readWith(string $path, callable $reader): mixed
+    {
+        if (!is_file($path)) {
+            throw new FileNotFoundException("File not found: {$path}");
+        }
+        // warning-suppressed: false becomes FileReadException on the next line
+        $handle = @fopen($path, 'rb');
+        if ($handle === false) {
+            throw new FileReadException("Cannot read file: {$path}");
+        }
+
+        try {
+            return $reader($handle);
         } finally {
             fclose($handle);
         }
@@ -267,6 +307,71 @@ final class FsPath
     }
 
     /**
+     * List the directory's entries, `.` and `..` left out.
+     *
+     * @param string $path Absolute directory path
+     * @return list<string> Entry names in `scandir()` order
+     *
+     * @throws DirectoryNotFoundException If the path is not a directory
+     * @throws FileReadException If the directory cannot be listed
+     */
+    public static function entries(string $path): array
+    {
+        if (!is_dir($path)) {
+            throw new DirectoryNotFoundException("Directory not found: {$path}");
+        }
+        // warning-suppressed: false becomes FileReadException on the next line
+        $entries = @scandir($path);
+        if ($entries === false) {
+            throw new FileReadException("Cannot list directory: {$path}");
+        }
+
+        return array_values(array_diff($entries, ['.', '..']));
+    }
+
+    /**
+     * @param string $path Absolute path of a directory on the filesystem to measure
+     * @return float Free bytes on the filesystem holding the directory
+     *
+     * @throws DirectoryNotFoundException If the path is not a directory
+     * @throws FileReadException If the filesystem does not answer
+     */
+    public static function freeSpace(string $path): float
+    {
+        if (!is_dir($path)) {
+            throw new DirectoryNotFoundException("Directory not found: {$path}");
+        }
+        // warning-suppressed: false becomes FileReadException on the next line
+        $bytes = @disk_free_space($path);
+        if ($bytes === false) {
+            throw new FileReadException("Cannot read free space of: {$path}");
+        }
+
+        return $bytes;
+    }
+
+    /**
+     * @param string $path Absolute path of a directory on the filesystem to measure
+     * @return float Total bytes of the filesystem holding the directory
+     *
+     * @throws DirectoryNotFoundException If the path is not a directory
+     * @throws FileReadException If the filesystem does not answer
+     */
+    public static function totalSpace(string $path): float
+    {
+        if (!is_dir($path)) {
+            throw new DirectoryNotFoundException("Directory not found: {$path}");
+        }
+        // warning-suppressed: false becomes FileReadException on the next line
+        $bytes = @disk_total_space($path);
+        if ($bytes === false) {
+            throw new FileReadException("Cannot read total space of: {$path}");
+        }
+
+        return $bytes;
+    }
+
+    /**
      * @param string $path Absolute file path
      * @return int Size in bytes
      *
@@ -288,6 +393,28 @@ final class FsPath
     }
 
     /**
+     * @param string $algorithm Digest algorithm name as `hash_file()` takes it
+     * @param string $path Absolute file path
+     * @return string Lowercase hex digest of the file's bytes
+     *
+     * @throws FileNotFoundException If the file does not exist
+     * @throws FileReadException If the digest cannot be read
+     */
+    public static function hash(string $algorithm, string $path): string
+    {
+        if (!is_file($path)) {
+            throw new FileNotFoundException("File not found: {$path}");
+        }
+        // warning-suppressed: false becomes FileReadException on the next line
+        $digest = @hash_file($algorithm, $path);
+        if ($digest === false) {
+            throw new FileReadException("Cannot read digest of file: {$path}");
+        }
+
+        return $digest;
+    }
+
+    /**
      * Delete the file (no-op when already absent).
      *
      * @param string $path Absolute file path
@@ -302,6 +429,24 @@ final class FsPath
         // warning-suppressed: false becomes FileDeleteException on the next line
         if (!@unlink($path)) {
             throw new FileDeleteException("Cannot delete file: {$path}");
+        }
+    }
+
+    /**
+     * Remove the directory (no-op when already absent).
+     *
+     * @param string $path Absolute directory path
+     *
+     * @throws FileDeleteException If the directory exists but stays — not empty, or no permission
+     */
+    public static function removeDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        // warning-suppressed: false becomes FileDeleteException on the next line
+        if (!@rmdir($path)) {
+            throw new FileDeleteException("Cannot remove directory: {$path}");
         }
     }
 }

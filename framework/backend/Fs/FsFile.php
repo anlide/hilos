@@ -70,17 +70,19 @@ final readonly class FsFile
     }
 
     /**
-     * @return int File size in bytes
+     * @return int File size in bytes, 0 when the size cannot be read
      *
      * @throws FileNotFoundException If the file does not exist
      */
     public function size(): int
     {
-        if (!is_file($this->path)) {
-            throw new FileNotFoundException("File not found: {$this->filename}");
+        try {
+            return FsPath::size($this->path);
+        } catch (FileNotFoundException $missing) {
+            throw new FileNotFoundException("File not found: {$this->filename}", 0, $missing);
+        } catch (FileReadException) {
+            return 0;
         }
-
-        return filesize($this->path) ?: 0;
     }
 
     /**
@@ -109,15 +111,13 @@ final readonly class FsFile
      */
     public function read(): string
     {
-        if (!is_file($this->path)) {
-            throw new FileNotFoundException("File not found: {$this->filename}");
+        try {
+            return FsPath::read($this->path);
+        } catch (FileNotFoundException $missing) {
+            throw new FileNotFoundException("File not found: {$this->filename}", 0, $missing);
+        } catch (FileReadException $unreadable) {
+            throw new FileReadException("Cannot read file: {$this->filename}", 0, $unreadable);
         }
-        $content = file_get_contents($this->path);
-        if ($content === false) {
-            throw new FileReadException("Cannot read file: {$this->filename}");
-        }
-
-        return $content;
     }
 
     /**

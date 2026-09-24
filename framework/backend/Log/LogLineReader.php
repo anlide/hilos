@@ -8,6 +8,8 @@ use DateTimeImmutable;
 use Generator;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Logger;
@@ -138,6 +140,9 @@ final class LogLineReader
      * private to this reader — a caller reaching for `filesize()` itself would leave the traversal guard
      * of {@see resolveReadablePath()} standing aside (HIL-389).
      *
+     * Measured by PATH on purpose, unlike the reads, which take the size of the file they hold open: the
+     * follower has to see the file now under this name to notice a rotation (a size below its offset).
+     *
      * @param string $relativePath Path of the target file relative to the log root
      *
      * @return ?int Size in bytes, or null when the path is unresolved, escapes the log root, or is not a readable file
@@ -149,9 +154,11 @@ final class LogLineReader
             return null;
         }
 
-        $size = filesize($path);
-
-        return $size === false ? null : $size;
+        try {
+            return FsPath::size($path);
+        } catch (FsException) {
+            return null;
+        }
     }
 
     /**
@@ -233,56 +240,49 @@ final class LogLineReader
             return null;
         }
 
-        $handle = fopen($path, 'rb');
-        if ($handle === false) {
-            return null;
-        }
-
-        $fileSize = filesize($path);
-        if ($fileSize === false || $fileSize === 0) {
-            fclose($handle);
-
-            return null;
-        }
-
-        $floor = max(0, $fileSize - max(1, $maxWindowBytes));
-        $chunkStart = $fileSize;
-        $unscannedEnd = $fileSize;
-        $placeOffset = null;
-        $placeStamp = null;
-        while (true) {
-            $chunkStart = max($floor, $chunkStart - self::CHUNK_SIZE);
-            fseek($handle, $chunkStart);
-            $buffer = fread($handle, $unscannedEnd - $chunkStart);
-            if ($buffer === false) {
-                fclose($handle);
-
-                return null;
-            }
-
-            // Newest line first: the first line earlier than the moment is the boundary, and the place is
-            // the line walked just before reaching it.
-            foreach (array_reverse(iterator_to_array(self::stampedLines($buffer, $chunkStart)), true) as $offset => $stamp) {
-                if ($stamp < $atMs) {
-                    fclose($handle);
-
-                    return $placeOffset;
+        try {
+            return FsPath::readWith($path, static function ($handle) use ($atMs, $maxWindowBytes): ?int {
+                $fileSize = self::openFileSize($handle);
+                if ($fileSize === null || $fileSize === 0) {
+                    return null;
                 }
-                $placeOffset = $offset;
-                $placeStamp = $stamp;
-            }
 
-            if ($chunkStart === $floor) {
-                fclose($handle);
+                $floor = max(0, $fileSize - max(1, $maxWindowBytes));
+                $chunkStart = $fileSize;
+                $unscannedEnd = $fileSize;
+                $placeOffset = null;
+                $placeStamp = null;
+                while (true) {
+                    $chunkStart = max($floor, $chunkStart - self::CHUNK_SIZE);
+                    fseek($handle, $chunkStart);
+                    $buffer = fread($handle, $unscannedEnd - $chunkStart);
+                    if ($buffer === false) {
+                        return null;
+                    }
 
-                return $placeStamp === $atMs ? $placeOffset : null;
-            }
+                    // Newest line first: the first line earlier than the moment is the boundary, and the place
+                    // is the line walked just before reaching it.
+                    foreach (array_reverse(iterator_to_array(self::stampedLines($buffer, $chunkStart)), true) as $offset => $stamp) {
+                        if ($stamp < $atMs) {
+                            return $placeOffset;
+                        }
+                        $placeOffset = $offset;
+                        $placeStamp = $stamp;
+                    }
 
-            // The fragment in front of the chunk's first whole line is read again, whole, with the next chunk.
-            $firstNewline = strpos($buffer, "\n");
-            if ($firstNewline !== false) {
-                $unscannedEnd = $chunkStart + $firstNewline + 1;
-            }
+                    if ($chunkStart === $floor) {
+                        return $placeStamp === $atMs ? $placeOffset : null;
+                    }
+
+                    // The fragment in front of the chunk's first whole line is read again, whole, with the next chunk.
+                    $firstNewline = strpos($buffer, "\n");
+                    if ($firstNewline !== false) {
+                        $unscannedEnd = $chunkStart + $firstNewline + 1;
+                    }
+                }
+            });
+        } catch (FsException) {
+            return null;
         }
     }
 
@@ -350,46 +350,44 @@ final class LogLineReader
      */
     private function readHead(string $path, LogReadQuery $query, int $limit): LogLinePage
     {
-        $handle = fopen($path, 'rb');
-        if ($handle === false) {
+        try {
+            return FsPath::readWith($path, static function ($handle) use ($query, $limit): LogLinePage {
+                $fileSize = self::openFileSize($handle);
+                $start = max(0, $query->cursor ?? 0);
+                $currentLevel = $query->inheritedLevel ?? Logger::LEVEL_INFO;
+                if ($fileSize === null || $start >= $fileSize) {
+                    return new LogLinePage(true, [], null, false, $start, $currentLevel);
+                }
+                fseek($handle, $start);
+
+                $lines = [];
+                $nextCursor = null;
+                $hasMore = false;
+                $endCursor = $start;
+                $endLevel = $currentLevel;
+                while (($raw = fgets($handle)) !== false) {
+                    if (!str_ends_with($raw, "\n")) {
+                        break;
+                    }
+                    $text = rtrim($raw, "\r\n");
+                    [$currentLevel, $isContinuation] = self::classify($text, $currentLevel);
+                    $endCursor += strlen($raw);
+                    $endLevel = $currentLevel;
+                    if (self::passesFilter($text, $currentLevel, $query)) {
+                        $lines[] = new LogLine($text, $currentLevel, $isContinuation);
+                        if (count($lines) === $limit) {
+                            $hasMore = $endCursor < $fileSize;
+                            $nextCursor = $hasMore ? $endCursor : null;
+                            break;
+                        }
+                    }
+                }
+
+                return new LogLinePage(true, $lines, $nextCursor, $hasMore, $endCursor, $endLevel);
+            });
+        } catch (FsException) {
             return LogLinePage::unavailable();
         }
-
-        $fileSize = filesize($path);
-        $start = max(0, $query->cursor ?? 0);
-        $currentLevel = $query->inheritedLevel ?? Logger::LEVEL_INFO;
-        if ($fileSize === false || $start >= $fileSize) {
-            fclose($handle);
-
-            return new LogLinePage(true, [], null, false, $start, $currentLevel);
-        }
-        fseek($handle, $start);
-
-        $lines = [];
-        $nextCursor = null;
-        $hasMore = false;
-        $endCursor = $start;
-        $endLevel = $currentLevel;
-        while (($raw = fgets($handle)) !== false) {
-            if (!str_ends_with($raw, "\n")) {
-                break;
-            }
-            $text = rtrim($raw, "\r\n");
-            [$currentLevel, $isContinuation] = self::classify($text, $currentLevel);
-            $endCursor += strlen($raw);
-            $endLevel = $currentLevel;
-            if (self::passesFilter($text, $currentLevel, $query)) {
-                $lines[] = new LogLine($text, $currentLevel, $isContinuation);
-                if (count($lines) === $limit) {
-                    $hasMore = $endCursor < $fileSize;
-                    $nextCursor = $hasMore ? $endCursor : null;
-                    break;
-                }
-            }
-        }
-        fclose($handle);
-
-        return new LogLinePage(true, $lines, $nextCursor, $hasMore, $endCursor, $endLevel);
     }
 
     /**
@@ -409,51 +407,59 @@ final class LogLineReader
      */
     private function readTail(string $path, LogReadQuery $query, int $limit): LogLinePage
     {
-        $handle = fopen($path, 'rb');
-        if ($handle === false) {
+        try {
+            return FsPath::readWith($path, static function ($handle) use ($query, $limit): LogLinePage {
+                $fileSize = self::openFileSize($handle);
+                if ($fileSize === null) {
+                    return LogLinePage::unavailable();
+                }
+
+                $end = $query->cursor ?? $fileSize;
+                $end = max(0, min($end, $fileSize));
+                if ($end === 0) {
+                    return new LogLinePage(true, [], null, false);
+                }
+
+                $ceiling = $query->maxWindowBytes === null ? $end : min($end, max(1, $query->maxWindowBytes));
+                $windowSize = 0;
+                while (true) {
+                    $windowSize = min($ceiling, $windowSize + self::CHUNK_SIZE);
+                    $windowStart = $end - $windowSize;
+                    fseek($handle, $windowStart);
+                    $buffer = fread($handle, $windowSize);
+                    if ($buffer === false) {
+                        return LogLinePage::unavailable();
+                    }
+
+                    $matches = self::matchWindow($buffer, $windowStart, $windowStart > 0, $query);
+                    if (count($matches) > $limit || $windowStart === 0) {
+                        return self::tailPageFromMatches($matches, $limit);
+                    }
+                    if ($windowSize === $ceiling) {
+                        return self::tailPageAtCeiling($matches, $buffer, $windowStart);
+                    }
+                }
+            });
+        } catch (FsException) {
             return LogLinePage::unavailable();
         }
+    }
 
-        $fileSize = filesize($path);
-        if ($fileSize === false) {
-            fclose($handle);
+    /**
+     * Size of the file a read holds open, asked of the handle rather than the path.
+     *
+     * A rotation renames the live file while a read is under way; the handle still names the file the
+     * read started on, and its size is the one the offsets inside that read are measured against.
+     *
+     * @param resource $handle Open read handle
+     *
+     * @return ?int Size in bytes, or null when the descriptor does not answer
+     */
+    private static function openFileSize($handle): ?int
+    {
+        $stat = fstat($handle);
 
-            return LogLinePage::unavailable();
-        }
-
-        $end = $query->cursor ?? $fileSize;
-        $end = max(0, min($end, $fileSize));
-        if ($end === 0) {
-            fclose($handle);
-
-            return new LogLinePage(true, [], null, false);
-        }
-
-        $ceiling = $query->maxWindowBytes === null ? $end : min($end, max(1, $query->maxWindowBytes));
-        $windowSize = 0;
-        while (true) {
-            $windowSize = min($ceiling, $windowSize + self::CHUNK_SIZE);
-            $windowStart = $end - $windowSize;
-            fseek($handle, $windowStart);
-            $buffer = fread($handle, $windowSize);
-            if ($buffer === false) {
-                fclose($handle);
-
-                return LogLinePage::unavailable();
-            }
-
-            $matches = self::matchWindow($buffer, $windowStart, $windowStart > 0, $query);
-            if (count($matches) > $limit || $windowStart === 0) {
-                fclose($handle);
-
-                return self::tailPageFromMatches($matches, $limit);
-            }
-            if ($windowSize === $ceiling) {
-                fclose($handle);
-
-                return self::tailPageAtCeiling($matches, $buffer, $windowStart);
-            }
-        }
+        return $stat === false ? null : $stat['size'];
     }
 
     /**

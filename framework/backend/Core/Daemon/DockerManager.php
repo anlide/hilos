@@ -18,6 +18,8 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Log\DaemonLogAddress;
 use Hilos\Log\DaemonRawStream;
@@ -371,10 +373,10 @@ class DockerManager extends BaseManager
         // that to create.
         if ($logFile !== null) {
             $logDir = dirname($logFile);
-            if (!is_dir($logDir)) {
-                if (!mkdir($logDir, 0700, true)) {
-                    throw new LogRotationException("Cannot create log directory: $logDir");
-                }
+            try {
+                FsPath::ensureDirectory($logDir, 0700);
+            } catch (DirectoryCreateException $failure) {
+                throw new LogRotationException("Cannot create log directory: $logDir", 0, $failure);
             }
         }
 

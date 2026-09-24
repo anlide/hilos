@@ -10,6 +10,8 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\View\Collection\HilosUserBlockSource;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
@@ -256,8 +258,9 @@ final class DeferredFeatureRequirementsValidator
                 continue;
             }
 
-            $sql = file_get_contents($file);
-            if ($sql === false) {
+            try {
+                $sql = FsPath::read($file);
+            } catch (FsException) {
                 continue;
             }
 

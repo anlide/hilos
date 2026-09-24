@@ -51,6 +51,8 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
@@ -697,11 +699,10 @@ abstract class WorkerServer extends AbstractServer implements
     {
         $logDirectory = $this->getLogDirectory();
 
-        // Ensure log directory exists
-        if (!is_dir($logDirectory)) {
-            if (!mkdir($logDirectory, self::LOG_DIR_PERMISSIONS, true)) {
-                Logger::error("Failed to create log directory: {$logDirectory}");
-            }
+        try {
+            FsPath::ensureDirectory($logDirectory, self::LOG_DIR_PERMISSIONS);
+        } catch (DirectoryCreateException) {
+            Logger::error("Failed to create log directory: {$logDirectory}");
         }
     }
 

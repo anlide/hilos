@@ -175,10 +175,11 @@ final class CodeStyleGuardTest extends TestCase
     }
 
     /**
-     * The index spans every production root, and the throws rule now judges all of it:
-     * a demo calls the framework, so an index cut down to part of the tree would answer
-     * "no contract" for half the calls inside it and pass them in silence. A suite is
-     * left out because nothing the rule judges calls into one.
+     * The index spans every root that runs — production and standalone alike — and the
+     * throws rule now judges all of it: a demo calls the framework, so an index cut down
+     * to part of the tree would answer "no contract" for half the calls inside it and
+     * pass them in silence. A suite is left out because nothing the rule judges calls
+     * into one.
      *
      * @return array<int, string> Roots the cross-file index is built over, relative to the repository root
      */
@@ -186,7 +187,7 @@ final class CodeStyleGuardTest extends TestCase
     {
         return array_keys(array_filter(
             ScannedRoots::all($this->repositoryRoot()),
-            static fn(RootKind $kind): bool => $kind === RootKind::Production,
+            static fn(RootKind $kind): bool => $kind !== RootKind::Suite,
         ));
     }
 
@@ -205,9 +206,10 @@ final class CodeStyleGuardTest extends TestCase
      * list, and every other root entire.
      *
      * @param string $root Scanned root, relative to the repository root
+     * @param RootKind $kind What the code under that root is, for the one rule that withholds a sign by it
      * @return array<int, CodeStyleRule> Rules under the guard, in report order
      */
-    private function rules(string $root): array
+    private function rules(string $root, RootKind $kind): array
     {
         return [
             new CodeFqnRule($this->repositoryRoot() . '/' . $root),
@@ -217,7 +219,7 @@ final class CodeStyleGuardTest extends TestCase
             new ObjectStoreMutationRule(),
             new ViewWrapperBindingRule(),
             new ErrorSuppressionRule(),
-            new FsSeamRule(),
+            new FsSeamRule($kind),
             new RandomSourceRule(),
             new BlockingResolutionRule(),
             new ProcessForkRule($root),
@@ -245,7 +247,7 @@ final class CodeStyleGuardTest extends TestCase
     private function rulesFor(string $root, RootKind $kind): array
     {
         return array_values(array_filter(
-            $this->rules($root),
+            $this->rules($root, $kind),
             static fn(CodeStyleRule $rule): bool => $kind->allows($rule->id()),
         ));
     }

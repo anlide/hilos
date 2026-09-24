@@ -10,7 +10,11 @@ namespace Hilos\Tests\CodeStyle;
  * A root is here when it holds PHP the repository runs, or PHP that decides a run:
  * the framework and the demos are the first, `scripts/` is the second — it carries
  * the test runner every Verify run is judged by, and host-side installers, all of
- * which execute for real and are held to production rules for that reason.
+ * which execute for real and are held to production rules for that reason. It is
+ * declared standalone rather than production because a script there runs as a PHP
+ * process of its own, loads no framework class and installs no warning handler — so
+ * the one sign that judges a dead false branch under the managers' handler does not
+ * apply to it, and the kind is what says so, never the directory's name.
  *
  * A demo contributes its two source directories rather than its whole tree, because
  * `demo/<name>/data/` is a sibling of them and holds root-owned MariaDB files the
@@ -35,7 +39,7 @@ final class ScannedRoots
         $roots = [
             'framework/backend' => RootKind::Production,
             'framework/tests' => RootKind::Suite,
-            'scripts' => RootKind::Production,
+            'scripts' => RootKind::Standalone,
         ];
 
         foreach (glob($repositoryRoot . '/demo/*', GLOB_ONLYDIR) ?: [] as $demo) {

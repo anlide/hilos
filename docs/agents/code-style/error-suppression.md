@@ -34,6 +34,8 @@ and `scripts`. Test code is out, the same boundary
 - `error_get_last()` after a suppressed call. Reading the error back out of the
   engine is the silent degrade this rule removes, not a way around it.
 - Suppressing where the result is not examined at all a few lines later.
+- A path primitive called without `@` in framework or demo code and checked for
+  `false`: the branch never runs there (class C says why).
 
 ## Workflow
 
@@ -87,10 +89,13 @@ directory name) calls the same layer, and a subsystem with paths of its own —
 Backup, for one — calls it directly and converts `FsException` into its own
 taxonomy at its boundary.
 
-The machine reads this class by two signs, and a marker legalizes neither of them.
+The machine reads this class by three signs, and a marker legalizes none of them.
 A file opened under `@` outside the seam is a hit whatever the next line does —
 the caller that needs one line at a time takes `FsPath::readLines()` rather than a
-handle of its own. A suppressed primitive addressed by a PATH — `fopen`,
+handle of its own, and the caller that jumps inside a file — a head, a tail, a
+search for an offset — takes `FsPath::readWith()`, which opens the file, hands the
+open handle to the caller's function for the length of the read and closes it
+itself. A suppressed primitive addressed by a PATH — `fopen`,
 `file_get_contents`, `file_put_contents`, `rename`, `copy`, `unlink`, `rmdir`,
 `mkdir`, `chmod`, `touch`, `filesize`, `tempnam` and their kin — is a hit when its
 result is checked and the checking branch throws: the failure becomes an exception
@@ -99,8 +104,28 @@ stays legal, and the stream and socket primitives (`fwrite`, `fread`, `fclose`,
 `feof`, `stream_*`, `socket_*`) are not judged at all — they work over a descriptor
 rather than a path, which is where class B lives. A suppression written over the
 whole assignment — `@$handle = fopen($path, 'rb');` — is the same class as one
-written over the call, and both signs read it by the call the `@` covers, so moving
+written over the call, and the signs read it by the call the `@` covers, so moving
 the sign one token left buys nothing.
+
+The third sign reads the call written WITHOUT `@`, and here is why once. Every
+long-lived Hilos process — the watchdog, the master, the worker, the CLI monitor —
+installs `BaseManager::errorHandler()`, which turns a PHP warning into an
+`ErrorException` and ends the process, and every path primitive of the list above
+raises its warning BEFORE it returns `false`. So a check of that `false` — `!mkdir(...)`,
+`=== false` on either side, the left of `?:`, the condition of a ternary, the bare
+condition of an `if`, `elseif` or `while` alone or inside an `&&` / `||` chain, or a
+variable whose first read after the assignment is one of these — guards a branch no
+process reaches: it has left before the branch runs, whatever the branch does. Leaving
+the `@` off buys nothing, then; the way out is the same seam, called and caught at the
+caller's own boundary so that each site keeps the outcome it meant — its own
+exception, `null`, a log line, a `continue`. A result nobody tests is not this sign:
+its failure ends the process by that policy, which is a different defect. Two
+primitives are outside the sign because they fail in silence, `false` and `[]` with
+no warning: `realpath()` and `glob()` — the check after them is alive, and they stay
+under the second sign when suppressed. And `scripts/` is outside it as a root declared
+*standalone* ([automated-checks.md](automated-checks.md)): a script there runs as a
+PHP process of its own, loads no framework class and installs no warning handler, so
+its false branch runs, and `Hilos\Fs` is not there to call.
 
 **Checked automatically: `ERROR-SUPPRESSION`, `FS-SEAM`.**
 

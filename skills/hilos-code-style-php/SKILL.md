@@ -75,7 +75,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   the line directly above the call, and the `ERROR-SUPPRESSION` guard fails
   `test:framework:unit` without it; the marker does not buy a file primitive the
   right to owe an exception outside `Hilos\Fs\FsPath`, which the `FS-SEAM` guard
-  fails on in the same run (`error-suppression.md`).
+  fails on in the same run, nor does leaving the `@` off: a checked unsuppressed
+  path primitive is an `FS-SEAM` hit too, because inside a Hilos process the
+  warning ends the process before the check runs (`error-suppression.md`).
 - A line is at most 150 characters wide, counted in characters and not in bytes;
   the `LINE-LENGTH` guard fails `test:framework:unit` on a wider one, and only a
   heredoc body is outside it (`line-length.md`).
