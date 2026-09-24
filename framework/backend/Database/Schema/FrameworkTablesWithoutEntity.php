@@ -59,8 +59,9 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      * Kept in step with the DDL the framework ships:
      * {@see Migration::initialize()} for `migration`, and the
      * `create_hilos_analytics.sql` / `create_hilos_change_log.sql` stubs for the rest.
-     * A table a project does not create is simply never seen by the gates, so the
-     * framework may classify everything it ships.
+     * Applied on every database in the registry because `migration` is created on every
+     * migrated database; a table a project does not create on a given database is simply
+     * never seen by the gates, so the framework may classify everything it ships.
      *
      * Analytics is classified per column, not per table. Purging it whole is not
      * available: its name and dictionary tables are RESTRICT parents of the fact tables,

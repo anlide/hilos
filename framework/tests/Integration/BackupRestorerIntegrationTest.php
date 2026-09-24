@@ -1085,7 +1085,9 @@ final class FullPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => FullPiiRestoreTestTables::class,
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => FullPiiRestoreTestTables::class,
+            ],
         ];
     }
 }
@@ -1139,7 +1141,9 @@ final class MigratedPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => MigratedPiiRestoreTestTables::class,
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => MigratedPiiRestoreTestTables::class,
+            ],
         ];
     }
 }
@@ -1192,7 +1196,9 @@ final class TightenedPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => TightenedPiiRestoreTestTables::class,
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => TightenedPiiRestoreTestTables::class,
+            ],
         ];
     }
 }
@@ -1243,7 +1249,9 @@ final class PartialPiiRestoreTestCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => PartialPiiRestoreTestTables::class,
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => PartialPiiRestoreTestTables::class,
+            ],
         ];
     }
 }

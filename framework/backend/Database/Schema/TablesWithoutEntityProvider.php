@@ -19,7 +19,8 @@ use Hilos\Backup\Anonymization\PiiRegistry;
  *
  * Implemented by {@see FrameworkTablesWithoutEntity} for the tables the framework ships;
  * a project with tables of its own implements it too and names the class under
- * `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` in its backup catalog.
+ * `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` in its backup catalog under the connection
+ * index on which its tables live.
  */
 interface TablesWithoutEntityProvider
 {

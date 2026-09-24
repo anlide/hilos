@@ -19,11 +19,14 @@ use Hilos\Hilos;
  * PiiRegistry - what one restore run believes about every table's personal data.
  *
  * Collected rather than listed: each table carries its own verdict where it is declared -
- * an Entity in its `_pii` / `_piiNotPersonal` constants, a table outside the ORM in its
- * {@see TablesWithoutEntityProvider} - and the registry is the walk over those
- * declarations. The walk goes through the collections a {@see DbContext} mounted, which
- * is the list an installation already keeps of the tables that are part of the system;
- * a second hand-written list of tables is exactly the thing this registry stopped being.
+ * an Entity in its `_pii` / `_piiNotPersonal` constants on the primary database (the only
+ * connection an Entity knows), a table outside the ORM in its {@see TablesWithoutEntityProvider}
+ * on the database under whose connection index the provider is declared, and the framework's
+ * own verdict ({@see FrameworkTablesWithoutEntity}) on every database in the registry because
+ * `migration` is created on every migrated database. The walk goes through the collections a
+ * {@see DbContext} mounted, which is the list an installation already keeps of the tables that
+ * are part of the system; a second hand-written list of tables is exactly the thing this
+ * registry stopped being.
  *
  * A table nobody classified is absent from the registry rather than assumed clean, and
  * the coverage gate then names it. Both halves of a verdict are kept: the columns that
@@ -50,9 +53,11 @@ final class PiiRegistry
     /**
      * Collects the registry this installation restores under.
      *
-     * Walks the mounted collections first, in the order they were registered - framework
-     * collections, then the project's - and the tables outside the ORM after them. That
-     * order becomes the order of the anonymization pass.
+     * Walks the mounted collections first, placing entity verdicts on the primary database,
+     * in the order they were registered - framework collections, then the project's - and
+     * the tables outside the ORM after them, placing provider verdicts under their declared
+     * connection indices with framework verdicts covering every database. That order becomes
+     * the order of the anonymization pass.
      *
      * @return self Registry over every verdict this installation declares
      * @throws AnonymizationConfigException When a verdict is malformed, or a mounted collection
@@ -62,13 +67,13 @@ final class PiiRegistry
     {
         $rows = [];
         $notPersonal = [];
-        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $primaryIndex = DatabaseConnectionDefaults::PRIMARY_INDEX;
 
         foreach (self::classifiedEntities() as $entityClass) {
             $table = $entityClass::_table;
             $row = self::normalizeRow($entityClass, $table, constant("{$entityClass}::" . Entity::META_PII));
-            $rows[$index][$table] = $row;
-            $notPersonal[$index][$table] = self::normalizeNotPersonal(
+            $rows[$primaryIndex][$table] = $row;
+            $notPersonal[$primaryIndex][$table] = self::normalizeNotPersonal(
                 $entityClass,
                 $table,
                 defined("{$entityClass}::" . Entity::META_PII_NOT_PERSONAL)
@@ -78,17 +83,19 @@ final class PiiRegistry
             );
         }
 
-        foreach (self::tablesWithoutEntityProviders() as $provider) {
-            $declaredNotPersonal = $provider::piiNotPersonal();
-            foreach ($provider::pii() as $table => $declaredRow) {
-                $row = self::normalizeRow($provider, (string)$table, $declaredRow);
-                $rows[$index][(string)$table] = $row;
-                $notPersonal[$index][(string)$table] = self::normalizeNotPersonal(
-                    $provider,
-                    (string)$table,
-                    $declaredNotPersonal[$table] ?? [],
-                    $row,
-                );
+        foreach (self::tablesWithoutEntityProviders() as $index => $providers) {
+            foreach ($providers as $provider) {
+                $declaredNotPersonal = $provider::piiNotPersonal();
+                foreach ($provider::pii() as $table => $declaredRow) {
+                    $row = self::normalizeRow($provider, (string)$table, $declaredRow);
+                    $rows[$index][(string)$table] = $row;
+                    $notPersonal[$index][(string)$table] = self::normalizeNotPersonal(
+                        $provider,
+                        (string)$table,
+                        $declaredNotPersonal[$table] ?? [],
+                        $row,
+                    );
+                }
             }
         }
 
@@ -210,16 +217,18 @@ final class PiiRegistry
     }
 
     /**
-     * Names the providers of tables that live outside the ORM.
+     * Names the providers of tables that live outside the ORM, keyed by connection index.
      *
-     * The framework's own always, and the project's when its backup catalog names one.
+     * The framework's own on the primary database always, and on every database where
+     * the project names a provider. The project's provider follows the framework's under
+     * the connection index it was declared for.
      *
-     * @return list<class-string<TablesWithoutEntityProvider>> Framework provider first, then the project's
-     * @throws AnonymizationConfigException When the catalog names something that is not a provider
+     * @return array<int, list<class-string<TablesWithoutEntityProvider>>> Connection index to provider classes
+     * @throws AnonymizationConfigException When the catalog names something that is not a provider map
      */
     private static function tablesWithoutEntityProviders(): array
     {
-        $providers = [FrameworkTablesWithoutEntity::class];
+        $providers = [DatabaseConnectionDefaults::PRIMARY_INDEX => [FrameworkTablesWithoutEntity::class]];
         $catalogClass = Hilos::getBackupCatalogClass();
         if ($catalogClass === null) {
             return $providers;
@@ -229,13 +238,22 @@ final class PiiRegistry
         if ($declared === null) {
             return $providers;
         }
-        if (!is_string($declared) || !is_subclass_of($declared, TablesWithoutEntityProvider::class)) {
+        if (!is_array($declared)) {
             throw new AnonymizationConfigException(
-                'Backup catalog key [' . BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY . '] must name a '
+                'Backup catalog key [' . BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY . '] must map a connection index to a '
                 . TablesWithoutEntityProvider::class . ' class',
             );
         }
-        $providers[] = $declared;
+        foreach ($declared as $index => $class) {
+            if (!is_int($index) || !is_string($class) || !is_subclass_of($class, TablesWithoutEntityProvider::class)) {
+                throw new AnonymizationConfigException(
+                    'Backup catalog key [' . BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY . '] must map a connection index to a '
+                    . TablesWithoutEntityProvider::class . ' class',
+                );
+            }
+            $providers[$index] ??= [FrameworkTablesWithoutEntity::class];
+            $providers[$index][] = $class;
+        }
 
         return $providers;
     }

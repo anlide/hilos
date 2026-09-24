@@ -114,12 +114,11 @@ final class BackupConstants
     /**
      * Backup catalog key under which a project names its tables that live outside the ORM.
      *
-     * The value at this key is a `class-string<TablesWithoutEntityProvider>`: one class, not a
-     * per-connection list, because a table with no Entity is declared by the code that creates
-     * it and that code belongs to one installation. The class answers both questions such a
-     * table has nowhere else to answer - which live tables are unmapped on purpose, and what of
-     * them is personal data. A table with an Entity needs nothing here: it carries its own
-     * verdict in {@see Entity::META_PII} / {@see Entity::META_PII_NOT_PERSONAL}.
+     * The value at this key is `array<int, class-string<TablesWithoutEntityProvider>>`: provider
+     * classes keyed by connection index. The class answers both questions such a table has
+     * nowhere else to answer - which live tables are unmapped on purpose, and what of them is
+     * personal data. A table with an Entity needs nothing here: it carries its own verdict in
+     * {@see Entity::META_PII} / {@see Entity::META_PII_NOT_PERSONAL}.
      */
     public const string CATALOG_TABLES_WITHOUT_ENTITY = 'tablesWithoutEntity';
 

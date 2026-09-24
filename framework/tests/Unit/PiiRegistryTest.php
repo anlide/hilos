@@ -11,6 +11,7 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\Session;
@@ -153,6 +154,57 @@ final class PiiRegistryTest extends TestCase
     public function testACatalogNamingSomethingElseThanAProviderIsRefused(): void
     {
         NotAProviderHilos::initBrowser();
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage(BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY);
+
+        PiiRegistry::collect();
+    }
+
+    public function testAProviderOnASecondaryConnectionGivesVerdictsThereAndNotOnPrimary(): void
+    {
+        SecondaryDatabaseTablesWithoutEntityHilos::initBrowser();
+
+        $registry = PiiRegistry::collect();
+
+        $this->assertSame(
+            ['token' => AnonymizationStrategy::MASK],
+            $registry->strategiesFor(1, 'secondary_probe'),
+        );
+        $this->assertSame(['id'], $registry->notPersonalColumns(1, 'secondary_probe'));
+        $this->assertNull($registry->strategiesFor(0, 'secondary_probe'));
+        $this->assertNull($registry->notPersonalColumns(0, 'secondary_probe'));
+        $this->assertContains('secondary_probe', $registry->declaredTables(1));
+        $this->assertNotContains('secondary_probe', $registry->declaredTables(0));
+    }
+
+    public function testFrameworkTablesArePresentOnSecondaryConnectionWithProviderAndAbsentWithout(): void
+    {
+        SecondaryDatabaseTablesWithoutEntityHilos::initBrowser();
+        $registryWithSecondary = PiiRegistry::collect();
+
+        $this->assertContains('migration', $registryWithSecondary->declaredTables(1));
+
+        Hilos::resetBrowser();
+        ProjectTablesWithoutEntityHilos::initBrowser();
+        $registryWithoutSecondary = PiiRegistry::collect();
+
+        $this->assertNotContains('migration', $registryWithoutSecondary->declaredTables(1));
+    }
+
+    public function testALegacyStringClassProviderIsRefused(): void
+    {
+        LegacyStringTablesWithoutEntityHilos::initBrowser();
+
+        $this->expectException(AnonymizationConfigException::class);
+        $this->expectExceptionMessage(BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY);
+
+        PiiRegistry::collect();
+    }
+
+    public function testANonIntegerConnectionIndexKeyIsRefused(): void
+    {
+        NonIntegerIndexTablesWithoutEntityHilos::initBrowser();
 
         $this->expectException(AnonymizationConfigException::class);
         $this->expectExceptionMessage(BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY);
@@ -342,7 +394,11 @@ final class ProjectTablesWithoutEntityCatalog implements CatalogProviderInterfac
      */
     public static function getCatalog(): array
     {
-        return [BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => ProjectTablesWithoutEntity::class];
+        return [
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => ProjectTablesWithoutEntity::class,
+            ],
+        ];
     }
 }
 
@@ -356,7 +412,11 @@ final class ContradictoryTablesWithoutEntityCatalog implements CatalogProviderIn
      */
     public static function getCatalog(): array
     {
-        return [BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => ContradictoryTablesWithoutEntity::class];
+        return [
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => ContradictoryTablesWithoutEntity::class,
+            ],
+        ];
     }
 }
 
@@ -370,7 +430,11 @@ final class NotAProviderCatalog implements CatalogProviderInterface
      */
     public static function getCatalog(): array
     {
-        return [BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => PiiEntityFixture::class];
+        return [
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                DatabaseConnectionDefaults::PRIMARY_INDEX => PiiEntityFixture::class,
+            ],
+        ];
     }
 }
 
@@ -412,6 +476,136 @@ final class ContradictoryTablesWithoutEntityHilos extends Hilos
 final class NotAProviderHilos extends Hilos
 {
     protected const ?string BACKUP_CATALOG = NotAProviderCatalog::class;
+
+    /**
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
+}
+
+/**
+ * Tables outside the ORM on a non-primary connection.
+ */
+final class SecondaryDatabaseTablesWithoutEntity implements TablesWithoutEntityProvider
+{
+    /**
+     * @return list<string> Table names of the fixture project on the secondary connection
+     */
+    public static function tables(): array
+    {
+        return ['secondary_probe'];
+    }
+
+    /**
+     * @return array<string, array<string, AnonymizationStrategy>|AnonymizationStrategy>
+     */
+    public static function pii(): array
+    {
+        return ['secondary_probe' => ['token' => AnonymizationStrategy::MASK]];
+    }
+
+    /**
+     * @return array<string, list<string>> Non-personal columns per table
+     */
+    public static function piiNotPersonal(): array
+    {
+        return ['secondary_probe' => ['id']];
+    }
+}
+
+/**
+ * Backup catalog fixture naming a provider on a non-primary connection.
+ */
+final class SecondaryDatabaseTablesWithoutEntityCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, mixed> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                1 => SecondaryDatabaseTablesWithoutEntity::class,
+            ],
+        ];
+    }
+}
+
+/**
+ * Project facade fixture naming the secondary connection provider's catalog.
+ */
+final class SecondaryDatabaseTablesWithoutEntityHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = SecondaryDatabaseTablesWithoutEntityCatalog::class;
+
+    /**
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
+}
+
+/**
+ * Backup catalog fixture naming the legacy string-class form.
+ */
+final class LegacyStringTablesWithoutEntityCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, mixed> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => ProjectTablesWithoutEntity::class,
+        ];
+    }
+}
+
+/**
+ * Project facade fixture naming a legacy string-class catalog.
+ */
+final class LegacyStringTablesWithoutEntityHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = LegacyStringTablesWithoutEntityCatalog::class;
+
+    /**
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FrameworkPiiTestDbContext();
+    }
+}
+
+/**
+ * Backup catalog fixture naming a provider with a non-integer connection index key.
+ */
+final class NonIntegerIndexTablesWithoutEntityCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, mixed> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY => [
+                'not-an-int' => ProjectTablesWithoutEntity::class,
+            ],
+        ];
+    }
+}
+
+/**
+ * Project facade fixture naming a non-integer connection index catalog.
+ */
+final class NonIntegerIndexTablesWithoutEntityHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = NonIntegerIndexTablesWithoutEntityCatalog::class;
 
     /**
      * @return HilosDbContext Test DB context

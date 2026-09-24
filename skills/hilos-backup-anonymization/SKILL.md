@@ -41,7 +41,8 @@ writing a verdict.
    is refused by the compatibility gate when an incoming foreign key forbids
    deleting a parent row, and the refusal names that key.
 5. Declare a table with no Entity in a `TablesWithoutEntityProvider` instead, and
-   name that class under `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY`.
+   name that class under `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` under
+   the connection index on which its tables live.
 6. Run the project's PII coverage test through composer, not a restore. A column left
    out of both halves now also keeps the daemon from starting, so an unrun test is a
    node that will not come up rather than a restore that will refuse later.

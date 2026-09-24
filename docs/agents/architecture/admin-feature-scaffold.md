@@ -178,11 +178,11 @@ also registers those. Generate, in any order:
    Entity/Object collection class-strings per connection index — the framework
    derives table names from the classes, so the registry survives table renames,
    and keeps their rows under the schema-seed scope; an empty registry is valid —
-   schema-seed then captures schema only, with a warning), the class naming the
+   schema-seed then captures schema only, with a warning), the map naming the
    project's tables that live outside the ORM under
-   `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` (one
-   `TablesWithoutEntityProvider` class-string; omit it when every table the project
-   creates has an Entity, as the chat demo does), and an optional schedule under
+   `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` (a
+   `TablesWithoutEntityProvider` class-string per connection index; omit it when every
+   table the project creates has an Entity, as the chat demo does), and an optional schedule under
    `BackupConstants::CATALOG_SCHEDULE` (omit it to take the framework default: one
    daily full backup at 03:00 on the agent mechanism). What of the data is personal
    is declared on the tables themselves rather than here — `_pii` and

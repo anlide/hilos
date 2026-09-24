@@ -97,9 +97,11 @@ final class User extends Entity
 **A table with no Entity declares both facts in a `TablesWithoutEntityProvider`** —
 which live tables are unmapped on purpose, and what of them is personal. The
 framework's own are `FrameworkTablesWithoutEntity`; a project with such tables
-implements the interface and names its class under
-`BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` in its backup catalog. A project
-whose tables all have an Entity, like the chat demo, names nothing there.
+implements the interface and names its class under the connection index of its
+tables in `BackupConstants::CATALOG_TABLES_WITHOUT_ENTITY` in its backup catalog.
+The framework's own verdicts cover the primary database and every database where
+the project names a provider. A project whose tables all have an Entity, like the
+chat demo, names nothing there.
 
 The worked examples are the framework's own Entities and
 `demo/chat/backend/Database/Entity/Item/`; the collection is documented on
