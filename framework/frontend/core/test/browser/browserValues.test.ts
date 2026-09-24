@@ -236,6 +236,27 @@ describe('eraseBrowserValues', () => {
     expect(swept).toEqual([])
   })
 
+  it('reports a store as not reached when the browser refuses even to name it', () => {
+    // Chrome with every cookie blocked throws from the global getter itself,
+    // before any removeItem could be reached.
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('denied', 'SecurityError')
+      },
+    })
+
+    const swept = eraseBrowserValues(
+      [
+        browserValue({ store: 'session', key: 'a', label: 'First' }),
+        browserValue({ store: 'local', key: 'b', label: 'Second' }),
+      ],
+      noCookieName,
+    )
+
+    expect(swept).toEqual(['Second'])
+  })
+
   it('goes on to the next entry when one store refuses', () => {
     const scope = globalThis as { sessionStorage?: Storage }
     scope.sessionStorage = fakeStorage({ throws: true })

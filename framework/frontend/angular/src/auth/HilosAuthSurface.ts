@@ -40,6 +40,7 @@ import type { WritableSignal } from '@angular/core'
 import {
   AUTH_CONVERGE_SIGNAL,
   AUTH_SURFACE_HEADING_ID,
+  browserRefusesCookies,
   SIGNAL_HANDSHAKE_RESPONSE,
   authAckToFlowPatch,
   authConvergeSignalSchema,
@@ -95,6 +96,7 @@ import { HilosLongText } from '../HilosLongText.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { hilosSignal } from '../hilosSignal.js'
+import { HilosCookiesRefused } from './HilosCookiesRefused.js'
 import { HILOS_AUTH_GATE } from './hilosAuthGateToken.js'
 
 /** How often the countdowns redraw — one second, the smallest unit they show. */
@@ -311,104 +313,113 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
 @Component({
   selector: 'hilos-auth-surface',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosFormError, HilosLongText, HilosModal, LoadingButton],
+  imports: [
+    HilosCookiesRefused,
+    HilosFormError,
+    HilosLongText,
+    HilosModal,
+    LoadingButton,
+  ],
   template: `
     <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
-      <h2 [id]="headingId" class="h5 mb-3" data-id="auth-heading">
-        {{ heading() }}
-      </h2>
+      @if (cookiesRefused) {
+        <hilos-cookies-refused [headingId]="headingId" />
+      } @else {
+        <h2 [id]="headingId" class="h5 mb-3" data-id="auth-heading">
+          {{ heading() }}
+        </h2>
 
-      <!-- The two live regions of the screen, declared in advance and on the
+        <!-- The two live regions of the screen, declared in advance and on the
       section rather than inside a form: the five forms replace one another as
       the machine steps, so a region living in one of them would die with its
       step — the very illness this cures. Two of them, because only a refusal is
       allowed to interrupt what the listener is hearing. The visible blocks below
       carry the same words for the eye and no role of their own. -->
-      <div
-        class="visually-hidden"
-        role="alert"
-        aria-live="assertive"
-        data-id="auth-live-assertive"
-      >
-        {{ errorMessage() }}
-      </div>
-      <div
-        class="visually-hidden"
-        role="status"
-        aria-live="polite"
-        data-id="auth-live-polite"
-      >
-        @for (item of announcedNews(); track item.key) {
-          <div>{{ item.text }}</div>
-        }
-      </div>
+        <div
+          class="visually-hidden"
+          role="alert"
+          aria-live="assertive"
+          data-id="auth-live-assertive"
+        >
+          {{ errorMessage() }}
+        </div>
+        <div
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="auth-live-polite"
+        >
+          @for (item of announcedNews(); track item.key) {
+            <div>{{ item.text }}</div>
+          }
+        </div>
 
-      <!-- OAuth email-collision re-auth prompt (HIL-282): the provider address
+        <!-- OAuth email-collision re-auth prompt (HIL-282): the provider address
       already has an account, so ask the person to sign in with an existing
       method to finish linking. The pending link token is redeemed globally once
       the session upgrades. -->
-      @if (linkPrompt() && state().step === 'identifier') {
-        <div class="alert alert-info py-2" data-id="auth-link-prompt">
-          {{ linkPromptMessage }}
-        </div>
-      }
+        @if (linkPrompt() && state().step === 'identifier') {
+          <div class="alert alert-info py-2" data-id="auth-link-prompt">
+            {{ linkPromptMessage }}
+          </div>
+        }
 
-      <!-- News about a move nobody on this screen asked for. Its own region,
+        <!-- News about a move nobody on this screen asked for. Its own region,
       above the form: it is not this step's refusal, and the step it lands on is
       usually the identifier field, where the error region belongs to what is
       typed next. -->
-      @if (notice(); as message) {
-        <div class="alert alert-warning py-2" data-id="auth-notice">
-          {{ message }}
-        </div>
-      }
+        @if (notice(); as message) {
+          <div class="alert alert-warning py-2" data-id="auth-notice">
+            {{ message }}
+          </div>
+        }
 
-      <!-- The single identifier field: one screen, whatever it turns out to be.
+        <!-- The single identifier field: one screen, whatever it turns out to be.
       The icon row stands FIRST because a device key and a provider are the short
       road and the field is the long one; both live only on an empty field. -->
-      @if (state().step === 'identifier') {
-        <form novalidate (submit)="submit($event)">
-          @if (rowIcons().length > 0) {
-            <div class="d-flex justify-content-center gap-2">
-              @for (method of rowIcons(); track method.key) {
-                <button
-                  hilosLoadingButton
-                  class="btn-outline-secondary"
-                  [loading]="pending() && state().methodKey === method.key"
-                  [disabled]="pending()"
-                  [attr.aria-label]="method.label"
-                  [title]="method.label"
-                  [attr.data-id]="methodDataId(method.key)"
-                  (click)="chooseMethod(method.key)"
-                >
-                  <i [class]="methodIcon(method.key)" aria-hidden="true"></i>
-                </button>
-              }
-            </div>
-            <div class="d-flex align-items-center gap-2 my-3">
-              <hr class="flex-grow-1 my-0" />
-              <span class="small text-body-secondary">or</span>
-              <hr class="flex-grow-1 my-0" />
-            </div>
-          }
+        @if (state().step === 'identifier') {
+          <form novalidate (submit)="submit($event)">
+            @if (rowIcons().length > 0) {
+              <div class="d-flex justify-content-center gap-2">
+                @for (method of rowIcons(); track method.key) {
+                  <button
+                    hilosLoadingButton
+                    class="btn-outline-secondary"
+                    [loading]="pending() && state().methodKey === method.key"
+                    [disabled]="pending()"
+                    [attr.aria-label]="method.label"
+                    [title]="method.label"
+                    [attr.data-id]="methodDataId(method.key)"
+                    (click)="chooseMethod(method.key)"
+                  >
+                    <i [class]="methodIcon(method.key)" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+              <div class="d-flex align-items-center gap-2 my-3">
+                <hr class="flex-grow-1 my-0" />
+                <span class="small text-body-secondary">or</span>
+                <hr class="flex-grow-1 my-0" />
+              </div>
+            }
 
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="auth-identifier">
-              Email or phone
-            </label>
-            <input
-              #identifierInput
-              id="auth-identifier"
-              type="text"
-              class="form-control"
-              autocomplete="username"
-              placeholder="you@example.com"
-              data-autofocus
-              data-id="auth-identifier"
-              [value]="form().identifier"
-              (input)="updateIdentifier($event)"
-            />
-            <!-- One room under the field for the whole conversation with it: the
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="auth-identifier">
+                Email or phone
+              </label>
+              <input
+                #identifierInput
+                id="auth-identifier"
+                type="text"
+                class="form-control"
+                autocomplete="username"
+                placeholder="you@example.com"
+                data-autofocus
+                data-id="auth-identifier"
+                [value]="form().identifier"
+                (input)="updateIdentifier($event)"
+              />
+              <!-- One room under the field for the whole conversation with it: the
             reveal when the reply is an account that signs in with a password, the
             grey line otherwise, and nothing while the first lookup runs. The
             reveal is the tallest of the three, so an invisible twin of it holds
@@ -418,95 +429,104 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
             main button (mockup node new_email). A found account has one because
             the envelope and the key walk past the FIELD standing beside them —
             with no field there is nothing to walk past. -->
-            <div class="position-relative" data-id="auth-reveal-slot">
-              @if (showPassword()) {
-                <label class="form-label small fw-semibold" for="auth-password">
-                  Password
-                </label>
-                <div class="d-flex align-items-center gap-2">
-                  <input
-                    id="auth-password"
-                    type="password"
-                    class="form-control"
-                    autocomplete="current-password"
-                    data-id="auth-password"
-                    [value]="form().password"
-                    (input)="updatePassword($event)"
-                  />
-                  @for (method of adjacentIcons(); track method.key) {
-                    <button
-                      hilosLoadingButton
-                      class="btn-outline-secondary"
-                      [loading]="pending() && state().methodKey === method.key"
-                      [disabled]="pending()"
-                      [attr.aria-label]="method.label"
-                      [title]="method.label"
-                      [attr.data-id]="methodDataId(method.key)"
-                      (click)="chooseMethod(method.key)"
-                    >
-                      <i
-                        [class]="methodIcon(method.key)"
-                        aria-hidden="true"
-                      ></i>
-                    </button>
-                  }
-                  @if (showRecovery()) {
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary"
-                      aria-label="Forgot your password?"
-                      title="Forgot your password?"
-                      data-id="auth-recovery"
-                      (click)="startRecovery()"
-                    >
-                      <i class="bi bi-key" aria-hidden="true"></i>
-                    </button>
-                  }
-                </div>
-              } @else {
-                @if (roomHeld()) {
-                  <div
-                    class="invisible"
-                    aria-hidden="true"
-                    data-id="auth-reveal-idle"
+              <div class="position-relative" data-id="auth-reveal-slot">
+                @if (showPassword()) {
+                  <label
+                    class="form-label small fw-semibold"
+                    for="auth-password"
                   >
-                    <!-- Spans and divs where the real row has a control: the twin
+                    Password
+                  </label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input
+                      id="auth-password"
+                      type="password"
+                      class="form-control"
+                      autocomplete="current-password"
+                      data-id="auth-password"
+                      [value]="form().password"
+                      (input)="updatePassword($event)"
+                    />
+                    @for (method of adjacentIcons(); track method.key) {
+                      <button
+                        hilosLoadingButton
+                        class="btn-outline-secondary"
+                        [loading]="
+                          pending() && state().methodKey === method.key
+                        "
+                        [disabled]="pending()"
+                        [attr.aria-label]="method.label"
+                        [title]="method.label"
+                        [attr.data-id]="methodDataId(method.key)"
+                        (click)="chooseMethod(method.key)"
+                      >
+                        <i
+                          [class]="methodIcon(method.key)"
+                          aria-hidden="true"
+                        ></i>
+                      </button>
+                    }
+                    @if (showRecovery()) {
+                      <button
+                        type="button"
+                        class="btn btn-outline-secondary"
+                        aria-label="Forgot your password?"
+                        title="Forgot your password?"
+                        data-id="auth-recovery"
+                        (click)="startRecovery()"
+                      >
+                        <i class="bi bi-key" aria-hidden="true"></i>
+                      </button>
+                    }
+                  </div>
+                } @else {
+                  @if (roomHeld()) {
+                    <div
+                      class="invisible"
+                      aria-hidden="true"
+                      data-id="auth-reveal-idle"
+                    >
+                      <!-- Spans and divs where the real row has a control: the twin
                     holds room, it does not take focus or name anything. The label
                     stays a label element because Bootstrap reboot makes that one
                     inline-block, and a div in its place is two pixels shorter —
                     which is a jump, since this is what the room is measured by.
                     One icon is enough: the row is a flex of equally tall things,
                     so their number is not its height. -->
-                    <label class="form-label small fw-semibold">Password</label>
-                    <div class="d-flex align-items-center gap-2">
-                      <div class="form-control">&nbsp;</div>
-                      <span class="btn position-relative btn-outline-secondary">
+                      <label class="form-label small fw-semibold"
+                        >Password</label
+                      >
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="form-control">&nbsp;</div>
                         <span
-                          ><i class="bi bi-envelope" aria-hidden="true"></i
-                        ></span>
-                      </span>
+                          class="btn position-relative btn-outline-secondary"
+                        >
+                          <span
+                            ><i class="bi bi-envelope" aria-hidden="true"></i
+                          ></span>
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  }
+                  @if (identifierHint(); as hint) {
+                    <div
+                      class="form-text"
+                      [class.position-absolute]="roomHeld()"
+                      [class.top-0]="roomHeld()"
+                      [class.start-0]="roomHeld()"
+                      [class.w-100]="roomHeld()"
+                      data-id="auth-identifier-hint"
+                    >
+                      {{ hint }}
+                    </div>
+                  }
                 }
-                @if (identifierHint(); as hint) {
-                  <div
-                    class="form-text"
-                    [class.position-absolute]="roomHeld()"
-                    [class.top-0]="roomHeld()"
-                    [class.start-0]="roomHeld()"
-                    [class.w-100]="roomHeld()"
-                    data-id="auth-identifier-hint"
-                  >
-                    {{ hint }}
-                  </div>
-                }
-              }
+              </div>
             </div>
-          </div>
 
-          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
+            <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
-          <!-- The main control is whatever the machine says it is: the submit, a
+            <!-- The main control is whatever the machine says it is: the submit, a
           passwordless method promoted to the button, or a code channel — for a
           phone the channel choice IS the send, so there is no separate button.
           Both resume controls act on the reply the reveal is drawn from, and that
@@ -515,110 +535,113 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
           Their gate is the disabled input and not the loading one: pending is
           set on the keystroke, before the debounce, and the spinner delay equals
           that debounce, so a spinner would blink on every pause in typing. -->
-          @if (primaryAction()?.kind === 'submit') {
-            <button
-              hilosLoadingButton
-              type="submit"
-              class="btn-primary w-100"
-              [loading]="pending()"
-              [disabled]="!submittable()"
-              data-id="auth-submit"
-            >
-              {{ submitLabel() }}
-            </button>
-          } @else if (primaryAction()?.kind === 'resume_code') {
-            <button
-              hilosLoadingButton
-              type="button"
-              class="btn-primary w-100"
-              [disabled]="detection().status !== 'resolved'"
-              data-id="auth-resume-code"
-              (click)="resumeHeldRegistration()"
-            >
-              {{ submitLabel() }}
-            </button>
-          } @else if (primaryAction()?.kind === 'resume_password') {
-            <button
-              hilosLoadingButton
-              type="button"
-              class="btn-primary w-100"
-              [disabled]="detection().status !== 'resolved'"
-              data-id="auth-resume-password"
-              (click)="resumeProvenRegistration()"
-            >
-              {{ submitLabel() }}
-            </button>
-          } @else if (primaryMethod(); as method) {
-            <button
-              hilosLoadingButton
-              class="btn-primary w-100"
-              [loading]="pending()"
-              [disabled]="pending()"
-              [attr.data-id]="methodDataId(method.key)"
-              (click)="chooseMethod(method.key)"
-            >
-              <i
-                class="me-2"
-                [class]="methodIcon(method.key)"
-                aria-hidden="true"
-              ></i>
-              {{ method.label }}
-            </button>
-          } @else if (primaryChannel(); as channel) {
-            <button
-              hilosLoadingButton
-              class="btn-primary w-100"
-              [loading]="pending()"
-              [disabled]="pending() || unavailableChannels().has(channel.key)"
-              [attr.data-id]="channelDataId(channel.key)"
-              (click)="chooseChannel(channel.key)"
-            >
-              Send a code by {{ channel.label }}
-            </button>
+            @if (primaryAction()?.kind === 'submit') {
+              <button
+                hilosLoadingButton
+                type="submit"
+                class="btn-primary w-100"
+                [loading]="pending()"
+                [disabled]="!submittable()"
+                data-id="auth-submit"
+              >
+                {{ submitLabel() }}
+              </button>
+            } @else if (primaryAction()?.kind === 'resume_code') {
+              <button
+                hilosLoadingButton
+                type="button"
+                class="btn-primary w-100"
+                [disabled]="detection().status !== 'resolved'"
+                data-id="auth-resume-code"
+                (click)="resumeHeldRegistration()"
+              >
+                {{ submitLabel() }}
+              </button>
+            } @else if (primaryAction()?.kind === 'resume_password') {
+              <button
+                hilosLoadingButton
+                type="button"
+                class="btn-primary w-100"
+                [disabled]="detection().status !== 'resolved'"
+                data-id="auth-resume-password"
+                (click)="resumeProvenRegistration()"
+              >
+                {{ submitLabel() }}
+              </button>
+            } @else if (primaryMethod(); as method) {
+              <button
+                hilosLoadingButton
+                class="btn-primary w-100"
+                [loading]="pending()"
+                [disabled]="pending()"
+                [attr.data-id]="methodDataId(method.key)"
+                (click)="chooseMethod(method.key)"
+              >
+                <i
+                  class="me-2"
+                  [class]="methodIcon(method.key)"
+                  aria-hidden="true"
+                ></i>
+                {{ method.label }}
+              </button>
+            } @else if (primaryChannel(); as channel) {
+              <button
+                hilosLoadingButton
+                class="btn-primary w-100"
+                [loading]="pending()"
+                [disabled]="pending() || unavailableChannels().has(channel.key)"
+                [attr.data-id]="channelDataId(channel.key)"
+                (click)="chooseChannel(channel.key)"
+              >
+                Send a code by {{ channel.label }}
+              </button>
 
-            @if (otherChannels().length > 0) {
-              <div class="d-flex align-items-center gap-2 my-3">
-                <hr class="flex-grow-1 my-0" />
-                <span class="small text-body-secondary">or send it to</span>
-                <hr class="flex-grow-1 my-0" />
-              </div>
-              <div class="d-flex justify-content-center gap-2">
-                @for (other of otherChannels(); track other.key) {
-                  <button
-                    hilosLoadingButton
-                    class="btn-outline-secondary"
-                    [loading]="pending() && state().channelKey === other.key"
-                    [disabled]="
-                      pending() || unavailableChannels().has(other.key)
-                    "
-                    [attr.aria-label]="'Send the code via ' + other.label"
-                    [title]="'Send the code via ' + other.label"
-                    [attr.data-id]="channelDataId(other.key)"
-                    (click)="chooseChannel(other.key)"
-                  >
-                    <i [class]="channelIcon(other.key)" aria-hidden="true"></i>
-                  </button>
-                }
-              </div>
-              @if (channelUnavailableLines().length > 0) {
-                <div
-                  class="small text-body-secondary mt-2"
-                  data-id="auth-channel-unavailable"
-                >
-                  @for (line of channelUnavailableLines(); track line.key) {
-                    <div
-                      [attr.data-id]="'auth-channel-unavailable-' + line.key"
+              @if (otherChannels().length > 0) {
+                <div class="d-flex align-items-center gap-2 my-3">
+                  <hr class="flex-grow-1 my-0" />
+                  <span class="small text-body-secondary">or send it to</span>
+                  <hr class="flex-grow-1 my-0" />
+                </div>
+                <div class="d-flex justify-content-center gap-2">
+                  @for (other of otherChannels(); track other.key) {
+                    <button
+                      hilosLoadingButton
+                      class="btn-outline-secondary"
+                      [loading]="pending() && state().channelKey === other.key"
+                      [disabled]="
+                        pending() || unavailableChannels().has(other.key)
+                      "
+                      [attr.aria-label]="'Send the code via ' + other.label"
+                      [title]="'Send the code via ' + other.label"
+                      [attr.data-id]="channelDataId(other.key)"
+                      (click)="chooseChannel(other.key)"
                     >
-                      {{ line.text }}
-                    </div>
+                      <i
+                        [class]="channelIcon(other.key)"
+                        aria-hidden="true"
+                      ></i>
+                    </button>
                   }
                 </div>
+                @if (channelUnavailableLines().length > 0) {
+                  <div
+                    class="small text-body-secondary mt-2"
+                    data-id="auth-channel-unavailable"
+                  >
+                    @for (line of channelUnavailableLines(); track line.key) {
+                      <div
+                        [attr.data-id]="'auth-channel-unavailable-' + line.key"
+                      >
+                        {{ line.text }}
+                      </div>
+                    }
+                  </div>
+                }
               }
             }
-          }
-        </form>
-      } @else if (state().step === 'consent') {
-        <!-- The terms screen. Registration is unreachable without it: the
+          </form>
+        } @else if (state().step === 'consent') {
+          <!-- The terms screen. Registration is unreachable without it: the
         machine's submit on the identifier step moves here, and the dispatch that
         creates anything happens from this button.
 
@@ -626,494 +649,504 @@ const CODE_EXPIRED_MESSAGE = 'That code has expired.'
         checkbox covering both documents, links to their full texts, and NO
         acceptance record of any kind — a record names a revision, and revisions
         do not exist yet. -->
-        <form novalidate (submit)="submit($event)">
-          <p class="text-body-secondary small mb-3">
-            This project runs on the standard Hilos terms.
-          </p>
+          <form novalidate (submit)="submit($event)">
+            <p class="text-body-secondary small mb-3">
+              This project runs on the standard Hilos terms.
+            </p>
 
-          <div class="form-check mb-3">
-            <input
-              #consentInput
-              id="auth-consent-accept"
-              class="form-check-input"
-              type="checkbox"
-              data-id="auth-consent-accept"
-              [checked]="form().consentAccepted"
-              (change)="updateConsent($event)"
-            />
-            <label class="form-check-label small" for="auth-consent-accept">
-              I agree to the
-              <a [href]="context().termsPath" target="_blank" rel="noopener">
-                Terms
-              </a>
-              and the
-              <a [href]="context().privacyPath" target="_blank" rel="noopener">
-                Privacy Policy </a
-              >.
-            </label>
-          </div>
+            <div class="form-check mb-3">
+              <input
+                #consentInput
+                id="auth-consent-accept"
+                class="form-check-input"
+                type="checkbox"
+                data-id="auth-consent-accept"
+                [checked]="form().consentAccepted"
+                (change)="updateConsent($event)"
+              />
+              <label class="form-check-label small" for="auth-consent-accept">
+                I agree to the
+                <a [href]="context().termsPath" target="_blank" rel="noopener">
+                  Terms
+                </a>
+                and the
+                <a
+                  [href]="context().privacyPath"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Privacy Policy </a
+                >.
+              </label>
+            </div>
 
-          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
+            <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
-          <button
-            hilosLoadingButton
-            type="submit"
-            class="btn-primary w-100 mb-2"
-            [loading]="pending()"
-            [disabled]="!submittable()"
-            data-id="auth-submit"
-          >
-            {{ submitLabel() }}
-          </button>
+            <button
+              hilosLoadingButton
+              type="submit"
+              class="btn-primary w-100 mb-2"
+              [loading]="pending()"
+              [disabled]="!submittable()"
+              data-id="auth-submit"
+            >
+              {{ submitLabel() }}
+            </button>
 
-          <button
-            type="button"
-            class="btn btn-link btn-sm w-100"
-            data-id="auth-restart"
-            (click)="backToIdentifier()"
-          >
-            Back
-          </button>
-        </form>
-      } @else if (state().step === 'code') {
-        <!-- The one code screen, whichever code it is: confirming an address,
+            <button
+              type="button"
+              class="btn btn-link btn-sm w-100"
+              data-id="auth-restart"
+              (click)="backToIdentifier()"
+            >
+              Back
+            </button>
+          </form>
+        } @else if (state().step === 'code') {
+          <!-- The one code screen, whichever code it is: confirming an address,
         signing a number in, proving a mailbox for a reset, or typing the digits
         that came in a sign-in letter (HIL-606). What differs is the heading, the
         line naming where the code went, and the way out. -->
-        <form novalidate (submit)="submit($event)">
-          <div
-            class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
-          >
-            <i
-              class="bi bi-envelope text-body-secondary"
-              aria-hidden="true"
-            ></i>
-            <span class="small fw-semibold flex-grow-1">
-              {{ form().identifier }}
-            </span>
-          </div>
-
-          @if (deliveredChannel(); as channel) {
-            <p
-              class="text-body-secondary small mb-3"
-              data-id="auth-delivered-channel"
+          <form novalidate (submit)="submit($event)">
+            <div
+              class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
             >
-              Sent via {{ channel }}.
-            </p>
-          }
+              <i
+                class="bi bi-envelope text-body-secondary"
+                aria-hidden="true"
+              ></i>
+              <span class="small fw-semibold flex-grow-1">
+                {{ form().identifier }}
+              </span>
+            </div>
 
-          <!-- The send line holds its room from the moment the code screen
+            @if (deliveredChannel(); as channel) {
+              <p
+                class="text-body-secondary small mb-3"
+                data-id="auth-delivered-channel"
+              >
+                Sent via {{ channel }}.
+              </p>
+            }
+
+            <!-- The send line holds its room from the moment the code screen
           opens (HIL-977, styling-rules.md "The room a live message takes"):
           the slot always holds exactly one row, the line itself or its
           invisible twin of the very same markup, so neither the line's arrival
           nor a provider's long sentence moves the code field. The text is
           truncated to one line and the whole of it sits behind the details
           button, in every state. -->
-          <div data-id="auth-send-progress-slot">
-            @if (sendProgress(); as progress) {
-              <div
-                [class]="sendProgressRowClass + ' ' + progress.tone"
-                data-id="auth-send-progress"
-              >
-                <i
-                  [class]="'bi flex-shrink-0 ' + progress.icon"
+            <div data-id="auth-send-progress-slot">
+              @if (sendProgress(); as progress) {
+                <div
+                  [class]="sendProgressRowClass + ' ' + progress.tone"
+                  data-id="auth-send-progress"
+                >
+                  <i
+                    [class]="'bi flex-shrink-0 ' + progress.icon"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="flex-grow-1 text-truncate">{{
+                    progress.text
+                  }}</span>
+                  <button
+                    type="button"
+                    [class]="sendProgressDetailsClass"
+                    aria-label="Show the full message"
+                    title="Show the full message"
+                    data-id="auth-send-progress-details"
+                    (click)="sendDetailOpen.set(true)"
+                  >
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                  </button>
+                </div>
+              } @else {
+                <div
+                  [class]="sendProgressRowClass + ' invisible'"
                   aria-hidden="true"
-                ></i>
-                <span class="flex-grow-1 text-truncate">{{
-                  progress.text
-                }}</span>
+                  data-id="auth-send-progress-idle"
+                >
+                  <i
+                    class="bi bi-hourglass-split flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="flex-grow-1 text-truncate">&nbsp;</span>
+                  <!-- A span, not a button: the twin holds room, it does not take
+                focus. -->
+                  <span [class]="sendProgressDetailsClass">
+                    <i class="bi bi-info-circle" aria-hidden="true"></i>
+                  </span>
+                </div>
+              }
+            </div>
+            <hilos-modal
+              [open]="sendDetailOpen()"
+              (openChange)="sendDetailOpen.set($event)"
+              title="Send details"
+              initialFocus="dialog"
+            >
+              <hilos-long-text
+                kind="prose"
+                [text]="sendProgress()?.text ?? ''"
+                dataId="auth-send-progress-full"
+              />
+              <ng-template #modalActions let-requestClose="requestClose">
                 <button
                   type="button"
-                  [class]="sendProgressDetailsClass"
-                  aria-label="Show the full message"
-                  title="Show the full message"
-                  data-id="auth-send-progress-details"
-                  (click)="sendDetailOpen.set(true)"
+                  class="btn btn-secondary"
+                  data-id="auth-send-progress-close"
+                  (click)="requestClose()"
                 >
-                  <i class="bi bi-info-circle" aria-hidden="true"></i>
+                  Close
                 </button>
-              </div>
-            } @else {
-              <div
-                [class]="sendProgressRowClass + ' invisible'"
-                aria-hidden="true"
-                data-id="auth-send-progress-idle"
-              >
-                <i
-                  class="bi bi-hourglass-split flex-shrink-0"
-                  aria-hidden="true"
-                ></i>
-                <span class="flex-grow-1 text-truncate">&nbsp;</span>
-                <!-- A span, not a button: the twin holds room, it does not take
-                focus. -->
-                <span [class]="sendProgressDetailsClass">
-                  <i class="bi bi-info-circle" aria-hidden="true"></i>
-                </span>
-              </div>
-            }
-          </div>
-          <hilos-modal
-            [open]="sendDetailOpen()"
-            (openChange)="sendDetailOpen.set($event)"
-            title="Send details"
-            initialFocus="dialog"
-          >
-            <hilos-long-text
-              kind="prose"
-              [text]="sendProgress()?.text ?? ''"
-              dataId="auth-send-progress-full"
-            />
-            <ng-template #modalActions let-requestClose="requestClose">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-id="auth-send-progress-close"
-                (click)="requestClose()"
-              >
-                Close
-              </button>
-            </ng-template>
-          </hilos-modal>
+              </ng-template>
+            </hilos-modal>
 
-          <!-- The letter went out with two ways back in it, so the screen says
+            <!-- The letter went out with two ways back in it, so the screen says
           so before it asks for one: the link is still the shorter road for
           whoever can click it, and the field below is for whoever cannot. -->
-          @if (screenKey() === 'check_inbox') {
-            <div
-              class="alert alert-success small py-2"
-              data-id="auth-link-sent"
+            @if (screenKey() === 'check_inbox') {
+              <div
+                class="alert alert-success small py-2"
+                data-id="auth-link-sent"
+              >
+                <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
+                {{ linkSentLead }}
+                <strong>{{ form().identifier }}</strong
+                >. {{ linkSentTail }}
+              </div>
+            }
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold" for="auth-code">
+                Code
+              </label>
+              <input
+                #codeInput
+                id="auth-code"
+                type="text"
+                inputmode="numeric"
+                class="form-control"
+                autocomplete="one-time-code"
+                data-id="auth-code"
+                [value]="form().code"
+                (input)="updateCode($event)"
+              />
+              @if (expiresIn(); as left) {
+                <div class="form-text" data-id="auth-expires-in">
+                  <i class="bi bi-clock me-1" aria-hidden="true"></i>
+                  Expires in {{ left }}.
+                </div>
+              }
+            </div>
+
+            <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
+
+            <button
+              hilosLoadingButton
+              type="submit"
+              class="btn-primary w-100 mb-2"
+              [loading]="pending()"
+              [disabled]="!submittable()"
+              data-id="auth-submit"
             >
+              {{ submitLabel() }}
+            </button>
+
+            <!-- The gate is the backend's (the address owns the cooldown, not this
+          tab): while it holds, the button is a countdown instead. -->
+            @if (resendIn(); as left) {
+              <div
+                class="small text-body-secondary text-center"
+                data-id="auth-resend-in"
+              >
+                <i class="bi bi-clock me-1" aria-hidden="true"></i>
+                Send a new code in {{ left }}
+              </div>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                [disabled]="pending()"
+                data-id="auth-resend"
+                (click)="resend()"
+              >
+                <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
+                Send a new code
+              </button>
+            }
+
+            <!-- The way out, and the last thing on the card because it is the
+          answer to "not this, then": a registration says so out loud and in red,
+          and what it cancels is freed - the same address typed again starts
+          over. A sign-in or a recovery has nothing to give back, so it says Back
+          and wears the word the consent step already uses for the same move
+          (HIL-829). -->
+            @if (state().intent === 'register') {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                data-id="auth-cancel-registration"
+                (click)="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                (click)="cancelRegistration()"
+              >
+                Back
+              </button>
+            }
+          </form>
+        } @else if (state().step === 'code_expired') {
+          <!-- The same screen after its countdown ran out (HIL-828). The heading
+        and the address block above do not move - the person is still doing the
+        thing they came to do - and what changes is everything under them: no
+        field, no Confirm, one line saying the code is dead and one button
+        offering a new one. Not a form: there is nothing here to submit. -->
+          <div>
+            <div
+              class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+            >
+              <i
+                class="bi bi-envelope text-body-secondary"
+                aria-hidden="true"
+              ></i>
+              <span class="small fw-semibold flex-grow-1">
+                {{ form().identifier }}
+              </span>
+            </div>
+
+            <div
+              class="alert alert-warning small py-2 mb-3"
+              data-id="auth-code-expired"
+            >
+              <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+              {{ codeExpiredMessage }}
+            </div>
+
+            <!-- The gate outlives the code it was armed for: it belongs to the
+          address, so a person cannot spend a code, watch it expire and re-take
+          the address inside the cooldown the gate exists to hold. -->
+            @if (resendIn(); as left) {
+              <div
+                class="small text-body-secondary text-center"
+                data-id="auth-resend-in"
+              >
+                <i class="bi bi-clock me-1" aria-hidden="true"></i>
+                Send a new code in {{ left }}
+              </div>
+            } @else {
+              <button
+                hilosLoadingButton
+                type="button"
+                class="btn-primary w-100 mb-2"
+                [loading]="pending()"
+                data-id="auth-code-renew"
+                (click)="renewCode()"
+              >
+                <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
+                Send a new code
+              </button>
+            }
+
+            <!-- The way out, and the last thing on the card because it is the
+          answer to "not this, then": a registration says so out loud and in red,
+          and what it cancels is freed - the same address typed again starts
+          over. A sign-in or a recovery has nothing to give back, so it says Back
+          and wears the word the consent step already uses for the same move
+          (HIL-829). -->
+            @if (state().intent === 'register') {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                data-id="auth-cancel-registration"
+                (click)="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                (click)="cancelRegistration()"
+              >
+                Back
+              </button>
+            }
+          </div>
+        } @else if (state().step === 'set_password') {
+          <!-- One screen for two endings (HIL-825): a recovery writes the new
+        password of an account that exists, a registration CREATES the account on
+        the address it just proved. The address is not asked for again either
+        way — what the accepted code left on this session names it. -->
+          <form novalidate (submit)="submit($event)">
+            <p class="text-body-secondary small mb-3">
+              {{ setPasswordLead() }}
+            </p>
+
+            <!-- The address, for the password manager and for nobody else: a saved
+          entry with no login against it is an entry its owner cannot use. Hidden
+          rather than absent, because what the manager files the password under is
+          the field beside it. -->
+            <input
+              type="text"
+              hidden
+              autocomplete="username"
+              data-id="auth-username"
+              [value]="form().identifier"
+            />
+
+            <div class="mb-3">
+              <label
+                class="form-label small fw-semibold"
+                for="auth-new-password"
+              >
+                {{ newPasswordLabel() }}
+              </label>
+              <input
+                #newPasswordInput
+                id="auth-new-password"
+                type="password"
+                class="form-control"
+                autocomplete="new-password"
+                data-id="auth-new-password"
+                [value]="form().newPassword"
+                (input)="updateNewPassword($event)"
+              />
+              <div class="form-text">
+                At least {{ passwordMinLength }} characters.
+              </div>
+            </div>
+
+            <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
+
+            <button
+              hilosLoadingButton
+              type="submit"
+              class="btn-primary w-100 mb-2"
+              [loading]="pending()"
+              [disabled]="!submittable()"
+              data-id="auth-submit"
+            >
+              {{ submitLabel() }}
+            </button>
+
+            <!-- Two ways to FINISH the registration, then the way to drop it, and
+          the order carries that meaning (HIL-1008). Unemphasized rather than a
+          second primary: choosing a password is still the road this screen is
+          named after. -->
+            @if (showFinishWithoutPassword()) {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                [disabled]="pending()"
+                data-id="auth-complete-passwordless"
+                (click)="completeWithoutPassword()"
+              >
+                Create it without a password
+              </button>
+            }
+
+            <!-- The same way out the code screen carries, for the same reason:
+          this screen has no address field and no step behind it, so whoever
+          changed their mind here would otherwise be shut in (HIL-825). The hold
+          is alive and proved at this point, so on a registration the cancel is
+          the one that really gives the address back. -->
+            @if (state().intent === 'register') {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                data-id="auth-cancel-registration"
+                (click)="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                (click)="cancelRegistration()"
+              >
+                Back
+              </button>
+            }
+          </form>
+        } @else if (state().step === 'external') {
+          <!-- Parked on a ceremony. A link waits on the inbox, everything else
+        waits on the device; both are the same step and both can be taken back —
+        cancelling ends the ceremony itself rather than merely forgetting its
+        outcome. -->
+          @if (screenKey() === 'check_inbox') {
+            <div class="alert alert-success small py-2">
               <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
               {{ linkSentLead }}
               <strong>{{ form().identifier }}</strong
               >. {{ linkSentTail }}
             </div>
-          }
-
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="auth-code">
-              Code
-            </label>
-            <input
-              #codeInput
-              id="auth-code"
-              type="text"
-              inputmode="numeric"
-              class="form-control"
-              autocomplete="one-time-code"
-              data-id="auth-code"
-              [value]="form().code"
-              (input)="updateCode($event)"
-            />
-            @if (expiresIn(); as left) {
-              <div class="form-text" data-id="auth-expires-in">
-                <i class="bi bi-clock me-1" aria-hidden="true"></i>
-                Expires in {{ left }}.
+          } @else {
+            <div class="text-center py-4">
+              <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Waiting</span>
               </div>
-            }
-          </div>
+              @if (trip()) {
+                <div class="fw-semibold mb-1">{{ waitingTitle() }}</div>
+              }
+              <div class="small text-body-secondary">
+                {{ waitingMessage() }}
+              </div>
+            </div>
+          }
 
           <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
 
-          <button
-            hilosLoadingButton
-            type="submit"
-            class="btn-primary w-100 mb-2"
-            [loading]="pending()"
-            [disabled]="!submittable()"
-            data-id="auth-submit"
-          >
-            {{ submitLabel() }}
-          </button>
-
-          <!-- The gate is the backend's (the address owns the cooldown, not this
-          tab): while it holds, the button is a countdown instead. -->
-          @if (resendIn(); as left) {
-            <div
-              class="small text-body-secondary text-center"
-              data-id="auth-resend-in"
-            >
-              <i class="bi bi-clock me-1" aria-hidden="true"></i>
-              Send a new code in {{ left }}
-            </div>
-          } @else {
+          @if (tripCancelable()) {
             <button
               type="button"
-              class="btn btn-link btn-sm w-100"
-              [disabled]="pending()"
-              data-id="auth-resend"
-              (click)="resend()"
+              class="btn btn-outline-secondary w-100"
+              data-id="auth-cancel"
+              (click)="cancelMethod()"
             >
-              <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
-              Send a new code
+              Cancel
             </button>
           }
-
-          <!-- The way out, and the last thing on the card because it is the
-          answer to "not this, then": a registration says so out loud and in red,
-          and what it cancels is freed - the same address typed again starts
-          over. A sign-in or a recovery has nothing to give back, so it says Back
-          and wears the word the consent step already uses for the same move
-          (HIL-829). -->
-          @if (state().intent === 'register') {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100 text-danger"
-              data-id="auth-cancel-registration"
-              (click)="cancelRegistration()"
-            >
-              Cancel registration
-            </button>
-          } @else {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100"
-              data-id="auth-restart"
-              (click)="cancelRegistration()"
-            >
-              Back
-            </button>
-          }
-        </form>
-      } @else if (state().step === 'code_expired') {
-        <!-- The same screen after its countdown ran out (HIL-828). The heading
-        and the address block above do not move - the person is still doing the
-        thing they came to do - and what changes is everything under them: no
-        field, no Confirm, one line saying the code is dead and one button
-        offering a new one. Not a form: there is nothing here to submit. -->
-        <div>
-          <div
-            class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
-          >
-            <i
-              class="bi bi-envelope text-body-secondary"
-              aria-hidden="true"
-            ></i>
-            <span class="small fw-semibold flex-grow-1">
-              {{ form().identifier }}
-            </span>
-          </div>
-
-          <div
-            class="alert alert-warning small py-2 mb-3"
-            data-id="auth-code-expired"
-          >
-            <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
-            {{ codeExpiredMessage }}
-          </div>
-
-          <!-- The gate outlives the code it was armed for: it belongs to the
-          address, so a person cannot spend a code, watch it expire and re-take
-          the address inside the cooldown the gate exists to hold. -->
-          @if (resendIn(); as left) {
-            <div
-              class="small text-body-secondary text-center"
-              data-id="auth-resend-in"
-            >
-              <i class="bi bi-clock me-1" aria-hidden="true"></i>
-              Send a new code in {{ left }}
-            </div>
-          } @else {
-            <button
-              hilosLoadingButton
-              type="button"
-              class="btn-primary w-100 mb-2"
-              [loading]="pending()"
-              data-id="auth-code-renew"
-              (click)="renewCode()"
-            >
-              <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
-              Send a new code
-            </button>
-          }
-
-          <!-- The way out, and the last thing on the card because it is the
-          answer to "not this, then": a registration says so out loud and in red,
-          and what it cancels is freed - the same address typed again starts
-          over. A sign-in or a recovery has nothing to give back, so it says Back
-          and wears the word the consent step already uses for the same move
-          (HIL-829). -->
-          @if (state().intent === 'register') {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100 text-danger"
-              data-id="auth-cancel-registration"
-              (click)="cancelRegistration()"
-            >
-              Cancel registration
-            </button>
-          } @else {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100"
-              data-id="auth-restart"
-              (click)="cancelRegistration()"
-            >
-              Back
-            </button>
-          }
-        </div>
-      } @else if (state().step === 'set_password') {
-        <!-- One screen for two endings (HIL-825): a recovery writes the new
-        password of an account that exists, a registration CREATES the account on
-        the address it just proved. The address is not asked for again either
-        way — what the accepted code left on this session names it. -->
-        <form novalidate (submit)="submit($event)">
-          <p class="text-body-secondary small mb-3">{{ setPasswordLead() }}</p>
-
-          <!-- The address, for the password manager and for nobody else: a saved
-          entry with no login against it is an entry its owner cannot use. Hidden
-          rather than absent, because what the manager files the password under is
-          the field beside it. -->
-          <input
-            type="text"
-            hidden
-            autocomplete="username"
-            data-id="auth-username"
-            [value]="form().identifier"
-          />
-
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="auth-new-password">
-              {{ newPasswordLabel() }}
-            </label>
-            <input
-              #newPasswordInput
-              id="auth-new-password"
-              type="password"
-              class="form-control"
-              autocomplete="new-password"
-              data-id="auth-new-password"
-              [value]="form().newPassword"
-              (input)="updateNewPassword($event)"
-            />
-            <div class="form-text">
-              At least {{ passwordMinLength }} characters.
-            </div>
-          </div>
-
-          <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
-
-          <button
-            hilosLoadingButton
-            type="submit"
-            class="btn-primary w-100 mb-2"
-            [loading]="pending()"
-            [disabled]="!submittable()"
-            data-id="auth-submit"
-          >
-            {{ submitLabel() }}
-          </button>
-
-          <!-- Two ways to FINISH the registration, then the way to drop it, and
-          the order carries that meaning (HIL-1008). Unemphasized rather than a
-          second primary: choosing a password is still the road this screen is
-          named after. -->
-          @if (showFinishWithoutPassword()) {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100"
-              [disabled]="pending()"
-              data-id="auth-complete-passwordless"
-              (click)="completeWithoutPassword()"
-            >
-              Create it without a password
-            </button>
-          }
-
-          <!-- The same way out the code screen carries, for the same reason:
-          this screen has no address field and no step behind it, so whoever
-          changed their mind here would otherwise be shut in (HIL-825). The hold
-          is alive and proved at this point, so on a registration the cancel is
-          the one that really gives the address back. -->
-          @if (state().intent === 'register') {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100 text-danger"
-              data-id="auth-cancel-registration"
-              (click)="cancelRegistration()"
-            >
-              Cancel registration
-            </button>
-          } @else {
-            <button
-              type="button"
-              class="btn btn-link btn-sm w-100"
-              data-id="auth-restart"
-              (click)="cancelRegistration()"
-            >
-              Back
-            </button>
-          }
-        </form>
-      } @else if (state().step === 'external') {
-        <!-- Parked on a ceremony. A link waits on the inbox, everything else
-        waits on the device; both are the same step and both can be taken back —
-        cancelling ends the ceremony itself rather than merely forgetting its
-        outcome. -->
-        @if (screenKey() === 'check_inbox') {
-          <div class="alert alert-success small py-2">
-            <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
-            {{ linkSentLead }}
-            <strong>{{ form().identifier }}</strong
-            >. {{ linkSentTail }}
-          </div>
-        } @else {
-          <div class="text-center py-4">
-            <div class="spinner-border text-primary mb-3" role="status">
-              <span class="visually-hidden">Waiting</span>
-            </div>
-            @if (trip()) {
-              <div class="fw-semibold mb-1">{{ waitingTitle() }}</div>
-            }
-            <div class="small text-body-secondary">
-              {{ waitingMessage() }}
-            </div>
-          </div>
-        }
-
-        <hilos-form-error [message]="errorMessage()" dataId="auth-error" />
-
-        @if (tripCancelable()) {
-          <button
-            type="button"
-            class="btn btn-outline-secondary w-100"
-            data-id="auth-cancel"
-            (click)="cancelMethod()"
-          >
-            Cancel
-          </button>
-        }
-      } @else if (state().step === 'done') {
-        <!-- The end of a flow is a screen with a button, not a fading toast:
+        } @else if (state().step === 'done') {
+          <!-- The end of a flow is a screen with a button, not a fading toast:
         what was achieved is said once, and Continue is what closes it and lets
         the page through. -->
-        <div class="text-center py-3">
-          <i
-            class="bi bi-check-circle-fill text-success mb-3 fs-1"
-            aria-hidden="true"
-          ></i>
-          <p class="text-body-secondary small mb-4">
-            @if (screenKey() === 'done_registered') {
-              Your address is confirmed and you are signed in.
-            } @else if (screenKey() === 'done_password_changed') {
-              Your new password is saved. Codes left on other devices no longer
-              work.
-            } @else {
-              You are signed in.
-            }
-          </p>
+          <div class="text-center py-3">
+            <i
+              class="bi bi-check-circle-fill text-success mb-3 fs-1"
+              aria-hidden="true"
+            ></i>
+            <p class="text-body-secondary small mb-4">
+              @if (screenKey() === 'done_registered') {
+                Your address is confirmed and you are signed in.
+              } @else if (screenKey() === 'done_password_changed') {
+                Your new password is saved. Codes left on other devices no
+                longer work.
+              } @else {
+                You are signed in.
+              }
+            </p>
 
-          <button
-            hilosLoadingButton
-            class="btn-primary w-100"
-            [loading]="pending()"
-            data-id="auth-continue"
-            (click)="continueFromDone()"
-          >
-            {{ submitLabel() }}
-          </button>
-        </div>
+            <button
+              hilosLoadingButton
+              class="btn-primary w-100"
+              [loading]="pending()"
+              data-id="auth-continue"
+              (click)="continueFromDone()"
+            >
+              {{ submitLabel() }}
+            </button>
+          </div>
+        }
       }
     </section>
   `,
@@ -1126,6 +1159,12 @@ export class HilosAuthSurface {
   // A module constant is invisible to an Angular template, so the id the frame
   // names this surface by reaches the markup through a field.
   protected readonly headingId = AUTH_SURFACE_HEADING_ID
+  // A browser that refuses cookies cannot stay signed in by any method
+  // (HIL-1074), so the surface draws the card that says so instead of a form.
+  // Read once: the browser fires no event when its settings change, and the card
+  // sends the person to reload. Everything below is built as always — with no
+  // form on screen there is nothing to press and nothing to send.
+  protected readonly cookiesRefused = browserRefusesCookies()
 
   // Everything born from the context is a computed over it, so it is built once
   // per context and never per change detection: `createAuthFlow` carries the

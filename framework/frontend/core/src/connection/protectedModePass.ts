@@ -11,6 +11,7 @@
 // sessionStorage rather than a cookie for the lifetime: one tab, gone when it
 // closes, whereas a cookie is domain-wide and would outlive the freeze it
 // belongs to.
+import { browserStorage } from '../browser/browserStorage.js'
 import { browserValue } from '../browser/browserValue.js'
 
 /** sessionStorage key the presented pass is mirrored under. */
@@ -30,7 +31,7 @@ export const PROTECTED_MODE_PASS_BROWSER_VALUE = browserValue({
  * all (prerender), and a connection with no memory of a pass simply has none.
  */
 export function readStoredProtectedModePass(): string | undefined {
-  const storage = passStorage()
+  const storage = browserStorage('sessionStorage')
   if (storage === undefined) {
     return undefined
   }
@@ -51,7 +52,7 @@ export function readStoredProtectedModePass(): string | undefined {
  * @param pass The pass to keep, or undefined to drop the stored one.
  */
 export function writeStoredProtectedModePass(pass: string | undefined): void {
-  const storage = passStorage()
+  const storage = browserStorage('sessionStorage')
   if (storage === undefined) {
     return
   }
@@ -67,11 +68,4 @@ export function writeStoredProtectedModePass(pass: string | undefined): void {
     // Same reasoning as above: the key still works on this socket, it just will
     // not survive a reload.
   }
-}
-
-/** The tab's session storage, or undefined where there is none to speak of. */
-function passStorage(): Storage | undefined {
-  return typeof globalThis.sessionStorage === 'undefined'
-    ? undefined
-    : globalThis.sessionStorage
 }

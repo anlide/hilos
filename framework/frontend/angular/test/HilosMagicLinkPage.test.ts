@@ -19,6 +19,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   bindPageReady,
+  COOKIES_REFUSED_COPY,
   createHilosAuthContext,
   createSignal,
   ScopeManager,
@@ -412,5 +413,30 @@ describe('HilosMagicLinkPage', () => {
     }
 
     expect(world.navigated).toEqual([])
+  })
+
+  describe('in a browser that refuses cookies', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('keeps the link unspent and says why, before waiting on anything', async () => {
+      vi.spyOn(navigator, 'cookieEnabled', 'get').mockReturnValue(false)
+      // The page has answered, so nothing but the refusal holds the confirm back.
+      const world = relayWorld(true)
+      world.answerPage()
+      const fixture = mountRelay(world)
+      await flush(fixture)
+
+      expect(byId(fixture, 'cookies-refused')).not.toBeNull()
+      expect(textById(fixture, 'cookies-refused-link-kept')).toBe(
+        COOKIES_REFUSED_COPY.linkKept,
+      )
+      expect(byId(fixture, 'auth-magic-verifying')).toBeNull()
+      expect(byId(fixture, 'auth-magic-retry')).toBeNull()
+      expect(byId(fixture, 'auth-magic-to-login')).toBeNull()
+      expect(world.dispatched).toEqual([])
+      expect(world.navigated).toEqual([])
+    })
   })
 })

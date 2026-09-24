@@ -3,9 +3,9 @@
 // so the three SDKs draw the same list rather than each assembling its own
 // (multiframework-core.md).
 //
-// This file imports the declaring modules; they import only browserValue.ts. That
-// is the whole reason the declaring form lives in a file of its own: the other
-// direction would be a cycle.
+// This file imports the declaring modules; they import only browserValue.ts and
+// browserStorage.ts. That is the whole reason both live in files of their own:
+// the other direction would be a cycle.
 //
 // NOTHING HERE READS THE BROWSER AT MODULE LOAD. /privacy is prerendered, so this
 // module is evaluated at build time with no browser present; a declaration is data
@@ -15,6 +15,7 @@ import { OAUTH_PROVIDER_BROWSER_VALUE } from '../auth/oauthLogin.js'
 import { SESSION_ROTATE_BROWSER_VALUE } from '../connection/createHilosConnection.js'
 import { PROTECTED_MODE_HINT_BROWSER_VALUE } from '../connection/maintenanceHint.js'
 import { PROTECTED_MODE_PASS_BROWSER_VALUE } from '../connection/protectedModePass.js'
+import { browserStorage } from './browserStorage.js'
 import {
   type HilosBrowserValue,
   type HilosBrowserValueContext,
@@ -136,16 +137,4 @@ function eraseCookie(name: string): boolean {
     // still an erase of the rest.
     return false
   }
-}
-
-/**
- * The named store, or undefined where there is no browser to speak of.
- *
- * @param name Which global store to reach for.
- * @returns The store, or undefined when this runtime has none.
- */
-function browserStorage(
-  name: 'sessionStorage' | 'localStorage',
-): Storage | undefined {
-  return typeof globalThis[name] === 'undefined' ? undefined : globalThis[name]
 }

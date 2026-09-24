@@ -11,6 +11,7 @@
 // `bootHilos` binds in a real app.
 import {
   bindPageReady,
+  COOKIES_REFUSED_COPY,
   createHilosAuthContext,
   createSignal,
   ScopeManager,
@@ -309,5 +310,34 @@ describe('HilosMagicLinkPage', () => {
     }
 
     expect(world.navigated).toEqual([])
+  })
+
+  describe('in a browser that refuses cookies', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('keeps the link unspent and says why, before waiting on anything', async () => {
+      vi.spyOn(navigator, 'cookieEnabled', 'get').mockReturnValue(false)
+      // The page has answered, so nothing but the refusal holds the confirm back.
+      const world = relayWorld(true)
+      world.answerPage()
+      const wrapper = mountRelay(world)
+      await flush(wrapper)
+
+      expect(wrapper.find('[data-id="cookies-refused"]').exists()).toBe(true)
+      expect(wrapper.find('[data-id="cookies-refused-link-kept"]').text()).toBe(
+        COOKIES_REFUSED_COPY.linkKept,
+      )
+      expect(wrapper.find('[data-id="auth-magic-verifying"]').exists()).toBe(
+        false,
+      )
+      expect(wrapper.find('[data-id="auth-magic-retry"]').exists()).toBe(false)
+      expect(wrapper.find('[data-id="auth-magic-to-login"]').exists()).toBe(
+        false,
+      )
+      expect(world.dispatched).toEqual([])
+      expect(world.navigated).toEqual([])
+    })
   })
 })

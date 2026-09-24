@@ -474,6 +474,10 @@ export {
   type PasskeyAssertionResponse,
 } from './auth/passkey.js'
 export {
+  browserRefusesCookies,
+  COOKIES_REFUSED_COPY,
+} from './auth/cookiesRefused.js'
+export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,

@@ -8,6 +8,8 @@ import {
   computeBackoffDelay,
   isReconnectDragging,
   RECONNECT_DRAGGING_COPY,
+  browserRefusesCookies,
+  COOKIES_REFUSED_COPY,
   createPageRouter,
   createAppPageRouter,
   createHilosRouter,
@@ -42,6 +44,8 @@ it('exports the @hilos/core public surface', () => {
   expect(computeBackoffDelay).toBeTypeOf('function')
   expect(isReconnectDragging).toBeTypeOf('function')
   expect(RECONNECT_DRAGGING_COPY.dragging).toBeTypeOf('string')
+  expect(browserRefusesCookies).toBeTypeOf('function')
+  expect(COOKIES_REFUSED_COPY.title).toBeTypeOf('string')
   expect(createPageRouter).toBeTypeOf('function')
   expect(createAppPageRouter).toBeTypeOf('function')
   expect(createHilosRouter).toBeTypeOf('function')

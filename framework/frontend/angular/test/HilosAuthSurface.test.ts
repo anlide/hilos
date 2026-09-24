@@ -10,6 +10,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   AUTH_ACTION_DETECT_IDENTIFIER,
+  AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
   bindPageReady,
   cancelOAuthTrip,
@@ -18,6 +19,7 @@ import {
   CODE_SEND_STATE_QUEUED,
   CODE_SEND_STATE_SENDING,
   CODE_SEND_STATE_SENT,
+  COOKIES_REFUSED_COPY,
   createHilosAuthContext,
   createOAuthLogin,
   createSignal,
@@ -697,5 +699,35 @@ describe('HilosAuthSurface', () => {
 
     expect(byId(fixture, 'auth-password')).not.toBeNull()
     expect(byId(fixture, 'auth-submit')).not.toBeNull()
+  })
+})
+
+describe('HilosAuthSurface in a browser that refuses cookies', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('draws the card that says why in place of every form, and sends nothing', async () => {
+    vi.spyOn(navigator, 'cookieEnabled', 'get').mockReturnValue(false)
+    const world = surfaceWorld()
+    const dispatch = vi.fn()
+    const context = createHilosAuthContext({
+      ...world.context,
+      actions: { dispatch } as unknown as ActionLifecycle,
+    })
+    const fixture = mountSurface({ context, gate: world.gate })
+    await flush(fixture)
+
+    expect(byId(fixture, 'cookies-refused')).not.toBeNull()
+    // The card's heading takes the surface's id, so a modal around it is named
+    // by the refusal rather than by a sign-in heading that is not drawn.
+    const heading = byId(fixture, 'cookies-refused-heading')
+    expect(heading?.tagName).toBe('H2')
+    expect(heading?.getAttribute('id')).toBe(AUTH_SURFACE_HEADING_ID)
+    expect(heading?.textContent?.trim()).toBe(COOKIES_REFUSED_COPY.title)
+    expect(byId(fixture, 'auth-heading')).toBeNull()
+    expect(byId(fixture, 'auth-identifier')).toBeNull()
+    expect(byId(fixture, 'cookies-refused-link-kept')).toBeNull()
+    expect(dispatch).not.toHaveBeenCalled()
   })
 })

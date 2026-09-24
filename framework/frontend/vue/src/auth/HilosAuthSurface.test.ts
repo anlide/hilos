@@ -29,6 +29,7 @@ import {
   CODE_SEND_STATE_QUEUED,
   CODE_SEND_STATE_SENDING,
   CODE_SEND_STATE_SENT,
+  COOKIES_REFUSED_COPY,
   createHilosAuthContext,
   createOAuthLogin,
   createSignal,
@@ -1722,6 +1723,34 @@ describe('HilosAuthSurface', () => {
 
     expect(wrapper.find('[data-id="auth-icon-passkey"]').exists()).toBe(false)
     expect(context.actions.dispatch).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
+describe('HilosAuthSurface in a browser that refuses cookies', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('draws the card that says why in place of every form, and sends nothing', async () => {
+    vi.spyOn(navigator, 'cookieEnabled', 'get').mockReturnValue(false)
+    const { context, dispatched } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="cookies-refused"]').exists()).toBe(true)
+    // The card's heading takes the surface's id, so a modal around it is named
+    // by the refusal rather than by a sign-in heading that is not drawn.
+    const heading = wrapper.find('[data-id="cookies-refused-heading"]')
+    expect(heading.element.tagName).toBe('H2')
+    expect(heading.attributes('id')).toBe(AUTH_SURFACE_HEADING_ID)
+    expect(heading.text()).toBe(COOKIES_REFUSED_COPY.title)
+    expect(wrapper.find('[data-id="auth-heading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="cookies-refused-link-kept"]').exists()).toBe(
+      false,
+    )
+    expect(dispatched).toEqual([])
     wrapper.unmount()
   })
 })

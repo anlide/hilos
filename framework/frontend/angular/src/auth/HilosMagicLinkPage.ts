@@ -27,7 +27,11 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { createAuthActions, whenPageReadyOrUnreachable } from '@hilos/core'
+import {
+  browserRefusesCookies,
+  createAuthActions,
+  whenPageReadyOrUnreachable,
+} from '@hilos/core'
 import type {
   HilosAuthActions,
   HilosAuthContext,
@@ -35,6 +39,7 @@ import type {
 } from '@hilos/core'
 
 import { HILOS_ROUTER } from '../hilosRouterToken.js'
+import { HilosCookiesRefused } from './HilosCookiesRefused.js'
 
 /**
  * The home path the successful sign-in lands on; also the target of the "back to
@@ -73,13 +78,16 @@ function waitForConnection(connection: HilosConnection): Promise<boolean> {
 @Component({
   selector: 'hilos-magic-link-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosCookiesRefused],
   template: `
     <section
       data-id="auth-magic"
       class="mx-auto text-center"
       style="max-width: 24rem"
     >
-      @if (status() === 'verifying') {
+      @if (status() === 'cookies') {
+        <hilos-cookies-refused [linkKept]="true" />
+      } @else if (status() === 'verifying') {
         <div role="status" data-id="auth-magic-verifying">
           <span class="spinner-border" role="status" aria-hidden="true"></span>
           <p class="mt-3">Signing you in…</p>
@@ -126,9 +134,12 @@ export class HilosMagicLinkPage {
   private readonly router = inject(HILOS_ROUTER)
 
   // The relay outcome: `verifying` while the token is in flight, `error` once it
-  // is rejected, malformed, or given up on. A success navigates away, so it needs
-  // no visible state.
-  protected readonly status = signal<'verifying' | 'error'>('verifying')
+  // is rejected, malformed, or given up on, `cookies` when the browser refuses
+  // cookies and the token is kept unspent (HIL-1074). A success navigates away,
+  // so it needs no visible state.
+  protected readonly status = signal<'verifying' | 'error' | 'cookies'>(
+    'verifying',
+  )
   protected readonly message = signal('')
 
   // Whether the failure on screen is one a retry can do anything about. A
@@ -147,6 +158,16 @@ export class HilosMagicLinkPage {
 
   constructor() {
     effect((onCleanup) => {
+      // First, before the link is even read: a browser that refuses cookies
+      // could not keep the session the token would open, and the token is spent
+      // by a successful check. Kept unspent, it still works in another browser
+      // (HIL-1074).
+      if (browserRefusesCookies()) {
+        this.status.set('cookies')
+
+        return
+      }
+
       const params = new URLSearchParams(window.location.search)
       this.link = {
         email: params.get('email') ?? '',

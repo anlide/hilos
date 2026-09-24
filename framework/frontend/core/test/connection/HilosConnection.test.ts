@@ -877,3 +877,34 @@ describe('build-version check', () => {
     expect(builds).toEqual(['build-a'])
   })
 })
+
+describe('a browser that refuses its storage', () => {
+  /**
+   * Make one of the browser's stores throw on the global read itself, the way
+   * Chrome with every cookie blocked does — before any getItem is reached.
+   */
+  function refuseStorage(name: 'localStorage' | 'sessionStorage'): void {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      get() {
+        throw new DOMException('denied', 'SecurityError')
+      },
+    })
+  }
+
+  afterEach(() => {
+    delete (globalThis as { localStorage?: Storage }).localStorage
+    delete (globalThis as { sessionStorage?: Storage }).sessionStorage
+  })
+
+  it('still creates and opens the connection', () => {
+    refuseStorage('localStorage')
+    refuseStorage('sessionStorage')
+
+    const { connection, states } = createConnection()
+    connection.connect()
+    MockWebSocket.last.open()
+
+    expect(states).toEqual(['connecting', 'connected'])
+  })
+})

@@ -18,6 +18,7 @@ successful check, so a retry is the one action that actually helps here.
 Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  browserRefusesCookies,
   createAuthActions,
   whenPageReadyOrUnreachable,
   type HilosAuthContext,
@@ -26,6 +27,7 @@ import {
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
 import { hilosRouterKey } from '../hilosRouterKey.js'
+import HilosCookiesRefused from './HilosCookiesRefused.vue'
 
 defineOptions({ name: 'HilosMagicLinkPage' })
 
@@ -49,9 +51,10 @@ if (!injectedRouter) {
 const router = injectedRouter
 
 // The relay outcome: `verifying` while the token is in flight, `error` once it is
-// rejected, malformed, or given up on. A success navigates away, so it needs no
-// visible state.
-const status = ref<'verifying' | 'error'>('verifying')
+// rejected, malformed, or given up on, `cookies` when the browser refuses cookies
+// and the token is kept unspent (HIL-1074). A success navigates away, so it needs
+// no visible state.
+const status = ref<'verifying' | 'error' | 'cookies'>('verifying')
 const message = ref('')
 
 // Whether the failure on screen is one a retry can do anything about. A malformed
@@ -140,6 +143,15 @@ async function runConfirm(): Promise<void> {
 }
 
 onMounted(() => {
+  // First, before the link is even read: a browser that refuses cookies could not
+  // keep the session the token would open, and the token is spent by a successful
+  // check. Kept unspent, it still works in another browser (HIL-1074).
+  if (browserRefusesCookies()) {
+    status.value = 'cookies'
+
+    return
+  }
+
   const params = new URLSearchParams(window.location.search)
   linkEmail = params.get('email') ?? ''
   linkToken = params.get('token') ?? ''
@@ -168,8 +180,10 @@ function goToSignIn(): void {
     class="mx-auto text-center"
     style="max-width: 24rem"
   >
+    <HilosCookiesRefused v-if="status === 'cookies'" link-kept />
+
     <div
-      v-if="status === 'verifying'"
+      v-else-if="status === 'verifying'"
       role="status"
       data-id="auth-magic-verifying"
     >

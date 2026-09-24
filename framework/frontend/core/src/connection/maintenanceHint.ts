@@ -9,6 +9,7 @@
 // (protectedModePass.ts), and for the opposite reason: an admission must die
 // with the tab, while a hint is worth nothing unless it outlives it — the flash
 // being fixed happens on a fresh load.
+import { browserStorage } from '../browser/browserStorage.js'
 import { browserValue } from '../browser/browserValue.js'
 
 /** localStorage key the maintenance hint is kept under. */
@@ -29,7 +30,7 @@ export const PROTECTED_MODE_HINT_BROWSER_VALUE = browserValue({
  * read only costs the flash it was meant to prevent.
  */
 export function readProtectedModeHint(): boolean {
-  const storage = hintStorage()
+  const storage = browserStorage('localStorage')
   if (storage === undefined) {
     return false
   }
@@ -56,7 +57,7 @@ export function readProtectedModeHint(): boolean {
  * @param suspected Whether maintenance is running on the node, per that frame.
  */
 export function writeProtectedModeHint(suspected: boolean): void {
-  const storage = hintStorage()
+  const storage = browserStorage('localStorage')
   if (storage === undefined) {
     return
   }
@@ -72,11 +73,4 @@ export function writeProtectedModeHint(suspected: boolean): void {
     // Same reasoning as above: the hint is nowhere a source of truth, so failing
     // to keep it costs one flash and nothing else.
   }
-}
-
-/** The browser's local storage, or undefined where there is none to speak of. */
-function hintStorage(): Storage | undefined {
-  return typeof globalThis.localStorage === 'undefined'
-    ? undefined
-    : globalThis.localStorage
 }

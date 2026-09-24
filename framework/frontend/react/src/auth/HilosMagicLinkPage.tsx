@@ -26,6 +26,7 @@ import {
   useState,
 } from 'react'
 import {
+  browserRefusesCookies,
   createAuthActions,
   whenPageReadyOrUnreachable,
   type HilosAuthContext,
@@ -33,6 +34,7 @@ import {
 } from '@hilos/core'
 
 import { HilosRouterContext } from '../hilosRouterContext.js'
+import { HilosCookiesRefused } from './HilosCookiesRefused.js'
 
 /**
  * The home path the successful sign-in lands on; also the target of the "back to
@@ -89,9 +91,12 @@ export function HilosMagicLinkPage({ context }: HilosMagicLinkPageProps) {
   }
 
   // The relay outcome: `verifying` while the token is in flight, `error` once it
-  // is rejected, malformed, or given up on. A success navigates away, so it needs
-  // no visible state.
-  const [status, setStatus] = useState<'verifying' | 'error'>('verifying')
+  // is rejected, malformed, or given up on, `cookies` when the browser refuses
+  // cookies and the token is kept unspent (HIL-1074). A success navigates away,
+  // so it needs no visible state.
+  const [status, setStatus] = useState<'verifying' | 'error' | 'cookies'>(
+    'verifying',
+  )
   const [message, setMessage] = useState('')
 
   // Whether the failure on screen is one a retry can do anything about. A
@@ -163,6 +168,16 @@ export function HilosMagicLinkPage({ context }: HilosMagicLinkPageProps) {
   }, [authActions, router, showError])
 
   useEffect(() => {
+    // First, before the link is even read: a browser that refuses cookies could
+    // not keep the session the token would open, and the token is spent by a
+    // successful check. Kept unspent, it still works in another browser
+    // (HIL-1074).
+    if (browserRefusesCookies()) {
+      setStatus('cookies')
+
+      return
+    }
+
     const params = new URLSearchParams(window.location.search)
     link.current = {
       email: params.get('email') ?? '',
@@ -188,7 +203,9 @@ export function HilosMagicLinkPage({ context }: HilosMagicLinkPageProps) {
       className="mx-auto text-center"
       style={MAX_WIDTH}
     >
-      {status === 'verifying' ? (
+      {status === 'cookies' ? (
+        <HilosCookiesRefused linkKept />
+      ) : status === 'verifying' ? (
         <div role="status" data-id="auth-magic-verifying">
           <span className="spinner-border" role="status" aria-hidden="true" />
           <p className="mt-3">Signing you in…</p>
