@@ -14,6 +14,7 @@ import {
 } from '@hilos/core'
 import type {
   HilosCommunicationsContext,
+  HilosPageIdentity,
   HilosRouter,
   PageRouteMatch,
 } from '@hilos/core'
@@ -23,7 +24,37 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 const TABLE = 'hilosCommunicationsChannelFields'
 
-function router(): HilosRouter {
+/**
+ * The identity the channel page answers with: the card to its delivery journal
+ * is its one child.
+ */
+const CHANNEL_IDENTITY: HilosPageIdentity = {
+  label: 'Channel',
+  lead: 'A single communication channel and its configuration.',
+  breadcrumb: [
+    { page: HilosPages.COMMUNICATIONS, label: 'Communications' },
+    { page: HilosPages.COMMUNICATIONS_CHANNEL, label: 'Channel' },
+  ],
+  children: [
+    {
+      page: HilosPages.COMMUNICATIONS_DELIVERIES,
+      label: 'Deliveries',
+      lead: 'Delivery log for one channel.',
+      icon: null,
+    },
+  ],
+}
+
+/** Resolves the delivery journal from the channel's own route params. */
+const resolveDeliveries: HilosRouter['resolvePath'] = (page, params) =>
+  page === HilosPages.COMMUNICATIONS_DELIVERIES
+    ? `/hilos/communications/${params?.channelId}/deliveries`
+    : undefined
+
+function router(
+  identity?: HilosPageIdentity,
+  resolvePath: HilosRouter['resolvePath'] = () => undefined,
+): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.COMMUNICATIONS_CHANNEL,
@@ -34,9 +65,9 @@ function router(): HilosRouter {
     currentTitle: createSignal(''),
     pageError: createSignal(null),
     pageLoading: createSignal(false),
-    pageIdentity: createSignal(undefined),
+    pageIdentity: createSignal(identity),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -192,11 +223,14 @@ afterEach(() => {
   document.body.classList.remove('modal-open')
 })
 
-async function mountPage(context: HilosCommunicationsContext) {
+async function mountPage(
+  context: HilosCommunicationsContext,
+  navigator: HilosRouter = router(),
+) {
   const wrapper = mount(HilosCommunicationsChannelPage, {
     props: { context: markRaw(context) },
     attachTo: document.body,
-    global: { provide: { [hilosRouterKey as symbol]: router() } },
+    global: { provide: { [hilosRouterKey as symbol]: navigator } },
   })
   mounted.push(wrapper)
   await nextTick()
@@ -355,5 +389,29 @@ describe('HilosCommunicationsChannelPage edit modal', () => {
     modalEl('modal-confirm-discard')?.click()
     await nextTick()
     expect(modalEl('modal')).toBeNull()
+  })
+})
+
+describe('HilosCommunicationsChannelPage door', () => {
+  it('shows the card to its delivery journal above the fields', async () => {
+    // The rest of this file mounts the page with no identity, where the card is
+    // absent from sound and broken code alike — which is how the page went
+    // without a door to its journal.
+    const { context } = seededContext([fromField('+1000')])
+    await mountPage(context, router(CHANNEL_IDENTITY, resolveDeliveries))
+
+    const card = document.querySelector(
+      `[data-id="hilos-admin-child-${HilosPages.COMMUNICATIONS_DELIVERIES}"]`,
+    )
+    const test = document.querySelector('[data-id="hilos-channel-test"]')
+    expect(card?.getAttribute('href')).toBe(
+      '/hilos/communications/sms/deliveries',
+    )
+    expect(test).not.toBeNull()
+    // The way on stands above what the admin came for.
+    expect(
+      (card as Element).compareDocumentPosition(test as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })

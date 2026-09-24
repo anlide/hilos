@@ -438,6 +438,30 @@ test('the journal keeps the reason of a delivery in a panel the row expands into
   await expect(panel).toHaveCount(0)
 })
 
+test("an operator reaches a channel's delivery journal by clicks alone", async ({
+  page,
+}) => {
+  // The journal is the channel page's child: the shell draws its card above the
+  // channel's own fields, so no address is typed past the hub. The channel stays
+  // as it is — the door does not depend on whether it is switched on.
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/communications')
+
+  // The hub is a declared table drawn both as rows and as cards, so the button
+  // is aimed at through the copy on screen.
+  await shownByTestId(page, 'hilos-channel-configure-email').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Channel')
+  expect(new URL(page.url()).pathname).toBe('/hilos/communications/email')
+
+  await page
+    .getByTestId('hilos-admin-child-hilos_communications_deliveries')
+    .click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Deliveries')
+  expect(new URL(page.url()).pathname).toBe(
+    '/hilos/communications/email/deliveries',
+  )
+})
+
 // Table pager on an inexact count (HIL-1077): composer test:db-prepare seeds 501
 // notifications with email delivery rows for seed-002 (501 = TableConstants::COUNT_CEILING + 1),
 // crossing the count ceiling where the total stops being exact. When the count is

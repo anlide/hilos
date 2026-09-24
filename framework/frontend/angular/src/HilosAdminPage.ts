@@ -1,24 +1,23 @@
 // HilosAdminPage — the admin section page shell: the breadcrumb, heading, and
-// lead common to every Hilos admin page, plus a default body. A page passes only
-// its key ([page]); the shell reads the live route params from the navigator to
-// keep the breadcrumb and child links in context, and takes the heading, the lead,
-// the chain and the subsection cards from the navigator's pageIdentity — what the
-// page's own subscription answered with, not a frontend constant. It is
-// page-agnostic — it renders whichever key it is given, never choosing the page
-// itself (that is the app shell's page->view map). The default body is the
-// section's sub-navigation cards, or a stub empty-state for a leaf; a real page
-// projects its own content to replace the default while keeping the shell.
+// lead common to every Hilos admin page, plus the cards to the page's children. A
+// page passes only its key ([page]); the shell reads the live route params from
+// the navigator to keep the breadcrumb and child links in context, and takes the
+// heading, the lead, the chain and the subsection cards from the navigator's
+// pageIdentity — what the page's own subscription answered with, not a frontend
+// constant. It is page-agnostic — it renders whichever key it is given, never
+// choosing the page itself (that is the app shell's page->view map).
+//
+// Under the heading the shell always draws the section's sub-navigation cards —
+// one for every child the live params can resolve — and a page's own projected
+// content is drawn beneath them: the way on stands above what the admin came for,
+// and no page's content can cost its children their cards. A leaf that projects
+// no content gets a stub empty-state instead.
 //
 // While the identity is still on the wire the heading is a neutral placeholder and
-// nothing else of the shell is drawn: the raw page key is never printed, and an
-// empty h1 under the same data-id would make "the name did not arrive" look
-// exactly like "the name arrived empty".
-//
-// A section ROOT that has content of its own projects it with the `body`
-// attribute instead, which is drawn after the default content: it needs both, the
-// cards to its children and its own figures beneath them, and replacing the
-// default content would cost it the cards. A leaf page goes on replacing the
-// default content as before.
+// neither the cards nor the stub is drawn; a page's own content already is, and
+// the cards rise above it once the identity lands. The raw page key is never
+// printed, and an empty h1 under the same data-id would make "the name did not
+// arrive" look exactly like "the name arrived empty".
 //
 // The heading carries an id the shell provides to what it holds: a table that
 // declares no title of its own takes its accessible name from this heading, which
@@ -41,7 +40,10 @@ import { hilosSignal } from './hilosSignal.js'
 // Distinct ids so two shells alive at once never give their headings the same one.
 let adminPageHeadingSeq = 0
 
-/** The admin section shell: breadcrumb, heading, lead, and a default body. */
+/**
+ * The admin section shell: breadcrumb, heading, lead, the cards to the page's
+ * children, and the page's own content beneath them.
+ */
 @Component({
   selector: 'hilos-admin-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -72,38 +74,40 @@ let adminPageHeadingSeq = 0
         </div>
       }
 
+      @if (children().length) {
+        <div
+          class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4"
+          data-id="hilos-admin-children"
+        >
+          @for (child of children(); track child.page) {
+            <div class="col">
+              <a
+                [hilosLink]="child.to"
+                class="card h-100 shadow-sm border-0 text-decoration-none link-body-emphasis"
+                [attr.data-id]="'hilos-admin-child-' + child.page"
+              >
+                <div class="card-body d-flex flex-column gap-1">
+                  <span
+                    class="h6 mb-0 d-flex align-items-center justify-content-between gap-2"
+                  >
+                    <span>{{ child.label }}</span>
+                    <i
+                      class="bi bi-chevron-right text-body-secondary"
+                      aria-hidden="true"
+                    ></i>
+                  </span>
+                  <span class="small text-body-secondary">{{
+                    child.lead
+                  }}</span>
+                </div>
+              </a>
+            </div>
+          }
+        </div>
+      }
+
       <ng-content>
-        @if (children().length) {
-          <div
-            class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3"
-            data-id="hilos-admin-children"
-          >
-            @for (child of children(); track child.page) {
-              <div class="col">
-                <a
-                  [hilosLink]="child.to"
-                  class="card h-100 shadow-sm border-0 text-decoration-none link-body-emphasis"
-                  [attr.data-id]="'hilos-admin-child-' + child.page"
-                >
-                  <div class="card-body d-flex flex-column gap-1">
-                    <span
-                      class="h6 mb-0 d-flex align-items-center justify-content-between gap-2"
-                    >
-                      <span>{{ child.label }}</span>
-                      <i
-                        class="bi bi-chevron-right text-body-secondary"
-                        aria-hidden="true"
-                      ></i>
-                    </span>
-                    <span class="small text-body-secondary">{{
-                      child.lead
-                    }}</span>
-                  </div>
-                </a>
-              </div>
-            }
-          </div>
-        } @else if (identity()) {
+        @if (!children().length && identity()) {
           <div
             class="border rounded p-4 text-center text-body-secondary"
             data-id="hilos-admin-empty"
@@ -119,7 +123,6 @@ let adminPageHeadingSeq = 0
           </div>
         }
       </ng-content>
-      <ng-content select="[body]" />
     </section>
   `,
 })

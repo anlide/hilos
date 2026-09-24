@@ -66,13 +66,10 @@ function renderPage(
   page: string,
   identity: HilosPageIdentity | undefined,
   children?: ReactNode,
-  body?: ReactNode,
 ) {
   return render(
     <HilosRouterContext.Provider value={router(identity)}>
-      <HilosAdminPage page={page} body={body}>
-        {children}
-      </HilosAdminPage>
+      <HilosAdminPage page={page}>{children}</HilosAdminPage>
     </HilosRouterContext.Provider>,
   )
 }
@@ -106,33 +103,6 @@ describe('HilosAdminPage', () => {
     ).toBeNull()
   })
 
-  it('overrides the body with provided children', () => {
-    const { container } = renderPage(
-      HilosPages.I18N,
-      SECTION_IDENTITY,
-      <div data-id="custom-body">mine</div>,
-    )
-    expect(container.querySelector('[data-id="custom-body"]')).not.toBeNull()
-    expect(
-      container.querySelector('[data-id="hilos-admin-children"]'),
-    ).toBeNull()
-  })
-
-  it('passes the resolved admin children to a render function', () => {
-    const { container } = render(
-      <HilosRouterContext.Provider value={router(SECTION_IDENTITY)}>
-        <HilosAdminPage page={HilosPages.I18N}>
-          {({ adminChildren }) => (
-            <div data-id="count">{adminChildren.length}</div>
-          )}
-        </HilosAdminPage>
-      </HilosRouterContext.Provider>,
-    )
-    const count = container.querySelector('[data-id="count"]')
-    expect(count).not.toBeNull()
-    expect(Number(count?.textContent)).toBeGreaterThan(0)
-  })
-
   it('draws a skeleton and nothing else while the name is still on the wire', () => {
     // The empty h1 under the same data-id is what this rules out: a test could
     // not tell "the name did not arrive" from "the name arrived empty".
@@ -148,25 +118,40 @@ describe('HilosAdminPage', () => {
     expect(container.textContent).not.toContain(HilosPages.I18N)
   })
 
-  it('draws a section root body after the child cards rather than in place of them', () => {
+  it('keeps the child cards above the content a page provides', () => {
     const { container } = renderPage(
       HilosPages.I18N,
       SECTION_IDENTITY,
-      undefined,
-      <p data-id="section-body">Figures of this section</p>,
+      <div data-id="custom-body">mine</div>,
     )
 
     const cards = container.querySelector('[data-id="hilos-admin-children"]')
-    const body = container.querySelector('[data-id="section-body"]')
+    const body = container.querySelector('[data-id="custom-body"]')
     if (cards === null || body === null) {
-      throw new Error('A section root draws both the cards and its own body.')
+      throw new Error(
+        'A page with children draws both the cards and its content.',
+      )
     }
 
-    // A section root needs both, so the order is the contract and not an accident:
-    // the way onward stays above the figures it is offered alongside.
+    // A page with children needs both, so the order is the contract and not an
+    // accident: the way onward stays above the content it is offered alongside.
     expect(
       cards.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+
+  it("draws no stub under a leaf's own content", () => {
+    const { container } = renderPage(
+      HilosPages.I18N_LANGUAGE,
+      LEAF_IDENTITY,
+      <p data-id="leaf-body">One language</p>,
+    )
+
+    expect(container.querySelector('[data-id="leaf-body"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="hilos-admin-empty"]')).toBeNull()
+    expect(
+      container.querySelector('[data-id="hilos-admin-children"]'),
+    ).toBeNull()
   })
 
   it('names a declared table that has no title of its own by the page heading', () => {
