@@ -66,6 +66,9 @@ export const AUTH_ACTION_OAUTH_START = 'hilos_oauth_start'
 /** Client→server: hand back the OAuth provider code+state after the redirect (PHP `HilosSignalConstants::HILOS_OAUTH_CALLBACK`). */
 export const AUTH_ACTION_OAUTH_CALLBACK = 'hilos_oauth_callback'
 
+/** Client→server: this new connection is the tab whose OAuth trip runs under this key (PHP `HilosSignalConstants::HILOS_OAUTH_RESUME`). */
+export const AUTH_ACTION_OAUTH_RESUME = 'hilos_oauth_resume'
+
 /** Client→server: clear the success announcement an auth flow left on this session (PHP `HilosSignalConstants::HILOS_DISMISS_SESSION_ACK`). */
 export const AUTH_ACTION_DISMISS_SESSION_ACK = 'hilos_dismiss_session_ack'
 

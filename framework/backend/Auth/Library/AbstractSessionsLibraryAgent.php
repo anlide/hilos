@@ -20,8 +20,13 @@ use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
@@ -33,6 +38,8 @@ use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
+use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -59,6 +66,8 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -89,10 +98,14 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
+use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
+use Hilos\Runtime\View\Item\HilosOAuthTrip;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -198,8 +211,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * by nothing else, so in a project with no sign-in surface there is no collection to own - and
      * a library that claimed one anyway would go on to read it every tick and raise on every pass.
      * A constant has no way to ask {@see hasSignInSurface()}, so the project subclass that has the
-     * surface declares them, and the users library stands beside it on both as a declared
-     * add/remove co-owner (HIL-685) rather than as a second full owner.
+     * surface declares them - alone since HIL-1044: the users library, a declared add/remove
+     * co-owner of both since HIL-685, asks for every park by frame now.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -242,6 +255,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * offered from the backup directory they were left in, because in a cluster that directory
      * need not be on this library's node. {@see HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED}
      * is absent for the usual reason: it is the receipt this library sends back.
+     *
+     * The last two are a provider sign-in, opened and ended (HIL-1044): the users library opens
+     * it when it accepts the callback, and whichever of it and {@see AbstractOAuthAgent} reaches
+     * an ending that is not a session grant reports it here. They arrive here because what a
+     * tab is waiting on is this library's to keep - it is the one process that knows which
+     * connection the tab is on now, and whether a sign-in may be handed to it.
+     * {@see HilosSignalConstants::HILOS_OAUTH_RESULT} is absent for the usual reason: it is what
+     * this library sends on to the tab.
+     *
+     * The very last is the master's (HIL-1044): which agents are gone, when a worker died, a start
+     * failed or the leader placed an agent nowhere. It is declared here because this library is the
+     * one answering browsers on behalf of the agents a sign-in goes through - and so the one that
+     * has to end what they will never answer. Beside it, the code agent's word that a code went out
+     * to a free number: what a browser waits on is written here and nowhere else.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -258,6 +285,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
         HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
         HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => DeferredSessionCarryoverHandoverSignalData::class,
+        HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => OAuthTripOpenedSignalData::class,
+        HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => OAuthTripEndedSignalData::class,
+        HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => AuthRegistrationWaitHeldSignalData::class,
     ];
 
     /**
@@ -290,6 +321,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * does, and its page could not own it for a third reason besides: /privacy is public, so
      * the person clicking may have no account at all - and the session it ends they have
      * regardless (HIL-839).
+     *
+     * {@see HilosSignalConstants::HILOS_OAUTH_RESUME} is a tab presenting the key of its provider
+     * sign-in after a reconnect (HIL-1044). It passes both halves as plainly as the sign-out: the
+     * person presenting it is usually nobody yet, and the trip it presents is this library's row.
+     * It is not throttled - the key is 128 random bits and presenting one spends nothing.
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
@@ -299,6 +335,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_READING => SessionToastReadingActionDTO::class,
+        HilosSignalConstants::HILOS_OAUTH_RESUME => OAuthResumeActionDTO::class,
     ];
 
     /**
@@ -383,18 +420,29 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private ?CronRule $reservationSweepRule = null;
 
     /**
-     * Arms the two sweeps that keep the session set honest.
+     * Arms the two sweeps that keep the session set honest, and ends what a predecessor left open.
      *
      * A restore's logins are not replayed here any more (HIL-846): they arrive as a frame from the
      * agent holding them ({@see carryOverHandedOverSessions()}), and they arrive after this hook has
      * returned, so the claim on the rows is in place before the first one is written.
      *
+     * An instance that starts to find sign-ins still going is the heir of one that fell (HIL-1044):
+     * the rows outlive the worker - the master keeps them and hands them to the next one before
+     * this hook runs - but the frames that could have ended them died with it. So every provider
+     * sign-in with no ending and every code send not yet over and not carried by the mail queue is
+     * ended here with a refusal. The mail queue is spared because it survives a fall and sends again.
+     *
      * @throws EnvException When the sweep schedule key is missing, outside the catalog, or of the wrong type
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
      */
     public function onStart(): void
     {
         $this->armPendingRegistrationSweep();
         $this->armReservationSweep();
+        if ($this->hasSignInSurface()) {
+            $this->endOpenSignIns(null);
+        }
     }
 
     /**
@@ -502,6 +550,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepRegistrationWaiters();
         $this->sweepRecoveryWaiters();
         $this->sweepCodeSendAttempts();
+        $this->sweepOAuthTrips();
     }
 
     /**
@@ -2293,8 +2342,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * over the project seam (HIL-622, HIL-710, HIL-729), one from whoever has something to
      * say to a browser (HIL-768), one from the framework's own Hilos users page, which holds
      * the takeover's name and forwards its write here (HIL-824), one from whoever is carrying
-     * a code, each time the send moves (HIL-826), and one from the agent holding the logins a
-     * restore left (HIL-846).
+     * a code, each time the send moves (HIL-826), one from the agent holding the logins a
+     * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
+     * master about agents that are gone (HIL-1044).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -2484,6 +2534,56 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED:
+                if (!$data->data instanceof OAuthTripOpenedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        OAuthTripOpenedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->openOAuthTrip($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED:
+                if (!$data->data instanceof OAuthTripEndedSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        OAuthTripEndedSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->endOAuthTrip($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD:
+                if (!$data->data instanceof AuthRegistrationWaitHeldSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthRegistrationWaitHeldSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->holdRegistrationWait($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AGENTS_GONE:
+                if (!$data->data instanceof AgentsGoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AgentsGoneSignalData::class, $data->data);
+                }
+
+                if ($this->hasSignInSurface()) {
+                    $this->endOpenSignIns($this->agentTypesOf($data->data->agentIds));
+                }
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -2582,12 +2682,57 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $sessionTokenHash = $attempts->actions->advance($frame->ticket, $frame->state, $frame->detail);
+        $sessionTokenHash = $attempts->actions->advance(
+            $frame->ticket,
+            $frame->state,
+            $frame->detail,
+            $frame->reason,
+            $frame->resendAt,
+            $frame->expiresAt,
+        );
         if ($sessionTokenHash === null) {
             return;
         }
 
         $this->publishCodeSendProgress($sessionTokenHash);
+    }
+
+    /**
+     * Writes onto a session that it waits on registering the number a code just went to (HIL-486,
+     * HIL-1044).
+     *
+     * The code agent learns the code went out; this library owns the session row the wait is a
+     * column of, so the agent says it and the write happens here. The policy on a failure is the
+     * one the agent kept while it wrote the row itself: the code DID go out, so nothing is raised -
+     * a wiring refusal is logged as the error it is, and anything else as a lost wait.
+     *
+     * @param AuthRegistrationWaitHeldSignalData $frame Session and the number it waits on
+     */
+    private function holdRegistrationWait(AuthRegistrationWaitHeldSignalData $frame): void
+    {
+        $this->writeRegistrationWait($frame->sessionToken, $frame->identifier);
+    }
+
+    /**
+     * Writes onto a session row the address it waits on registering, never raising (HIL-1044).
+     *
+     * Both callers write it after the browser was already told its code went out, so a failure
+     * here has nobody to answer and must not break the frame loop: a wiring refusal is logged as
+     * the error it is, anything else as a lost wait - the policy the code agent kept while it wrote
+     * the row itself.
+     *
+     * @param string $sessionToken Session cookie token of the waiting browser
+     * @param string $identifier Normalized identifier it waits on
+     */
+    private function writeRegistrationWait(string $sessionToken, string $identifier): void
+    {
+        try {
+            Hilos::$db->sessions->findByToken($sessionToken)?->actions->holdPendingRegistration($identifier);
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError('No registration wait could be written: ' . $refusal->getMessage());
+        } catch (Throwable $e) {
+            $this->logAgentWarning('A registration wait was lost: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -2876,10 +3021,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * have a session", so the name stands on {@see AbstractHilosUsersPage} and only the write
      * arrives here, on {@see HilosSignalConstants::HILOS_IMPERSONATE_REQUEST}.
      *
+     * The presentation of a provider sign-in's key (HIL-1044) is the one that DOES answer here,
+     * and only with whether the key is known: the outcome it hands over leaves on its own frame
+     * - the result signal, or the state frame of a sign-in - exactly as it would have without a
+     * reconnect, and the tab reads it the same way.
+     *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Always null: the answer travels on a state or toast frame instead
+     * @return ?ActionReplyDTO Null for all but the trip presentation: their answer travels on a state or toast frame instead
      * @throws SessionNotOnConnectionException When the acting connection carries no session
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
@@ -2951,6 +3101,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $this->setSessionToastReading($sessionToken, $acceptKey, $dto->reading);
 
                 return null;
+
+            case HilosSignalConstants::HILOS_OAUTH_RESUME:
+                if (!$dto instanceof OAuthResumeActionDTO) {
+                    throw new InvalidActionPayloadException($action, OAuthResumeActionDTO::class, $dto);
+                }
+
+                return $this->resumeOAuthTrip($sessionToken, $acceptKey, $dto->tripKey);
 
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
@@ -3605,6 +3762,30 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Drops the provider sign-ins that ended long enough ago that nobody is coming back for them
+     * (HIL-1044).
+     *
+     * Only ended trips: one still going is ended by a fact and never by the clock. The age is
+     * the one the send-progress line goes by ({@see self::sweepCodeSendAttempts()}) - past a
+     * code's lifetime nobody is waiting on a sign-in screen any more either - and a trip that
+     * ended while its tab was away and is reclaimed here was never applied, so nobody signed in.
+     *
+     * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
+     * @throws HilosException On runtime failure
+     */
+    private function sweepOAuthTrips(): void
+    {
+        $trips = Hilos::$rt->hilosOAuthTrips;
+        if (count($trips) === 0) {
+            return;
+        }
+
+        $trips->actions->forgetEnded(
+            Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int() * TimeConstants::MS_PER_SECOND,
+        );
+    }
+
+    /**
      * Drops the send-progress lines that have outlived their codes (HIL-826).
      *
      * The line's own reclamation, and it is deliberately NOT the rule the toast stacks settle
@@ -3688,6 +3869,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function grantSessionToUser(AuthSessionGrantSignalData $frame): void
     {
+        if ($frame->tripKeyHash !== null) {
+            $this->grantOAuthTrip($frame, $frame->tripKeyHash);
+
+            return;
+        }
+
         $this->authenticateSession(
             $frame->sessionToken,
             $frame->userId,
@@ -3697,6 +3884,444 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             action: $frame->action,
             outcome: $frame->outcome,
         );
+    }
+
+    /**
+     * Puts a provider sign-in a tab is now waiting on on record (HIL-1044).
+     *
+     * @param OAuthTripOpenedSignalData $frame The trip, the session and connection it started from
+     * @throws HilosException On runtime failure
+     */
+    private function openOAuthTrip(OAuthTripOpenedSignalData $frame): void
+    {
+        Hilos::$rt->hilosOAuthTrips->actions->open(
+            $frame->tripKeyHash,
+            $frame->sessionTokenHash,
+            $frame->acceptKey,
+            $frame->mode,
+            $frame->provider,
+        );
+    }
+
+    /**
+     * Records how a provider sign-in ended without a sign-in, and tells the tab if it can hear
+     * (HIL-1044).
+     *
+     * The first ending wins: one that arrives for a trip that already has one is a sentence in
+     * the log and nothing else, because the tab has been told - or will be told on presenting
+     * its key - the ending that came first.
+     *
+     * A trip with no record at all is still answered, on the connection the frame names: the
+     * record was reclaimed or never arrived, and an order this library did not expect must not
+     * become a spinner nobody ends.
+     *
+     * @param OAuthTripEndedSignalData $frame The trip and how it ended
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When the result signal cannot be named or queued
+     */
+    private function endOAuthTrip(OAuthTripEndedSignalData $frame): void
+    {
+        $trip = Hilos::$rt->hilosOAuthTrips[$frame->tripKeyHash];
+        if ($trip === null) {
+            $this->logAgentWarning(
+                "OAuth trip ended with no record ({$frame->reason}); answering {$frame->acceptKey} directly",
+            );
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_OAUTH_RESULT,
+                $frame->acceptKey,
+                new OAuthResultSignalData(
+                    $frame->acceptKey,
+                    $frame->provider,
+                    $frame->reason,
+                    $frame->email,
+                    $frame->linkToken,
+                ),
+            );
+
+            return;
+        }
+
+        if (!$trip->actions->end($frame->reason, $frame->email, $frame->linkToken)) {
+            $this->logAgentInfo("OAuth trip already ended ({$trip->ending}); late ending {$frame->reason} dropped");
+
+            return;
+        }
+
+        $this->deliverOAuthTripResult($trip, $frame->reason);
+    }
+
+    /**
+     * Tells the tab how its trip ended, when the connection it is owed to is alive.
+     *
+     * A dead one is not an error: the ending stays on the record, and the tab asks for it with
+     * its key once it is back on a new connection ({@see self::resumeOAuthTrip()}).
+     *
+     * @param HilosOAuthTrip $trip Trip that ended
+     * @param string $reason How it ended, the reason the trip records
+     * @throws InvalidArgumentException When the result signal cannot be named or queued
+     * @throws HilosException On runtime failure
+     */
+    private function deliverOAuthTripResult(HilosOAuthTrip $trip, string $reason): void
+    {
+        $acceptKey = $trip->acceptKey;
+        if (!$this->isConnectionLive($acceptKey)) {
+            return;
+        }
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_OAUTH_RESULT,
+            $acceptKey,
+            new OAuthResultSignalData($acceptKey, $trip->provider, $reason, $trip->email, $trip->linkToken),
+        );
+    }
+
+    /**
+     * Signs a session in on the word of a provider sign-in - when the tab that started it can be
+     * handed the rotation (HIL-1044).
+     *
+     * The sign-in rotates the session token and hands the ticket for the new cookie to the
+     * initiating connection alone (HIL-582). Applied while that connection is dead, the ticket
+     * would reach nobody and the browser, coming back with its old cookie, would land in a fresh
+     * anonymous session while the signed-in one belonged to no browser at all. So a grant whose
+     * tab is not on the wire right now is HELD: nothing is bound and nothing rotated, and the tab
+     * presenting its key applies it then.
+     *
+     * The initiator is the connection the trip is owed to, which is not necessarily the one the
+     * callback came from - the tab may have reconnected and presented its key already.
+     *
+     * @param AuthSessionGrantSignalData $frame Session, user, and the connection the callback came from
+     * @param string $tripKeyHash Hash of the key of the trip the grant ends
+     * @throws HilosException On runtime failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws InvalidArgumentException When a result frame cannot be named or queued
+     */
+    private function grantOAuthTrip(AuthSessionGrantSignalData $frame, string $tripKeyHash): void
+    {
+        $trip = Hilos::$rt->hilosOAuthTrips[$tripKeyHash];
+        if ($trip === null) {
+            $this->logAgentWarning("OAuth sign-in granted with no trip on record; signing {$frame->acceptKey} in directly");
+            $this->authenticateSession(
+                $frame->sessionToken,
+                $frame->userId,
+                $frame->acceptKey,
+                ack: $frame->ack,
+                requestId: $frame->requestId,
+                action: $frame->action,
+                outcome: $frame->outcome,
+            );
+
+            return;
+        }
+        if ($trip->ending !== null) {
+            $this->logAgentInfo("OAuth trip already ended ({$trip->ending}); late sign-in of user {$frame->userId} dropped");
+
+            return;
+        }
+
+        $initiator = $trip->acceptKey;
+        if (!$this->isConnectionLive($initiator)) {
+            $trip->actions->end(StateHilosOAuthTrip::ENDING_GRANTED, userId: $frame->userId);
+            $this->logAgentInfo("OAuth sign-in of user {$frame->userId} held until its tab presents the key");
+
+            return;
+        }
+
+        try {
+            $sessionId = Hilos::$db->sessions->findByToken($frame->sessionToken)?->id;
+            $liveToken = $sessionId === null ? null : $this->authenticateSession(
+                $frame->sessionToken,
+                $frame->userId,
+                $initiator,
+                ack: $frame->ack,
+                requestId: $frame->requestId,
+                action: $frame->action,
+                outcome: $frame->outcome,
+            );
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $this->logAgentError("OAuth sign-in of user {$frame->userId} failed: " . $e->getMessage());
+            $liveToken = null;
+            $sessionId = null;
+        }
+
+        if ($liveToken === null || $sessionId === null) {
+            $trip->actions->end(OAuthResultSignalData::REASON_LOGIN_FAILED);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_LOGIN_FAILED);
+
+            return;
+        }
+
+        $trip->actions->markSignedIn($sessionId);
+    }
+
+    /**
+     * Makes the connection that presented a trip's key the one the trip is owed to, and hands it
+     * whatever already arrived (HIL-1044).
+     *
+     * The key alone opens nothing: the connection presenting it has to carry the cookie the
+     * trip was started under, so a key that leaked without the session is worth nothing, and a
+     * browser with the same cookie that never saw the key - another tab of it - has nothing to
+     * present.
+     *
+     * What is handed over depends on how far the trip got:
+     * - still going: nothing yet, the ending will come to this connection;
+     * - ended without a sign-in: the result, as it would have been delivered;
+     * - a sign-in held because nobody was listening: applied now, with this connection as the
+     *   initiator of the rotation;
+     * - a sign-in applied but whose answer was lost with the old connection: a fresh ticket for
+     *   the token the session row answers to now, handed to this connection.
+     *
+     * @param string $sessionToken Session cookie token of the connection presenting the key
+     * @param string $acceptKey Accept key of that connection
+     * @param string $tripKey Key the tab minted, in the clear
+     * @return OAuthResumeReplyDTO Whether a trip is kept under that key for this session
+     * @throws HilosException On database or runtime failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token or ticket
+     * @throws InvalidArgumentException When a result or state frame cannot be named or queued
+     */
+    private function resumeOAuthTrip(string $sessionToken, string $acceptKey, string $tripKey): OAuthResumeReplyDTO
+    {
+        $trip = Hilos::$rt->hilosOAuthTrips[StateHilosOAuthTrip::hashKey($tripKey)];
+        if ($trip === null || $trip->sessionTokenHash !== StateProtectedModeRuntime::hashSessionToken($sessionToken)) {
+            return new OAuthResumeReplyDTO(false);
+        }
+
+        $trip->actions->readdress($acceptKey);
+
+        $ending = $trip->ending;
+        if ($ending === StateHilosOAuthTrip::ENDING_GRANTED) {
+            $this->applyHeldOAuthGrant($trip, $trip->userId, $sessionToken, $acceptKey);
+        } elseif ($ending === StateHilosOAuthTrip::ENDING_SIGNED_IN) {
+            $this->reissueOAuthSignIn($trip, $trip->sessionId, $acceptKey);
+        } elseif ($ending !== null) {
+            $this->deliverOAuthTripResult($trip, $ending);
+        }
+
+        return new OAuthResumeReplyDTO(true);
+    }
+
+    /**
+     * Applies a sign-in that was held while its tab was away, now that the tab is back (HIL-1044).
+     *
+     * The session is the one the presenting connection carries - the same one the trip was
+     * started under, since the cookie was checked on the way in, and still unrotated, since
+     * nothing was applied.
+     *
+     * A failure here cannot rewrite the ending - the grant stays held - so the tab is told
+     * directly that the sign-in did not go through; presenting the key again tries once more.
+     *
+     * @param HilosOAuthTrip $trip Trip holding the grant
+     * @param ?int $userId User the held grant signs in, or null when the record lost it
+     * @param string $sessionToken Session cookie token of the presenting connection
+     * @param string $acceptKey Accept key of the presenting connection, the initiator of the rotation
+     * @throws InvalidArgumentException When the result signal cannot be named or queued
+     * @throws HilosException On runtime failure
+     */
+    private function applyHeldOAuthGrant(HilosOAuthTrip $trip, ?int $userId, string $sessionToken, string $acceptKey): void
+    {
+        if ($userId === null) {
+            $this->sendOAuthLoginFailed($trip, $acceptKey);
+
+            return;
+        }
+
+        try {
+            $sessionId = Hilos::$db->sessions->findByToken($sessionToken)?->id;
+            $liveToken = $sessionId === null ? null : $this->authenticateSession($sessionToken, $userId, $acceptKey);
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $this->logAgentError("Held OAuth sign-in of user {$userId} failed: " . $e->getMessage());
+            $liveToken = null;
+            $sessionId = null;
+        }
+
+        if ($liveToken === null || $sessionId === null) {
+            $this->sendOAuthLoginFailed($trip, $acceptKey);
+
+            return;
+        }
+
+        $trip->actions->markSignedIn($sessionId);
+    }
+
+    /**
+     * Hands a fresh rotation ticket for an applied sign-in whose answer was lost (HIL-1044).
+     *
+     * The session row was rotated onto a new token and the ticket for it went to a connection
+     * that died before it could trade it; the browser came back with its old cookie and holds a
+     * connection on nothing. The row is found by its id - a rotation keeps it - and a new ticket
+     * for the token it answers to now is registered and handed to this connection in the same
+     * frame shape a sign-in ends in ({@see self::authenticateSession()}). Nothing is rotated a
+     * second time: the token was already fresh, and nobody but this tab was ever handed it.
+     *
+     * A row that has gone, or lost its person since, has no sign-in left to hand over.
+     *
+     * @param HilosOAuthTrip $trip Trip whose sign-in was applied
+     * @param ?int $sessionId Session row the sign-in was applied to, or null when the record lost it
+     * @param string $acceptKey Accept key of the presenting connection
+     * @throws HilosException On database or runtime failure
+     * @throws RandomException When the platform CSPRNG cannot mint the ticket
+     * @throws InvalidArgumentException When a result or state frame cannot be named or queued
+     */
+    private function reissueOAuthSignIn(HilosOAuthTrip $trip, ?int $sessionId, string $acceptKey): void
+    {
+        $session = $sessionId === null ? null : Hilos::$db->sessions[$sessionId];
+        $userId = $session?->userId;
+        if ($session === null || $userId === null) {
+            $this->sendOAuthLoginFailed($trip, $acceptKey);
+
+            return;
+        }
+
+        $this->publishSessionState(new SessionStateSignalData(
+            sessionToken: $session->token,
+            userId: $userId,
+            acceptKeys: [$acceptKey],
+            pendingAck: $this->sessionPendingAck($session),
+            pendingAuthStep: $this->pendingAuthStepFor($session),
+            rotationTicket: $this->announceRotation($session->token, []),
+        ));
+    }
+
+    /**
+     * Tells one connection its provider sign-in did not go through, without touching the record.
+     *
+     * @param HilosOAuthTrip $trip Trip the failure is about
+     * @param string $acceptKey Accept key of the connection to tell
+     * @throws InvalidArgumentException When the result signal cannot be named or queued
+     */
+    private function sendOAuthLoginFailed(HilosOAuthTrip $trip, string $acceptKey): void
+    {
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_OAUTH_RESULT,
+            $acceptKey,
+            new OAuthResultSignalData($acceptKey, $trip->provider, OAuthResultSignalData::REASON_LOGIN_FAILED),
+        );
+    }
+
+    /**
+     * Ends with a refusal every sign-in still going through agents that are gone (HIL-1044).
+     *
+     * A provider sign-in goes through the OAuth agent, and a login also through the users library
+     * that turns the answer into an account; a link settles in the OAuth agent alone. A code send
+     * not yet over is carried by the code agent - unless it is a letter, which the mail queue
+     * carries and sends again after a fall of its own, so a dead agent says nothing about it.
+     *
+     * Null stands for "all of them": the start of this library, which cannot tell what went with
+     * its predecessor and knows only that nothing it left open will be answered.
+     *
+     * @param ?list<string> $goneTypes Types of the agents that are gone, or null when every sign-in is to end
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a result or progress frame cannot be named or queued
+     */
+    private function endOpenSignIns(?array $goneTypes): void
+    {
+        $oauthGone = $goneTypes === null || in_array(HilosAgentType::HILOS_OAUTH, $goneTypes, true);
+        $usersGone = $goneTypes === null || in_array(HilosAgentType::HILOS_USERS_LIBRARY, $goneTypes, true);
+        $codesGone = $goneTypes === null || in_array(HilosAgentType::HILOS_AUTH_CODE, $goneTypes, true);
+
+        if ($oauthGone || $usersGone) {
+            $this->endOpenOAuthTrips($oauthGone, $usersGone);
+        }
+        if ($codesGone) {
+            $this->failOpenCodeSends();
+        }
+    }
+
+    /**
+     * Ends every provider sign-in with no ending whose exchange went through a gone agent.
+     *
+     * The trips are read out before any is ended: ending one writes the row, and a walk that wrote
+     * the collection it was walking would be judged by what it had just written.
+     *
+     * @param bool $oauthGone Whether the OAuth agent is among the gone
+     * @param bool $usersGone Whether the users library is among the gone
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a result frame cannot be named or queued
+     */
+    private function endOpenOAuthTrips(bool $oauthGone, bool $usersGone): void
+    {
+        $ending = [];
+        foreach (Hilos::$rt->hilosOAuthTrips as $trip) {
+            if ($trip->ending !== null) {
+                continue;
+            }
+            $isLink = $trip->mode === OAuthPendingLogin::MODE_LINK;
+            if ($oauthGone || (!$isLink && $usersGone)) {
+                $ending[] = $trip;
+            }
+        }
+
+        foreach ($ending as $trip) {
+            $reason = $trip->mode === OAuthPendingLogin::MODE_LINK
+                ? OAuthResultSignalData::REASON_LINK_FAILED
+                : OAuthResultSignalData::REASON_LOGIN_FAILED;
+            if ($trip->actions->end($reason)) {
+                $this->deliverOAuthTripResult($trip, $reason);
+            }
+        }
+    }
+
+    /**
+     * Ends every code send not yet over whose carrier is gone, and tells its tabs so.
+     *
+     * @throws HilosException On runtime failure
+     * @throws InvalidArgumentException When a progress frame cannot be named or queued
+     */
+    private function failOpenCodeSends(): void
+    {
+        $attempts = Hilos::$rt->hilosCodeSendAttempts;
+        $tickets = [];
+        foreach ($attempts as $attempt) {
+            $open = $attempt->state === StateHilosCodeSendAttempt::STATE_QUEUED
+                || $attempt->state === StateHilosCodeSendAttempt::STATE_SENDING;
+            if ($open && $attempt->channel !== StateHilosCodeSendAttempt::CHANNEL_EMAIL) {
+                $tickets[] = $attempt->ticket;
+            }
+        }
+
+        foreach ($tickets as $ticket) {
+            $sessionTokenHash = $attempts->actions->advance(
+                $ticket,
+                StateHilosCodeSendAttempt::STATE_FAILED,
+                null,
+                StateHilosCodeSendAttempt::REASON_SEND_FAILED,
+            );
+            if ($sessionTokenHash !== null) {
+                $this->publishCodeSendProgress($sessionTokenHash);
+            }
+        }
+    }
+
+    /**
+     * @param list<string> $agentIds Ids of agents
+     * @return list<string> Their types, one per id
+     */
+    private function agentTypesOf(array $agentIds): array
+    {
+        return array_map(static fn(string $agentId): string => AgentId::fromId($agentId)->type, $agentIds);
+    }
+
+    /**
+     * Whether a connection is on the wire right now, as the connection rows say.
+     *
+     * A project whose connections do not reach the session stage has nothing to compare
+     * against, and is answered "alive" - which is what every delivery did before anybody asked,
+     * the same nothing-to-do {@see self::sweepRecoveryWaiters()} settles on.
+     *
+     * @param string $acceptKey Accept key to look for
+     * @return bool True unless the connection rows say the connection is gone
+     */
+    private function isConnectionLive(string $acceptKey): bool
+    {
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return true;
+        }
+
+        return $connections->get($acceptKey) !== null;
     }
 
     /**
@@ -3872,19 +4497,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Makes one registration waiter say the address its browser is on now (HIL-685).
+     * Parks one browser on the address it is registering, or re-points it there (HIL-685,
+     * HIL-1044).
      *
-     * The edit half of parking, which the users library may not do: it adds rows to this
-     * collection and removes them, and the row of a browser that submitted a second
-     * address is already there. So the library parks what is missing, sends this, and the
-     * two together are the upsert that used to sit inside `park()`.
+     * The whole of parking, and this library's alone since HIL-1044: the waiter row - brought
+     * into being when it is missing, made to say the new address when the browser submitted a
+     * second one - and the wait on the session row that answers a reconnect with the code screen
+     * it left. The users library used to add the row and write the column itself and only asked
+     * for the edit; now it asks for all of it, and one writer of what a browser waits on is what
+     * the move bought.
      *
      * Nothing is answered. The browser that asked was told its code went out by the
      * library itself, because that answer never stood on the wait: the row is what a
      * converge reaches the OTHER tabs of the session through.
      *
      * @param AuthRegistrationWaitMovedSignalData $frame Connection, address, and session it waits on now
-     * @throws HilosException On runtime failure
+     * @throws HilosException On runtime or database failure
      */
     private function moveRegistrationWait(AuthRegistrationWaitMovedSignalData $frame): void
     {
@@ -3893,12 +4521,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->identifier,
             $frame->sessionToken,
         );
+        $this->writeRegistrationWait($frame->sessionToken, $frame->identifier);
     }
 
     /**
-     * Makes one recovery waiter say the address its browser is on now, un-granted (HIL-685).
+     * Parks one browser on the address it recovers, or re-points it there un-granted (HIL-685,
+     * HIL-1044).
      *
-     * The recovery twin of {@see moveRegistrationWait()}, and it takes one thing more away:
+     * The recovery twin of {@see moveRegistrationWait()} - the whole park, this library's alone -
+     * and it takes one thing more away:
      * re-pointing clears the grant, because a proven code buys the password step of the
      * address it was proven for and of no other. A person who asks for a second code from
      * the same tab has left the first address, and the grant does not follow them.

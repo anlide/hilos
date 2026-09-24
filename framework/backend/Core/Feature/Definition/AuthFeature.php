@@ -16,15 +16,20 @@ use Hilos\Database\Entity\Item\RegistrationReservation;
 use Hilos\Database\Entity\Item\UserVerification;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
+use Hilos\Runtime\State\Collection\HilosOAuthTrips as StateHilosOAuthTrips;
 use Hilos\Runtime\State\Collection\RecoveryWaiters as StateRecoveryWaiters;
 use Hilos\Runtime\State\Collection\RegistrationWaiters as StateRegistrationWaiters;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
+use Hilos\Runtime\View\Actions\Collection\HilosOAuthTripsActions;
 use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Runtime\View\Actions\Collection\RegistrationWaitersActions;
+use Hilos\Runtime\View\Actions\Item\HilosOAuthTripActions;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
+use Hilos\Runtime\View\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Context\RtContext;
@@ -53,7 +58,8 @@ use Hilos\Runtime\View\Context\RtContext;
  * tab is converged, and a project that mounted them by hand would be declaring the feature
  * twice - with the second declaration free to drift. The send-progress line stands with them
  * for the same reason and one of its own (HIL-826): a project with no sign-in surface has no
- * codes to send, so there is nothing for the line to describe.
+ * codes to send, so there is nothing for the line to describe. The provider sign-ins tabs are
+ * waiting on stand with them for the same two reasons (HIL-1044).
  */
 final class AuthFeature extends FeatureDefinition
 {
@@ -85,8 +91,8 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * Carries the parked sign-in surfaces and the send-progress line, declared beside the mount
-     * it describes.
+     * Carries the parked sign-in surfaces, the send-progress line and the provider sign-ins in
+     * flight, declared beside the mount it describes.
      *
      * @return bool Always true
      */
@@ -96,8 +102,8 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * Mounts the registration and recovery waits and the send-progress line with their framework
-     * representation.
+     * Mounts the registration and recovery waits, the send-progress line and the provider sign-ins
+     * in flight with their framework representation.
      *
      * The representation is not optional decoration: the actions class is the only write
      * path that queues an RT sync, so a collection mounted without it would change in the
@@ -128,6 +134,13 @@ final class AuthFeature extends FeatureDefinition
             StateHilosCodeSendAttempt::RT_COLLECTION,
             HilosCodeSendAttempts::class,
             HilosCodeSendAttemptsActions::class,
+        );
+        $context->mountFeatureCollection(StateHilosOAuthTrip::RT_COLLECTION, StateHilosOAuthTrips::init());
+        $context->setRepresent(
+            StateHilosOAuthTrip::RT_COLLECTION,
+            HilosOAuthTrips::class,
+            HilosOAuthTripsActions::class,
+            HilosOAuthTripActions::class,
         );
     }
 }

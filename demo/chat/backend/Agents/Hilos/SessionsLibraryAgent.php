@@ -18,6 +18,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
@@ -95,9 +96,11 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * Declared here rather than by {@see AbstractSessionsLibraryAgent} because the collections
      * exist only where a sign-in surface does: {@see AuthFeature::mount()} mounts them and nothing
      * else does, so a library that claimed them in a project without one would read a collection
-     * that is not there on every tick. The users library stands beside the two waits as a declared
-     * add/remove co-owner (HIL-685) rather than as a second full owner; the progress line has no
-     * second writer at all - the transports carrying the code report to this library by frame.
+     * that is not there on every tick. None of them has a second writer: the users library asks
+     * for every park by frame (HIL-1044, it was an add/remove co-owner of the waits since HIL-685),
+     * and the transports carrying the code report to this library by frame.
+     * Neither have the provider sign-ins tabs are waiting on, which stand here for the same
+     * reason (HIL-1044): the agents carrying the exchange report every ending by frame.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -105,6 +108,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateRegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateRecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosOAuthTrip::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
     /**

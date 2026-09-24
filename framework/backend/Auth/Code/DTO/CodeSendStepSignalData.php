@@ -42,6 +42,9 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $sessionTokenHash Hash of the session cookie token, on the `queued` report and no other
      * @param ?string $channel Channel the code travels over, on the `queued` report and no other
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
+     * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null
      */
     public function __construct(
         public readonly string $ticket,
@@ -49,6 +52,9 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?string $sessionTokenHash = null,
         public readonly ?string $channel = null,
         public readonly ?string $detail = null,
+        public readonly ?string $reason = null,
+        public readonly ?int $resendAt = null,
+        public readonly ?int $expiresAt = null,
     ) {
     }
 
@@ -79,11 +85,27 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      * @param string $ticket Ticket the transport was handed with the order
      * @param string $state One of the five states on {@see HilosCodeSendAttempt}
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
+     * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null
      * @return self Frame carrying one step
      */
-    public static function step(string $ticket, string $state, ?string $detail = null): self
-    {
-        return new self(ticket: $ticket, state: $state, detail: self::sentenceOf($detail));
+    public static function step(
+        string $ticket,
+        string $state,
+        ?string $detail = null,
+        ?string $reason = null,
+        ?int $resendAt = null,
+        ?int $expiresAt = null,
+    ): self {
+        return new self(
+            ticket: $ticket,
+            state: $state,
+            detail: self::sentenceOf($detail),
+            reason: $reason,
+            resendAt: $resendAt,
+            expiresAt: $expiresAt,
+        );
     }
 
     /**
@@ -97,6 +119,9 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
             'sessionTokenHash' => $this->sessionTokenHash,
             'channel' => $this->channel,
             'detail' => $this->detail,
+            'reason' => $this->reason,
+            'resendAt' => $this->resendAt,
+            'expiresAt' => $this->expiresAt,
         ];
     }
 
@@ -104,8 +129,7 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      * Rebuilds one reported step.
      *
      * The ticket and the state are required: a step with no ticket names no line, and one with
-     * no state has nothing to say about it. The other three are the fields only some steps
-     * carry.
+     * no state has nothing to say about it. The others are the fields only some steps carry.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
@@ -119,6 +143,9 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
             sessionTokenHash: self::optionalString($data, 'sessionTokenHash'),
             channel: self::optionalString($data, 'channel'),
             detail: self::optionalString($data, 'detail'),
+            reason: self::optionalString($data, 'reason'),
+            resendAt: self::optionalInt($data, 'resendAt'),
+            expiresAt: self::optionalInt($data, 'expiresAt'),
         );
     }
 

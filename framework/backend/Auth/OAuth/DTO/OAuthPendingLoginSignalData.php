@@ -21,8 +21,8 @@ use Hilos\Runtime\State\Item\OAuthPendingLogin;
  * cross-process runtime collection — is what actually carries the op across that
  * boundary; the agent is the op's single consumer and owns its in-flight pool.
  *
- * It carries exactly the fields {@see OAuthPendingLogin::create()} needs, including the
- * absolute {@see deadlineMs} the callback computes, and the link-mode fields (HIL-401):
+ * It carries exactly the fields {@see OAuthPendingLogin::create()} needs - with no deadline
+ * since HIL-1044, the hash of the tab's trip key in its place - and the link-mode fields (HIL-401):
  * {@see mode} and {@see linkUserId}, which the agent uses to branch the success path.
  */
 final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInterface
@@ -32,7 +32,7 @@ final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInt
      * @param string $sessionToken Session token to authenticate on a login success
      * @param string $provider Provider key, e.g. 'oauth:github'
      * @param string $code Authorization code to exchange
-     * @param float $deadlineMs Absolute deadline in milliseconds after which the exchange is abandoned
+     * @param string $tripKeyHash Hash of the key the tab minted, naming the trip every ending is reported under
      * @param string $mode Flow mode ({@see OAuthPendingLogin::MODE_LOGIN} default, {@see OAuthPendingLogin::MODE_LINK})
      * @param int $linkUserId User the identity links to under link mode; 0 for a login exchange
      */
@@ -41,7 +41,7 @@ final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInt
         public readonly string $sessionToken,
         public readonly string $provider,
         public readonly string $code,
-        public readonly float $deadlineMs,
+        public readonly string $tripKeyHash,
         public readonly string $mode = OAuthPendingLogin::MODE_LOGIN,
         public readonly int $linkUserId = 0,
     ) {
@@ -59,7 +59,7 @@ final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInt
             $this->sessionToken,
             $this->provider,
             $this->code,
-            $this->deadlineMs,
+            $this->tripKeyHash,
             $this->mode,
             $this->linkUserId,
         );
@@ -75,7 +75,7 @@ final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInt
             'sessionToken' => $this->sessionToken,
             'provider' => $this->provider,
             'code' => $this->code,
-            'deadlineMs' => $this->deadlineMs,
+            'tripKeyHash' => $this->tripKeyHash,
             'mode' => $this->mode,
             'linkUserId' => $this->linkUserId,
         ];
@@ -102,7 +102,7 @@ final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInt
             sessionToken: self::requireString($data, 'sessionToken'),
             provider: self::requireString($data, 'provider'),
             code: self::requireString($data, 'code'),
-            deadlineMs: self::requireFloat($data, 'deadlineMs'),
+            tripKeyHash: self::requireString($data, 'tripKeyHash'),
             mode: self::requireString($data, 'mode'),
             linkUserId: self::requireInt($data, 'linkUserId'),
         );

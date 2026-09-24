@@ -8,9 +8,9 @@ use Hilos\API\AsyncHttpClient;
 use Hilos\API\DTO\AsyncHttpRequest;
 use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\API\Exception\AsyncHttpException;
-use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelProbe;
 use Hilos\Auth\MagicLink\MagicLinkService;
@@ -36,7 +36,6 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Socket\SocketException;
-use Hilos\WiringRefusal;
 use Throwable;
 
 /**
@@ -46,8 +45,9 @@ use Throwable;
  * sent validates only what costs nothing and hands the request here over
  * {@see HilosSignalConstants::HILOS_AUTH_CODE_SEND}; this agent drives what a worker
  * may not - a network round-trip to ask a messenger whether it can reach the number,
- * then the mint, then the delivery - and reports every outcome back to the requesting
- * socket on {@see HilosSignalConstants::HILOS_AUTH_CODE_RESULT}.
+ * then the mint, then the delivery - and reports every outcome on the closing step of the
+ * send's progress line ({@see HilosSignalConstants::HILOS_CODE_SEND_STEP}), which the session
+ * holder keeps and replays to every tab of the session, a reconnected one included (HIL-1044).
  *
  * The ORDER is the design, not an implementation detail: probe, then mint, then send.
  * A channel that cannot reach the target must cost the person NOTHING - no challenge
@@ -93,15 +93,12 @@ class AuthCodeAgent extends AbstractAgent
      * TODO(HIL-630): borrowed claim - the users library owns the challenge and the hold; this
      * agent mints one and takes the other because a code that was never delivered must cost
      * neither.
-     * TODO(HIL-626): borrowed claim - the sessions library owns the session set, and the
-     * pending-registration wait is one of its columns.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::verifications => TruthSourceOperation::BY_KIND,
         HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
-        HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_AUTH_CODE;
@@ -119,9 +116,6 @@ class AuthCodeAgent extends AbstractAgent
 
     /** Default per-request network timeout in milliseconds (probe and send each). */
     private const float DEFAULT_HTTP_TIMEOUT_MS = 5000.0;
-
-    /** Default whole-operation deadline in milliseconds, covering probe, mint and send. */
-    private const float DEFAULT_OPERATION_TTL_MS = 15000.0;
 
     /** @var array<int, AuthCodeOperation> In-flight operations keyed by a monotonic op id. */
     private array $operations = [];
@@ -166,8 +160,12 @@ class AuthCodeAgent extends AbstractAgent
             // The line opened when the person picked the channel, and nothing is going to
             // travel over it - so it stops promising here rather than sitting on "queued"
             // until the next send replaces it (HIL-826).
-            $this->reportCodeSendStep($request, HilosCodeSendAttempt::STATE_FAILED, null);
-            $this->report($request, AuthCodeResultSignalData::REASON_CHANNEL_UNAVAILABLE);
+            $this->reportCodeSendStep(
+                $request,
+                HilosCodeSendAttempt::STATE_FAILED,
+                null,
+                HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE,
+            );
 
             return;
         }
@@ -176,7 +174,6 @@ class AuthCodeAgent extends AbstractAgent
             $request,
             $channel,
             AuthCodeOperation::STAGE_PROBE,
-            microtime(true) * TimeConstants::MS_PER_SECOND + $this->operationTtlMs(),
         );
     }
 
@@ -200,11 +197,6 @@ class AuthCodeAgent extends AbstractAgent
                 continue;
             }
 
-            if ($nowMs >= $operation->deadlineMs) {
-                $this->fail($id, $operation, 'operation timed out');
-                continue;
-            }
-
             try {
                 $this->advance($id, $operation, $nowMs);
             } catch (Throwable $e) {
@@ -214,12 +206,19 @@ class AuthCodeAgent extends AbstractAgent
     }
 
     /**
-     * Abandons every in-flight operation on shutdown, closing its socket.
+     * Answers every in-flight operation with a refused send on shutdown, closing its socket.
+     *
+     * Silence is not an option here any more (HIL-1044): the browser waiting on a code has no
+     * clock left to end its wait, and a send this agent drops without a word is a line saying
+     * "sending" forever. The refusal leaves in the same tick, ahead of the stop, as every frame
+     * of an ordinary stop does.
+     *
+     * @throws InvalidArgumentException When a refusal cannot be named or queued
      */
     public function onStop(): void
     {
-        foreach ($this->operations as $operation) {
-            $operation->closeClient();
+        foreach ($this->operations as $id => $operation) {
+            $this->fail($id, $operation, 'agent stopped');
         }
         $this->operations = [];
     }
@@ -238,14 +237,6 @@ class AuthCodeAgent extends AbstractAgent
     protected function httpTimeoutMs(): float
     {
         return self::DEFAULT_HTTP_TIMEOUT_MS;
-    }
-
-    /**
-     * @return float Whole-operation deadline in milliseconds
-     */
-    protected function operationTtlMs(): float
-    {
-        return self::DEFAULT_OPERATION_TTL_MS;
     }
 
     /**
@@ -290,8 +281,9 @@ class AuthCodeAgent extends AbstractAgent
      *
      * A channel that answers without the network settles inside this tick; one that
      * needs a round-trip opens a client here and is read on a later tick. A request
-     * held back by the concurrency ceiling simply waits for a free slot - the whole
-     * operation still has its deadline, so nothing waits forever.
+     * held back by the concurrency ceiling simply waits for a free slot, and the queue drains
+     * by facts rather than by a clock: every operation holding a slot ends within the
+     * ceilings of its own requests (HIL-1044).
      *
      * @param int $id Op id in the pool
      * @param AuthCodeOperation $operation Operation being probed
@@ -358,7 +350,7 @@ class AuthCodeAgent extends AbstractAgent
         $operation->closeClient();
 
         if (!$probe->reachable) {
-            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CHANNEL_UNAVAILABLE);
+            $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE);
 
             return;
         }
@@ -438,7 +430,7 @@ class AuthCodeAgent extends AbstractAgent
     private function reportRefusedIssue(int $id, AuthCodeOperation $operation, VerificationIssuedCode $issued): void
     {
         if ($issued->outcome->capReached) {
-            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CAP_REACHED);
+            $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CAP_REACHED);
 
             return;
         }
@@ -451,7 +443,7 @@ class AuthCodeAgent extends AbstractAgent
         $this->finish(
             $id,
             $operation,
-            AuthCodeResultSignalData::REASON_RATE_LIMITED,
+            HilosCodeSendAttempt::REASON_RATE_LIMITED,
             $issued->outcome->resendAt(),
         );
     }
@@ -489,7 +481,7 @@ class AuthCodeAgent extends AbstractAgent
             $this->finish(
                 $id,
                 $operation,
-                AuthCodeResultSignalData::REASON_SEND_FAILED,
+                HilosCodeSendAttempt::REASON_SEND_FAILED,
                 $operation->resendAt,
                 $send->detail,
             );
@@ -497,7 +489,7 @@ class AuthCodeAgent extends AbstractAgent
             return;
         }
 
-        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CODE_SENT, $operation->resendAt);
+        $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CODE_SENT, $operation->resendAt);
     }
 
     /**
@@ -537,12 +529,12 @@ class AuthCodeAgent extends AbstractAgent
             $operation->channel->handoff($operation->request->identifier, $operation->request->type, $code);
         } catch (Throwable $e) {
             $this->logAgentWarning($this->describe($operation) . ' handoff refused the code: ' . $e->getMessage());
-            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendAt);
+            $this->finish($id, $operation, HilosCodeSendAttempt::REASON_SEND_FAILED, $operation->resendAt);
 
             return;
         }
 
-        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CODE_SENT, $operation->resendAt);
+        $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CODE_SENT, $operation->resendAt);
     }
 
     /**
@@ -648,19 +640,19 @@ class AuthCodeAgent extends AbstractAgent
     }
 
     /**
-     * Reports an outcome to the requesting connection and drops the operation.
+     * Reports an outcome on the closing step of the line and drops the operation.
      *
-     * The durable memory of the wait is written here, before the answer goes out and
-     * on exactly the arms the surface opens its code screen on (HIL-486): a code that
-     * went out, and a send the cooldown held back because an earlier one already did.
-     * The refusals write nothing - there is no code to come back to.
+     * The wait on a registration is announced here, before the closing step and on exactly
+     * the arms the surface opens its code screen on (HIL-486): a code that went out, and a
+     * send the cooldown held back because an earlier one already did. The refusals announce
+     * nothing - there is no code to come back to. Before the step and from this one sender,
+     * so a line the holder replays after the step already finds the wait written (HIL-1044).
      *
      * @param int $id Op id in the pool
      * @param AuthCodeOperation $operation Operation being finished
-     * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
+     * @param string $reason Stable outcome reason (see HilosCodeSendAttempt REASON_*)
      * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null when waiting is not the answer
      * @param ?string $detail Channel's own refusal sentence for the progress line, null on every other arm
-     * @throws InvalidArgumentException When the outcome signal cannot be named or queued
      */
     private function finish(
         int $id,
@@ -672,13 +664,19 @@ class AuthCodeAgent extends AbstractAgent
         $operation->closeClient();
         unset($this->operations[$id]);
 
-        if ($reason === AuthCodeResultSignalData::REASON_CODE_SENT
-            || $reason === AuthCodeResultSignalData::REASON_RATE_LIMITED) {
+        if ($reason === HilosCodeSendAttempt::REASON_CODE_SENT
+            || $reason === HilosCodeSendAttempt::REASON_RATE_LIMITED) {
             $this->rememberWait($operation);
         }
 
-        $this->reportCodeSendStep($operation->request, $this->lineStateFor($reason), $detail);
-        $this->report($operation->request, $reason, $resendAt, $operation->expiresAt);
+        $this->reportCodeSendStep(
+            $operation->request,
+            $this->lineStateFor($reason),
+            $detail,
+            $reason,
+            $resendAt,
+            $operation->expiresAt,
+        );
     }
 
     /**
@@ -691,14 +689,14 @@ class AuthCodeAgent extends AbstractAgent
      * says so and stops promising - the reason itself is the surface's to word, which it
      * already does by dimming the channel or refusing the cap out loud.
      *
-     * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
+     * @param string $reason Stable outcome reason (see HilosCodeSendAttempt REASON_*)
      * @return string One of the four states on {@see HilosCodeSendAttempt}
      */
     private function lineStateFor(string $reason): string
     {
         return match ($reason) {
-            AuthCodeResultSignalData::REASON_CODE_SENT,
-            AuthCodeResultSignalData::REASON_RATE_LIMITED => HilosCodeSendAttempt::STATE_SENT,
+            HilosCodeSendAttempt::REASON_CODE_SENT,
+            HilosCodeSendAttempt::REASON_RATE_LIMITED => HilosCodeSendAttempt::STATE_SENT,
             default => HilosCodeSendAttempt::STATE_FAILED,
         };
     }
@@ -710,24 +708,37 @@ class AuthCodeAgent extends AbstractAgent
      * frame: this agent knows the session token but not the line, and the line is not its row
      * to write. What travels is the opaque ticket the request arrived with.
      *
-     * It takes a REQUEST rather than an operation for the reason {@see self::report()} does:
-     * one arm has no operation to speak from, because a channel the registry does not carry is
-     * refused at intake - and that refusal leaves a line saying a code is queued when none is.
+     * It takes a REQUEST rather than an operation: one arm has no operation to speak from,
+     * because a channel the registry does not carry is refused at intake - and that refusal
+     * leaves a line saying a code is queued when none is.
      *
      * A step that cannot be named is logged and swallowed, for the reason
      * {@see self::rememberWait()} gives about its own row: the code did go out, and turning a
      * delivered code into an error over a frame nobody could name would be the worse lie.
      *
+     * The closing step carries the outcome (HIL-1044): the reason, and the two moments the code
+     * screen counts down to. The line is the one source the tab reads it from, which is what lets
+     * a tab that reconnected mid-send read it at all.
+     *
      * @param AuthCodeSendSignalData $request Request whose step is being reported
      * @param string $state One of the four states on {@see HilosCodeSendAttempt}
      * @param ?string $detail Channel's own refusal sentence, null on every other step
+     * @param ?string $reason How the send ended (HilosCodeSendAttempt REASON_*), on the closing step alone
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null
      */
-    private function reportCodeSendStep(AuthCodeSendSignalData $request, string $state, ?string $detail): void
-    {
+    private function reportCodeSendStep(
+        AuthCodeSendSignalData $request,
+        string $state,
+        ?string $detail,
+        ?string $reason = null,
+        ?int $resendAt = null,
+        ?int $expiresAt = null,
+    ): void {
         try {
             $this->sendToAgent(
                 HilosSignalConstants::HILOS_CODE_SEND_STEP,
-                CodeSendStepSignalData::step($request->progressTicket, $state, $detail),
+                CodeSendStepSignalData::step($request->progressTicket, $state, $detail, $reason, $resendAt, $expiresAt),
             );
         } catch (InvalidArgumentException $failure) {
             $this->logAgentWarning(
@@ -737,24 +748,20 @@ class AuthCodeAgent extends AbstractAgent
     }
 
     /**
-     * Remembers, against the asking session, that it is waiting on a code (HIL-486).
+     * Tells the session holder the asking session now waits on registering this number (HIL-486,
+     * HIL-1044).
      *
-     * The durable half of the unfinished-registration memory: the runtime waiter list
-     * is a projection of the asking session's row, so a browser that reloads is parked
-     * again at its handshake and given back the code screen it was on. Only a
-     * REGISTRATION is remembered - a code sent to a number that already has an account
-     * signs somebody in, and there is no half-finished registration to come back to.
+     * The durable half of the unfinished-registration memory: the runtime waiter list is a
+     * projection of the asking session's row, so a browser that reloads is parked again at its
+     * handshake and given back the code screen it was on. Only a REGISTRATION is announced - a
+     * code sent to a number that already has an account signs somebody in, and there is no
+     * half-finished registration to come back to.
      *
-     * A token with no session row writes nothing: the wait is memory ABOUT a session
-     * (HIL-612), and a request that names none has nowhere to keep it. A failure to
-     * write is logged and swallowed, alone in this class: the code did go out, the
-     * person is owed that answer, and turning a delivered code into "send failed" over
-     * a memory row would be a worse lie than losing the row.
-     *
-     * The wiring refusing the read is told apart from the rest and written down louder: it
-     * says the sessions collection is not addressed to this process at all, so the row was
-     * never going to be written and no later attempt would write it either. It is still not
-     * raised - {@see self::finish()} sends the person's answer on the line after this call.
+     * The row is the holder's to write, so this agent says it rather than writing it: until
+     * HIL-1044 it wrote the column itself, under a claim borrowed from the owner of the session
+     * set. A frame that cannot be named is logged and swallowed, for the reason the old write gave
+     * about a failure: the code did go out, and turning a delivered code into "send failed" over
+     * a memory row would be the worse lie.
      *
      * @param AuthCodeOperation $operation Operation whose code left a session waiting
      */
@@ -765,15 +772,15 @@ class AuthCodeAgent extends AbstractAgent
         }
 
         try {
-            Hilos::$db?->sessions->findByToken($operation->request->sessionToken)
-                ?->actions->holdPendingRegistration($operation->request->identifier);
-        } catch (WiringRefusal $refusal) {
-            // An error and not a warning: one lost wait is the smallest consequence of a process
-            // that reads none of this collection, and the operator needs to see the cause rather
-            // than the symptom. Answered all the same - the code went out.
-            $this->logAgentError($this->describe($operation) . ' cannot leave a wait behind: ' . $refusal->getMessage());
-        } catch (Throwable $e) {
-            $this->logAgentWarning($this->describe($operation) . ' left no wait behind: ' . $e->getMessage());
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD,
+                new AuthRegistrationWaitHeldSignalData(
+                    $operation->request->sessionToken,
+                    $operation->request->identifier,
+                ),
+            );
+        } catch (InvalidArgumentException $failure) {
+            $this->logAgentWarning($this->describe($operation) . ' left no wait behind: ' . $failure->getMessage());
         }
     }
 
@@ -791,40 +798,7 @@ class AuthCodeAgent extends AbstractAgent
     private function fail(int $id, AuthCodeOperation $operation, string $detail): void
     {
         $this->logAgentWarning($this->describe($operation) . ' failed: ' . $detail);
-        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendAt);
-    }
-
-    /**
-     * Queues the outcome signal to the requesting connection's accept key.
-     *
-     * It answers a REQUEST rather than an operation, because one arm has no operation
-     * to answer from: a channel the registry does not carry is refused at intake, where
-     * nothing has been adopted yet. Every other caller reads both moments off the
-     * operation it is finishing, so the two facts still travel together.
-     *
-     * @param AuthCodeSendSignalData $request Request being answered
-     * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
-     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
-     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null when none is live
-     * @throws InvalidArgumentException When the outcome signal cannot be named or queued
-     */
-    private function report(
-        AuthCodeSendSignalData $request,
-        string $reason,
-        ?int $resendAt = null,
-        ?int $expiresAt = null,
-    ): void {
-        $this->sendToUser(
-            HilosSignalConstants::HILOS_AUTH_CODE_RESULT,
-            $request->acceptKey,
-            new AuthCodeResultSignalData(
-                $request->acceptKey,
-                $request->channel,
-                $reason,
-                $resendAt,
-                $expiresAt,
-            ),
-        );
+        $this->finish($id, $operation, HilosCodeSendAttempt::REASON_SEND_FAILED, $operation->resendAt);
     }
 
     /**

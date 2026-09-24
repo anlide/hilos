@@ -21,10 +21,13 @@ use PHPUnit\Framework\TestCase;
 /**
  * The split between parking a wait and re-pointing one (HIL-685).
  *
- * Two agents write these collections and they hold different rights: the session holder
- * owns them fully, and the users library holds adding and removing so it can park the
- * browser whose code it just sent. Everything here is that one sentence made checkable -
- * `park()` adds and never edits, `repoint()` edits, and the library is refused the second.
+ * The split was made for two writers holding different rights: the session holder owning
+ * them fully, and the users library holding adding and removing so it could park the
+ * browser whose code it had just sent. Since HIL-1044 the library writes neither and asks
+ * the holder by frame, but the actions keep the split, and a project co-owner declared the
+ * same way meets it - so everything here is still that one sentence made checkable:
+ * `park()` adds and never edits, `repoint()` edits, and an add/remove co-owner is refused
+ * the second.
  *
  * The case that matters most is the one that reads like nothing happening: a library
  * parking a browser that is ALREADY parked. That was an unconditional upsert until this

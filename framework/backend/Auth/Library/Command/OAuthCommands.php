@@ -13,12 +13,13 @@ use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -27,7 +28,8 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Item\OAuthPendingLogin;
+use Hilos\Runtime\State\Item\HilosOAuthTrip;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 
@@ -98,6 +100,12 @@ final class OAuthCommands extends AbstractLibraryCommands
      * the FE keeps its spinner and resolves on the currentUser update (success) or
      * the OAuthResult failure signal.
      *
+     * The session holder hears about the trip FIRST (HIL-1044): every ending of the exchange
+     * is reported to it, so it has to have the trip on record before the agent can end it.
+     * Both frames leave this library in one tick through one master, and that queue is what
+     * keeps them in this order. Only the hash of the tab's key goes along; the key stays with
+     * the tab, for the one presentation after a reconnect.
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param OAuthCallbackActionDTO $dto Parsed callback payload (provider, code, state)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
@@ -132,6 +140,18 @@ final class OAuthCommands extends AbstractLibraryCommands
             $linkUserId = $acting->userId;
         }
 
+        $tripKeyHash = HilosOAuthTrip::hashKey($dto->tripKey);
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED,
+            new OAuthTripOpenedSignalData(
+                $tripKeyHash,
+                ProtectedModeRuntime::hashSessionToken($acting->sessionToken),
+                $acting->acceptKey,
+                $mode,
+                $dto->provider,
+            ),
+        );
+
         // Hand the verified op to the monopolistic OAuth agent point-to-point; the op has
         // exactly one consumer, so a synced agent signal — not a cross-process runtime
         // collection — is what carries it across the process boundary (HIL-281).
@@ -142,7 +162,7 @@ final class OAuthCommands extends AbstractLibraryCommands
                 $acting->sessionToken,
                 $dto->provider,
                 $dto->code,
-                microtime(true) * TimeConstants::MS_PER_SECOND + OAuthPendingLogin::EXCHANGE_TTL_MS,
+                $tripKeyHash,
                 $mode,
                 $linkUserId,
             ),
@@ -222,7 +242,7 @@ final class OAuthCommands extends AbstractLibraryCommands
             $data->provider . ':' . $data->subject,
         );
         if ($identity !== null && $identity->userId !== null) {
-            $this->library->grantSession($acting, $identity->userId);
+            $this->library->grantSession($acting, $identity->userId, tripKeyHash: $data->tripKeyHash);
 
             return;
         }
@@ -247,7 +267,7 @@ final class OAuthCommands extends AbstractLibraryCommands
             }
         }
         $this->library->afterUserCreated($userId, $data->provider . ':' . $data->subject);
-        $this->library->grantSession($acting, $userId);
+        $this->library->grantSession($acting, $userId, tripKeyHash: $data->tripKeyHash);
     }
 
     /**
@@ -255,24 +275,25 @@ final class OAuthCommands extends AbstractLibraryCommands
      *
      * The provider email matches an existing verified identity, so no user is
      * created and nobody is signed in: a stateless link token is minted and the
-     * re-auth-required result is delivered to the initiating connection. The
-     * surface re-authenticates the owner (email pre-filled) and redeems the token
-     * through the link action, which is where the identity is finally bound.
+     * re-auth-required ending is reported to the session holder, which delivers it to
+     * the tab wherever it is now (HIL-1044). The surface re-authenticates the owner
+     * (email pre-filled) and redeems the token through the link action, which is where
+     * the identity is finally bound.
      *
      * @param OAuthLoginReadySignalData $data Provider facts the exchange settled on
      * @param string $email Colliding address the caller already read off the identity
      * @throws ValidationException When the project has no OAuth wiring to mint the token with
-     * @throws InvalidArgumentException When the result signal cannot be named or queued
+     * @throws InvalidArgumentException When the ending frame cannot be named or queued
      * @throws HilosException When the provider registry cannot be built
      */
     private function requireReauthToLink(OAuthLoginReadySignalData $data, string $email): void
     {
         $linkToken = $this->oauthService()->issueLinkToken($data->provider, $data->subject, $email);
 
-        $this->library->sendToUser(
-            HilosSignalConstants::HILOS_OAUTH_RESULT,
-            $data->acceptKey,
-            new OAuthResultSignalData(
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,
+            new OAuthTripEndedSignalData(
+                $data->tripKeyHash,
                 $data->acceptKey,
                 $data->provider,
                 OAuthResultSignalData::REASON_REAUTH_REQUIRED,

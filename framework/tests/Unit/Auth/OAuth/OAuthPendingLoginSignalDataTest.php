@@ -25,7 +25,7 @@ final class OAuthPendingLoginSignalDataTest extends TestCase
             'session-1',
             'oauth:stub',
             'code-1',
-            1_700_000_000_000.0,
+            'trip-hash-1',
             OAuthPendingLogin::MODE_LINK,
             42,
         );
@@ -37,14 +37,6 @@ final class OAuthPendingLoginSignalDataTest extends TestCase
         $this->assertSame(42, $restored->linkUserId);
     }
 
-    public function testDeadlineSurvivesTheWholeNumberJsonWritesItAs(): void
-    {
-        $payload = new OAuthPendingLoginSignalData('accept-1', 'session-1', 'oauth:stub', 'code-1', 1000.0)->toArray();
-        $payload['deadlineMs'] = 1000;
-
-        $this->assertSame(1000.0, OAuthPendingLoginSignalData::fromArray($payload)->deadlineMs);
-    }
-
     public function testRefusesAPayloadThatLostTheAuthorizationCode(): void
     {
         $this->expectException(InvalidFormatException::class);
@@ -54,7 +46,7 @@ final class OAuthPendingLoginSignalDataTest extends TestCase
             'acceptKey' => 'accept-1',
             'sessionToken' => 'session-1',
             'provider' => 'oauth:stub',
-            'deadlineMs' => 1000.0,
+            'tripKeyHash' => 'trip-hash-1',
             'mode' => OAuthPendingLogin::MODE_LOGIN,
             'linkUserId' => 0,
         ]);
@@ -70,7 +62,7 @@ final class OAuthPendingLoginSignalDataTest extends TestCase
             'sessionToken' => 'session-1',
             'provider' => 'oauth:stub',
             'code' => 'code-1',
-            'deadlineMs' => 1000.0,
+            'tripKeyHash' => 'trip-hash-1',
             'mode' => OAuthPendingLogin::MODE_LINK,
         ]);
     }

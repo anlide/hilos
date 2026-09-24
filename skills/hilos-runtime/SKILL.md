@@ -212,8 +212,8 @@ of duplicating runtime mutation logic in the page/table layer.
 - Never run `git commit` or `git push`.
 - Only the truth source agent writes to its owned RT collection, and only the
   operations its claim covers: a claim carries a list of `TruthSourceOperation`
-  and the guard refuses the others by name. An `AbstractUsersLibraryAgent` adds
-  and removes rows it may never edit.
+  and the guard refuses the others by name. A co-owner declared for adding and
+  removing brings rows into being and takes them away, and may never edit one.
 - Never write to an `RtStates` collection directly (`add()`, `remove()`,
   `clear()`): those queue no RT sync, so the change exists in the writing worker
   and nowhere else. Write through the collection or item actions.

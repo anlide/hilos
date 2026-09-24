@@ -6,6 +6,7 @@ namespace Hilos\Auth\Library\Command;
 
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
+use Hilos\Auth\Code\DTO\CodeSendOrderReplyDTO;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -54,10 +55,10 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      *
      * Everything that can block moves to {@see AuthCodeAgent} - asking a messenger
      * whether it can reach the number is a round-trip, and no process that answers
-     * commands may wait on one. So the outcome does NOT ride this ack: the auto-sent
-     * `action_success` means "accepted, working", and the code screen opens later on the
-     * agent's result signal, which is also what names the channel the code really went
-     * over.
+     * commands may wait on one. So the outcome does NOT ride this ack: the reply names the
+     * send - its ticket - and nothing more, and the outcome arrives on the closing step of the
+     * session's send-progress line, which carries the same ticket so the tab that asked can tell
+     * its own send from a line replayed about another (HIL-1044).
      *
      * A well-formed request is handed over whether or not the number has an `sms`
      * identity - the account is find-or-created on confirm, so accepting
@@ -70,9 +71,10 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * @throws ValidationException When the phone number is malformed or the channel cannot serve it
      * @throws InvalidArgumentException When the code-request signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot mint the progress ticket
+     * @return CodeSendOrderReplyDTO The ticket of the send the order opened
      * @throws HilosException When the project's channel registry cannot be resolved
      */
-    public function requestPhoneCode(string $acceptKey, RequestPhoneCodeActionDTO $dto): void
+    public function requestPhoneCode(string $acceptKey, RequestPhoneCodeActionDTO $dto): CodeSendOrderReplyDTO
     {
         $acting = $this->acting($acceptKey);
 
@@ -93,6 +95,10 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
         // fan out to (the shape the OAuth callback established, HIL-281). The session
         // rides along for the memory the agent writes when a code really goes out
         // (HIL-486): that one outlives the socket, which is the point of it.
+        // The line opens HERE, before the agent has looked at the channel, because "in the
+        // queue" is true from this moment and the code screen is already open (HIL-826). The
+        // ticket rides along so the agent can move the line it did not create.
+        $ticket = $this->openCodeSendLine($acting, $channel->name());
         $this->library->sendToAgent(
             HilosSignalConstants::HILOS_AUTH_CODE_SEND,
             new AuthCodeSendSignalData(
@@ -101,13 +107,11 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
                 $phone,
                 $channel->name(),
                 VerificationType::SMS_LOGIN,
-                // The line opens HERE, before the agent has looked at the channel, because
-                // "in the queue" is true from this moment and the code screen is already
-                // open (HIL-826). The ticket rides along so the agent can move the line it
-                // did not create.
-                $this->openCodeSendLine($acting, $channel->name()),
+                $ticket,
             ),
         );
+
+        return new CodeSendOrderReplyDTO($ticket);
     }
 
     /**

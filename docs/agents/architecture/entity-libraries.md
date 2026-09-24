@@ -247,8 +247,10 @@ Two claims on one collection are not a smell to be argued each time: the holder 
 the entity holds it whole, and a library beside it holds adding and removing so it
 can park what it just created. What the co-owner may NOT do is edit - a row that is
 already there is the full owner's, and the library says what changed in a frame
-instead (HIL-685 is the first pair: `hilos_auth_registration_wait_moved` and
-`hilos_auth_recovery_wait_moved`). Two machines check this now and neither reads
+instead. HIL-685 was the first pair (`hilos_auth_registration_wait_moved` and
+`hilos_auth_recovery_wait_moved`); since HIL-1044 the users library no longer
+co-owns those waits at all - the session holder writes every wait a browser is
+on, and the two frames ask it for the whole park, row and session column alike. Two machines check this now and neither reads
 the `register()` calls with the eye: the runtime guard refuses the second full
 claim as it is laid down (HIL-696), and topology validation refuses the start of a
 process whose declarations say it already (HIL-899). A pair the project knows about

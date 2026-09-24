@@ -15,7 +15,8 @@ use Hilos\Auth\CodeChannel\CodeChannel;
  * It holds the request that started it, the resolved channel, the stage cursor, the
  * current non-blocking client (a fresh one per stage - a client is
  * one-request-per-instance, and probe and send may not even share a path), the handle
- * the probe told the send to quote back, and the op's absolute deadline.
+ * the probe told the send to quote back. It carries no deadline of its own: every request it
+ * makes is bounded by the request's own timeout, and that is the only clock (HIL-1044).
  *
  * The stages are exactly the two questions a channel is asked, in order: can this
  * target be reached, and then - only then - here is a code, deliver it. A channel that
@@ -69,13 +70,11 @@ final class AuthCodeOperation
      * @param AuthCodeSendSignalData $request Handed-off request that started this op
      * @param CodeChannel $channel Resolved channel that probes and delivers
      * @param int $stage Current stage ({@see STAGE_PROBE} or {@see STAGE_SEND})
-     * @param float $deadlineMs Absolute deadline in milliseconds
      */
     public function __construct(
         public readonly AuthCodeSendSignalData $request,
         public readonly CodeChannel $channel,
         public int $stage,
-        public readonly float $deadlineMs,
     ) {
     }
 

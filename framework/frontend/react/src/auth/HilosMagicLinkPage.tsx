@@ -11,8 +11,9 @@
 // The route is entered by a click in a mail client, so it loads cold: the confirm
 // is held behind the framework's page-ready gate until the connection can carry it
 // (HIL-607, in `authActions`). Waiting is the one thing that can go on forever, so
-// this screen carries the backstop the gate deliberately does not — the same 20s
-// the OAuth callback relay uses — and offers Try again, which repeats the step
+// this screen ends the wait on the connection's own verdict that the server
+// cannot be reached (HIL-1044) — the same verdict the OAuth callback relay ends
+// on, and no clock of its own — and offers Try again, which repeats the step
 // whole. The link is not spent by a wait that failed: a token is consumed only by
 // a successful check, so a retry is the one action that actually helps here.
 // Bootstrap classes only, no CSS of its own (styling-rules.md).
@@ -26,8 +27,9 @@ import {
 } from 'react'
 import {
   createAuthActions,
-  whenPageReady,
+  whenPageReadyOrUnreachable,
   type HilosAuthContext,
+  type HilosConnection,
 } from '@hilos/core'
 
 import { HilosRouterContext } from '../hilosRouterContext.js'
@@ -38,13 +40,6 @@ import { HilosRouterContext } from '../hilosRouterContext.js'
  */
 const HOME_PATH = '/'
 
-// Client-side backstop on the wait for a connection that can carry the confirm:
-// the page-ready gate parks forever by design, so if no page is ever answered,
-// give the wait up rather than let the spinner wedge. The same value as the OAuth
-// trip's OAUTH_EXCHANGE_TIMEOUT_MS — the two relays wait on the same thing and
-// there is no reason for one to be more patient than the other.
-const MAGIC_LINK_TIMEOUT_MS = 20000
-
 // The generic sentence for a confirm that never reached the server, matching what
 // `describeAuthError` shows for a dropped connection: here it is the honest
 // report it was not, since the frame really did fail to leave.
@@ -54,22 +49,19 @@ const UNREACHABLE_MESSAGE = 'Could not reach the server. Please try again.'
 const MAX_WIDTH = { maxWidth: '24rem' }
 
 /**
- * Wait for a connection that can carry the confirm, and give the wait up after
- * the backstop. Giving up has to end the ATTEMPT, not merely the spinner: a wait
- * abandoned on screen but still pending underneath would dispatch whenever the
- * connection eventually settled, spend the one-time token on a screen already
- * showing an error, and leave Try again nothing left to succeed with.
+ * Wait for a connection that can carry the confirm, and give the wait up on the
+ * connection's verdict that the server cannot be reached (HIL-1044) - the repair
+ * dragging (HIL-831) or a connection that gave up; no clock of this screen's own.
+ * Giving up has to end the ATTEMPT, not merely the spinner: a wait abandoned on
+ * screen but still pending underneath would dispatch whenever the connection
+ * eventually settled, spend the one-time token on a screen already showing an
+ * error, and leave Try again nothing left to succeed with.
  *
- * @returns True when a page answered in time, false when the wait was given up on.
+ * @param connection The connection the confirm is dispatched over.
+ * @returns True when a page answered, false when the server was judged out of reach.
  */
-function waitForConnection(): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), MAGIC_LINK_TIMEOUT_MS)
-    void whenPageReady().then(() => {
-      clearTimeout(timer)
-      resolve(true)
-    })
-  })
+function waitForConnection(connection: HilosConnection): Promise<boolean> {
+  return whenPageReadyOrUnreachable(connection)
 }
 
 /** Props for {@link HilosMagicLinkPage}. */
@@ -130,7 +122,7 @@ export function HilosMagicLinkPage({ context }: HilosMagicLinkPageProps) {
    *
    * Each call takes the attempt token, and every resume point checks it is still
    * the holder. The guard lives HERE rather than in the callers because both of
-   * them need it for the same reason: the wait is up to twenty seconds long and
+   * them need it for the same reason: the wait may be long and
    * the token is one-time, so an attempt that has been superseded — by Try again,
    * or by the view going away — must not spend it and must not navigate out of a
    * page the person has already left. It is also what keeps React's development
@@ -141,7 +133,7 @@ export function HilosMagicLinkPage({ context }: HilosMagicLinkPageProps) {
     const mine = attempt.current
     setStatus('verifying')
     setMessage('')
-    if (!(await waitForConnection())) {
+    if (!(await waitForConnection(context.connection))) {
       if (attempt.current === mine) {
         showError(UNREACHABLE_MESSAGE, true)
       }

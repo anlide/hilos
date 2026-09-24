@@ -14,7 +14,7 @@ use Hilos\Auth\OAuth\HttpOAuthProvider;
  * pumping each across ticks. It holds the provider that builds/parses the requests,
  * the current {@see AsyncHttpClient} (a fresh one per stage — the token and userinfo
  * endpoints may be different hosts, and a client is one-request-per-instance), the
- * two-step stage cursor, and the op's absolute deadline.
+ * two-step stage cursor. No deadline: each request is bounded by its own timeout (HIL-1044).
  *
  * Every login goes through one: since the in-process stub was removed (HIL-924) every
  * provider is an {@see HttpOAuthProvider} and resolves the code over the network.
@@ -31,13 +31,11 @@ final class OAuthExchange
      * @param HttpOAuthProvider $provider Provider that builds and parses the requests
      * @param int $stage Current stage ({@see STAGE_TOKEN} or {@see STAGE_USERINFO})
      * @param AsyncHttpClient $client Non-blocking client for the current stage
-     * @param float $deadlineMs Absolute deadline in milliseconds
      */
     public function __construct(
         public readonly HttpOAuthProvider $provider,
         public int $stage,
         public AsyncHttpClient $client,
-        public readonly float $deadlineMs,
     ) {
     }
 

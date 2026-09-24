@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\AgentSignalData;
@@ -57,7 +58,7 @@ final class OAuthAgentRegistryTest extends TestCase
 
         $this->assertCount(1, $agent->sent);
         $result = $agent->sent[0]['data'];
-        $this->assertInstanceOf(OAuthResultSignalData::class, $result);
+        $this->assertInstanceOf(OAuthTripEndedSignalData::class, $result);
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $result->reason);
     }
 
@@ -75,7 +76,7 @@ final class OAuthAgentRegistryTest extends TestCase
                 'session-1',
                 self::PROVIDER_KEY,
                 'code-1',
-                microtime(true) * 1000 + 60_000.0,
+                'trip-hash-' . $acceptKey,
             )),
             'test-source',
             HilosSignalConstants::HILOS_OAUTH_PENDING,
@@ -84,7 +85,7 @@ final class OAuthAgentRegistryTest extends TestCase
 
     /**
      * @param bool $fails Whether reading the providers raises
-     * @return AbstractOAuthAgent&object{builds: int, sent: list<array{name: string, acceptKey: string, data: SignalDataInterface}>}
+     * @return AbstractOAuthAgent&object{builds: int, sent: list<array{name: string, data: SignalDataInterface}>}
      */
     private function makeAgent(bool $fails): AbstractOAuthAgent
     {
@@ -92,7 +93,7 @@ final class OAuthAgentRegistryTest extends TestCase
             /** Times the providers were read. */
             public int $builds = 0;
 
-            /** @var list<array{name: string, acceptKey: string, data: SignalDataInterface}> Signals sent to a user, oldest first */
+            /** @var list<array{name: string, data: SignalDataInterface}> Frames sent to another agent, oldest first */
             public array $sent = [];
 
             /**
@@ -116,9 +117,9 @@ final class OAuthAgentRegistryTest extends TestCase
                 return new OAuthProviderRegistry();
             }
 
-            public function sendToUser(string $signalName, string $targetAcceptKey, SignalDataInterface $data): void
+            public function sendToAgent(string $signalName, SignalDataInterface $data): void
             {
-                $this->sent[] = ['name' => $signalName, 'acceptKey' => $targetAcceptKey, 'data' => $data];
+                $this->sent[] = ['name' => $signalName, 'data' => $data];
             }
         };
     }

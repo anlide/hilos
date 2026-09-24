@@ -82,11 +82,10 @@ final class RecoveryCommands extends AbstractLibraryCommands
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, AuthMessages::SEND_CAP);
         }
 
-        // Two halves of one park since HIL-685: this library may add the row and may not
-        // edit one, so the frame is what re-points a tab that asked for a second code on
-        // another address. The answer below is still the library's - it never stood on
-        // the row, which exists for the OTHER tabs of this session.
-        Hilos::$rt->hilosRecoveryWaiters->actions->park($acting->acceptKey, $email, $acting->sessionToken);
+        // The wait is the session holder's to write (HIL-1044), so the frame parks the tab or
+        // re-points the one that asked for a second code on another address. The answer below
+        // is still the library's - it never stood on the row, which exists for the OTHER tabs
+        // of this session.
         $this->library->announceRecoveryWaitMoved($acting, $email);
 
         return AuthFlowOutcome::sent(

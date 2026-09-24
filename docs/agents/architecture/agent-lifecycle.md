@@ -130,6 +130,14 @@ line. The wait becomes a start-under-way wait the moment the agent does turn up
 starting here. The hold lives in the master's memory and dies with it: delivery
 across a node that fell over is HIL-347.
 
+Having answered the held frames, the master says one more thing (HIL-1044): to
+the agent declaring `hilos_agents_gone` in its `AGENT_SIGNALS`, which agents are
+gone and why — a dead worker, a failed start, an agent not placed — so whoever
+answers people on those agents' behalf ends what they will never answer. It is
+never sent when nobody declares it, and never to a declarer that is itself among
+the gone: a frame about its own death would restart the failing start again and
+again, the argument above against redelivery.
+
 The price of ending on a fact is that a start which ends without one strands its
 frames: a worker wedged in `onStart()` forever. A page and a command are taken
 off the hold when whoever asked goes away; a push has nobody to leave and simply

@@ -45,6 +45,7 @@ use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosClusterNodes;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
+use Hilos\Runtime\View\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
@@ -72,6 +73,7 @@ use OutOfBoundsException;
  * @property-read RegistrationWaiters $hilosRegistrationWaiters Browser sessions parked on a pending registration, mounted for every project
  * @property-read RecoveryWaiters $hilosRecoveryWaiters Browser sessions parked on a pending password recovery, mounted for every project
  * @property-read HilosCodeSendAttempts $hilosCodeSendAttempts Per-identifier code send attempts, mounted for every project
+ * @property-read HilosOAuthTrips $hilosOAuthTrips Provider sign-ins tabs are waiting on, mounted for a project that declares HilosFeature::AUTH
  * @property-read AuthAttempts $hilosAuthAttempts Sign-in attempt counters, mounted for a project that declares HilosFeature::AUTH_THROTTLE
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted

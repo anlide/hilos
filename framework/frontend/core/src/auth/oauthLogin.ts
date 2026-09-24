@@ -35,8 +35,13 @@
 // callback that finds no opener (the main window was closed while the person was at
 // the provider) finishes the exchange in its own document, and the callback URL
 // carries only `code` + `state`.
+import { z } from 'zod'
 import { browserValue } from '../browser/browserValue.js'
 import { ActionError } from '../connection/actionLifecycle.js'
+import {
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+} from '../protocol/constants.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { sessionAuthMethods, sessionUserId } from '../session/sessionScope.js'
 import {
@@ -50,6 +55,7 @@ import {
   AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
   AUTH_ACTION_LINK_OAUTH_START,
   AUTH_ACTION_OAUTH_CALLBACK,
+  AUTH_ACTION_OAUTH_RESUME,
   AUTH_ACTION_OAUTH_START,
 } from './authProtocol.js'
 import {
@@ -68,8 +74,10 @@ import {
 export type OAuthTripIntent = 'login' | 'link'
 
 /**
- * Where a trip is. `authorizing` is the person's time at the provider and has no
- * deadline; `exchanging` is our own round trip to the daemon and does.
+ * Where a trip is. `authorizing` is the person's time at the provider;
+ * `exchanging` is our own round trip to the daemon. Neither has a deadline: the
+ * exchange ends on a fact the server delivers, or on the connection's verdict
+ * that the server cannot be reached (HIL-1044).
  */
 export type OAuthTripPhase = 'authorizing' | 'exchanging'
 
@@ -178,14 +186,6 @@ export const OAUTH_WINDOW_FEATURES = 'popup=yes,width=600,height=700'
  */
 export const OAUTH_WINDOW_POLL_MS = 500
 
-/**
- * How long the exchange leg waits for its outcome before giving up. Comfortably
- * past the backend exchange deadline (EXCHANGE_TTL_MS = 15s), so it fires only when
- * the outcome is never coming. The authorizing leg has no deadline of its own: it
- * is the person's time, not ours.
- */
-export const OAUTH_EXCHANGE_TIMEOUT_MS = 20000
-
 /** Shown when the browser refused to open the provider window. */
 export const OAUTH_POPUP_BLOCKED_MESSAGE =
   'Allow pop-ups for this site to continue.'
@@ -221,11 +221,26 @@ export const OAUTH_PROVIDER_BROWSER_VALUE = browserValue({
 /** The generic message shown when an OAuth login cannot be completed. */
 const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
 
-/** Shown when the exchange leg passes {@link OAUTH_EXCHANGE_TIMEOUT_MS}. */
-const OAUTH_TIMEOUT_MESSAGE = 'OAuth login timed out. Please try again.'
+/**
+ * Shown when the connection cannot be brought back while the exchange runs: the
+ * connection's own verdict that the repair is dragging (HIL-831), or a connection
+ * that gave up. There is no Cancel on the exchange step (HIL-633), so this is the
+ * way out of a wait nothing on the server can end (HIL-1044).
+ */
+const OAUTH_UNREACHABLE_MESSAGE =
+  'Could not reach the server. Please try again.'
 
 /** Shown when the provider came back without the code and state to exchange. */
 const OAUTH_INCOMPLETE_MESSAGE = 'This sign-in link is invalid or incomplete.'
+
+/**
+ * Byte length of the key a trip is exchanged under (HIL-1044); the key is these
+ * bytes in hex, the form the server checks it against.
+ */
+const OAUTH_TRIP_KEY_BYTES = 16
+
+/** What the server answers a presented trip key with: whether it keeps that trip. */
+const oauthResumeReplySchema = z.object({ known: z.boolean() })
 
 /**
  * The messages shown when a profile link (HIL-401) does not succeed. A duplicate is
@@ -343,10 +358,10 @@ export const oauthTrip: ReadonlySignal<OAuthTrip | null> = tripSignal
 const outcomeHandlers = new Set<(outcome: OAuthTripOutcome) => void>()
 
 /**
- * Tears down the exchange leg's three arms (the result signal, the current-user
- * watch, the deadline). Non-null exactly while an exchange is in flight — which is
- * also how the cold path, where there is no {@link attempt} at all, is known to
- * have something to settle.
+ * Tears down the exchange leg's arms (the result signal, the current-user watch,
+ * the unreachable-server verdict, the key presented after a reconnect). Non-null exactly while an
+ * exchange is in flight — which is also how the cold path, where there is no
+ * {@link attempt} at all, is known to have something to settle.
  */
 let releaseExchange: (() => void) | null = null
 
@@ -797,12 +812,20 @@ function receiveOAuthReturn(
 }
 
 /**
- * Run the exchange leg: arm the three ways it can end, then hand the callback to
- * the daemon over THIS window's connection.
+ * Run the exchange leg: arm the ways it can end, then hand the callback to the
+ * daemon over THIS window's connection.
  *
  * The arms go up BEFORE the dispatch, so an early current-user update or result
  * signal cannot slip past. They come down together the moment one of them wins, so
  * a late one cannot fire into a trip that is over.
+ *
+ * The exchange is sent with a key minted for it (HIL-1044). The outcome is owed to
+ * the connection that sent the callback, and a reconnect replaces that connection;
+ * the key is what the tab presents on the new one to have the outcome moved there —
+ * a sign-in included, which the server hands to the tab that started it and to
+ * nobody else with the same cookie. So a callback that went down with its
+ * connection does not end the trip: whether it reached the server is exactly what
+ * the presentation finds out.
  *
  * @param context The project auth context the wire dispatches over.
  * @param provider The provider key the callback belongs to.
@@ -833,26 +856,197 @@ function runExchange(
       finishTrip({ kind: 'signed_in', message: '' })
     }
   })
-  const deadline = setTimeout(() => {
-    finishTrip({ kind: 'error', message: OAUTH_TIMEOUT_MESSAGE })
-  }, OAUTH_EXCHANGE_TIMEOUT_MS)
+  const isLive = (): boolean => releaseExchange === release
+  const stopUnreachable = armUnreachableServer(context, isLive)
+  const tripKey = mintTripKey()
+  const stopResume = armTripKeyPresentation(context, tripKey, isLive)
   const release = (): void => {
     stopResult()
     stopUser()
-    clearTimeout(deadline)
+    stopUnreachable()
+    stopResume()
   }
   releaseExchange = release
 
-  dispatchOAuthCallback(context, provider, code, state).catch(
+  dispatchOAuthCallback(context, provider, code, state, tripKey).catch(
     (error: unknown) => {
       // A rejection landing after the trip already ended belongs to a trip that is
-      // over; unlike the other two arms, a promise cannot be unsubscribed from.
-      if (releaseExchange !== release) {
+      // over; unlike the other arms, a promise cannot be unsubscribed from.
+      if (!isLive()) {
+        return
+      }
+      if (error instanceof ActionError && error.outcome === 'disconnected') {
+        // Gone with the connection, maybe after the server took it: the key
+        // presented on the next connection says which.
         return
       }
       finishTrip({ kind: 'error', message: describeOAuthError(error) })
     },
   )
+}
+
+/**
+ * End the trip when the connection cannot be brought back (HIL-1044).
+ *
+ * Nothing on the server can end a wait the tab cannot hear, and the exchange has
+ * no clock any more: every ending the server reaches is delivered or kept for the
+ * key. What is left is the network, which is outside, and the connection already
+ * has a verdict about it - the repair is dragging (HIL-831) - the same one the
+ * rest of the framework shows. A connection that gave up entirely is the same
+ * answer. A sign-in the server finished meanwhile is never applied without the
+ * tab presenting its key, so nobody is signed in behind the error.
+ *
+ * @param context The project auth context whose connection is watched.
+ * @param isLive Whether the exchange this arm belongs to is still running.
+ * @returns Teardown for the arm.
+ */
+function armUnreachableServer(
+  context: HilosAuthContext,
+  isLive: () => boolean,
+): () => void {
+  const unreachable = (): void => {
+    if (isLive()) {
+      finishTrip({ kind: 'error', message: OAUTH_UNREACHABLE_MESSAGE })
+    }
+  }
+  if (
+    context.connection.reconnectDragging ||
+    context.connection.state === 'disconnected'
+  ) {
+    queueMicrotask(unreachable)
+
+    return () => undefined
+  }
+  const stopDragging = context.connection.on(
+    'reconnectDragging',
+    (dragging) => {
+      if (dragging) {
+        unreachable()
+      }
+    },
+  )
+  const stopState = context.connection.on('state', (connectionState) => {
+    if (connectionState === 'disconnected') {
+      unreachable()
+    }
+  })
+
+  return () => {
+    stopDragging()
+    stopState()
+  }
+}
+
+/**
+ * Mint the key one exchange is sent and presented under (HIL-1044). A secret, not
+ * a counter: presenting it is what hands a sign-in to a connection, so it is drawn
+ * from the platform's secure source.
+ *
+ * @returns The key, {@link OAUTH_TRIP_KEY_BYTES} random bytes in lowercase hex.
+ */
+function mintTripKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(OAUTH_TRIP_KEY_BYTES))
+
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  )
+}
+
+/**
+ * Present the trip's key after every reconnect while the exchange is running, so
+ * the outcome owed to the old connection reaches the new one (HIL-1044).
+ *
+ * It is sent once the new connection's page has answered — an action is routed
+ * through the page subscription, so that answer is when the connection can carry
+ * one; the same arrival the page-ready gate latches. The latch itself is no use
+ * here: it is set once and stays set across a reconnect.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @param tripKey The key the exchange was sent under.
+ * @param isLive Whether the exchange this presentation belongs to is still running.
+ * @returns Teardown for the arm.
+ */
+function armTripKeyPresentation(
+  context: HilosAuthContext,
+  tripKey: string,
+  isLive: () => boolean,
+): () => void {
+  let stopAnswer: (() => void) | null = null
+  // Only a connection that actually dropped during the exchange replaced the one
+  // the outcome is owed to. The first `connected` of a freshly loaded document -
+  // the cold path - is the connection the callback itself is about to leave on,
+  // and presenting the key ahead of it would be answered "unknown".
+  let dropped = false
+  const stopState = context.connection.on('state', (connectionState) => {
+    if (
+      connectionState === 'reconnecting' ||
+      connectionState === 'disconnected'
+    ) {
+      dropped = true
+
+      return
+    }
+    if (connectionState !== 'connected' || !dropped) {
+      return
+    }
+    dropped = false
+    stopAnswer?.()
+    stopAnswer = context.connection.on('projectSignal', (signal) => {
+      if (
+        signal.type !== SIGNAL_TYPE_PAGE_RESPONSE &&
+        signal.type !== SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR
+      ) {
+        return
+      }
+      stopAnswer?.()
+      stopAnswer = null
+      presentTripKey(context, tripKey, isLive)
+    })
+  })
+
+  return () => {
+    stopState()
+    stopAnswer?.()
+  }
+}
+
+/**
+ * Present the trip's key on this connection and settle what the answer says. A
+ * known key changes nothing here: the outcome arrives the way it always does, as
+ * the result signal or the identity coming up. An unknown one means nothing is
+ * coming at all, and the trip ends rather than wait for it.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @param tripKey The key the exchange was sent under.
+ * @param isLive Whether the exchange this presentation belongs to is still running.
+ */
+function presentTripKey(
+  context: HilosAuthContext,
+  tripKey: string,
+  isLive: () => boolean,
+): void {
+  context.actions
+    .dispatch(
+      AUTH_ACTION_OAUTH_RESUME,
+      { tripKey },
+      { replySchema: oauthResumeReplySchema },
+    )
+    .done.then(({ reply }) => {
+      // A server that answered nothing kept nothing either.
+      if (isLive() && reply?.known !== true) {
+        finishTrip({ kind: 'error', message: OAUTH_FAILED_MESSAGE })
+      }
+    })
+    .catch((error: unknown) => {
+      if (!isLive()) {
+        return
+      }
+      if (error instanceof ActionError && error.outcome === 'disconnected') {
+        // The next connection presents it again.
+        return
+      }
+      finishTrip({ kind: 'error', message: describeOAuthError(error) })
+    })
 }
 
 /**
@@ -957,24 +1151,27 @@ function takeOAuthProvider(): string {
  * session yet, so the completed login binds nothing back to this browser and the
  * spinner hangs. The page's answer closes both, and closes them strictly harder
  * than the handshake this used to wait on: a page is only answered after the
- * session that judges it. A connection that never answers leaves this pending,
- * which the trip's own deadline backstops.
+ * session that judges it. A connection that never comes up leaves this pending,
+ * and the connection's own verdict that the server cannot be reached ends the
+ * trip instead (HIL-1044).
  *
  * @param context The project auth context the wire dispatches over.
  * @param provider The provider key the callback belongs to.
  * @param code The authorization code the provider returned.
  * @param state The signed state the provider returned.
+ * @param tripKey The key the exchange is sent under.
  */
 async function dispatchOAuthCallback(
   context: HilosAuthContext,
   provider: string,
   code: string,
   state: string,
+  tripKey: string,
 ): Promise<void> {
   await whenPageReady()
 
   return context.actions
-    .dispatch(AUTH_ACTION_OAUTH_CALLBACK, { provider, code, state })
+    .dispatch(AUTH_ACTION_OAUTH_CALLBACK, { provider, code, state, tripKey })
     .done.then(() => undefined)
 }
 

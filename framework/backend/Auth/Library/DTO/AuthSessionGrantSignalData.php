@@ -34,6 +34,8 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
      * @param ?string $action Action name to answer, or null when nothing is waiting on an answer
      * @param ?array<string, mixed> $outcome Reply the answer carries ({@see AuthFlowOutcome::toArray()}), or null
      * @param ?string $ack Ack to show on the session's tabs (a {@see SessionAck} value), or null for none
+     * @param ?string $tripKeyHash Hash of the key of the provider sign-in this grant ends, or null for every other
+     *     ceremony (HIL-1044)
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -43,6 +45,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
         public readonly ?string $action = null,
         public readonly ?array $outcome = null,
         public readonly ?string $ack = null,
+        public readonly ?string $tripKeyHash = null,
     ) {
     }
 
@@ -61,6 +64,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
             'action' => $this->action,
             'outcome' => $this->outcome,
             'ack' => $this->ack,
+            'tripKeyHash' => $this->tripKeyHash,
         ];
     }
 
@@ -81,6 +85,7 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
             action: self::optionalString($data, 'action'),
             outcome: self::optionalArray($data, 'outcome'),
             ack: self::optionalString($data, 'ack'),
+            tripKeyHash: self::optionalString($data, 'tripKeyHash'),
         );
     }
 }

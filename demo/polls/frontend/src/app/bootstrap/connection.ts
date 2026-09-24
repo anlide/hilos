@@ -12,7 +12,6 @@
 // the settings table's edit dialog calls `actions.dispatch(...)` and closes on
 // the returned handle's resolved `done`.
 import {
-  AUTH_CODE_SIGNAL_SCHEMAS,
   AUTH_CONVERGE_SIGNAL_SCHEMAS,
   createHilosConnection,
   OAUTH_SIGNAL_SCHEMAS,
@@ -35,7 +34,6 @@ export const { connection, actions } = createHilosConnection({
   // button that never stops loading.
   projectSchemas: {
     ...GUEST_SIGNAL_SCHEMAS,
-    ...AUTH_CODE_SIGNAL_SCHEMAS,
     ...AUTH_CONVERGE_SIGNAL_SCHEMAS,
     ...OAUTH_SIGNAL_SCHEMAS,
     ...PASSKEY_SIGNAL_SCHEMAS,

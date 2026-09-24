@@ -12,7 +12,6 @@
 // `actions` is the requestId-correlated reply lifecycle: a modal submit calls
 // `actions.dispatch(...)` and closes on the returned handle's resolved `done`.
 import {
-  AUTH_CODE_SIGNAL_SCHEMAS,
   AUTH_CONVERGE_SIGNAL_SCHEMAS,
   createHilosConnection,
   OAUTH_SIGNAL_SCHEMAS,
@@ -29,7 +28,6 @@ export const { connection, actionErrors, actions } = createHilosConnection({
   // outcome (HIL-492), the auth-converge step change (HIL-415) — plus the
   // project's own profile set-password success (HIL-402). All arrive WS_USER.
   projectSchemas: {
-    ...AUTH_CODE_SIGNAL_SCHEMAS,
     ...AUTH_CONVERGE_SIGNAL_SCHEMAS,
     ...OAUTH_SIGNAL_SCHEMAS,
     ...PASSKEY_SIGNAL_SCHEMAS,

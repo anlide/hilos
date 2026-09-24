@@ -317,7 +317,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         ?string $email,
         ?string $name,
     ): void {
-        $op = OAuthPendingLogin::create('ak-' . $subject, 'session-' . $subject, $provider, 'code', 0.0);
+        $op = OAuthPendingLogin::create('ak-' . $subject, 'session-' . $subject, $provider, 'code', 'trip-' . $subject);
         $method = new ReflectionMethod(OAuthAgent::class, 'completeOAuthLogin');
         $method->invoke($agent, $op, new OAuthUserInfo($subject, $email, $name));
         $this->resolveHandedOverLogin();

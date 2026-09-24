@@ -68,14 +68,17 @@ final class HilosCodeSendAttemptsActions extends RtActions
     /**
      * Moves the line one step, if the step belongs to the send the line is following.
      *
-     * The detail is written on every accepted step rather than only on a refusal, because the
-     * two emptinesses differ: a send that goes back to queued after a retryable refusal has to
+     * The detail - and the outcome beside it - is written on every accepted step rather than only
+     * on the one that carries it, because the two emptinesses differ: a send that goes back to queued after a retryable refusal has to
      * LOSE the sentence it was carrying, or the screen would show yesterday's reason under
      * today's state.
      *
      * @param string $ticket Ticket the reporting transport was given
      * @param string $state One of the five states on {@see StateHilosCodeSendAttempt}
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
+     * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null
      * @return ?string Session token hash of the row that moved, or null when the ticket is stale
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
@@ -84,8 +87,14 @@ final class HilosCodeSendAttemptsActions extends RtActions
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws HilosException Whatever the row's read of the written fields raises
      */
-    public function advance(string $ticket, string $state, ?string $detail): ?string
-    {
+    public function advance(
+        string $ticket,
+        string $state,
+        ?string $detail,
+        ?string $reason = null,
+        ?int $resendAt = null,
+        ?int $expiresAt = null,
+    ): ?string {
         $this->ensureCanWrite();
 
         foreach ($this->stateCollection as $attempt) {
@@ -96,6 +105,9 @@ final class HilosCodeSendAttemptsActions extends RtActions
             $this->applyDiffToState($attempt, [
                 StateHilosCodeSendAttempt::state => $state,
                 StateHilosCodeSendAttempt::detail => $detail,
+                StateHilosCodeSendAttempt::reason => $reason,
+                StateHilosCodeSendAttempt::resendAt => $resendAt,
+                StateHilosCodeSendAttempt::expiresAt => $expiresAt,
                 StateHilosCodeSendAttempt::updatedAt => TimeHelper::nowMs(),
             ]);
 

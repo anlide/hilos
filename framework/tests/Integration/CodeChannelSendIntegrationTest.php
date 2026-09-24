@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Code\AuthCodeAgent;
-use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
@@ -15,7 +15,6 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -83,6 +82,9 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
     private ?SignalRouter $previousSignalRouter = null;
 
+    /** @var array<string, string> Number each session was said to wait on, by session token */
+    private array $waitsHeld = [];
+
     /**
      * @throws HilosException When a stub statement fails or the context cannot be configured
      */
@@ -139,7 +141,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $this->request($agent, $phone, 'unreachable');
 
         self::assertSame(
-            AuthCodeResultSignalData::REASON_CHANNEL_UNAVAILABLE,
+            HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE,
             $this->takeResultReason(),
         );
         self::assertNull(
@@ -166,7 +168,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->request($agent, $phone, 'carrier');
 
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
         self::assertSame([$phone], $channel->handedOff, 'The channel must be handed the code it reported sending');
         self::assertSame(
             'carrier',
@@ -218,6 +220,23 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
+     * Stopping the agent answers every send it still holds (HIL-1044): the browser waiting on the
+     * code has no clock left to end its wait, so a send dropped in silence would be a line saying
+     * "sending" forever.
+     *
+     * @throws HilosException When the intake or the stop raises
+     */
+    public function testStoppingTheAgentAnswersEverySendStillInFlight(): void
+    {
+        $agent = new CodeChannelTestAgent(new CodeChannelTestChannel('carrier', reachable: true));
+        $this->deliver($agent, $this->uniquePhone(), 'carrier');
+
+        $agent->onStop();
+
+        self::assertSame([HilosCodeSendAttempt::STATE_FAILED], $this->takeReportedSteps());
+    }
+
+    /**
      * The cap counts the number, not the channel, so a second channel cannot buy a third code.
      *
      * @throws HilosException When a verification query fails
@@ -229,17 +248,17 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $second = new CodeChannelTestChannel('second', reachable: true);
 
         $this->request(new CodeChannelTestAgent($first), $phone, 'first');
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
 
         $this->request(new CodeChannelTestAgent($second), $phone, 'second');
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
 
         // Third send, on a channel that has sent nothing yet: refused all the same,
         // because the budget belongs to the number.
         $third = new CodeChannelTestChannel('third', reachable: true);
         $this->request(new CodeChannelTestAgent($third), $phone, 'third');
 
-        self::assertSame(AuthCodeResultSignalData::REASON_CAP_REACHED, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CAP_REACHED, $this->takeResultReason());
         self::assertSame([], $third->handedOff, 'A capped request must not reach the transport');
     }
 
@@ -256,11 +275,11 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $channel = new CodeChannelTestChannel('held', reachable: true);
 
         $this->request(new CodeChannelTestAgent($channel), $phone, 'held');
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
 
         $this->request(new CodeChannelTestAgent($channel), $phone, 'held');
 
-        self::assertSame(AuthCodeResultSignalData::REASON_RATE_LIMITED, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_RATE_LIMITED, $this->takeResultReason());
         self::assertCount(1, $channel->handedOff, 'A held send must not reach the transport a second time');
     }
 
@@ -275,7 +294,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->request(new CodeChannelTestAgent(new CodeChannelTestChannel('free', reachable: true)), $phone, 'free');
 
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
         self::assertNotNull(
             new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN),
             'A number nobody owns must be held while its code travels',
@@ -295,7 +314,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->request(new CodeChannelTestAgent(new CodeChannelTestChannel('known', reachable: true)), $phone, 'known');
 
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
         self::assertNull(
             new RegistrationReservationService()->findActiveForSession(self::SESSION_TOKEN),
             'There is nothing left to reserve about a number somebody already owns',
@@ -323,25 +342,27 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $second = 'c0de00000000000000000000000000b2';
 
         $this->request(new CodeChannelTestAgent($channel), $phone, 'joined');
-        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
 
         $this->request(new CodeChannelTestAgent($channel), $phone, 'joined', $second);
 
-        self::assertSame(AuthCodeResultSignalData::REASON_RATE_LIMITED, $this->takeResultReason());
+        self::assertSame(HilosCodeSendAttempt::REASON_RATE_LIMITED, $this->takeResultReason());
         self::assertSame($phone, $this->waitOf($second), 'The joining session waits on the same number');
         self::assertSame($phone, $this->waitOf(self::SESSION_TOKEN), 'The first session keeps waiting on it');
     }
 
     /**
-     * Reads what a session is waiting on, straight from the durable memory.
+     * The number a session was said to wait on, as the agent told the session holder.
      *
-     * @param string $sessionToken Session token to ask about
-     * @return ?string Identifier the session is waiting on, or null when it waits on nothing
-     * @throws HilosException When the session lookup fails
+     * The holder writes the wait (HIL-1044); what this case owns is the agent's word, and
+     * {@see self::takeResultReason()} collects it only when it came BEFORE the closing step.
+     *
+     * @param string $sessionToken Session token the request spoke for
+     * @return ?string Number the session was said to wait on, or null when nothing was said
      */
     private function waitOf(string $sessionToken): ?string
     {
-        return Hilos::$db?->sessions->findByToken($sessionToken)?->pendingRegistrationIdentifier;
+        return $this->waitsHeld[$sessionToken] ?? null;
     }
 
     /**
@@ -363,6 +384,28 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         // request speaks for has to exist before the agent can remember anything about it -
         // exactly as it does in production, where a socket only ever arrives with a
         // session the master already resolved.
+        $this->deliver($agent, $phone, $channel, $sessionToken);
+
+        // Every channel in this case answers reachability without the network, so a
+        // single tick carries the operation through probe, mint, send and outcome.
+        $agent->onTick();
+    }
+
+    /**
+     * Hands one request to an agent and leaves it in the agent's pool, unpumped.
+     *
+     * @param CodeChannelTestAgent $agent Agent under test, carrying its one channel
+     * @param string $phone Number the code is asked for
+     * @param string $channel Channel name the request names
+     * @param string $sessionToken Session token the request speaks for
+     * @throws HilosException When the session seed or the agent's intake raises
+     */
+    private function deliver(
+        CodeChannelTestAgent $agent,
+        string $phone,
+        string $channel,
+        string $sessionToken = self::SESSION_TOKEN,
+    ): void {
         if (Hilos::$db?->sessions->findByToken($sessionToken) === null) {
             Hilos::$db?->sessions->actions->createAnonymous($sessionToken);
         }
@@ -379,14 +422,15 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
             '',
             HilosSignalConstants::HILOS_AUTH_CODE_SEND,
         );
-
-        // Every channel in this case answers reachability without the network, so a
-        // single tick carries the operation through probe, mint, send and outcome.
-        $agent->onTick();
     }
 
     /**
-     * Takes the reason off the next queued outcome signal.
+     * Takes the reason off the closing step of the send, collecting the waits announced before it.
+     *
+     * The outcome rides the line since HIL-1044: the closing step is the one that carries a
+     * reason. A wait the agent announced to the session holder is collected on the way, and only
+     * on the way - one announced after the closing step would reach the holder too late for the
+     * line it replays.
      *
      * @return ?string Reason the agent reported, or null when it queued nothing
      */
@@ -394,8 +438,15 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $payload = $signal->data;
-            $inner = $payload instanceof WebSocketSignalData ? $payload->data : $payload;
-            if ($inner instanceof AuthCodeResultSignalData) {
+            if (!$payload instanceof AgentSignalData) {
+                continue;
+            }
+            $inner = $payload->data;
+            if ($inner instanceof AuthRegistrationWaitHeldSignalData) {
+                $this->waitsHeld[$inner->sessionToken] = $inner->identifier;
+                continue;
+            }
+            if ($inner instanceof CodeSendStepSignalData && $inner->reason !== null) {
                 return $inner->reason;
             }
         }

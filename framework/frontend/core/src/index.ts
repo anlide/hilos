@@ -213,7 +213,11 @@ export {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
 } from './subscription/bindPageScope.js'
-export { bindPageReady, whenPageReady } from './subscription/pageReadyGate.js'
+export {
+  bindPageReady,
+  whenPageReady,
+  whenPageReadyOrUnreachable,
+} from './subscription/pageReadyGate.js'
 export {
   bindTableViewport,
   type TableViewportAddress,
@@ -303,15 +307,11 @@ export {
   type HilosOAuthProviderOption,
 } from './auth/authContext.js'
 export {
-  AUTH_CODE_RESULT_SIGNAL,
   AUTH_CODE_REASON_SENT,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
   AUTH_CODE_REASON_RATE_LIMITED,
   AUTH_CODE_REASON_CAP_REACHED,
   AUTH_CODE_REASON_SEND_FAILED,
-  authCodeResultSignalSchema,
-  AUTH_CODE_SIGNAL_SCHEMAS,
-  type AuthCodeResultSignalData,
 } from './auth/authCodeSignals.js'
 export {
   SIGNAL_CODE_SEND_PROGRESS,
@@ -344,7 +344,6 @@ export {
   oauthTripMessage,
   oauthTripTitle,
   HILOS_OAUTH_WINDOW_NAME,
-  OAUTH_EXCHANGE_TIMEOUT_MS,
   OAUTH_POPUP_BLOCKED_MESSAGE,
   OAUTH_RETURN_MESSAGE_TYPE,
   OAuthWindowBlockedError,
@@ -402,6 +401,7 @@ export {
   AUTH_ACTION_CANCEL_REGISTRATION,
   AUTH_ACTION_OAUTH_START,
   AUTH_ACTION_OAUTH_CALLBACK,
+  AUTH_ACTION_OAUTH_RESUME,
   AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
   AUTH_ACTION_PASSKEY_LOGIN_CONFIRM,

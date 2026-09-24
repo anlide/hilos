@@ -27,6 +27,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
      * @param string $displayName Name to give a freshly created account
      * @param string $acceptKey Accept key of the connection that started the login
      * @param string $sessionToken Session token of that browser
+     * @param string $tripKeyHash Hash of the key the tab minted, naming the trip the ending belongs to (HIL-1044)
      * @param ?string $requestId Request id of the action that started it, or null when untracked
      * @param ?string $action Action name to answer, or null when nothing is waiting on an answer
      */
@@ -37,6 +38,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
         public readonly string $displayName,
         public readonly string $acceptKey,
         public readonly string $sessionToken,
+        public readonly string $tripKeyHash,
         public readonly ?string $requestId = null,
         public readonly ?string $action = null,
     ) {
@@ -56,6 +58,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
             'displayName' => $this->displayName,
             'acceptKey' => $this->acceptKey,
             'sessionToken' => $this->sessionToken,
+            'tripKeyHash' => $this->tripKeyHash,
             'requestId' => $this->requestId,
             'action' => $this->action,
         ];
@@ -66,7 +69,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload names no provider, no subject, or no connection to answer
+     * @throws InvalidFormatException When the payload names no provider, no subject, no connection to answer, or no trip
      */
     public static function fromArray(array $data): static
     {
@@ -77,6 +80,7 @@ final class OAuthLoginReadySignalData extends BaseDTO implements SignalDataInter
             displayName: self::requireString($data, 'displayName'),
             acceptKey: self::requireString($data, 'acceptKey'),
             sessionToken: self::requireString($data, 'sessionToken'),
+            tripKeyHash: self::requireString($data, 'tripKeyHash'),
             requestId: self::optionalString($data, 'requestId'),
             action: self::optionalString($data, 'action'),
         );

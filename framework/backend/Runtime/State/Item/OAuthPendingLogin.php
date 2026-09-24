@@ -18,24 +18,15 @@ use Hilos\Core\Exception\InvalidFormatException;
  * ({@see AbstractOAuthAgent}) observes the collection and
  * drives the token/userinfo round-trips across ticks off the master.
  *
- * It is a short-lived, best-effort record: {@see deadlineMs} bounds its life so a
- * dropped or failed-over exchange is expired rather than leaked. It is an INTERNAL
- * op, not a browser-gated table item — nothing here is surfaced to a page.
+ * It carries no deadline (HIL-1044): each of its provider requests is bounded by its
+ * own timeout, and every other ending - a stop, a dead agent - is a fact the session
+ * holder is told. It is an INTERNAL op, not a browser-gated table item — nothing here
+ * is surfaced to a page.
  */
 final class OAuthPendingLogin extends RtState
 {
     /** Runtime collection key registered by the project and used for RT sync. */
     public const string RT_COLLECTION = 'hilosOAuthPendingLogins';
-
-    /**
-     * Lifetime of an in-flight exchange op after the callback records it: two provider
-     * round-trips plus slack, after which the agent abandons it.
-     *
-     * It bounds a framework mechanism - how long the agent keeps chasing a provider that
-     * stopped answering - so the framework sets it rather than asking each project for a
-     * number it has no way to judge.
-     */
-    public const float EXCHANGE_TTL_MS = 15000.0;
 
     /** Flow mode: a plain sign-in exchange (the default). */
     public const string MODE_LOGIN = 'login';
@@ -47,7 +38,7 @@ final class OAuthPendingLogin extends RtState
     public const string sessionToken = 'sessionToken';
     public const string provider = 'provider';
     public const string code = 'code';
-    public const string deadlineMs = 'deadlineMs';
+    public const string tripKeyHash = 'tripKeyHash';
     public const string mode = 'mode';
     public const string linkUserId = 'linkUserId';
 
@@ -63,8 +54,8 @@ final class OAuthPendingLogin extends RtState
     /** Authorization code returned to the SPA callback, exchanged for a token. */
     public string $code = '';
 
-    /** Absolute deadline in milliseconds after which the exchange is abandoned. */
-    public float $deadlineMs = 0.0;
+    /** Hash of the key the tab minted; names the trip every ending of this op is reported under (HIL-1044). */
+    public string $tripKeyHash = '';
 
     /** Flow mode this op resolves under ({@see MODE_LOGIN} or {@see MODE_LINK}, HIL-401). */
     public string $mode = self::MODE_LOGIN;
@@ -79,7 +70,7 @@ final class OAuthPendingLogin extends RtState
      * @param string $sessionToken Session token to authenticate on success
      * @param string $provider Provider key, e.g. 'oauth:github'
      * @param string $code Authorization code to exchange
-     * @param float $deadlineMs Absolute deadline in milliseconds
+     * @param string $tripKeyHash Hash of the key the tab minted for this exchange
      * @param string $mode Flow mode ({@see MODE_LOGIN} default, {@see MODE_LINK})
      * @param int $linkUserId User the identity links to under {@see MODE_LINK}; 0 for login
      * @return static Fresh pending-login op
@@ -89,7 +80,7 @@ final class OAuthPendingLogin extends RtState
         string $sessionToken,
         string $provider,
         string $code,
-        float $deadlineMs,
+        string $tripKeyHash,
         string $mode = self::MODE_LOGIN,
         int $linkUserId = 0,
     ): static {
@@ -98,7 +89,7 @@ final class OAuthPendingLogin extends RtState
         $instance->sessionToken = $sessionToken;
         $instance->provider = $provider;
         $instance->code = $code;
-        $instance->deadlineMs = $deadlineMs;
+        $instance->tripKeyHash = $tripKeyHash;
         $instance->mode = $mode;
         $instance->linkUserId = $linkUserId;
         $instance->markRtSyncBaseline();
@@ -118,7 +109,7 @@ final class OAuthPendingLogin extends RtState
         $instance->sessionToken = self::requireString($row, self::sessionToken);
         $instance->provider = self::requireString($row, self::provider);
         $instance->code = self::requireString($row, self::code);
-        $instance->deadlineMs = self::requireFloat($row, self::deadlineMs);
+        $instance->tripKeyHash = self::requireString($row, self::tripKeyHash);
         $instance->mode = self::requireString($row, self::mode);
         $instance->linkUserId = self::requireInt($row, self::linkUserId);
         $instance->markRtSyncBaseline();
@@ -152,7 +143,7 @@ final class OAuthPendingLogin extends RtState
             self::sessionToken => $this->sessionToken,
             self::provider => $this->provider,
             self::code => $this->code,
-            self::deadlineMs => $this->deadlineMs,
+            self::tripKeyHash => $this->tripKeyHash,
             self::mode => $this->mode,
             self::linkUserId => $this->linkUserId,
         ];

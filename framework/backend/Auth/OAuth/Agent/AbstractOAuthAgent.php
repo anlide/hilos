@@ -9,6 +9,7 @@ use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthException;
 use Hilos\Auth\OAuth\HttpOAuthProvider;
 use Hilos\Auth\OAuth\OAuthHttpRequest;
@@ -168,10 +169,29 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Abandons any in-flight exchange on shutdown, closing its socket.
+     * Answers every pending login with a failure on shutdown, then closes the sockets.
+     *
+     * Silence is not an option here any more (HIL-1044): a tab waiting on the exchange has no
+     * clock left to end its wait, so every op this agent holds - started or still queued behind
+     * the pool ceiling - is reported ended to the session holder, the way a failed exchange is.
+     * The frames leave in the same tick, ahead of the stop, as every frame of an ordinary stop
+     * does.
+     *
+     * @throws InvalidArgumentException When an ending frame cannot be named or queued
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the pool's announcement raises
      */
     public function onStop(): void
     {
+        $ops = [];
+        foreach ($this->pending as $op) {
+            if ($op instanceof OAuthPendingLogin) {
+                $ops[] = $op;
+            }
+        }
+        foreach ($ops as $op) {
+            $this->failOp($op, 'agent stopped');
+        }
+
         foreach ($this->exchanges as $exchange) {
             $exchange->reset();
         }
@@ -218,6 +238,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
                 $this->displayNameFor($op, $info),
                 $op->acceptKey,
                 $op->sessionToken,
+                $op->tripKeyHash,
             ),
         );
     }
@@ -260,11 +281,13 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Starts an exchange for each fresh op, failing expired ones and respecting the pool ceiling.
+     * Starts an exchange for each fresh op, respecting the pool ceiling.
      *
      * Ops are snapshotted before iterating so failing/adopting an op (which mutates the
-     * collection) is safe. An op past its deadline is failed regardless of capacity; a fresh
-     * op is only started while there is a free pool slot, otherwise it waits for a later tick.
+     * collection) is safe. A fresh op is only started while there is a free pool slot,
+     * otherwise it waits for a later tick - with no clock on the wait since HIL-1044: every
+     * exchange holding a slot ends within the timeouts of its own two requests, so the queue
+     * drains by facts.
      *
      * @param OAuthPendingLogins $collection Agent-local pending-login pool
      * @param float $nowMs Current time in milliseconds
@@ -280,10 +303,6 @@ abstract class AbstractOAuthAgent extends AbstractAgent
 
         foreach ($ops as $op) {
             if (isset($this->exchanges[$op->getId()])) {
-                continue;
-            }
-            if ($nowMs >= $op->deadlineMs) {
-                $this->failOp($op, 'deadline exceeded before the exchange started');
                 continue;
             }
             if (count($this->exchanges) >= $this->maxConcurrentExchanges()) {
@@ -336,7 +355,6 @@ abstract class AbstractOAuthAgent extends AbstractAgent
             $provider,
             OAuthExchange::STAGE_TOKEN,
             $client,
-            $op->deadlineMs,
         );
     }
 
@@ -344,8 +362,9 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * Pumps each in-flight exchange one step, advancing token → userinfo → completion.
      *
      * Exchange keys are snapshotted so completing/failing an op (which drops it from the
-     * pool) is safe. An op that vanished from the collection (expired elsewhere) drops its
-     * exchange; a deadline overrun fails it; any transport or parse error fails it generically.
+     * pool) is safe. An op that vanished from the collection drops its exchange; any
+     * transport or parse error - a request past its own timeout included - fails it
+     * generically.
      *
      * @param OAuthPendingLogins $collection Agent-local pending-login pool
      * @param float $nowMs Current time in milliseconds
@@ -363,11 +382,6 @@ abstract class AbstractOAuthAgent extends AbstractAgent
                 $this->dropExchange($acceptKey);
                 continue;
             }
-            if ($nowMs >= $exchange->deadlineMs) {
-                $this->failOp($op, 'exchange timed out');
-                continue;
-            }
-
             try {
                 $this->advanceExchange($op, $exchange, $nowMs);
             } catch (OAuthException|AsyncHttpException|SocketException $e) {
@@ -486,7 +500,8 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * has no session change to ride: success ({@see OAuthResultSignalData::REASON_LINK_OK}),
      * an identity already linked to some account
      * ({@see OAuthResultSignalData::REASON_LINK_DUPLICATE}), or any other write
-     * failure ({@see OAuthResultSignalData::REASON_LINK_FAILED}).
+     * failure ({@see OAuthResultSignalData::REASON_LINK_FAILED}). Signalled through the
+     * session holder, which knows which connection the tab is on by then (HIL-1044).
      *
      * @param OAuthPendingLogin $op Op being completed (carries the target user and accept key)
      * @param OAuthUserInfo $info Resolved provider identity
@@ -524,22 +539,19 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Delivers a terminal link-result signal to the initiating connection (HIL-401).
+     * Reports a terminal link result to the session holder (HIL-401, HIL-1044).
      *
-     * @param OAuthPendingLogin $op Op whose accept key the signal targets
+     * @param OAuthPendingLogin $op Op whose trip the result ends
      * @param string $reason Terminal link reason ({@see OAuthResultSignalData} REASON_LINK_*)
+     * @throws InvalidArgumentException When the ending frame cannot be named or queued
      */
     private function sendLinkResult(OAuthPendingLogin $op, string $reason): void
     {
-        $this->sendToUser(
-            HilosSignalConstants::HILOS_OAUTH_RESULT,
-            $op->acceptKey,
-            new OAuthResultSignalData($op->acceptKey, $op->provider, $reason),
-        );
+        $this->reportTripEnded($op, $reason);
     }
 
     /**
-     * Reports a login failure to the initiating connection and clears the op.
+     * Reports a login failure to the session holder and clears the op.
      *
      * The client sees a generic failure ({@see OAuthResultSignalData}); the specific cause
      * stays in the agent log so no provider/network detail crosses the wire. The generic
@@ -547,6 +559,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      *
      * @param OAuthPendingLogin $op Op being failed
      * @param string $detail Cause detail for the log only
+     * @throws InvalidArgumentException When the ending frame cannot be named or queued
      */
     private function failOp(OAuthPendingLogin $op, string $detail): void
     {
@@ -554,12 +567,28 @@ abstract class AbstractOAuthAgent extends AbstractAgent
         $reason = $op->mode === OAuthPendingLogin::MODE_LINK
             ? OAuthResultSignalData::REASON_LINK_FAILED
             : OAuthResultSignalData::REASON_LOGIN_FAILED;
-        $this->sendToUser(
-            HilosSignalConstants::HILOS_OAUTH_RESULT,
-            $op->acceptKey,
-            new OAuthResultSignalData($op->acceptKey, $op->provider, $reason),
-        );
+        $this->reportTripEnded($op, $reason);
         $this->clearOp($op->getId());
+    }
+
+    /**
+     * Tells the session holder how an op's trip ended (HIL-1044).
+     *
+     * Not the tab directly, as it used to be: the tab is owed the outcome on whatever connection
+     * it is on NOW, and only the holder knows that - a reconnect in the middle of an exchange
+     * moved the outcome to the socket that presented the trip's key, which this agent never
+     * hears of.
+     *
+     * @param OAuthPendingLogin $op Op whose trip ended
+     * @param string $reason How it ended ({@see OAuthResultSignalData} REASON_*)
+     * @throws InvalidArgumentException When the ending frame cannot be named or queued
+     */
+    private function reportTripEnded(OAuthPendingLogin $op, string $reason): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,
+            new OAuthTripEndedSignalData($op->tripKeyHash, $op->acceptKey, $op->provider, $reason),
+        );
     }
 
     /**

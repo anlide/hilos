@@ -16,7 +16,9 @@
 //
 // No timeout lives here. A gate that gave up on its own would turn a slow
 // connection into a silent failure at a depth that cannot say what to do next;
-// the relay screen that shows the spinner owns the backstop and the retry.
+// the relay screen that shows the spinner owns the retry, and ends the wait on
+// the connection's own verdict that the server cannot be reached
+// ({@link whenPageReadyOrUnreachable}, HIL-1044).
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
@@ -89,5 +91,52 @@ export function whenPageReady(): Promise<void> {
 
   return new Promise<void>((resolve) => {
     pageReadyWaiters.push(resolve)
+  })
+}
+
+/**
+ * Resolve `true` once a page subscription on this connection has answered, or
+ * `false` once the connection says the server cannot be reached (HIL-1044) - its
+ * own verdict that the repair is dragging (HIL-831), or a connection that gave up.
+ *
+ * The relay screens' way to wait without a clock of their own: {@link whenPageReady}
+ * parks for as long as it takes by design, and what ends a wait nobody will answer
+ * is the network being out of reach, which the connection already judges for the
+ * whole framework.
+ *
+ * @param connection The application's Hilos connection.
+ * @returns Whether the connection can carry a dispatch.
+ */
+export function whenPageReadyOrUnreachable(
+  connection: HilosConnection,
+): Promise<boolean> {
+  if (connection.reconnectDragging || connection.state === 'disconnected') {
+    return Promise.resolve(false)
+  }
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const settle = (canCarry: boolean): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      stopDragging()
+      stopState()
+      resolve(canCarry)
+    }
+    const stopDragging = connection.on('reconnectDragging', (dragging) => {
+      if (dragging) {
+        settle(false)
+      }
+    })
+    const stopState = connection.on('state', (state) => {
+      if (state === 'disconnected') {
+        settle(false)
+      }
+    })
+    void whenPageReady().then(() => {
+      settle(true)
+    })
   })
 }

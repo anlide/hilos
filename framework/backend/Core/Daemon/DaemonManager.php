@@ -48,11 +48,13 @@ use Hilos\Cluster\RtSyncSink;
 use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -1114,7 +1116,8 @@ abstract class DaemonManager extends BaseManager implements
      * The frames held for those agents are answered first, before the project hears anything: the
      * hold for a start under way has no deadline behind it, and this death is the end of the wait
      * (HIL-1040). First also so a project hook that raises cannot leave an asker waiting forever -
-     * the guard below contains the hook, not what the node owes the people who asked.
+     * the guard below contains the hook, not what the node owes the people who asked. The agent
+     * answering somebody on their behalf is told next, for the same reason (HIL-1044).
      *
      * @param int $workerIndex Index of the worker that died
      * @param bool $isMonopolistic True when that worker was monopolistic
@@ -1124,6 +1127,7 @@ abstract class DaemonManager extends BaseManager implements
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
     {
         $this->answerFramesHeldForLostAgents($agentIds);
+        $this->announceAgentsGone($agentIds, AgentsGoneSignalData::REASON_WORKER_DIED);
 
         try {
             $this->onAgentsLostWithWorker($workerIndex, $isMonopolistic, $agentIds);
@@ -1225,6 +1229,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->parkedAgentSignals = $stillParked;
         $agent = AgentId::fromId($agentId);
         Hilos::$cluster?->placement()?->noteAgentStartFailed($agent->type, $agent->index, $reason);
+        $this->announceAgentsGone([$agentId], AgentsGoneSignalData::REASON_START_FAILED);
     }
 
     /**
@@ -1261,6 +1266,44 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $this->parkedAgentSignals = $stillParked;
+        $this->announceAgentsGone([$agentId], AgentsGoneSignalData::REASON_NOT_PLACED);
+    }
+
+    /**
+     * Tells the agent that declared {@see HilosSignalConstants::HILOS_AGENTS_GONE} which agents are
+     * gone and why (HIL-1044).
+     *
+     * The three places that call this used to end in a log line, and the agents answering somebody
+     * on the lost agents' behalf - a sign-in a browser is waiting on - learned nothing and waited on
+     * a clock. The frame says only who and why; what went through them is the receiver's to know.
+     *
+     * Two cases send nothing. Nobody declares the name: then nobody is waiting on it either. The
+     * declaring agent is itself among the gone: a frame about its own death would start the very
+     * agent whose start just failed, and again on every failure after - the argument HIL-1040 made
+     * against redelivering to a failing start. Its own successor learns the same fact by starting.
+     *
+     * @param list<string> $agentIds Ids of the agents that are gone
+     * @param string $reason One of the {@see AgentsGoneSignalData} REASON_* constants
+     * @throws InvalidArgumentException When the frame cannot be named
+     */
+    private function announceAgentsGone(array $agentIds, string $reason): void
+    {
+        $recipientType = Hilos::appClass()::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE] ?? null;
+        if ($recipientType === null || $agentIds === []) {
+            return;
+        }
+        foreach ($agentIds as $agentId) {
+            if (AgentId::fromId($agentId)->type === $recipientType) {
+                return;
+            }
+        }
+
+        Hilos::$sr?->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_AGENTS_GONE),
+            new AgentSignalData(data: new AgentsGoneSignalData($agentIds, $reason)),
+        );
     }
 
     /**

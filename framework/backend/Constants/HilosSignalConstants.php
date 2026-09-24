@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
-use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
@@ -14,6 +13,7 @@ use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
@@ -598,6 +598,17 @@ final class HilosSignalConstants
     public const string HILOS_OAUTH_CALLBACK = 'hilos_oauth_callback';
 
     /**
+     * Client → session holder: this connection is the tab that started the trip under this key.
+     *
+     * Sent after every reconnect while an exchange is running (HIL-1044). The outcome of a trip
+     * is owed to the connection that sent the callback, and a reconnect replaces it; presenting
+     * the key the tab minted moves the outcome onto the new connection and hands over whatever
+     * already arrived - a sign-in included, which may only ever go to the tab that started it
+     * (HIL-582). The reply says whether the holder knows the key at all.
+     */
+    public const string HILOS_OAUTH_RESUME = 'hilos_oauth_resume';
+
+    /**
      * Client → agent (page-independent): the person has read the success ack an auth
      * flow left on this session, so clear it from every socket of the session (HIL-422).
      */
@@ -749,11 +760,14 @@ final class HilosSignalConstants
 
     // ── Hilos OAuth login: async agent → initiating browser (WS_USER) ──
     /**
-     * OAuth agent → initiating connection: the async login exchange failed or timed out.
+     * Session holder → the tab that started the trip: the provider sign-in ended without a
+     * sign-in.
      *
      * The only OAuth outcome that needs its own signal: success rides the existing
      * session/currentUser fan-out (HIL-161), so the SPA callback surface resolves on
-     * EITHER currentUser (login) OR this failure signal (see HIL-281 mechanism B).
+     * EITHER currentUser (login) OR this signal (see HIL-281 mechanism B). Sent by the holder
+     * since HIL-1044, because the holder is the one that knows which connection the tab is on
+     * now; the agents that reach the ending report it there on {@see HILOS_OAUTH_TRIP_ENDED}.
      */
     public const string HILOS_OAUTH_RESULT = 'hilos_oauth_result';
 
@@ -789,6 +803,40 @@ final class HilosSignalConstants
      * monopolistic.
      */
     public const string HILOS_OAUTH_LOGIN_READY = 'hilos_oauth_login_ready';
+
+    /**
+     * Users library → session holder: a tab is now waiting on a provider sign-in (HIL-1044).
+     *
+     * Sent from the callback BEFORE the exchange is handed to the OAuth agent, by the same
+     * sender in the same tick, so the holder has the trip on record before anything can end it.
+     * It carries the hash of the key the tab minted, never the key: the key is for the one
+     * presentation that proves a new connection is that tab ({@see HILOS_OAUTH_RESUME}).
+     */
+    public const string HILOS_OAUTH_TRIP_OPENED = 'hilos_oauth_trip_opened';
+
+    /**
+     * OAuth agent or users library → session holder: a provider sign-in ended without signing
+     * anybody in (HIL-1044).
+     *
+     * Every ending that is not a session grant: the exchange failed, a link settled, the address
+     * collided with an account and needs re-authentication, the completion broke. The holder
+     * records the first one and tells the tab on {@see HILOS_OAUTH_RESULT} - now, when its
+     * connection is alive, or when it presents its key after a reconnect.
+     */
+    public const string HILOS_OAUTH_TRIP_ENDED = 'hilos_oauth_trip_ended';
+
+    // ── Agent lifecycle: master → the agent that declared it (agent signal) ──
+    /**
+     * Master → the agent declaring this name: these agents are gone (HIL-1044).
+     *
+     * Sent where the master used to settle a lost agent with a log line and nothing else: after
+     * it answered the frames held for agents whose worker died, after a start failed, and after
+     * the leader placed an agent nowhere. Whoever was answering somebody on those agents' behalf
+     * learns it here, as a fact, instead of by a clock. Never sent when nobody declares the name,
+     * nor when the declaring agent is itself among the gone - a frame about its own death would
+     * start the failing agent again and again.
+     */
+    public const string HILOS_AGENTS_GONE = 'hilos_agents_gone';
 
     // ── Hilos users library → the agent that holds sessions (agent signals) ──
     /**
@@ -828,6 +876,20 @@ final class HilosSignalConstants
      * Carried by {@see AuthRegistrationWaitMovedSignalData}.
      */
     public const string HILOS_AUTH_REGISTRATION_WAIT_MOVED = 'hilos_auth_registration_wait_moved';
+
+    /**
+     * Code agent → the session holder: a code went out to a free number, so this session now
+     * waits on registering it (HIL-1044).
+     *
+     * The code agent used to write that wait onto the session row itself, under a claim it
+     * borrowed from the holder. The holder is the one that writes what a browser waits on now,
+     * so the agent says it here instead - before the closing step of the send, from the same
+     * sender, so a line replayed after the step already finds the wait written. It names the
+     * session by its token, as the neighbouring frame does: the agent is handed the token with
+     * the order, and a step of the line names no session at all. Carried by
+     * {@see AuthRegistrationWaitHeldSignalData}.
+     */
+    public const string HILOS_AUTH_REGISTRATION_WAIT_HELD = 'hilos_auth_registration_wait_held';
 
     /**
      * Users library → the session holder: this recovery is granted, move its tabs along.
@@ -903,18 +965,6 @@ final class HilosSignalConstants
      * that opens later.
      */
     public const string HILOS_AUTH_METHODS = 'hilos_auth_methods';
-
-    /**
-     * Code agent → the requesting connection: what became of the code request.
-     *
-     * Every outcome travels here, success included, which is what parts this from the
-     * usual action ack: the person asking is a guest with no account and no session to
-     * fan out to, so the accept key of their live socket is the only address there is
-     * (the shape {@see HILOS_OAUTH_RESULT} established). The code screen opens on THIS
-     * signal rather than on the click, so the channel it names is the channel the code
-     * actually went over. Carried by {@see AuthCodeResultSignalData}.
-     */
-    public const string HILOS_AUTH_CODE_RESULT = 'hilos_auth_code_result';
 
     /**
      * Sessions library → every tab of one browser session: this is how the code is travelling

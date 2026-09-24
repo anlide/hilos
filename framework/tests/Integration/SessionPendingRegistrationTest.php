@@ -8,6 +8,8 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
@@ -341,6 +343,52 @@ final class SessionPendingRegistrationTest extends HilosSessionIntegrationTestCa
             $parked,
             'Only the browser still holding the address belongs to its converge',
         );
+    }
+
+    /**
+     * A park frame from the users library is the whole park since HIL-1044: the holder brings the
+     * waiter row into being and writes the wait on the session row, both of which the library
+     * used to write itself.
+     *
+     * @throws HilosException When the park fails
+     * @throws DatabaseException When seeding or reading the rows fails
+     */
+    public function testAParkFrameParksTheTabAndWritesTheSessionsWait(): void
+    {
+        self::seedSession(self::FRESH_TOKEN, null, self::CREATED_AT, null);
+
+        new SessionPendingRegistrationTestAgent()->onSignalAgent(
+            new AgentSignalData(data: new AuthRegistrationWaitMovedSignalData(
+                self::ACCEPT_KEY,
+                self::IDENTIFIER,
+                self::FRESH_TOKEN,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED,
+        );
+
+        $this->assertSame(self::IDENTIFIER, Hilos::$rt?->hilosRegistrationWaiters[self::ACCEPT_KEY]?->identifier);
+        $this->assertSame(self::IDENTIFIER, self::waitIdentifier(self::FRESH_TOKEN));
+    }
+
+    /**
+     * The code agent's word that a code went out to a free number leaves the session waiting on
+     * it - written by this library, which owns the row, and no longer by the agent (HIL-1044).
+     *
+     * @throws HilosException When the write fails
+     * @throws DatabaseException When seeding or reading the rows fails
+     */
+    public function testTheCodeAgentsWordLeavesTheSessionWaitingOnTheNumber(): void
+    {
+        self::seedSession(self::FRESH_TOKEN, null, self::CREATED_AT, null);
+
+        new SessionPendingRegistrationTestAgent()->onSignalAgent(
+            new AgentSignalData(data: new AuthRegistrationWaitHeldSignalData(self::FRESH_TOKEN, self::IDENTIFIER)),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD,
+        );
+
+        $this->assertSame(self::IDENTIFIER, self::waitIdentifier(self::FRESH_TOKEN));
     }
 
     /**

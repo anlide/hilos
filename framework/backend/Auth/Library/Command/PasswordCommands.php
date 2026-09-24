@@ -575,28 +575,22 @@ final class PasswordCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Parks this browser on an address it is registering, in the runtime and in the session row.
+     * Parks this browser on an address it is registering - by telling the session holder so.
      *
-     * Both halves of one wait, which is why they are one call: the parked socket is what a
-     * converge reaches while the tab is open, and the row on the session is what answers a
-     * reconnect with the code screen it left. Two callers do this identically and a third
-     * would have.
-     *
-     * The runtime half takes two steps since HIL-685, and the pair is one park. This
-     * library may bring a waiter row into being and take it away; it may not edit one, and
-     * a browser that submits a second address already HAS a row. So the missing row is
-     * added here and the frame beside it asks the session holder - the collection's one
-     * full truth source - to make an existing one say the new address.
+     * One wait with two halves: the parked socket is what a converge reaches while the tab is
+     * open, and the row on the session is what answers a reconnect with the code screen it left.
+     * Both are the holder's to write since HIL-1044 - it is the one that writes what a browser
+     * waits on - so this library sends the frame and writes neither. It used to add the waiter
+     * row and write the session column itself (HIL-685), under a co-ownership of the waiters and
+     * a borrowed claim on sessions that are both gone now. Two callers do this identically and a
+     * third would have.
      *
      * @param ActingSession $acting Browser being parked
      * @param string $identifier Normalized address it is registering
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
-     * @throws HilosException When the runtime park or the durable hold fails
      */
     private function parkRegistrationWait(ActingSession $acting, string $identifier): void
     {
-        Hilos::$rt->hilosRegistrationWaiters->actions->park($acting->acceptKey, $identifier, $acting->sessionToken);
         $this->library->announceRegistrationWaitMoved($acting, $identifier);
-        Hilos::$db->sessions->findByToken($acting->sessionToken)?->actions->holdPendingRegistration($identifier);
     }
 }

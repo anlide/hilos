@@ -199,10 +199,15 @@ for the installation and every letter it takes gets the same reading.
 
 **The refusal carries the provider's own words**, cut to one sentence on the way
 out (`CodeSendStepSignalData::step()`: first line, whitespace collapsed, capped).
-This is a deliberate departure from the practice `AuthCodeResultSignalData` set —
+This is a deliberate departure from the practice the outcome of a code send set —
 a stable reason code only, detail in the log — because a stable code cannot hold
 words we did not write. The dialogue behind the sentence still stays in the agent
-log, and the outcome signal still carries nothing but its reason code.
+log, and the outcome still carries nothing but its reason code. Since HIL-1044 that
+outcome rides the line too: the code agent's closing step carries the reason and
+the two moments the code screen counts down to (`HilosCodeSendAttempt::REASON_*`,
+`resendAt`, `expiresAt`), the line replays them on every handshake, and the tab
+that ordered the code settles on the closing frame carrying its own `ticket` —
+there is no outcome signal addressed to one socket any more.
 
 **There is no timeout on a silent transport.** A dead mail agent leaves the line
 on `queued`, which is true: the letter IS queued. What ends the wait is the code

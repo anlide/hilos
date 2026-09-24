@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
 use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
@@ -27,8 +28,8 @@ use PHPUnit\Framework\TestCase;
  * a shared runtime collection silently dropped.
  *
  * The intake is proved without sockets: a delivered op whose provider the registry does not
- * hold is answered on the next tick with the failed-login result, which is a step no op
- * reaches unless it was adopted. The exchange over HTTP is proved where it is real — the
+ * hold is ended on the next tick with the failed-login ending reported to the session holder
+ * (HIL-1044), which is a step no op reaches unless it was adopted. The exchange over HTTP is proved where it is real — the
  * sign-in e2e through the stand's provider emulator (HIL-924).
  */
 final class OAuthAgentIntakeTest extends TestCase
@@ -46,7 +47,13 @@ final class OAuthAgentIntakeTest extends TestCase
 
         $agent->onSignalAgent(
             new AgentSignalData(
-                new OAuthPendingLoginSignalData('ak-1', 'session-1', self::UNKNOWN_KEY, 'code-1', $this->farDeadline()),
+                new OAuthPendingLoginSignalData(
+                    'ak-1',
+                    'session-1',
+                    self::UNKNOWN_KEY,
+                    'code-1',
+                    'trip-hash-1',
+                ),
             ),
             'test-source',
             HilosSignalConstants::HILOS_OAUTH_PENDING,
@@ -55,16 +62,45 @@ final class OAuthAgentIntakeTest extends TestCase
         $agent->onTick();
 
         $this->assertCount(1, $agent->sent);
-        $this->assertSame(HilosSignalConstants::HILOS_OAUTH_RESULT, $agent->sent[0]['name']);
-        $this->assertSame('ak-1', $agent->sent[0]['acceptKey']);
-        $result = $agent->sent[0]['data'];
-        $this->assertInstanceOf(OAuthResultSignalData::class, $result);
-        $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $result->reason);
+        $this->assertSame(HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED, $agent->sent[0]['name']);
+        $ended = $agent->sent[0]['data'];
+        $this->assertInstanceOf(OAuthTripEndedSignalData::class, $ended);
+        $this->assertSame('ak-1', $ended->acceptKey);
+        $this->assertSame('trip-hash-1', $ended->tripKeyHash);
+        $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $ended->reason);
         $this->assertSame([], $agent->completed);
 
         // The op is cleared once processed, so a second tick does not answer it again.
         $agent->onTick();
         $this->assertCount(1, $agent->sent);
+    }
+
+    public function testStoppingTheAgentAnswersEveryLoginItStillHolds(): void
+    {
+        $agent = $this->makeAgent();
+        $agent->onStart();
+        $agent->onSignalAgent(
+            new AgentSignalData(
+                new OAuthPendingLoginSignalData(
+                    'ak-1',
+                    'session-1',
+                    self::KNOWN_KEY,
+                    'code-1',
+                    'trip-hash-1',
+                ),
+            ),
+            'test-source',
+            HilosSignalConstants::HILOS_OAUTH_PENDING,
+        );
+
+        $agent->onStop();
+
+        // The tab waiting on this exchange has no clock left to end its wait (HIL-1044).
+        $this->assertCount(1, $agent->sent);
+        $ended = $agent->sent[0]['data'];
+        $this->assertInstanceOf(OAuthTripEndedSignalData::class, $ended);
+        $this->assertSame('trip-hash-1', $ended->tripKeyHash);
+        $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $ended->reason);
     }
 
     public function testUnknownSignalNameIsRefused(): void
@@ -75,7 +111,13 @@ final class OAuthAgentIntakeTest extends TestCase
         $this->expectException(AgentUnknownSignalException::class);
         $agent->onSignalAgent(
             new AgentSignalData(
-                new OAuthPendingLoginSignalData('ak-1', 'session-1', self::KNOWN_KEY, 'code-1', $this->farDeadline()),
+                new OAuthPendingLoginSignalData(
+                    'ak-1',
+                    'session-1',
+                    self::KNOWN_KEY,
+                    'code-1',
+                    'trip-hash-1',
+                ),
             ),
             'test-source',
             'not_the_pending_signal',
@@ -101,7 +143,7 @@ final class OAuthAgentIntakeTest extends TestCase
     /**
      * @return AbstractOAuthAgent&object{
      *     completed: list<array{op: OAuthPendingLogin, info: OAuthUserInfo}>,
-     *     sent: list<array{name: string, acceptKey: string, data: SignalDataInterface}>
+     *     sent: list<array{name: string, data: SignalDataInterface}>
      * }
      */
     private function makeAgent(): AbstractOAuthAgent
@@ -110,7 +152,7 @@ final class OAuthAgentIntakeTest extends TestCase
             /** @var list<array{op: OAuthPendingLogin, info: OAuthUserInfo}> */
             public array $completed = [];
 
-            /** @var list<array{name: string, acceptKey: string, data: SignalDataInterface}> Signals sent to a user, oldest first */
+            /** @var list<array{name: string, data: SignalDataInterface}> Frames sent to another agent, oldest first */
             public array $sent = [];
 
             protected function buildProviderRegistry(): OAuthProviderRegistry
@@ -132,9 +174,9 @@ final class OAuthAgentIntakeTest extends TestCase
                 ]);
             }
 
-            public function sendToUser(string $signalName, string $targetAcceptKey, SignalDataInterface $data): void
+            public function sendToAgent(string $signalName, SignalDataInterface $data): void
             {
-                $this->sent[] = ['name' => $signalName, 'acceptKey' => $targetAcceptKey, 'data' => $data];
+                $this->sent[] = ['name' => $signalName, 'data' => $data];
             }
 
             protected function completeOAuthLogin(OAuthPendingLogin $op, OAuthUserInfo $info): void
@@ -142,13 +184,5 @@ final class OAuthAgentIntakeTest extends TestCase
                 $this->completed[] = ['op' => $op, 'info' => $info];
             }
         };
-    }
-
-    /**
-     * @return float A deadline far enough ahead that the exchange never expires mid-test
-     */
-    private function farDeadline(): float
-    {
-        return microtime(true) * 1000 + 60_000.0;
     }
 }

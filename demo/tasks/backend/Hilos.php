@@ -273,10 +273,6 @@ final class Hilos extends HilosFacade
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, OAuthAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',
         ],
-        HilosDbContext::sessions => [
-            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, AuthCodeAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
-        ],
         HilosDbContext::verifications => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
             SharedOwnersKey::DEBT => 'HIL-630',

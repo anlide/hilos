@@ -189,10 +189,8 @@ const PROVIDER_HOLD_MS = 50
 /**
  * How long the provider holds the connection in the HIL-1043 scenario. It is above the
  * agent's request deadline (AbstractOAuthAgent DEFAULT_HTTP_TIMEOUT_MS, 5 s) — otherwise
- * the scenario would be green before the fix — and below the exchange TTL
- * (OAuthPendingLogin EXCHANGE_TTL_MS, 15 s) and the browser trip
- * (OAUTH_EXCHANGE_TIMEOUT_MS, 20 s), or a different clock would fail the run and lie
- * about the cause.
+ * the scenario would be green before the fix. That request deadline is the only product
+ * clock on the way since HIL-1044: the exchange and the browser trip wait on facts.
  */
 const PROVIDER_HOLD_PAST_DEADLINE_MS = 6000
 
@@ -265,13 +263,10 @@ test('refuses the sign-in when the provider stays silent past the wait', async (
 }) => {
   test.slow()
   // The refusal comes as the agent's verdict once its own request deadline passes
-  // (AbstractOAuthAgent DEFAULT_HTTP_TIMEOUT_MS, 5 s) — and, were that one longer, its
-  // operation deadline (OAuthPendingLogin EXCHANGE_TTL_MS, 15 s) would still answer the
-  // same refusal first. It is waited for longer than the trip's own deadline in the
-  // browser (OAUTH_EXCHANGE_TIMEOUT_MS, 20 s): were the browser's clock to answer
-  // instead, the text would read "OAuth login timed out…" and this assertion would fail
-  // on the wrong sentence rather than on a timeout. The 60 s silence is not derived
-  // from any product clock — it is merely longer than all of them.
+  // (AbstractOAuthAgent DEFAULT_HTTP_TIMEOUT_MS, 5 s) - since HIL-1044 the only product
+  // clock on the way: the exchange and the browser trip wait on facts, so nothing else
+  // could answer first. The 60 s silence is not derived from any product clock — it is
+  // merely longer than the one there is.
   const account = await declareOAuthAccount('google', { email: uniqueEmail() })
   await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
     delayMs: 60_000,

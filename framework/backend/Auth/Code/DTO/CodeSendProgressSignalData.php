@@ -35,11 +35,19 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
      * @param ?string $state One of the five states of the send, or null when there is no line
      * @param ?string $channel Channel the code travels over, or null when there is no line
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
+     * @param ?string $ticket Send the line follows, which is how a tab tells its own send from a replayed one
+     * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null
      */
     public function __construct(
         public readonly ?string $state = null,
         public readonly ?string $channel = null,
         public readonly ?string $detail = null,
+        public readonly ?string $ticket = null,
+        public readonly ?string $reason = null,
+        public readonly ?int $resendAt = null,
+        public readonly ?int $expiresAt = null,
     ) {
     }
 
@@ -63,6 +71,10 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
             state: $attempt->state,
             channel: $attempt->channel,
             detail: $attempt->detail,
+            ticket: $attempt->ticket,
+            reason: $attempt->reason,
+            resendAt: $attempt->resendAt,
+            expiresAt: $attempt->expiresAt,
         );
     }
 
@@ -75,6 +87,10 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
             'state' => $this->state,
             'channel' => $this->channel,
             'detail' => $this->detail,
+            'ticket' => $this->ticket,
+            'reason' => $this->reason,
+            'resendAt' => $this->resendAt,
+            'expiresAt' => $this->expiresAt,
         ];
     }
 
@@ -87,7 +103,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a field is present and is not a string
+     * @throws InvalidFormatException When a field is present and is not of its type
      */
     public static function fromArray(array $data): static
     {
@@ -95,6 +111,10 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
             state: self::optionalString($data, 'state'),
             channel: self::optionalString($data, 'channel'),
             detail: self::optionalString($data, 'detail'),
+            ticket: self::optionalString($data, 'ticket'),
+            reason: self::optionalString($data, 'reason'),
+            resendAt: self::optionalInt($data, 'resendAt'),
+            expiresAt: self::optionalInt($data, 'expiresAt'),
         );
     }
 }

@@ -1,32 +1,20 @@
-// The inbound phone one-time-code signal the daemon delivers WS_USER to the
-// requesting connection (HIL-492), declared as a project signal schema so the
-// parse boundary validates it before a reaction runs. Kept pure (schema + names
-// only, no connection import) so `bootstrap/connection` can merge it without a
-// cycle through the module that drives the flow over it.
+// The outcome reasons of a phone one-time-code request (HIL-492). Requesting a
+// code is asynchronous for every channel: deciding whether a channel can reach a
+// number is a network round-trip on some of them, so the action reply names the
+// send and the real outcome arrives later.
 //
-// Requesting a code became asynchronous for every channel: deciding whether a
-// channel can reach a number is a network round-trip on some of them, so the
-// action ack only means "accepted, working" and the real outcome arrives here.
-// SUCCESS travels on this signal too, unlike the OAuth result, and it names the
-// channel the code really went over rather than the one that was clicked.
+// It arrives on the session's send-progress line (HIL-1044), not on a signal of
+// its own: the code agent's closing step carries the reason and the moments the
+// code screen counts down to, and the line is replayed on every handshake, so a
+// tab back from a dropped connection reads the ending too. What the reasons
+// decide is what the surface does next; WHEN the code screen opens is not theirs
+// (HIL-826) - it opens the moment the send is ordered.
 //
-// What it no longer decides is WHEN the code screen opens (HIL-826). The screen
-// opens the moment the send is ordered, as the email path always has, and the
-// send-progress line on it says queued, then sending; the old rule was
-// compensation for having no such line. A channel that turns out unreachable
-// rolls the person back to the step they sent from and is dimmed, as before.
-//
-// The name and the reason values are byte-equal to the backend
-// `HilosSignalConstants` / `AuthCodeResultSignalData` constants.
-import { z } from 'zod'
-
-import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
-
-/** Signal `type` for a code-request outcome (PHP `HilosSignalConstants::HILOS_AUTH_CODE_RESULT`). */
-export const AUTH_CODE_RESULT_SIGNAL = 'hilos_auth_code_result'
+// The values are byte-equal to the backend `HilosCodeSendAttempt::REASON_*`
+// constants.
 
 /**
- * `reason` marking a code that went out (PHP `AuthCodeResultSignalData::REASON_CODE_SENT`).
+ * `reason` marking a code that went out (PHP `HilosCodeSendAttempt::REASON_CODE_SENT`).
  * The arm that arms the resend gate and names the channel the code carried.
  */
 export const AUTH_CODE_REASON_SENT = 'code_sent'
@@ -56,35 +44,3 @@ export const AUTH_CODE_REASON_CAP_REACHED = 'code_cap_reached'
  * The provider/network detail stays in the agent log, never on the wire.
  */
 export const AUTH_CODE_REASON_SEND_FAILED = 'code_send_failed'
-
-/**
- * The code-request outcome payload: the channel the request named and a stable,
- * non-sensitive reason code. `resendAt` is filled on the arms where waiting is the
- * answer — the SERVER moment a fresh send's cooldown runs out, or the one already
- * running does — and null where waiting changes nothing. `expiresAt` is the SERVER
- * moment the code now in play dies, which the code screen counts down; it is the
- * EARLIER code's moment on the rate-limited arm, since that is the one the person
- * is being asked for. The wire also carries the targeting `acceptKey`, kept
- * here for validation fidelity though the reaction ignores it (WS_USER already
- * targets this connection).
- */
-export const authCodeResultSignalSchema = z.object({
-  acceptKey: z.string(),
-  channel: z.string(),
-  reason: z.string(),
-  resendAt: z.number().nullable().default(null),
-  expiresAt: z.number().nullable().default(null),
-})
-
-/** Typed code-request outcome payload (the schema's output). */
-export type AuthCodeResultSignalData = z.infer<
-  typeof authCodeResultSignalSchema
->
-
-/**
- * The project signal schema `createHilosConnection` merges so the code-request
- * outcome parses at the boundary before the auth surface reacts to it.
- */
-export const AUTH_CODE_SIGNAL_SCHEMAS: ProjectSignalSchemas = {
-  [AUTH_CODE_RESULT_SIGNAL]: authCodeResultSignalSchema,
-}

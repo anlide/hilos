@@ -9,12 +9,16 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Cluster\WorkerPlacement;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Daemon\AgentDeliveryOutcome;
@@ -25,6 +29,7 @@ use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -50,6 +55,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionProperty;
 
 /**
  * A frame addressed to an agent that is not up yet waits for it in the master (HIL-629).
@@ -91,12 +97,70 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
      */
     private const float LONG_START_SECONDS = AgentConstants::START_DEADLINE_SECONDS * 4;
 
+    /** @var ?class-string<Hilos> Facade class bound before a case that declares a listener */
+    private ?string $boundAppClass = null;
+
     protected function tearDown(): void
     {
+        if ($this->boundAppClass !== null) {
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
+            $this->boundAppClass = null;
+        }
         Hilos::$sr = null;
         Hilos::$cluster = null;
 
         parent::tearDown();
+    }
+
+    /**
+     * The three places that used to end a lost agent with a log line now tell the agent that
+     * declared the fact which agents are gone and why (HIL-1044).
+     */
+    public function testEveryLossIsToldToTheAgentThatDeclaredIt(): void
+    {
+        $this->declareGoneListener();
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->reportWorkerLost(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->reportStartFailed(HeldAgentSignalTestRouter::UP_AGENT);
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::FROZEN_AGENT);
+
+        $this->assertSame(
+            [
+                [[HeldAgentSignalTestRouter::COLD_AGENT], AgentsGoneSignalData::REASON_WORKER_DIED],
+                [[HeldAgentSignalTestRouter::UP_AGENT], AgentsGoneSignalData::REASON_START_FAILED],
+                [[HeldAgentSignalTestRouter::FROZEN_AGENT], AgentsGoneSignalData::REASON_NOT_PLACED],
+            ],
+            $this->goneFrames(),
+        );
+    }
+
+    /**
+     * Nobody declares the fact, so nobody is waiting on it: the master sends nothing rather than
+     * a frame with no route.
+     */
+    public function testALossNobodyDeclaredAFactForSendsNothing(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->reportWorkerLost(HeldAgentSignalTestRouter::COLD_AGENT);
+
+        $this->assertSame([], $this->goneFrames());
+    }
+
+    /**
+     * A frame about its own death would start the failing listener again, and again on every
+     * failure after - so the listener is never told about itself.
+     */
+    public function testTheListenerIsNeverToldAboutItself(): void
+    {
+        $this->declareGoneListener();
+        $manager = new HeldAgentSignalTestManager();
+
+        $manager->reportStartFailed(AgentsGoneTestListener::TYPE);
+        $manager->reportWorkerLost(AgentsGoneTestListener::TYPE);
+
+        $this->assertSame([], $this->goneFrames());
     }
 
     public function testAFrameForAnAgentThatHasNotReportedItsStartIsHeld(): void
@@ -768,6 +832,35 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
+     * Binds a facade whose one agent declares the loss fact, for the cases that need a listener.
+     */
+    private function declareGoneListener(): void
+    {
+        $this->boundAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, AgentsGoneTestHilos::class);
+    }
+
+    /**
+     * @return list<array{list<string>, string}> Agents and reason of every loss fact queued, in order
+     */
+    private function goneFrames(): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_AGENTS_GONE) {
+                continue;
+            }
+            $payload = $signal->data;
+            $this->assertInstanceOf(AgentSignalData::class, $payload);
+            $gone = $payload->data;
+            $this->assertInstanceOf(AgentsGoneSignalData::class, $gone);
+            $frames[] = [$gone->agentIds, $gone->reason];
+        }
+
+        return $frames;
+    }
+
+    /**
      * @param string $command Command name the router answers with its case's agent
      */
     private function queueCommand(string $command): void
@@ -1158,6 +1251,32 @@ final class HeldAgentSignalTestAgentDaemon extends AbstractAgentDaemon
      * @param AgentMessageDTOInterface $message Message that would go to a user; unused here
      */
     public function sendToUser(AgentMessageDTOInterface $message): void
+    {
+    }
+}
+
+/**
+ * Facade of a fixture project whose one agent declares the loss fact (HIL-1044).
+ */
+abstract class AgentsGoneTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        AgentsGoneTestListener::TYPE => [AgentRegistryKey::WORKER => AgentsGoneTestListener::class],
+    ];
+}
+
+/**
+ * The agent answering somebody on other agents' behalf, reduced to its declaration.
+ */
+final class AgentsGoneTestListener extends AbstractAgent
+{
+    public const string TYPE = 'agents_gone_listener';
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
+    ];
+
+    public function onStop(): void
     {
     }
 }

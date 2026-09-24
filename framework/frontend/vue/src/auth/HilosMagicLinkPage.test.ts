@@ -42,9 +42,6 @@ function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
   return scopes
 }
 
-/** The same backstop the screen declares; restated so a drift shows up here. */
-const MAGIC_LINK_TIMEOUT_MS = 20000
-
 /** The dispatch calls one mounted relay made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 
@@ -64,14 +61,19 @@ function relayWorld(confirmOk: boolean): {
   navigated: string[]
   router: HilosRouter
   answerPage: () => void
+  drag: () => void
 } {
   const dispatched: Dispatched = []
   const navigated: string[] = []
   const listeners: Array<(signal: ProjectSignal) => void> = []
+  const draggingListeners: Array<(dragging: boolean) => void> = []
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
         listeners.push(listener as (signal: ProjectSignal) => void)
+      }
+      if (event === 'reconnectDragging') {
+        draggingListeners.push(listener as (dragging: boolean) => void)
       }
 
       return () => undefined
@@ -104,6 +106,11 @@ function relayWorld(confirmOk: boolean): {
     router: {
       navigate: (pathname: string) => navigated.push(pathname),
     } as unknown as HilosRouter,
+    drag: () => {
+      for (const listener of draggingListeners) {
+        listener(true)
+      }
+    },
     answerPage: () => {
       const signal = {
         kind: 'project',
@@ -186,11 +193,12 @@ describe('HilosMagicLinkPage', () => {
     expect(world.dispatched).toEqual([])
   })
 
-  it('backstops a wait that never ends, and offers a retry', async () => {
+  it('gives the wait up on the verdict that the server cannot be reached, and offers a retry', async () => {
     const world = relayWorld(true)
     const wrapper = mountRelay(world)
 
-    await vi.advanceTimersByTimeAsync(MAGIC_LINK_TIMEOUT_MS + 1)
+    // No clock of the screen's own (HIL-1044): the connection judges the network.
+    world.drag()
     await flush(wrapper)
 
     expect(wrapper.find('[data-id="auth-magic-error"]').text()).toBe(
@@ -204,7 +212,7 @@ describe('HilosMagicLinkPage', () => {
     const world = relayWorld(true)
     const wrapper = mountRelay(world)
 
-    await vi.advanceTimersByTimeAsync(MAGIC_LINK_TIMEOUT_MS + 1)
+    world.drag()
     await flush(wrapper)
     // The connection has since settled: a page answered, so the gate is open and
     // the repeated step gets all the way to the wire.

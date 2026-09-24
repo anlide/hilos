@@ -69,6 +69,38 @@ describe('code send progress frame', () => {
     expect(parsed.detail).toBeNull()
   })
 
+  it('carries the outcome of a phone code on its closing step (HIL-1044)', () => {
+    const parsed = codeSendProgressSchema.parse({
+      state: CODE_SEND_STATE_SENT,
+      channel: 'telegram',
+      detail: null,
+      ticket: 'a1b2c3d4e5f60718',
+      reason: 'code_sent',
+      resendAt: 1_790_000_060_000,
+      expiresAt: 1_790_000_600_000,
+    })
+
+    // The ticket is how the tab that asked tells its own send from a line
+    // replayed about another; the reason and the moments are what the code
+    // screen needs from the ending.
+    expect(parsed.ticket).toBe('a1b2c3d4e5f60718')
+    expect(parsed.reason).toBe('code_sent')
+    expect(parsed.resendAt).toBe(1_790_000_060_000)
+    expect(parsed.expiresAt).toBe(1_790_000_600_000)
+  })
+
+  it('reads a step before the closing one as carrying no outcome', () => {
+    const parsed = codeSendProgressSchema.parse({
+      state: CODE_SEND_STATE_QUEUED,
+      channel: 'telegram',
+    })
+
+    expect(parsed.ticket).toBeNull()
+    expect(parsed.reason).toBeNull()
+    expect(parsed.resendAt).toBeNull()
+    expect(parsed.expiresAt).toBeNull()
+  })
+
   it('holds what the server said, for a reader that arrives afterwards', () => {
     const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
     const connection = {

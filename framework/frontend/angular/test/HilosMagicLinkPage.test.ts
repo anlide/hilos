@@ -49,9 +49,6 @@ function scopesWith(entries: readonly AuthMethodEntry[]): ScopeManager {
   return scopes
 }
 
-/** The same backstop the screen declares; restated so a drift shows up here. */
-const MAGIC_LINK_TIMEOUT_MS = 20000
-
 /** The dispatch calls one mounted relay made, in order. */
 type Dispatched = Array<{ action: string; payload: Record<string, unknown> }>
 
@@ -71,14 +68,19 @@ function relayWorld(confirmOk: boolean): {
   navigated: string[]
   router: HilosRouter
   answerPage: () => void
+  drag: () => void
 } {
   const dispatched: Dispatched = []
   const navigated: string[] = []
   const listeners: Array<(signal: ProjectSignal) => void> = []
+  const draggingListeners: Array<(dragging: boolean) => void> = []
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
         listeners.push(listener as (signal: ProjectSignal) => void)
+      }
+      if (event === 'reconnectDragging') {
+        draggingListeners.push(listener as (dragging: boolean) => void)
       }
 
       return () => undefined
@@ -111,6 +113,11 @@ function relayWorld(confirmOk: boolean): {
     router: {
       navigate: (pathname: string) => navigated.push(pathname),
     } as unknown as HilosRouter,
+    drag: () => {
+      for (const listener of draggingListeners) {
+        listener(true)
+      }
+    },
     answerPage: () => {
       const signal = {
         kind: 'project',
@@ -260,11 +267,12 @@ describe('HilosMagicLinkPage', () => {
     expect(world.dispatched).toEqual([])
   })
 
-  it('backstops a wait that never ends, and offers a retry', async () => {
+  it('gives the wait up on the verdict that the server cannot be reached, and offers a retry', async () => {
     const world = relayWorld(true)
     const fixture = mountRelay(world)
 
-    await vi.advanceTimersByTimeAsync(MAGIC_LINK_TIMEOUT_MS + 1)
+    // No clock of the screen's own (HIL-1044): the connection judges the network.
+    world.drag()
     await flush(fixture)
 
     expect(textById(fixture, 'auth-magic-error')).toBe(
@@ -276,7 +284,7 @@ describe('HilosMagicLinkPage', () => {
 
   it('ignores a wait that gave up after its attempt was superseded', async () => {
     // The third resume point, which no case of the Vue or React peers reaches:
-    // a wait that timed out for an attempt nobody is waiting on any more.
+    // a wait that gave up for an attempt nobody is waiting on any more.
     //
     // The view going away would be the honest trigger, but it proves nothing —
     // a suppressed error on a destroyed screen has no observable consequence,
@@ -288,15 +296,14 @@ describe('HilosMagicLinkPage', () => {
     const first = relayWorld(true)
     const fixture = mountRelay(first)
 
-    await vi.advanceTimersByTimeAsync(5000)
     // The same screen is handed a different context: the effect restarts, the
     // attempt counter moves on, and the first wait belongs to nobody.
     const second = relayWorld(true)
     fixture.componentRef.setInput('context', second.context)
     fixture.detectChanges()
-    // Only the FIRST attempt's backstop expires: the second one started five
-    // seconds later and is still waiting.
-    await vi.advanceTimersByTimeAsync(MAGIC_LINK_TIMEOUT_MS - 5000 + 1)
+    // Only the FIRST attempt's wait gives up: it watches the first connection,
+    // and the second attempt waits on its own.
+    first.drag()
     await flush(fixture)
 
     expect(byId(fixture, 'auth-magic-verifying')).not.toBeNull()
@@ -308,7 +315,7 @@ describe('HilosMagicLinkPage', () => {
     const world = relayWorld(true)
     const fixture = mountRelay(world)
 
-    await vi.advanceTimersByTimeAsync(MAGIC_LINK_TIMEOUT_MS + 1)
+    world.drag()
     await flush(fixture)
     // The connection has since settled: a page answered, so the gate is open and
     // the repeated step gets all the way to the wire.

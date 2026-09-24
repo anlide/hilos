@@ -51,6 +51,8 @@ use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
 use Hilos\Auth\Method\AuthMethodGate;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
@@ -73,11 +75,11 @@ use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
-use Hilos\Runtime\State\Item\RecoveryWaiter;
-use Hilos\Runtime\State\Item\RegistrationWaiter;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\WiringRefusal;
 use Random\RandomException;
+use Throwable;
 
 /**
  * The users library: the one owner of the user set and of every command that writes it.
@@ -108,8 +110,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 {
     /**
      * The proofs an account is reached by: its ways in, the codes that check them, the holds a
-     * registration takes, the credentials a passkey enrols - and the one column of a session row
-     * a parked wait is written into.
+     * registration takes, the credentials a passkey enrols.
      *
      * The first four are claimed OUTRIGHT and with every operation. They used to be described as
      * needing no claim of their own, and that sentence held on nothing but the guard's silence:
@@ -133,32 +134,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::verifications => TruthSourceOperation::ALL,
         HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
         HilosDbContext::passkeyCredentials => TruthSourceOperation::ALL,
-        // TODO(HIL-626): borrowed claim - the sessions library owns the session set. A command
-        // that parks a browser on a code screen writes the durable half of that wait on the
-        // session row itself ({@see PasswordCommands::parkRegistrationWait()}), and until that
-        // half travels as a frame the claim is named as narrowly as the write is: an update of a
-        // row that already exists, never a create or a remove.
-        HilosDbContext::sessions => [TruthSourceOperation::Update],
-    ];
-
-    /**
-     * The two parked-surface collections, claimed because a command parks a browser on the code
-     * step it just opened and a runtime write with no claim behind it is refused.
-     *
-     * The session holder claims them too, and for its own half - it parks a reconnecting socket
-     * and releases every wait a converge or a dead connection ends. Which of the two OWNS the wait
-     * was open when this was written (HIL-622, P-125) and is answered now: the holder does,
-     * wholly, and this library is a declared add/remove co-owner beside it (HIL-685). So the pair
-     * is not two writers of one row - what the library brings into being it may also take away,
-     * and everything else about a row that already exists it says in a frame. That add-and-remove
-     * is what {@see TruthSourceOperation::BY_KIND} resolves to here, through
-     * {@see self::defaultTruthSourceOperations()}.
-     *
-     * @var array<string, list<TruthSourceOperation>>
-     */
-    public const array OWNS_RT = [
-        RegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
-        RecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -288,9 +263,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * What a library does to a row it shares with another owner: bring it into being, take it away.
      *
      * The default covers the claims made through the seam, and those are the co-owned ones -
-     * the two parked-surface collections above, and whatever a project adds beside them. A fact
-     * another holder is keeping is not this library's to reword, which is why updating is
-     * absent and why the pair is not two writers of one row.
+     * whatever a project adds beside the framework's own. The two parked-surface collections
+     * used to be the framework's example; since HIL-1044 the session holder writes them alone and
+     * this library asks for every change by frame. A fact another holder is keeping is not this
+     * library's to reword, which is why updating is absent and why a pair is not two writers of
+     * one row.
      *
      * The account set is deliberately not among them: the project subclass claims it whole in its
      * own `OWNS_DB`, because a library that renames somebody edits the row it owns, and there it
@@ -347,13 +324,17 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * what holds the parked action waiting on it; the library itself has nothing to do
      * with it.
      *
+     * A completion that breaks is answered, not only logged (HIL-1044): a tab is waiting on
+     * this login, and an exception that went to the log alone left it waiting for good. It
+     * learns the login failed through the session holder, like every other ending of a trip.
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
-     * @throws ValidationException When the payload is not the one its name promises, or OAuth is unwired
-     * @throws InvalidArgumentException When a frame the completion sends cannot be named or queued
-     * @throws HilosException When the identity lookup, the account, or the project's bookkeeping fails
+     * @throws ValidationException When the payload is not the one its name promises
+     * @throws InvalidArgumentException When the failure frame cannot be named or queued
+     * @throws HilosException Whatever a project library that takes frames of its own raises on them
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -369,7 +350,38 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             );
         }
 
-        $this->oauthCommands()->completeLogin($data->data);
+        $ready = $data->data;
+        try {
+            $this->oauthCommands()->completeLogin($ready);
+        } catch (WiringRefusal $refusal) {
+            // Told apart from an ordinary failure: nothing about this login is wrong, the process
+            // is not wired to what it reads, and every login will fail the same way until it is.
+            // The tab is still answered - it cannot be raised to.
+            $this->logAgentError("OAuth login completion is not wired in this process: {$refusal->getMessage()}");
+            $this->reportOAuthLoginFailed($ready);
+        } catch (Throwable $e) {
+            $this->logAgentError("OAuth login completion failed for {$ready->acceptKey}: " . $e->getMessage());
+            $this->reportOAuthLoginFailed($ready);
+        }
+    }
+
+    /**
+     * Tells the session holder a provider sign-in ended in a failure here (HIL-1044).
+     *
+     * @param OAuthLoginReadySignalData $ready The answer whose completion failed
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    private function reportOAuthLoginFailed(OAuthLoginReadySignalData $ready): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,
+            new OAuthTripEndedSignalData(
+                $ready->tripKeyHash,
+                $ready->acceptKey,
+                $ready->provider,
+                OAuthResultSignalData::REASON_LOGIN_FAILED,
+            ),
+        );
     }
 
     /**
@@ -421,6 +433,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param int $userId Account it proved itself to be
      * @param ?string $ack Mark to show on the session's sockets (a {@see SessionAck} value), or null for none
      * @param ?AuthFlowOutcome $outcome Where the surface goes next, answered by the holder
+     * @param ?string $tripKeyHash Hash of the key of the provider sign-in this grant ends, or null for every other
+     *     ceremony (HIL-1044)
      * @throws InvalidArgumentException When the frame cannot be named or queued
      */
     public function grantSession(
@@ -428,6 +442,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         int $userId,
         ?string $ack = null,
         ?AuthFlowOutcome $outcome = null,
+        ?string $tripKeyHash = null,
     ): void {
         $this->handOff(
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
@@ -439,6 +454,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $this->currentAction,
                 $outcome?->toArray(),
                 $ack,
+                $tripKeyHash,
             ),
         );
     }
@@ -843,9 +859,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof RequestPhoneCodeActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestPhoneCodeActionDTO::class, $dto);
                 }
-                $this->phoneCodeCommands()->requestPhoneCode($acceptKey, $dto);
-
-                return null;
+                return $this->phoneCodeCommands()->requestPhoneCode($acceptKey, $dto);
 
             case HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE:
                 if (!$dto instanceof ConfirmPhoneCodeActionDTO) {

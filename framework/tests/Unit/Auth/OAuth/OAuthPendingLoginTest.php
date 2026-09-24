@@ -19,7 +19,7 @@ final class OAuthPendingLoginTest extends TestCase
 {
     public function testCreateExposesTheAcceptKeyAsTheId(): void
     {
-        $op = OAuthPendingLogin::create('accept-1', 'session-abc', 'oauth:github', 'code-xyz', 1234.5);
+        $op = OAuthPendingLogin::create('accept-1', 'session-abc', 'oauth:github', 'code-xyz', 'trip-hash-1');
 
         $this->assertSame('accept-1', $op->getId());
         $this->assertSame('accept-1', $op->acceptKey);
@@ -29,7 +29,7 @@ final class OAuthPendingLoginTest extends TestCase
 
     public function testToArrayCarriesEveryField(): void
     {
-        $op = OAuthPendingLogin::create('accept-1', 'session-abc', 'oauth:github', 'code-xyz', 1234.5);
+        $op = OAuthPendingLogin::create('accept-1', 'session-abc', 'oauth:github', 'code-xyz', 'trip-hash-1');
 
         $this->assertSame(
             [
@@ -37,7 +37,7 @@ final class OAuthPendingLoginTest extends TestCase
                 OAuthPendingLogin::sessionToken => 'session-abc',
                 OAuthPendingLogin::provider => 'oauth:github',
                 OAuthPendingLogin::code => 'code-xyz',
-                OAuthPendingLogin::deadlineMs => 1234.5,
+                OAuthPendingLogin::tripKeyHash => 'trip-hash-1',
                 OAuthPendingLogin::mode => OAuthPendingLogin::MODE_LOGIN,
                 OAuthPendingLogin::linkUserId => 0,
             ],
@@ -52,7 +52,7 @@ final class OAuthPendingLoginTest extends TestCase
             'session-ghi',
             'oauth:github',
             'code-link',
-            5000.0,
+            'trip-hash-9',
             OAuthPendingLogin::MODE_LINK,
             77,
         );
@@ -66,7 +66,7 @@ final class OAuthPendingLoginTest extends TestCase
 
     public function testFromRowRoundTripsToArray(): void
     {
-        $row = OAuthPendingLogin::create('accept-2', 'session-def', 'oauth:stub', 'stub', 9999.0)->toArray();
+        $row = OAuthPendingLogin::create('accept-2', 'session-def', 'oauth:stub', 'stub', 'trip-hash-2')->toArray();
 
         $this->assertSame($row, OAuthPendingLogin::fromRow($row)->toArray());
     }

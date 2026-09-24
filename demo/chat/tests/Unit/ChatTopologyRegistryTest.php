@@ -30,6 +30,9 @@ use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
@@ -61,6 +64,7 @@ use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
@@ -93,6 +97,7 @@ use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
+use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
@@ -471,6 +476,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_CODE_SEND_STEP => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AGENTS_GONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -605,6 +614,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_IMPERSONATE_REQUEST => ImpersonateRequestSignalData::class,
             HilosSignalConstants::HILOS_CODE_SEND_STEP => CodeSendStepSignalData::class,
             HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER => DeferredSessionCarryoverHandoverSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED => OAuthTripOpenedSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => OAuthTripEndedSignalData::class,
+            HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => AuthRegistrationWaitHeldSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
@@ -685,6 +698,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_TOAST_DISMISS => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_TOAST_EXPIRED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_TOAST_READING => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_OAUTH_RESUME => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             NotificationAction::MARK_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             NotificationAction::MARK_ALL_READ => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             NotificationPreferenceAction::CHANNEL_SET => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -747,6 +761,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_TOAST_DISMISS => DismissSessionToastActionDTO::class,
             HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
             HilosSignalConstants::HILOS_TOAST_READING => SessionToastReadingActionDTO::class,
+            HilosSignalConstants::HILOS_OAUTH_RESUME => OAuthResumeActionDTO::class,
             NotificationAction::MARK_READ => NotificationMarkReadPayloadDTO::class,
             NotificationAction::MARK_ALL_READ => NotificationMarkAllReadPayloadDTO::class,
             NotificationPreferenceAction::CHANNEL_SET => NotificationChannelPreferenceActionDTO::class,

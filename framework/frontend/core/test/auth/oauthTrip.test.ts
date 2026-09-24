@@ -11,6 +11,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
+  ActionError,
   type ActionHandle,
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
@@ -21,7 +22,6 @@ import {
 import { createHilosAuthContext } from '../../src/auth/authContext.js'
 import {
   createOAuthLogin,
-  OAUTH_EXCHANGE_TIMEOUT_MS,
   OAUTH_POPUP_BLOCKED_MESSAGE,
   OAUTH_RETURN_MESSAGE_TYPE,
   OAUTH_WINDOW_POLL_MS,
@@ -101,12 +101,20 @@ interface TripWorld {
   outcomes: OAuthTripOutcome[]
   /** Refuse the next start action with this message, or null to accept it. */
   refuseStart: string | null
+  /** Drop the callback with its connection instead of accepting it. */
+  dropCallback: boolean
+  /** What the server answers a presented trip key with (HIL-1044). */
+  resumeKnown: boolean
   /** Hold the next start's answer back, for the test to refuse when it chooses. */
   holdStart: boolean
   /** Refuse a held start, the way a slow backend refusal lands. */
   refuseHeldStart(message: string): void
   /** Deliver a project signal the way the connection would. */
   emit(type: string, data: Record<string, unknown>): void
+  /** Move the connection to a state, the way its `state` event reports it. */
+  setState(state: string): void
+  /** Report the repair of the connection dragging, the way its event does (HIL-831). */
+  setDragging(dragging: boolean): void
   /** Sign the session in, the way the handshake fan-out does. */
   signIn(userId: number): void
   /** Deliver a courier message from a window at an origin. */
@@ -129,6 +137,8 @@ let active: TripWorld | null = null
  */
 function tripWorld(): TripWorld {
   const listeners: Array<(signal: ProjectSignal) => void> = []
+  const stateListeners: Array<(state: string) => void> = []
+  const draggingListeners: Array<(dragging: boolean) => void> = []
   const messageListeners: Array<(event: MessageEvent) => void> = []
   const held: Array<(reason: unknown) => void> = []
   const scopes = new ScopeManager()
@@ -141,6 +151,28 @@ function tripWorld(): TripWorld {
 
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'reconnectDragging') {
+        const onDragging = listener as unknown as (dragging: boolean) => void
+        draggingListeners.push(onDragging)
+
+        return () => {
+          const at = draggingListeners.indexOf(onDragging)
+          if (at >= 0) {
+            draggingListeners.splice(at, 1)
+          }
+        }
+      }
+      if (event === 'state') {
+        const onState = listener as unknown as (state: string) => void
+        stateListeners.push(onState)
+
+        return () => {
+          const at = stateListeners.indexOf(onState)
+          if (at >= 0) {
+            stateListeners.splice(at, 1)
+          }
+        }
+      }
       const typed = listener as unknown as (signal: ProjectSignal) => void
       if (event !== 'projectSignal') {
         return () => undefined
@@ -159,6 +191,22 @@ function tripWorld(): TripWorld {
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
       world.dispatched.push({ action, payload })
+      if (action === 'hilos_oauth_resume') {
+        return {
+          requestId: `req-${world.dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.resolve({ reply: { known: world.resumeKnown } }),
+        } as unknown as ActionHandle
+      }
+      if (action === 'hilos_oauth_callback' && world.dropCallback) {
+        return {
+          requestId: `req-${world.dispatched.length}`,
+          loading: createSignal(false),
+          done: Promise.reject(
+            new ActionError(action, 'disconnected', 'Not connected.'),
+          ),
+        } as unknown as ActionHandle
+      }
       const refusal = world.refuseStart
       const done = world.holdStart
         ? new Promise((_resolve, reject) => {
@@ -252,6 +300,8 @@ function tripWorld(): TripWorld {
     dispatched: [],
     outcomes: [],
     refuseStart: null,
+    dropCallback: false,
+    resumeKnown: true,
     holdStart: false,
     refuseHeldStart(message) {
       held.shift()?.(new Error(message))
@@ -265,6 +315,16 @@ function tripWorld(): TripWorld {
       } as unknown as ProjectSignal
       for (const listener of [...listeners]) {
         listener(signal)
+      }
+    },
+    setState(state) {
+      for (const listener of [...stateListeners]) {
+        listener(state)
+      }
+    },
+    setDragging(dragging) {
+      for (const listener of [...draggingListeners]) {
+        listener(dragging)
       }
     },
     signIn(userId) {
@@ -688,8 +748,111 @@ describe('the OAuth trip machine', () => {
     expect(world.oauth.trip.get()?.phase).toBe('exchanging')
     expect(world.dispatched[1]).toEqual({
       action: 'hilos_oauth_callback',
-      payload: { provider: GITHUB, code: 'code-1', state: 'state-1' },
+      payload: {
+        provider: GITHUB,
+        code: 'code-1',
+        state: 'state-1',
+        tripKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+      },
     })
+  })
+
+  it('sends every exchange under a key of its own', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+    world.oauth.cancelOAuthTrip()
+
+    sessionStorage.setItem(PROVIDER_STORAGE_KEY, GITHUB)
+    world.oauth.resumeOAuthReturn('code-2', 'state-2', '')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const keys = world.dispatched
+      .filter((sent) => sent.action === 'hilos_oauth_callback')
+      .map((sent) => sent.payload.tripKey)
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).not.toBe(keys[1])
+  })
+
+  it('presents the key on a new connection once its page has answered (HIL-1044)', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+    const tripKey = world.dispatched[1].payload.tripKey
+
+    world.setState('reconnecting')
+    world.setState('connected')
+    expect(world.dispatched).toHaveLength(2)
+
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+
+    expect(world.dispatched[2]).toEqual({
+      action: 'hilos_oauth_resume',
+      payload: { tripKey },
+    })
+    // A known key changes nothing here: the outcome arrives the way it always does.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(world.outcomes).toEqual([])
+    world.signIn(7)
+    expect(world.outcomes).toEqual([{ kind: 'signed_in', message: '' }])
+  })
+
+  it('ends the trip when the server does not know the presented key', async () => {
+    const world = tripWorld()
+    world.resumeKnown = false
+    await reachExchange(world)
+
+    world.setState('reconnecting')
+    world.setState('connected')
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(world.outcomes).toEqual([
+      { kind: 'error', message: 'OAuth login failed. Please try again.' },
+    ])
+    expect(world.oauth.trip.get()).toBeNull()
+  })
+
+  it('keeps the trip when the callback went down with its connection', async () => {
+    const world = tripWorld()
+    world.dropCallback = true
+
+    await reachExchange(world)
+    await Promise.resolve()
+
+    // Whether the server took it before the drop is what the key finds out.
+    expect(world.outcomes).toEqual([])
+    expect(world.oauth.trip.get()?.phase).toBe('exchanging')
+  })
+
+  it('does not present the key on the first connect of a freshly loaded document', async () => {
+    const world = tripWorld()
+    sessionStorage.setItem(PROVIDER_STORAGE_KEY, GITHUB)
+    world.oauth.resumeOAuthReturn('code-cold', 'state-cold', '')
+
+    // The cold path: this connect is the one the callback is about to leave on,
+    // not a replacement of it - a key presented now would be answered "unknown".
+    world.setState('connected')
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+
+    expect(
+      world.dispatched.filter((sent) => sent.action === 'hilos_oauth_resume'),
+    ).toEqual([])
+  })
+
+  it('presents nothing once the trip is over', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+    world.signIn(7)
+
+    world.setState('reconnecting')
+    world.setState('connected')
+    world.emit(SIGNAL_TYPE_PAGE_RESPONSE, { page: 'main', payload: {} })
+
+    expect(
+      world.dispatched.filter((sent) => sent.action === 'hilos_oauth_resume'),
+    ).toEqual([])
   })
 
   it('has no deadline while the person is at the provider', async () => {
@@ -697,23 +860,51 @@ describe('the OAuth trip machine', () => {
     const world = tripWorld()
     await reachProvider(world)
 
-    await vi.advanceTimersByTimeAsync(OAUTH_EXCHANGE_TIMEOUT_MS * 2)
+    await vi.advanceTimersByTimeAsync(60_000)
 
     expect(world.outcomes).toEqual([])
     expect(world.oauth.trip.get()?.phase).toBe('authorizing')
   })
 
-  it('gives up on an exchange that never answers', async () => {
+  it('keeps waiting on an exchange however long the server takes (HIL-1044)', async () => {
     vi.useFakeTimers()
     const world = tripWorld()
     await reachExchange(world)
 
-    await vi.advanceTimersByTimeAsync(OAUTH_EXCHANGE_TIMEOUT_MS)
+    // A queue behind the pool ceiling is drained by facts, not by a clock.
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(world.outcomes).toEqual([])
+    expect(world.oauth.trip.get()?.phase).toBe('exchanging')
+  })
+
+  it('ends the exchange when the connection cannot be brought back', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+
+    world.setDragging(true)
 
     expect(world.outcomes).toEqual([
-      { kind: 'error', message: 'OAuth login timed out. Please try again.' },
+      {
+        kind: 'error',
+        message: 'Could not reach the server. Please try again.',
+      },
     ])
     expect(world.oauth.trip.get()).toBeNull()
+  })
+
+  it('ends the exchange when the connection gave up', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+
+    world.setState('disconnected')
+
+    expect(world.outcomes).toEqual([
+      {
+        kind: 'error',
+        message: 'Could not reach the server. Please try again.',
+      },
+    ])
   })
 
   it('ends a sign-in when the session becomes somebody', async () => {
@@ -793,7 +984,8 @@ describe('the OAuth trip machine', () => {
       email: null,
       linkToken: null,
     })
-    await vi.advanceTimersByTimeAsync(OAUTH_EXCHANGE_TIMEOUT_MS)
+    world.setDragging(true)
+    await vi.advanceTimersByTimeAsync(60_000)
 
     expect(world.outcomes).toEqual([{ kind: 'signed_in', message: '' }])
   })
@@ -810,7 +1002,12 @@ describe('the OAuth trip machine', () => {
     expect(world.oauth.trip.get()).toBeNull()
     expect(world.dispatched[0]).toEqual({
       action: 'hilos_oauth_callback',
-      payload: { provider: GITHUB, code: 'code-cold', state: 'state-cold' },
+      payload: {
+        provider: GITHUB,
+        code: 'code-cold',
+        state: 'state-cold',
+        tripKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+      },
     })
 
     world.signIn(9)

@@ -45,7 +45,29 @@ final class HilosCodeSendAttempt extends RtState
     public const string channel = 'channel';
     public const string state = 'state';
     public const string detail = 'detail';
+    public const string reason = 'reason';
+    public const string resendAt = 'resendAt';
+    public const string expiresAt = 'expiresAt';
     public const string updatedAt = 'updatedAt';
+
+    /** A code went out over the channel: the surface names it on the code screen. */
+    public const string REASON_CODE_SENT = 'code_sent';
+
+    /**
+     * The channel cannot reach this identifier: nothing was minted and no cooldown was
+     * spent, so the surface takes the person back to the step they sent from, dims this
+     * channel, and lets them pick another one.
+     */
+    public const string REASON_CHANNEL_UNAVAILABLE = 'code_channel_unavailable';
+
+    /** The cooldown between sends has not run out: {@see self::$resendAt} says when it opens. */
+    public const string REASON_RATE_LIMITED = 'code_rate_limited';
+
+    /** The per-window cap refused the send: waiting a little changes nothing, so no moment rides along. */
+    public const string REASON_CAP_REACHED = 'code_cap_reached';
+
+    /** A code was minted but the transport refused it: the surface offers a resend. */
+    public const string REASON_SEND_FAILED = 'code_send_failed';
 
     /** The order is placed and nothing has been attempted yet. */
     public const string STATE_QUEUED = 'queued';
@@ -95,6 +117,23 @@ final class HilosCodeSendAttempt extends RtState
     /** The provider's own sentence, on {@see self::STATE_FAILED} and nowhere else. */
     private(set) ?string $detail = null;
 
+    /**
+     * How the code agent's send ended - one of the REASON_* constants - on its closing step and
+     * nowhere else (HIL-1044).
+     *
+     * The outcome rides the line rather than a signal of its own to the connection that asked:
+     * the line is replayed on every handshake, so a tab that lost its connection mid-send reads
+     * the ending when it is back. Null on every step before the last and on every send carried
+     * by a transport other than the code agent.
+     */
+    private(set) ?string $reason = null;
+
+    /** Server moment a send is allowed again, in epoch ms, on the arms where waiting is the answer. */
+    private(set) ?int $resendAt = null;
+
+    /** Server moment the live code dies, in epoch ms, on the arms that leave a live code. */
+    private(set) ?int $expiresAt = null;
+
     /** Epoch milliseconds of the last write, on the server's scale. */
     private(set) int $updatedAt = 0;
 
@@ -141,6 +180,9 @@ final class HilosCodeSendAttempt extends RtState
         $instance->channel = self::requireString($row, self::channel);
         $instance->state = self::requireString($row, self::state);
         $instance->detail = self::optionalString($row, self::detail);
+        $instance->reason = self::optionalString($row, self::reason);
+        $instance->resendAt = self::optionalInt($row, self::resendAt);
+        $instance->expiresAt = self::optionalInt($row, self::expiresAt);
         $instance->updatedAt = self::requireInt($row, self::updatedAt);
         $instance->markRtSyncBaseline();
 
@@ -163,6 +205,9 @@ final class HilosCodeSendAttempt extends RtState
         $this->channel = self::patchString($diff, self::channel, $this->channel);
         $this->state = self::patchString($diff, self::state, $this->state);
         $this->detail = self::patchOptionalString($diff, self::detail, $this->detail);
+        $this->reason = self::patchOptionalString($diff, self::reason, $this->reason);
+        $this->resendAt = self::patchOptionalInt($diff, self::resendAt, $this->resendAt);
+        $this->expiresAt = self::patchOptionalInt($diff, self::expiresAt, $this->expiresAt);
         $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
     }
 
@@ -193,6 +238,9 @@ final class HilosCodeSendAttempt extends RtState
             self::channel => $this->channel,
             self::state => $this->state,
             self::detail => $this->detail,
+            self::reason => $this->reason,
+            self::resendAt => $this->resendAt,
+            self::expiresAt => $this->expiresAt,
             self::updatedAt => $this->updatedAt,
         ];
     }

@@ -37,11 +37,17 @@ import {
   AUTH_CODE_REASON_CAP_REACHED,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
   AUTH_CODE_REASON_RATE_LIMITED,
+  AUTH_CODE_REASON_SEND_FAILED,
   AUTH_CODE_REASON_SENT,
-  AUTH_CODE_RESULT_SIGNAL,
-  authCodeResultSignalSchema,
 } from './authCodeSignals.js'
 import { type HilosAuthContext } from './authContext.js'
+import {
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_NOT_SENT,
+  CODE_SEND_STATE_SENT,
+  SIGNAL_CODE_SEND_PROGRESS,
+  type CodeSendProgressSignalData,
+} from './authSendProgress.js'
 import {
   MAGIC_LINK_METHOD_KEY,
   OAUTH_METHOD_PREFIX,
@@ -78,11 +84,17 @@ import { describeOAuthError, startOAuthLogin } from './oauthLogin.js'
 import { runPasskeyDiscoverableLogin } from './passkeyCeremony.js'
 
 /**
- * How long a code request waits for its outcome signal before giving up. Comfortably
- * past the agent's own whole-operation deadline (15s), so this fires only when the
- * outcome is never coming — not when the messenger is merely slow.
+ * The states a send can close in (HIL-1044). The code agent's closing step is the
+ * one that carries a reason, and it lands in one of these.
  */
-const CODE_OUTCOME_TIMEOUT_MS = 20000
+const CODE_SEND_CLOSING_STATES: readonly string[] = [
+  CODE_SEND_STATE_SENT,
+  CODE_SEND_STATE_FAILED,
+  CODE_SEND_STATE_NOT_SENT,
+]
+
+/** What the server answers an order for a phone code with: the ticket of the send it opened. */
+const codeSendOrderReplySchema = z.object({ ticket: z.string() })
 
 /** The steps a backend reply or a converge may name (PHP `AuthFlowStep`). */
 const FLOW_STEPS: readonly AuthStep[] = [
@@ -467,7 +479,8 @@ async function confirmMagicLink(
  * A view concern, and deliberately not folded into the submit outcome: the surface
  * dims the channel that failed and leaves the rest offered, so what it needs is the
  * channel KEY, while the machine only needs "did the step advance". Two readers of
- * one signal, each taking the part it acts on.
+ * one line - the send-progress line, whose closing step carries the reason
+ * (HIL-1044) - each taking the part it acts on.
  *
  * Nothing is dimmed permanently — the caller clears its own dimmed set when the
  * number changes, since a different number is a different question.
@@ -481,13 +494,14 @@ function subscribeCodeChannelUnavailable(
   handler: (channel: string) => void,
 ): () => void {
   return context.connection.on('projectSignal', (signal: ProjectSignal) => {
-    if (signal.type !== AUTH_CODE_RESULT_SIGNAL) {
+    if (signal.type !== SIGNAL_CODE_SEND_PROGRESS) {
       return
     }
-    const data = signal.data as ReturnType<
-      typeof authCodeResultSignalSchema.parse
-    >
-    if (data.reason === AUTH_CODE_REASON_CHANNEL_UNAVAILABLE) {
+    const data = signal.data as CodeSendProgressSignalData
+    if (
+      data.reason === AUTH_CODE_REASON_CHANNEL_UNAVAILABLE &&
+      data.channel !== null
+    ) {
       handler(data.channel)
     }
   })
@@ -675,30 +689,30 @@ async function sendPhoneCode(
 }
 
 /**
- * Dispatch a phone code request and wait for the outcome signal it triggers.
+ * Dispatch a phone code request and wait for the closing step of its send.
  *
  * The one submit on this surface whose outcome does NOT ride its own ack. Deciding
  * whether a channel can reach a number is a network round-trip for a messenger, so
  * the page action validates what costs nothing, hands the rest to the code agent
- * and acks "accepted"; the real answer lands later on
- * {@link AUTH_CODE_RESULT_SIGNAL}. What the wait buys is no longer the code screen's
+ * and answers with the send's ticket; the real answer lands later on the session's
+ * send-progress line ({@link SIGNAL_CODE_SEND_PROGRESS}), whose closing step
+ * carries the reason (HIL-1044). What the wait buys is no longer the code screen's
  * opening - that happens at once now (HIL-826) - but everything the outcome alone
  * knows: the channel the code went over, the resend gate, and the refusal.
  *
- * Ordering is why the subscription is registered BEFORE the dispatch: the outcome
- * can arrive while the ack is still in flight, and a listener attached afterwards
- * would miss it and leave the surface waiting forever.
+ * The ticket is what tells THIS send's ending from a line replayed about another
+ * one, and the latest frame is kept because the ending may arrive before the
+ * reply that names the ticket. The subscription goes up BEFORE the dispatch for
+ * the same reason.
  *
  * A dispatch that fails outright (the channel was refused up front, the connection
  * dropped) settles inline; no signal is coming for it.
  *
- * It also gives up on its own after {@link CODE_OUTCOME_TIMEOUT_MS}. Waiting on a
- * signal forever is not patience but a dead surface: a reconnect gives the socket a
- * new accept key and an agent restart drops its in-flight ops, so in both cases the
- * outcome is addressed to somebody who no longer exists and nothing will ever
- * arrive. Without the deadline the promise never settles, `pending` never clears,
- * and every later press is a silent no-op — the exact opposite of the recovery the
- * flow is designed around, which is the person pressing the button again.
+ * It no longer gives up on a clock (HIL-1044). The two reasons it used to are
+ * gone: the outcome rides the session's line, which a reconnect replays rather
+ * than losing with the old accept key, and an agent that stops or dies has its
+ * sends ended with a refusal by itself or by the session holder. A connection that
+ * drops between the order and its reply fails the order as it always has.
  *
  * @param context The project auth context the wire dispatches over.
  * @param phone The number the code is asked for.
@@ -712,45 +726,84 @@ function requestPhoneCode(
 ): Promise<PhoneCodeOutcome> {
   return new Promise<PhoneCodeOutcome>((resolve) => {
     let settled = false
+    let ticket: string | null = null
+    let latest: CodeSendProgressSignalData | null = null
     const settle = (outcome: PhoneCodeOutcome): void => {
       if (settled) {
         return
       }
       settled = true
-      clearTimeout(deadline)
       unsubscribe()
       resolve(outcome)
+    }
+    // Whether the line has been seen following THIS send. Only after that does a
+    // frame about another send - or no send at all - mean ours was replaced: until
+    // then the line may still be the previous send's, replayed or not yet moved on.
+    let seenOwn = false
+    const settleOnLine = (): void => {
+      if (ticket === null || latest === null) {
+        return
+      }
+      if (latest.ticket !== ticket) {
+        if (seenOwn) {
+          // Another order of this session took the line over (another tab, an
+          // email code): the closing step of ours will be dropped as stale, so
+          // nothing more is coming for it.
+          settle({
+            ...describeCodeOutcome(AUTH_CODE_REASON_SEND_FAILED),
+            channel,
+          })
+        }
+
+        return
+      }
+      seenOwn = true
+      if (
+        latest.reason === null ||
+        latest.state === null ||
+        !CODE_SEND_CLOSING_STATES.includes(latest.state)
+      ) {
+        return
+      }
+      settle({
+        ...describeCodeOutcome(latest.reason),
+        channel: latest.channel ?? channel,
+        resendAt: latest.resendAt ?? undefined,
+        expiresAt: latest.expiresAt ?? undefined,
+      })
     }
 
     const unsubscribe = context.connection.on(
       'projectSignal',
       (signal: ProjectSignal) => {
-        if (signal.type !== AUTH_CODE_RESULT_SIGNAL) {
+        if (signal.type !== SIGNAL_CODE_SEND_PROGRESS) {
           return
         }
-        const data = signal.data as ReturnType<
-          typeof authCodeResultSignalSchema.parse
-        >
-        settle({
-          ...describeCodeOutcome(data.reason),
-          channel: data.channel,
-          resendAt: data.resendAt ?? undefined,
-          expiresAt: data.expiresAt ?? undefined,
-        })
+        latest = signal.data as CodeSendProgressSignalData
+        settleOnLine()
       },
     )
 
-    const deadline = setTimeout(() => {
-      settle({
-        ok: false,
-        message: 'The code did not go out in time. Please try again.',
-        channel,
-      })
-    }, CODE_OUTCOME_TIMEOUT_MS)
-
     context.actions
-      .dispatch(AUTH_ACTION_REQUEST_PHONE_CODE, { phone, channel })
-      .done.catch((error: unknown) => {
+      .dispatch(
+        AUTH_ACTION_REQUEST_PHONE_CODE,
+        { phone, channel },
+        { replySchema: codeSendOrderReplySchema },
+      )
+      .done.then(({ reply }) => {
+        if (reply === undefined) {
+          settle({
+            ok: false,
+            message: 'Could not send the code. Please try again.',
+            channel,
+          })
+
+          return
+        }
+        ticket = reply.ticket
+        settleOnLine()
+      })
+      .catch((error: unknown) => {
         settle({ ok: false, message: describeAuthError(error), channel })
       })
   })

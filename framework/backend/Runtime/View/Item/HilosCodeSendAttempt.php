@@ -25,6 +25,9 @@ use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
  * @property-read string $channel Channel the code is travelling over
  * @property-read string $state One of the five states of the send
  * @property-read ?string $detail Provider's sentence, on a refusal and nowhere else
+ * @property-read ?string $reason How the code agent's send ended, on its closing step alone
+ * @property-read ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+ * @property-read ?int $expiresAt Server moment the live code dies, in epoch ms, or null
  * @property-read int $updatedAt Epoch milliseconds of the last write
  */
 final class HilosCodeSendAttempt extends RtItem
@@ -51,6 +54,9 @@ final class HilosCodeSendAttempt extends RtItem
             StateHilosCodeSendAttempt::channel => $this->_state->channel,
             StateHilosCodeSendAttempt::state => $this->_state->state,
             StateHilosCodeSendAttempt::detail => $this->_state->detail,
+            StateHilosCodeSendAttempt::reason => $this->_state->reason,
+            StateHilosCodeSendAttempt::resendAt => $this->_state->resendAt,
+            StateHilosCodeSendAttempt::expiresAt => $this->_state->expiresAt,
             StateHilosCodeSendAttempt::updatedAt => $this->_state->updatedAt,
             default => parent::__get($name),
         };

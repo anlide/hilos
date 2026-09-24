@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\CodeChannel;
 
-use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 
 /**
  * CodeChannelSend - what a channel answers about a code it was asked to deliver (HIL-492).
@@ -23,8 +23,8 @@ use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
  * for a good reason: a stable reason code cannot leak. What changed is what the leaf asks for
  * - the refusal on the code screen must carry the provider's own words rather than "something
  * went wrong", and no stable code of ours can hold words we did not write. The dialogue behind
- * the sentence still stays in the agent log, and the outcome signal
- * ({@see AuthCodeResultSignalData::reason}) still carries nothing but its stable code.
+ * the sentence still stays in the agent log, and the outcome on the line
+ * ({@see HilosCodeSendAttempt::$reason}, HIL-1044) still carries nothing but its stable code.
  */
 final readonly class CodeChannelSend
 {

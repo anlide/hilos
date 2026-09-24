@@ -58,18 +58,29 @@ export const CODE_SEND_STATE_NOT_SENT = 'not_sent'
 /**
  * The frame: the whole line, every field nullable.
  *
- * All three being null is not a lax reader but the commonest frame the signal
+ * Every field being null is not a lax reader but the commonest frame the signal
  * carries — it is what a handshake is answered with when the session is waiting
  * for nothing, and what takes the line off the screen when a wait is let go.
  * `detail` carries the provider's own sentence and is deliberately untranslated:
  * the point of the refusal is that a person is told "mailbox unavailable (550)"
  * rather than "something went wrong", and no key of ours can hold words we did
  * not write.
+ *
+ * The rest is the OUTCOME of a phone code (HIL-1044): `ticket` names the send the
+ * line follows, and the code agent's closing step adds `reason` (one of the
+ * `AUTH_CODE_REASON_*` values) and the two moments the code screen counts down
+ * to. The outcome rides the line rather than a signal to one socket because the
+ * line is replayed on every handshake, so a tab back from a dropped connection
+ * reads the ending too.
  */
 export const codeSendProgressSchema = z.looseObject({
   state: z.string().nullable().default(null),
   channel: z.string().nullable().default(null),
   detail: z.string().nullable().default(null),
+  ticket: z.string().nullable().default(null),
+  reason: z.string().nullable().default(null),
+  resendAt: z.number().nullable().default(null),
+  expiresAt: z.number().nullable().default(null),
 })
 
 /** Typed send-progress payload (the schema's output). */
