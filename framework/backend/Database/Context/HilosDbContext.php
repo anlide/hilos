@@ -15,6 +15,11 @@ use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
+use Hilos\Database\Object\Collection\SecondFactorBackupCodes as ObjectSecondFactorBackupCodes;
+use Hilos\Database\Object\Collection\SecondFactorResets as ObjectSecondFactorResets;
+use Hilos\Database\Object\Collection\SecondFactors as ObjectSecondFactors;
+use Hilos\Database\Object\Collection\SecondFactorSettings as ObjectSecondFactorSettings;
+use Hilos\Database\Object\Collection\SecondFactorTrusts as ObjectSecondFactorTrusts;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
@@ -29,6 +34,11 @@ use Hilos\Database\View\Collection\OAuthProviders as DbCollectionOAuthProviders;
 use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
 use Hilos\Database\View\Collection\RegistrationReservations as DbCollectionRegistrationReservations;
+use Hilos\Database\View\Collection\SecondFactorBackupCodes as DbCollectionSecondFactorBackupCodes;
+use Hilos\Database\View\Collection\SecondFactorResets as DbCollectionSecondFactorResets;
+use Hilos\Database\View\Collection\SecondFactors as DbCollectionSecondFactors;
+use Hilos\Database\View\Collection\SecondFactorSettings as DbCollectionSecondFactorSettings;
+use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFactorTrusts;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
@@ -37,11 +47,19 @@ use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
 use Hilos\Database\Actions\Collection\PushSubscriptionsActions;
+use Hilos\Database\Actions\Collection\SecondFactorBackupCodesActions;
+use Hilos\Database\Actions\Collection\SecondFactorResetsActions;
+use Hilos\Database\Actions\Collection\SecondFactorsActions;
+use Hilos\Database\Actions\Collection\SecondFactorSettingsActions;
+use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
+use Hilos\Database\Actions\Item\SecondFactorActions;
+use Hilos\Database\Actions\Item\SecondFactorBackupCodeActions;
+use Hilos\Database\Actions\Item\SecondFactorResetActions;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
@@ -67,6 +85,11 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionVerifierCircleMembers $verifierCircle
  * @property-read DbCollectionAuthBlocks $authBlocks
  * @property-read DbCollectionOAuthProviders $oauthProviders
+ * @property-read DbCollectionSecondFactors $secondFactors
+ * @property-read DbCollectionSecondFactorBackupCodes $secondFactorBackupCodes
+ * @property-read DbCollectionSecondFactorTrusts $secondFactorTrusts
+ * @property-read DbCollectionSecondFactorResets $secondFactorResets
+ * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -95,12 +118,22 @@ abstract class HilosDbContext extends DbContext
     public const string authBlock = 'authBlock';
     public const string oauthProviders = 'oauthProviders';
     public const string oauthProvider = 'oauthProvider';
+    public const string secondFactors = 'secondFactors';
+    public const string secondFactor = 'secondFactor';
+    public const string secondFactorBackupCodes = 'secondFactorBackupCodes';
+    public const string secondFactorBackupCode = 'secondFactorBackupCode';
+    public const string secondFactorTrusts = 'secondFactorTrusts';
+    public const string secondFactorTrust = 'secondFactorTrust';
+    public const string secondFactorResets = 'secondFactorResets';
+    public const string secondFactorReset = 'secondFactorReset';
+    public const string secondFactorSettings = 'secondFactorSettings';
+    public const string secondFactorSetting = 'secondFactorSetting';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
-     * OAuth providers).
+     * OAuth providers, and the five tables of the second factor).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -111,6 +144,10 @@ abstract class HilosDbContext extends DbContext
      * hilos_user_verification / hilos_passkey_credential / hilos_session /
      * hilos_notification / hilos_notification_delivery / hilos_notification_preference /
      * hilos_push_subscription / hilos_auth_block tables.
+     *
+     * The second factor's five tables (HIL-494) - authenticators, backup codes, trusted
+     * browsers, delayed removals and each person's own removal wait - load by key or by person
+     * too, and stay inert for the same reason where nobody signs in.
      *
      * OAuth providers are read whole on the first lookup of a provider in the process
      * (HIL-1080) - a row per declared provider, asked on every handshake - and stay inert
@@ -173,6 +210,40 @@ abstract class HilosDbContext extends DbContext
             DbCollectionOAuthProviders::class,
             OAuthProvidersActions::class,
             OAuthProviderActions::class,
+        );
+
+        $this->_objectCollections[self::secondFactors] = ObjectSecondFactors::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::secondFactors,
+            DbCollectionSecondFactors::class,
+            SecondFactorsActions::class,
+            SecondFactorActions::class,
+        );
+
+        $this->_objectCollections[self::secondFactorBackupCodes] = ObjectSecondFactorBackupCodes::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::secondFactorBackupCodes,
+            DbCollectionSecondFactorBackupCodes::class,
+            SecondFactorBackupCodesActions::class,
+            SecondFactorBackupCodeActions::class,
+        );
+
+        $this->_objectCollections[self::secondFactorTrusts] = ObjectSecondFactorTrusts::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::secondFactorTrusts, DbCollectionSecondFactorTrusts::class, SecondFactorTrustsActions::class);
+
+        $this->_objectCollections[self::secondFactorResets] = ObjectSecondFactorResets::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::secondFactorResets,
+            DbCollectionSecondFactorResets::class,
+            SecondFactorResetsActions::class,
+            SecondFactorResetActions::class,
+        );
+
+        $this->_objectCollections[self::secondFactorSettings] = ObjectSecondFactorSettings::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(
+            self::secondFactorSettings,
+            DbCollectionSecondFactorSettings::class,
+            SecondFactorSettingsActions::class,
         );
     }
 

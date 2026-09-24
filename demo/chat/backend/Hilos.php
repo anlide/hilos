@@ -126,6 +126,7 @@ use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Chat\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityPage;
+use Demo\Chat\Pages\Hilos\ProfileSecurityPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
@@ -195,6 +196,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -328,6 +330,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
@@ -518,6 +521,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         ChatTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
+        ChatTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -627,6 +631,9 @@ final class Hilos extends HilosFacade
         ],
         SecuritySignInMethodsPage::PAGE => [
             ChatTableContext::hilosSecuritySignInMethods => [],
+        ],
+        SecurityTwoFactorPage::PAGE => [
+            ChatTableContext::hilosSecurityTwoFactor => [],
         ],
         LogsKeysPage::PAGE => [
             ChatTableContext::hilosLogKeys => [],

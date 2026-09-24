@@ -16,6 +16,7 @@ import {
   HILOS_ROUTER,
   HilosLayout,
   HilosMagicLinkPage,
+  HilosSecondFactorCancelPage,
   HilosNotificationBell,
   HilosOAuthCallbackPage,
   HilosView,
@@ -24,6 +25,7 @@ import {
 } from '@hilos/angular'
 import {
   AUTH_MAGIC_LINK_PATH,
+  AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
   HilosPages,
 } from '@hilos/core'
@@ -47,6 +49,8 @@ import { Privacy } from './views/privacy/privacy'
 import { SecurityOauth } from './views/hilos/security/oauth'
 import { SecurityOauthProvider } from './views/hilos/security/oauth-provider'
 import { SecuritySignInMethods } from './views/hilos/security/sign-in-methods'
+import { SecurityTwoFactor } from './views/hilos/security/two-factor'
+import { ProfileSecurity } from './views/profile/profile-security'
 import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
 import { User } from './views/hilos/users/user'
@@ -68,6 +72,7 @@ const LOGOUT_FALLBACK_MS = 5000
   imports: [
     HilosLayout,
     HilosMagicLinkPage,
+    HilosSecondFactorCancelPage,
     HilosNotificationBell,
     HilosOAuthCallbackPage,
     HilosView,
@@ -122,6 +127,8 @@ const LOGOUT_FALLBACK_MS = 5000
       <hilos-magic-link-page [context]="authContext" />
     } @else if (currentPath() === AUTH_OAUTH_CALLBACK_PATH) {
       <hilos-oauth-callback-page [context]="authContext" />
+    } @else if (currentPath() === AUTH_SECOND_FACTOR_CANCEL_PATH) {
+      <hilos-second-factor-cancel-page [context]="authContext" />
     } @else {
       <hilos-view
         [pages]="pages"
@@ -159,6 +166,7 @@ export class App {
   protected readonly currentPath = hilosSignal(inject(HILOS_ROUTER).currentPath)
 
   protected readonly AUTH_MAGIC_LINK_PATH = AUTH_MAGIC_LINK_PATH
+  protected readonly AUTH_SECOND_FACTOR_CANCEL_PATH = AUTH_SECOND_FACTOR_CANCEL_PATH
 
   protected readonly AUTH_OAUTH_CALLBACK_PATH = AUTH_OAUTH_CALLBACK_PATH
 
@@ -206,6 +214,8 @@ export class App {
     // stores and action lifecycle (views/hilos/security) and declares its method
     // directory on the backend.
     [HilosPages.SECURITY_SIGN_IN_METHODS]: SecuritySignInMethods,
+    [HilosPages.SECURITY_2FA]: SecurityTwoFactor,
+    [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its

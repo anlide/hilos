@@ -16,6 +16,7 @@ use Hilos\Auth\Library\Command\PasskeyCommands;
 use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
+use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -23,8 +24,13 @@ use Hilos\Auth\Library\DTO\AuthRegistrationCanceledSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CancelSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
@@ -33,6 +39,7 @@ use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
@@ -48,12 +55,26 @@ use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorResetRequestActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorSetupConfirmActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorSetupFinishActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorSetupStartActionDTO;
 use Hilos\Auth\Method\AuthMethodGate;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\OAuthService;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollStartActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorRemoveActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
+use Hilos\Auth\SecondFactor\SecondFactorResetSweeper;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosAgentType;
@@ -61,6 +82,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
@@ -127,6 +149,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * create-only right it began as (HIL-771): a page carries no claim, so the writers that used
      * to rename somebody from a profile submit come here instead, and renaming is editing the row.
      *
+     * The second factor is a proof of the account too (HIL-494), so four of its tables are here
+     * the same way: the authenticators, the backup codes, the delayed removals and each person's
+     * own removal wait are written by this library's commands and by its reset sweep, and by
+     * nothing else. The fifth, the browsers trusted to skip the step, is keyed by a session row
+     * and belongs to the session holder.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
@@ -134,6 +162,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::verifications => TruthSourceOperation::ALL,
         HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
         HilosDbContext::passkeyCredentials => TruthSourceOperation::ALL,
+        HilosDbContext::secondFactors => TruthSourceOperation::ALL,
+        HilosDbContext::secondFactorBackupCodes => TruthSourceOperation::ALL,
+        HilosDbContext::secondFactorResets => TruthSourceOperation::ALL,
+        HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -184,6 +216,21 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS =>
             PasskeyDiscoverableLoginOptionsActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR => ConfirmSecondFactorActionDTO::class,
+        HilosSignalConstants::HILOS_CANCEL_SECOND_FACTOR => CancelSecondFactorActionDTO::class,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START => SecondFactorSetupStartActionDTO::class,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM => SecondFactorSetupConfirmActionDTO::class,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH => SecondFactorSetupFinishActionDTO::class,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST => SecondFactorResetRequestActionDTO::class,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK => SecondFactorResetCancelLinkActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START => ProfileSecondFactorEnrollStartActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM => ProfileSecondFactorEnrollConfirmActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE => ProfileSecondFactorRemoveActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW => ProfileSecondFactorCodesShowActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW => ProfileSecondFactorCodesRenewActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => ProfileSecondFactorResetWaitSetActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => ProfileSecondFactorResetRequestActionDTO::class,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => ProfileSecondFactorResetCancelActionDTO::class,
     ];
 
     /**
@@ -195,6 +242,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * enumerator wants, and this list is the whole of what keeps that answer expensive
      * (HIL-414). Canceling a registration is absent because it spends nothing and can only
      * ever undo the caller's own registration - its wait and the hold it took (HIL-829).
+     *
+     * The second factor adds the doors that guess a secret (HIL-494): a code on the way in, the
+     * first code of an enrolment, the token of a cancel link, and the five profile submits that
+     * start with a code. Its other submits spend nothing and only move the caller's own wait or
+     * the caller's own choice.
      */
     public const array THROTTLED_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
@@ -213,17 +265,41 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
         HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE,
         HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM,
+        HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
     ];
 
     /**
      * The commands that add to an account rather than open one, and so need a signed-in
-     * session. Everything else here is a guest's way in and must stay open to one.
+     * session. Everything else here is a guest's way in and must stay open to one. The
+     * profile's second-factor commands are here whole (HIL-494): they act on the person the
+     * session belongs to and on nobody else.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
+        HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL,
     ];
+
+    /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
+    private const string SECOND_FACTOR_RESET_SWEEP_RULE = 'hilos_second_factor_reset_sweep';
+
+    /** Once a minute: a removal is carried out within a minute of its moment. */
+    private const string SECOND_FACTOR_RESET_SWEEP_CRON = '* * * * *';
 
     /**
      * Action name of the dispatch running right now, or null outside one.
@@ -259,6 +335,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** Taking a sign-in method off an account, built on first use. */
     private ?IdentityCommands $identityCommands = null;
 
+    /** The second factor's commands, built on first use. */
+    private ?SecondFactorCommands $secondFactorCommands = null;
+
+    /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
+    private ?CronRule $secondFactorResetSweepRule = null;
+
     /**
      * What a library does to a row it shares with another owner: bring it into being, take it away.
      *
@@ -285,6 +367,33 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     public function onStop(): void
     {
+    }
+
+    /**
+     * Arms the once-a-minute sweep of second-factor removals (HIL-494).
+     *
+     * Never run rather than just run: removals whose time came while no library held the table
+     * are the ones waiting longest, and the first tick carries them out.
+     */
+    public function onStart(): void
+    {
+        $rule = new CronRule(self::SECOND_FACTOR_RESET_SWEEP_RULE, self::SECOND_FACTOR_RESET_SWEEP_CRON);
+        $rule->lastRun = 0.0;
+        $this->secondFactorResetSweepRule = $rule;
+    }
+
+    /**
+     * Carries out the second-factor removals whose time came and reminds of the rest, when the rule says so (HIL-494).
+     *
+     * @throws HilosException When a lookup, a write, a frame or an announcement fails
+     */
+    public function onTick(): void
+    {
+        if ($this->secondFactorResetSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        new SecondFactorResetSweeper($this->secondFactorCommands())->sweep();
     }
 
     /**
@@ -435,6 +544,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param ?AuthFlowOutcome $outcome Where the surface goes next, answered by the holder
      * @param ?string $tripKeyHash Hash of the key of the provider sign-in this grant ends, or null for every other
      *     ceremony (HIL-1044)
+     * @param bool $secondFactorProven Whether the second factor was just shown, so the holder does not ask for it
+     *     again (HIL-494); every first proof leaves it false and meets the holder's second-factor gate
+     * @param bool $trustDevice Whether the person asked not to be asked again on this browser (HIL-494)
      * @throws InvalidArgumentException When the frame cannot be named or queued
      */
     public function grantSession(
@@ -443,6 +555,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         ?string $ack = null,
         ?AuthFlowOutcome $outcome = null,
         ?string $tripKeyHash = null,
+        bool $secondFactorProven = false,
+        bool $trustDevice = false,
     ): void {
         $this->handOff(
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
@@ -455,6 +569,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $outcome?->toArray(),
                 $ack,
                 $tripKeyHash,
+                $secondFactorProven,
+                $trustDevice,
             ),
         );
     }
@@ -663,6 +779,74 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $this->sendToAgent(
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED,
             new AuthRecoveryWaitMovedSignalData($acting->acceptKey, $identifier, $acting->sessionToken),
+        );
+    }
+
+    /**
+     * Asks the session holder to count a wrong second-factor code against this browser's wait (HIL-494).
+     *
+     * Not a hand-off: the submit is answered here, with the refusal the command throws after
+     * this frame is queued.
+     *
+     * @param ActingSession $acting Browser that sent the code
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceSecondFactorMissed(ActingSession $acting): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED,
+            new AuthSecondFactorMissedSignalData($acting->sessionToken),
+        );
+    }
+
+    /**
+     * Tells the session holder the enrolment on the way in is confirmed (HIL-494).
+     *
+     * @param ActingSession $acting Browser that enrolled
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceSecondFactorSetupProven(ActingSession $acting): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN,
+            new AuthSecondFactorSetupProvenSignalData($acting->sessionToken),
+        );
+    }
+
+    /**
+     * Tells the session holder a person's second factor is gone (HIL-494).
+     *
+     * @param int $userId Person whose factor is gone
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceSecondFactorOff(int $userId): void
+    {
+        $this->sendToAgent(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF, new AuthSecondFactorOffSignalData($userId));
+    }
+
+    /**
+     * Asks the session holder to let this browser's second-factor wait go, and hands it the answer (HIL-494).
+     *
+     * @param ActingSession $acting Browser whose wait ends
+     * @param ?AuthFlowOutcome $outcome Answer to the submit, or null for the address field
+     * @param ?string $code Why the other tabs go back (an AuthFlowOutcome::CODE_* value), or null
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceSecondFactorCanceled(
+        ActingSession $acting,
+        ?AuthFlowOutcome $outcome = null,
+        ?string $code = null,
+    ): void {
+        $this->handOff(
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL,
+            new AuthSecondFactorCancelSignalData(
+                $acting->sessionToken,
+                $acting->acceptKey,
+                $this->currentActionRequestId(),
+                $this->currentAction,
+                $outcome?->toArray(),
+                $code,
+            ),
         );
     }
 
@@ -950,8 +1134,153 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return null;
 
             default:
+                return $this->runSecondFactorAction($acceptKey, $action, $dto);
+        }
+    }
+
+    /**
+     * Runs one of the second factor's sign-in commands (HIL-494).
+     *
+     * Split off {@see runOwnedAction()} only for its length: the routing is the same - a name,
+     * the group that owns it, the reply that group produced, or null when the holder answers.
+     *
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param string $action Owned action name from {@see AGENT_ACTIONS}
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO What the surface is told, or null when the holder answers instead
+     * @throws AgentUnknownActionException When the action is not one this library owns
+     * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws ValidationException When the command refuses what was submitted
+     * @throws RandomException When a secret, a backup code or a token cannot be drawn
+     * @throws HilosException When a command exposes database, runtime, or settings failure
+     */
+    private function runSecondFactorAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR:
+                if (!$dto instanceof ConfirmSecondFactorActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmSecondFactorActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->confirm($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_CANCEL_SECOND_FACTOR:
+                if (!$dto instanceof CancelSecondFactorActionDTO) {
+                    throw new InvalidActionPayloadException($action, CancelSecondFactorActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->cancel($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START:
+                if (!$dto instanceof SecondFactorSetupStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, SecondFactorSetupStartActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->setupStart($acceptKey);
+
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM:
+                if (!$dto instanceof SecondFactorSetupConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, SecondFactorSetupConfirmActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->setupConfirm($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH:
+                if (!$dto instanceof SecondFactorSetupFinishActionDTO) {
+                    throw new InvalidActionPayloadException($action, SecondFactorSetupFinishActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->setupFinish($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST:
+                if (!$dto instanceof SecondFactorResetRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, SecondFactorResetRequestActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->resetRequest($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK:
+                if (!$dto instanceof SecondFactorResetCancelLinkActionDTO) {
+                    throw new InvalidActionPayloadException($action, SecondFactorResetCancelLinkActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->resetCancelLink($dto);
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
+                if (!$dto instanceof ProfileSecondFactorEnrollStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorEnrollStartActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->profileEnrollStart($acceptKey, $dto);
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM:
+                if (!$dto instanceof ProfileSecondFactorEnrollConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorEnrollConfirmActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->profileEnrollConfirm($acceptKey, $dto);
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE:
+                if (!$dto instanceof ProfileSecondFactorRemoveActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorRemoveActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->profileRemove($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW:
+                if (!$dto instanceof ProfileSecondFactorCodesShowActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorCodesShowActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->profileCodesShow($acceptKey, $dto);
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
+                if (!$dto instanceof ProfileSecondFactorCodesRenewActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorCodesRenewActionDTO::class, $dto);
+                }
+
+                return $this->secondFactorCommands()->profileCodesRenew($acceptKey, $dto);
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET:
+                if (!$dto instanceof ProfileSecondFactorResetWaitSetActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorResetWaitSetActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->profileResetWaitSet($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST:
+                if (!$dto instanceof ProfileSecondFactorResetRequestActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorResetRequestActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->profileResetRequest($acceptKey);
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL:
+                if (!$dto instanceof ProfileSecondFactorResetCancelActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProfileSecondFactorResetCancelActionDTO::class, $dto);
+                }
+                $this->secondFactorCommands()->profileResetCancel($acceptKey);
+
+                return null;
+
+            default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+    }
+
+    /**
+     * @return SecondFactorCommands The second factor's commands, built once per process
+     */
+    protected function secondFactorCommands(): SecondFactorCommands
+    {
+        return $this->secondFactorCommands ??= new SecondFactorCommands($this);
     }
 
     /**

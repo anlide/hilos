@@ -6,6 +6,8 @@ namespace Hilos\Database\Settings\Library;
 
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
+use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -138,13 +140,14 @@ final class SettingsLibraryAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         $methodsBefore = $this->offeredMethods();
+        $policyBefore = $this->secondFactorPolicy();
 
         switch ($name) {
             case HilosSignalConstants::HILOS_SETTING_WRITE:
                 if (!$data->data instanceof SettingWriteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingWriteSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->storeValue($data->data), $methodsBefore);
+                $this->settle($data->data, $this->storeValue($data->data), $methodsBefore, $policyBefore);
 
                 return;
 
@@ -152,7 +155,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingResetSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingResetSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->resetToDefault($data->data), $methodsBefore);
+                $this->settle($data->data, $this->resetToDefault($data->data), $methodsBefore, $policyBefore);
 
                 return;
 
@@ -160,7 +163,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                 if (!$data->data instanceof SettingDeleteSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, SettingDeleteSignalData::class, $data->data);
                 }
-                $this->settle($data->data, $this->dropOrphan($data->data), $methodsBefore);
+                $this->settle($data->data, $this->dropOrphan($data->data), $methodsBefore, $policyBefore);
 
                 return;
 
@@ -172,7 +175,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                         $data->data,
                     );
                 }
-                $this->settle($data->data, $this->applyPreset($data->data), $methodsBefore);
+                $this->settle($data->data, $this->applyPreset($data->data), $methodsBefore, $policyBefore);
 
                 return;
 
@@ -304,19 +307,55 @@ final class SettingsLibraryAgent extends AbstractAgent
      *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
      * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
+     * The second-factor settings travel the same way (HIL-494): a write that moved them is told to
+     * every connection, so the profile section and the code step redraw without a reload.
+     *
      * @param ?list<array{key: string, name: ?string, ready: bool}> $methodsBefore Enabled method set before the write, or null when unread
-     * @throws InvalidArgumentException When the answer or the new method set cannot be named or queued
+     * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
+     * @throws InvalidArgumentException When the answer, the new method set or the new policy cannot be named or queued
      */
-    private function settle(HandoverAskInterface $ask, ?ActionRefusal $refusal, ?array $methodsBefore): void
-    {
+    private function settle(
+        HandoverAskInterface $ask,
+        ?ActionRefusal $refusal,
+        ?array $methodsBefore,
+        ?SecondFactorPolicy $policyBefore,
+    ): void {
         $this->answer($ask, $refusal);
-        if ($refusal !== null || $methodsBefore === null) {
+        if ($refusal !== null) {
             return;
         }
 
-        $methodsAfter = $this->offeredMethods();
+        $methodsAfter = $methodsBefore === null ? null : $this->offeredMethods();
         if ($methodsAfter !== null && $methodsAfter !== $methodsBefore) {
             $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, new AuthMethodsSignalData($methodsAfter));
+        }
+
+        $policyAfter = $policyBefore === null ? null : $this->secondFactorPolicy();
+        if ($policyBefore === null || $policyAfter === null) {
+            return;
+        }
+        $announced = SecondFactorPolicySignalData::of($policyAfter);
+        if ($announced->toArray() !== SecondFactorPolicySignalData::of($policyBefore)->toArray()) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_SECOND_FACTOR_POLICY, $announced);
+        }
+    }
+
+    /**
+     * Reads the second-factor settings as they stand, or null when they cannot be read (HIL-494).
+     *
+     * Logged and answered with null rather than thrown, for the reason {@see offeredMethods()}
+     * gives: the write being served is answered either way.
+     *
+     * @return ?SecondFactorPolicy The settings in force, or null when unread
+     */
+    private function secondFactorPolicy(): ?SecondFactorPolicy
+    {
+        try {
+            return SecondFactorPolicy::current();
+        } catch (HilosException $e) {
+            $this->logAgentError("Second-factor settings could not be read: {$e->getMessage()}");
+
+            return null;
         }
     }
 

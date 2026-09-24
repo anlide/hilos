@@ -22,9 +22,9 @@ Common ground (containers, connection, e2e, stable ids) is in
 - Flat dist: `outputPath: { "base": "dist", "browser": "" }` so the nginx
   mount stays `../frontend/dist`, uniform with the Vite demos.
 - deps `@angular/{common,compiler,core,platform-browser}` `^22`, `rxjs`,
-  `tslib`, `@vue/reactivity` (see below), `bootstrap` + `bootstrap-icons` (see
-  Styling), and `@hilos/angular` pinned at the **package root**:
-  `file:../../../framework/frontend/angular`. The Angular view layer is
+  `tslib`, `@vue/reactivity` and `qrcode-generator` (see below),
+  `bootstrap` + `bootstrap-icons` (see Styling), and `@hilos/angular` pinned
+  at the **package root**: `file:../../../framework/frontend/angular`. The Angular view layer is
   built with **ng-packagr** (Angular Package Format: a FESM2022 bundle + a
   generated manifest), unlike the Vue/React layers' Vite library build, because
   only an Angular-aware compiler can emit the shell's declarables. devDeps
@@ -204,4 +204,13 @@ Angular consumer so npm installs it locally:
 
 ```json
 "dependencies": { "@vue/reactivity": "^3.5.35" }
+```
+
+Every other runtime dependency of the core is in the same position and gets the
+same line. Today that is `qrcode-generator`, the QR library behind the core's
+`qrMatrix` (HIL-494) — without it the build stops at
+`Could not resolve "qrcode-generator"`:
+
+```json
+"dependencies": { "qrcode-generator": "^2.0.4" }
 ```

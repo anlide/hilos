@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Notification;
 
+use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Backup\BackupNotificationType;
 use Hilos\Hilos;
 
@@ -40,6 +41,9 @@ abstract class NotificationTypeRegistry
      * personal channel setting may turn off. A project that does not activate backups inherits
      * two types nothing ever emits, which costs it nothing.
      *
+     * The four announcements of a delayed second-factor removal (HIL-494) are mandatory for the
+     * reason the removal is delayed at all: whoever took the account over would mute them first.
+     *
      * @return array<string, NotificationTypeDescriptor> Type descriptors keyed by type
      */
     protected static function types(): array
@@ -47,6 +51,10 @@ abstract class NotificationTypeRegistry
         return [
             BackupNotificationType::RESTORE_SUCCEEDED => new NotificationTypeDescriptor(mandatory: true),
             BackupNotificationType::RESTORE_FAILED => new NotificationTypeDescriptor(mandatory: true),
+            SecondFactorNotificationType::RESET_REQUESTED => new NotificationTypeDescriptor(mandatory: true),
+            SecondFactorNotificationType::RESET_REMINDER => new NotificationTypeDescriptor(mandatory: true),
+            SecondFactorNotificationType::RESET_CANCELED => new NotificationTypeDescriptor(mandatory: true),
+            SecondFactorNotificationType::RESET_COMPLETED => new NotificationTypeDescriptor(mandatory: true),
         ];
     }
 

@@ -47,6 +47,7 @@ use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityPage;
+use Demo\Tasks\Pages\Hilos\ProfileSecurityPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Pages\Hilos\Users\UsersPage;
@@ -95,6 +96,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -160,6 +162,7 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
@@ -295,6 +298,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
+        TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -328,6 +332,9 @@ final class Hilos extends HilosFacade
         ],
         SecuritySignInMethodsPage::PAGE => [
             TasksTableContext::hilosSecuritySignInMethods => [],
+        ],
+        SecurityTwoFactorPage::PAGE => [
+            TasksTableContext::hilosSecurityTwoFactor => [],
         ],
         UsersPage::PAGE => [
             TasksTableContext::hilosUsers => [],

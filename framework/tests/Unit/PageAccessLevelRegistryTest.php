@@ -10,6 +10,7 @@ use Hilos\Pages\AbstractHilosAboutPage;
 use Hilos\Pages\AbstractHilosLicensePage;
 use Hilos\Pages\AbstractHilosPrivacyPage;
 use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Pages\AbstractHilosProfileSecurityPage;
 use Hilos\Pages\AbstractHilosTermsPage;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -36,6 +37,7 @@ final class PageAccessLevelRegistryTest extends TestCase
     /** Exact set of framework pages open to any signed-in user. */
     private const array AUTHENTICATED_PAGES = [
         AbstractHilosProfilePage::class,
+        AbstractHilosProfileSecurityPage::class,
     ];
 
     public function testFrameworkPageAccessLevelsMatchTheDeclaredExceptionsExactly(): void

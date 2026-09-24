@@ -36,6 +36,9 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
      * @param ?string $ack Ack to show on the session's tabs (a {@see SessionAck} value), or null for none
      * @param ?string $tripKeyHash Hash of the key of the provider sign-in this grant ends, or null for every other
      *     ceremony (HIL-1044)
+     * @param bool $secondFactorProven Whether the second factor was shown on the way here, so the holder lets the
+     *     sign-in through without asking again (HIL-494)
+     * @param bool $trustDevice Whether the person asked not to be asked again on this browser (HIL-494)
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -46,6 +49,8 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
         public readonly ?array $outcome = null,
         public readonly ?string $ack = null,
         public readonly ?string $tripKeyHash = null,
+        public readonly bool $secondFactorProven = false,
+        public readonly bool $trustDevice = false,
     ) {
     }
 
@@ -65,6 +70,8 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
             'outcome' => $this->outcome,
             'ack' => $this->ack,
             'tripKeyHash' => $this->tripKeyHash,
+            'secondFactorProven' => $this->secondFactorProven,
+            'trustDevice' => $this->trustDevice,
         ];
     }
 
@@ -86,6 +93,8 @@ final class AuthSessionGrantSignalData extends BaseDTO implements SignalDataInte
             outcome: self::optionalArray($data, 'outcome'),
             ack: self::optionalString($data, 'ack'),
             tripKeyHash: self::optionalString($data, 'tripKeyHash'),
+            secondFactorProven: self::requireBool($data, 'secondFactorProven'),
+            trustDevice: self::requireBool($data, 'trustDevice'),
         );
     }
 }

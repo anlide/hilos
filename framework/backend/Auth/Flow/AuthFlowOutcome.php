@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Flow;
 
+use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 
@@ -56,6 +57,12 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The new password typed into a reset is the account's current one: the surface stays put. */
     public const string CODE_PASSWORD_UNCHANGED = 'password_unchanged';
 
+    /** The sign-in waiting on a second factor ran out: back to the address field (HIL-494). */
+    public const string CODE_SECOND_FACTOR_EXPIRED = 'second_factor_expired';
+
+    /** The sign-in waiting on a second factor took too many wrong codes: back to the address field (HIL-494). */
+    public const string CODE_SECOND_FACTOR_ATTEMPTS = 'second_factor_attempts';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 
@@ -92,6 +99,9 @@ final class AuthFlowOutcome extends ActionReplyDTO
      */
     private const string FIELD_EXPIRES_AT = 'expiresAt';
 
+    /** Wire key for what a second-factor screen needs beyond its step (HIL-494). */
+    private const string FIELD_SECOND_FACTOR = 'secondFactor';
+
     /**
      * @param bool $ok Whether the submit succeeded
      * @param ?string $step Step the surface moves to, or null to stay put
@@ -100,6 +110,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
      * @param ?string $message Backend-authored inline message on failure, or null
      * @param ?int $resendAt Server moment a code re-send is allowed, in epoch ms, or null when nothing was sent
      * @param ?int $expiresAt Server moment the code or link in play dies, in epoch ms, or null when none is
+     * @param ?SecondFactorStepData $secondFactor What a second-factor screen needs, or null on every other step
      */
     private function __construct(
         public readonly bool $ok,
@@ -109,7 +120,36 @@ final class AuthFlowOutcome extends ActionReplyDTO
         public readonly ?string $message,
         public readonly ?int $resendAt,
         public readonly ?int $expiresAt,
+        public readonly ?SecondFactorStepData $secondFactor = null,
     ) {
+    }
+
+    /**
+     * Builds a successful outcome that moves the surface to a second-factor screen (HIL-494).
+     *
+     * @param string $step Second-factor step the surface moves to (see AuthFlowStep::SECOND_FACTOR*)
+     * @param SecondFactorStepData $secondFactor What that screen needs
+     * @param ?int $expiresAt Server moment the waiting sign-in runs out, in epoch ms, or null when nothing waits
+     * @return static Success outcome
+     */
+    public static function moveToSecondFactor(string $step, SecondFactorStepData $secondFactor, ?int $expiresAt): static
+    {
+        return new static(true, $step, AuthFlowIntent::LOGIN, null, null, null, $expiresAt, $secondFactor);
+    }
+
+    /**
+     * Builds a successful outcome that stays on its screen and hands it second-factor data (HIL-494).
+     *
+     * The shape of the two enrolment answers on the way in: the secret once when the enrolment
+     * starts, the backup codes once when it is confirmed. Neither moves the surface by itself -
+     * the screen that asked is the one that shows what came back.
+     *
+     * @param SecondFactorStepData $secondFactor What the screen needs
+     * @return static Success outcome that moves nowhere
+     */
+    public static function secondFactorData(SecondFactorStepData $secondFactor): static
+    {
+        return new static(true, null, null, null, null, null, null, $secondFactor);
     }
 
     /**
@@ -211,6 +251,9 @@ final class AuthFlowOutcome extends ActionReplyDTO
         if ($this->expiresAt !== null) {
             $data[self::FIELD_EXPIRES_AT] = $this->expiresAt;
         }
+        if ($this->secondFactor !== null) {
+            $data[self::FIELD_SECOND_FACTOR] = $this->secondFactor->toArray();
+        }
 
         return $data;
     }
@@ -223,6 +266,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
     public static function fromArray(array $data): static
     {
         $next = self::optionalArray($data, self::FIELD_NEXT) ?? [];
+        $secondFactor = self::optionalArray($data, self::FIELD_SECOND_FACTOR);
 
         return new static(
             (bool)($data[self::FIELD_OK] ?? throw new InvalidFormatException('Auth flow outcome requires ' . self::FIELD_OK)),
@@ -232,6 +276,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
             self::optionalString($data, self::FIELD_MESSAGE),
             self::optionalInt($data, self::FIELD_RESEND_AT),
             self::optionalInt($data, self::FIELD_EXPIRES_AT),
+            $secondFactor === null ? null : SecondFactorStepData::fromArray($secondFactor),
         );
     }
 }

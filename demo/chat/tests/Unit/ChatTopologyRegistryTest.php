@@ -35,7 +35,12 @@ use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
+use Hilos\Auth\Library\DTO\CancelSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompleteRegistrationPasswordlessActionDTO;
@@ -44,6 +49,7 @@ use Hilos\Auth\Library\DTO\ConfirmMagicLinkCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
+use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
@@ -58,6 +64,19 @@ use Hilos\Auth\Library\DTO\RequestMagicLinkActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPhoneCodeActionDTO;
 use Hilos\Auth\Library\DTO\RequestRegisterConfirmActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorResetRequestActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorSetupConfirmActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorSetupFinishActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorSetupStartActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollStartActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorRemoveActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -352,6 +371,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => PageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+            HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosPageConstants::HILOS_SECURITY_2FA,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_SET => PageConstants::HILOS_SECURITY_OAUTH,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_RESET => PageConstants::HILOS_SECURITY_OAUTH,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_SET => PageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
@@ -401,6 +421,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SECURITY_2FA_SETTING_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_SET => AgentType::HILOS_INDEX,
@@ -426,6 +447,7 @@ final class ChatTopologyRegistryTest extends TestCase
                     => HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE
                     => HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+                HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_2FA,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_OAUTH,
                 HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             ],
@@ -446,6 +468,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_CHANNEL_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_OAUTH_REDIRECT_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE => AgentType::HILOS_INDEX,
             ],
@@ -480,6 +503,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AGENTS_GONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -618,6 +645,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => OAuthTripEndedSignalData::class,
             HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => AuthRegistrationWaitHeldSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
@@ -680,6 +711,21 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CANCEL_SECOND_FACTOR => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::UNLINK_IDENTITY => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::SET_PASSWORD => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -743,6 +789,21 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
+            HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR => ConfirmSecondFactorActionDTO::class,
+            HilosSignalConstants::HILOS_CANCEL_SECOND_FACTOR => CancelSecondFactorActionDTO::class,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START => SecondFactorSetupStartActionDTO::class,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM => SecondFactorSetupConfirmActionDTO::class,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH => SecondFactorSetupFinishActionDTO::class,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST => SecondFactorResetRequestActionDTO::class,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK => SecondFactorResetCancelLinkActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START => ProfileSecondFactorEnrollStartActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM => ProfileSecondFactorEnrollConfirmActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE => ProfileSecondFactorRemoveActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW => ProfileSecondFactorCodesShowActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW => ProfileSecondFactorCodesRenewActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => ProfileSecondFactorResetWaitSetActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => ProfileSecondFactorResetRequestActionDTO::class,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => ProfileSecondFactorResetCancelActionDTO::class,
             ChatSignalConstants::RENAME => RenameActionDTO::class,
             ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
             ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,

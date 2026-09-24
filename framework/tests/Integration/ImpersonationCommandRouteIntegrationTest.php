@@ -88,9 +88,10 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
 
     /**
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one framework
-     *     collection loaded eagerly, so mounting the context reaches for it.
+     *     collection loaded eagerly, so mounting the context reaches for it; `hilos_second_factor`
+     *     is asked by every sign-in the holder grants (HIL-494), and has to be there to be empty.
      */
-    private const array TABLES = ['hilos_session', 'hilos_setting'];
+    private const array TABLES = ['hilos_session', 'hilos_setting', 'hilos_second_factor'];
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;

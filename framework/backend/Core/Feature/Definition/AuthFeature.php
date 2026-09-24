@@ -13,6 +13,11 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\Identity;
 use Hilos\Database\Entity\Item\PasskeyCredential;
 use Hilos\Database\Entity\Item\RegistrationReservation;
+use Hilos\Database\Entity\Item\SecondFactor;
+use Hilos\Database\Entity\Item\SecondFactorBackupCode;
+use Hilos\Database\Entity\Item\SecondFactorReset;
+use Hilos\Database\Entity\Item\SecondFactorSetting;
+use Hilos\Database\Entity\Item\SecondFactorTrust;
 use Hilos\Database\Entity\Item\UserVerification;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
@@ -72,7 +77,7 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The two library agent pairs and the four tables the set lives in
+     * @return FeatureRequirements The two library agent pairs and the tables the set lives in
      */
     public function requirements(): FeatureRequirements
     {
@@ -86,6 +91,11 @@ final class AuthFeature extends FeatureDefinition
                 UserVerification::_table,
                 PasskeyCredential::_table,
                 RegistrationReservation::_table,
+                SecondFactor::_table,
+                SecondFactorBackupCode::_table,
+                SecondFactorTrust::_table,
+                SecondFactorReset::_table,
+                SecondFactorSetting::_table,
             ],
         );
     }

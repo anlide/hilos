@@ -10,6 +10,7 @@ import {
   HilosLayout,
   HilosLink,
   HilosMagicLinkPage,
+  HilosSecondFactorCancelPage,
   HilosNotificationBell,
   HilosOAuthCallbackPage,
   HilosView,
@@ -19,6 +20,7 @@ import {
 } from '@hilos/vue'
 import {
   AUTH_MAGIC_LINK_PATH,
+  AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
   HILOS_PAGE_ROUTES,
   HilosPages,
@@ -52,6 +54,7 @@ import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import Profile from './views/Profile/Profile.vue'
+import ProfileSecurity from './views/Profile/ProfileSecurity.vue'
 import Terms from './views/Terms/Terms.vue'
 import User from './views/User/User.vue'
 // The Hilos admin section. The framework ships a real default page for every
@@ -68,6 +71,7 @@ import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveri
 import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth.vue'
 import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider.vue'
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods.vue'
+import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
 import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
@@ -95,6 +99,7 @@ const pages: Record<string, Component> = {
   [PAGE_ADMIN_USERS]: AdminUsers,
   ...hilosAdminViews(),
   [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
@@ -109,6 +114,7 @@ const pages: Record<string, Component> = {
   [HilosPages.SECURITY_OAUTH]: HilosSecurityOauth,
   [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProvider,
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
+  [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
   [HilosPages.LOGS]: HilosLogsOverview,
   [HilosPages.LOGS_KEYS]: HilosLogsKeys,
   [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,
@@ -139,6 +145,9 @@ const currentPath = useSignal(router.currentPath)
 const isMagicRoute = computed(() => currentPath.value === AUTH_MAGIC_LINK_PATH)
 const isOAuthCallbackRoute = computed(
   () => currentPath.value === AUTH_OAUTH_CALLBACK_PATH,
+)
+const isSecondFactorCancelRoute = computed(
+  () => currentPath.value === AUTH_SECOND_FACTOR_CANCEL_PATH,
 )
 
 // The navbar profile entry: the current user's name links to the framework
@@ -305,6 +314,10 @@ watch(isImpersonating, (value) => {
     <HilosMagicLinkPage v-if="isMagicRoute" :context="hilosAuthContext" />
     <HilosOAuthCallbackPage
       v-else-if="isOAuthCallbackRoute"
+      :context="hilosAuthContext"
+    />
+    <HilosSecondFactorCancelPage
+      v-else-if="isSecondFactorCancelRoute"
       :context="hilosAuthContext"
     />
     <HilosView

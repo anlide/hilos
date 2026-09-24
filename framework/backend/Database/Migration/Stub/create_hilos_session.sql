@@ -45,6 +45,17 @@
 -- one. It carries no index - nothing looks a session up by it, it is read off a
 -- session already in hand - and holds one of a closed set of values written by the
 -- framework, so the default collation is enough.
+--
+-- The `pending_second_factor_*` group (HIL-494) is the sign-in this browser proved and
+-- has not been let through yet, because the person has a second factor to show first:
+-- whose sign-in it is, which of the three screens it waits on ('verify' - the code
+-- step; 'setup' - an administrator requires a second factor the person never enrolled;
+-- 'setup_done' - enrolled on the way in, backup codes still on screen), until when, how
+-- many wrong codes it took, and the success sentence to show once through (the
+-- password changed on the way). Memory ABOUT this session by the same argument as the
+-- pair above: a reload, a second tab and a restarted daemon all come back to the step.
+-- The person's column carries an index for the reverse lookup - switching the second
+-- factor off lets every browser waiting on it go.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -57,8 +68,14 @@ CREATE TABLE `hilos_session` (
     `pending_registration_identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
     `pending_registration_since` TIMESTAMP NULL DEFAULT NULL,
     `pending_ack` VARCHAR(64) DEFAULT NULL,
+    `pending_second_factor_user_id` INT UNSIGNED DEFAULT NULL,
+    `pending_second_factor_mode` VARCHAR(16) DEFAULT NULL,
+    `pending_second_factor_until` TIMESTAMP NULL DEFAULT NULL,
+    `pending_second_factor_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),
-    KEY `idx_session_pending_registration` (`pending_registration_identifier`)
+    KEY `idx_session_pending_registration` (`pending_registration_identifier`),
+    KEY `idx_session_pending_second_factor` (`pending_second_factor_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

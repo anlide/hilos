@@ -331,6 +331,14 @@ enum EnvConstants
      */
     case HILOS_MAGIC_LINK_URL;
 
+    /**
+     * Absolute address of the screen the "it was not me" link of a second-factor removal opens
+     * (HIL-494). The link's token is appended as a query param, and the result is what every
+     * announcement of the removal carries - the letter, the SMS, the push and the bell - so,
+     * like the magic link, it has to survive leaving the application and is the project's to set.
+     */
+    case HILOS_SECOND_FACTOR_CANCEL_URL;
+
     // ── Auth throttle (anti-abuse on expensive auth actions) ─────────────────
 
     /**

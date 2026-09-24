@@ -18,6 +18,9 @@ final class HilosPageConstants
     /** @var string Hilos current-user profile page */
     public const string HILOS_PROFILE = 'hilos_profile';
 
+    /** @var string Hilos profile security page - the second factor (HIL-494) */
+    public const string HILOS_PROFILE_SECURITY = 'hilos_profile_security';
+
     /** @var string Hilos settings page */
     public const string HILOS_SETTINGS = 'hilos_settings';
 

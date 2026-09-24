@@ -115,7 +115,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
     <hilos-admin-page [page]="page">
       <hilos-viewport-table [controller]="settings().controller">
         <ng-template hilosTableCell="key" let-row>
-          <code>{{ row.key }}</code>
+          <code class="text-break">{{ row.key }}</code>
         </ng-template>
         <ng-template hilosTableCell="value" let-row>
           <div style="max-width: 18rem">
@@ -305,7 +305,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
         </p>
         @if (deleteRow(); as row) {
           <p class="mb-0 mt-2">
-            <code>{{ row.key }}</code>
+            <code class="text-break">{{ row.key }}</code>
           </p>
         }
         @if (deleteGone()) {

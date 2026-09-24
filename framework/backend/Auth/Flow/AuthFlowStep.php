@@ -35,6 +35,18 @@ final class AuthFlowStep
     /** Two-step verification after a good credential and before the session upgrade. */
     public const string SECOND_FACTOR = 'second_factor';
 
+    /** Enrolling a second factor on the way in, because an administrator requires one (HIL-494). */
+    public const string SECOND_FACTOR_SETUP = 'second_factor_setup';
+
+    /** The backup codes of a second factor just enrolled on the way in, before the person is let in (HIL-494). */
+    public const string SECOND_FACTOR_CODES = 'second_factor_codes';
+
+    /** Asking for the delayed removal of a second factor nobody can show any more (HIL-494). */
+    public const string SECOND_FACTOR_RESET = 'second_factor_reset';
+
+    /** The removal is asked for and will take effect on its date (HIL-494). */
+    public const string SECOND_FACTOR_RESET_REQUESTED = 'second_factor_reset_requested';
+
     /** Choosing a new password (recovery). */
     public const string SET_PASSWORD = 'set_password';
 

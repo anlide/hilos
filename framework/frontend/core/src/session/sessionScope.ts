@@ -103,6 +103,40 @@ export const authMethodsSchema = z.looseObject({
 })
 
 /**
+ * The settings library → every connection: the administrator's second-factor
+ * settings, sent after a write that moved them (PHP `HILOS_SECOND_FACTOR_POLICY`,
+ * HIL-494). The profile section redraws its bounds and its "required" line, and
+ * the code step its trust checkbox, without a reload.
+ */
+export const SIGNAL_SECOND_FACTOR_POLICY = 'hilos_second_factor_policy'
+
+/**
+ * Plain session-scope key the last {@link SIGNAL_SECOND_FACTOR_POLICY} is kept
+ * under. Only the frame writes it — the handshake does not carry the policy — so
+ * it is null until an administrator changes something while this tab is open,
+ * and a reader treats it as news newer than what it was answered before.
+ */
+const SECOND_FACTOR_POLICY_KEY = 'secondFactorPolicy'
+
+/** The payload of {@link SIGNAL_SECOND_FACTOR_POLICY} (PHP `SecondFactorPolicySignalData`). */
+export const secondFactorPolicySchema = z.looseObject({
+  required: z.enum(['none', 'admins', 'everyone']),
+  trustDays: z.number(),
+  backupCodes: z.number(),
+  resetWaitDefaultDays: z.number(),
+  resetWaitMinDays: z.number(),
+  resetWaitMaxDays: z.number(),
+})
+
+/**
+ * The administrator's second-factor settings as the last policy frame said them
+ * (HIL-494): who must use a second factor, the days of trust a browser may be
+ * given (0 offers none), the size of a set of backup codes, and the bounds of a
+ * person's removal wait.
+ */
+export type SecondFactorPolicy = z.infer<typeof secondFactorPolicySchema>
+
+/**
  * What an installation with nothing configured is READ as, key by key. A
  * missing or unreadable answer must not withdraw registration from a working
  * deployment, so the fallback is what every deployment did before the key
@@ -139,12 +173,27 @@ export interface CodeDelivery {
  * was racing for comes back to the identifier field knowing the address is
  * taken, instead of to a code screen for a registration that has quietly
  * stopped being winnable.
+ *
+ * A sign-in held on its second factor (HIL-494) is a step of the same node, and
+ * the one that names nobody: the person is known to the server, and the screens
+ * ask for nothing about them. So on `second_factor` and `second_factor_setup`
+ * the identifier and its kind are null and {@link secondFactor} carries what
+ * the code step draws. The field those steps send a session back to, when the
+ * wait is let go, names nobody either — that is how it is told apart from the
+ * field a lost race sends a session to.
  */
 export interface PendingAuthStep {
-  /** The identifier the code went to, shown on the screen it is restored to. */
-  readonly identifier: string
-  /** What that identifier is — the classification the backend made of it. */
-  readonly kind: 'email' | 'phone'
+  /**
+   * The identifier the code went to, shown on the screen it is restored to, or
+   * `null` on the second-factor steps and on the field their wait sends a
+   * session back to.
+   */
+  readonly identifier: string | null
+  /**
+   * What that identifier is — the classification the backend made of it — or
+   * `null` wherever the identifier is.
+   */
+  readonly kind: 'email' | 'phone' | null
   /**
    * Which flow the session is standing in. `login` is the one it did not ask
    * for: the address it was registering has an account now, and signing in is
@@ -153,10 +202,16 @@ export interface PendingAuthStep {
   readonly intent: 'register' | 'recovery' | 'login'
   /**
    * Which screen of that flow it is standing on. `identifier` is the screen a
-   * session is sent BACK to, and the only one of the three that stands on no
-   * code.
+   * session is sent BACK to, and the only one that stands on no code.
+   * `second_factor` asks the code of a sign-in held on its factor, and
+   * `second_factor_setup` the enrolment an administrator requires on the way in.
    */
-  readonly step: 'code' | 'set_password' | 'identifier'
+  readonly step:
+    | 'code'
+    | 'set_password'
+    | 'identifier'
+    | 'second_factor'
+    | 'second_factor_setup'
   /** The code channel it went over, or `null` for a mail flow. */
   readonly channel: string | null
   /**
@@ -169,6 +224,20 @@ export interface PendingAuthStep {
    * `null` when it simply has not finished what it started.
    */
   readonly code: string | null
+  /**
+   * What the second-factor steps draw (HIL-494) — the days of trust the code
+   * step offers and the LOCAL moment an already requested removal takes effect —
+   * or `null` on every other step.
+   */
+  readonly secondFactor: PendingSecondFactor | null
+}
+
+/** What a sign-in held on its second factor carries into the step it is restored to (HIL-494). */
+export interface PendingSecondFactor {
+  /** Days "don't ask again on this device" promises, or `null` when no trust is offered. */
+  readonly trustDeviceDays: number | null
+  /** The LOCAL epoch-ms moment a requested removal takes effect, or `null` when none is. */
+  readonly resetEffectiveAt: number | null
 }
 
 /**
@@ -202,6 +271,7 @@ export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
   [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
   [SIGNAL_AUTH_METHODS]: authMethodsSchema,
+  [SIGNAL_SECOND_FACTOR_POLICY]: secondFactorPolicySchema,
 }
 
 /** Where the current user sits in the session scope, and which field names it. */
@@ -299,6 +369,11 @@ export function bindSessionScope(
       const frame = signal.data as z.infer<typeof authMethodsSchema>
       ingest(scopes.session, {
         data: { [AUTH_METHODS_KEY]: frame.authMethods },
+      })
+    }
+    if (signal.type === SIGNAL_SECOND_FACTOR_POLICY) {
+      ingest(scopes.session, {
+        data: { [SECOND_FACTOR_POLICY_KEY]: signal.data },
       })
     }
   })
@@ -472,15 +547,21 @@ export function sessionPendingAuthStep(
  * would restore a code screen naming no address or counting down to nothing,
  * which is worse than the identifier field this falls back to.
  *
- * The moment is judged PER STEP rather than always (HIL-833), because the three
+ * The moment is judged PER STEP rather than always (HIL-833), because the
  * steps do not stand on the same thing: a code and a new-password screen are
  * drawn against a deadline and are unreadable without one, while the identifier
  * step a lost race sends a session back to has no code left in play, so a moment
  * there is not missing data but invented data. The reason is judged the same way
- * and for the same sentence: on the two steps a session reached by itself it is
+ * and for the same sentence: on the steps a session reached by itself it is
  * optional, and on the one it was MOVED to it is the whole message — a silent
  * jump out of a code screen would take somebody off the screen they were using
  * and say nothing about who took it.
+ *
+ * The second factor's nodes (HIL-494) are judged by their own shape: the two
+ * steps of the wait name nobody and stand on a deadline and on their data, and
+ * the field the wait is let go to names nobody and may name no reason — the
+ * person stepped back from it in another tab, or the factor was switched off,
+ * and neither is news that needs a sentence.
  *
  * @param value The raw session-scope slot.
  */
@@ -489,20 +570,62 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     return null
   }
   const node = value as Record<string, unknown>
-  const identifier = node['identifier']
-  const kind = node['kind']
+  const identifier = node['identifier'] ?? null
+  const kind = node['kind'] ?? null
   const intent = node['intent']
   const step = node['step']
   const channel = node['channel'] ?? null
   const expiresAt = node['expiresAt'] ?? null
   const code = node['code'] ?? null
   if (
-    typeof identifier !== 'string' ||
-    (kind !== 'email' && kind !== 'phone') ||
     (intent !== 'register' && intent !== 'recovery' && intent !== 'login') ||
-    (step !== 'code' && step !== 'set_password' && step !== 'identifier') ||
     (channel !== null && typeof channel !== 'string') ||
     (code !== null && typeof code !== 'string')
+  ) {
+    return null
+  }
+  if (step === 'second_factor' || step === 'second_factor_setup') {
+    const secondFactor = readPendingSecondFactor(node['secondFactor'])
+    if (
+      identifier !== null ||
+      kind !== null ||
+      typeof expiresAt !== 'number' ||
+      secondFactor === null
+    ) {
+      return null
+    }
+
+    return {
+      identifier: null,
+      kind: null,
+      intent,
+      step,
+      channel,
+      expiresAt: toLocal(expiresAt),
+      code,
+      secondFactor,
+    }
+  }
+  if (step === 'identifier' && identifier === null && kind === null) {
+    if (expiresAt !== null) {
+      return null
+    }
+
+    return {
+      identifier: null,
+      kind: null,
+      intent,
+      step,
+      channel,
+      expiresAt: null,
+      code,
+      secondFactor: null,
+    }
+  }
+  if (
+    typeof identifier !== 'string' ||
+    (kind !== 'email' && kind !== 'phone') ||
+    (step !== 'code' && step !== 'set_password' && step !== 'identifier')
   ) {
     return null
   }
@@ -522,6 +645,35 @@ function readPendingAuthStep(value: unknown): PendingAuthStep | null {
     channel,
     expiresAt: typeof expiresAt === 'number' ? toLocal(expiresAt) : null,
     code,
+    secondFactor: null,
+  }
+}
+
+/**
+ * Read what a second-factor step carries, or null when what arrived is not it.
+ * Both members are required and both may be null — each null is an answer
+ * ("no trust offered", "no removal asked"), not a gap.
+ *
+ * @param value The raw `secondFactor` member of the step node.
+ */
+function readPendingSecondFactor(value: unknown): PendingSecondFactor | null {
+  if (value === null || typeof value !== 'object') {
+    return null
+  }
+  const node = value as Record<string, unknown>
+  const trustDeviceDays = node['trustDeviceDays']
+  const resetEffectiveAt = node['resetEffectiveAt']
+  if (
+    (trustDeviceDays !== null && typeof trustDeviceDays !== 'number') ||
+    (resetEffectiveAt !== null && typeof resetEffectiveAt !== 'number')
+  ) {
+    return null
+  }
+
+  return {
+    trustDeviceDays,
+    resetEffectiveAt:
+      resetEffectiveAt === null ? null : toLocal(resetEffectiveAt),
   }
 }
 
@@ -574,6 +726,30 @@ export function sessionAuthMethods(
       .filter((entry) => entry.ready)
       .map(publicEntry),
   )
+}
+
+/**
+ * The administrator's second-factor settings as the last policy frame of this
+ * tab said them, or `null` when none has arrived since it opened (HIL-494).
+ *
+ * News, not the whole truth: the handshake does not carry the policy, and what
+ * a surface was answered — the section of the profile, the step of a held
+ * sign-in — was computed under the policy of its moment. A reader lets this
+ * override its answer only when the frame is NEWER than the answer, which it
+ * tells by the value itself: every frame is a new object.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionSecondFactorPolicy(
+  scopes: ScopeManager,
+): ReadonlySignal<SecondFactorPolicy | null> {
+  const slot = scopes.session.data.signal(SECOND_FACTOR_POLICY_KEY)
+
+  return computedSignal(() => {
+    const parsed = secondFactorPolicySchema.safeParse(slot.get())
+
+    return parsed.success ? parsed.data : null
+  })
 }
 
 /**

@@ -29,6 +29,11 @@ use Hilos\HilosException;
  * @property-read ?string $pendingRegistrationIdentifier Address whose code this session is waiting on, or null when it waits on none
  * @property-read ?string $pendingRegistrationSince Moment that wait was last written, or null when there is none
  * @property-read ?string $pendingAck Success ack this session still owes its person, or null when it owes none
+ * @property-read ?int $pendingSecondFactorUserId Person whose proven sign-in waits on a second factor, or null when none waits
+ * @property-read ?string $pendingSecondFactorMode Screen that sign-in waits on (a SecondFactorPendingMode value), or null
+ * @property-read ?string $pendingSecondFactorUntil Moment the wait runs out, or null when none waits
+ * @property-read int $pendingSecondFactorAttempts Wrong codes the wait has taken so far
+ * @property-read ?string $pendingSecondFactorAck Success ack to show once the step passes, or null when none is owed
  * @property-read SessionActions $actions Actions for write operations on this session
  */
 final class Session extends DbItem
@@ -55,6 +60,11 @@ final class Session extends DbItem
             ObjectSession::pendingRegistrationIdentifier => $this->_object->pendingRegistrationIdentifier,
             ObjectSession::pendingRegistrationSince => $this->_object->pendingRegistrationSince,
             ObjectSession::pendingAck => $this->_object->pendingAck,
+            ObjectSession::pendingSecondFactorUserId => $this->_object->pendingSecondFactorUserId,
+            ObjectSession::pendingSecondFactorMode => $this->_object->pendingSecondFactorMode,
+            ObjectSession::pendingSecondFactorUntil => $this->_object->pendingSecondFactorUntil,
+            ObjectSession::pendingSecondFactorAttempts => $this->_object->pendingSecondFactorAttempts,
+            ObjectSession::pendingSecondFactorAck => $this->_object->pendingSecondFactorAck,
             default => parent::__get($name),
         };
     }

@@ -29,6 +29,10 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  *   initiator is already signed in and the session is never touched, so every
  *   outcome (including success) must be signalled explicitly. {@see email} /
  *   {@see linkToken} are null.
+ * - {@see REASON_SECOND_FACTOR} — the provider proved the person, and the person has a
+ *   second factor to show before being let in (HIL-494): nobody was signed in, the
+ *   session waits on the code step, and the surface moves there. {@see email} /
+ *   {@see linkToken} are null.
  *
  * The {@see reason} is a stable, non-sensitive code; network/provider failure
  * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
@@ -51,6 +55,9 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
 
     /** Profile link failed: the exchange or the identity write did not complete (HIL-401). */
     public const string REASON_LINK_FAILED = 'oauth_link_failed';
+
+    /** The provider proved the person, who now owes the second factor: the session waits on its step (HIL-494). */
+    public const string REASON_SECOND_FACTOR = 'second_factor';
 
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets

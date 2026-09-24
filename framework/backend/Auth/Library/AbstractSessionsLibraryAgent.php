@@ -22,6 +22,10 @@ use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
@@ -30,6 +34,10 @@ use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
+use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
+use Hilos\Auth\SecondFactor\SecondFactorGate;
+use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
@@ -92,6 +100,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
+use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
@@ -168,9 +177,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *     library's row, and this library only wants to know whether it is still alive.
      *     Unconditional because the collection is, and because a class constant cannot ask
      *     {@see hasSignInSurface()} - a project carrying sessions with no login mounts the
-     *     collection all the same and simply never reaches it.
+     *     collection all the same and simply never reaches it. Beside it, two tables of the
+     *     second factor (HIL-494), read for the same kind of reason: whether a person has a
+     *     confirmed authenticator decides whether a proven sign-in is let through, and whether a
+     *     removal of it is asked for goes onto the code step. Both are the users library's rows.
      */
-    public const array READS_DB = [HilosDbContext::verifications];
+    public const array READS_DB = [
+        HilosDbContext::verifications,
+        HilosDbContext::secondFactors,
+        HilosDbContext::secondFactorResets,
+    ];
 
     /**
      * The session set, plus the identity rows an account merge moves.
@@ -192,10 +208,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * where a sign-in surface exists, which a class constant cannot ask - so the project subclass
      * that has one declares them itself, under the same condition that arms the hold sweep.
      *
+     * The browsers trusted to skip the second-factor step (HIL-494) are claimed outright too. A
+     * trust is keyed by the session row, it is written when a sign-in this library grants is
+     * let through, and it is dropped when the second factor it skipped is switched off - all of
+     * it here, because what a browser is let into is decided here.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
+        HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
         // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
     ];
@@ -269,6 +291,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * one answering browsers on behalf of the agents a sign-in goes through - and so the one that
      * has to end what they will never answer. Beside it, the code agent's word that a code went out
      * to a free number: what a browser waits on is written here and nowhere else.
+     *
+     * The last four are the second factor's (HIL-494): a proven sign-in waits on it on the session
+     * row, which is this library's, so the users library that checks the codes asks for every move
+     * of the wait by frame - a wrong code counted, an enrolment on the way in confirmed, a factor
+     * gone, a wait to let go.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -289,6 +316,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => OAuthTripEndedSignalData::class,
         HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => AuthRegistrationWaitHeldSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
     ];
 
     /**
@@ -835,12 +866,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $session = $this->resolveHandshakeSession($sessionToken);
         $this->parkPendingAuthStep($data->acceptKey, $session);
 
+        $pendingAuthStep = $this->pendingAuthStepFor($session);
+        if ($session->pendingSecondFactorUserId !== null && $this->secondFactorStepFor($session) === null) {
+            // Described above as run out, and let go here, once it has been reported (HIL-494).
+            $session->actions->releasePendingSecondFactor();
+        }
+
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $session->token,
             userId: $session->userId,
             acceptKeys: [$data->acceptKey],
             pendingAck: $this->sessionPendingAck($session),
-            pendingAuthStep: $this->pendingAuthStepFor($session),
+            pendingAuthStep: $pendingAuthStep,
         ));
         $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($session->token);
         $this->publishSessionToasts($sessionTokenHash);
@@ -932,15 +969,27 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * loses a race for a NUMBER is signed in rather than refused
      * ({@see PhoneCodeCommands::confirmPhoneCode()}), so there is no loser to tell.
      *
+     * A SECOND-FACTOR WAIT IS ASKED BEFORE BOTH (HIL-494). It stands on a sign-in already
+     * proven, so it is the latest thing the person did, and it names no address: the step is
+     * the code screen (or enrolment on the way in), with the moment the wait runs out. A wait
+     * whose moment has passed is reported once as the address field with the reason, and the
+     * handshake that reports it lets it go.
+     *
      * @param ?Session $session Session to describe, or null for an anonymous response
-     * @return ?array{identifier: string, kind: string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string} Step, or null when there is none
+     * @return ?array{identifier: ?string, kind: ?string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} Step, or null when there is none
      * @throws HilosException When the reservation, runtime, verification or identity query fails
      */
     private function pendingAuthStepFor(?Session $session): ?array
     {
         if ($session === null) {
             return null;
+        }
+
+        if ($session->pendingSecondFactorUserId !== null) {
+            return $this->secondFactorStepFor($session)
+                ?? $this->secondFactorGoneStep(AuthFlowOutcome::CODE_SECOND_FACTOR_EXPIRED);
         }
 
         $recovery = $this->recoveryStepFor($session);
@@ -1629,6 +1678,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // which would otherwise hand the freshly authenticated browser back the code
         // screen it just left.
         $session->actions->releasePendingRegistration();
+
+        // A sign-in that waited on its second factor is through now, by the code that ended the
+        // wait or by an operator who needs none (HIL-494). The sentence the wait was holding - the
+        // password changed on the way here - is the one this ending owes, unless it earned its own.
+        if ($session->pendingSecondFactorUserId !== null) {
+            $ack ??= $session->pendingSecondFactorAck;
+            $session->actions->releasePendingSecondFactor();
+        }
 
         // The announcement this ending earned is written on the session before any frame
         // states it (HIL-875). The row owes it from here on, so a tab that is not on the frame
@@ -2325,12 +2382,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $identifier Normalized address whose password was just saved (lowercased email)
      * @param string $sessionToken Session token that saved it, whose tabs go to done
      * @param string $initiatorAcceptKey Accept key of the connection that submitted the password
+     * @param bool $sameSessionHeld Whether the saving session is held on its second factor, so its own tabs are
+     *     released without a word - the frame that holds them follows (HIL-494)
      * @throws HilosException On runtime failure
      */
     private function convergeRecovery(
         string $identifier,
         string $sessionToken,
         string $initiatorAcceptKey,
+        bool $sameSessionHeld = false,
     ): void {
         foreach ($this->parkedRecoveryAcceptKeys($identifier) as $acceptKey => $parkedSessionToken) {
             Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
@@ -2339,6 +2399,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
 
             $isSameSession = $parkedSessionToken === $sessionToken;
+            if ($isSameSession && $sameSessionHeld) {
+                // The session was held on its second factor, and the frame that says so reaches
+                // this tab next; a "done" in between would flash a screen it never stays on.
+                continue;
+            }
 
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
@@ -2598,6 +2663,46 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if ($this->hasSignInSurface()) {
                     $this->endOpenSignIns($this->agentTypesOf($data->data->agentIds));
                 }
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED:
+                if (!$data->data instanceof AuthSecondFactorMissedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorMissedSignalData::class, $data->data);
+                }
+
+                $this->countSecondFactorMiss($data->data->sessionToken);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN:
+                if (!$data->data instanceof AuthSecondFactorSetupProvenSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthSecondFactorSetupProvenSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                Hilos::$db->sessions->findByToken($data->data->sessionToken)?->actions->markSecondFactorSetupProven();
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF:
+                if (!$data->data instanceof AuthSecondFactorOffSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorOffSignalData::class, $data->data);
+                }
+
+                $this->forgetSecondFactor($data->data->userId);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL:
+                if (!$data->data instanceof AuthSecondFactorCancelSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorCancelSignalData::class, $data->data);
+                }
+
+                $this->cancelSecondFactorWait($data->data);
 
                 return;
 
@@ -3872,12 +3977,375 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Holds a proven sign-in on its second factor when the gate says so (HIL-494).
+     *
+     * The gate ({@see SecondFactorGate}) is asked on every path that ends a proof; a sign-in it
+     * lets through is left to the caller, which signs it in as before.
+     *
+     * @param Session $session Session the proof arrived on
+     * @param int $userId Person the proof resolved to
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $ack Sentence to show once the step passes, or null when none is owed
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @return bool True when the sign-in was held, false when it passes
+     * @throws HilosException On database, runtime, or settings failure
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function holdForSecondFactor(
+        Session $session,
+        int $userId,
+        ?string $initiatorAcceptKey,
+        ?string $ack,
+        ?string $requestId,
+        ?string $action,
+    ): bool {
+        $verdict = $this->secondFactorVerdict($session, $userId);
+        if ($verdict === SecondFactorGate::PASS) {
+            return false;
+        }
+
+        $this->holdSecondFactorWait($session, $userId, $verdict, $initiatorAcceptKey, $ack, $requestId, $action);
+
+        return true;
+    }
+
+    /**
+     * Asks the second-factor gate about one person on one browser (HIL-494).
+     *
+     * @param Session $session Session the proof arrived on
+     * @param int $userId Person the proof resolved to
+     * @return string A {@see SecondFactorGate} verdict
+     * @throws HilosException On database or settings failure
+     */
+    private function secondFactorVerdict(Session $session, int $userId): string
+    {
+        $sessionId = $session->id;
+        if ($sessionId === null) {
+            return SecondFactorGate::PASS;
+        }
+
+        return SecondFactorGate::verdict($sessionId, $userId, SecondFactorPolicy::current());
+    }
+
+    /**
+     * Writes the second-factor wait on the session row and moves every tab of the browser to its step.
+     *
+     * The wait lives on the row, not on a socket, which is what lets a reload, a second tab and a
+     * restarted daemon come back to it. Every tab of the session is told; the one whose submit
+     * is waiting is told with the answer, in a frame of its own, because an answer names a single
+     * connection.
+     *
+     * @param Session $session Session to hold
+     * @param int $userId Person the proof resolved to
+     * @param string $verdict Gate verdict that holds it (VERIFY or SETUP)
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $ack Sentence to show once the step passes, or null when none is owed
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @throws HilosException On database, runtime, or settings failure
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function holdSecondFactorWait(
+        Session $session,
+        int $userId,
+        string $verdict,
+        ?string $initiatorAcceptKey,
+        ?string $ack,
+        ?string $requestId,
+        ?string $action,
+    ): void {
+        $mode = $verdict === SecondFactorGate::SETUP ? SecondFactorPendingMode::SETUP : SecondFactorPendingMode::VERIFY;
+        $until = date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int());
+        $session->actions->holdPendingSecondFactor($userId, $mode, $until, $ack);
+
+        $step = $this->secondFactorStep($userId, $mode, $until);
+        $this->publishSecondFactorStep($session, $step, $initiatorAcceptKey, $requestId, $action, $this->secondFactorOutcome($step));
+    }
+
+    /**
+     * Counts one wrong code against a browser's wait, and lets the wait go at the ceiling (HIL-494).
+     *
+     * @param string $sessionToken Session cookie token of the browser that sent the code
+     * @throws HilosException On database, runtime, or settings failure
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function countSecondFactorMiss(string $sessionToken): void
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            return;
+        }
+
+        $misses = $session->actions->missPendingSecondFactor();
+        if ($misses === 0 || $misses < Hilos::$env[EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS]->int()) {
+            return;
+        }
+
+        $this->releaseSecondFactorWait($session, null, AuthFlowOutcome::CODE_SECOND_FACTOR_ATTEMPTS, null, null, null);
+    }
+
+    /**
+     * Lets a browser's wait go on the users library's word, and answers the submit that asked (HIL-494).
+     *
+     * @param AuthSecondFactorCancelSignalData $frame Browser, the submit to answer and why
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function cancelSecondFactorWait(AuthSecondFactorCancelSignalData $frame): void
+    {
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session === null) {
+            $this->answerLibraryAction(
+                $frame->acceptKey,
+                $frame->sessionToken,
+                $frame->action,
+                $frame->requestId,
+                $frame->outcome,
+            );
+
+            return;
+        }
+
+        $this->releaseSecondFactorWait(
+            $session,
+            $frame->acceptKey,
+            $frame->code,
+            $frame->requestId,
+            $frame->action,
+            $frame->outcome ?? AuthFlowOutcome::moveTo(AuthFlowStep::IDENTIFIER, AuthFlowIntent::LOGIN)->toArray(),
+        );
+    }
+
+    /**
+     * Takes away what a person's second factor let this library keep, once the factor is gone (HIL-494).
+     *
+     * The browsers trusted to skip the step are forgotten - a trust is worth nothing past the
+     * factor it skipped - and every browser still waiting on a code from that factor is sent back
+     * to the address field: nothing can produce the code any more.
+     *
+     * @param int $userId Person whose second factor is gone
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function forgetSecondFactor(int $userId): void
+    {
+        Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
+
+        foreach (Hilos::$db->sessions->whereColumnIs(ObjectSession::pendingSecondFactorUserId, $userId) as $session) {
+            $this->releaseSecondFactorWait($session, null, null, null, null, null);
+        }
+    }
+
+    /**
+     * Releases a browser's second-factor wait and sends its tabs back to the address field (HIL-494).
+     *
+     * @param Session $session Session whose wait ends
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $code Why the tabs go back (an AuthFlowOutcome::CODE_* value), or null when nobody was refused
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @param ?array<string, mixed> $outcome Answer to give that submit, or null when there is none
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function releaseSecondFactorWait(
+        Session $session,
+        ?string $initiatorAcceptKey,
+        ?string $code,
+        ?string $requestId,
+        ?string $action,
+        ?array $outcome,
+    ): void {
+        $session->actions->releasePendingSecondFactor();
+        $this->publishSecondFactorStep(
+            $session,
+            $this->secondFactorGoneStep($code),
+            $initiatorAcceptKey,
+            $requestId,
+            $action,
+            $outcome,
+        );
+    }
+
+    /**
+     * Tells every tab of a browser which second-factor step it is on, answering one submit on the way (HIL-494).
+     *
+     * @param Session $session Session whose tabs are told
+     * @param array<string, mixed> $step Step node every tab is told
+     * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
+     * @param ?string $requestId Request id of the submit waiting on the answer, or null
+     * @param ?string $action Action name the answer is for, or null
+     * @param ?array<string, mixed> $outcome Answer to give that submit, or null for none
+     * @throws InvalidArgumentException When a state frame cannot be named
+     */
+    private function publishSecondFactorStep(
+        Session $session,
+        array $step,
+        ?string $initiatorAcceptKey,
+        ?string $requestId,
+        ?string $action,
+        ?array $outcome,
+    ): void {
+        $answered = $requestId !== null && $action !== null ? $initiatorAcceptKey : null;
+        $others = array_values(array_filter(
+            $this->sessionConnectionKeys($session->token),
+            static fn (string $acceptKey): bool => $acceptKey !== $answered,
+        ));
+
+        if ($others !== []) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $session->token,
+                userId: $session->userId,
+                acceptKeys: $others,
+                pendingAck: $this->sessionPendingAck($session),
+                pendingAuthStep: $step,
+            ));
+        }
+        if ($answered !== null) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $session->token,
+                userId: $session->userId,
+                acceptKeys: [$answered],
+                pendingAck: $this->sessionPendingAck($session),
+                pendingAuthStep: $step,
+                requestId: $requestId,
+                action: $action,
+                outcome: $outcome,
+            ));
+        }
+    }
+
+    /**
+     * Describes the second-factor step a session waits on, or null when it waits on none (HIL-494).
+     *
+     * A wait whose moment has passed answers null here: it is released by the handshake that
+     * reports it ({@see pendingAuthStepFor()}), not by a read.
+     *
+     * @param Session $session Session to describe
+     * @return ?array<string, mixed> Step node, or null when no live wait stands
+     * @throws HilosException On database or settings failure
+     */
+    private function secondFactorStepFor(Session $session): ?array
+    {
+        $userId = $session->pendingSecondFactorUserId;
+        $mode = $session->pendingSecondFactorMode;
+        $until = $session->pendingSecondFactorUntil;
+        if ($userId === null || $mode === null || $until === null || $until <= TimeHelper::getSqlDateTime()) {
+            return null;
+        }
+
+        return $this->secondFactorStep($userId, $mode, $until);
+    }
+
+    /**
+     * Builds the step node of a second-factor wait (HIL-494).
+     *
+     * The code step and the last screen of an enrolment on the way in are served alike: the
+     * factor exists once the enrolment is confirmed, and the codes it showed are not kept
+     * anywhere a reload reads - they stay reachable from the profile.
+     *
+     * @param int $userId Person the wait is for
+     * @param string $mode Screen the wait is on (a {@see SecondFactorPendingMode} value)
+     * @param string $until Moment the wait runs out (SQL datetime)
+     * @return array<string, mixed> Step node
+     * @throws HilosException On database or settings failure
+     */
+    private function secondFactorStep(int $userId, string $mode, string $until): array
+    {
+        $reset = Hilos::$db->secondFactorResets->liveOf($userId);
+
+        return [
+            HandshakeResponseSignalData::identifier => null,
+            HandshakeResponseSignalData::kind => null,
+            HandshakeResponseSignalData::intent => AuthFlowIntent::LOGIN,
+            HandshakeResponseSignalData::step => $mode === SecondFactorPendingMode::SETUP
+                ? AuthFlowStep::SECOND_FACTOR_SETUP
+                : AuthFlowStep::SECOND_FACTOR,
+            HandshakeResponseSignalData::channel => null,
+            HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($until),
+            HandshakeResponseSignalData::code => null,
+            HandshakeResponseSignalData::secondFactor => [
+                HandshakeResponseSignalData::trustDeviceDays => SecondFactorPolicy::current()->trustDeviceDays(),
+                HandshakeResponseSignalData::resetEffectiveAt => $reset === null
+                    ? null
+                    : TimeHelper::sqlToMs($reset->effectiveAt),
+            ],
+        ];
+    }
+
+    /**
+     * Builds the step node a released wait sends its tabs to: the address field (HIL-494).
+     *
+     * @param ?string $code Why (an AuthFlowOutcome::CODE_* value), or null when nobody was refused
+     * @return array<string, mixed> Step node naming no address
+     */
+    private function secondFactorGoneStep(?string $code): array
+    {
+        return [
+            HandshakeResponseSignalData::identifier => null,
+            HandshakeResponseSignalData::kind => null,
+            HandshakeResponseSignalData::intent => AuthFlowIntent::LOGIN,
+            HandshakeResponseSignalData::step => AuthFlowStep::IDENTIFIER,
+            HandshakeResponseSignalData::channel => null,
+            HandshakeResponseSignalData::expiresAt => null,
+            HandshakeResponseSignalData::code => $code,
+        ];
+    }
+
+    /**
+     * The answer a submit that ended in a second-factor wait is given (HIL-494).
+     *
+     * @param array<string, mixed> $step Step node of the wait
+     * @return array<string, mixed> Wire form of the outcome
+     */
+    private function secondFactorOutcome(array $step): array
+    {
+        $data = $step[HandshakeResponseSignalData::secondFactor];
+
+        return AuthFlowOutcome::moveToSecondFactor(
+            $step[HandshakeResponseSignalData::step],
+            new SecondFactorStepData(
+                $data[HandshakeResponseSignalData::trustDeviceDays],
+                $data[HandshakeResponseSignalData::resetEffectiveAt],
+            ),
+            $step[HandshakeResponseSignalData::expiresAt],
+        )->toArray();
+    }
+
+    /**
+     * Trusts a browser for a person after the second factor was shown on it (HIL-494).
+     *
+     * @param int $sessionId Session row of the browser
+     * @param int $userId Person who asked not to be asked again
+     * @throws HilosException On database or settings failure
+     */
+    private function trustBrowser(int $sessionId, int $userId): void
+    {
+        $days = SecondFactorPolicy::current()->trustDeviceDays();
+        if ($days === null) {
+            return;
+        }
+
+        Hilos::$db->secondFactorTrusts->actions->trust(
+            $sessionId,
+            $userId,
+            date('Y-m-d H:i:s', time() + $days * TimeConstants::SECONDS_PER_DAY),
+        );
+    }
+
+    /**
      * Signs one session in on the library's word and answers the surface that asked.
      *
      * The ending shared by every ceremony that proves who somebody is against an account
      * that already exists. The mark goes on the sockets BEFORE the sign-in, because the
      * surface closes on the identity coming up and would otherwise take the sentence with
      * it (HIL-422); the reply goes last, after the session is really up.
+     *
+     * A first proof meets the second-factor gate before anything is bound (HIL-494): a person
+     * with a factor to show, or one an administrator requires to enrol, is held on the session
+     * row instead, and the surface is moved to that step. A grant that says the factor was just
+     * shown passes the gate, and writes the browser's trust if the person asked for it.
      *
      * @param AuthSessionGrantSignalData $frame Session, user, and the answer to give
      * @throws HilosException On database, runtime, or session failure
@@ -3892,6 +4360,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if (!$frame->secondFactorProven && $session !== null && $this->holdForSecondFactor(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->ack,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            return;
+        }
+
         $this->authenticateSession(
             $frame->sessionToken,
             $frame->userId,
@@ -3901,6 +4381,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             action: $frame->action,
             outcome: $frame->outcome,
         );
+        if ($frame->secondFactorProven && $frame->trustDevice && $session?->id !== null) {
+            $this->trustBrowser($session->id, $frame->userId);
+        }
     }
 
     /**
@@ -4016,6 +4499,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $trip = Hilos::$rt->hilosOAuthTrips[$tripKeyHash];
         if ($trip === null) {
+            $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+            if ($session !== null && $this->holdForSecondFactor(
+                $session,
+                $frame->userId,
+                $frame->acceptKey,
+                $frame->ack,
+                $frame->requestId,
+                $frame->action,
+            )) {
+                return;
+            }
+
             $this->logAgentWarning("OAuth sign-in granted with no trip on record; signing {$frame->acceptKey} in directly");
             $this->authenticateSession(
                 $frame->sessionToken,
@@ -4039,6 +4534,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if (!$this->isConnectionLive($initiator)) {
             $trip->actions->end(StateHilosOAuthTrip::ENDING_GRANTED, userId: $frame->userId);
             $this->logAgentInfo("OAuth sign-in of user {$frame->userId} held until its tab presents the key");
+
+            return;
+        }
+
+        // A grant whose tab is on the wire meets the second-factor gate here (HIL-494); one held
+        // for an absent tab meets it when the tab presents its key ({@see applyHeldOAuthGrant()}).
+        // Held, the trip ends in the second-factor step instead of a sign-in: nothing is bound,
+        // and the tab learns where to go from the ending and from the frame the hold sent.
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($session !== null && $this->holdForSecondFactor($session, $frame->userId, null, $frame->ack, null, null)) {
+            $trip->actions->end(OAuthResultSignalData::REASON_SECOND_FACTOR);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_SECOND_FACTOR);
 
             return;
         }
@@ -4139,6 +4646,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         if ($userId === null) {
             $this->sendOAuthLoginFailed($trip, $acceptKey);
+
+            return;
+        }
+
+        // Asked again at the moment the grant is applied (HIL-494): the person may have enrolled a
+        // second factor, or had it required, while the grant was waiting for its tab.
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session !== null && $this->holdForSecondFactor($session, $userId, null, null, null, null)) {
+            $trip->actions->end(OAuthResultSignalData::REASON_SECOND_FACTOR);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_SECOND_FACTOR);
 
             return;
         }
@@ -4482,6 +4999,28 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function settleChangedPassword(AuthPasswordChangedSignalData $frame): void
     {
+        // A mailbox is exactly what a second factor stands against, so recovering the password
+        // by mail does not sign in past it (HIL-494): the password is saved and every other
+        // session still goes, but this browser waits on the code step, holding the sentence
+        // about the new password for the moment it is let through.
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        $verdict = $session === null ? SecondFactorGate::PASS : $this->secondFactorVerdict($session, $frame->userId);
+        if ($session !== null && $verdict !== SecondFactorGate::PASS) {
+            $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);
+            $this->holdSecondFactorWait(
+                $session,
+                $frame->userId,
+                $verdict,
+                $frame->acceptKey,
+                SessionAck::PASSWORD_CHANGED,
+                $frame->requestId,
+                $frame->action,
+            );
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
+
+            return;
+        }
+
         // The mark rides the sign-in rather than going ahead of it: the surface closes on
         // the session coming up, so the two have to reach the browser together (HIL-422).
         $liveToken = $this->authenticateSession(

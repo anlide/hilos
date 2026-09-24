@@ -28,13 +28,20 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
      *     very thing a restore triggers - reaches for it whether the case cares about it or not.
      *     The registration holds join them because the wait a session carries is only half the
      *     story since HIL-833: what the handshake answers depends on whether a hold stands
-     *     behind that wait, so the table has to be there to be empty.
+     *     behind that wait, so the table has to be there to be empty. The second factor's
+     *     tables join for the same kind of reason (HIL-494): every sign-in the holder grants
+     *     asks first whether the person has a factor to show.
      */
     private const array TABLES = [
         'hilos_session',
         'hilos_identity',
         'hilos_setting',
         'hilos_registration_reservation',
+        'hilos_second_factor',
+        'hilos_second_factor_backup_code',
+        'hilos_second_factor_trust',
+        'hilos_second_factor_reset',
+        'hilos_second_factor_setting',
     ];
 
     /** @var ?DbContext Database context to restore after the test */

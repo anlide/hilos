@@ -108,6 +108,10 @@ export {
   type HilosSecuritySignInMethodsPageProps,
 } from './admin/security/HilosSecuritySignInMethodsPage.js'
 export {
+  HilosSecurity2faPage,
+  type HilosSecurity2faPageProps,
+} from './admin/security/HilosSecurity2faPage.js'
+export {
   HilosCommunicationsDeliveriesPage,
   type HilosCommunicationsDeliveriesPageProps,
 } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
@@ -155,6 +159,15 @@ export {
   HilosPushDeviceToggle,
   type HilosPushDeviceToggleProps,
 } from './HilosPushDeviceToggle.js'
+export { HilosQrCode, type HilosQrCodeProps } from './HilosQrCode.js'
+export {
+  HilosBackupCodes,
+  type HilosBackupCodesProps,
+} from './HilosBackupCodes.js'
+export {
+  HilosProfileSecurityPage,
+  type HilosProfileSecurityPageProps,
+} from './profile/HilosProfileSecurityPage.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
 export { HilosLongText, type HilosLongTextProps } from './HilosLongText.js'
 export {
@@ -182,6 +195,10 @@ export {
   HilosMagicLinkPage,
   type HilosMagicLinkPageProps,
 } from './auth/HilosMagicLinkPage.js'
+export {
+  HilosSecondFactorCancelPage,
+  type HilosSecondFactorCancelPageProps,
+} from './auth/HilosSecondFactorCancelPage.js'
 export {
   HilosOAuthCallbackPage,
   type HilosOAuthCallbackPageProps,

@@ -188,6 +188,7 @@ services:
       # its dev server on 5174 so it can run beside the chat one - so the default
       # would mail a person a link into another application's front end.
       - HILOS_MAGIC_LINK_URL=${HILOS_MAGIC_LINK_URL:-http://localhost:5174/auth/magic}
+      - HILOS_SECOND_FACTOR_CANCEL_URL=${HILOS_SECOND_FACTOR_CANCEL_URL:-http://localhost:5174/auth/second-factor/cancel}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:

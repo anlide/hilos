@@ -16,6 +16,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -36,6 +37,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
  * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
  * @property-read HilosSecuritySignInMethodsTable $hilosSecuritySignInMethods
+ * @property-read HilosSecurityTwoFactorTable $hilosSecurityTwoFactor
  */
 final class TasksTableContext extends TableContext
 {
@@ -50,6 +52,7 @@ final class TasksTableContext extends TableContext
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;
     public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;
     public const string hilosSecuritySignInMethods = HilosSecuritySignInMethodsTable::TABLE;
+    public const string hilosSecurityTwoFactor = HilosSecurityTwoFactorTable::TABLE;
 
     /**
      * Registers tasks table definitions from the project topology registry.

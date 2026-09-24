@@ -49,6 +49,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
   handshakeResponseAck,
@@ -63,6 +64,7 @@ import {
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
+  sessionSecondFactorPolicy,
   shouldLowerAckPanel,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
@@ -75,9 +77,11 @@ import {
   type ProjectSignal,
 } from '@hilos/core'
 
+import { HilosBackupCodes } from '../HilosBackupCodes.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosLongText } from '../HilosLongText.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosQrCode } from '../HilosQrCode.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
 import { HilosCookiesRefused } from './HilosCookiesRefused.js'
@@ -126,6 +130,10 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
   choose_password: 'Choose a new password',
   set_first_password: 'Choose a password',
   two_step: 'Two-step verification',
+  two_step_setup: 'Set up two-step verification',
+  two_step_codes: 'Save your backup codes',
+  two_step_reset: 'Remove two-step verification',
+  two_step_reset_requested: 'Removal requested',
   waiting_external: 'Sign in',
   check_inbox: 'Check your inbox',
   done_registered: 'Your account is ready',
@@ -146,6 +154,10 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
   choose_password: 'Save password',
   set_first_password: 'Save password',
   two_step: 'Verify',
+  two_step_setup: 'Verify',
+  two_step_codes: 'Continue',
+  two_step_reset: 'Request removal',
+  two_step_reset_requested: 'Continue',
   waiting_external: '',
   check_inbox: 'Continue',
   done_registered: 'Continue',
@@ -170,6 +182,8 @@ const CODE_MESSAGES: Record<string, string> = {
   send_cap_reached: 'Too many codes have gone out. Please try again later.',
   rate_limited: 'Too many attempts. Please wait a moment and try again.',
   challenge_required: 'Please confirm you are not a robot and try again.',
+  second_factor_expired: 'Your sign-in step expired. Sign in again.',
+  second_factor_attempts: 'Too many wrong codes. Sign in again.',
 }
 
 /** What is shown when a refusal carried neither a sentence nor a known code. */
@@ -339,6 +353,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         onDetect: (identifier) => authActions.onDetect(identifier),
         onSubmit: authActions.onSubmit,
         onMethodAction: authActions.onMethodAction,
+        secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
       }),
     [context, authActions],
   )
@@ -388,6 +403,7 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   const screenKey = useSignal(auth.screenKey)
   const resendAvailableAt = useSignal(auth.resendAvailableAt)
   const expiresAt = useSignal(auth.expiresAt)
+  const secondFactor = useSignal(auth.secondFactor)
   const ack = useSignal(pendingAck)
   const reportedStep = useSignal(pendingAuthStep)
   const codeDelivery = useSignal(codeDeliverySignal)
@@ -726,6 +742,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
 
   const resendIn = formatCountdown(resendAvailableAt, now)
   const expiresIn = formatCountdown(expiresAt, now)
+  // What the second-factor screens draw from the step's data (HIL-494): the days
+  // a trusted browser skips the step (no checkbox without them), the date a
+  // removal already asked for takes effect, and the secret of the enrolment.
+  const trustDeviceDays = secondFactor?.trustDeviceDays ?? null
+  const resetEffectiveAt = secondFactor?.resetEffectiveAt ?? null
+  const resetDate =
+    resetEffectiveAt === null ? null : formatCalendarDate(resetEffectiveAt)
+  const setup = secondFactor?.setup ?? null
 
   /**
    * Mirror the identifier field into the machine, which restarts the flow from
@@ -749,7 +773,23 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
    */
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    void auth.submit()
+    void auth.submit().then(loadSetupIfMissing)
+  }
+
+  /**
+   * Ask for the secret of the enrolment on the way in when this tab stands on it
+   * without one (HIL-494). Called where THIS tab arrived on the step — its own
+   * submit, its own ceremony, its mount — and not where it followed another tab
+   * there: a second secret would kill the one the person is scanning in the
+   * first, so a follower asks only when the person presses for it.
+   */
+  function loadSetupIfMissing(): void {
+    if (
+      auth.flow.get().step === 'second_factor_setup' &&
+      auth.secondFactor.get()?.setup === undefined
+    ) {
+      void auth.loadSecondFactorSetup()
+    }
   }
 
   // The key icon: enter recovery and ask for the code in one move, so the first
@@ -823,6 +863,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       code_expired: null,
       set_password: newPasswordInput,
       second_factor: codeInput,
+      second_factor_setup: codeInput,
+      // The three screens of a code that is not typed here have one control each.
+      second_factor_codes: null,
+      second_factor_reset: null,
+      second_factor_reset_requested: null,
       external: null,
       done: null,
     }[state.step]
@@ -1056,9 +1101,12 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         if (auth.flow.get().step !== 'external') {
           return
         }
-        if (outcome.kind === 'signed_in') {
+        if (outcome.kind === 'signed_in' || outcome.kind === 'second_factor') {
           // The gate closes this surface on the upgrade; saying anything here
-          // would be saying it to a screen already on its way out (HIL-422).
+          // would be saying it to a screen already on its way out (HIL-422). A
+          // sign-in the second factor holds moves every tab to its code step
+          // through the session itself (HIL-494), and cancelling here would
+          // undo that move.
           return
         }
         if (outcome.kind === 'error') {
@@ -1080,6 +1128,12 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
     // rather than from this render, so neither becomes a dependency that would
     // re-run the whole mount.
     auth.resume(pendingAuthStep.get())
+    if (
+      auth.flow.get().step === 'second_factor_setup' &&
+      auth.secondFactor.get()?.setup === undefined
+    ) {
+      void auth.loadSecondFactorSetup()
+    }
     const patch = authAckToFlowPatch(pendingAck.get())
     if (patch !== null) {
       panelRaisedByAck.current = true
@@ -1111,9 +1165,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // screen moved there - resume() moves it and stays silent - and it is written
   // AFTER the mount effect for exactly that: that one clears the notice, and the
   // effects of one render run in the order they stand in.
+  // The second-factor wait is followed as it happens (HIL-494): a sign-in held
+  // in another tab brings this one to the code step, and a wait let go takes it
+  // back. After the reasons, so a coded return is announced by the step it
+  // already made.
   useEffect(() => {
     applyReportedStep(reportedStep)
-  }, [applyReportedStep, reportedStep])
+    auth.followReportedStep(reportedStep)
+  }, [applyReportedStep, auth, reportedStep])
 
   return (
     <section data-id="auth-surface" className="mx-auto" style={MAX_WIDTH}>
@@ -1194,7 +1253,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                         aria-label={method.label}
                         title={method.label}
                         data-id={methodDataId(method.key)}
-                        onClick={() => void auth.chooseMethod(method.key)}
+                        onClick={() =>
+                          void auth
+                            .chooseMethod(method.key)
+                            .then(loadSetupIfMissing)
+                        }
                       >
                         <i
                           className={methodIcon(method.key)}
@@ -1272,7 +1335,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                             aria-label={method.label}
                             title={method.label}
                             data-id={methodDataId(method.key)}
-                            onClick={() => void auth.chooseMethod(method.key)}
+                            onClick={() =>
+                              void auth
+                                .chooseMethod(method.key)
+                                .then(loadSetupIfMissing)
+                            }
                           >
                             <i
                               className={methodIcon(method.key)}
@@ -1392,7 +1459,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                   loading={pending}
                   disabled={pending}
                   data-id={methodDataId(primaryMethod.key)}
-                  onClick={() => void auth.chooseMethod(primaryMethod.key)}
+                  onClick={() =>
+                    void auth
+                      .chooseMethod(primaryMethod.key)
+                      .then(loadSetupIfMissing)
+                  }
                 >
                   <i
                     className={`${methodIcon(primaryMethod.key)} me-2`}
@@ -1920,6 +1991,311 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                   Back
                 </button>
               )}
+            </form>
+          ) : null}
+
+          {/* The code of a sign-in held on its second factor (HIL-494): from the
+          app, or one of the backup codes — the person says which, and the field
+          says it back. The way off it for somebody with neither is the delayed
+          removal, which the step names instead once it is asked. */}
+          {state.step === 'second_factor' ? (
+            <form noValidate onSubmit={submit}>
+              <p
+                className="text-body-secondary small mb-3"
+                data-id="auth-two-step-lead"
+              >
+                {form.usingBackupCode
+                  ? 'Enter one of the backup codes you saved when you set up two-step verification.'
+                  : 'Open your authenticator app and enter the code it shows.'}
+              </p>
+              <div className="mb-3">
+                <label
+                  className="form-label small fw-semibold"
+                  htmlFor="auth-code"
+                >
+                  {form.usingBackupCode ? 'Backup code' : 'Code'}
+                </label>
+                <input
+                  id="auth-code"
+                  ref={codeInput}
+                  type="text"
+                  inputMode={form.usingBackupCode ? 'text' : 'numeric'}
+                  className="form-control"
+                  autoComplete="one-time-code"
+                  data-id="auth-code"
+                  value={form.code}
+                  onChange={(event) =>
+                    auth.setField('code', event.target.value)
+                  }
+                />
+              </div>
+              {trustDeviceDays !== null ? (
+                <div className="form-check mb-3">
+                  <input
+                    id="auth-trust-device"
+                    className="form-check-input"
+                    type="checkbox"
+                    data-id="auth-trust-device"
+                    checked={form.trustDevice}
+                    onChange={(event) =>
+                      auth.setField('trustDevice', event.target.checked)
+                    }
+                  />
+                  <label
+                    className="form-check-label small"
+                    htmlFor="auth-trust-device"
+                  >
+                    Don&apos;t ask again on this device for {trustDeviceDays}{' '}
+                    days
+                  </label>
+                </div>
+              ) : null}
+
+              <HilosFormError message={errorMessage} dataId="auth-error" />
+
+              <LoadingButton
+                type="submit"
+                className="btn-primary w-100 mb-2"
+                loading={pending}
+                disabled={!submittable}
+                data-id="auth-submit"
+              >
+                {submitLabel}
+              </LoadingButton>
+              <button
+                type="button"
+                className="btn btn-link btn-sm w-100"
+                data-id="auth-backup-toggle"
+                onClick={() =>
+                  auth.setField('usingBackupCode', !form.usingBackupCode)
+                }
+              >
+                {form.usingBackupCode
+                  ? 'Use the app code'
+                  : 'Use a backup code'}
+              </button>
+              {resetDate !== null ? (
+                <p
+                  className="small text-body-secondary text-center my-2"
+                  data-id="auth-reset-pending"
+                >
+                  Removal requested, takes effect on {resetDate}.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm w-100"
+                  data-id="auth-reset-start"
+                  onClick={() => auth.startSecondFactorReset()}
+                >
+                  I can&apos;t use the app or any backup code
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                onClick={() => auth.backToIdentifier()}
+              >
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {/* Asking the delayed removal from the sign-in (HIL-494): what
+          happens, and that every message about it lets the owner cancel. */}
+          {state.step === 'second_factor_reset' ? (
+            <form noValidate onSubmit={submit}>
+              <p className="small mb-2">
+                If you can use neither your authenticator app nor any backup
+                code, two-step verification can be removed from your account
+                after a waiting period.
+              </p>
+              <p className="text-body-secondary small mb-3">
+                We tell you at once and then every day, on every channel you
+                have — email, text message, push and the bell in the app — and
+                each message lets you cancel. Until then a code from your app or
+                a backup code still signs you in.
+              </p>
+
+              <HilosFormError message={errorMessage} dataId="auth-error" />
+
+              <LoadingButton
+                type="submit"
+                className="btn-danger w-100 mb-2"
+                loading={pending}
+                disabled={!submittable}
+                data-id="auth-submit"
+              >
+                {submitLabel}
+              </LoadingButton>
+              <button
+                type="button"
+                className="btn btn-link btn-sm w-100"
+                data-id="auth-reset-back"
+                onClick={() => auth.backToSecondFactor()}
+              >
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {/* The removal is asked, and the held sign-in let go with it: the
+          date, and the way back to the field. */}
+          {state.step === 'second_factor_reset_requested' ? (
+            <form noValidate onSubmit={submit}>
+              <div
+                className="alert alert-warning small py-2"
+                data-id="auth-reset-requested"
+              >
+                Two-step verification will be removed on{' '}
+                <strong>{resetDate}</strong>.
+              </div>
+              <p className="text-body-secondary small mb-3">
+                We sent a notice to every channel you have. If this was not you,
+                follow the link in it to cancel.
+              </p>
+              <LoadingButton
+                type="submit"
+                className="btn-primary w-100"
+                loading={pending}
+                disabled={!submittable}
+                data-id="auth-submit"
+              >
+                {submitLabel}
+              </LoadingButton>
+            </form>
+          ) : null}
+
+          {/* The enrolment an administrator requires on the way in (HIL-494):
+          the QR code and its key as text, a name for the app, and its first
+          code. */}
+          {state.step === 'second_factor_setup' ? (
+            <form noValidate onSubmit={submit}>
+              <p className="small mb-3" data-id="auth-setup-lead">
+                Your administrator requires two-step verification. Scan this
+                code with an authenticator app, then enter the code the app
+                shows.
+              </p>
+              {setup !== null ? (
+                <>
+                  <HilosQrCode
+                    text={setup.otpauthUri}
+                    label="QR code for your authenticator app"
+                    className="mb-2"
+                  />
+                  <p className="small text-body-secondary text-center mb-1">
+                    Can&apos;t scan it? Enter this key in the app:
+                  </p>
+                  <p
+                    className="font-monospace small text-center text-break mb-3"
+                    data-id="auth-setup-secret"
+                  >
+                    {setup.secret}
+                  </p>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary w-100 mb-3"
+                  disabled={pending}
+                  data-id="auth-setup-load"
+                  onClick={() => void auth.loadSecondFactorSetup()}
+                >
+                  Show the code to scan
+                </button>
+              )}
+              <div className="mb-3">
+                <label
+                  className="form-label small fw-semibold"
+                  htmlFor="auth-setup-label"
+                >
+                  Name of this app
+                </label>
+                <input
+                  id="auth-setup-label"
+                  type="text"
+                  className="form-control"
+                  maxLength={64}
+                  placeholder="Authenticator app"
+                  data-id="auth-setup-label"
+                  value={form.secondFactorLabel}
+                  onChange={(event) =>
+                    auth.setField('secondFactorLabel', event.target.value)
+                  }
+                />
+              </div>
+              <div className="mb-3">
+                <label
+                  className="form-label small fw-semibold"
+                  htmlFor="auth-code"
+                >
+                  Code
+                </label>
+                <input
+                  id="auth-code"
+                  ref={codeInput}
+                  type="text"
+                  inputMode="numeric"
+                  className="form-control"
+                  autoComplete="one-time-code"
+                  data-id="auth-code"
+                  value={form.code}
+                  onChange={(event) =>
+                    auth.setField('code', event.target.value)
+                  }
+                />
+              </div>
+
+              <HilosFormError message={errorMessage} dataId="auth-error" />
+
+              <LoadingButton
+                type="submit"
+                className="btn-primary w-100 mb-2"
+                loading={pending}
+                disabled={!submittable || setup === null}
+                data-id="auth-submit"
+              >
+                {submitLabel}
+              </LoadingButton>
+              <button
+                type="button"
+                className="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                onClick={() => auth.backToIdentifier()}
+              >
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {/* The backup codes of that enrolment, shown once: Continue lets the
+          person in, and waits for "I have saved these codes". */}
+          {state.step === 'second_factor_codes' ? (
+            <form noValidate onSubmit={submit}>
+              <p className="small mb-3">
+                Keep these codes somewhere safe. Each one signs you in once if
+                you lose your authenticator app.
+              </p>
+              <HilosBackupCodes
+                codes={secondFactor?.backupCodes ?? []}
+                saved={form.backupCodesSaved}
+                onSavedChange={(saved) =>
+                  auth.setField('backupCodesSaved', saved)
+                }
+              />
+
+              <HilosFormError message={errorMessage} dataId="auth-error" />
+
+              <LoadingButton
+                type="submit"
+                className="btn-primary w-100"
+                loading={pending}
+                disabled={!submittable}
+                data-id="auth-submit"
+              >
+                {submitLabel}
+              </LoadingButton>
             </form>
           ) : null}
 

@@ -43,7 +43,6 @@ import HilosI18nTranslateGroupItemPage from './i18n/translate/HilosI18nTranslate
 import HilosI18nTranslateActionErrorPage from './i18n/translate/HilosI18nTranslateActionErrorPage.vue'
 import HilosI18nTranslateEmailPage from './i18n/translate/HilosI18nTranslateEmailPage.vue'
 import HilosSecurityPage from './security/HilosSecurityPage.vue'
-import HilosSecurity2faPage from './security/HilosSecurity2faPage.vue'
 import HilosBillingPage from './billing/HilosBillingPage.vue'
 import HilosBillingProviderPage from './billing/HilosBillingProviderPage.vue'
 import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
@@ -103,7 +102,9 @@ export function hilosAdminViews(): Record<string, Component> {
     // the deliveries journal reads a live connection for its table, so a project
     // mounts them directly rather than through this context-free default map.
     [HilosPages.SECURITY]: HilosSecurityPage,
-    [HilosPages.SECURITY_2FA]: HilosSecurity2faPage,
+    // SECURITY_2FA is a real framework page since HIL-494: its table reads a
+    // live connection, so a project mounts HilosSecurity2faPage directly with its
+    // context.
     // SECURITY_OAUTH and SECURITY_OAUTH_PROVIDER are real framework pages since
     // HIL-286: their tables read a live connection, so a project mounts
     // HilosSecurityOauthPage and HilosSecurityOauthProviderPage directly with its context.

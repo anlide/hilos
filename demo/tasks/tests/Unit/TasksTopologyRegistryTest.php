@@ -33,6 +33,7 @@ use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
+use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Pages\Hilos\Users\UsersPage;
 use Demo\Tasks\Pages\MainPage;
@@ -62,6 +63,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -191,6 +193,10 @@ final class TasksTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AGENTS_GONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
                 HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -327,6 +333,21 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_CANCEL_SECOND_FACTOR => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -347,6 +368,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
             TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
+            TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -364,6 +386,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
+                SecurityTwoFactorPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
             ],

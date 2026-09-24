@@ -17,6 +17,7 @@ import { modelKey } from '../../../../../framework/frontend/scripts/standModel.m
 import { dictateModerationVerdict } from '../helpers/moderation'
 import {
   emitNotification,
+  enableEmailChannel,
   openBell,
   signUpJoined,
   unreadBadge,
@@ -113,30 +114,6 @@ async function signInAddressableAdmin(
   await expect(page.getByTestId('nav-admin')).toBeVisible()
 
   return { email, userId }
-}
-
-/**
- * Turn the email delivery channel on from the admin communications hub.
- *
- * Global enablement is a persisted setting of the whole stand rather than of one
- * account, so the step is idempotent: a channel another test already switched on
- * is left alone instead of being toggled off and back on under it.
- *
- * @param page Page of a signed-in admin.
- */
-async function enableEmailChannel(page: Page): Promise<void> {
-  await gotoPage(page, '/hilos/communications')
-  // The switch stands in a cell, and the hub is a declared table drawn both as rows
-  // and as cards, so it is aimed at through the copy on screen.
-  const toggle = shownByTestId(page, 'hilos-channel-enabled-email')
-  await expect(toggle).toBeVisible()
-  if (await toggle.isChecked()) {
-    return
-  }
-
-  await toggle.click()
-  // The server's table update moves this same switch; no page re-read is needed.
-  await expect(toggle).toBeChecked()
 }
 
 /**

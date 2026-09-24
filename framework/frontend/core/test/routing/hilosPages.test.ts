@@ -21,9 +21,10 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
 
   it('mounts admin paths under /hilos and personal/public pages at the root', () => {
     // Root-routed framework pages: the public footer pages plus the personal
-    // profile page. Every other Hilos page is admin and lives under /hilos.
+    // profile pages. Every other Hilos page is admin and lives under /hilos.
     const rootPages = new Set<string>([
       HilosPages.PROFILE,
+      HilosPages.PROFILE_SECURITY,
       ...HILOS_FOOTER_LINKS.map((l) => l.page),
     ])
     for (const [page, declaration] of Object.entries(

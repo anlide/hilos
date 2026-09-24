@@ -288,16 +288,28 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 
-    public function testRoundtripRejectsAnAuthStepNodeWithoutItsIdentifier(): void
+    public function testRoundtripCarriesASecondFactorStepThatNamesNoAddress(): void
     {
+        // A sign-in held on its second factor names no address (HIL-494): the person proved
+        // one on the way in and the code screen does not repeat it, so the node arrives with
+        // the address members null and the second-factor member beside them.
+        $step = [
+            'identifier' => null,
+            'kind' => null,
+            'intent' => 'login',
+            'step' => 'second_factor',
+            'channel' => null,
+            'expiresAt' => 1_760_000_900_000,
+            'code' => null,
+            'secondFactor' => ['trustDeviceDays' => 30, 'resetEffectiveAt' => null],
+        ];
         $payload = new HandshakeResponseSignalData()
-            ->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS)
+            ->withSessionContext(self::SERVER_TIME_MS, $step, self::CODE_DELIVERY, self::AUTH_METHODS)
             ->toArray();
-        unset($payload['data']['pendingAuthStep']['identifier']);
 
-        $this->expectException(InvalidFormatException::class);
+        $restored = HandshakeResponseSignalData::fromArray($payload);
 
-        HandshakeResponseSignalData::fromArray($payload);
+        $this->assertSame($step, $restored->pendingAuthStep);
     }
 
     public function testRoundtripRejectsAnAuthStepNodeWithoutItsStep(): void

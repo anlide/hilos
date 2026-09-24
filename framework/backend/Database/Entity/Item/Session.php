@@ -38,6 +38,11 @@ use Hilos\Database\PhpType;
  * socket that replaced the marked one, and what the person was left looking at was an
  * announcement about a flow that had already ended.
  *
+ * The `pending_second_factor_*` group is a proven sign-in waiting on the person's second
+ * factor (HIL-494): whose it is, which screen it waits on, until when, how many wrong codes
+ * it took and the sentence owed once it passes. Memory ABOUT this session for the same
+ * reason as the two above, and written only by the session holder.
+ *
  * @method static EntitySessions get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessions getAll()
  */
@@ -53,6 +58,11 @@ final class Session extends Entity
     public const string pending_registration_identifier = 'pending_registration_identifier';
     public const string pending_registration_since = 'pending_registration_since';
     public const string pending_ack = 'pending_ack';
+    public const string pending_second_factor_user_id = 'pending_second_factor_user_id';
+    public const string pending_second_factor_mode = 'pending_second_factor_mode';
+    public const string pending_second_factor_until = 'pending_second_factor_until';
+    public const string pending_second_factor_attempts = 'pending_second_factor_attempts';
+    public const string pending_second_factor_ack = 'pending_second_factor_ack';
 
     public const string _table = 'hilos_session';
     public const string _primary = self::id;
@@ -67,6 +77,11 @@ final class Session extends Entity
         self::pending_registration_identifier,
         self::pending_registration_since,
         self::pending_ack,
+        self::pending_second_factor_user_id,
+        self::pending_second_factor_mode,
+        self::pending_second_factor_until,
+        self::pending_second_factor_attempts,
+        self::pending_second_factor_ack,
     ];
 
     public const array _types = [
@@ -80,6 +95,11 @@ final class Session extends Entity
         self::pending_registration_identifier => PhpType::STRING->value,
         self::pending_registration_since => PhpType::DATETIME->value,
         self::pending_ack => PhpType::STRING->value,
+        self::pending_second_factor_user_id => PhpType::INTEGER->value,
+        self::pending_second_factor_mode => PhpType::STRING->value,
+        self::pending_second_factor_until => PhpType::DATETIME->value,
+        self::pending_second_factor_attempts => PhpType::INTEGER->value,
+        self::pending_second_factor_ack => PhpType::STRING->value,
     ];
 
     public const array _indexes = [
@@ -87,6 +107,9 @@ final class Session extends Entity
         'idx_session_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
         'idx_session_pending_registration' => [
             Entity::INDEX_COLUMNS => [self::pending_registration_identifier],
+        ],
+        'idx_session_pending_second_factor' => [
+            Entity::INDEX_COLUMNS => [self::pending_second_factor_user_id],
         ],
     ];
 
@@ -109,4 +132,9 @@ final class Session extends Entity
     public ?string $pending_registration_identifier = null;
     public ?string $pending_registration_since = null;
     public ?string $pending_ack = null;
+    public ?int $pending_second_factor_user_id = null;
+    public ?string $pending_second_factor_mode = null;
+    public ?string $pending_second_factor_until = null;
+    public int $pending_second_factor_attempts = 0;
+    public ?string $pending_second_factor_ack = null;
 }

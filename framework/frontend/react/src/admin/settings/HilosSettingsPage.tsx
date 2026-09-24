@@ -265,7 +265,9 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
       <HilosViewportTable
         controller={settings.controller}
         cells={{
-          [SETTING_KEY_FIELD]: (row) => <code>{row.key}</code>,
+          [SETTING_KEY_FIELD]: (row) => (
+            <code className="text-break">{row.key}</code>
+          ),
           [SETTING_VALUE_FIELD]: (row) => (
             <div style={{ maxWidth: '18rem' }}>
               <HilosSettingValueCell
@@ -484,7 +486,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
         </p>
         {deleteRow ? (
           <p className="mb-0 mt-2">
-            <code>{deleteRow.key}</code>
+            <code className="text-break">{deleteRow.key}</code>
           </p>
         ) : null}
         {deleteGone ? (

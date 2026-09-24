@@ -13,6 +13,8 @@ import {
   createOAuthLogin,
   createPasskeyCeremony,
   describeOAuthError,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
   hilosToasts,
   isPasskeySupported,
   threeWayMerge,
@@ -21,6 +23,7 @@ import {
   ConflictActions,
   ConflictHeader,
   HilosFormError,
+  HilosLink,
   HilosModal,
   HilosNotificationPreferences,
   LoadingButton,
@@ -648,6 +651,25 @@ function mergeBoth(): void {
     <p v-else class="text-body-secondary" data-id="profile-loading">
       Loading profile…
     </p>
+
+    <!-- The way to two-step verification (HIL-494): its own page, which the
+    profile's sections list will name among the others (HIL-493). -->
+    <div class="mt-4" data-id="profile-security-row">
+      <h2 class="h6 mb-2">Security</h2>
+      <div class="list-group">
+        <div class="list-group-item d-flex align-items-center gap-3">
+          <i class="bi bi-shield-lock fs-5" aria-hidden="true"></i>
+          <span class="flex-grow-1">Two-step verification</span>
+          <HilosLink
+            :to="HILOS_PAGE_ROUTES[HilosPages.PROFILE_SECURITY]"
+            class="btn btn-sm btn-outline-secondary"
+            data-id="profile-security-open"
+          >
+            Open
+          </HilosLink>
+        </div>
+      </div>
+    </div>
 
     <!-- The user's linked login identities (HIL-297), each unlinkable (HIL-377).
     Scoped to the signed-in user by the backend; secrets never reach here. Unlink

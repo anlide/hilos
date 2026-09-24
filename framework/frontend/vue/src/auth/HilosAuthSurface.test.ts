@@ -1754,3 +1754,187 @@ describe('HilosAuthSurface in a browser that refuses cookies', () => {
     wrapper.unmount()
   })
 })
+
+describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', () => {
+  /** The handshake node of a held sign-in: the code step, naming nobody. */
+  const HELD_STEP = {
+    identifier: null,
+    kind: null,
+    intent: 'login',
+    step: 'second_factor',
+    channel: null,
+    expiresAt: Date.now() + 600000,
+    code: null,
+    secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+  }
+
+  it('draws the code step restored by the handshake, with the trust the step offers', async () => {
+    const { context } = passwordOnlyContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-heading"]').text()).toBe(
+      'Two-step verification',
+    )
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('label[for="auth-trust-device"]').text()).toBe(
+      "Don't ask again on this device for 30 days",
+    )
+    expect(wrapper.find('[data-id="auth-reset-start"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('offers no trust when the step names none, and the removal date when one is asked', async () => {
+    const { context } = passwordOnlyContext()
+    const effectiveAt = new Date(2026, 9, 2, 12).getTime()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...HELD_STEP,
+      secondFactor: { trustDeviceDays: null, resetEffectiveAt: effectiveAt },
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-trust-device"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-reset-start"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="auth-reset-pending"]').text()).toContain(
+      '2026',
+    )
+    wrapper.unmount()
+  })
+
+  it('sends the code with the kind the person chose and the trust they asked for', async () => {
+    const { context, dispatched } = passwordOnlyContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    await wrapper.find('[data-id="auth-backup-toggle"]').trigger('click')
+    expect(wrapper.find('label[for="auth-code"]').text()).toBe('Backup code')
+    await wrapper.find('[data-id="auth-code"]').setValue('abcde-fghjk')
+    await wrapper.find('[data-id="auth-trust-device"]').setValue(true)
+    await wrapper.find('form').trigger('submit')
+    await flush(wrapper)
+
+    expect(dispatched.at(-1)).toEqual({
+      action: 'hilos_confirm_second_factor',
+      payload: { code: 'abcde-fghjk', backupCode: true, trustDevice: true },
+    })
+    wrapper.unmount()
+  })
+
+  it('opens the removal screen locally and comes back from it', async () => {
+    const { context, dispatched } = passwordOnlyContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    const before = dispatched.length
+
+    await wrapper.find('[data-id="auth-reset-start"]').trigger('click')
+    expect(wrapper.find('[data-id="auth-heading"]').text()).toBe(
+      'Remove two-step verification',
+    )
+    expect(wrapper.find('[data-id="auth-submit"]').text()).toBe(
+      'Request removal',
+    )
+    await wrapper.find('[data-id="auth-reset-back"]').trigger('click')
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(dispatched.length).toBe(before)
+    wrapper.unmount()
+  })
+
+  it('lets the held sign-in go on Back', async () => {
+    const { context, dispatched } = passwordOnlyContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    await wrapper.find('[data-id="auth-restart"]').trigger('click')
+    await flush(wrapper)
+
+    expect(dispatched.map((entry) => entry.action)).toContain(
+      'hilos_cancel_second_factor',
+    )
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('follows the wait another tab of the browser reached, and its release', async () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    await flush(wrapper)
+    expect(wrapper.find('[data-id="auth-heading"]').text()).toBe(
+      'Two-step verification',
+    )
+
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: 'second_factor_attempts',
+    })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-identifier"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-notice"]').text()).toBe(
+      'Too many wrong codes. Sign in again.',
+    )
+    wrapper.unmount()
+  })
+
+  it('asks for the secret of the enrolment it stands on, and draws its code and key', async () => {
+    const { context, dispatched } = passwordOnlyContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...HELD_STEP,
+      step: 'second_factor_setup',
+    })
+    const lifecycle = context.actions as unknown as {
+      dispatch: (action: string, payload: Record<string, unknown>) => unknown
+    }
+    const dispatch = lifecycle.dispatch
+    lifecycle.dispatch = (action, payload) =>
+      action === 'hilos_second_factor_setup_start'
+        ? (dispatched.push({ action, payload }),
+          {
+            requestId: 'req-setup',
+            loading: createSignal(false),
+            done: Promise.resolve({
+              reply: {
+                ok: true,
+                secondFactor: {
+                  trustDeviceDays: 30,
+                  resetEffectiveAt: null,
+                  setup: {
+                    secret: 'JBSWY3DPEHPK3PXP',
+                    otpauthUri:
+                      'otpauth://totp/Hilos:ada%40b.com?secret=JBSWY3DPEHPK3PXP&issuer=Hilos',
+                  },
+                },
+              },
+            }),
+          })
+        : dispatch(action, payload)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+    await flush(wrapper)
+
+    expect(dispatched.map((entry) => entry.action)).toContain(
+      'hilos_second_factor_setup_start',
+    )
+    expect(wrapper.find('[data-id="auth-setup-lead"]').text()).toContain(
+      'Your administrator requires two-step verification',
+    )
+    expect(wrapper.find('[data-id="qr-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-setup-secret"]').text()).toBe(
+      'JBSWY3DPEHPK3PXP',
+    )
+    wrapper.unmount()
+  })
+})

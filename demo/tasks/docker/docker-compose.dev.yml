@@ -126,6 +126,7 @@ services:
       # frontend, but the framework default names port 5173 - the chat demo's - so
       # the link names this demo's own local dev server instead of another application.
       - HILOS_MAGIC_LINK_URL=${HILOS_MAGIC_LINK_URL:-http://localhost:5174/auth/magic}
+      - HILOS_SECOND_FACTOR_CANCEL_URL=${HILOS_SECOND_FACTOR_CANCEL_URL:-http://localhost:5174/auth/second-factor/cancel}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:

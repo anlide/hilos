@@ -93,3 +93,29 @@ export const AUTH_ACTION_LINK_OAUTH_START = 'hilos_link_oauth_start'
 /** Client→server: redeem an OAuth link token after re-auth (PHP `HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH`). */
 export const AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH =
   'hilos_link_oauth_after_reauth'
+
+/** Client→server: the code of a sign-in held on its second factor (PHP `HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR`). */
+export const AUTH_ACTION_CONFIRM_SECOND_FACTOR = 'hilos_confirm_second_factor'
+
+/** Client→server: let a sign-in held on its second factor go (PHP `HilosSignalConstants::HILOS_CANCEL_SECOND_FACTOR`). */
+export const AUTH_ACTION_CANCEL_SECOND_FACTOR = 'hilos_cancel_second_factor'
+
+/** Client→server: open the enrolment an administrator requires on the way in (PHP `HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START`). */
+export const AUTH_ACTION_SECOND_FACTOR_SETUP_START =
+  'hilos_second_factor_setup_start'
+
+/** Client→server: confirm that enrolment with its first code (PHP `HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM`). */
+export const AUTH_ACTION_SECOND_FACTOR_SETUP_CONFIRM =
+  'hilos_second_factor_setup_confirm'
+
+/** Client→server: go in after the backup codes of that enrolment (PHP `HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH`). */
+export const AUTH_ACTION_SECOND_FACTOR_SETUP_FINISH =
+  'hilos_second_factor_setup_finish'
+
+/** Client→server: ask the delayed removal of the second factor from the code step (PHP `HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST`). */
+export const AUTH_ACTION_SECOND_FACTOR_RESET_REQUEST =
+  'hilos_second_factor_reset_request'
+
+/** Client→server: cancel a removal by the "it was not me" link, signed in or not (PHP `HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK`). */
+export const AUTH_ACTION_SECOND_FACTOR_RESET_CANCEL_LINK =
+  'hilos_second_factor_reset_cancel_link'

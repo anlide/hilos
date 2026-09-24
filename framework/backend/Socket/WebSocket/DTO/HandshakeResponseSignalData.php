@@ -80,6 +80,14 @@ use Hilos\Core\Router\SignalDataInterface;
  * administrator switches a method, and the settings library sends the new set to every
  * connection on its own frame. The handshake gives a new connection the set as it is
  * now; the frame keeps the old ones in step. Null means the stamp never ran.
+ *
+ * The step node also describes a sign-in held on its SECOND FACTOR (HIL-494): step
+ * `second_factor` or `second_factor_setup` under the sign-in intent, `expiresAt` the moment
+ * the held sign-in runs out, and a `secondFactor` member with what the code screen needs -
+ * how many days the device checkbox promises and when an already asked removal takes effect.
+ * Such a step names no address - the person proved one on the way in and the screen does
+ * not repeat it - so `identifier` and `kind` are null on it and only on it; every other
+ * step still names both.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -104,6 +112,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string channel = 'channel';
     public const string expiresAt = 'expiresAt';
     public const string code = 'code';
+    public const string secondFactor = 'secondFactor';
+    public const string trustDeviceDays = 'trustDeviceDays';
+    public const string resetEffectiveAt = 'resetEffectiveAt';
 
     /**
      * Creates handshake response signal data.
@@ -126,8 +137,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?string $impersonatorName Impersonating admin's display name, or null when not impersonating
      * @param ?string $pendingAck Ack the receiving connection still owes (a {@see SessionAck} value), or null
      * @param ?int $serverTimeMs Server "now" in epoch milliseconds, or null before the session context is stamped
-     * @param ?array{identifier: string, kind: string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string} $pendingAuthStep
+     * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param ?array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time
      *     code to, or null before the session context is stamped
@@ -186,8 +198,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * happened to hold, which is exactly what a re-handshake exists to refresh.
      *
      * @param int $serverTimeMs Server "now" in epoch milliseconds
-     * @param ?array{identifier: string, kind: string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string} $pendingAuthStep
+     * @param ?array{identifier: ?string, kind: ?string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} $pendingAuthStep
      *     Authentication step the session stands on, or null when it stands on none
      * @param array{email: bool, phone: bool} $codeDelivery What this installation can deliver a one-time code to
      * @param list<array{key: string, name: ?string, ready: bool}> $authMethods Enabled sign-in methods in button order
@@ -314,8 +327,13 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * is reading and can ask for the moment on exactly the two that count down.
      *
      * @param array<string, mixed> $section Plain data section of the response
-     * @return ?array{identifier: string, kind: string, intent: string, step: string,
-     *     channel: ?string, expiresAt: ?int, code: ?string} Node, or null when absent
+     * The address is optional since HIL-494: a sign-in held on its second factor names none,
+     * and neither does the address field it is sent back to when the hold ends. The second-factor
+     * member is read only where it came.
+     *
+     * @return ?array{identifier: ?string, kind: ?string, intent: string, step: string,
+     *     channel: ?string, expiresAt: ?int, code: ?string,
+     *     secondFactor?: array{trustDeviceDays: ?int, resetEffectiveAt: ?int}} Node, or null when absent
      * @throws InvalidFormatException When a present node lacks a required member
      */
     private static function readPendingAuthStep(array $section): ?array
@@ -325,15 +343,24 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             return null;
         }
 
-        return [
-            self::identifier => self::requireString($node, self::identifier),
-            self::kind => self::requireString($node, self::kind),
+        $step = [
+            self::identifier => self::optionalString($node, self::identifier),
+            self::kind => self::optionalString($node, self::kind),
             self::intent => self::requireString($node, self::intent),
             self::step => self::requireString($node, self::step),
             self::channel => self::optionalString($node, self::channel),
             self::expiresAt => self::optionalInt($node, self::expiresAt),
             self::code => self::optionalString($node, self::code),
         ];
+        $secondFactor = self::optionalArray($node, self::secondFactor);
+        if ($secondFactor !== null) {
+            $step[self::secondFactor] = [
+                self::trustDeviceDays => self::optionalInt($secondFactor, self::trustDeviceDays),
+                self::resetEffectiveAt => self::optionalInt($secondFactor, self::resetEffectiveAt),
+            ];
+        }
+
+        return $step;
     }
 
     /**

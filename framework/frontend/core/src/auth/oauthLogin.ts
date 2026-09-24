@@ -67,6 +67,7 @@ import {
   OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_REAUTH_REQUIRED,
+  OAUTH_REASON_SECOND_FACTOR,
   OAUTH_RESULT_SIGNAL,
   oauthAuthorizeSignalSchema,
   oauthResultSignalSchema,
@@ -100,10 +101,19 @@ export interface OAuthTrip {
  * How a trip that began ended. `canceled` covers every quiet ending — the person
  * pressed Cancel, closed the provider window, or declined at the provider — and
  * carries no message, because none of them is a failure to report.
+ * `second_factor` is a sign-in the provider proved and the second factor holds
+ * (HIL-494): the session moves every tab to the code step itself, so the surface
+ * waiting on the trip has nothing to do but let it go.
  */
 export interface OAuthTripOutcome {
   /** The ending. */
-  kind: 'signed_in' | 'linked' | 'reauth_pending' | 'canceled' | 'error'
+  kind:
+    | 'signed_in'
+    | 'linked'
+    | 'reauth_pending'
+    | 'second_factor'
+    | 'canceled'
+    | 'error'
   /** The sentence to show, empty on every arm but `error`. */
   message: string
 }
@@ -1076,6 +1086,11 @@ function applyResult(data: OAuthResultSignalData): void {
   }
   if (data.reason === OAUTH_REASON_LINK_OK) {
     finishTrip({ kind: 'linked', message: '' })
+
+    return
+  }
+  if (data.reason === OAUTH_REASON_SECOND_FACTOR) {
+    finishTrip({ kind: 'second_factor', message: '' })
 
     return
   }

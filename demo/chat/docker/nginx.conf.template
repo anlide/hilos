@@ -91,15 +91,19 @@ http {
         location = /profile {
             try_files /index.html =404;
         }
+        location = /profile/security {
+            try_files /index.html =404;
+        }
         location ~ ^/(user|bot)/[0-9]+$ {
             try_files /index.html =404;
         }
 
-        # OAuth + magic-link relay routes (HIL-281/HIL-401): the provider redirect
-        # and the emailed link land the browser on these client-side deep links,
-        # which resolve the exchange over the socket and are not prerendered, so
-        # they cold-load the SPA shell like the other deep links above.
-        location ~ ^/auth/(callback|magic)$ {
+        # OAuth, magic-link and second-factor cancel relay routes (HIL-281/HIL-401,
+        # HIL-494): the provider redirect and the emailed links land the browser on
+        # these client-side deep links, which resolve the exchange over the socket
+        # and are not prerendered, so they cold-load the SPA shell like the other
+        # deep links above.
+        location ~ ^/auth/(callback|magic|second-factor/cancel)$ {
             try_files /index.html =404;
         }
 

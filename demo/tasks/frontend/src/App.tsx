@@ -7,6 +7,7 @@
 import {
   HilosLayout,
   HilosMagicLinkPage,
+  HilosSecondFactorCancelPage,
   HilosNotificationBell,
   HilosOAuthCallbackPage,
   HilosRouterContext,
@@ -16,6 +17,7 @@ import {
 } from '@hilos/react'
 import {
   AUTH_MAGIC_LINK_PATH,
+  AUTH_SECOND_FACTOR_CANCEL_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
   HilosPages,
   type AuthGate,
@@ -39,6 +41,8 @@ import HilosLogsWorkers from './views/Hilos/Logs/Workers'
 import HilosSecurityOauth from './views/Hilos/Security/SecurityOauth'
 import HilosSecurityOauthProvider from './views/Hilos/Security/SecurityOauthProvider'
 import HilosSecuritySignInMethods from './views/Hilos/Security/SecuritySignInMethods'
+import HilosSecurityTwoFactor from './views/Hilos/Security/SecurityTwoFactor'
+import ProfileSecurity from './views/Profile/ProfileSecurity'
 import HilosUser from './views/Hilos/Users/User'
 import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
@@ -92,6 +96,8 @@ const pages: Record<string, ComponentType> = {
   // the live enabled set and the switch; the project binds its context
   // (views/Hilos/Security) and, on its backend, declares its method directory.
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
+  [HilosPages.SECURITY_2FA]: HilosSecurityTwoFactor,
+  [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
@@ -234,6 +240,8 @@ export default function App({ authGate }: AppProps) {
         <HilosMagicLinkPage context={hilosAuthContext} />
       ) : currentPath === AUTH_OAUTH_CALLBACK_PATH ? (
         <HilosOAuthCallbackPage context={hilosAuthContext} />
+      ) : currentPath === AUTH_SECOND_FACTOR_CANCEL_PATH ? (
+        <HilosSecondFactorCancelPage context={hilosAuthContext} />
       ) : (
         <HilosView
           pages={pages}

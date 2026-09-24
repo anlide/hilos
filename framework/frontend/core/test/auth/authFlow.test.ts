@@ -45,7 +45,8 @@ import {
   type DetectionState,
   type IdentifierDetection,
 } from '../../src/auth/authFlow.js'
-import { createAuthActions, toFlowPatch } from '../../src/auth/authActions.js'
+import { createAuthActions } from '../../src/auth/authActions.js'
+import { toFlowPatch } from '../../src/auth/authFlowReply.js'
 import { type HilosAuthContext } from '../../src/auth/authContext.js'
 import { type AuthMethodEntry } from '../../src/session/sessionScope.js'
 import { createSignal } from '../../src/state/signal.js'
@@ -61,6 +62,8 @@ const EMPTY_FORM: AuthFlowForm = {
   consentAccepted: false,
   usingBackupCode: false,
   trustDevice: false,
+  secondFactorLabel: '',
+  backupCodesSaved: false,
 }
 
 const INITIAL_FLOW: AuthFlowState = {
@@ -500,12 +503,32 @@ describe('isFlowSubmittable', () => {
     ).toBe(true)
   })
 
-  it('code and second_factor submit on a non-empty code', () => {
-    for (const step of ['code', 'second_factor'] as const) {
+  it('code and the second-factor code steps submit on a non-empty code', () => {
+    for (const step of [
+      'code',
+      'second_factor',
+      'second_factor_setup',
+    ] as const) {
       const flow = { ...INITIAL_FLOW, step }
       expect(isFlowSubmittable(flow, EMPTY_FORM, idle)).toBe(false)
       expect(
         isFlowSubmittable(flow, { ...EMPTY_FORM, code: '123456' }, idle),
+      ).toBe(true)
+    }
+  })
+
+  it('the backup codes wait for "I have saved these codes"; the removal screens always submit', () => {
+    const codes = { ...INITIAL_FLOW, step: 'second_factor_codes' as const }
+    expect(isFlowSubmittable(codes, EMPTY_FORM, idle)).toBe(false)
+    expect(
+      isFlowSubmittable(codes, { ...EMPTY_FORM, backupCodesSaved: true }, idle),
+    ).toBe(true)
+    for (const step of [
+      'second_factor_reset',
+      'second_factor_reset_requested',
+    ] as const) {
+      expect(
+        isFlowSubmittable({ ...INITIAL_FLOW, step }, EMPTY_FORM, idle),
       ).toBe(true)
     }
   })
@@ -890,7 +913,7 @@ describe('primaryAction — the six shapes', () => {
   })
 })
 
-describe('screenKey — all sixteen screens', () => {
+describe('screenKey — all twenty screens', () => {
   it('derives every screen from the axes', () => {
     // The third element is the resolved lookup: only the identifier step
     // consults one, and only a `pending` (HIL-651) or `proven` (HIL-825) reply
@@ -923,6 +946,13 @@ describe('screenKey — all sixteen screens', () => {
         'check_inbox',
       ],
       [{ step: 'second_factor', intent: 'login' }, 'two_step'],
+      [{ step: 'second_factor_setup', intent: 'login' }, 'two_step_setup'],
+      [{ step: 'second_factor_codes', intent: 'login' }, 'two_step_codes'],
+      [{ step: 'second_factor_reset', intent: 'login' }, 'two_step_reset'],
+      [
+        { step: 'second_factor_reset_requested', intent: 'login' },
+        'two_step_reset_requested',
+      ],
       [{ step: 'set_password', intent: 'recovery' }, 'choose_password'],
       [{ step: 'set_password', intent: 'register' }, 'set_first_password'],
       [{ step: 'external', methodKey: 'oauth:github' }, 'waiting_external'],
@@ -2075,6 +2105,7 @@ describe('failure surface', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     flow.setField('newPassword', 'long-enough-1')
     await flow.submit()
@@ -2253,6 +2284,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'code',
@@ -2275,6 +2307,7 @@ describe('resuming an unfinished auth step', () => {
       channel: 'telegram',
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     expect(flow.flow.get()).toMatchObject({
       identifierKind: 'phone',
@@ -2304,6 +2337,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     flow.setField('identifier', 'other@b.com')
     expect(flow.expiresAt.get()).toBeNull()
@@ -2339,6 +2373,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     flow.setField('code', '000000')
     await flow.submit()
@@ -2357,6 +2392,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'set_password',
@@ -2376,6 +2412,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'code',
@@ -2397,6 +2434,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      secondFactor: null,
     })
     expect(flow.flow.get()).toMatchObject({
       step: 'identifier',
@@ -2423,6 +2461,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      secondFactor: null,
     })
     expect(flow.detection.get()).toEqual({ status: 'pending', result: null })
     await settleRefresh()
@@ -2446,6 +2485,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 10 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     await settleRefresh()
     expect(onDetect).not.toHaveBeenCalled()
@@ -2465,6 +2505,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: Date.now() + 5 * SECOND_MS,
       code: null,
+      secondFactor: null,
     })
     flow.resume({
       identifier: 'ada@b.com',
@@ -2474,6 +2515,7 @@ describe('resuming an unfinished auth step', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      secondFactor: null,
     })
     expect(flow.flow.get().step).toBe('identifier')
 
@@ -2671,6 +2713,7 @@ describe('a code that ran out says so itself (HIL-828)', () => {
       channel: null,
       expiresAt: Date.now() - SECOND_MS,
       code: null,
+      secondFactor: null,
     })
 
     await vi.advanceTimersByTimeAsync(0)

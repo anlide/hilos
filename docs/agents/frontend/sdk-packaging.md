@@ -60,7 +60,9 @@ workspace copy and leaves it out of the consumer's `node_modules`. The core's
 compiles the core `src`, prod consumes its FESM), so the bare import resolves
 from the consumer root and fails — so an Angular consumer adds `@vue/reactivity`
 as a direct dependency. The Vite-Vue/React demos prebundle it through the
-symlink's real path and need nothing. Full recipe in
+symlink's real path and need nothing. The same holds for every runtime
+dependency the core takes — today also `qrcode-generator`, the QR library behind
+`qrMatrix` (HIL-494). Full recipe in
 [docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
 
 ## Angular versions: exact in both roots, a range only in the peers

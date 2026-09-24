@@ -235,7 +235,9 @@ export {
   sessionCodeDelivery,
   sessionAuthMethods,
   sessionEnabledAuthMethods,
+  sessionSecondFactorPolicy,
   SIGNAL_AUTH_METHODS,
+  SIGNAL_SECOND_FACTOR_POLICY,
   SIGNAL_HANDSHAKE_RESPONSE,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
@@ -244,6 +246,8 @@ export {
   type AuthMethodEntry,
   type CodeDelivery,
   type PendingAuthStep,
+  type PendingSecondFactor,
+  type SecondFactorPolicy,
   type SessionScopeOptions,
 } from './session/sessionScope.js'
 export { applyServerTime, offsetMs, toLocal } from './session/serverClock.js'
@@ -282,6 +286,25 @@ export {
   type HilosNotificationPreferencesStore,
 } from './notifications/notificationPreferences.js'
 export {
+  createHilosSecondFactorActions,
+  createHilosSecondFactorStore,
+  readHilosSecondFactorState,
+  PROFILE_SECOND_FACTOR_SECTION,
+  SECOND_FACTOR_SIGNAL_SCHEMAS,
+  SIGNAL_SECOND_FACTOR_STATE,
+  type HilosBackupCodeEntry,
+  type HilosSecondFactorActions,
+  type HilosSecondFactorAuthenticator,
+  type HilosSecondFactorContext,
+  type HilosSecondFactorEnrollment,
+  type HilosSecondFactorProof,
+  type HilosSecondFactorReset,
+  type HilosSecondFactorResetWait,
+  type HilosSecondFactorState,
+  type HilosSecondFactorStore,
+} from './profile/secondFactor.js'
+export { qrMatrix } from './auth/qrMatrix.js'
+export {
   createBrowserPushEnvironment,
   createHilosPushSubscriptionStore,
   hilosPushSubscription,
@@ -296,11 +319,8 @@ export {
 } from './notifications/pushSubscription.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
 export { authAckToFlowPatch, shouldLowerAckPanel } from './auth/authAck.js'
-export {
-  createAuthActions,
-  toFlowPatch,
-  type HilosAuthActions,
-} from './auth/authActions.js'
+export { createAuthActions, type HilosAuthActions } from './auth/authActions.js'
+export { toFlowPatch } from './auth/authFlowReply.js'
 export {
   createHilosAuthContext,
   oauthProviderOptionsFor,
@@ -328,6 +348,7 @@ export {
   type CodeSendProgressSignalData,
 } from './auth/authSendProgress.js'
 export { formatCountdown } from './format/duration.js'
+export { formatCalendarDate } from './format/date.js'
 export {
   AUTH_CONVERGE_SIGNAL,
   authConvergeSignalSchema,
@@ -337,6 +358,7 @@ export {
 export {
   AUTH_MAGIC_LINK_PATH,
   AUTH_OAUTH_CALLBACK_PATH,
+  AUTH_SECOND_FACTOR_CANCEL_PATH,
 } from './auth/authRoutes.js'
 export {
   cancelOAuthTrip,
@@ -366,6 +388,7 @@ export {
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_LINK_DUPLICATE,
   OAUTH_REASON_LINK_FAILED,
+  OAUTH_REASON_SECOND_FACTOR,
   oauthAuthorizeSignalSchema,
   oauthResultSignalSchema,
   OAUTH_SIGNAL_SCHEMAS,
@@ -411,6 +434,13 @@ export {
   AUTH_ACTION_PASSKEY_REGISTER_CONFIRM,
   AUTH_ACTION_LINK_OAUTH_START,
   AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
+  AUTH_ACTION_CONFIRM_SECOND_FACTOR,
+  AUTH_ACTION_CANCEL_SECOND_FACTOR,
+  AUTH_ACTION_SECOND_FACTOR_SETUP_START,
+  AUTH_ACTION_SECOND_FACTOR_SETUP_CONFIRM,
+  AUTH_ACTION_SECOND_FACTOR_SETUP_FINISH,
+  AUTH_ACTION_SECOND_FACTOR_RESET_REQUEST,
+  AUTH_ACTION_SECOND_FACTOR_RESET_CANCEL_LINK,
 } from './auth/authProtocol.js'
 export {
   createAuthGate,
@@ -460,6 +490,8 @@ export {
   type DetectionStatus,
   type IdentifierDetection,
   type IdentifierKind,
+  type SecondFactorSetup,
+  type SecondFactorStepData,
 } from './auth/authFlow.js'
 export {
   createPasskey,
@@ -884,6 +916,22 @@ export {
   type HilosSignInMethodsActions,
   type HilosSignInMethodsTable,
 } from './admin/security/hilosSecuritySignInMethods.js'
+export {
+  resolveHilosTwoFactorSettingRow,
+  createHilosSecurityTwoFactorTable,
+  createHilosSecurityTwoFactorActions,
+  HilosSecondFactorSettingKey,
+  HilosTwoFactorSettingRowKey,
+  HILOS_SECOND_FACTOR_REQUIRED_VALUES,
+  HILOS_SECOND_FACTOR_REQUIRED_COPY,
+  HILOS_SECOND_FACTOR_SETTING_COPY,
+  describeHilosSecondFactorSetting,
+  type HilosSecondFactorSettingCopy,
+  type HilosTwoFactorSettingRow,
+  type HilosTwoFactorContext,
+  type HilosTwoFactorActions,
+  type HilosTwoFactorTable,
+} from './admin/security/hilosSecurityTwoFactor.js'
 export {
   resolveHilosLogKeyRow,
   createHilosLogKeysTable,

@@ -44,6 +44,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  formatCalendarDate,
   formatCountdown,
   hilosCodeSendProgress,
   MAGIC_LINK_FLOW_METHOD,
@@ -57,6 +58,7 @@ import {
   sessionCodeDelivery,
   sessionPendingAck,
   sessionPendingAuthStep,
+  sessionSecondFactorPolicy,
   shouldLowerAckPanel,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
@@ -68,9 +70,11 @@ import {
   type ProjectSignal,
 } from '@hilos/core'
 
+import HilosBackupCodes from '../HilosBackupCodes.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosLongText from '../HilosLongText.vue'
 import HilosModal from '../HilosModal.vue'
+import HilosQrCode from '../HilosQrCode.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
 import HilosCookiesRefused from './HilosCookiesRefused.vue'
@@ -133,6 +137,10 @@ const HEADINGS: Record<AuthFlowScreen, string> = {
   choose_password: 'Choose a new password',
   set_first_password: 'Choose a password',
   two_step: 'Two-step verification',
+  two_step_setup: 'Set up two-step verification',
+  two_step_codes: 'Save your backup codes',
+  two_step_reset: 'Remove two-step verification',
+  two_step_reset_requested: 'Removal requested',
   waiting_external: 'Sign in',
   check_inbox: 'Check your inbox',
   done_registered: 'Your account is ready',
@@ -153,6 +161,10 @@ const SUBMIT_LABELS: Record<AuthFlowScreen, string> = {
   choose_password: 'Save password',
   set_first_password: 'Save password',
   two_step: 'Verify',
+  two_step_setup: 'Verify',
+  two_step_codes: 'Continue',
+  two_step_reset: 'Request removal',
+  two_step_reset_requested: 'Continue',
   waiting_external: '',
   check_inbox: 'Continue',
   done_registered: 'Continue',
@@ -177,6 +189,8 @@ const CODE_MESSAGES: Record<string, string> = {
   send_cap_reached: 'Too many codes have gone out. Please try again later.',
   rate_limited: 'Too many attempts. Please wait a moment and try again.',
   challenge_required: 'Please confirm you are not a robot and try again.',
+  second_factor_expired: 'Your sign-in step expired. Sign in again.',
+  second_factor_attempts: 'Too many wrong codes. Sign in again.',
 }
 
 /** What is shown when a refusal carried neither a sentence nor a known code. */
@@ -250,6 +264,7 @@ const auth = createAuthFlow({
   onDetect: (identifier) => authActions.onDetect(identifier),
   onSubmit: authActions.onSubmit,
   onMethodAction: authActions.onMethodAction,
+  secondFactorPolicy: sessionSecondFactorPolicy(context.scopes),
 })
 
 const gate = inject(hilosAuthGateKey, null)
@@ -283,6 +298,7 @@ const primaryAction = useSignal(auth.primaryAction)
 const screenKey = useSignal(auth.screenKey)
 const resendAvailableAt = useSignal(auth.resendAvailableAt)
 const expiresAt = useSignal(auth.expiresAt)
+const secondFactor = useSignal(auth.secondFactor)
 // The two pending facts the surface resumes from are DERIVED from the session
 // scope by the framework's own factories, never handed in: a project cannot pass a
 // stale copy of state the framework already owns.
@@ -662,6 +678,20 @@ const resendIn = computed(() =>
 )
 const expiresIn = computed(() => formatCountdown(expiresAt.value, now.value))
 
+// What the second-factor screens draw from the step's data (HIL-494): the days a
+// trusted browser skips the step (no checkbox without them), the date a removal
+// already asked for takes effect, and the secret of the enrolment on the way in.
+const trustDeviceDays = computed(
+  () => secondFactor.value?.trustDeviceDays ?? null,
+)
+const resetDate = computed(() => {
+  const moment = secondFactor.value?.resetEffectiveAt ?? null
+
+  return moment === null ? null : formatCalendarDate(moment)
+})
+const setup = computed(() => secondFactor.value?.setup ?? null)
+const backupCodes = computed(() => secondFactor.value?.backupCodes ?? [])
+
 /**
  * The stable `data-id` of one method's control.
  *
@@ -752,8 +782,69 @@ function updateConsent(event: Event): void {
   auth.setField('consentAccepted', (event.target as HTMLInputElement).checked)
 }
 
-function submit(): void {
-  void auth.submit()
+async function submit(): Promise<void> {
+  await auth.submit()
+  loadSetupIfMissing()
+}
+
+/**
+ * Ask for the secret of the enrolment on the way in when this tab stands on it
+ * without one (HIL-494). Called where THIS tab arrived on the step — its own
+ * submit, its own ceremony, its mount — and not where it followed another tab
+ * there: a second secret would kill the one the person is scanning in the
+ * first, so a follower asks only when the person presses for it.
+ */
+function loadSetupIfMissing(): void {
+  if (
+    state.value.step === 'second_factor_setup' &&
+    secondFactor.value?.setup === undefined
+  ) {
+    void auth.loadSecondFactorSetup()
+  }
+}
+
+function loadSetup(): void {
+  void auth.loadSecondFactorSetup()
+}
+
+/** Switch the code step between a code from the app and a backup code. */
+function toggleBackupCode(): void {
+  auth.setField('usingBackupCode', !form.value.usingBackupCode)
+}
+
+/**
+ * Mirror "don't ask again on this device" into the machine.
+ *
+ * @param event The change event.
+ */
+function updateTrustDevice(event: Event): void {
+  auth.setField('trustDevice', (event.target as HTMLInputElement).checked)
+}
+
+/**
+ * Mirror the name of the app being connected into the machine.
+ *
+ * @param event The input event.
+ */
+function updateSecondFactorLabel(event: Event): void {
+  auth.setField('secondFactorLabel', (event.target as HTMLInputElement).value)
+}
+
+/**
+ * Mirror "I have saved these codes" into the machine.
+ *
+ * @param saved Whether the box is ticked.
+ */
+function updateBackupCodesSaved(saved: boolean): void {
+  auth.setField('backupCodesSaved', saved)
+}
+
+function startSecondFactorReset(): void {
+  auth.startSecondFactorReset()
+}
+
+function backToSecondFactor(): void {
+  auth.backToSecondFactor()
 }
 
 function resend(): void {
@@ -772,7 +863,7 @@ function renewCode(): void {
  * @param key The chosen method key.
  */
 function chooseMethod(key: string): void {
-  void auth.chooseMethod(key)
+  void auth.chooseMethod(key).then(loadSetupIfMissing)
 }
 
 /**
@@ -932,6 +1023,11 @@ function focusStep(): void {
     code_expired: null,
     set_password: newPasswordInput,
     second_factor: codeInput,
+    second_factor_setup: codeInput,
+    // The three screens of a code that is not typed here have one control each.
+    second_factor_codes: null,
+    second_factor_reset: null,
+    second_factor_reset_requested: null,
     external: null,
     done: null,
   }[state.value.step]
@@ -996,7 +1092,13 @@ watch(ack, (value, previous) => {
 // News of a lost race reaches a tab whose socket merely BLINKED, not only one
 // that reloaded: resume() runs on mount and nowhere else (deliberately), so a
 // step arriving on a reconnect would otherwise sit in the session unread.
-watch(resumable, applyReportedStep)
+// The second-factor wait is followed as it happens (HIL-494): a sign-in held in
+// another tab brings this one to the code step, and a wait let go takes it back.
+// After the reasons, so a coded return is announced by the step it already made.
+watch(resumable, (step) => {
+  applyReportedStep(step)
+  auth.followReportedStep(step)
+})
 
 /**
  * Show the pending link the collision arm armed: pre-fill the colliding address
@@ -1027,9 +1129,11 @@ function applyTripOutcome(outcome: OAuthTripOutcome): void {
   if (auth.flow.get().step !== 'external') {
     return
   }
-  if (outcome.kind === 'signed_in') {
+  if (outcome.kind === 'signed_in' || outcome.kind === 'second_factor') {
     // The gate closes this surface on the upgrade; saying anything here would be
-    // saying it to a screen already on its way out (HIL-422).
+    // saying it to a screen already on its way out (HIL-422). A sign-in the
+    // second factor holds moves every tab to its code step through the session
+    // itself (HIL-494), and cancelling here would undo that move.
     return
   }
   if (outcome.kind === 'error') {
@@ -1119,6 +1223,7 @@ onMounted(() => {
   // this tab remembers, so a reload, a second tab and another device all resume
   // the same screen.
   auth.resume(resumable.value)
+  loadSetupIfMissing()
   // resume() moves the screen but says nothing about WHY it moved, and the why
   // is what the notice draws: without this a tab coming back by reload lands on
   // the identifier field, address filled in, with no word about what happened.
@@ -1854,6 +1959,288 @@ onUnmounted(() => {
         >
           Back
         </button>
+      </form>
+
+      <!-- The code of a sign-in held on its second factor (HIL-494): from the
+    app, or one of the backup codes — the person says which, and the field says
+    it back. The way off it for somebody with neither is the delayed removal,
+    which the step names instead once it is asked. -->
+      <form
+        v-else-if="state.step === 'second_factor'"
+        novalidate
+        @submit.prevent="submit()"
+      >
+        <p class="text-body-secondary small mb-3" data-id="auth-two-step-lead">
+          {{
+            form.usingBackupCode
+              ? 'Enter one of the backup codes you saved when you set up two-step verification.'
+              : 'Open your authenticator app and enter the code it shows.'
+          }}
+        </p>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="auth-code">{{
+            form.usingBackupCode ? 'Backup code' : 'Code'
+          }}</label>
+          <input
+            id="auth-code"
+            ref="codeInput"
+            type="text"
+            :inputmode="form.usingBackupCode ? 'text' : 'numeric'"
+            class="form-control"
+            autocomplete="one-time-code"
+            data-id="auth-code"
+            :value="form.code"
+            @input="updateCode($event)"
+          />
+        </div>
+        <div v-if="trustDeviceDays !== null" class="form-check mb-3">
+          <input
+            id="auth-trust-device"
+            class="form-check-input"
+            type="checkbox"
+            data-id="auth-trust-device"
+            :checked="form.trustDevice"
+            @change="updateTrustDevice($event)"
+          />
+          <label class="form-check-label small" for="auth-trust-device"
+            >Don't ask again on this device for
+            {{ trustDeviceDays }} days</label
+          >
+        </div>
+
+        <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+        <LoadingButton
+          type="submit"
+          class="btn-primary w-100 mb-2"
+          :loading="pending"
+          :disabled="!submittable"
+          data-id="auth-submit"
+        >
+          {{ submitLabel }}
+        </LoadingButton>
+        <button
+          type="button"
+          class="btn btn-link btn-sm w-100"
+          data-id="auth-backup-toggle"
+          @click="toggleBackupCode()"
+        >
+          {{ form.usingBackupCode ? 'Use the app code' : 'Use a backup code' }}
+        </button>
+        <p
+          v-if="resetDate !== null"
+          class="small text-body-secondary text-center my-2"
+          data-id="auth-reset-pending"
+        >
+          Removal requested, takes effect on {{ resetDate }}.
+        </p>
+        <button
+          v-else
+          type="button"
+          class="btn btn-link btn-sm w-100"
+          data-id="auth-reset-start"
+          @click="startSecondFactorReset()"
+        >
+          I can't use the app or any backup code
+        </button>
+        <button
+          type="button"
+          class="btn btn-link btn-sm w-100"
+          data-id="auth-restart"
+          @click="backToIdentifier()"
+        >
+          Back
+        </button>
+      </form>
+
+      <!-- Asking the delayed removal from the sign-in (HIL-494): what happens,
+    and that every message about it lets the owner cancel. -->
+      <form
+        v-else-if="state.step === 'second_factor_reset'"
+        novalidate
+        @submit.prevent="submit()"
+      >
+        <p class="small mb-2">
+          If you can use neither your authenticator app nor any backup code,
+          two-step verification can be removed from your account after a waiting
+          period.
+        </p>
+        <p class="text-body-secondary small mb-3">
+          We tell you at once and then every day, on every channel you have —
+          email, text message, push and the bell in the app — and each message
+          lets you cancel. Until then a code from your app or a backup code
+          still signs you in.
+        </p>
+
+        <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+        <LoadingButton
+          type="submit"
+          class="btn-danger w-100 mb-2"
+          :loading="pending"
+          :disabled="!submittable"
+          data-id="auth-submit"
+        >
+          {{ submitLabel }}
+        </LoadingButton>
+        <button
+          type="button"
+          class="btn btn-link btn-sm w-100"
+          data-id="auth-reset-back"
+          @click="backToSecondFactor()"
+        >
+          Back
+        </button>
+      </form>
+
+      <!-- The removal is asked, and the held sign-in let go with it: the date,
+    and the way back to the field. -->
+      <form
+        v-else-if="state.step === 'second_factor_reset_requested'"
+        novalidate
+        @submit.prevent="submit()"
+      >
+        <div
+          class="alert alert-warning small py-2"
+          data-id="auth-reset-requested"
+        >
+          Two-step verification will be removed on
+          <strong>{{ resetDate }}</strong
+          >.
+        </div>
+        <p class="text-body-secondary small mb-3">
+          We sent a notice to every channel you have. If this was not you,
+          follow the link in it to cancel.
+        </p>
+        <LoadingButton
+          type="submit"
+          class="btn-primary w-100"
+          :loading="pending"
+          :disabled="!submittable"
+          data-id="auth-submit"
+        >
+          {{ submitLabel }}
+        </LoadingButton>
+      </form>
+
+      <!-- The enrolment an administrator requires on the way in (HIL-494): the
+    QR code and its key as text, a name for the app, and its first code. -->
+      <form
+        v-else-if="state.step === 'second_factor_setup'"
+        novalidate
+        @submit.prevent="submit()"
+      >
+        <p class="small mb-3" data-id="auth-setup-lead">
+          Your administrator requires two-step verification. Scan this code with
+          an authenticator app, then enter the code the app shows.
+        </p>
+        <template v-if="setup !== null">
+          <HilosQrCode
+            :text="setup.otpauthUri"
+            label="QR code for your authenticator app"
+            class="mb-2"
+          />
+          <p class="small text-body-secondary text-center mb-1">
+            Can't scan it? Enter this key in the app:
+          </p>
+          <p
+            class="font-monospace small text-center text-break mb-3"
+            data-id="auth-setup-secret"
+          >
+            {{ setup.secret }}
+          </p>
+        </template>
+        <button
+          v-else
+          type="button"
+          class="btn btn-outline-secondary w-100 mb-3"
+          :disabled="pending"
+          data-id="auth-setup-load"
+          @click="loadSetup()"
+        >
+          Show the code to scan
+        </button>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="auth-setup-label"
+            >Name of this app</label
+          >
+          <input
+            id="auth-setup-label"
+            type="text"
+            class="form-control"
+            maxlength="64"
+            placeholder="Authenticator app"
+            data-id="auth-setup-label"
+            :value="form.secondFactorLabel"
+            @input="updateSecondFactorLabel($event)"
+          />
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="auth-code"
+            >Code</label
+          >
+          <input
+            id="auth-code"
+            ref="codeInput"
+            type="text"
+            inputmode="numeric"
+            class="form-control"
+            autocomplete="one-time-code"
+            data-id="auth-code"
+            :value="form.code"
+            @input="updateCode($event)"
+          />
+        </div>
+
+        <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+        <LoadingButton
+          type="submit"
+          class="btn-primary w-100 mb-2"
+          :loading="pending"
+          :disabled="!submittable || setup === null"
+          data-id="auth-submit"
+        >
+          {{ submitLabel }}
+        </LoadingButton>
+        <button
+          type="button"
+          class="btn btn-link btn-sm w-100"
+          data-id="auth-restart"
+          @click="backToIdentifier()"
+        >
+          Back
+        </button>
+      </form>
+
+      <!-- The backup codes of that enrolment, shown once: Continue lets the
+    person in, and waits for "I have saved these codes". -->
+      <form
+        v-else-if="state.step === 'second_factor_codes'"
+        novalidate
+        @submit.prevent="submit()"
+      >
+        <p class="small mb-3">
+          Keep these codes somewhere safe. Each one signs you in once if you
+          lose your authenticator app.
+        </p>
+        <HilosBackupCodes
+          :codes="backupCodes"
+          :saved="form.backupCodesSaved"
+          @update:saved="updateBackupCodesSaved"
+        />
+
+        <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+        <LoadingButton
+          type="submit"
+          class="btn-primary w-100"
+          :loading="pending"
+          :disabled="!submittable"
+          data-id="auth-submit"
+        >
+          {{ submitLabel }}
+        </LoadingButton>
       </form>
 
       <!-- Parked on a ceremony. A link waits on the inbox, everything else waits on

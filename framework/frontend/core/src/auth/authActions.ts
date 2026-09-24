@@ -56,13 +56,13 @@ import {
   type AuthFlowForm,
   type AuthFlowState,
   type AuthFlowSubmitOutcome,
-  type AuthIntent,
-  type AuthStep,
   type AuthSubmitAction,
   type IdentifierDetection,
 } from './authFlow.js'
+import { authFlowOutcomeOf, authFlowOutcomeSchema } from './authFlowReply.js'
 import {
   AUTH_ACTION_CANCEL_REGISTRATION,
+  AUTH_ACTION_CANCEL_SECOND_FACTOR,
   AUTH_ACTION_COMPLETE_PASSWORD_RESET,
   AUTH_ACTION_COMPLETE_REGISTRATION,
   AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
@@ -71,6 +71,7 @@ import {
   AUTH_ACTION_CONFIRM_PASSWORD_RESET,
   AUTH_ACTION_CONFIRM_PHONE_CODE,
   AUTH_ACTION_CONFIRM_REGISTER,
+  AUTH_ACTION_CONFIRM_SECOND_FACTOR,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_LOGIN,
@@ -79,6 +80,11 @@ import {
   AUTH_ACTION_REQUEST_PASSWORD_RESET,
   AUTH_ACTION_REQUEST_PHONE_CODE,
   AUTH_ACTION_REQUEST_REGISTER_CONFIRM,
+  AUTH_ACTION_SECOND_FACTOR_RESET_CANCEL_LINK,
+  AUTH_ACTION_SECOND_FACTOR_RESET_REQUEST,
+  AUTH_ACTION_SECOND_FACTOR_SETUP_CONFIRM,
+  AUTH_ACTION_SECOND_FACTOR_SETUP_FINISH,
+  AUTH_ACTION_SECOND_FACTOR_SETUP_START,
 } from './authProtocol.js'
 import { describeOAuthError, startOAuthLogin } from './oauthLogin.js'
 import { runPasskeyDiscoverableLogin } from './passkeyCeremony.js'
@@ -95,21 +101,6 @@ const CODE_SEND_CLOSING_STATES: readonly string[] = [
 
 /** What the server answers an order for a phone code with: the ticket of the send it opened. */
 const codeSendOrderReplySchema = z.object({ ticket: z.string() })
-
-/** The steps a backend reply or a converge may name (PHP `AuthFlowStep`). */
-const FLOW_STEPS: readonly AuthStep[] = [
-  'identifier',
-  'consent',
-  'code',
-  'code_expired',
-  'second_factor',
-  'set_password',
-  'external',
-  'done',
-]
-
-/** The intents a backend reply or a converge may name (PHP `AuthFlowIntent`). */
-const FLOW_INTENTS: readonly AuthIntent[] = ['login', 'register', 'recovery']
 
 /**
  * The live lookup reply (PHP `Hilos\Auth\Detection\IdentifierDetection`). The
@@ -132,30 +123,6 @@ const identifierDetectionSchema = z.object({
   // optional for the same reason.
   signInBlock: z.enum(['no_channel']).nullable(),
 })
-
-/**
- * A submit reply (PHP `Hilos\Auth\Flow\AuthFlowOutcome`), optional because most
- * of these actions answer with nothing at all: a sign-in upgrades the session
- * and the gate closes the surface off the current-user signal, and an action
- * that answered nothing is the success its ack already made it.
- *
- * `next` rides a FAILURE too, which is the shape's one load-bearing oddity: a
- * rejected submit on this surface usually moves (a taken address becomes a
- * sign-in, an expired hold goes back to the identifier field).
- */
-const authFlowOutcomeSchema = z
-  .object({
-    ok: z.boolean(),
-    next: z
-      .object({ step: z.string(), intent: z.string() })
-      .partial()
-      .optional(),
-    code: z.string().optional(),
-    message: z.string().optional(),
-    resendAt: z.number().optional(),
-    expiresAt: z.number().optional(),
-  })
-  .optional()
 
 /**
  * A code request's outcome, and the channel it is ABOUT.
@@ -228,6 +195,13 @@ export interface HilosAuthActions {
    */
   confirmMagicLink(email: string, token: string): Promise<AuthFlowSubmitOutcome>
   /**
+   * Relay the token of a second factor's "it was not me" link the
+   * /auth/second-factor/cancel route was opened with (HIL-494).
+   *
+   * @param token The one-time cancel token carried in the link.
+   */
+  cancelSecondFactorReset(token: string): Promise<AuthFlowSubmitOutcome>
+  /**
    * Watch for a channel reporting it cannot reach the number being typed.
    *
    * @param handler Called with the channel key that reported itself unreachable.
@@ -253,6 +227,7 @@ export function createAuthActions(context: HilosAuthContext): HilosAuthActions {
       runAuthMethod(context, key, form, signal),
     cancelRegistration: () => cancelRegistration(context),
     confirmMagicLink: (email, token) => confirmMagicLink(context, email, token),
+    cancelSecondFactorReset: (token) => cancelSecondFactorReset(context, token),
     subscribeCodeChannelUnavailable: (handler) =>
       subscribeCodeChannelUnavailable(context, handler),
   }
@@ -315,6 +290,15 @@ function submitAuthFlow(
   flow: AuthFlowState,
   form: AuthFlowForm,
 ): Promise<AuthFlowSubmitOutcome> {
+  // The two errands of a sign-in held on its second factor are named rather than
+  // read off the step (HIL-494): neither is what the screen SENDS, and the step
+  // they leave from says nothing about which one is meant.
+  if (action === 'second_factor_cancel') {
+    return dispatchFlow(context, AUTH_ACTION_CANCEL_SECOND_FACTOR, {})
+  }
+  if (action === 'second_factor_setup_start') {
+    return dispatchFlow(context, AUTH_ACTION_SECOND_FACTOR_SETUP_START, {})
+  }
   switch (flow.step) {
     case 'identifier':
       // A phone never submits a form from this step — picking its channel IS the
@@ -373,10 +357,31 @@ function submitAuthFlow(
       // the resume it was holding, and the surface closes.
       return dispatchFlow(context, AUTH_ACTION_DISMISS_SESSION_ACK, {})
     case 'second_factor':
+      // A code from the app or a backup code, told apart by the person rather
+      // than guessed from its shape (HIL-494): the server burns a backup code
+      // and checks an app code against every connected app, and one sentence
+      // answers both when it matches nothing.
+      return dispatchFlow(context, AUTH_ACTION_CONFIRM_SECOND_FACTOR, {
+        code: form.code,
+        backupCode: form.usingBackupCode,
+        trustDevice: form.trustDevice,
+      })
+    case 'second_factor_setup':
+      return dispatchFlow(context, AUTH_ACTION_SECOND_FACTOR_SETUP_CONFIRM, {
+        code: form.code,
+        label: form.secondFactorLabel,
+      })
+    case 'second_factor_codes':
+      // Continue under the backup codes is what lets the person in: the
+      // enrolment was confirmed a screen ago, the sign-in is still held.
+      return dispatchFlow(context, AUTH_ACTION_SECOND_FACTOR_SETUP_FINISH, {})
+    case 'second_factor_reset':
+      return dispatchFlow(context, AUTH_ACTION_SECOND_FACTOR_RESET_REQUEST, {})
+    case 'second_factor_reset_requested':
     case 'external':
-      // Neither screen has a form to send: two-step verification is HIL-68/494
-      // and no backend reply moves the flow there, and an external step is
-      // waiting on a ceremony, which cancels rather than submits.
+      // Neither screen has a form to send: the removal is asked already and its
+      // Continue is the machine's own move, and an external step is waiting on
+      // a ceremony, which cancels rather than submits.
       return Promise.resolve({ ok: false })
   }
 }
@@ -474,6 +479,32 @@ async function confirmMagicLink(
 }
 
 /**
+ * Relay the token of a second factor's "it was not me" link over the live
+ * connection for the /auth/second-factor/cancel route (HIL-494).
+ *
+ * No sign-in is involved and none results: the token alone names the removal, so
+ * the route works in a browser that never signed in. It loads cold from a click
+ * in an email client exactly as the magic-link route does, and waits for the
+ * connection for the same reason ({@link whenPageReady}). The answer is shown in
+ * place — `ok` is the removal canceled, a refusal is a link that no longer names
+ * one.
+ *
+ * @param context The project auth context the wire dispatches over.
+ * @param token The one-time cancel token carried in the link.
+ * @returns Whether the removal was canceled, with the reason when it was not.
+ */
+async function cancelSecondFactorReset(
+  context: HilosAuthContext,
+  token: string,
+): Promise<AuthFlowSubmitOutcome> {
+  await whenPageReady()
+
+  return dispatchFlow(context, AUTH_ACTION_SECOND_FACTOR_RESET_CANCEL_LINK, {
+    token,
+  })
+}
+
+/**
  * Watch for a channel reporting that it cannot reach the number being typed.
  *
  * A view concern, and deliberately not folded into the submit outcome: the surface
@@ -505,35 +536,6 @@ function subscribeCodeChannelUnavailable(
       handler(data.channel)
     }
   })
-}
-
-/**
- * Narrow a step/intent pair off the wire into the patch the machine merges, or
- * null when the step is one this build has no screen for.
- *
- * The one narrowing both inbound halves of the converge property go through: a
- * submit reply names where the flow goes next, and a converge signal names the
- * same thing for a session that submitted nothing. A server one deploy ahead may
- * name a step that does not exist here, and ignoring it is a better answer than
- * a surface stuck on a screen it cannot draw.
- *
- * @param step The step name off the wire.
- * @param intent The intent name off the wire, which may be absent.
- * @returns The patch to merge, or null when the step is unknown.
- */
-export function toFlowPatch(
-  step: unknown,
-  intent: unknown,
-): Partial<AuthFlowState> | null {
-  const known = FLOW_STEPS.find((candidate) => candidate === step)
-  if (known === undefined) {
-    return null
-  }
-  const knownIntent = FLOW_INTENTS.find((candidate) => candidate === intent)
-
-  return knownIntent === undefined
-    ? { step: known }
-    : { step: known, intent: knownIntent }
 }
 
 /**
@@ -896,28 +898,14 @@ async function startOAuthProvider(
 async function dispatchFlow(
   context: HilosAuthContext,
   action: string,
-  payload: Record<string, string>,
+  payload: Record<string, string | boolean>,
 ): Promise<AuthFlowSubmitOutcome> {
   try {
     const { reply } = await context.actions.dispatch(action, payload, {
       replySchema: authFlowOutcomeSchema,
     }).done
-    if (reply === undefined) {
-      return { ok: true }
-    }
-    const next = reply.next
 
-    return {
-      ok: reply.ok,
-      message: reply.message,
-      code: reply.code,
-      next:
-        next === undefined
-          ? undefined
-          : (toFlowPatch(next.step, next.intent) ?? undefined),
-      resendAt: reply.resendAt,
-      expiresAt: reply.expiresAt,
-    }
+    return authFlowOutcomeOf(reply)
   } catch (error) {
     return { ok: false, message: describeAuthError(error) }
   }

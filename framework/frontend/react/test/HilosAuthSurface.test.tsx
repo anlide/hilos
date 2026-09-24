@@ -1517,6 +1517,69 @@ describe('HilosAuthSurface', () => {
   })
 })
 
+describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  /** The handshake node of a held sign-in: the code step, naming nobody. */
+  const HELD_STEP = {
+    identifier: null,
+    kind: null,
+    intent: 'login',
+    step: 'second_factor',
+    channel: null,
+    expiresAt: Date.now() + 600000,
+    code: null,
+    secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+  }
+
+  it('draws the code step restored by the handshake and sends the code as chosen', async () => {
+    const { context, dispatched } = contextAnswering([PASSWORD_METHOD_KEY])
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-heading')?.textContent).toBe('Two-step verification')
+    expect(
+      document.querySelector('label[for="auth-trust-device"]')?.textContent,
+    ).toBe("Don't ask again on this device for 30 days")
+
+    fireEvent.click(byId('auth-backup-toggle') as Element)
+    await flush()
+    type('auth-code', 'abcde-fghjk')
+    fireEvent.click(byId('auth-trust-device') as Element)
+    await flush()
+    fireEvent.submit(byId('auth-code')?.closest('form') as Element)
+    await flush()
+
+    expect(dispatched.at(-1)).toEqual({
+      action: 'hilos_confirm_second_factor',
+      payload: { code: 'abcde-fghjk', backupCode: true, trustDevice: true },
+    })
+  })
+
+  it('follows the wait another tab reached, and lets it go on Back', async () => {
+    const { context, dispatched } = contextAnswering([PASSWORD_METHOD_KEY])
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    act(() => {
+      context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, HELD_STEP)
+    })
+    await flush()
+    expect(byId('auth-heading')?.textContent).toBe('Two-step verification')
+
+    fireEvent.click(byId('auth-restart') as Element)
+    await flush()
+
+    expect(dispatched.map((entry) => entry.action)).toContain(
+      'hilos_cancel_second_factor',
+    )
+    expect(byId('auth-identifier')).not.toBeNull()
+  })
+})
+
 describe('HilosAuthSurface in a browser that refuses cookies', () => {
   afterEach(() => {
     cleanup()

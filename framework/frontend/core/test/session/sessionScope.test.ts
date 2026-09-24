@@ -12,8 +12,10 @@ import {
   sessionCodeDelivery,
   sessionAuthMethods,
   sessionEnabledAuthMethods,
+  sessionSecondFactorPolicy,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
+  SIGNAL_SECOND_FACTOR_POLICY,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
@@ -412,6 +414,7 @@ describe('sessionScope', () => {
       channel: null,
       expiresAt: null,
       code: 'identifier_taken',
+      secondFactor: null,
     })
   })
 
@@ -480,6 +483,168 @@ describe('sessionScope', () => {
     })
 
     expect(step.get()).toBeNull()
+  })
+})
+
+describe('a sign-in held on its second factor (HIL-494)', () => {
+  it('reads the code step, naming nobody, with its moments put on the local scale', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(LOCAL_NOW)
+    try {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      const step = sessionPendingAuthStep(scopes)
+
+      connection.emitHandshakeResponse({
+        data: {
+          serverTimeMs: LOCAL_NOW + SERVER_DRIFT_MS,
+          pendingAuthStep: {
+            identifier: null,
+            kind: null,
+            intent: 'login',
+            step: 'second_factor',
+            channel: null,
+            expiresAt: LOCAL_NOW + SERVER_DRIFT_MS + 60_000,
+            code: null,
+            secondFactor: {
+              trustDeviceDays: 30,
+              resetEffectiveAt: LOCAL_NOW + SERVER_DRIFT_MS + 86_400_000,
+            },
+          },
+        },
+      })
+
+      expect(step.get()).toStrictEqual({
+        identifier: null,
+        kind: null,
+        intent: 'login',
+        step: 'second_factor',
+        channel: null,
+        expiresAt: LOCAL_NOW + 60_000,
+        code: null,
+        secondFactor: {
+          trustDeviceDays: 30,
+          resetEffectiveAt: LOCAL_NOW + 86_400_000,
+        },
+      })
+    } finally {
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
+  })
+
+  it('reads the enrolment on the way in, whose trust may be none', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const step = sessionPendingAuthStep(scopes)
+
+    connection.emitHandshakeResponse({
+      data: {
+        pendingAuthStep: {
+          identifier: null,
+          kind: null,
+          intent: 'login',
+          step: 'second_factor_setup',
+          channel: null,
+          expiresAt: 1_700_000_000_000,
+          code: null,
+          secondFactor: { trustDeviceDays: null, resetEffectiveAt: null },
+        },
+      },
+    })
+
+    expect(step.get()).toMatchObject({
+      step: 'second_factor_setup',
+      secondFactor: { trustDeviceDays: null, resetEffectiveAt: null },
+    })
+  })
+
+  it('drops a second-factor step that names somebody, counts to nothing or carries no data', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const step = sessionPendingAuthStep(scopes)
+    const node = {
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step: 'second_factor',
+      channel: null,
+      expiresAt: 1_700_000_000_000,
+      code: null,
+      secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+    }
+
+    for (const broken of [
+      { ...node, identifier: 'ada@b.com', kind: 'email' },
+      { ...node, expiresAt: null },
+      { ...node, secondFactor: null },
+      { ...node, secondFactor: { trustDeviceDays: 30 } },
+    ]) {
+      connection.emitHandshakeResponse({ data: { pendingAuthStep: broken } })
+      expect(step.get()).toBeNull()
+    }
+  })
+
+  it('reads the field a let-go wait sends a session to, with or without a reason', () => {
+    // Another tab stepped back, or the factor was switched off: news without a
+    // sentence, told apart from a lost race by naming nobody.
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const step = sessionPendingAuthStep(scopes)
+    const released = {
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: null,
+    }
+
+    connection.emitHandshakeResponse({ data: { pendingAuthStep: released } })
+    expect(step.get()).toStrictEqual({ ...released, secondFactor: null })
+
+    connection.emitHandshakeResponse({
+      data: {
+        pendingAuthStep: { ...released, code: 'second_factor_attempts' },
+      },
+    })
+    expect(step.get()).toMatchObject({
+      step: 'identifier',
+      identifier: null,
+      code: 'second_factor_attempts',
+    })
+  })
+
+  it('keeps the policy frame an administrator sends, and nothing before it', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const policy = sessionSecondFactorPolicy(scopes)
+    const frame = {
+      required: 'everyone',
+      trustDays: 0,
+      backupCodes: 12,
+      resetWaitDefaultDays: 8,
+      resetWaitMinDays: 2,
+      resetWaitMaxDays: 30,
+    }
+
+    expect(SESSION_SIGNAL_SCHEMAS[SIGNAL_SECOND_FACTOR_POLICY]).toBeDefined()
+    expect(policy.get()).toBeNull()
+
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, frame)
+    expect(policy.get()).toStrictEqual(frame)
+
+    const first = policy.get()
+    connection.emit(SIGNAL_SECOND_FACTOR_POLICY, { ...frame })
+    // Every frame is a new value: that is how a reader tells a frame newer
+    // than its answer from the one it was answered under.
+    expect(policy.get()).not.toBe(first)
   })
 })
 

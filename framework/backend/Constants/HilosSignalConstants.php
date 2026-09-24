@@ -15,9 +15,16 @@ use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
+use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
+use Hilos\Auth\SecondFactor\DTO\SecondFactorStateSignalData;
+use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
@@ -81,6 +88,9 @@ final class HilosSignalConstants
 
     /** Subscription signal for Hilos current-user profile page. */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE = 'subscription_page_hilos_profile';
+
+    /** Subscription signal for the profile's security page - the second factor (HIL-494). */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_SECURITY = 'subscription_page_hilos_profile_security';
 
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
@@ -452,6 +462,43 @@ final class HilosSignalConstants
      */
     public const string SECURITY_SIGN_IN_METHOD_SET = 'security_sign_in_method_set';
 
+    // ── Hilos security admin: two-factor settings action (client → server, HIL-494) ──
+    /**
+     * Client → server: write one of the six second-factor settings.
+     *
+     * Owned by the two-factor page, which narrows the write to its own keys and asks the
+     * settings library to store it; the setting's rule answers a refusal in the dialog.
+     */
+    public const string SECURITY_2FA_SETTING_SET = 'security_2fa_setting_set';
+
+    // ── Hilos profile: second factor (client → server, signed in, HIL-494) ──
+    /**
+     * Client → server: start connecting an authenticator app. A further app is proven by a code
+     * from one connected or a backup code; the answer hands the secret out once.
+     */
+    public const string PROFILE_SECOND_FACTOR_ENROLL_START = 'profile_second_factor_enroll_start';
+
+    /** Client → server: the first code of the app being connected, and its name; the first app issues backup codes. */
+    public const string PROFILE_SECOND_FACTOR_ENROLL_CONFIRM = 'profile_second_factor_enroll_confirm';
+
+    /** Client → server: disconnect an app, proven by a code; the last one takes the whole factor with it. */
+    public const string PROFILE_SECOND_FACTOR_REMOVE = 'profile_second_factor_remove';
+
+    /** Client → server: show the backup codes, proven by a code. */
+    public const string PROFILE_SECOND_FACTOR_CODES_SHOW = 'profile_second_factor_codes_show';
+
+    /** Client → server: issue a new set of backup codes, proven by a code; the old set dies. */
+    public const string PROFILE_SECOND_FACTOR_CODES_RENEW = 'profile_second_factor_codes_renew';
+
+    /** Client → server: choose the removal wait; longer applies at once, shorter after the wait in force. */
+    public const string PROFILE_SECOND_FACTOR_RESET_WAIT_SET = 'profile_second_factor_reset_wait_set';
+
+    /** Client → server: ask the delayed removal of the second factor. */
+    public const string PROFILE_SECOND_FACTOR_RESET_REQUEST = 'profile_second_factor_reset_request';
+
+    /** Client → server: cancel the removal that stands. */
+    public const string PROFILE_SECOND_FACTOR_RESET_CANCEL = 'profile_second_factor_reset_cancel';
+
     // ── Hilos logs admin: viewer page actions (client → server) ──
     /**
      * Client → server: read one page of lines from one log file (HIL-757).
@@ -744,6 +791,31 @@ final class HilosSignalConstants
     /** Client → server: submit a WebAuthn registration attestation to store a new passkey (authenticated, HIL-284). */
     public const string HILOS_PASSKEY_REGISTER_CONFIRM = 'hilos_passkey_register_confirm';
 
+    // ── Hilos sign-in surface: second factor (client → server, HIL-494) ──
+    /**
+     * Client → server: the code of a sign-in held on its second factor - from an authenticator
+     * app or a backup code - with the choice to trust this browser (anonymous-reachable, throttled).
+     */
+    public const string HILOS_CONFIRM_SECOND_FACTOR = 'hilos_confirm_second_factor';
+
+    /** Client → server: go back from a second-factor screen and sign in another way (anonymous-reachable). */
+    public const string HILOS_CANCEL_SECOND_FACTOR = 'hilos_cancel_second_factor';
+
+    /** Client → server: a fresh secret for the enrolment an administrator requires on the way in. */
+    public const string HILOS_SECOND_FACTOR_SETUP_START = 'hilos_second_factor_setup_start';
+
+    /** Client → server: the first code of that enrolment and the name of the app (throttled). */
+    public const string HILOS_SECOND_FACTOR_SETUP_CONFIRM = 'hilos_second_factor_setup_confirm';
+
+    /** Client → server: the Continue under the backup codes of that enrolment - let the person in. */
+    public const string HILOS_SECOND_FACTOR_SETUP_FINISH = 'hilos_second_factor_setup_finish';
+
+    /** Client → server: ask the delayed removal of the second factor from the code step. */
+    public const string HILOS_SECOND_FACTOR_RESET_REQUEST = 'hilos_second_factor_reset_request';
+
+    /** Client → server: the "it was not me" link of a delayed removal, without signing in (throttled). */
+    public const string HILOS_SECOND_FACTOR_RESET_CANCEL_LINK = 'hilos_second_factor_reset_cancel_link';
+
     // ── Hilos profile: OAuth account linking (client → server) ──
     /** Client → server: begin linking an OAuth provider to the signed-in account (authenticated, HIL-401). */
     public const string HILOS_LINK_OAUTH_START = 'hilos_link_oauth_start';
@@ -930,6 +1002,37 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_PASSWORD_CHANGED = 'hilos_auth_password_changed';
 
     /**
+     * Users library → the session holder: a wrong second-factor code, count it (HIL-494).
+     *
+     * The count lives on the session row; at the ceiling the holder lets the wait go and sends
+     * the browser's tabs back to the address field. Carried by {@see AuthSecondFactorMissedSignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_MISSED = 'hilos_auth_second_factor_missed';
+
+    /**
+     * Users library → the session holder: the enrolment on the way in is confirmed (HIL-494).
+     *
+     * Moves the wait to its last screen, so a reload serves the code step rather than a second
+     * enrolment. Carried by {@see AuthSecondFactorSetupProvenSignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN = 'hilos_auth_second_factor_setup_proven';
+
+    /**
+     * Users library → the session holder: this person's second factor is gone (HIL-494).
+     *
+     * Drops the browsers trusted to skip the step and lets every sign-in of the person still
+     * waiting on a code go. Carried by {@see AuthSecondFactorOffSignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_OFF = 'hilos_auth_second_factor_off';
+
+    /**
+     * Users library → the session holder: let this browser's second-factor wait go, and answer (HIL-494).
+     *
+     * Carried by {@see AuthSecondFactorCancelSignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_CANCEL = 'hilos_auth_second_factor_cancel';
+
+    /**
      * Users library → the session holder: this browser canceled its registration.
      *
      * Drops the pending registration of the session and the waits standing on it. The
@@ -965,6 +1068,22 @@ final class HilosSignalConstants
      * that opens later.
      */
     public const string HILOS_AUTH_METHODS = 'hilos_auth_methods';
+
+    /**
+     * Server → client (WS_GROUP): the profile's second-factor section of one person, whole (HIL-494).
+     *
+     * Fanned to the person's {@see SecondFactorGroup} after every write to their second factor,
+     * from whichever process made it. Carried by {@see SecondFactorStateSignalData}.
+     */
+    public const string HILOS_SECOND_FACTOR_STATE = 'hilos_second_factor_state';
+
+    /**
+     * Server → client (all connected): the administrator's second-factor settings changed (HIL-494).
+     *
+     * Sent by the settings library after a write that moved them, so the profile section and the
+     * code step redraw their bounds, note and checkbox. Carried by {@see SecondFactorPolicySignalData}.
+     */
+    public const string HILOS_SECOND_FACTOR_POLICY = 'hilos_second_factor_policy';
 
     /**
      * Sessions library → every tab of one browser session: this is how the code is travelling
@@ -1265,6 +1384,13 @@ final class HilosSignalConstants
      * A name of that page's own for the same reason as {@see HILOS_CHANNEL_SETTING_WRITE_DONE}.
      */
     public const string HILOS_SIGN_IN_METHODS_WRITE_DONE = 'hilos_sign_in_methods_write_done';
+
+    /**
+     * Settings library → the two-factor admin page: the setting write it asked for is done (HIL-494).
+     *
+     * Carried by {@see HandoverAnswerSignalData}, like the other admin screens' write answers.
+     */
+    public const string HILOS_SECOND_FACTOR_SETTING_WRITE_DONE = 'hilos_second_factor_setting_write_done';
 
     /**
      * The settings library → the log modes screen: your preset is applied, or refused (HIL-946).

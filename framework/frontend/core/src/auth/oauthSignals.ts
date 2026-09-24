@@ -53,6 +53,14 @@ export const OAUTH_REASON_LINK_DUPLICATE = 'oauth_link_duplicate'
 export const OAUTH_REASON_LINK_FAILED = 'oauth_link_failed'
 
 /**
+ * `reason` marking a sign-in the provider proved and the second factor holds
+ * (PHP `OAuthResultSignalData::REASON_SECOND_FACTOR`, HIL-494). The session did
+ * not rise: every tab of it was moved to the code step instead, by the session
+ * itself, so the trip ends here with nothing left to say.
+ */
+export const OAUTH_REASON_SECOND_FACTOR = 'second_factor'
+
+/**
  * The authorize-reply payload: the absolute provider URL to navigate to, and the
  * `tripId` the start named, echoed back so the reaction can tell an answer to the
  * trip it is running from a late answer to one it abandoned (HIL-707). The

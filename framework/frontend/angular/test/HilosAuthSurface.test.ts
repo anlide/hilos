@@ -702,6 +702,53 @@ describe('HilosAuthSurface', () => {
   })
 })
 
+describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', () => {
+  it('draws the code step restored by the handshake, and follows its release', async () => {
+    const world = surfaceWorld()
+    world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step: 'second_factor',
+      channel: null,
+      expiresAt: Date.now() + 600000,
+      code: null,
+      secondFactor: { trustDeviceDays: 30, resetEffectiveAt: null },
+    })
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-heading')?.textContent?.trim()).toBe(
+      'Two-step verification',
+    )
+    expect(
+      (fixture.nativeElement as HTMLElement)
+        .querySelector('label[for="auth-trust-device"]')
+        ?.textContent?.trim(),
+    ).toBe("Don't ask again on this device for 30 days")
+    ;(byId(fixture, 'auth-backup-toggle') as HTMLButtonElement).click()
+    await flush(fixture)
+    expect(
+      (fixture.nativeElement as HTMLElement)
+        .querySelector('label[for="auth-code"]')
+        ?.textContent?.trim(),
+    ).toBe('Backup code')
+
+    world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      identifier: null,
+      kind: null,
+      intent: 'login',
+      step: 'identifier',
+      channel: null,
+      expiresAt: null,
+      code: null,
+    })
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-identifier')).not.toBeNull()
+  })
+})
+
 describe('HilosAuthSurface in a browser that refuses cookies', () => {
   afterEach(() => {
     vi.restoreAllMocks()

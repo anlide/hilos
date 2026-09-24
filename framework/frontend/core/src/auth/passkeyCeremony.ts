@@ -19,6 +19,7 @@ import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { type HilosAuthContext } from './authContext.js'
 import { type AuthFlowSubmitOutcome } from './authFlow.js'
+import { authFlowOutcomeOf, authFlowOutcomeSchema } from './authFlowReply.js'
 import {
   AUTH_ACTION_PASSKEY_DISCOVERABLE_LOGIN_OPTIONS,
   AUTH_ACTION_PASSKEY_LOGIN_CONFIRM,
@@ -158,8 +159,10 @@ function requestOptions(
  * browser show the OS discoverable-passkey picker, and confirm — handing back the
  * assertion's user handle so the server resolves the account (the login named
  * none). Resolves `ok` on the confirm ack; the session upgrade (HIL-161) then
- * closes the surface through the auth gate, so no next mode. A canceled picker
- * makes no server call (getPasskey rejects before confirm).
+ * closes the surface through the auth gate, so no next mode — unless the sign-in
+ * is held on its second factor (HIL-494), and then the confirm is answered with
+ * the step it waits on, which this hands on as it came. A canceled picker makes
+ * no server call (getPasskey rejects before confirm).
  *
  * Cancelling (HIL-418) reaches every stage: the options wait, the OS picker, and
  * the confirm. A signature that races the abort and lands anyway is DROPPED —
@@ -196,16 +199,20 @@ export async function runPasskeyDiscoverableLogin(
     // The authenticator can still answer between the abort and this line; the
     // confirm is the point of no return, so it is the last place to check.
     abort?.throwIfAborted()
-    await context.actions.dispatch(AUTH_ACTION_PASSKEY_LOGIN_CONFIRM, {
-      signedChallenge: options.signedChallenge,
-      credentialId: assertion.credentialId,
-      authenticatorData: assertion.authenticatorData,
-      clientDataJson: assertion.clientDataJson,
-      signature: assertion.signature,
-      userHandle: assertion.userHandle ?? '',
-    }).done
+    const { reply } = await context.actions.dispatch(
+      AUTH_ACTION_PASSKEY_LOGIN_CONFIRM,
+      {
+        signedChallenge: options.signedChallenge,
+        credentialId: assertion.credentialId,
+        authenticatorData: assertion.authenticatorData,
+        clientDataJson: assertion.clientDataJson,
+        signature: assertion.signature,
+        userHandle: assertion.userHandle ?? '',
+      },
+      { replySchema: authFlowOutcomeSchema },
+    ).done
 
-    return { ok: true }
+    return authFlowOutcomeOf(reply)
   } catch (error) {
     return {
       ok: false,

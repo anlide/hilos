@@ -286,7 +286,7 @@ async function submitDelete(): Promise<void> {
   <HilosAdminPage :page="HilosPages.SETTINGS">
     <HilosViewportTable :controller="settingsTable">
       <template #cell-key="{ row }">
-        <code>{{ row.key }}</code>
+        <code class="text-break">{{ row.key }}</code>
       </template>
       <template #cell-value="{ row }">
         <div style="max-width: 18rem">
@@ -456,7 +456,7 @@ async function submitDelete(): Promise<void> {
         the catalog.
       </p>
       <p v-if="deleteRow" class="mb-0 mt-2">
-        <code>{{ deleteRow.key }}</code>
+        <code class="text-break">{{ deleteRow.key }}</code>
       </p>
       <p
         v-if="deleteGone"

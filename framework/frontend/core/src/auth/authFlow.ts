@@ -47,6 +47,7 @@ import { toLocal } from '../session/serverClock.js'
 import {
   type AuthMethodEntry,
   type PendingAuthStep,
+  type SecondFactorPolicy,
 } from '../session/sessionScope.js'
 import {
   computedSignal,
@@ -70,11 +71,17 @@ export type IdentifierKind = 'email' | 'phone' | 'unknown'
  * collects a one-time code (identifier confirmation, phone sign-in, recovery);
  * `code_expired` is that same screen after its countdown ran out — the field is
  * gone and one button offers a new code (HIL-828), a step of its own rather
- * than a flag because a step IS a screen here; `second_factor` is the two-step
- * verification code after a successful credential and before the session
- * upgrade (contract here, mechanism HIL-494); `set_password` chooses a new
+ * than a flag because a step IS a screen here; `set_password` chooses a new
  * password (recovery); `external` parks while an icon method's ceremony runs
  * (HIL-418/419); `done` is a real terminal screen with a Continue action.
+ *
+ * The five `second_factor*` steps are the sign-in held on its second factor
+ * after the credential proved the person (HIL-494). `second_factor` asks the
+ * code from an authenticator app or a backup code; `second_factor_reset` is the
+ * screen that asks the delayed removal of the factor from there, and
+ * `second_factor_reset_requested` the one that names its date afterwards.
+ * `second_factor_setup` is the enrolment an administrator requires on the way
+ * in, and `second_factor_codes` the backup codes it ends on.
  */
 export type AuthStep =
   | 'identifier'
@@ -82,6 +89,10 @@ export type AuthStep =
   | 'code'
   | 'code_expired'
   | 'second_factor'
+  | 'second_factor_setup'
+  | 'second_factor_codes'
+  | 'second_factor_reset'
+  | 'second_factor_reset_requested'
   | 'set_password'
   | 'external'
   | 'done'
@@ -138,7 +149,7 @@ export interface AuthFlowForm {
   readonly identifier: string
   /** Password — revealed inside the `identifier` step by the detection reply. */
   readonly password: string
-  /** One-time code — the `code` and `second_factor` steps. */
+  /** One-time code — the `code`, `second_factor` and `second_factor_setup` steps. */
   readonly code: string
   /** New password — the `set_password` step. */
   readonly newPassword: string
@@ -148,6 +159,16 @@ export interface AuthFlowForm {
   readonly usingBackupCode: boolean
   /** "Don't ask again on this device" on the `second_factor` step. */
   readonly trustDevice: boolean
+  /**
+   * The name the person gives the authenticator app they connect on the
+   * `second_factor_setup` step; empty leaves the naming to the server.
+   */
+  readonly secondFactorLabel: string
+  /**
+   * "I have saved these codes" on the `second_factor_codes` step — the one gate
+   * of its Continue, so the codes cannot be flashed past once and lost.
+   */
+  readonly backupCodesSaved: boolean
 }
 
 /** A form field name, for the view's per-field update calls. */
@@ -307,6 +328,43 @@ export interface AuthFlowError {
 }
 
 /**
+ * The secret of an enrolment just started on the way in, answered exactly once
+ * (HIL-494): the QR code is drawn from `otpauthUri`, and `secret` is printed
+ * under it for the app that cannot scan.
+ */
+export interface SecondFactorSetup {
+  /** The base32 secret, for typing into the app by hand. */
+  readonly secret: string
+  /** The `otpauth://` address the QR code carries. */
+  readonly otpauthUri: string
+}
+
+/**
+ * What the second-factor screens need beyond their step (PHP
+ * `SecondFactorStepData`, HIL-494). The code step reads the first two members;
+ * the enrolment on the way in reads the other two, each answered once and kept
+ * nowhere a reload reads — the codes stay reachable from the profile.
+ */
+export interface SecondFactorStepData {
+  /**
+   * How many days "don't ask again on this device" promises, or `null` when
+   * the administrator offers no trust and the checkbox is not drawn.
+   */
+  readonly trustDeviceDays: number | null
+  /**
+   * The moment a removal of the factor that is already asked for takes effect,
+   * or `null` when none is. The step says so instead of offering to ask again.
+   * A SERVER moment on the wire and in {@link AuthFlowSubmitOutcome}, a LOCAL
+   * one in {@link AuthFlow.secondFactor}, like every other moment here.
+   */
+  readonly resetEffectiveAt: number | null
+  /** The secret of an enrolment just started; absent everywhere else. */
+  readonly setup?: SecondFactorSetup
+  /** The backup codes an enrolment just issued, in display form; absent everywhere else. */
+  readonly backupCodes?: readonly string[]
+}
+
+/**
  * The outcome a delegated dispatch reports back. On failure `message`/`code`
  * surface inline (auth deliberately shows the backend reason). `next` is a
  * PARTIAL flow state merged over the current one whatever `ok` says — the
@@ -337,6 +395,12 @@ export interface AuthFlowSubmitOutcome {
    * (HIL-486).
    */
   readonly expiresAt?: number
+  /**
+   * What the second-factor screen the outcome leaves on needs (HIL-494), or
+   * absent when it leaves on none. It replaces what the surface held, whole:
+   * each answer carries everything its screen reads.
+   */
+  readonly secondFactor?: SecondFactorStepData
 }
 
 /**
@@ -374,14 +438,30 @@ export type AuthFlowScreen =
   | 'choose_password'
   | 'set_first_password'
   | 'two_step'
+  | 'two_step_setup'
+  | 'two_step_codes'
+  | 'two_step_reset'
+  | 'two_step_reset_requested'
   | 'waiting_external'
   | 'check_inbox'
   | 'done_registered'
   | 'done_password_changed'
   | 'done_signed_in'
 
-/** What a submit dispatch is: the step's form, or a code re-send. */
-export type AuthSubmitAction = 'submit' | 'resend' | 'finish_without_password'
+/**
+ * What a submit dispatch is: the step's form, a code re-send, the way past the
+ * password, or one of the two errands of a sign-in held on its second factor
+ * (HIL-494) — asking the server for the secret of the enrolment on the way in,
+ * and letting the held sign-in go when the person steps back from it. What a
+ * second-factor screen SENDS is its submit, told apart by the step like every
+ * other screen's.
+ */
+export type AuthSubmitAction =
+  | 'submit'
+  | 'resend'
+  | 'finish_without_password'
+  | 'second_factor_setup_start'
+  | 'second_factor_cancel'
 
 /** Wiring for {@link createAuthFlow}. */
 export interface AuthFlowOptions {
@@ -443,6 +523,14 @@ export interface AuthFlowOptions {
     form: AuthFlowForm,
     signal: AbortSignal,
   ) => Promise<AuthFlowSubmitOutcome>
+  /**
+   * The administrator's second-factor settings as the last policy frame said
+   * them (HIL-494) — what {@link sessionSecondFactorPolicy} answers. A frame
+   * newer than the answer that opened a second-factor screen wins over it, so
+   * a change of the trust days reaches a code step already on show. Absent, the
+   * screen keeps what its answer named.
+   */
+  secondFactorPolicy?: ReadonlySignal<SecondFactorPolicy | null>
   /** Detection debounce in ms; defaults to {@link DEFAULT_DETECT_DEBOUNCE_MS}. */
   detectDebounceMs?: number
   /**
@@ -513,6 +601,13 @@ export interface AuthFlow {
    */
   readonly expiresAt: ReadonlySignal<number | null>
   /**
+   * What the second-factor screen on show needs (HIL-494), or `null` on every
+   * other step. Filled by the answers that lead to such a screen and by a
+   * restored or followed step, and emptied the moment the flow leaves them —
+   * a backup code or a secret must not outlive the screen it was shown on.
+   */
+  readonly secondFactor: ReadonlySignal<SecondFactorStepData | null>
+  /**
    * Restore the step a session left unfinished, as the handshake reports it
    * (HIL-486, HIL-648). Parks the flow on the screen the node NAMES, with the
    * identifier back in the form, so a reload, a second tab and another device
@@ -532,10 +627,37 @@ export interface AuthFlow {
    * they are doing. A step is only ever taken AWAY by the server saying so
    * (the converge signal), never by a handshake that had nothing to say.
    *
+   * A sign-in held on its second factor names no identifier (HIL-494): the
+   * person is known to the server, and the screen asks for nothing about them.
+   * The field keeps whatever it holds, and the step's own data comes along.
+   *
    * @param pending The unfinished auth step, or `null` when the session stands
    *   on none.
    */
   resume(pending: PendingAuthStep | null): void
+  /**
+   * Follow a step the session was moved to while this surface is OPEN, when
+   * that step is the second-factor wait's (HIL-494) — the one kind of move the
+   * session reports to every tab as it happens, rather than only at the next
+   * handshake.
+   *
+   * Every tab of a browser stands where the wait stands: a sign-in held on its
+   * factor takes all of them to the code step, and a wait let go — another tab
+   * stepped back, the factor was switched off, the attempts ran out — takes
+   * them all back to the field. Anything else the session reports is left to
+   * {@link resume} and to the reasons a surface already reads, because
+   * rebuilding a registration screen under somebody's hands is the defect
+   * {@link resume} is careful about.
+   *
+   * Nothing moves while a dispatch of this surface is in flight: the answer to
+   * it is behind the report and names where to go, and following the report
+   * first would flash the screen it is about to leave. A report of the screen
+   * already on show only brings its data up to date — the typed code and the
+   * secret on screen stay.
+   *
+   * @param pending The step the session reports, or `null` when it stands on none.
+   */
+  followReportedStep(pending: PendingAuthStep | null): void
   /**
    * Put the server's reported send step on the code screen, or take the line
    * away with `null` (HIL-826).
@@ -636,8 +758,38 @@ export interface AuthFlow {
    * The field is re-looked-up on arrival, so the screen that greets them states
    * what the address is NOW rather than what it was before they left; the answer
    * never moves the step, because the return itself was the choice (HIL-651).
+   *
+   * From a sign-in held on its second factor this is "sign in another way"
+   * (HIL-494), and the server is told to let the held sign-in go — otherwise the
+   * next handshake would put the person back on its code. It is told and not
+   * waited for: the person is already on the field, and a failure to forget the
+   * wait is nothing they can act on.
    */
   backToIdentifier(): void
+  /**
+   * Open the screen that asks the delayed removal of the second factor — the
+   * "I can't use the app or any backup code" way off the code step (HIL-494). A
+   * purely LOCAL move: nothing is asked of the server until that screen
+   * submits. A no-op anywhere but on the code step.
+   */
+  startSecondFactorReset(): void
+  /**
+   * Go back from the removal screen to the code step, asking nothing (HIL-494).
+   * A no-op anywhere but on the removal screen.
+   */
+  backToSecondFactor(): void
+  /**
+   * Ask the server for the secret of the enrolment an administrator requires on
+   * the way in (HIL-494). The answer fills {@link secondFactor} with the QR
+   * address and the secret, and each call REPLACES the previous secret — an
+   * enrolment has one secret at a time. A no-op anywhere but on the enrolment
+   * step, and while pending.
+   *
+   * The machine does not call it on arrival: a tab that follows another tab
+   * onto this step must not replace the secret the person is scanning there,
+   * and only the surface knows which of the two is in front of them.
+   */
+  loadSecondFactorSetup(): Promise<void>
   /**
    * Go back to the code of a registration this browser already started — the
    * `resume_code` primary action of the `held_identifier` screen. A purely LOCAL
@@ -758,6 +910,55 @@ const EMPTY_FORM: AuthFlowForm = {
   consentAccepted: false,
   usingBackupCode: false,
   trustDevice: false,
+  secondFactorLabel: '',
+  backupCodesSaved: false,
+}
+
+/**
+ * The steps of a sign-in held on its second factor (HIL-494) — every screen
+ * {@link AuthFlow.secondFactor} is kept for, and the only ones it is.
+ */
+const SECOND_FACTOR_STEPS: readonly AuthStep[] = [
+  'second_factor',
+  'second_factor_setup',
+  'second_factor_codes',
+  'second_factor_reset',
+  'second_factor_reset_requested',
+]
+
+/**
+ * The second-factor steps on which the server still holds the sign-in, so that
+ * stepping back from one lets the hold go. The screen that names the date of a
+ * requested removal is not one of them: asking the removal already let it go.
+ */
+const SECOND_FACTOR_WAIT_STEPS: readonly AuthStep[] = [
+  'second_factor',
+  'second_factor_setup',
+  'second_factor_codes',
+  'second_factor_reset',
+]
+
+/**
+ * Whether a step is one of the second-factor screens.
+ *
+ * @param step The step to ask about.
+ */
+function isSecondFactorStep(step: AuthStep): boolean {
+  return SECOND_FACTOR_STEPS.includes(step)
+}
+
+/**
+ * The step data as the machine keeps it — with its moment put on this
+ * browser's scale, as every server moment is on the way in.
+ *
+ * @param data The step data off the wire.
+ */
+function localSecondFactor(data: SecondFactorStepData): SecondFactorStepData {
+  return {
+    ...data,
+    resetEffectiveAt:
+      data.resetEffectiveAt === null ? null : toLocal(data.resetEffectiveAt),
+  }
 }
 
 /** The detection signal before or without a lookup. */
@@ -1128,7 +1329,9 @@ export function applicableChannels(
  * goes through its method's ceremony rather than submit, and a `proven` address
  * offers its primary action instead — all three mirrored by the primary action.
  * `external` and `code_expired` are never submittable (the second has no field
- * left to fill); `done` always is (its Continue).
+ * left to fill); `done` always is (its Continue), and so are the two removal
+ * screens of the second factor, whose one control is their button. The backup
+ * codes screen waits for "I have saved these codes".
  *
  * @param flow The current flow state.
  * @param form The current form values.
@@ -1170,7 +1373,15 @@ export function isFlowSubmittable(
       return form.consentAccepted
     case 'code':
     case 'second_factor':
+    case 'second_factor_setup':
       return form.code.trim() !== ''
+    case 'second_factor_codes':
+      // The codes cannot be flashed past once and lost (HIL-494): Continue
+      // waits for the person to say they are kept somewhere.
+      return form.backupCodesSaved
+    case 'second_factor_reset':
+    case 'second_factor_reset_requested':
+      return true
     case 'code_expired':
       // The screen has no field at all (HIL-828): its one control is the button
       // that orders a new code, and that is not a submit of this step.
@@ -1257,6 +1468,14 @@ export function screenKeyOf(
         : CODE_SCREENS[flow.intent]
     case 'second_factor':
       return 'two_step'
+    case 'second_factor_setup':
+      return 'two_step_setup'
+    case 'second_factor_codes':
+      return 'two_step_codes'
+    case 'second_factor_reset':
+      return 'two_step_reset'
+    case 'second_factor_reset_requested':
+      return 'two_step_reset_requested'
     case 'set_password':
       return flow.intent === 'register'
         ? 'set_first_password'
@@ -1330,6 +1549,27 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   const error = createSignal<AuthFlowError | null>(null)
   const resendAvailableAt = createSignal<number | null>(null)
   const expiresAt = createSignal<number | null>(null)
+  // What the second-factor screen was answered, with the policy frame that stood
+  // when it was: a frame that arrives LATER is news the answer did not know.
+  const heldSecondFactor = createSignal<{
+    readonly data: SecondFactorStepData
+    readonly policy: SecondFactorPolicy | null
+  } | null>(null)
+  const secondFactor = computedSignal<SecondFactorStepData | null>(() => {
+    const held = heldSecondFactor.get()
+    if (held === null) {
+      return null
+    }
+    const policy = options.secondFactorPolicy?.get() ?? null
+    if (policy === null || policy === held.policy) {
+      return held.data
+    }
+
+    return {
+      ...held.data,
+      trustDeviceDays: policy.trustDays > 0 ? policy.trustDays : null,
+    }
+  })
   const submittable = computedSignal(() =>
     isFlowSubmittable(flow.get(), form.get(), detection.get()),
   )
@@ -1652,10 +1892,122 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * @param next The partial flow state to merge.
    */
   function mergeNext(next: Partial<AuthFlowState>): void {
+    const from = flow.get().step
     flow.set({ ...flow.get(), ...next })
+    if (next.step !== undefined) {
+      arriveAt(next.step, from)
+    }
     if (next.step === 'identifier') {
       refreshDetect()
     }
+  }
+
+  /**
+   * Keep what a second-factor screen was answered, beside the policy frame that
+   * stood at that moment.
+   *
+   * @param data The step data, its moment already local, or `null` to drop it.
+   */
+  function holdSecondFactor(data: SecondFactorStepData | null): void {
+    heldSecondFactor.set(
+      data === null
+        ? null
+        : { data, policy: options.secondFactorPolicy?.get() ?? null },
+    )
+  }
+
+  /**
+   * Settle what the second factor's screens keep as the flow arrives on a step
+   * (HIL-494).
+   *
+   * Leaving them drops their data: a secret or a backup code must not outlive
+   * the screen it was shown on. Entering one from another step empties the code
+   * field and the two checkboxes of the codes: a code typed for another
+   * challenge — the phone code that proved the person a moment ago — would make
+   * the new screen submittable before anything was typed, the reason
+   * {@link AuthFlow.startRecovery} clears it too.
+   *
+   * @param step The step the flow arrives on.
+   * @param from The step it leaves.
+   */
+  function arriveAt(step: AuthStep, from: AuthStep): void {
+    if (!isSecondFactorStep(step)) {
+      holdSecondFactor(null)
+
+      return
+    }
+    if (step !== from) {
+      form.set({
+        ...form.get(),
+        code: '',
+        usingBackupCode: false,
+        backupCodesSaved: false,
+      })
+    }
+  }
+
+  /**
+   * Put the flow on the step a session reports, with the identifier and the
+   * step's own data it names — the one body behind {@link AuthFlow.resume} and
+   * the move {@link AuthFlow.followReportedStep} makes.
+   *
+   * @param pending The reported step.
+   */
+  function restore(pending: PendingAuthStep): void {
+    const previous = flow.get()
+    flow.set({
+      ...previous,
+      step: pending.step,
+      intent: pending.intent,
+      methodKey: null,
+      // A second-factor step names nobody (HIL-494): the field keeps what it
+      // holds, and so does the classification of it.
+      identifierKind: pending.kind ?? previous.identifierKind,
+      channelKey: pending.channel,
+    })
+    if (pending.identifier !== null) {
+      form.set({ ...form.get(), identifier: pending.identifier })
+    }
+    arriveAt(pending.step, previous.step)
+    if (isSecondFactorStep(pending.step)) {
+      holdSecondFactor(pending.secondFactor)
+    }
+    expiresAt.set(pending.expiresAt)
+    // A code that died while the tab was closed flips at once (HIL-828), which
+    // is the whole of what a past moment means here. A step carrying NO moment
+    // arms nothing and leaves no countdown behind it (HIL-833): the identifier
+    // step a lost race sends a session back to stands on no code, and a timer
+    // left running there would expire a screen that is not counting.
+    armExpiry(pending.expiresAt)
+    // The lost race and a let-go second factor are the handshake steps naming
+    // the identifier field (lostRegistrationStepFor(), secondFactorGoneStep());
+    // unlike an ordinary resume (code, set_password, recovery) which never
+    // touches the wire, it asks detection immediately so the screen is not left
+    // without password and button (HIL-1027).
+    if (pending.step === 'identifier') {
+      refreshDetect()
+    }
+  }
+
+  /**
+   * Take the flow back to the identifier field with everything typed preserved
+   * — the form is NOT cleared (only an identifier edit clears it) — and ask the
+   * lookup about the field again.
+   */
+  function returnToIdentifier(): void {
+    error.set(null)
+    resendAvailableAt.set(null)
+    expiresAt.set(null)
+    disarmExpiry()
+    holdSecondFactor(null)
+    flow.set({
+      ...flow.get(),
+      step: 'identifier',
+      methodKey: null,
+      channelKey: null,
+      sendProgress: null,
+    })
+    refreshDetect()
   }
 
   /**
@@ -1677,6 +2029,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         message: outcome.message ?? null,
         code: outcome.code ?? null,
       })
+    }
+    // The data before the move, for the reason the error is: the screen and what
+    // it draws land in one paint. An answer that leaves the second factor's
+    // screens carries none, and the move below drops what was held.
+    if (outcome.secondFactor !== undefined) {
+      holdSecondFactor(localSecondFactor(outcome.secondFactor))
     }
     if (outcome.next !== undefined) {
       mergeNext(outcome.next)
@@ -1910,32 +2268,54 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     screenKey,
     resendAvailableAt,
     expiresAt,
+    secondFactor,
     resume(pending: PendingAuthStep | null): void {
       if (pending === null) {
         return
       }
-      flow.set({
-        ...flow.get(),
-        step: pending.step,
-        intent: pending.intent,
-        methodKey: null,
-        identifierKind: pending.kind,
-        channelKey: pending.channel,
-      })
-      form.set({ ...form.get(), identifier: pending.identifier })
-      expiresAt.set(pending.expiresAt)
-      // A code that died while the tab was closed flips at once (HIL-828), which
-      // is the whole of what a past moment means here. A step carrying NO moment
-      // arms nothing and leaves no countdown behind it (HIL-833): the identifier
-      // step a lost race sends a session back to stands on no code, and a timer
-      // left running there would expire a screen that is not counting.
-      armExpiry(pending.expiresAt)
-      // The lost race is the only handshake step naming the identifier
-      // (lostRegistrationStepFor()); unlike an ordinary resume (code,
-      // set_password, recovery) which never touches the wire, it asks detection
-      // immediately so the screen is not left without password and button (HIL-1027).
-      if (pending.step === 'identifier') {
-        refreshDetect()
+      restore(pending)
+    },
+    followReportedStep(reported: PendingAuthStep | null): void {
+      if (reported === null || pending.get()) {
+        return
+      }
+      const state = flow.get()
+      if (
+        reported.step === 'second_factor' ||
+        reported.step === 'second_factor_setup'
+      ) {
+        // The removal screen is a detour off the code step, taken locally; a
+        // report of the code step finds the person still there.
+        const standing =
+          state.step === reported.step ||
+          (reported.step === 'second_factor' &&
+            state.step === 'second_factor_reset')
+        if (!standing) {
+          error.set(null)
+          restore(reported)
+
+          return
+        }
+        const data = reported.secondFactor
+        if (data !== null) {
+          holdSecondFactor({
+            ...secondFactor.get(),
+            trustDeviceDays: data.trustDeviceDays,
+            resetEffectiveAt: data.resetEffectiveAt,
+          })
+        }
+        expiresAt.set(reported.expiresAt)
+
+        return
+      }
+      // A wait let go names the field and nobody on it; only a surface standing
+      // on the wait has anything to leave.
+      if (
+        reported.step === 'identifier' &&
+        reported.identifier === null &&
+        SECOND_FACTOR_WAIT_STEPS.includes(state.step)
+      ) {
+        returnToIdentifier()
       }
     },
     setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void {
@@ -1965,6 +2345,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         resendAvailableAt.set(null)
         expiresAt.set(null)
         disarmExpiry()
+        holdSecondFactor(null)
         scheduleDetect(identifier, kind, true)
 
         return
@@ -1981,6 +2362,14 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // it moves locally to the terms screen; the real dispatch is consent's.
         error.set(null)
         flow.set({ ...state, step: 'consent' })
+
+        return
+      }
+      if (state.step === 'second_factor_reset_requested') {
+        // Asking the removal let the held sign-in go (HIL-494), so Continue has
+        // nothing left to send: the person goes back to the field, to sign in
+        // another way or to wait out the date the screen named.
+        returnToIdentifier()
 
         return
       }
@@ -2151,7 +2540,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         // `startRecovery` clears it: a code left over from another challenge
         // would make the screen submittable before anything was typed.
         form.set({ ...form.get(), code: '' })
-        flow.set({ ...flow.get(), step: stepAfterMethodSend(key) })
+        // A ceremony that proved the person can still be held on the second
+        // factor (HIL-494), and then the server NAMED the step, already merged
+        // above; its word is later than the method's.
+        if (outcome.next === undefined) {
+          flow.set({ ...flow.get(), step: stepAfterMethodSend(key) })
+        }
       } finally {
         if (ceremony === run) {
           ceremony = null
@@ -2208,20 +2602,37 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       })
     },
     backToIdentifier(): void {
+      const leaving = flow.get()
+      returnToIdentifier()
+      if (SECOND_FACTOR_WAIT_STEPS.includes(leaving.step)) {
+        // Told, not waited for: the person is on the field already, and the
+        // answer carries nothing this surface does not know (HIL-494).
+        void options.onSubmit('second_factor_cancel', leaving, form.get())
+      }
+    },
+    startSecondFactorReset(): void {
+      const state = flow.get()
+      if (state.step !== 'second_factor') {
+        return
+      }
       error.set(null)
-      resendAvailableAt.set(null)
-      expiresAt.set(null)
-      disarmExpiry()
-      // Back to the single field with everything typed preserved — the form is
-      // NOT cleared (only an identifier edit clears it).
-      flow.set({
-        ...flow.get(),
-        step: 'identifier',
-        methodKey: null,
-        channelKey: null,
-        sendProgress: null,
-      })
-      refreshDetect()
+      flow.set({ ...state, step: 'second_factor_reset' })
+    },
+    backToSecondFactor(): void {
+      const state = flow.get()
+      if (state.step !== 'second_factor_reset') {
+        return
+      }
+      error.set(null)
+      flow.set({ ...state, step: 'second_factor' })
+    },
+    async loadSecondFactorSetup(): Promise<void> {
+      if (pending.get() || flow.get().step !== 'second_factor_setup') {
+        return
+      }
+      await dispatch(() =>
+        options.onSubmit('second_factor_setup_start', flow.get(), form.get()),
+      )
     },
     resumeHeldRegistration(): void {
       flow.set({ ...flow.get(), step: 'code', intent: 'register' })
@@ -2263,6 +2674,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       resendAvailableAt.set(null)
       expiresAt.set(null)
       disarmExpiry()
+      holdSecondFactor(null)
     },
   }
 }

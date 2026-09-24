@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -248,6 +249,107 @@ final class SessionActions extends DbActions
         }
 
         $this->object->pendingAck = null;
+        $this->object->sync();
+    }
+
+    /**
+     * Holds a proven sign-in on this session until the person shows their second factor (HIL-494).
+     *
+     * The durable half of the second-factor step: the handshake serves the step from here,
+     * so a reload, a second tab and a restarted daemon all come back to it. A second call
+     * re-points the same row - one sign-in waits at a time - and resets the wrong-code
+     * count, because a new proof of the credential opens a new wait.
+     *
+     * @param int $userId Person whose sign-in is being held
+     * @param string $mode Screen the sign-in waits on (a {@see SecondFactorPendingMode} value)
+     * @param string $until Moment the wait runs out (SQL datetime)
+     * @param ?string $ack Success ack to show once the step passes, or null when none is owed
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function holdPendingSecondFactor(int $userId, string $mode, string $until, ?string $ack): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for holdPendingSecondFactor (id is null)');
+        }
+
+        $this->object->pendingSecondFactorUserId = $userId;
+        $this->object->pendingSecondFactorMode = $mode;
+        $this->object->pendingSecondFactorUntil = $until;
+        $this->object->pendingSecondFactorAttempts = 0;
+        $this->object->pendingSecondFactorAck = $ack;
+        $this->object->sync();
+    }
+
+    /**
+     * Counts one wrong second-factor code against this session's wait and answers the count (HIL-494).
+     *
+     * The count belongs to the ROW: the increment is one conditional statement, so two tabs
+     * of the same browser sending wrong codes at once both land on it. A session with no
+     * wait left answers zero and writes nothing - the wait it would count against is gone.
+     *
+     * @return int Wrong codes the wait has taken after this one, or 0 when the session no longer waits
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function missPendingSecondFactor(): int
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for missPendingSecondFactor (id is null)');
+        }
+
+        return $this->object->countSecondFactorMiss();
+    }
+
+    /**
+     * Moves this session's enrolment on the way in to its last screen (HIL-494).
+     *
+     * The authenticator is confirmed and the backup codes are being shown. The wait stays -
+     * the person is let in only by the Continue under the codes - but a reload now serves
+     * the ordinary code step, since the factor exists.
+     *
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function markSecondFactorSetupProven(): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for markSecondFactorSetupProven (id is null)');
+        }
+
+        $this->object->pendingSecondFactorMode = SecondFactorPendingMode::SETUP_DONE;
+        $this->object->sync();
+    }
+
+    /**
+     * Forgets the second-factor wait of this session (HIL-494).
+     *
+     * The end of the wait as this session experienced it: the step passed, the person went
+     * back to sign in another way, the wait ran out or took too many wrong codes, or the
+     * second factor it waited on was switched off. Releasing a released session is harmless.
+     *
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function releasePendingSecondFactor(): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for releasePendingSecondFactor (id is null)');
+        }
+
+        $this->object->pendingSecondFactorUserId = null;
+        $this->object->pendingSecondFactorMode = null;
+        $this->object->pendingSecondFactorUntil = null;
+        $this->object->pendingSecondFactorAttempts = 0;
+        $this->object->pendingSecondFactorAck = null;
         $this->object->sync();
     }
 

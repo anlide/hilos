@@ -45,6 +45,7 @@ use Demo\Polls\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityOAuthProviderPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityPage;
+use Demo\Polls\Pages\Hilos\ProfileSecurityPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
@@ -89,6 +90,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
+use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -150,6 +152,7 @@ final class Hilos extends HilosFacade
         LicensePage::PAGE => LicensePage::class,
         SecurityPage::PAGE => SecurityPage::class,
         SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
         SecuritySignInMethodsPage::PAGE => SecuritySignInMethodsPage::class,
@@ -278,6 +281,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
+        PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -307,6 +311,9 @@ final class Hilos extends HilosFacade
         ],
         SecuritySignInMethodsPage::PAGE => [
             PollsTableContext::hilosSecuritySignInMethods => [],
+        ],
+        SecurityTwoFactorPage::PAGE => [
+            PollsTableContext::hilosSecurityTwoFactor => [],
         ],
         UsersPage::PAGE => [
             PollsTableContext::hilosUsers => [],
