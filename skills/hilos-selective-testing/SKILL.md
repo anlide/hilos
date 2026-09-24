@@ -35,13 +35,14 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    (`docs/agents/stand-services.md`), a second process inside a unit test last
    and only with the reason written in its docblock.
 3. Run the narrowest set the map prescribes for that class.
-4. Reach for the heavy suites — `test:e2e-full` per demo, the two-window tests, and
+4. Reach for the heavy suites — `test:e2e-full` per demo, unpointed, the two-window tests, and
    the a11y tests (`a11y.spec.ts`) — only for cross-connection behavior (subscription /
    viewport / pending / presence), accessibility changes (ARIA / keyboard / focus), or
    as the pre-merge gate; they are not an inner-loop step.
 5. The full cross-demo pass is `composer run test:frontend:all`, and everything at
    once is `composer run test:suite`; run either rarely.
-6. Reset before re-running a data-mutating e2e (`test:e2e-up`).
+6. An e2e spec runs through its demo's full cycle pointed at it —
+   `composer run test:e2e-full -- <spec | --grep "…">` — which resets for you.
 7. A step that went red while another step was running is not a verdict: re-run it
    alone (`php scripts/run-test-suite.php <id> --lanes=1`) on the same HEAD. Green
    alone makes the run inconclusive, not green.

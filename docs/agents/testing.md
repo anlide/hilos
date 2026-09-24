@@ -126,9 +126,18 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 | FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
 | An Angular view's template | `test:framework:frontend` — plain `tsc` does not read templates, so the `@hilos/angular` check runs a second pass, `ngc --noEmit` over the `tsconfig.build.json` the ng-packagr build uses; a template error — and an Angular extended template diagnostic (`NG8xxx`), which `tsconfig.build.json` raises to an error — is red here, not only in `test:framework:frontend:build` | every Angular template change |
 | Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
-| An e2e spec or a selector | that demo's e2e, pointed: `test:e2e-up` once, then `test:e2e -- <grep>` | while editing the spec |
+| An e2e spec or a selector | that demo's full cycle, pointed: `composer run test:e2e-full -- <spec file>` or `-- --grep "<title>"` — the same clean stand as the full run, so a repeat is a fresh verdict | while editing the spec |
 | Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
 | Accessibility — ARIA roles/names, keyboard, focus, screen-reader semantics | the **a11y** e2e (`a11y.spec.ts`) across the affected demos (and a full pass) | rarely — see below |
+
+**A pointed cycle is the full cycle.** Every link of `test:e2e-full` but `@test:e2e`
+carries Composer's `@no_additional_args`, so what follows `--` reaches only
+`npx playwright test`: teardown, database reset and daemon boot run exactly as they
+do unpointed. A filter that matches no test is red (`No tests found`), not green.
+It needs Composer ≥ 2.8.0 — an older one hands the marker to `test:down` as an
+argument, and the first link is red on an unknown stand. Bringing the stack up once
+and repeating `test:e2e` against it is not a verdict: the database is dirty between
+runs. `E2eFullPointingTest` in the framework unit suite keeps the markers on.
 
 **The rare, full run** is `composer run test:frontend:all` — the `frontend` slice
 of the step graph below (FE install + build + check / vitest / lint, then every
@@ -157,13 +166,13 @@ separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
 accessibility tree over the live socket: table accessible names and `aria-sort`,
 keyboard sort operability, the skip link and `aria-current`, the document title
 and page-change announcement, one top-level heading per page, and presence
-exposed as text. Run it in the full pass or pointed (`test:e2e -- a11y.spec`)
+exposed as text. Run it in the full pass or pointed (`test:e2e-full -- a11y.spec`)
 while editing a11y; a green inner loop (check + vitest + pointed phpunit) does not
 require re-running them. The normative AA requirements those specs guard are in
 [frontend/accessibility.md](frontend/accessibility.md).
 
-Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
-the next section.
+A data-mutating e2e is **re-run through the full cycle, pointed or not** — the cycle
+resets for you; see [Re-running tests and state between runs](#re-running-tests-and-state-between-runs).
 
 ### A cross-process defect is an e2e defect first
 
@@ -320,8 +329,8 @@ ticket for the entries that are genuinely foreign.
 ## Re-running tests and state between runs
 
 - A test that **mutates data** is not idempotent across runs on the same database.
-  Reset before re-running it (`composer run test:db-reset`, or `test:e2e-up` for
-  e2e); the full pass (`test:all` / `test:e2e-full`) resets for you. **Do not treat a
+  Reset before re-running it — `composer run test:db-reset` for PHPUnit; for e2e,
+  `test:e2e-full`, pointed or not, resets for you, and so does `test:all`. **Do not treat a
   failure on a repeated run *without* a reset as a bug** — reset is the contract;
   re-running against a dirty database is not a supported scenario.
 - `test:e2e-full` **tears the stack down before it starts**, so it never inherits a

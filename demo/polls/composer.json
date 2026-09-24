@@ -90,14 +90,14 @@
         "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm polls-e2e-runner npx playwright test",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
-            "@test:down",
-            "@test:up",
-            "@test:e2e-build",
-            "@test:e2e-install",
-            "@test:e2e-check",
-            "@test:e2e-up",
+            "@test:down @no_additional_args",
+            "@test:up @no_additional_args",
+            "@test:e2e-build @no_additional_args",
+            "@test:e2e-install @no_additional_args",
+            "@test:e2e-check @no_additional_args",
+            "@test:e2e-up @no_additional_args",
             "@test:e2e",
-            "@test:e2e-down"
+            "@test:e2e-down @no_additional_args"
         ],
         "test:all": [
             "@test:db-reset",

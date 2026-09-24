@@ -423,9 +423,10 @@ the full e2e cycle. The SDK build comes first because consumers resolve
 on a fresh clone. Run it at milestones and before handing a change over.
 
 The aggregate is **not** the inner loop — do not re-run the whole matrix per
-iteration. Day-to-day stays pointed: bring one demo's e2e stack up once
-(`composer run test:e2e-up`), then run only the slice under work with
-`composer run test:e2e -- --grep <pattern>` — one feature, or one of the
-categories above — and tear down when done. Unit tests are pointed the same
-way: `npm run test` in the SDK container, or one package via `npm run test -w
-<package>`.
+iteration. Day-to-day stays pointed: run one demo's full cycle pointed at the
+slice under work — `composer run test:e2e-full -- --grep <pattern>`, or a spec
+file — one feature, or one of the categories above. It is the same clean cycle
+as the unpointed run (teardown, fresh database, fresh daemon), so a repeat is a
+fresh verdict; the mechanics are in [testing.md](../testing.md). Unit tests are
+pointed the same way: `npm run test` in the SDK container, or one package via
+`npm run test -w <package>`.

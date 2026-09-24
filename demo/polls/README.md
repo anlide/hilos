@@ -131,8 +131,9 @@ is the container `env_file`.
 
 e2e runs against the **built** frontend artifact served by the prod-parity
 nginx (TLS, `/ws` upgrade proxy) with a booted daemon behind it
-(`docs/agents/frontend/testing-strategy.md`). Agent flow: one `test:e2e-up`,
-any number of pointed `test:e2e` runs, one `test:e2e-down`.
+(`docs/agents/frontend/testing-strategy.md`). Agent flow:
+`composer run test:e2e-full -- <spec>` or `-- --grep "…"` — the full clean cycle
+pointed at a subset.
 
 | Command | What it does |
 |---|---|
@@ -143,7 +144,7 @@ any number of pointed `test:e2e` runs, one `test:e2e-down`.
 | `composer run test:e2e-up` | start the e2e stack: MySQL (reset) + daemon + nginx |
 | `composer run test:e2e` | run the e2e suite (`-- --grep "..."` filters) |
 | `composer run test:e2e-down` | tear the e2e stack down |
-| `composer run test:e2e-full` | build → install → check → up → test → down |
+| `composer run test:e2e-full` | build → install → check → up → test → down; `-- <spec>` or `-- --grep "…"` points the same clean cycle at a subset |
 
 ## License
 

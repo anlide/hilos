@@ -213,7 +213,11 @@ container to avoid the env_file chicken-and-egg), `install-deps`,
 `test:up/down/down-volumes/db-wait/db-reset/unit/phpunit/install-deps`,
 `test:check`, `test:e2e-build/install/check/up/(run)/down/full`.
 `test:e2e-up` = mysql up → `db:wait` → `test:db:reset` → daemon + nginx up.
-Always `docker compose` (not the legacy `docker-compose`), and
+Every link of `test:e2e-full` but `@test:e2e` carries ` @no_additional_args` —
+that is what lets the cycle be pointed (`composer run test:e2e-full -- <spec>`),
+and `E2eFullPointingTest` in the framework unit suite checks the chain of every
+demo that declares one. Always `docker compose` (not the legacy `docker-compose`),
+Composer ≥ 2.8.0 (the marker is read from that version on), and
 `config.process-timeout: 0` (image pulls outlive composer's 300s default).
 
 ## Frontend (common ground)

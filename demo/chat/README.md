@@ -218,17 +218,20 @@ Tests select elements by stable `data-id` attributes only.
 | `composer run test:e2e-up` | start the e2e stack: MySQL (reset) + daemon + nginx |
 | `composer run test:e2e` | run e2e tests against the running stack |
 | `composer run test:e2e-down` | stop the e2e stack |
-| `composer run test:e2e-full` | the whole cycle: build → install → check → up → test → down |
+| `composer run test:e2e-full` | the whole cycle: build → install → check → up → test → down; `-- <spec>` or `-- --grep "…"` points the same clean cycle at a subset |
 
-The stack stays up between runs, so the fast loop is one `test:e2e-up` and then
-any number of `test:e2e` invocations. Extra Playwright arguments pass through
-after `--`, which is how a single test or a tagged group is targeted:
+The stack stays up between runs, so the fast loop at a keyboard is one `test:e2e-up`
+and then any number of `test:e2e` invocations. Extra Playwright arguments pass
+through after `--`, which is how a single test or a tagged group is targeted. The
+database is not reset between these runs, so a verdict comes from the pointed full
+cycle instead:
 
 ```bash
 composer run test:e2e-up
 composer run test:e2e                          # everything
 composer run test:e2e -- --grep "blank page"   # one test / future @group tag
 composer run test:e2e-down
+composer run test:e2e-full -- --grep "blank page"   # clean cycle, one test
 ```
 
 Rebuild the artifact (`test:e2e-build`) after frontend changes; restart the

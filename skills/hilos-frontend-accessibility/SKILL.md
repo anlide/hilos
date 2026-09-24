@@ -39,7 +39,7 @@ target is **WCAG 2.1 AA**, in full, from v1.
 6. Let a page's tab title flow from `pageTitles` (the bootstrap input), not a
    hand-set `document.title`.
 7. Guard new structure in the demo's `a11y.spec.ts` (the rare category); run it
-   pointed with `test:e2e -- a11y.spec`.
+   pointed with `test:e2e-full -- a11y.spec`.
 
 ## Hard Rules
 

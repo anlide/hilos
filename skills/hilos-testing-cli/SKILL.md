@@ -36,6 +36,7 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Demo frontend loop from `demo/chat`: `composer run test:frontend`
 - Full framework pass: `composer run test:framework:all`
 - Full demo/chat pass from `demo/chat`: `composer run test:all`
+- One e2e spec or grep, full clean cycle, from `demo/<demo>`: `composer run test:e2e-full -- <spec | --grep "…">`
 - Everything, as one graph: `composer run test:suite`
 - One step of that graph, alone: `php scripts/run-test-suite.php <id> --lanes=1`
 
