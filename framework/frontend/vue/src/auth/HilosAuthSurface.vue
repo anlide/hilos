@@ -43,6 +43,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  formatCountdown,
   hilosCodeSendProgress,
   MAGIC_LINK_FLOW_METHOD,
   oauthTrip,
@@ -82,12 +83,6 @@ const props = defineProps<{
 
 /** How often the countdowns redraw — one second, the smallest unit they show. */
 const COUNTDOWN_TICK_MS = 1000
-
-/** Milliseconds in a second, for reading a remaining span as a clock. */
-const MS_PER_SECOND = 1000
-
-/** Seconds in a minute, for the same. */
-const SECONDS_PER_MINUTE = 60
 
 // The declarations the project makes and the stores it owns (HIL-409): the ordered
 // method registry that drives the field, the icons and the reveal, the code
@@ -653,31 +648,10 @@ const deliveredChannel = computed(() => {
   return context.channels.find((channel) => channel.key === key)?.label ?? key
 })
 
-const resendIn = computed(() => remaining(resendAvailableAt.value))
-const expiresIn = computed(() => remaining(expiresAt.value))
-
-/**
- * A server moment read as the `m:ss` still to run, or null once it is spent.
- *
- * @param moment The local-scale epoch-ms moment, or null when nothing is armed.
- * @returns The remaining span as a clock, or null.
- */
-function remaining(moment: number | null): string | null {
-  if (moment === null) {
-    return null
-  }
-  const left = moment - now.value
-  if (left <= 0) {
-    return null
-  }
-  const seconds = Math.ceil(left / MS_PER_SECOND)
-
-  return (
-    Math.floor(seconds / SECONDS_PER_MINUTE) +
-    ':' +
-    String(seconds % SECONDS_PER_MINUTE).padStart(2, '0')
-  )
-}
+const resendIn = computed(() =>
+  formatCountdown(resendAvailableAt.value, now.value),
+)
+const expiresIn = computed(() => formatCountdown(expiresAt.value, now.value))
 
 /**
  * The stable `data-id` of one method's control.

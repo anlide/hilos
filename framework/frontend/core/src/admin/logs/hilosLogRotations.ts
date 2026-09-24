@@ -26,6 +26,7 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { formatDurationInWords } from '../../format/duration.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
@@ -45,6 +46,10 @@ import {
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+import {
+  formatLogRotationSchedule,
+  formatLogSizeThreshold,
+} from './hilosLogSettings.js'
 
 /** One row of the log-rotations table — one archived batch on one node. */
 export interface HilosLogRotationRow {
@@ -778,11 +783,13 @@ export function formatRotationFileCounts(row: HilosLogRotationRow): string {
 /**
  * The rotation half of the rule line: every axis that is on, in words.
  *
- * The axes are listed rather than named by a preset, because presets do not exist
- * yet (HIL-762) and a screen that said "Normal mode" would be naming something the
- * installation cannot be set to. An axis at zero is off and is left out entirely —
+ * The axes are listed rather than named by a mode: the modes exist, but this page is
+ * not told which one is applied, so it names what fires instead — in the words of the
+ * logging-mode screen (hilosLogSettings.ts), so the two screens of the section never
+ * disagree about the same value. An axis at zero is off and is left out entirely —
  * printing `0` would read as "rotates at no size", which is the opposite of what a
- * disabled threshold means.
+ * disabled threshold means. The axes join as one list does in English: "X or Y" for
+ * two, "X, Y, or Z" for three.
  *
  * Every axis off is a sentence of its own rather than an empty line: rotation that
  * only happens on a restart is a real configuration, and an operator reading a blank
@@ -793,22 +800,25 @@ export function formatRotationFileCounts(row: HilosLogRotationRow): string {
 export function formatRotationRule(header: HilosLogRotationsHeader): string {
   const axes: string[] = []
   if (header.rotationCron !== null && header.rotationCron !== '') {
-    axes.push(`on the schedule ${header.rotationCron}`)
+    axes.push(formatLogRotationSchedule(header.rotationCron))
   }
   if (header.rotationMaxAgeSeconds > 0) {
     axes.push(
-      `${formatRotationDuration(header.rotationMaxAgeSeconds)} after the last rotation`,
+      `${formatDurationInWords(header.rotationMaxAgeSeconds)} after the last rotation`,
     )
   }
   if (header.rotationMaxLiveSizeBytes > 0) {
-    axes.push(
-      `when the live logs reach ${formatBytes(header.rotationMaxLiveSizeBytes)}`,
-    )
+    axes.push(`at ${formatLogSizeThreshold(header.rotationMaxLiveSizeBytes)}`)
   }
 
-  return axes.length === 0
-    ? 'Rotates only when the node restarts'
-    : `Rotates ${axes.join(', or ')}`
+  if (axes.length === 0) {
+    return 'Rotates only when the node restarts'
+  }
+  if (axes.length <= 2) {
+    return `Rotates ${axes.join(' or ')}`
+  }
+
+  return `Rotates ${axes.slice(0, -1).join(', ')}, or ${axes[axes.length - 1]}`
 }
 
 /**
@@ -829,36 +839,11 @@ export function formatRetentionRule(header: HilosLogRotationsHeader): string {
   }
   if (header.retentionMaxAgeSeconds > 0) {
     criteria.push(
-      `older than ${formatRotationDuration(header.retentionMaxAgeSeconds)}`,
+      `older than ${formatDurationInWords(header.retentionMaxAgeSeconds)}`,
     )
   }
 
   return criteria.length === 0
     ? 'Nothing is ever recommended for carrying off'
     : `Recommends carrying off a batch ${criteria.join(' and ')}`
-}
-
-/** Seconds in one hour, the smallest unit the rule line speaks in. */
-const SECONDS_PER_HOUR = 3600
-
-/** Seconds in one day. */
-const SECONDS_PER_DAY = 86400
-
-/**
- * A configured threshold in the largest whole unit it fits, down to seconds.
- *
- * Whole units only: a threshold is something an administrator typed, and `1.5 d`
- * would be this screen's rounding rather than their number.
- *
- * @param seconds The threshold, in seconds.
- */
-function formatRotationDuration(seconds: number): string {
-  if (seconds % SECONDS_PER_DAY === 0) {
-    return `${seconds / SECONDS_PER_DAY} d`
-  }
-  if (seconds % SECONDS_PER_HOUR === 0) {
-    return `${seconds / SECONDS_PER_HOUR} h`
-  }
-
-  return `${seconds} s`
 }

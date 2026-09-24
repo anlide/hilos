@@ -261,7 +261,7 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // the new threshold. Without it a setting that never landed and a rotation that
   // never ran are the same red — a timeout on a row that did not appear.
   await expect(page.getByTestId('hilos-rotation-rule')).toContainText(
-    '1 s after the last rotation',
+    '1 second after the last rotation',
     { timeout: WALK_WAIT_MS },
   )
 

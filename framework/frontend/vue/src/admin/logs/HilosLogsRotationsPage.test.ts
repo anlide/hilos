@@ -372,9 +372,9 @@ describe('HilosLogsRotationsPage', () => {
     await nextTick()
 
     const rule = wrapper.find('[data-id="hilos-rotation-rule"]')
-    expect(rule.text()).toBe('Rotates on the schedule 0 4 * * *')
+    expect(rule.text()).toBe('Rotates at 04:00')
     expect(wrapper.text()).toContain(
-      'Recommends carrying off a batch outside the newest 7 and older than 30 d',
+      'Recommends carrying off a batch outside the newest 7 and older than 30 days',
     )
   })
 

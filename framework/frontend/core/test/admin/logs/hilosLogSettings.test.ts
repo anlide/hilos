@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  formatLogRetentionDays,
+  formatLogRetentionAge,
   formatLogRotationSchedule,
   formatLogSizeThreshold,
   formatLogWriteLevel,
@@ -78,9 +78,13 @@ describe('formatLogRotationSchedule', () => {
     expect(formatLogRotationSchedule('0 */1 * * *')).toBe('every hour')
   })
 
-  it('prints anything else as itself rather than guessing at it', () => {
-    expect(formatLogRotationSchedule('15 4 * * 0')).toBe('15 4 * * 0')
-    expect(formatLogRotationSchedule('*/5 * * * *')).toBe('*/5 * * * *')
+  it('prints anything else as the expression it is', () => {
+    expect(formatLogRotationSchedule('15 4 * * 0')).toBe(
+      'on the schedule 15 4 * * 0',
+    )
+    expect(formatLogRotationSchedule('*/5 * * * *')).toBe(
+      'on the schedule */5 * * * *',
+    )
   })
 
   it('reads an empty expression as the schedule switched off', () => {
@@ -89,6 +93,15 @@ describe('formatLogRotationSchedule', () => {
 })
 
 describe('formatLogSizeThreshold', () => {
+  it('reads a threshold under a kibibyte in bytes', () => {
+    expect(formatLogSizeThreshold(512)).toBe('512 B')
+  })
+
+  it('reads a threshold under a mebibyte in kibibytes', () => {
+    expect(formatLogSizeThreshold(1024)).toBe('1 KiB')
+    expect(formatLogSizeThreshold(1536)).toBe('1.5 KiB')
+  })
+
   it('reads a threshold in mebibytes until a gibibyte is whole', () => {
     expect(formatLogSizeThreshold(256 * MIB)).toBe('256 MiB')
     expect(formatLogSizeThreshold(512 * MIB)).toBe('512 MiB')
@@ -104,15 +117,19 @@ describe('formatLogSizeThreshold', () => {
   })
 })
 
-describe('formatLogRetentionDays', () => {
+describe('formatLogRetentionAge', () => {
   it('counts days and agrees with the count', () => {
-    expect(formatLogRetentionDays(7 * DAY)).toBe('7 days')
-    expect(formatLogRetentionDays(30 * DAY)).toBe('30 days')
-    expect(formatLogRetentionDays(DAY)).toBe('1 day')
+    expect(formatLogRetentionAge(7 * DAY)).toBe('7 days')
+    expect(formatLogRetentionAge(30 * DAY)).toBe('30 days')
+    expect(formatLogRetentionAge(DAY)).toBe('1 day')
+  })
+
+  it('reads an age that is not whole days in the largest unit it is whole in', () => {
+    expect(formatLogRetentionAge(36 * 3600)).toBe('36 hours')
   })
 
   it('reads zero as the age limit switched off', () => {
-    expect(formatLogRetentionDays(0)).toBe('no age limit')
+    expect(formatLogRetentionAge(0)).toBe('no age limit')
   })
 })
 
@@ -311,6 +328,18 @@ describe('hilosLogSettingsVocabulary.differenceLine', () => {
       }),
     ).toBe(
       'also rotates 12 hours after the last rotation, which the mode does not do',
+    )
+  })
+
+  it('reads a forced-rotation age too short for an hour in seconds', () => {
+    expect(
+      hilosLogSettingsVocabulary.differenceLine({
+        key: LOG_SETTING_ROTATION_MAX_AGE,
+        presetValue: 0,
+        currentValue: 1,
+      }),
+    ).toBe(
+      'also rotates 1 second after the last rotation, which the mode does not do',
     )
   })
 

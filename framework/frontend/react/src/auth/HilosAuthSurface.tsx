@@ -48,6 +48,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  formatCountdown,
   hilosCodeSendProgress,
   handshakeResponseAck,
   MAGIC_LINK_FLOW_METHOD,
@@ -82,12 +83,6 @@ import { HilosAuthGateContext } from './hilosAuthGateContext.js'
 
 /** How often the countdowns redraw — one second, the smallest unit they show. */
 const COUNTDOWN_TICK_MS = 1000
-
-/** Milliseconds in a second, for reading a remaining span as a clock. */
-const MS_PER_SECOND = 1000
-
-/** Seconds in a minute, for the same. */
-const SECONDS_PER_MINUTE = 60
 
 /** The column the surface stands in, the width the mockup gives it. */
 const MAX_WIDTH = { maxWidth: '24rem' }
@@ -268,31 +263,6 @@ function sendProgressLine(
     tone: copy.tone,
     text: progress.detail === null ? text : `${text}: ${progress.detail}`,
   }
-}
-
-/**
- * A server moment read as the `m:ss` still to run, or null once it is spent.
- *
- * @param moment The local-scale epoch-ms moment, or null when nothing is armed.
- * @param now The clock the span is measured against — the ticking one, so the
- *   number keeps counting down instead of freezing where the screen opened.
- * @returns The remaining span as a clock, or null.
- */
-function remaining(moment: number | null, now: number): string | null {
-  if (moment === null) {
-    return null
-  }
-  const left = moment - now
-  if (left <= 0) {
-    return null
-  }
-  const seconds = Math.ceil(left / MS_PER_SECOND)
-
-  return (
-    Math.floor(seconds / SECONDS_PER_MINUTE) +
-    ':' +
-    String(seconds % SECONDS_PER_MINUTE).padStart(2, '0')
-  )
 }
 
 /**
@@ -744,8 +714,8 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
       : (context.channels.find((channel) => channel.key === state.channelKey)
           ?.label ?? state.channelKey)
 
-  const resendIn = remaining(resendAvailableAt, now)
-  const expiresIn = remaining(expiresAt, now)
+  const resendIn = formatCountdown(resendAvailableAt, now)
+  const expiresIn = formatCountdown(expiresAt, now)
 
   /**
    * Mirror the identifier field into the machine, which restarts the flow from

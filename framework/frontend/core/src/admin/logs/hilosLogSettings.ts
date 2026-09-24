@@ -20,6 +20,7 @@ import {
   type HilosSettingPresetsVocabulary,
 } from '../settings/hilosSettingPresets.js'
 import { HilosPages } from '../../routing/hilosPages.js'
+import { formatDurationInWords } from '../../format/duration.js'
 
 /** Server→client signal `type` carrying the group (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_SETTINGS`). */
 export const LOG_SETTINGS_SIGNAL = 'subscription_page_hilos_logs_settings'
@@ -68,11 +69,8 @@ export const LOG_PRESET_INVESTIGATION = 'investigation'
 /** The log level that writes everything, which is the one the wording singles out. */
 const LOG_LEVEL_DEBUG = 'DEBUG'
 
-/** Seconds in one day, the unit the retention axis is read in. */
-const SECONDS_PER_DAY = 86400
-
-/** Seconds in one hour, the unit a forced-rotation age is read in. */
-const SECONDS_PER_HOUR = 3600
+/** Bytes in one kibibyte, the unit a size threshold under a mebibyte is read in. */
+const BYTES_PER_KIBIBYTE = 1024
 
 /** Bytes in one mebibyte, the smallest unit a size threshold is read in. */
 const BYTES_PER_MEBIBYTE = 1024 * 1024
@@ -112,16 +110,6 @@ const LOG_PRESET_CARDS: Record<
 const UNKNOWN_PRESET_ICON = 'bi-gear'
 
 /**
- * A count and the word it counts, in agreement.
- *
- * @param count How many.
- * @param noun The singular of what is counted.
- */
-function counted(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
-}
-
-/**
  * A wire value as a string, whatever arrived.
  *
  * A value of an unexpected type is printed rather than dropped: the catalog on the
@@ -153,8 +141,9 @@ export function formatLogWriteLevel(value: unknown): string {
  * When the live files are rotated, as the tail of a sentence beginning "rotates".
  *
  * Two forms are read, because the recipe declares two: a fixed time of day and every
- * N-th hour. Anything else is printed as the expression itself — the frontend keeps
- * no cron parser, since an invented one would be wrong confidently.
+ * N-th hour. Anything else is printed as "on the schedule" and the expression itself
+ * — the frontend keeps no cron parser, since an invented one would be wrong
+ * confidently.
  *
  * An empty expression is the axis switched off ({@link LOG_SETTING_ROTATION_CRON}
  * declares it so), and it reads as such rather than as a hole in the sentence.
@@ -184,7 +173,7 @@ export function formatLogRotationSchedule(value: unknown): string {
     return every === 1 ? 'every hour' : `every ${every} hours`
   }
 
-  return value
+  return `on the schedule ${value}`
 }
 
 /**
@@ -201,6 +190,13 @@ export function formatLogSizeThreshold(value: unknown): string {
     return 'no size limit'
   }
 
+  if (value < BYTES_PER_KIBIBYTE) {
+    return `${value} B`
+  }
+  if (value < BYTES_PER_MEBIBYTE) {
+    return `${trimmedNumber(value / BYTES_PER_KIBIBYTE)} KiB`
+  }
+
   const mebibytes = value / BYTES_PER_MEBIBYTE
   if (mebibytes < MEBIBYTES_PER_GIBIBYTE) {
     return `${trimmedNumber(mebibytes)} MiB`
@@ -210,12 +206,12 @@ export function formatLogSizeThreshold(value: unknown): string {
 }
 
 /**
- * How long an archived batch is kept, in days.
+ * How long an archived batch is kept, in the largest whole unit.
  *
  * @param value Value of {@link LOG_SETTING_RETENTION_MAX_AGE}, in seconds; 0 is the
  *   axis switched off.
  */
-export function formatLogRetentionDays(value: unknown): string {
+export function formatLogRetentionAge(value: unknown): string {
   if (typeof value !== 'number') {
     return raw(value)
   }
@@ -223,11 +219,12 @@ export function formatLogRetentionDays(value: unknown): string {
     return 'no age limit'
   }
 
-  return counted(trimmedNumber(value / SECONDS_PER_DAY), 'day')
+  return formatDurationInWords(value)
 }
 
 /**
- * The age since the last rotation that forces the next one, in hours.
+ * The age since the last rotation that forces the next one, in the largest whole
+ * unit.
  *
  * Not a line on any card: every mode declares this axis switched off, so the card
  * would name an empty place. It is only ever read as a difference, when somebody has
@@ -240,7 +237,7 @@ function formatLogRotationAge(value: unknown): string {
     return raw(value)
   }
 
-  return counted(trimmedNumber(value / SECONDS_PER_HOUR), 'hour')
+  return formatDurationInWords(value)
 }
 
 /**
@@ -270,13 +267,13 @@ function sizeTail(value: unknown): string {
 /**
  * The retention as the tail of a sentence beginning "keeps batches".
  *
- * The preposition is chosen here and not by {@link formatLogRetentionDays}, which is
+ * The preposition is chosen here and not by {@link formatLogRetentionAge}, which is
  * exported and keeps the bare form of a retention that is on.
  *
  * @param value Value of {@link LOG_SETTING_RETENTION_MAX_AGE}, in seconds.
  */
 function retentionTail(value: unknown): string {
-  const kept = formatLogRetentionDays(value)
+  const kept = formatLogRetentionAge(value)
 
   return value === 0 ? `with ${kept}` : `for ${kept}`
 }
@@ -398,7 +395,7 @@ export const hilosLogSettingsVocabulary: HilosSettingPresetsVocabulary = {
       }
       case LOG_SETTING_RETENTION_MAX_AGE: {
         const current = retentionTail(difference.currentValue)
-        const declared = formatLogRetentionDays(difference.presetValue)
+        const declared = formatLogRetentionAge(difference.presetValue)
 
         return `keeps batches ${current} instead of ${declared}`
       }

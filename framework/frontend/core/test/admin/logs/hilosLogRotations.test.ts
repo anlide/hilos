@@ -314,14 +314,29 @@ describe('formatRotationRule', () => {
           rotationMaxLiveSizeBytes: 512 * 1024 * 1024,
         }),
       ),
-    ).toBe(
-      'Rotates on the schedule 0 4 * * *, or 1 h after the last rotation, or when the live logs reach 512.0 MB',
+    ).toBe('Rotates at 04:00, 1 hour after the last rotation, or at 512 MiB')
+  })
+
+  it('joins two axes with "or" alone, as the logging-mode card does', () => {
+    expect(
+      formatRotationRule(
+        header({
+          rotationCron: '0 3 * * *',
+          rotationMaxLiveSizeBytes: 512 * 1024 * 1024,
+        }),
+      ),
+    ).toBe('Rotates at 03:00 or at 512 MiB')
+  })
+
+  it('reads a schedule the screen does not parse as the expression it is', () => {
+    expect(formatRotationRule(header({ rotationCron: '15 4 * * 0' }))).toBe(
+      'Rotates on the schedule 15 4 * * 0',
     )
   })
 
   it('leaves a disabled axis out instead of printing it as a zero', () => {
     expect(formatRotationRule(header({ rotationMaxLiveSizeBytes: 1024 }))).toBe(
-      'Rotates when the live logs reach 1.0 KB',
+      'Rotates at 1 KiB',
     )
   })
 
@@ -339,7 +354,7 @@ describe('formatRetentionRule', () => {
         header({ retentionKeepBatches: 7, retentionMaxAgeSeconds: 2592000 }),
       ),
     ).toBe(
-      'Recommends carrying off a batch outside the newest 7 and older than 30 d',
+      'Recommends carrying off a batch outside the newest 7 and older than 30 days',
     )
   })
 

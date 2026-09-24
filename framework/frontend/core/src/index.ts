@@ -326,6 +326,7 @@ export {
   type CodeSendProgress,
   type CodeSendProgressSignalData,
 } from './auth/authSendProgress.js'
+export { formatCountdown } from './format/duration.js'
 export {
   AUTH_CONVERGE_SIGNAL,
   authConvergeSignalSchema,
@@ -996,7 +997,7 @@ export {
   formatLogWriteLevel,
   formatLogRotationSchedule,
   formatLogSizeThreshold,
-  formatLogRetentionDays,
+  formatLogRetentionAge,
   LOG_SETTINGS_SIGNAL,
   LOGS_SETTINGS_SIGNAL_SCHEMAS,
   LOG_SETTING_WRITE_LEVEL,

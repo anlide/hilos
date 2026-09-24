@@ -152,8 +152,14 @@ describe('formatBackupDuration', () => {
     expect(formatBackupDuration(row({ durationSeconds: 7 }))).toBe('7s')
   })
 
-  it('splits a longer run into minutes and seconds', () => {
-    expect(formatBackupDuration(row({ durationSeconds: 125 }))).toBe('2m 5s')
+  it('splits a longer run into minutes and two-digit seconds', () => {
+    expect(formatBackupDuration(row({ durationSeconds: 125 }))).toBe('2m 05s')
+  })
+
+  it('leads with hours once a run passes an hour', () => {
+    expect(formatBackupDuration(row({ durationSeconds: 3725 }))).toBe(
+      '1h 02m 05s',
+    )
   })
 
   it('reports a failed run by the time it burned before failing', () => {

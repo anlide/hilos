@@ -362,10 +362,10 @@ describe('HilosLogsRotationsPage', () => {
     pushHeader(header())
 
     expect(byId(container, 'hilos-rotation-rule')?.textContent).toBe(
-      'Rotates on the schedule 0 4 * * *',
+      'Rotates at 04:00',
     )
     expect(container.textContent).toContain(
-      'Recommends carrying off a batch outside the newest 7 and older than 30 d',
+      'Recommends carrying off a batch outside the newest 7 and older than 30 days',
     )
   })
 

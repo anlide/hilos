@@ -19,6 +19,7 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { formatDurationShort } from '../../format/duration.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
@@ -599,17 +600,13 @@ export function formatBackupSize(row: HilosBackupRow): string {
  *
  * Every row of this set is a run that ended, so every one of them has a duration: a
  * backup that took under a second took `0s`, and reporting that as "no duration" would
- * read as missing data.
+ * read as missing data. The form is the compact one of a measured run — `7s`,
+ * `3m 05s`, `1h 02m 05s` — and a negative figure reads as `0s`.
  *
  * @param row The backup row to format.
  */
 export function formatBackupDuration(row: HilosBackupRow): string {
-  const seconds = Math.max(0, row.durationSeconds)
-  if (seconds < 60) {
-    return `${seconds}s`
-  }
-
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  return formatDurationShort(Math.max(0, row.durationSeconds))
 }
 
 /**

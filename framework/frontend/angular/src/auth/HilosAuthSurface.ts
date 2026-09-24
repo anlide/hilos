@@ -51,6 +51,7 @@ import {
   createAuthActions,
   createAuthFlow,
   createOAuthLogin,
+  formatCountdown,
   hilosCodeSendProgress,
   handshakeResponseAck,
   oauthTrip,
@@ -98,12 +99,6 @@ import { HILOS_AUTH_GATE } from './hilosAuthGateToken.js'
 
 /** How often the countdowns redraw — one second, the smallest unit they show. */
 const COUNTDOWN_TICK_MS = 1000
-
-/** Milliseconds in a second, for reading a remaining span as a clock. */
-const MS_PER_SECOND = 1000
-
-/** Seconds in a minute, for the same. */
-const SECONDS_PER_MINUTE = 60
 
 // What the mirrors below hold in the moment between construction and the effect
 // that binds them to the machine — the machine is born from the `context` input
@@ -1626,10 +1621,10 @@ export class HilosAuthSurface {
   })
 
   protected readonly resendIn = computed(() =>
-    this.remaining(this.resendAvailableAt()),
+    formatCountdown(this.resendAvailableAt(), this.now()),
   )
   protected readonly expiresIn = computed(() =>
-    this.remaining(this.expiresAt()),
+    formatCountdown(this.expiresAt(), this.now()),
   )
 
   constructor() {
@@ -2123,30 +2118,6 @@ export class HilosAuthSurface {
         this.gate?.dismiss()
       }
     })
-  }
-
-  /**
-   * A server moment read as the `m:ss` still to run, or null once it is spent.
-   *
-   * @param moment The local-scale epoch-ms moment, or null when nothing is
-   *   armed.
-   * @returns The remaining span as a clock, or null.
-   */
-  private remaining(moment: number | null): string | null {
-    if (moment === null) {
-      return null
-    }
-    const left = moment - this.now()
-    if (left <= 0) {
-      return null
-    }
-    const seconds = Math.ceil(left / MS_PER_SECOND)
-
-    return (
-      Math.floor(seconds / SECONDS_PER_MINUTE) +
-      ':' +
-      String(seconds % SECONDS_PER_MINUTE).padStart(2, '0')
-    )
   }
 
   /**
