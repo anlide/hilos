@@ -463,6 +463,14 @@ freeze's own ready path; a restore is today's only destructive operation, not a
 condition (not in the code yet — HIL-1118). Today two carriers each take it:
 `BackupAgent::captureVerifierCircle()` and `captureVerifierCircleForTest()` of
 `ProtectedModeTestDriverTrait`, the latter under a freeze that restores nothing.
+Both read it by one rule — a process-wide read of the framework, *Readers Past
+The Agent* in [truth-source.md](truth-source.md) — and no initiator declares
+it (not in the code yet — HIL-1118): declared by one agent instead, the read
+is refused in every other worker, the initiator's included (HIL-1096). A
+photograph that could not be taken is a line in the initiator's error log and
+nothing to the operator — past the seam the refusal cannot happen, and a
+database failure there fails the operation itself, which is reported — so the
+row then carries `circleNamedCount = 0`.
 
 Without `HilosFeature::BACKUP` the circle loses nothing: the freeze alone admits
 its member (not in the code yet — HIL-1118), people are named in the same

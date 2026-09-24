@@ -499,8 +499,14 @@ most of them. The process-wide list is where a layer says so:
 `DbContext::processWideReadCollections()` names them, and
 `DbContext::declareProcessWideReads()` registers an interest for each under a
 feature consumer. The framework's own entries are in `HilosDbContext` —
-settings, identities, sessions and notifications — and a project adds to the
-list by overriding the method and calling the parent. The runtime twin is
+settings, identities, sessions, notifications and the verifier circle
+(not in the code yet — HIL-1118) — and a project adds to the list by
+overriding the method and calling the parent. The circle is here because the
+freeze photographs it in the initiator's worker and any agent that asks for a
+freeze is an initiator: the read runs in whichever process asked, and naming
+it per initiator is the silent trap of `AbstractAgent::READS_DB` — a subclass
+list replaces the parent's. HIL-1096 is the refused read this answers, taken
+in a worker the circle's owner never shares. The runtime twin is
 `RtContext::declareProcessWideReads()`, which declares every `RtState` item and
 the connections collection as held here.
 
