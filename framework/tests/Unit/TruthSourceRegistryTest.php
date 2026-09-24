@@ -37,10 +37,10 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('2'), self::AGENT_B);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
 
         $this->expectException(WriteNotAllowedException::class);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', [], TruthSourceOperation::Update);
     }
 
     public function testKeyedDbSourceCannotPerformCollectionWideWrite(): void
@@ -58,8 +58,8 @@ final class TruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         TruthSourceRegistry::checkCanWrite(self::COLLECTION, TruthSourceOperation::Update);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', [], TruthSourceOperation::Remove);
 
         $this->assertTrue(true);
     }
@@ -107,7 +107,7 @@ final class TruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(WriteNotAllowedException::class);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
     }
 
     public function testKeyedSourceCannotMintANewRecord(): void
@@ -125,7 +125,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::unregisterCreate(self::COLLECTION, self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
 
         $this->expectException(CreateNotAllowedException::class);
         TruthSourceRegistry::checkCanCreate(self::COLLECTION);
@@ -143,7 +143,7 @@ final class TruthSourceRegistryTest extends TestCase
         TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
 
         $this->assertSame(['1'], TruthSourceRegistry::getTruthSourceKeys(self::COLLECTION)?->listedKeys());
     }
@@ -160,7 +160,7 @@ final class TruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         TruthSourceRegistry::checkCanCreate(self::COLLECTION);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
 
         $this->assertTrue(TruthSourceRegistry::getTruthSourceKeys(self::COLLECTION)?->coversEveryKey());
     }
@@ -179,7 +179,7 @@ final class TruthSourceRegistryTest extends TestCase
             "Write operation not allowed: agent '" . self::AGENT_A . "' is a truth source for table "
             . "'" . self::COLLECTION . "' with operations [add, remove] and may not update item '7'."
         );
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '7', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '7', [], TruthSourceOperation::Update);
     }
 
     public function testCollectionWideAgentWithoutRemoveCannotDropRowsAcrossTheTable(): void

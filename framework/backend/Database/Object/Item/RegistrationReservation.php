@@ -146,6 +146,7 @@ final class RegistrationReservation extends Object_
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
             (string)$this->entity->id,
+            $this->touchedSetKeys(),
             TruthSourceOperation::Update,
         );
 
@@ -185,6 +186,7 @@ final class RegistrationReservation extends Object_
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
             (string)$this->entity->id,
+            $this->touchedSetKeys(),
             TruthSourceOperation::Update,
         );
 

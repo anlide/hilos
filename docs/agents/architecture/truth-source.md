@@ -136,8 +136,7 @@ say both "nothing may be done here" and "the set was never written".
 
 A right has two axes. The width of the claim says which rows are yours — the
 whole collection, or keys named one by one; a third width, the rows of the set
-its owner holds, is the next section's (not in the code yet — HIL-1109). The
-operations say what may be done with them: `TruthSourceOperation::Add`,
+its owner holds, is the next section's. The operations say what may be done with them: `TruthSourceOperation::Add`,
 `TruthSourceOperation::Update`, `TruthSourceOperation::Remove`. The two sit in
 one grant rather than in two stores keyed by the same pair, because they are
 always answered together: a refusal names both, and the guard that refuses a
@@ -181,8 +180,8 @@ its rows one by one, and a row born after its start is not among them. The third
 width is *the rows of my set*: a claim over one set of a table, named by its set
 key.
 
-The width is written down here before any of it is built, so that the leaves
-building it cut by one answer (not in the code yet — HIL-1109). Every sentence
+The width was written down here before any of it was built, so that the leaves
+building it cut by one answer, and it is built leaf by leaf. Every sentence
 below that the code does not hold yet ends with the marker of the leaf that
 lands it; a sentence with no marker describes the tree as it stands, or a
 decision no code will change. The table closing the section says which leaf
@@ -263,19 +262,29 @@ cross-check.
 
 **The width is a third named state of `TruthSourceKeys`.** Beside `all()` and
 `listed()` stands the factory `TruthSourceKeys::set(string $setKey)`, with the
-questions `coversSet(): bool` and `setKey(): string`, and the sentence of the
-class docblock that reads "Two named states and no third" is rewritten to three
-(not in the code yet — HIL-1109). Named `set` and not `bySet`: the factories of
-that class call a width by the noun of what it covers.
+questions `coversSet(): bool` and `setKey(): string`, and the class docblock
+names three states. Named `set` and not `bySet`: the factories of that class
+call a width by the noun of what it covers. The set key is kept in a field of
+its own rather than as a claim listing no row, because a claim listing no row is
+already the right to create. The write door asks one question of every width,
+`coversRow(string $key, array $setKeys): bool`, and each width answers it by its
+own: the whole collection covers every row, named rows cover the keys they name,
+a set covers the rows its key is carried by.
 
 **Belonging is asked of the row's set column, not of its key.** The key of a row
 says nothing about whose set it is in, so `TruthSourceKeys::covers()` has no
 answer at this width: the guard is asked with the value the row carries in its
-`_setVia` column, and compares it with the set key of the grant
-(not in the code yet — HIL-1109). That value is already in hand at the door —
-`DbActions::ensureCanWrite()` holds the object it is about to write, not only
-its id. What the seam between the door and the guard looks like is HIL-1109's to
-name, not this page's. A row born after the agent's start is covered by
+`_setVia` column, and compares it with the set key of the grant. That value is
+already in hand at the door — `DbActions::ensureCanWrite()` holds the object it
+is about to write, not only its id, and so does every door that writes one row.
+Beside the id, the door hands the guard the set keys the write touches
+(`Object_::touchedSetKeys()`): the key the row is stored under and the key an
+unsaved edit moves it to, each once. A claim over a set covers the write only
+when every one of them is its key. A row moved from one set to another is
+therefore not the write of a set's owner — it writes into two sets, and only the
+owner of the whole table moves it — and a row whose set column is empty is in
+nobody's set and covered by no set claim. The two older widths do not look at
+the set keys. A row born after the agent's start is covered by
 construction, because the grant keeps a set key and not a list of rows collected
 at the start (not in the code yet — HIL-1110).
 
@@ -667,7 +676,9 @@ the chain, over each half (`DeclaredDbOwnershipTest`,
 refusals (`DeclaredRowOwnershipTest`), the one call that lays all four maps
 (`DeclaredClaimAllTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
-`DbWriteGuardLazyCollectionsTest`), the grants a stop takes back
+`DbWriteGuardLazyCollectionsTest`), the third width answered by the row's set
+column at the value, the registry and the door (`TruthSourceSetWidthTest`), the
+grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
 (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
 intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself

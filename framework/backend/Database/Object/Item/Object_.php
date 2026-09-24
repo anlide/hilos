@@ -228,7 +228,7 @@ abstract class Object_
 
         $idString = $this->getIdString();
 
-        DbWriteGuard::guardItemWrite($collectionKey, $idString, TruthSourceOperation::Remove);
+        DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(), TruthSourceOperation::Remove);
 
         // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
         // available from the object collection after the physical delete.
@@ -354,7 +354,12 @@ abstract class Object_
             return;
         }
 
-        DbWriteGuard::guardItemWrite($collectionKey, $this->getIdString(), TruthSourceOperation::Update);
+        DbWriteGuard::guardItemWrite(
+            $collectionKey,
+            $this->getIdString(),
+            $this->touchedSetKeys(),
+            TruthSourceOperation::Update,
+        );
     }
 
     /**
@@ -489,6 +494,38 @@ abstract class Object_
     public function getPrimaryKeyArrayKeys(): array
     {
         return is_array($this->entity::_primary) ? $this->entity::_primary : [$this->entity::_primary];
+    }
+
+    /**
+     * Set keys a write of this row touches: the value of the table's set column the row is stored
+     * under, and the one an unsaved edit moves it to, each once.
+     *
+     * Empty when the table is cut by no set column - it declares {@see Entity::SET_STANDALONE}, or
+     * declares no `_setVia` at all - and when either value is null: a row that stands, or is about
+     * to stand, outside every set is in nobody's set. The write guard reads the empty list as
+     * belonging to no claim over a set.
+     *
+     * @return list<string> Set keys the write touches, empty for a row outside every set
+     */
+    public function touchedSetKeys(): array
+    {
+        $setViaName = static::ENTITY_CLASS . '::' . Entity::META_SET_VIA;
+        if (!defined($setViaName)) {
+            return [];
+        }
+
+        $column = constant($setViaName);
+        if ($column === Entity::SET_STANDALONE) {
+            return [];
+        }
+
+        $stored = $this->entitySync->$column;
+        $edited = $this->entity->$column;
+        if ($stored === null || $edited === null) {
+            return [];
+        }
+
+        return array_values(array_unique([(string)$stored, (string)$edited]));
     }
 
     /**

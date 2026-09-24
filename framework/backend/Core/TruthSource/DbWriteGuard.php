@@ -61,20 +61,27 @@ class DbWriteGuard
     /**
      * Judges one operation on one row that already exists.
      *
+     * The door hands over, beside the row's id, the set keys the write touches, because a claim
+     * over a set is answered by the row's set column and not by its id: the key the row is stored
+     * under, and the one an unsaved edit moves it to. Each is named once, so a write that keeps
+     * the row in its set names one key and a move between two sets names both.
+     *
      * @param string $collection Collection key, empty for a manual collection nobody owns
      * @param string $idString Row id as string, composite keys joined with ':'
+     * @param list<string> $setKeys Set keys the write touches, each once; empty for a row outside every set
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws WriteNotAllowedException When no grant in this process covers that row and operation
      */
     public static function guardItemWrite(
         string $collection,
         string $idString,
+        array $setKeys,
         TruthSourceOperation $operation,
     ): void {
         if ($collection === '') {
             return;
         }
 
-        TruthSourceRegistry::checkCanWriteItem($collection, $idString, $operation);
+        TruthSourceRegistry::checkCanWriteItem($collection, $idString, $setKeys, $operation);
     }
 }

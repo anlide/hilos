@@ -161,6 +161,10 @@ abstract class AbstractTruthSourceRegistry
      * Null still means "no cover here", and it is also the answer when the collection has grants
      * but every one of them owns no row: a mint-only claim covers nothing to read.
      *
+     * A claim over a set names no keys and adds nothing to the answer, so a collection held only
+     * by such claims answers null too, as one with no cover. Which rows a set holds is a question
+     * about their set column, and this answer is a list of row keys.
+     *
      * @param string $collection Collection/table name
      * @return ?TruthSourceKeys Width of the cover over this collection, or null when it has none
      */

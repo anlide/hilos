@@ -178,7 +178,7 @@ final class Identities extends Objects
             throw new DatabaseException('Identity insert did not assign an id');
         }
 
-        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, TruthSourceOperation::Update);
+        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, $identity->touchedSetKeys(), TruthSourceOperation::Update);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($passwordHash));
