@@ -12,10 +12,15 @@ use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
@@ -28,6 +33,8 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
+use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTableRow;
 
 /**
  * Integration tests for the stored layer of an OAuth provider's configuration (HIL-286).
@@ -36,8 +43,9 @@ use Hilos\HilosException;
  * The client secret in that row is written and erased through the provider layer's own
  * primitive and is never read back into the object: the resolver reports it by source and
  * state, and only the configuration the exchange runs on carries its value. Because no
- * mapped column moves when it is written, the write announces itself on the source bus, so
- * the admin screen drawn off the row redraws.
+ * mapped column moves when it is written, the write is announced with an empty diff through
+ * both ORM sync paths (db_sync_updated signal and source bus), so the admin screen drawn off
+ * the row redraws across processes.
  */
 final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -65,6 +73,8 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
 
     private ?SettingsAccessor $previousSetting = null;
 
+    private ?SignalRouter $previousSignalRouter = null;
+
     /** @var list<SourceChange> Changes announced during the case, oldest first */
     private array $announced = [];
 
@@ -84,12 +94,14 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->previousDb = Hilos::$db;
         $this->previousEnv = Hilos::$env;
         $this->previousSetting = Hilos::$setting;
+        $this->previousSignalRouter = Hilos::$sr;
 
         $db = new OAuthProviderConfigTestDbContext();
         $db->configure();
         Hilos::$db = $db;
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
         Hilos::$setting = new SettingsAccessor(OAuthSettingsCatalog::class);
+        Hilos::$sr = new SignalRouter();
 
         putenv(self::CLIENT_ID_ENV->name . '=env-client');
         putenv(self::CLIENT_SECRET_ENV->name . '=env-secret');
@@ -124,6 +136,7 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         TruthSourceRegistry::unregister(HilosDbContext::oauthProviders, self::WRITER_ID);
         TruthSourceRegistry::unregister(HilosDbContext::settings, self::WRITER_ID);
 
+        Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
         Hilos::$setting = $this->previousSetting;
         Hilos::$db = $this->previousDb;
@@ -209,6 +222,101 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
         $this->assertSame([], $change->row);
     }
 
+    public function testWritingTheSecretSendsTheRowToEveryProcessWithoutTheValue(): void
+    {
+        $row = $this->row();
+        $this->drainQueuedSignals();
+
+        $row->actions->writeClientSecret('admin-secret');
+
+        $signals = $this->drainQueuedSignals();
+        $this->assertCount(1, $signals);
+        $signal = $signals[0];
+        $this->assertSame(SignalConstants::DB_SYNC_UPDATED, $signal->signalName->getName());
+        $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $signal->data);
+        $this->assertSame(HilosDbContext::oauthProviders, $signal->data->collectionKey);
+        $this->assertSame((string)$row->id, $signal->data->idString);
+        $this->assertSame([], $signal->data->row);
+        $this->assertStringNotContainsString('admin-secret', json_encode($signal->data->toArray(), JSON_THROW_ON_ERROR));
+    }
+
+    public function testErasingTheSecretSendsTheRowToo(): void
+    {
+        $row = $this->row();
+        $row->actions->writeClientSecret('admin-secret');
+        $this->drainQueuedSignals();
+
+        $row->actions->writeClientSecret(null);
+
+        $signals = $this->drainQueuedSignals();
+        $this->assertCount(1, $signals);
+        $signal = $signals[0];
+        $this->assertSame(SignalConstants::DB_SYNC_UPDATED, $signal->signalName->getName());
+        $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $signal->data);
+        $this->assertSame(HilosDbContext::oauthProviders, $signal->data->collectionKey);
+        $this->assertSame((string)$row->id, $signal->data->idString);
+        $this->assertSame([], $signal->data->row);
+    }
+
+    public function testTheSentRowRedrawsTheSecretRowOfTheFieldsTable(): void
+    {
+        $row = $this->row();
+        $this->drainQueuedSignals();
+
+        $row->actions->writeClientSecret('admin-secret');
+
+        $signals = $this->drainQueuedSignals();
+        $this->assertCount(1, $signals);
+        $data = $signals[0]->data;
+        $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $data);
+
+        $change = SourceChange::dbUpdated(
+            $data->collectionKey,
+            $data->idString,
+            $data->row,
+            $data->origin,
+            $data->originRequestId,
+        );
+
+        $fieldsTable = new class extends HilosSecurityOAuthProviderFieldsTable {
+            protected function providers(): array
+            {
+                return [OAuthProviderPreset::GITHUB->value => OAuthProviderConfigIntegrationTest::github()];
+            }
+        };
+
+        $mutation = $fieldsTable->buildMutationForSourceEvent($change);
+        $this->assertNotNull($mutation);
+        $this->assertSame(TableMutationType::Update, $mutation->type);
+        $this->assertInstanceOf(HilosSecurityOAuthProviderFieldsTableRow::class, $mutation->row);
+        $this->assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutation->row->field);
+        $this->assertTrue($mutation->row->setState);
+        $this->assertSame('db', $mutation->row->source);
+
+        $row->actions->writeClientSecret(null);
+
+        $signalsAfterReset = $this->drainQueuedSignals();
+        $this->assertCount(1, $signalsAfterReset);
+        $dataAfterReset = $signalsAfterReset[0]->data;
+        $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $dataAfterReset);
+
+        $changeAfterReset = SourceChange::dbUpdated(
+            $dataAfterReset->collectionKey,
+            $dataAfterReset->idString,
+            $dataAfterReset->row,
+            $dataAfterReset->origin,
+            $dataAfterReset->originRequestId,
+        );
+
+        $mutationAfterReset = $fieldsTable->buildMutationForSourceEvent($changeAfterReset);
+        $this->assertNotNull($mutationAfterReset);
+        $this->assertSame(TableMutationType::Update, $mutationAfterReset->type);
+        $this->assertInstanceOf(HilosSecurityOAuthProviderFieldsTableRow::class, $mutationAfterReset->row);
+        $this->assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutationAfterReset->row->field);
+        $this->assertTrue($mutationAfterReset->row->setState);
+        $this->assertSame('env', $mutationAfterReset->row->source);
+    }
+
     public function testAStoredReturnAddressWinsOverEnv(): void
     {
         $this->storeReturnAddress('https://admin.example/auth/callback');
@@ -249,6 +357,21 @@ final class OAuthProviderConfigIntegrationTest extends FrameworkIntegrationTestC
     private function row(): OAuthProvider
     {
         return Hilos::$db->oauthProviders->actions->add(OAuthProviderPreset::GITHUB->value);
+    }
+
+    /**
+     * Drains and returns all queued signals from the signal router.
+     *
+     * @return list<SignalDTO> Drained signals in queue order
+     */
+    private function drainQueuedSignals(): array
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $signals[] = $signal;
+        }
+
+        return $signals;
     }
 
     /**

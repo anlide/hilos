@@ -25,6 +25,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\OAuthProvider as EntityOAuthProvider;
 use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -41,9 +42,9 @@ use Hilos\Hilos;
  *
  * The writable source behind a row is the provider's row in hilos_oauth_provider. An
  * update names the columns that moved, and each column is one field row; the secret moves
- * no mapped column, and its write is announced with an empty diff
- * ({@see ObjectOAuthProvider::writeClientSecret()}), which is the
- * secret's row.
+ * no mapped column, and its write is announced with an empty diff via db_sync_updated
+ * ({@see ObjectOAuthProvider::writeClientSecret()} via {@see Object_::announceUnmappedUpdate()}),
+ * which redraws the secret's row. A freshly created provider row is accepted as Create too.
  *
  * A project activates the table by registering it under a table key and binding that key
  * to the OAuth provider page in {@see Hilos::PAGE_TABLES}.
@@ -74,6 +75,8 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
     /**
      * Builds a field row mutation from a change of the provider rows.
      *
+     * Accepts row updates and freshly created provider rows, returning an update mutation for the affected field row.
+     *
      * @param SourceChange $change Source change
      * @return ?TableRowMutationDTO Field row mutation, or null when the change does not affect this table
      * @throws DatabaseException When a provider's row cannot be read
@@ -83,7 +86,9 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey !== HilosDbContext::oauthProviders || $change->mutationType !== TableMutationType::Update) {
+        if ($change->sourceKey !== HilosDbContext::oauthProviders
+            || ($change->mutationType !== TableMutationType::Update && $change->mutationType !== TableMutationType::Create)
+        ) {
             return null;
         }
 
@@ -213,16 +218,31 @@ class HilosSecurityOAuthProviderFieldsTable extends TableDefinition implements S
     }
 
     /**
-     * Names the field an update of a provider row moved.
+     * Names the field an update or create of a provider row moved.
      *
-     * An empty diff is the secret's own announcement; otherwise the first mapped column
-     * of the diff names the field.
+     * For an update, an empty diff is the secret's own announcement; otherwise the first mapped
+     * column of the diff names the field. For a create (such as a freshly added provider row merged
+     * with its initial field write), a non-empty client_id or scope names that field, and an empty
+     * or null-only row means the row was created for the secret.
      *
-     * @param SourceChange $change Update of a provider row
+     * @param SourceChange $change Update or create of a provider row
      * @return ?OAuthConfigField Field whose row redraws, or null when no field moved
      */
     private static function fieldForChange(SourceChange $change): ?OAuthConfigField
     {
+        if ($change->mutationType === TableMutationType::Create) {
+            $clientId = $change->row[EntityOAuthProvider::client_id] ?? null;
+            if (is_string($clientId) && $clientId !== '') {
+                return OAuthConfigField::CLIENT_ID;
+            }
+            $scope = $change->row[EntityOAuthProvider::scope] ?? null;
+            if (is_string($scope) && $scope !== '') {
+                return OAuthConfigField::SCOPE;
+            }
+
+            return OAuthConfigField::CLIENT_SECRET;
+        }
+
         if ($change->row === []) {
             return OAuthConfigField::CLIENT_SECRET;
         }

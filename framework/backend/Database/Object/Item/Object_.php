@@ -288,6 +288,38 @@ abstract class Object_
     }
 
     /**
+     * Announces an update of the row made outside ORM-mapped columns.
+     *
+     * A write to a column omitted from the entity's mapped column set does not move any ORM
+     * column, so the normal update announcement never fires and open screens would never redraw.
+     * Queues a DB-sync updated signal with an empty diff (row: []) to other processes and publishes
+     * the same empty diff on the local SourceChangeBus. An empty diff means the row changed, but no
+     * column held by a reader moved. The skip of empty results in ordinary ORM updates remains:
+     * there an empty diff means nothing changed at all.
+     *
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
+     */
+    protected function announceUnmappedUpdate(): void
+    {
+        $collectionKey = static::getCollectionKey();
+        if ($collectionKey === '') {
+            return;
+        }
+
+        $idString = $this->getIdString();
+        $this->queueDbSyncUpdated($collectionKey, $idString, []);
+        SourceChangeBus::publish(SourceChange::dbUpdated(
+            $collectionKey,
+            $idString,
+            [],
+            ExecutionContext::currentAcceptKey(),
+            ExecutionContext::currentRequestId(),
+        ));
+    }
+
+    /**
      * Asks the write guard before a row is saved, naming creation and editing apart.
      *
      * The id is read only for an edit: a row that does not exist yet has none. A collection

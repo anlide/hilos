@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
-use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -15,6 +13,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\OAuthProvider as EntityOAuthProvider;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -23,9 +22,10 @@ use Hilos\Database\SqlParamCollection;
  * OAuthProvider object - wraps OAuthProvider entity.
  *
  * Exposes the provider's non-secret fields and the secret primitives of the
- * provider layer (HIL-286). The `client_secret` column is never exposed as a
- * property, in toArray(), or over the DB sync bus: it is read and written with
- * targeted queries here, the way the identity layer handles a password hash.
+ * provider layer (HIL-286). The `client_secret` value is never exposed as a
+ * property, in toArray(), or over the DB sync wire: it is read and written with
+ * targeted queries here, the way the identity layer handles a password hash,
+ * while the fact of its write travels as an empty diff.
  *
  * @extends Object_<EntityOAuthProvider>
  *
@@ -146,16 +146,17 @@ final class OAuthProvider extends Object_
      * Replaces the stored client secret, or erases it with null (HIL-286).
      *
      * Written with a targeted UPDATE, so the secret stays out of the ORM columns, the
-     * object/view surface, and the cross-worker sync bus. Because no mapped column moves,
-     * the ordinary update announcement would never fire, and a screen drawn off this row
-     * would keep showing the old set/not-set state; the change is therefore announced on
-     * the source bus here with an empty diff - the row changed, no column a reader holds
-     * did. A no-op for an unpersisted row.
+     * object/view surface, and the cross-worker sync payload values. The write is announced
+     * through both ORM sync paths (db_sync_updated signal and source bus) with an empty diff,
+     * so open screens redraw across processes without exposing the secret. A no-op for an
+     * unpersisted row.
      *
      * @param ?string $secret New secret, or null to erase the stored one
      * @throws DatabaseException When the secret update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
     public function writeClientSecret(?string $secret): void
     {
@@ -175,13 +176,7 @@ final class OAuthProvider extends Object_
             $params,
         );
 
-        SourceChangeBus::publish(SourceChange::dbUpdated(
-            static::getCollectionKey(),
-            $idString,
-            [],
-            ExecutionContext::currentAcceptKey(),
-            ExecutionContext::currentRequestId(),
-        ));
+        $this->announceUnmappedUpdate();
     }
 
     /**

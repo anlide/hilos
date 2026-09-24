@@ -185,6 +185,45 @@ final class HilosSecurityOAuthTablesTest extends TestCase
         self::assertSame(OAuthConfigField::CLIENT_ID->value, $fieldMutation->row->field);
     }
 
+    public function testAFreshProviderRowCreatedForItsSecretRedrawsTheSecretRow(): void
+    {
+        $change = SourceChange::dbCreated(HilosDbContext::oauthProviders, '3', [
+            EntityOAuthProvider::provider_key => OAuthProviderPreset::GITHUB->value,
+            EntityOAuthProvider::client_id => null,
+            EntityOAuthProvider::scope => null,
+        ]);
+
+        $mutation = $this->fieldsTable()->buildMutationForSourceEvent($change);
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertInstanceOf(HilosSecurityOAuthProviderFieldsTableRow::class, $mutation->row);
+        self::assertSame(OAuthConfigField::CLIENT_SECRET->value, $mutation->row->field);
+    }
+
+    public function testAFreshProviderRowCreatedWithAClientIdRedrawsTheClientIdRow(): void
+    {
+        $change = SourceChange::dbCreated(HilosDbContext::oauthProviders, '3', [
+            EntityOAuthProvider::provider_key => OAuthProviderPreset::GITHUB->value,
+            EntityOAuthProvider::client_id => 'admin-client',
+            EntityOAuthProvider::scope => null,
+        ]);
+
+        $mutation = $this->fieldsTable()->buildMutationForSourceEvent($change);
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertInstanceOf(HilosSecurityOAuthProviderFieldsTableRow::class, $mutation->row);
+        self::assertSame(OAuthConfigField::CLIENT_ID->value, $mutation->row->field);
+    }
+
+    public function testADeletedProviderRowRedrawsNoField(): void
+    {
+        $change = SourceChange::dbDeleted(HilosDbContext::oauthProviders, '3', [
+            EntityOAuthProvider::provider_key => OAuthProviderPreset::GITHUB->value,
+        ]);
+
+        self::assertNull($this->fieldsTable()->buildMutationForSourceEvent($change));
+    }
+
     public function testAChangeOfAnotherCollectionIsIgnored(): void
     {
         $change = SourceChange::dbUpdated(HilosDbContext::settings, '3', [ObjectSetting::key => 'unrelated']);

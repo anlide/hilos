@@ -116,6 +116,39 @@ final class WorkerManagerBrowserContextTest extends TestCase
         $this->assertSame(['userId' => 1, 'presence' => 'online'], $changes[1]->row);
     }
 
+    public function testAnUpdateThatMovedNoColumnStillReachesTheBrowserContext(): void
+    {
+        $browser = new WorkerManagerBrowserContextTestBrowserContext();
+        Hilos::$browser = $browser;
+
+        $manager = new WorkerManagerBrowserContextTestManager(new WorkerManagerBrowserContextTestAgent());
+
+        $recordSourceChange = Closure::bind(
+            static function (WorkerManager $manager, SyncSignalDataInterface $signalData): void {
+                $manager->recordBrowserSourceChange($signalData);
+            },
+            null,
+            WorkerManager::class,
+        );
+
+        $recordSourceChange($manager, new DbSyncUpdatedSignalData('oauthProviders', '1', []));
+
+        $this->assertTrue($browser->hasChanges());
+
+        $browser->flushToSignalRouter();
+
+        $this->assertFalse($browser->hasChanges());
+        $this->assertCount(1, $browser->emittedChangeSets);
+
+        $changes = $browser->emittedChangeSets[0]->all();
+        $this->assertCount(1, $changes);
+        $this->assertSame(SourceChange::KIND_DB, $changes[0]->kind);
+        $this->assertSame(TableMutationType::Update, $changes[0]->mutationType);
+        $this->assertSame('oauthProviders', $changes[0]->sourceKey);
+        $this->assertSame('1', $changes[0]->sourceId);
+        $this->assertSame([], $changes[0]->row);
+    }
+
     /**
      * The fan-out contains a failed subscription but writes nothing: the record belongs
      * to the tick that asked for the flush, together with the project's chance to answer.

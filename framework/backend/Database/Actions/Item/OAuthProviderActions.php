@@ -90,6 +90,7 @@ final class OAuthProviderActions extends DbActions
      * @throws UnknownLazyStrategyException When the collection has an unsupported lazy strategy
      * @throws LogicException When the object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the row write
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      */
     public function writeClientSecret(?string $secret): void
