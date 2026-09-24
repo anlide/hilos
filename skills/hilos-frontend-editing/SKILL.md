@@ -1,20 +1,22 @@
 ---
 name: hilos-frontend-editing
-description: Implement or change a data-editing surface on the frontend — any form that edits and saves an entity. Use when adding, building, porting, or reviewing an edit/rename/update form in a Vue/React/Angular view, deciding inline vs modal, or wiring an edit session's draft, merge, and save lifecycle.
+description: Implement or change a data-editing surface on the frontend — any form that edits and saves an entity, and equally any mutation that takes a parameter without editing anything (a creation, a run with an option). Use when adding, building, porting, or reviewing an edit/rename/update form or a create/run-with-a-parameter dialog in a Vue/React/Angular view, deciding inline vs modal, or wiring an edit session's draft, merge, and save lifecycle.
 ---
 
 # Hilos Frontend Data Editing
 
 Use this skill whenever you implement, change, port, or review a frontend surface
-that edits and saves entity data. Start with `agents.md`, then read the canonical
-rules below. Every edit surface is a modal — never an inline form.
+that edits and saves entity data, or asks for the parameter of any other
+mutation — a creation, a run with an option. Start with `agents.md`, then read
+the canonical rules below. Every edit surface is a modal — never an inline form
+— and so is any mutation that takes a parameter.
 
 ## Read First
 
 - What an edit does to a live table — a value applies at once, only a move or a
   removal waits behind Apply, plus own-change correlation:
   `docs/agents/frontend/table-subscription.md`
-- Editing and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
+- Mutations and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
 - The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`
 - The shared row-edit helper every edit modal is built on: `framework/frontend/core/src/conflict/rowEdit.ts` (`conflict-resolution.md`, "The shared row-edit helper")
 - The `HilosModal` primitive and per-framework view adapters: `docs/agents/frontend/multiframework-core.md` (component: `framework/frontend/{vue,react,angular}/src/HilosModal.*`)
@@ -28,21 +30,27 @@ rules below. Every edit surface is a modal — never an inline form.
 
 1. Put every edit session in a modal: mount `HilosModal` (the agnostic SDK
    primitive) or a project descendant; the parent view owns the form fields
-   inside it. Never reveal an inline `<form>` in the page.
-2. The modal owns the session — freeze a `baseline` snapshot on open, clone it
-   into an editable `draft`, and keep the edited entity live-subscribed so
-   `incoming` committed changes arrive while the modal is open.
-3. Merge per field against the baseline: take user-only and server-only changes
-   automatically; surface a conflict only when the same field changed to
-   different values, presenting both for the user to pick.
+   inside it. Never reveal an inline `<form>` in the page. The parameter of a
+   creation or of a run with an option is asked in the same kind of dialog —
+   the page keeps no strip of its own for it.
+2. For an edit of an entity (a creation has no baseline, and steps 2, 3 and 5
+   do not apply to it): the modal owns the session — freeze a `baseline`
+   snapshot on open, clone it into an editable `draft`, and keep the edited
+   entity live-subscribed so `incoming` committed changes arrive while the
+   modal is open.
+3. For an edit of an entity: merge per field against the baseline: take
+   user-only and server-only changes automatically; surface a conflict only
+   when the same field changed to different values, presenting both for the
+   user to pick.
 4. Save is `submit → loading → backend echo`, not the tables' Apply. Validation
    is backend-only; field errors return on the action's `::fail`. Close on the
    committed echo.
-5. If the entity is deleted while the modal is open, keep the modal open, block
-   save, set the primary button to "Deleted", and keep the draft extractable —
-   never discard it silently.
-6. When porting the edit view to another framework, re-check it against section E
-   and `conflict-resolution.md`; do not copy an inline form forward.
+5. For an edit of an entity: if the entity is deleted while the modal is open,
+   keep the modal open, block save, set the primary button to "Deleted", and
+   keep the draft extractable — never discard it silently.
+6. When porting the edit view — or the dialog of any mutation with a
+   parameter — to another framework, re-check it against section E and
+   `conflict-resolution.md`; do not copy an inline form forward.
 
 ## Hard Rules
 
@@ -51,8 +59,10 @@ rules below. Every edit surface is a modal — never an inline form.
   (`expectOwnChange`) so the initiator applies its own change, and leave everyone
   else gated.
 
-- Edit only in a modal; inline forms are forbidden. Use `HilosModal` or a
-  descendant — the parent owns the form.
+- Edit only in a modal, and ask for the parameter of any other mutation in one
+  too — a creation, a run with an option; inline forms are forbidden. Use
+  `HilosModal` or a descendant — the parent owns the form. A mutation that
+  takes no parameter — a per-row toggle — needs no dialog of its own.
 - The modal owns the baseline / draft / incoming three-way merge; deviating from
   it is a gross violation.
 - Save commits only on the backend echo — never optimistic, never the tables'

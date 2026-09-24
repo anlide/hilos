@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos Frontend Data Editing"
-  short_description: "Edit surfaces are modals with a baseline/draft/incoming merge — never inline forms"
-  default_prompt: "Use $hilos-frontend-editing when implementing or changing a data-editing form on the frontend."
+  short_description: "Any mutation with a parameter asks in a modal — editing with a baseline/draft/incoming merge, a creation or a run with an option without one; never inline forms"
+  default_prompt: "Use $hilos-frontend-editing when implementing or changing a data-editing form, or any dialog that asks for the parameter of a mutation (a creation, a run with an option), on the frontend."

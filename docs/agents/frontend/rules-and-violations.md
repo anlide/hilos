@@ -184,10 +184,13 @@ Topic documents are referenced by filename; several are still being authored.
   the list and cannot assemble an arbitrary pair of columns. See
   [table-sort-orders.md](table-sort-orders.md).
 
-## E. Editing and modals
+## E. Mutations and modals
 
-- **Edit only in a modal.** All editing happens in a modal; inline forms are
-  forbidden. See [conflict-resolution.md](conflict-resolution.md).
+- **Ask in a modal, never on the page.** Any mutation that takes a
+  parameter asks for it in a modal: an edit of an entity, and equally a
+  creation or a run that carries an option. Inline forms are forbidden.
+  A mutation that takes no parameter — a per-row toggle — needs no dialog
+  of its own. See [conflict-resolution.md](conflict-resolution.md).
 - **The modal owns a baseline / draft / incoming 3-way merge.** On open, freeze
   a baseline snapshot and clone it into an editable draft; keep the edited entity
   live-subscribed so the modal sees incoming committed changes; merge per field

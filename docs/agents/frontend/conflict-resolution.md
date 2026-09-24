@@ -5,9 +5,12 @@ modal, and the modal owns a three-way merge so a user always knows whether a
 conflict exists and whether it is resolvable. This builds on the entity store and
 the authoritative-backend rule ([data-model.md](data-model.md), [core-and-connection.md](core-and-connection.md)).
 
-## Edit only in a modal
+## Ask in a modal
 
-All editing happens in a modal; inline forms are forbidden. The modal component
+All editing happens in a modal; inline forms are forbidden. So does any
+other mutation that takes a parameter — a creation or a run with an
+option asks for it in a modal too. The merge below belongs to editing
+alone: a creation has no baseline to merge against. The modal component
 itself is agnostic — the parent owns the form — but every edit session runs
 through a modal precisely so the merge below has one home.
 

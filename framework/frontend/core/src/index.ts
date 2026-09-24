@@ -801,6 +801,7 @@ export {
   type HilosBackupShipState,
   type HilosBackupsContext,
   type HilosBackupsTable,
+  type HilosBackupsTableView,
   type HilosBackupsCircleTable,
   type HilosBackupsActions,
   type HilosBackupScopeOption,

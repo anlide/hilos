@@ -1392,6 +1392,12 @@ export function createBackupProgressClock(): HilosBackupProgressClock {
   }
 }
 
+/** What the view lends the backup table: the press of its declared main action. */
+export interface HilosBackupsTableView {
+  /** Open the page's create dialog — what the table's main action does. */
+  readonly openCreate: () => void
+}
+
 /** The backup table handle a backup view drives: the controller plus its mount lifecycle. */
 export interface HilosBackupsTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
@@ -1526,20 +1532,29 @@ const BACKUPS_FRAME_BASE: HilosTableFrame = {
 
 /**
  * What the backup table declares about its frame: a search, the scope and the
- * period as the filters of its bar, one bulk operation, and no title — the page
- * heading above already names it. No main action either: the create strip above
- * the table stays whole until it moves into a dialog (HIL-1021).
+ * period as the filters of its bar, one main action, one bulk operation, and no
+ * title — the page heading above already names it. The main action is the create
+ * button: its press opens the page's create dialog, where the scope is picked and
+ * the command is sent. The dialog belongs to the view, and the frame only lends it
+ * the press — the bar's button knows neither "in flight" nor "disabled", because
+ * the command leaves from the dialog, not from the button (HilosTableMainAction).
  *
- * The bulk delete is the one part that needs the connection, so the declaration is
- * built per table rather than held as a constant. The framework's selection panel
- * confirms it before the run, and the storage agent judges every copy.
+ * The bulk delete needs the connection and the main action needs the view, so the
+ * declaration is built per table rather than held as a constant. The framework's
+ * selection panel confirms the delete before the run, and the storage agent judges
+ * every copy.
  *
  * @param context The project context the delete dispatches over.
+ * @param view What the view lends: the press that opens its create dialog.
  * @returns The frame declaration.
  */
-function backupsFrame(context: HilosBackupsContext): HilosTableFrame {
+function backupsFrame(
+  context: HilosBackupsContext,
+  view: HilosBackupsTableView,
+): HilosTableFrame {
   return {
     ...BACKUPS_FRAME_BASE,
+    mainAction: { label: 'Create backup', press: view.openCreate },
     bulkActions: [
       {
         key: 'delete',
@@ -1588,9 +1603,11 @@ const BACKUPS_ORDERS: readonly HilosTableSortOrder[] = [
  * `dispose` unbinds it (the view calls them on mount / unmount).
  *
  * @param context The project context (connection and scope stores).
+ * @param view What the view lends the table: the press of its main action.
  */
 export function createHilosBackupsTable(
   context: HilosBackupsContext,
+  view: HilosBackupsTableView,
 ): HilosBackupsTable {
   const controller = new TableViewportController<HilosBackupRow>({
     resolve: resolveHilosBackupRow,
@@ -1613,7 +1630,7 @@ export function createHilosBackupsTable(
         facets,
       ),
     declaredOrders: BACKUPS_ORDERS,
-    frame: backupsFrame(context),
+    frame: backupsFrame(context, view),
   })
   const teardown: Array<() => void> = []
 

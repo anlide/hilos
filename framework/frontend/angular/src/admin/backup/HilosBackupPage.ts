@@ -2,9 +2,10 @@
 // stored-backup list inside the admin shell, with its row actions. The list is
 // live — rows arrive over the socket from the backup runtime index, and a run in
 // flight is not one of them: it is the table's own bar, which this view does not draw
-// yet (HIL-814) and reads only to keep the create button honest. Its actions (create
-// with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
-// the core headless's (createHilosBackupsActions); each dispatches a tracked action
+// yet (HIL-814) and reads only to keep the create button honest. Its actions (create,
+// asked for its scope in the dialog the table's main action opens; per-row delete,
+// per-row keep toggle, per-row restore) are the core headless's
+// (createHilosBackupsActions); each dispatches a tracked action
 // and surfaces the backend's failure (authoritative-backend). Restore is the
 // destructive one: it is offered as a button only where the backend says so
 // (everywhere but production), it confirms by typing the archive id, and while it
@@ -14,8 +15,9 @@
 // block that closes it — the backend answers that personally in the page-data section,
 // so a second admin looking at the same page sees nothing. All table logic, the row
 // view-model, and what the backup list declares about its frame — its search, the
-// scope and period filters, its columns — are the core headless's too; this view
-// owns only the markup, so a project mounts it by passing its HilosBackupsContext.
+// scope and period filters, the create button as its main action, its columns — are
+// the core headless's too; this view owns only the markup (and the create dialog
+// that main action opens), so a project mounts it by passing its HilosBackupsContext.
 // Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
@@ -112,36 +114,6 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
   ],
   template: `
     <hilos-admin-page [page]="page">
-      <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
-        <div>
-          <label class="form-label" for="hilos-backup-create-scope"
-            >Scope</label
-          >
-          <select
-            id="hilos-backup-create-scope"
-            class="form-select"
-            [disabled]="create.busy()"
-            data-id="hilos-backup-create-scope"
-            [value]="createScope()"
-            (change)="onScope($event)"
-          >
-            @for (scope of scopes; track scope.value) {
-              <option [value]="scope.value">{{ scope.label }}</option>
-            }
-          </select>
-        </div>
-        <button
-          hilosLoadingButton
-          class="btn-primary"
-          [loading]="create.loading()"
-          [disabled]="create.busy()"
-          data-id="hilos-backup-create"
-          (click)="submitCreate()"
-        >
-          Create backup
-        </button>
-      </div>
-
       @if (restoreStatus(); as status) {
         <div
           class="alert"
@@ -837,6 +809,49 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           </button>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="createOpen()"
+        (openChange)="createOpen.set($event)"
+        title="Create backup"
+        [closeOnBackdrop]="!create.busy()"
+        [closeOnEsc]="!create.busy()"
+      >
+        <hilos-action-error [action]="create" />
+        <label class="form-label" for="hilos-backup-create-scope">Scope</label>
+        <select
+          id="hilos-backup-create-scope"
+          class="form-select"
+          [disabled]="create.busy()"
+          data-id="hilos-backup-create-scope"
+          data-autofocus
+          [value]="createScope()"
+          (change)="onScope($event)"
+        >
+          @for (scope of scopes; track scope.value) {
+            <option [value]="scope.value">{{ scope.label }}</option>
+          }
+        </select>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="create.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-primary"
+            [loading]="create.loading()"
+            data-id="hilos-backup-create-confirm"
+            (click)="submitCreate()"
+          >
+            Create
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -859,7 +874,9 @@ export class HilosBackupPage {
   protected readonly formatBackupRunCaption = formatBackupRunCaption
 
   protected readonly backups = computed(() =>
-    createHilosBackupsTable(this.context()),
+    createHilosBackupsTable(this.context(), {
+      openCreate: () => this.openCreate(),
+    }),
   )
   // The page's second table, on the same page scope under its own key: who the operator
   // named to check the system after a restore.
@@ -877,7 +894,12 @@ export class HilosBackupPage {
   // only speaks on a change of phase, so every bar here redraws from this signal.
   protected readonly progressNow = signal(Date.now())
 
-  // Create toolbar: pick a scope and start a backup as a tracked action.
+  // Create dialog: the table's main action opens it, the scope is picked inside, and
+  // the command leaves from its confirm button as a tracked action. Opening resets
+  // the scope to the first one on purpose — a choice remembered from a minute ago is
+  // the very slip the dialog exists to prevent — and clears the last refusal, which
+  // otherwise stands as the first line of the body while the dialog is open.
+  protected readonly createOpen = signal(false)
   protected readonly createScope = signal(HILOS_BACKUP_SCOPES[0].value)
   protected readonly create = createHilosTrackedAction()
 
@@ -1069,6 +1091,12 @@ export class HilosBackupPage {
     })
   }
 
+  protected openCreate(): void {
+    this.create.clearError()
+    this.createScope.set(HILOS_BACKUP_SCOPES[0].value)
+    this.createOpen.set(true)
+  }
+
   protected onScope(event: Event): void {
     this.createScope.set((event.target as HTMLSelectElement).value)
   }
@@ -1077,7 +1105,11 @@ export class HilosBackupPage {
     if (this.create.busy()) {
       return
     }
-    await this.create.run(this.actions().sendBackupCreate(this.createScope()))
+    if (
+      await this.create.run(this.actions().sendBackupCreate(this.createScope()))
+    ) {
+      this.createOpen.set(false)
+    }
   }
 
   protected async toggleKeep(

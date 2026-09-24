@@ -2,9 +2,10 @@
 // stored-backup list inside the admin shell, with its row actions. The list is
 // live — rows arrive over the socket from the backup runtime index, and a run in
 // flight is not one of them: it is the table's own bar, which this view does not draw
-// yet (HIL-814) and reads only to keep the create button honest. Its actions (create
-// with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
-// the core headless's (createHilosBackupsActions); each dispatches a tracked action
+// yet (HIL-814) and reads only to keep the create button honest. Its actions (create,
+// asked for its scope in the dialog the table's main action opens; per-row delete,
+// per-row keep toggle, per-row restore) are the core headless's
+// (createHilosBackupsActions); each dispatches a tracked action
 // and surfaces the backend's failure (authoritative-backend). Restore is the
 // destructive one: it is offered as a button only where the backend says so
 // (everywhere but production), it confirms by typing the archive id, and while it
@@ -14,10 +15,11 @@
 // block that closes it — the backend answers that personally in the page-data section,
 // so a second admin looking at the same page sees nothing. All table logic, the row
 // view-model, and what the backup list declares about its frame — its search, the
-// scope and period filters, its columns — are the core headless's too; this view
-// owns only the markup, so a project mounts it by passing its HilosBackupsContext.
+// scope and period filters, the create button as its main action, its columns — are
+// the core headless's too; this view owns only the markup (and the create dialog
+// that main action opens), so a project mounts it by passing its HilosBackupsContext.
 // Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   HILOS_BACKUP_CIRCLE_COPY,
   HILOS_BACKUP_REOPEN_COPY,
@@ -175,12 +177,32 @@ function outOfReachClass(row: HilosBackupRow): string | undefined {
 
 /**
  * The framework backup admin page: the searchable, sortable backup list with a
- * create toolbar and per-row keep / delete actions.
+ * create dialog behind the table's main action and per-row keep / delete actions.
  *
  * @param props The project context (scope stores + action lifecycle).
  */
 export function HilosBackupPage({ context }: HilosBackupPageProps) {
-  const backups = useMemo(() => createHilosBackupsTable(context), [context])
+  // Create dialog: the table's main action opens it, the scope is picked inside, and
+  // the command leaves from its confirm button as a tracked action. Its state stands
+  // above the table factory because the opener goes into it as an argument — and the
+  // opener is memoized on the one stable piece of the tracked action, so the factory
+  // does not rebuild the table on every render. Opening resets the scope to the first
+  // one on purpose — a choice remembered from a minute ago is the very slip the
+  // dialog exists to prevent — and clears the last refusal, which otherwise stands as
+  // the first line of the body while the dialog is open.
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createScope, setCreateScope] = useState(HILOS_BACKUP_SCOPES[0].value)
+  const create = useTrackedAction()
+  const clearCreateError = create.clearError
+  const openCreate = useCallback(() => {
+    clearCreateError()
+    setCreateScope(HILOS_BACKUP_SCOPES[0].value)
+    setCreateOpen(true)
+  }, [clearCreateError])
+  const backups = useMemo(
+    () => createHilosBackupsTable(context, { openCreate }),
+    [context, openCreate],
+  )
   // The page's second table, on the same page scope under its own key: who the operator
   // named to check the system after a restore.
   const circle = useMemo(
@@ -227,15 +249,17 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     }
   }, [backups, circle, restoreProgress, progressClock])
 
-  // Create toolbar: pick a scope and start a backup as a tracked action.
-  const [createScope, setCreateScope] = useState(HILOS_BACKUP_SCOPES[0].value)
-  const create = useTrackedAction()
+  function closeCreate(): void {
+    setCreateOpen(false)
+  }
 
   async function submitCreate(): Promise<void> {
     if (create.busy) {
       return
     }
-    await create.run(actions.sendBackupCreate(createScope))
+    if (await create.run(actions.sendBackupCreate(createScope))) {
+      closeCreate()
+    }
   }
 
   // Keep toggle: a per-row switch dispatched as a tracked action; the row stays
@@ -479,37 +503,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
 
   return (
     <HilosAdminPage page={HilosPages.BACKUP}>
-      <div className="d-flex flex-wrap align-items-end gap-2 mb-3">
-        <div>
-          <label className="form-label" htmlFor="hilos-backup-create-scope">
-            Scope
-          </label>
-          <select
-            id="hilos-backup-create-scope"
-            className="form-select"
-            disabled={create.busy}
-            data-id="hilos-backup-create-scope"
-            value={createScope}
-            onChange={(event) => setCreateScope(event.target.value)}
-          >
-            {HILOS_BACKUP_SCOPES.map((scope) => (
-              <option key={scope.value} value={scope.value}>
-                {scope.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <LoadingButton
-          className="btn-primary"
-          loading={create.loading}
-          disabled={create.busy}
-          data-id="hilos-backup-create"
-          onClick={() => void submitCreate()}
-        >
-          Create backup
-        </LoadingButton>
-      </div>
-
       {restoreStatus ? (
         <div
           className={`alert ${
@@ -1239,6 +1232,54 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             <code>{circleRemoveRow.identifier}</code>
           </p>
         ) : null}
+      </HilosModal>
+
+      <HilosModal
+        open={createOpen}
+        title="Create backup"
+        closeOnBackdrop={!create.busy}
+        closeOnEsc={!create.busy}
+        onClose={closeCreate}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={create.busy}
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              className="btn-primary"
+              loading={create.loading}
+              data-id="hilos-backup-create-confirm"
+              onClick={() => void submitCreate()}
+            >
+              Create
+            </LoadingButton>
+          </>
+        )}
+      >
+        <HilosActionError action={create} />
+        <label className="form-label" htmlFor="hilos-backup-create-scope">
+          Scope
+        </label>
+        <select
+          id="hilos-backup-create-scope"
+          className="form-select"
+          disabled={create.busy}
+          data-id="hilos-backup-create-scope"
+          data-autofocus
+          value={createScope}
+          onChange={(event) => setCreateScope(event.target.value)}
+        >
+          {HILOS_BACKUP_SCOPES.map((scope) => (
+            <option key={scope.value} value={scope.value}>
+              {scope.label}
+            </option>
+          ))}
+        </select>
       </HilosModal>
     </HilosAdminPage>
   )

@@ -2,9 +2,10 @@
 stored-backup list inside the admin shell, with its row actions. The list is live
 — rows arrive over the socket from the backup runtime index, and a run in flight is
 not one of them: it stands as the bar above the table, with the caption the core
-assembles out of the bar's own figures (HIL-820). Its actions (create with a scope
-picker, per-row delete, per-row keep toggle, per-row restore) are the core
-headless's (createHilosBackupsActions); each dispatches a tracked action and
+assembles out of the bar's own figures (HIL-820). Its actions (create, asked for
+its scope in the dialog the table's main action opens; per-row delete, per-row
+keep toggle, per-row restore) are the core headless's
+(createHilosBackupsActions); each dispatches a tracked action and
 surfaces the backend's failure (authoritative-backend). Restore is the
 destructive one: it is offered as a button only where the backend says so
 (everywhere but production), it confirms by typing the archive id, and while it
@@ -14,8 +15,9 @@ verification window, and the one browser that started the restore is offered the
 block that closes it — the backend answers that personally in the page-data
 section, so a second admin looking at the same page sees nothing. All table logic,
 the row view-model, and what the list declares about its frame — columns, search,
-the scope and period filters, empty state — are the core headless's too; this view
-owns only the markup, so a project mounts it by passing its HilosBackupsContext.
+the scope and period filters, the create button as its main action, empty state —
+are the core headless's too; this view owns only the markup (and the create dialog
+that main action opens), so a project mounts it by passing its HilosBackupsContext.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
@@ -77,7 +79,10 @@ const props = defineProps<{
   context: HilosBackupsContext
 }>()
 
-const backups = createHilosBackupsTable(props.context)
+// The create dialog's open state stands above the factory: what the table's main
+// action presses is the opener below, and the factory takes it as an argument.
+const createOpen = ref(false)
+const backups = createHilosBackupsTable(props.context, { openCreate })
 const backupsTable = backups.controller
 // The page's second table, on the same page scope under its own key: who the operator
 // named to check the system after a restore.
@@ -195,19 +200,37 @@ function outOfReachClass(row: HilosBackupRow): string | undefined {
   return isBackupOutOfReach(row) ? 'text-body-secondary' : undefined
 }
 
-// Create toolbar: pick a scope and start a backup as a tracked action.
+// Create dialog: the table's main action opens it, the scope is picked inside, and
+// the command leaves from its confirm button as a tracked action. Opening resets
+// the scope to the first one on purpose — a choice remembered from a minute ago is
+// the very slip the dialog exists to prevent — and clears the last refusal, which
+// otherwise stands as the first line of the body for as long as the dialog is open.
 const createScope = ref(HILOS_BACKUP_SCOPES[0].value)
+const createAction = useTrackedAction()
 const {
   loading: createLoading,
   busy: createBusy,
   run: runCreateAction,
-} = useTrackedAction()
+  clearError: clearCreateError,
+} = createAction
+
+function openCreate(): void {
+  clearCreateError()
+  createScope.value = HILOS_BACKUP_SCOPES[0].value
+  createOpen.value = true
+}
+
+function closeCreate(): void {
+  createOpen.value = false
+}
 
 async function submitCreate(): Promise<void> {
   if (createBusy.value) {
     return
   }
-  await runCreateAction(sendBackupCreate(createScope.value))
+  if (await runCreateAction(sendBackupCreate(createScope.value))) {
+    closeCreate()
+  }
 }
 
 // Keep toggle: a per-row switch dispatched as a tracked action; the row stays
@@ -443,36 +466,6 @@ function openOutcome(row: HilosBackupRow): void {
 
 <template>
   <HilosAdminPage :page="HilosPages.BACKUP">
-    <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
-      <div>
-        <label class="form-label" for="hilos-backup-create-scope">Scope</label>
-        <select
-          id="hilos-backup-create-scope"
-          v-model="createScope"
-          class="form-select"
-          :disabled="createBusy"
-          data-id="hilos-backup-create-scope"
-        >
-          <option
-            v-for="scope in HILOS_BACKUP_SCOPES"
-            :key="scope.value"
-            :value="scope.value"
-          >
-            {{ scope.label }}
-          </option>
-        </select>
-      </div>
-      <LoadingButton
-        class="btn-primary"
-        :loading="createLoading"
-        :disabled="createBusy"
-        data-id="hilos-backup-create"
-        @click="submitCreate"
-      >
-        Create backup
-      </LoadingButton>
-    </div>
-
     <div
       v-if="restoreStatus"
       class="alert"
@@ -1128,6 +1121,51 @@ function openOutcome(row: HilosBackupRow): void {
           @click="submitCircleRemove"
         >
           Remove
+        </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="createOpen"
+      title="Create backup"
+      :close-on-backdrop="!createBusy"
+      :close-on-esc="!createBusy"
+      @cancel="closeCreate"
+    >
+      <HilosActionError :action="createAction" />
+      <label class="form-label" for="hilos-backup-create-scope">Scope</label>
+      <select
+        id="hilos-backup-create-scope"
+        v-model="createScope"
+        class="form-select"
+        :disabled="createBusy"
+        data-id="hilos-backup-create-scope"
+        data-autofocus
+      >
+        <option
+          v-for="scope in HILOS_BACKUP_SCOPES"
+          :key="scope.value"
+          :value="scope.value"
+        >
+          {{ scope.label }}
+        </option>
+      </select>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="createBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-primary"
+          :loading="createLoading"
+          data-id="hilos-backup-create-confirm"
+          @click="submitCreate"
+        >
+          Create
         </LoadingButton>
       </template>
     </HilosModal>

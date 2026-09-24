@@ -54,17 +54,38 @@ async function newestArchiveKey(
 }
 
 /**
- * Run one schema-only backup from the page's own form, wait for it to land, and
+ * Ask for one schema-only backup the way a person does: press the table's main
+ * action, pick the scope in the dialog it opens, confirm. The scope is picked every
+ * time, because the dialog opens on the first scope rather than on the last one
+ * picked (HIL-1021). Resolves once the dialog has closed — that is the accepted
+ * create; a refused one keeps the dialog open, and the caller's toast assertion
+ * would then time out on the refusal instead.
+ *
+ * @param page Page of an admin standing on the backup page.
+ */
+async function askCreate(page: Page): Promise<void> {
+  await page.getByTestId('hilos-table-main-action').click()
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toBeVisible()
+  await dialog
+    .getByTestId('hilos-backup-create-scope')
+    .selectOption('schema-only')
+  const confirm = dialog.getByTestId('hilos-backup-create-confirm')
+  await expect(confirm).toBeVisible()
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+  await expect(dialog).toBeHidden()
+}
+
+/**
+ * Run one schema-only backup from the page's own dialog, wait for it to land, and
  * name the row it made. The card a finished run raises is what says the archive
  * is on disk; scope schema-only keeps the dump small.
  */
 async function createBackup(
   page: import('@playwright/test').Page,
 ): Promise<string> {
-  await page
-    .getByTestId('hilos-backup-create-scope')
-    .selectOption('schema-only')
-  await page.getByTestId('hilos-backup-create').click()
+  await askCreate(page)
   await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
   await expect(
     page.getByTestId('hilos-toasts').getByText('is ready.'),
@@ -93,7 +114,7 @@ async function deleteBackup(
 const READY_CARD = /Backup "([^"]+)" is ready\./
 
 /**
- * Run one schema-only backup from the page's own form and name the archive it made.
+ * Run one schema-only backup from the page's own dialog and name the archive it made.
  *
  * The name is read off the card the finished run raises rather than off the top of
  * the table: the card is addressed to this browser alone, while the newest row may
@@ -104,10 +125,7 @@ const READY_CARD = /Backup "([^"]+)" is ready\./
  */
 async function createNamedBackup(page: Page): Promise<string> {
   await dismissToasts(page)
-  await page
-    .getByTestId('hilos-backup-create-scope')
-    .selectOption('schema-only')
-  await page.getByTestId('hilos-backup-create').click()
+  await askCreate(page)
   await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
   const card = page.getByTestId('hilos-toasts').getByText(READY_CARD)
   await expect(card).toBeVisible({ timeout: 60_000 })
@@ -181,7 +199,7 @@ test('closes the backup page to a guest', async ({ page }) => {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-main-action')).toHaveCount(0)
   // The destructive control is behind the same door as the rest of the page
   // (HIL-276): no surface, no restore.
   await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(
@@ -197,7 +215,7 @@ test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-main-action')).toHaveCount(0)
   await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(
     0,
   )
@@ -227,7 +245,7 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-main-action')).toHaveCount(0)
   await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(
     0,
   )
@@ -255,7 +273,7 @@ test('opens the refused backup page the moment admin is granted', async ({
   // the whole verdict arriving - a page payload the client had no way to invent.
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(error).toHaveCount(0)
-  await expect(page.getByTestId('hilos-backup-create')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-main-action')).toBeVisible()
 })
 
 test('creates a backup, shows it as a completed row, and deletes it', async ({
@@ -274,10 +292,7 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   const keysBefore = new Set(await keysOf())
 
   // Create: the smallest scope, so the dump is quick.
-  await page
-    .getByTestId('hilos-backup-create-scope')
-    .selectOption('schema-only')
-  await page.getByTestId('hilos-backup-create').click()
+  await askCreate(page)
 
   // Acceptance is acked at once and the request must not fail: a misconfigured
   // storage root or CLI entry is refused synchronously and would toast here.
@@ -339,6 +354,49 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   ).toHaveCount(0)
 })
 
+// HIL-1021 acceptance, the half the leaf was raised for. A create used to be refused
+// only by a toast in the corner, gone in seconds; asked in a dialog, the refusal
+// stands as the first line of the dialog's body for as long as the dialog is open,
+// with the scope still picked. The stand has backups configured, so the one refusal
+// a browser can provoke here is an unknown scope — the select offers only lawful
+// ones, and the spec adds the unlawful option to the DOM itself before picking it.
+test('keeps the create dialog open with the refusal in it when the backend says no', async ({
+  page,
+}) => {
+  await openBackups(page)
+
+  await page.getByTestId('hilos-table-main-action').click()
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toBeVisible()
+  // The room for a refusal is taken before there is one (form-error): the slot
+  // stands, the plate does not.
+  await expect(dialog.getByTestId('hilos-action-error-slot')).toBeAttached()
+  await expect(dialog.getByTestId('hilos-action-error')).toHaveCount(0)
+
+  const scope = dialog.getByTestId('hilos-backup-create-scope')
+  await scope.evaluate((select: HTMLSelectElement) => {
+    const option = document.createElement('option')
+    option.value = 'no-such-scope'
+    option.textContent = 'No such scope'
+    select.append(option)
+  })
+  await scope.selectOption('no-such-scope')
+  const confirm = dialog.getByTestId('hilos-backup-create-confirm')
+  await expect(confirm).toBeVisible()
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+
+  // The dialog stays, the refusal is its first line, and the scope is still picked;
+  // the toast in the corner is the second addressee (HIL-779), not a replacement.
+  const refusal = dialog.getByTestId('hilos-action-error')
+  await expect(refusal).toBeVisible()
+  await expect(refusal).toContainText('Invalid backup scope: no-such-scope')
+  await expect(dialog).toBeVisible()
+  await expect(scope).toHaveValue('no-such-scope')
+  await expect(page.getByTestId('hilos-toast-error')).toBeVisible()
+  await expect(confirm).toBeEnabled()
+})
+
 // HIL-768 acceptance, and the reason the leaf landed a sender at all: a finished
 // create is the first toast addressed to a SESSION rather than to the socket that
 // asked. Two tabs of one browser is where the promise is either kept or broken -
@@ -363,10 +421,7 @@ test('agrees between two tabs about the card a finished backup raised', async ({
   // also freezes tab B's countdown while it waits, so neither tab burns the card
   // down before the close below.
   await tabA.bringToFront()
-  await tabA
-    .getByTestId('hilos-backup-create-scope')
-    .selectOption('schema-only')
-  await tabA.getByTestId('hilos-backup-create').click()
+  await askCreate(tabA)
   await expect(tabA.getByTestId('hilos-toast-error')).toHaveCount(0)
 
   // The card arrives in the tab that did NOT ask, on a page that knows nothing
@@ -455,10 +510,7 @@ test.fixme('raises the strip in another tab for a backup that lands above its wi
   // instead would prove nothing about the strip — the page re-subscribes when a run
   // ends, and a window arriving is exactly what clears an announcement (P-310).
   await tabA.bringToFront()
-  await tabA
-    .getByTestId('hilos-backup-create-scope')
-    .selectOption('schema-only')
-  await tabA.getByTestId('hilos-backup-create').click()
+  await askCreate(tabA)
   await expect(tabA.getByTestId('hilos-toast-error')).toHaveCount(0)
 
   // Tab B has been told and shown nothing: the strip stands and the top of its window
@@ -502,10 +554,7 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
 
   // A row to aim at. The live arrival of a created row is parked (HIL-432 above), so
   // the row is picked up from a fresh snapshot instead of from a delta.
-  await page
-    .getByTestId('hilos-backup-create-scope')
-    .selectOption('schema-only')
-  await page.getByTestId('hilos-backup-create').click()
+  await askCreate(page)
   await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
 
   // The row key is what the poll waits on, and the restore button is then named in

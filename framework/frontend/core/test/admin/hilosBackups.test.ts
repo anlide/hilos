@@ -16,6 +16,7 @@ import {
   formatRestoreOutcomeLine,
   createHilosBackupsActions,
   createHilosBackupsReopenGate,
+  createHilosBackupsTable,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
@@ -89,6 +90,13 @@ function runBar(
  */
 function gateContext(scopes: ScopeManager): HilosBackupsContext {
   return { scopes } as unknown as HilosBackupsContext
+}
+
+/** A context the table factory can be handed to read its declared frame. */
+function tableContext(): HilosBackupsContext {
+  // The factory touches the connection only from `start()` and the dispatches;
+  // reading the declared frame needs neither.
+  return {} as unknown as HilosBackupsContext
 }
 
 /** A context whose action lifecycle records what was dispatched over it. */
@@ -727,6 +735,34 @@ describe('createHilosBackupsActions', () => {
     actions.sendBackupReopen()
 
     expect(sent).toEqual([{ action: 'backup_reopen', payload: {} }])
+  })
+})
+
+describe('createHilosBackupsTable', () => {
+  // The one seam between the view and the core this leaf adds: the create button is
+  // declared on the frame, and its press is the opener the view lent. Drawing the
+  // button is the bar's and the empty state's, covered in every view already.
+  it('declares the create button as the main action of its frame', () => {
+    const table = createHilosBackupsTable(tableContext(), {
+      openCreate: () => undefined,
+    })
+
+    expect(table.controller.frame.declaration?.mainAction?.label).toBe(
+      'Create backup',
+    )
+  })
+
+  it('presses the main action into the opener the view lent, once', () => {
+    let opened = 0
+    const table = createHilosBackupsTable(tableContext(), {
+      openCreate: () => {
+        opened += 1
+      },
+    })
+
+    table.controller.frame.declaration?.mainAction?.press()
+
+    expect(opened).toBe(1)
   })
 })
 
