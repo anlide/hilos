@@ -325,7 +325,8 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Starts this node's cluster-singleton agents; fired once per leadership term.
+     * Starts this node's cluster-singleton agents; fired once per leadership term, and
+     * again after a worker dies hosting agents.
      *
      * Invoked by the daemon's leader-gated ensure-once once this node is the cluster
      * leader (or the sole node when cluster mode is off) and its workers are ready.
@@ -336,7 +337,8 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * Every agent started here still passes the placement gate in {@see startAgent()}, so an
      * agent the registry declares {@see AgentScope::NODE} is unaffected. Re-fires when a
-     * follower is later promoted, so it must stay idempotent.
+     * follower is later promoted, and on this node after every worker that dies hosting
+     * agents (HIL-502), so it must stay idempotent.
      *
      * @throws InvalidArgumentException When the initial-agents signal cannot be named
      * @throws HilosException Whatever the project's own cluster-singleton start raises

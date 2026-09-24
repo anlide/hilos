@@ -21,14 +21,27 @@ use ReflectionMethod;
 use ReflectionProperty;
 
 /**
- * Unit tests for the leader-gated singleton duties on the daemon (HIL-340):
- * the ensure-once that starts cluster-singleton agents, and the amLeader() gate that
- * keeps cron / readiness / singleton-start on the leader (or standalone) node only.
+ * Unit tests for the leader-gated singleton duties on the daemon (HIL-340, HIL-502):
+ * the ensure-once that starts cluster-singleton agents, the re-arm after a worker dies
+ * hosting them, and the amLeader() gate that keeps cron / readiness / singleton-start
+ * on the leader (or standalone) node only.
  */
 final class DaemonManagerSingletonDutiesTest extends TestCase
 {
+    /** @var class-string<Hilos> App class bound before this test touched it */
+    private string $boundAppClass;
+
+    protected function setUp(): void
+    {
+        $this->boundAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, Hilos::class);
+
+        parent::setUp();
+    }
+
     public function tearDown(): void
     {
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
         Hilos::$sr = null;
         Hilos::$cluster = null;
 
@@ -45,6 +58,57 @@ final class DaemonManagerSingletonDutiesTest extends TestCase
         $this->invokeEnsureSingletonsStarted($manager);
 
         $this->assertSame(1, $server->singletonHostCalls, 'The ensure-once must start singletons once per leadership term.');
+    }
+
+    public function testAWorkerLostWithAgentsRunsTheSingletonStartAgain(): void
+    {
+        $manager = new SingletonDutiesTestManager();
+        $server = $this->registerRecordingWorkerServer($manager);
+        $this->setWorkersReady($manager, true);
+
+        $this->invokeEnsureSingletonsStarted($manager);
+        $manager->reportAgentsLostWithWorker(1, false, ['moderator']);
+        $this->invokeEnsureSingletonsStarted($manager);
+
+        $this->assertSame(
+            2,
+            $server->singletonHostCalls,
+            'A worker lost with agents must re-arm the ensure-once so the next tick starts singletons again.',
+        );
+    }
+
+    public function testTheSingletonStartDoesNotRunAgainWhileTheNodeIsLeaving(): void
+    {
+        $manager = new SingletonDutiesTestManager();
+        $server = $this->registerRecordingWorkerServer($manager);
+        $this->setWorkersReady($manager, true);
+
+        $this->invokeEnsureSingletonsStarted($manager);
+        $manager->startLeaving();
+        $manager->reportAgentsLostWithWorker(1, false, ['moderator']);
+        $this->invokeEnsureSingletonsStarted($manager);
+
+        $this->assertSame(
+            1,
+            $server->singletonHostCalls,
+            'A node that is leaving must not re-run the singleton start after a worker dies with agents.',
+        );
+    }
+
+    public function testTheSingletonStartDoesNotRunWhileTheNodeIsLeaving(): void
+    {
+        $manager = new SingletonDutiesTestManager();
+        $server = $this->registerRecordingWorkerServer($manager);
+        $this->setWorkersReady($manager, true);
+        $manager->startLeaving();
+
+        $this->invokeEnsureSingletonsStarted($manager);
+
+        $this->assertSame(
+            0,
+            $server->singletonHostCalls,
+            'A node that is already leaving must not run the singleton start at all.',
+        );
     }
 
     public function testSingletonStartWaitsForWorkers(): void
@@ -114,6 +178,14 @@ final class DaemonManagerSingletonDutiesTest extends TestCase
 
 final class SingletonDutiesTestManager extends DaemonManager
 {
+    /**
+     * Marks the node as leaving, the way a shutdown request does.
+     */
+    public function startLeaving(): void
+    {
+        $this->shouldExit = true;
+    }
+
     protected function createSignalRouter(): SignalRouter
     {
         return new SignalRouter();

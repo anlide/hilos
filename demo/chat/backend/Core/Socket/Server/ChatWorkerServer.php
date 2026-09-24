@@ -35,7 +35,9 @@ final class ChatWorkerServer extends WorkerServer
      * Calls parent to queue INITIAL_AGENTS_START, then starts a BotAgent for each
      * active bot. Bots are cluster-singletons (leader-only by default), so the
      * per-bot startAgent() is a no-op on a follower; the daemon re-runs this on
-     * promotion, so it must stay idempotent (startAgent() skips a running agent).
+     * promotion and after a worker dies hosting agents, so it must stay idempotent
+     * (startAgent() skips a running agent); that re-run is what brings back a bot
+     * or a shard whose worker died.
      *
      * Then places the `hilos_mail` and `hilos_sms` pools: MAIL_WORKER_COUNT / SMS_WORKER_COUNT
      * indexed shards (1..N) each. Both delivery daemons are neither monopolistic nor

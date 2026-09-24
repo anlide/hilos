@@ -190,7 +190,7 @@ processEventLoop()     ← epoll: accept connections, read data
 servers->onTick()      ← process buffered client data
 dispatchRoleTick()     ← per-iteration hook for the current node lifecycle phase
 if amLeader():         ← leader (or standalone); a follower skips all three
-  ensureSingletonsStarted()  ← start cluster-singleton agents once per leadership term
+  ensureSingletonsStarted()  ← start cluster-singleton agents once per term, and again after a worker dies with agents
   tickReadiness()            ← open the WS once required startup agents are ready
   checkCronJobs()            ← once per minute, after workers ready
 dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
@@ -520,7 +520,9 @@ them:
   "leader AND local workers ready" start condition (the two arrive in any order). The
   first tick both hold, it fires `WorkerServer::onBecameSingletonHost()` and sets an
   internal `singletonsStarted` flag; real `startAgent` calls happen once per
-  leadership term, not per tick. The base `onBecameSingletonHost()` queues
+  leadership term and once more after each worker that dies hosting agents (the
+  loss re-arms the flag, HIL-502) — never per tick, and never while the node is
+  leaving. The base `onBecameSingletonHost()` queues
   `INITIAL_AGENTS_START` (launching the bootstrap agent list via routing); a project
   overrides it to start its own cluster-singletons (e.g. one agent per active bot).
   `WorkerServer::onInitialWorkersReady()` is now a per-node "local workers up" hook

@@ -357,7 +357,8 @@ abstract class DaemonManager extends BaseManager implements
      * @var bool True once this node's cluster-singleton agents have been started for
      *     the current leadership term. Set by the leader-gated ensure-once
      *     ({@see ensureSingletonsStarted()}); cleared on leadership loss by
-     *     {@see stopClusterSingletons()} so a later promotion re-runs the start.
+     *     {@see stopClusterSingletons()} so a later promotion re-runs the start,
+     *     and on a worker lost with agents by {@see rearmSingletonStart()}.
      */
     private bool $singletonsStarted = false;
 
@@ -803,7 +804,7 @@ abstract class DaemonManager extends BaseManager implements
             // sole node when cluster mode is off. A follower starts no cluster-singleton
             // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
             if ($this->amLeader()) {
-                // Start this node's cluster-singleton agents once per leadership term
+                // Start this node's cluster-singleton agents once per term, and again after a worker dies with agents
                 $this->ensureSingletonsStarted();
 
                 // Put the cluster-wide agents whose node the policy picks where the policy
@@ -1113,11 +1114,13 @@ abstract class DaemonManager extends BaseManager implements
      * answering a lost worker must not be able to take the master down with it, least of all
      * while the node is already a worker short.
      *
-     * The frames held for those agents are answered first, before the project hears anything: the
-     * hold for a start under way has no deadline behind it, and this death is the end of the wait
-     * (HIL-1040). First also so a project hook that raises cannot leave an asker waiting forever -
-     * the guard below contains the hook, not what the node owes the people who asked. The agent
-     * answering somebody on their behalf is told next, for the same reason (HIL-1044).
+     * The sink first re-arms the leader's bootstrap start (HIL-502), then answers whoever was
+     * waiting, then tells the project. The frames held for those agents are answered before the
+     * project hears anything: the hold for a start under way has no deadline behind it, and this
+     * death is the end of the wait (HIL-1040). Before the project also so a project hook that
+     * raises cannot leave an asker waiting forever - the guard below contains the hook, not what
+     * the node owes the people who asked. The agent answering somebody on their behalf is told
+     * next, for the same reason (HIL-1044).
      *
      * @param int $workerIndex Index of the worker that died
      * @param bool $isMonopolistic True when that worker was monopolistic
@@ -1126,6 +1129,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
     {
+        $this->rearmSingletonStart();
         $this->answerFramesHeldForLostAgents($agentIds);
         $this->announceAgentsGone($agentIds, AgentsGoneSignalData::REASON_WORKER_DIED);
 
@@ -5980,7 +5984,9 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Starts this node's cluster-singleton agents once per leadership term.
+     * Starts this node's cluster-singleton agents once per leadership term, and once more
+     * after every worker that dies hosting agents, which re-arms it ({@see rearmSingletonStart()});
+     * never while the node is leaving.
      *
      * The ensure-once for the "leader AND workers ready" start condition: called only
      * on the leader (or standalone) node, it fires {@see WorkerServer::onBecameSingletonHost()}
@@ -5988,11 +5994,13 @@ abstract class DaemonManager extends BaseManager implements
      * The two conditions may arrive in any order — a node promoted before its workers
      * register, or workers ready before promotion — and this covers both without a
      * per-tick liveness scan. {@see stopClusterSingletons()} clears the flag on
-     * leadership loss so a later promotion re-runs the start.
+     * leadership loss so a later promotion re-runs the start; {@see rearmSingletonStart()}
+     * clears it when a worker dies with agents. Returns at once when the node is leaving,
+     * so a death a tick before the leave request cannot start agents a tick after.
      */
     private function ensureSingletonsStarted(): void
     {
-        if ($this->singletonsStarted || !$this->workersReady) {
+        if ($this->singletonsStarted || !$this->workersReady || $this->shouldExit) {
             return;
         }
 
@@ -6101,6 +6109,23 @@ abstract class DaemonManager extends BaseManager implements
     private function stopClusterSingletons(): void
     {
         $this->findWorkerServer()?->onLostSingletonHost();
+        $this->singletonsStarted = false;
+    }
+
+    /**
+     * Re-arms the leader's bootstrap start after a worker died hosting agents.
+     *
+     * The death took agents the leader's start had raised, and no later address brings back
+     * the ones nobody addresses — the moderator, the context analyzer, the bots, the delivery
+     * shards. The start already had to be repeatable, because promoting a follower runs it
+     * again. Clearing the flag on a follower changes nothing: the start is called only under
+     * amLeader(). A node that is leaving still clears the flag here;
+     * {@see ensureSingletonsStarted()} is what refuses to run the start while the node is
+     * leaving, because the death can arrive a tick before the leave request and the start a
+     * tick after.
+     */
+    private function rearmSingletonStart(): void
+    {
         $this->singletonsStarted = false;
     }
 
@@ -6861,7 +6886,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Empty by default: the framework has already done the whole of its part by the time this
      * is called - the agents are off the roster, so the next frame addressed to one starts it
-     * again. This is where a project adds what only it knows, and usually that is nothing.
+     * again, and whatever the leader's bootstrap started comes back on its next tick. This is
+     * where a project adds what only it knows, and usually that is nothing.
      *
      * Called AFTER the journal line and never instead of it, the same bargain
      * {@see onContainedFailure()} keeps. The record of a lost worker is not overridable,
