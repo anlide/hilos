@@ -119,22 +119,6 @@ final class ChatSignalConstants
      */
     public const string USER_ADMIN_RENAME_DONE = 'user_admin_rename_done';
 
-    /** @var string Client → server (Hilos user page-action): admin merges the loser account into this survivor (HIL-378) */
-    public const string ACCOUNT_MERGE = 'account_merge';
-
-    /**
-     * @var string ChatAgent → initiator: account merge succeeded (ack for ACCOUNT_MERGE)
-     *
-     * Still chat's name although the merge itself is the framework's since HIL-729: the ack
-     * answers a page action of this project's, and only this project knows what its admin
-     * surface is listening for. The library hands the outcome over on a frame and the agent
-     * says it under this name.
-     */
-    public const string ACCOUNT_MERGE_SUCCESS = 'account_merge_success';
-
-    /** @var string ChatAgent → initiator: account merge failed (ack for ACCOUNT_MERGE) */
-    public const string ACCOUNT_MERGE_FAIL = 'account_merge_fail';
-
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';
 

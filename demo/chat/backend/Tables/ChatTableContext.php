@@ -7,6 +7,7 @@ namespace Demo\Chat\Tables;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Demo\Chat\Tables\Bot\BotsTable;
+use Demo\Chat\Tables\HilosUser\HilosMergeCandidatesTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Hilos\Core\Table\Context\TableContext;
@@ -33,6 +34,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  *
  * @property-read AdminUsersTable $adminUsers
  * @property-read HilosUsersTable $hilosUsers
+ * @property-read HilosMergeCandidatesTable $hilosMergeCandidates
  * @property-read BotsTable $bots
  * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  * @property-read HilosSettingsTable $settings
@@ -54,6 +56,7 @@ final class ChatTableContext extends TableContext
 {
     public const string adminUsers = 'adminUsers';
     public const string hilosUsers = 'hilosUsers';
+    public const string hilosMergeCandidates = HilosMergeCandidatesTable::TABLE;
     public const string bots = 'bots';
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
     public const string settings = HilosSettingsTable::TABLE;

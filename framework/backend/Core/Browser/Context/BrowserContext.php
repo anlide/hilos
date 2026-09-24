@@ -1627,6 +1627,7 @@ abstract class BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when the field is unknown
+     * @throws PageInternalErrorException When a project computed field cannot be resolved
      */
     protected function computeBrowserField(
         string $browserKey,

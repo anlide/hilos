@@ -4,53 +4,65 @@ declare(strict_types=1);
 
 namespace Hilos\Users\DTO;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
-use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Pages\Users\AbstractHilosUserPage;
 
 /**
- * Project agent → sessions library: fold this account into that one (HIL-378, HIL-729).
+ * Hilos user page → sessions library: fold one account into another (HIL-411).
  *
- * What {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE} carries, and the browser's way into
- * the same core an operator reaches through {@see CliCommands::ACCOUNT_MERGE}. The admin
- * table submits the merge as a page action; the page cannot run it, because the merge ends
- * in the loser's live sessions being signed out and those sessions are the library's, so it
- * names the two accounts here and lets the library do the work.
+ * {@see AbstractHilosUserPage} owns the ADMIN gate and forwards the write to
+ * {@see AbstractSessionsLibraryAgent}, which owns the sessions closed by a merge. The password
+ * fate is a backed-enum value on the transport and null when the browser did not need or make a
+ * choice.
  *
- * The accept key is the person waiting, not a party to the merge: the library hands it back
- * untouched on {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT} so the project can ack
- * the one connection that asked, under the name its own surface listens for. There is no
- * password fate among the fields on purpose - naming which of two passwords survives is an
- * operator's decision on a command line, and the admin surface has no control for it
- * (HIL-411); a merge that needs the decision is refused rather than guessed at.
+ * Everything after the merge fields describes the waiting submit ({@see HandoverAskInterface}):
+ * the page and request to answer, the browser action the ack belongs to, and its success text.
+ * The success text starts null because only the library knows the counts after the write.
  */
-final class AccountMergeSignalData extends BaseDTO implements SignalDataInterface
+final class AccountMergeSignalData extends BaseDTO implements HandoverAskInterface
 {
     /**
      * @param int $survivorUserId Survivor user id that absorbs the loser
      * @param int $loserUserId Loser user id folded into the survivor
-     * @param string $acceptKey Initiating connection accept key to ack with the result
+     * @param ?string $passwordFate Password-fate backed value, or null when unnamed
+     * @param string $replySignal Agent-signal name the library reports back under
+     * @param string $acceptKey Initiating connection accept key
+     * @param ?string $requestId Client-minted tracked request id, or null when untracked
+     * @param string $action Browser action name the ack is addressed to
+     * @param ?string $successMessage Initial success sentence, null until the library has counts
      */
     public function __construct(
         public readonly int $survivorUserId,
         public readonly int $loserUserId,
+        public readonly ?string $passwordFate,
+        public readonly string $replySignal,
         public readonly string $acceptKey,
+        public readonly ?string $requestId,
+        public readonly string $action,
+        public readonly ?string $successMessage,
     ) {
     }
 
     /**
      * Convert DTO to array for transport.
      *
-     * @return array<string, int|string> DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
         return [
             'survivorUserId' => $this->survivorUserId,
             'loserUserId' => $this->loserUserId,
+            'passwordFate' => $this->passwordFate,
+            'replySignal' => $this->replySignal,
             'acceptKey' => $this->acceptKey,
+            'requestId' => $this->requestId,
+            'action' => $this->action,
+            'successMessage' => $this->successMessage,
         ];
     }
 
@@ -59,14 +71,19 @@ final class AccountMergeSignalData extends BaseDTO implements SignalDataInterfac
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload names neither side of the merge or no key to ack
+     * @throws InvalidFormatException When the payload cannot name the merge or its waiting submit
      */
     public static function fromArray(array $data): static
     {
         return new static(
             survivorUserId: self::requireInt($data, 'survivorUserId'),
             loserUserId: self::requireInt($data, 'loserUserId'),
+            passwordFate: self::optionalString($data, 'passwordFate'),
+            replySignal: self::requireString($data, 'replySignal'),
             acceptKey: self::requireString($data, 'acceptKey'),
+            requestId: self::optionalString($data, 'requestId'),
+            action: self::requireString($data, 'action'),
+            successMessage: self::optionalString($data, 'successMessage'),
         );
     }
 }

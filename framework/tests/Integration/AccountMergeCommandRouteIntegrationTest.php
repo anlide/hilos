@@ -8,6 +8,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
@@ -24,8 +25,6 @@ use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
-use Hilos\Users\AccountMergeSummary;
-use Hilos\Users\DTO\AccountMergeResultSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 
 /**
@@ -46,9 +45,9 @@ use Hilos\Users\DTO\AccountMergeSignalData;
  * honest, the row move runs where a failure still rolls the merge back, and a project that
  * wired neither refuses instead of half-merging.
  *
- * The browser half is the same core through another door, so it is driven here too: one case,
- * enough to pin that the door leads to the same place and answers on a frame rather than on
- * the operator's socket.
+ * The browser half is the same core through another door, so it is driven here too: success,
+ * refusal and password-choice branches answer the page's named handover frame rather than the
+ * operator's socket.
  */
 final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -308,23 +307,18 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $agent = new AccountMergeRouteTestAgent();
 
         $agent->onSignalAgent(
-            new AgentSignalData(new AccountMergeSignalData(
-                self::SURVIVOR_USER_ID,
-                self::LOSER_USER_ID,
-                self::ACCEPT_KEY,
-            )),
+            new AgentSignalData($this->browserRequest()),
             '',
             HilosSignalConstants::HILOS_ACCOUNT_MERGE,
         );
 
-        $result = $this->consumeMergeResult();
+        $result = $this->consumeMergeAnswer();
         self::assertSame(self::ACCEPT_KEY, $result->acceptKey);
-        $outcome = $result->outcome;
-        self::assertInstanceOf(AccountMergeSummary::class, $outcome, 'A merge that went through hands back a summary');
         self::assertSame(
-            [AccountMergeRouteTestAgent::ROW_FAMILY => AccountMergeRouteTestAgent::ROWS_MOVED],
-            $outcome->rowsMoved,
+            'Merged #12 into #11. Moved: sign-in methods 1, notes 3.',
+            $result->successMessage,
         );
+        self::assertNull($result->error);
         self::assertSame(
             self::SURVIVOR_USER_ID,
             $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
@@ -342,18 +336,59 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $agent->refuseWith = new ValidationException('No such user: 12');
 
         $agent->onSignalAgent(
-            new AgentSignalData(new AccountMergeSignalData(
-                self::SURVIVOR_USER_ID,
-                self::LOSER_USER_ID,
-                self::ACCEPT_KEY,
-            )),
+            new AgentSignalData($this->browserRequest()),
             '',
             HilosSignalConstants::HILOS_ACCOUNT_MERGE,
         );
 
-        $result = $this->consumeMergeResult();
+        $result = $this->consumeMergeAnswer();
         self::assertSame(self::ACCEPT_KEY, $result->acceptKey);
-        self::assertSame('No such user: 12', $result->outcome);
+        self::assertSame('No such user: 12', $result->error);
+        self::assertNull($result->successMessage);
+    }
+
+    /**
+     * Browser wording asks for a choice without leaking the CLI flag syntax.
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testBrowserMergeWithTwoPasswordsAndNoFateAsksForAChoice(): void
+    {
+        $this->seedPassword(self::SURVIVOR_USER_ID);
+        $this->seedPassword(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest()),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+
+        $result = $this->consumeMergeAnswer();
+        self::assertSame(AbstractSessionsLibraryAgent::ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE, $result->error);
+        self::assertNull($agent->moved);
+    }
+
+    /**
+     * A browser password choice reaches the shared identity re-point.
+     *
+     * @throws HilosException When a seed, the merge, or a read-back fails
+     */
+    public function testBrowserMergeWithANamedFateCompletes(): void
+    {
+        $survivorEmail = $this->seedPassword(self::SURVIVOR_USER_ID);
+        $this->seedPassword(self::LOSER_USER_ID);
+        $agent = new AccountMergeRouteTestAgent();
+
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest(PasswordFate::SURVIVOR)),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+
+        $result = $this->consumeMergeAnswer();
+        self::assertNull($result->error);
+        self::assertSame($survivorEmail, $this->identities()->findPasswordByUser(self::SURVIVOR_USER_ID)?->identifier);
     }
 
     /**
@@ -422,16 +457,40 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * Takes the one result frame the browser path queued.
+     * Builds the browser's handed-over merge request.
      *
-     * @return AccountMergeResultSignalData What the library handed back to the project
+     * @param ?PasswordFate $passwordFate Fate named by the browser, or null
+     * @return AccountMergeSignalData Request addressed back to the test page
      */
-    private function consumeMergeResult(): AccountMergeResultSignalData
+    private function browserRequest(?PasswordFate $passwordFate = null): AccountMergeSignalData
+    {
+        return new AccountMergeSignalData(
+            survivorUserId: self::SURVIVOR_USER_ID,
+            loserUserId: self::LOSER_USER_ID,
+            passwordFate: $passwordFate?->value,
+            replySignal: HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: 'request-1',
+            action: HilosSignalConstants::HILOS_USER_MERGE,
+            successMessage: null,
+        );
+    }
+
+    /**
+     * Takes the one handover answer the browser path queued.
+     *
+     * @return HandoverAnswerSignalData What the library handed back to the page
+     */
+    private function consumeMergeAnswer(): HandoverAnswerSignalData
     {
         $results = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $data = $signal->data;
-            if ($data instanceof AgentSignalData && $data->data instanceof AccountMergeResultSignalData) {
+            if (
+                $signal->signalName->getName() === HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE
+                && $data instanceof AgentSignalData
+                && $data->data instanceof HandoverAnswerSignalData
+            ) {
                 $results[] = $data->data;
             }
         }

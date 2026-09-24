@@ -34,6 +34,8 @@ const props = defineProps<{
    * see it.
    */
   titleId: string
+  /** Whether the declared search field owns focus when its containing modal opens. */
+  autofocusSearch?: boolean
 }>()
 
 // The declaration does not change over the life of a table, so its parts are
@@ -185,6 +187,7 @@ function onSearchInput(event: Event): void {
           :placeholder="searchPlaceholder"
           :aria-label="searchPlaceholder"
           :value="search"
+          :data-autofocus="autofocusSearch ? '' : undefined"
           data-id="hilos-table-search"
           @input="onSearchInput"
         />

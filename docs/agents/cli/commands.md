@@ -69,8 +69,9 @@ no seam refuses rather than falling silent.
 sign-in identities itself and asks the project to move the rows only it knows about, so the
 reply carries the project's own tally under the project's own names — in chat, `messages`.
 It is also the one command of the six with a second way in: an admin table submits the same
-merge as a page action, the page forwards it to the library on `hilos_account_merge`, and the
-outcome comes back on `hilos_account_merge_result` for the project to ack under its own name.
+merge as the `hilos_user_merge` action on the single-user page, the page forwards it to the
+library on `hilos_account_merge`, and the outcome comes back to that page on
+`hilos_account_merge_done` so the tracked action is completed where it began.
 
 ## Test-only commands
 

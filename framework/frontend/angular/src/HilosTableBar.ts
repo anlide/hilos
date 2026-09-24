@@ -92,6 +92,7 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
                 [placeholder]="searchPlaceholder()"
                 [attr.aria-label]="searchPlaceholder()"
                 [value]="search()"
+                [attr.data-autofocus]="autofocusSearch() ? '' : null"
                 data-id="hilos-table-search"
                 (input)="onSearchInput($event)"
               />
@@ -276,6 +277,8 @@ export class HilosTableBar<R> {
    * it.
    */
   readonly titleId = input.required<string>()
+  /** Whether the declared search field owns focus when its containing modal opens. */
+  readonly autofocusSearch = input(false)
   /**
    * The human name of one row a bulk run left untouched, handed down to the
    * selection panel; the bar only passes it on.

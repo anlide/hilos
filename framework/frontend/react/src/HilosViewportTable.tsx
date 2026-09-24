@@ -94,6 +94,8 @@ export interface HilosViewportTableProps<R> {
   searchable?: boolean
   /** Placeholder for the search box. */
   searchPlaceholder?: string
+  /** Whether the search box owns focus when this table opens inside a modal. */
+  autofocusSearch?: boolean
   /** Message shown when there are no rows and the page declared no empty state. */
   emptyText?: string
   /**
@@ -145,6 +147,7 @@ export function HilosViewportTable<R>({
   label,
   searchable = false,
   searchPlaceholder = 'Search…',
+  autofocusSearch = false,
   emptyText = 'No rows.',
   empty,
   placeholderText = 'Removed',
@@ -652,6 +655,7 @@ export function HilosViewportTable<R>({
         <HilosTableBar
           controller={controller}
           titleId={titleId}
+          autofocusSearch={autofocusSearch}
           bulkUntouched={bulkUntouched}
         />
       ) : null}
@@ -666,6 +670,7 @@ export function HilosViewportTable<R>({
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             value={search}
+            data-autofocus={autofocusSearch ? '' : undefined}
             data-id="hilos-table-search"
             onChange={(event) => controller.setSearch(event.target.value)}
           />

@@ -36,6 +36,8 @@ export interface HilosTableBarProps<R> {
    * see it.
    */
   titleId: string
+  /** Whether the declared search field owns focus when its containing modal opens. */
+  autofocusSearch?: boolean
   /**
    * The human name of one row a bulk run left untouched, handed down to the
    * selection panel; the bar only passes it on.
@@ -60,6 +62,7 @@ function filterKey(view: HilosTableFilterView): string {
 export function HilosTableBar<R>({
   controller,
   titleId,
+  autofocusSearch = false,
   bulkUntouched,
 }: HilosTableBarProps<R>) {
   // The declaration does not change over the life of a table, so its parts are
@@ -184,6 +187,7 @@ export function HilosTableBar<R>({
                 placeholder={searchPlaceholder}
                 aria-label={searchPlaceholder}
                 value={search}
+                data-autofocus={autofocusSearch ? '' : undefined}
                 data-id="hilos-table-search"
                 onChange={(event) => controller.setSearch(event.target.value)}
               />

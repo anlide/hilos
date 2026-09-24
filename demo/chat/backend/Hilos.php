@@ -142,6 +142,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
+use Demo\Chat\Tables\HilosUser\HilosMergeCandidatesTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Demo\Chat\Users\ChatAdminAudience;
@@ -506,6 +507,7 @@ final class Hilos extends HilosFacade
     public const array TABLES = [
         ChatTableContext::adminUsers => AdminUsersTable::class,
         ChatTableContext::hilosUsers => HilosUsersTable::class,
+        ChatTableContext::hilosMergeCandidates => HilosMergeCandidatesTable::class,
         ChatTableContext::bots => BotsTable::class,
         ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
         ChatTableContext::settings => HilosSettingsTable::class,
@@ -663,6 +665,7 @@ final class Hilos extends HilosFacade
                     HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::HILOS_USER_ID,
                 ],
             ],
+            ChatTableContext::hilosMergeCandidates => [],
         ],
     ];
 

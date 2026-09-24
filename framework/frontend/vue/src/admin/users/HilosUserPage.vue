@@ -15,12 +15,18 @@ import { computed, ref, watch } from 'vue'
 
 import {
   createHilosUserDetail,
+  createHilosAccountMerge,
+  createHilosMergeCandidates,
   createHilosUserRename,
   HilosPages,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
+  sessionUserId,
   takeTheirsRowEdit,
+  type HilosMergeCandidateIdentity,
+  type HilosMergeCandidateRow,
+  type HilosPasswordFate,
   type HilosUsersContext,
   type RowEditBaseline,
   type RowEditState,
@@ -30,11 +36,14 @@ import {
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosActionError from '../../HilosActionError.vue'
 import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosModal from '../../HilosModal.vue'
+import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
+import { useTrackedAction } from '../../useTrackedAction.js'
 
 const props = defineProps<{
   /** The project context: scope stores, connection, and the user collection. */
@@ -68,6 +77,119 @@ const rename = createHilosUserRename(props.context)
 
 const detail = useSignal(userDetail)
 const error = useSignal(rename.renameError)
+
+const mergeCandidates = createHilosMergeCandidates(props.context)
+const mergeRows = useSignal(mergeCandidates.controller.rows)
+const accountMerge = createHilosAccountMerge(props.context)
+const mergeAction = useTrackedAction()
+const currentUserId = useSignal(sessionUserId(props.context.scopes))
+const mergeOpen = ref(false)
+const mergeStep = ref<1 | 2>(1)
+const selectedCandidateId = ref<number | null>(null)
+const selectedSnapshot = ref<HilosMergeCandidateRow | null>(null)
+const passwordFate = ref<HilosPasswordFate | null>(null)
+
+const selectedCandidate = computed(() => {
+  const selected = mergeRows.value.find(
+    (entry) => entry.row?.id === selectedCandidateId.value,
+  )
+
+  return selected?.pending === 'remove' || selected?.placeholder
+    ? null
+    : (selected?.row ?? null)
+})
+const mergeSummaryCandidate = computed(
+  () => selectedCandidate.value ?? selectedSnapshot.value,
+)
+const passwordChoiceRequired = computed(
+  () =>
+    detail.value?.hasPassword === true &&
+    selectedCandidate.value?.hasPassword === true,
+)
+const mergeGone = computed(
+  () => mergeStep.value === 2 && selectedCandidate.value === null,
+)
+const mergeDisabled = computed(
+  () =>
+    mergeAction.busy.value ||
+    mergeGone.value ||
+    selectedCandidate.value === null ||
+    (passwordChoiceRequired.value && passwordFate.value === null),
+)
+
+watch(mergeRows, () => {
+  if (
+    mergeStep.value === 1 &&
+    selectedCandidateId.value !== null &&
+    selectedCandidate.value === null
+  ) {
+    selectedCandidateId.value = null
+  }
+})
+
+function identityTitle(identity: HilosMergeCandidateIdentity): string {
+  return identity.provider ?? identity.type
+}
+
+function openMerge(): void {
+  const survivor = detail.value
+  if (!survivor) {
+    return
+  }
+  mergeCandidates.dispose()
+  mergeAction.clearError()
+  mergeStep.value = 1
+  selectedCandidateId.value = null
+  selectedSnapshot.value = null
+  passwordFate.value = null
+  mergeOpen.value = true
+  mergeCandidates.start(survivor.id)
+}
+
+function closeMerge(): void {
+  mergeOpen.value = false
+  mergeCandidates.dispose()
+}
+
+function chooseCandidate(row: HilosMergeCandidateRow): void {
+  if (row.id === currentUserId.value) {
+    return
+  }
+  selectedCandidateId.value = row.id
+  passwordFate.value = null
+  mergeAction.clearError()
+}
+
+function nextMergeStep(): void {
+  if (!selectedCandidate.value) {
+    return
+  }
+  selectedSnapshot.value = selectedCandidate.value
+  mergeStep.value = 2
+}
+
+function previousMergeStep(): void {
+  mergeStep.value = 1
+  if (selectedCandidate.value === null) {
+    selectedCandidateId.value = null
+    selectedSnapshot.value = null
+  }
+  mergeAction.clearError()
+}
+
+async function submitMerge(): Promise<void> {
+  const survivor = detail.value
+  const loser = selectedCandidate.value
+  if (!survivor || !loser || mergeDisabled.value) {
+    return
+  }
+  const fate = passwordChoiceRequired.value
+    ? (passwordFate.value ?? undefined)
+    : undefined
+  if (await mergeAction.run(accountMerge.merge(survivor.id, loser.id, fate))) {
+    closeMerge()
+  }
+}
 
 const editing = ref(false)
 const draft = ref('')
@@ -181,42 +303,69 @@ watch(error, (reason) => {
 
 <template>
   <HilosAdminPage :page="HilosPages.USER">
-    <div v-if="detail" class="card" data-id="hilos-user-detail">
-      <div class="card-header d-flex align-items-center gap-2">
-        <span
-          class="rounded-circle flex-shrink-0"
-          :class="detail.presence === 'online' ? 'bg-success' : 'bg-secondary'"
-          style="width: 10px; height: 10px"
-          aria-hidden="true"
-        />
-        <span class="h5 mb-0" data-id="hilos-user-name">{{ detail.name }}</span>
-        <span class="badge text-bg-secondary">{{ detail.presence }}</span>
-        <button
-          type="button"
-          class="btn btn-outline-primary btn-sm ms-auto"
-          data-id="hilos-user-edit"
-          @click="openEdit"
-        >
-          Edit
-        </button>
-      </div>
-      <div class="card-body">
-        <dl class="row mb-0">
-          <dt class="col-sm-3">User ID</dt>
-          <dd class="col-sm-9" data-id="hilos-user-id">{{ detail.id }}</dd>
-          <dt class="col-sm-3">Online sessions</dt>
-          <dd class="col-sm-9" data-id="hilos-user-sessions">
-            {{ detail.onlineSessionCount }}
-          </dd>
-          <template v-if="detail.lastActivity">
-            <dt class="col-sm-3">Last activity</dt>
-            <dd class="col-sm-9" data-id="hilos-user-last-activity">
-              {{ detail.lastActivity }}
+    <template v-if="detail">
+      <div class="card" data-id="hilos-user-detail">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span
+            class="rounded-circle flex-shrink-0"
+            :class="
+              detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
+            "
+            style="width: 10px; height: 10px"
+            aria-hidden="true"
+          />
+          <span class="h5 mb-0" data-id="hilos-user-name">{{
+            detail.name
+          }}</span>
+          <span class="badge text-bg-secondary">{{ detail.presence }}</span>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm ms-auto"
+            data-id="hilos-user-edit"
+            @click="openEdit"
+          >
+            Edit
+          </button>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-3">User ID</dt>
+            <dd class="col-sm-9" data-id="hilos-user-id">{{ detail.id }}</dd>
+            <dt class="col-sm-3">Online sessions</dt>
+            <dd class="col-sm-9" data-id="hilos-user-sessions">
+              {{ detail.onlineSessionCount }}
             </dd>
-          </template>
-        </dl>
+            <template v-if="detail.lastActivity">
+              <dt class="col-sm-3">Last activity</dt>
+              <dd class="col-sm-9" data-id="hilos-user-last-activity">
+                {{ detail.lastActivity }}
+              </dd>
+            </template>
+          </dl>
+        </div>
       </div>
-    </div>
+      <section
+        v-if="context.accountMerge"
+        class="card border-danger mt-4"
+        data-id="hilos-user-merge-zone"
+      >
+        <div class="card-body">
+          <h2 class="h5">Merge another account into this one</h2>
+          <p class="mb-3">
+            Its sign-in methods and messages move here; the other account is
+            closed for good.
+          </p>
+          <button
+            type="button"
+            class="btn btn-outline-danger"
+            data-id="hilos-user-merge-open"
+            @click="openMerge"
+          >
+            Merge an account into this…
+          </button>
+        </div>
+      </section>
+    </template>
     <p v-else class="text-body-secondary" data-id="hilos-user-empty">
       Loading user…
     </p>
@@ -292,6 +441,167 @@ watch(error, (reason) => {
             </LoadingButton>
           </template>
         </ConflictActions>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="mergeOpen"
+      :title="
+        detail ? `Merge an account into ${detail.name}` : 'Merge an account'
+      "
+      :confirm-on-close="selectedCandidateId !== null"
+      :close-on-backdrop="!mergeAction.busy.value"
+      :close-on-esc="!mergeAction.busy.value"
+      initial-focus="inner"
+      size="wide"
+      @cancel="closeMerge"
+    >
+      <div class="visually-hidden" role="alert" aria-live="assertive">
+        {{ mergeAction.error.value }}
+      </div>
+      <HilosActionError :action="mergeAction" />
+      <template v-if="mergeStep === 1">
+        <div role="radiogroup" aria-label="Account to merge">
+          <HilosViewportTable
+            :controller="mergeCandidates.controller"
+            :autofocus-search="true"
+          >
+            <template #cell-actions="{ row }">
+              <input
+                type="radio"
+                class="form-check-input"
+                :aria-label="`Merge ${row.name}`"
+                :data-id="`hilos-user-merge-row-${row.id}`"
+                :checked="selectedCandidateId === row.id"
+                :disabled="row.id === currentUserId"
+                @change="chooseCandidate(row)"
+              />
+            </template>
+            <template #cell-name="{ row }">
+              {{ row.name }}
+              <span class="text-body-secondary">#{{ row.id }}</span>
+              <span
+                v-if="row.id === currentUserId"
+                class="badge text-bg-secondary ms-2"
+                >you</span
+              >
+            </template>
+            <template #cell-identities="{ row }">
+              <ul class="list-unstyled mb-0">
+                <li
+                  v-for="identity in row.identities"
+                  :key="`${identity.type}:${identity.identifier}`"
+                >
+                  <span class="fw-medium">{{ identityTitle(identity) }}</span>
+                  <template v-if="identity.type !== 'passkey'">
+                    · {{ identity.identifier }}
+                  </template>
+                  <template v-if="identity.verified">
+                    <span aria-hidden="true"> ✓</span
+                    ><span class="visually-hidden"> Verified</span>
+                  </template>
+                </li>
+              </ul>
+            </template>
+            <template #cell-lastActivity="{ row }">{{
+              row.lastActivity ?? '—'
+            }}</template>
+          </HilosViewportTable>
+        </div>
+      </template>
+      <template v-else-if="mergeSummaryCandidate">
+        <p data-id="hilos-user-merge-summary">
+          <strong
+            >{{ mergeSummaryCandidate.name }} (#{{
+              mergeSummaryCandidate.id
+            }})</strong
+          >
+          will be merged into
+          <strong>{{ detail?.name }} (#{{ detail?.id }})</strong>.
+        </p>
+        <ul>
+          <li>
+            Its sign-in methods and everything it wrote move to the survivor.
+          </li>
+          <li>
+            The other account is closed for good; it cannot sign in and its open
+            tabs sign out.
+          </li>
+          <li>This cannot be undone.</li>
+        </ul>
+        <p v-if="mergeGone" class="text-danger" data-id="hilos-user-merge-gone">
+          No longer available
+        </p>
+        <fieldset v-if="passwordChoiceRequired" class="mb-3">
+          <legend class="h6">
+            Both accounts have a password. Which one stays?
+          </legend>
+          <div
+            v-for="choice in [
+              ['survivor', 'The survivor password'],
+              ['loser', 'The other account password'],
+              ['none', 'Neither password; set a new one in Profile'],
+            ] as const"
+            :key="choice[0]"
+            class="form-check"
+          >
+            <input
+              :id="`hilos-user-merge-fate-${choice[0]}-field`"
+              v-model="passwordFate"
+              class="form-check-input"
+              type="radio"
+              name="hilos-user-merge-password-fate"
+              :value="choice[0]"
+              :data-id="`hilos-user-merge-fate-${choice[0]}`"
+            />
+            <label
+              class="form-check-label"
+              :for="`hilos-user-merge-fate-${choice[0]}-field`"
+              >{{ choice[1] }}</label
+            >
+          </div>
+        </fieldset>
+      </template>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="mergeAction.busy.value"
+          data-id="hilos-user-merge-cancel"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <button
+          v-if="mergeStep === 1"
+          type="button"
+          class="btn btn-primary"
+          :disabled="selectedCandidate === null"
+          data-id="hilos-user-merge-next"
+          @click="nextMergeStep"
+        >
+          Next
+        </button>
+        <template v-else>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="mergeAction.busy.value"
+            data-id="hilos-user-merge-back"
+            @click="previousMergeStep"
+          >
+            Back
+          </button>
+          <LoadingButton
+            class="btn-danger"
+            :loading="mergeAction.loading.value"
+            :disabled="mergeDisabled"
+            data-id="hilos-user-merge-confirm"
+            @click="submitMerge"
+          >
+            Merge
+          </LoadingButton>
+        </template>
       </template>
     </HilosModal>
   </HilosAdminPage>

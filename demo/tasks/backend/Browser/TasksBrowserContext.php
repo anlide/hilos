@@ -7,6 +7,7 @@ namespace Demo\Tasks\Browser;
 use Demo\Tasks\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
@@ -51,6 +52,7 @@ final class TasksBrowserContext extends BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when unavailable
+     * @throws PageInternalErrorException When another project computed field cannot be resolved
      */
     protected function computeBrowserField(
         string $browserKey,

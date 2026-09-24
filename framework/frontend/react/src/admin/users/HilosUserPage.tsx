@@ -12,15 +12,23 @@
 // backend fail ack inside the modal. Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
+  USER_IDENTITIES_FIELD,
+  createHilosAccountMerge,
+  createHilosMergeCandidates,
   createHilosUserDetail,
   createHilosUserRename,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
+  sessionUserId,
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  HilosMergeCandidateIdentity,
+  HilosMergeCandidateRow,
+  HilosPasswordFate,
   HilosUsersContext,
   RowEditBaseline,
   RowEditState,
@@ -29,12 +37,15 @@ import type {
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useSignal } from '../../useSignal.js'
+import { useTrackedAction } from '../../useTrackedAction.js'
 
 /** Props for {@link HilosUserPage}. */
 export interface HilosUserPageProps {
@@ -75,6 +86,64 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
 
   const detail = useSignal(userDetail)
   const error = useSignal(rename.renameError)
+  const mergeCandidates = useMemo(
+    () => createHilosMergeCandidates(context),
+    [context],
+  )
+  const candidateRows = useSignal(mergeCandidates.controller.rows)
+  const accountMerge = useMemo(
+    () => createHilosAccountMerge(context),
+    [context],
+  )
+  const currentUserIdSignal = useMemo(
+    () => sessionUserId(context.scopes),
+    [context],
+  )
+  const currentUserId = useSignal(currentUserIdSignal)
+  const mergeAction = useTrackedAction()
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [mergeStep, setMergeStep] = useState<1 | 2>(1)
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(
+    null,
+  )
+  const [selectedSnapshot, setSelectedSnapshot] =
+    useState<HilosMergeCandidateRow | null>(null)
+  const [passwordFate, setPasswordFate] = useState<HilosPasswordFate | null>(
+    null,
+  )
+  const selectedEntry = candidateRows.find(
+    (entry) => entry.row?.id === selectedCandidateId,
+  )
+  const selectedCandidate =
+    selectedEntry?.pending === 'remove' || selectedEntry?.placeholder
+      ? null
+      : (selectedEntry?.row ?? null)
+  const summaryCandidate = selectedCandidate ?? selectedSnapshot
+  const passwordChoiceRequired =
+    detail?.hasPassword === true && selectedCandidate?.hasPassword === true
+  const mergeGone = mergeStep === 2 && selectedCandidate === null
+  const mergeDisabled =
+    mergeAction.busy ||
+    mergeGone ||
+    selectedCandidate === null ||
+    (passwordChoiceRequired && passwordFate === null)
+
+  useEffect(
+    () => () => {
+      mergeCandidates.dispose()
+    },
+    [mergeCandidates],
+  )
+
+  useEffect(() => {
+    if (
+      mergeStep === 1 &&
+      selectedCandidateId !== null &&
+      selectedCandidate === null
+    ) {
+      setSelectedCandidateId(null)
+    }
+  }, [candidateRows, mergeStep, selectedCandidateId, selectedCandidate])
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -97,6 +166,71 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const editNotice = live.notice?.kind ?? null
   const editNoticeText = noticeText(live)
   const saveLabel = live.gone ? 'Deleted' : 'Save'
+
+  function identityTitle(identity: HilosMergeCandidateIdentity): string {
+    return identity.provider ?? identity.type
+  }
+
+  function openMerge(): void {
+    if (!detail) {
+      return
+    }
+    mergeCandidates.dispose()
+    mergeAction.clearError()
+    setMergeStep(1)
+    setSelectedCandidateId(null)
+    setSelectedSnapshot(null)
+    setPasswordFate(null)
+    setMergeOpen(true)
+    mergeCandidates.start(detail.id)
+  }
+
+  function closeMerge(): void {
+    setMergeOpen(false)
+    mergeCandidates.dispose()
+  }
+
+  function chooseCandidate(row: HilosMergeCandidateRow): void {
+    if (row.id === currentUserId) {
+      return
+    }
+    setSelectedCandidateId(row.id)
+    setPasswordFate(null)
+    mergeAction.clearError()
+  }
+
+  function nextMergeStep(): void {
+    if (!selectedCandidate) {
+      return
+    }
+    setSelectedSnapshot(selectedCandidate)
+    setMergeStep(2)
+  }
+
+  function previousMergeStep(): void {
+    setMergeStep(1)
+    if (!selectedCandidate) {
+      setSelectedCandidateId(null)
+      setSelectedSnapshot(null)
+    }
+    mergeAction.clearError()
+  }
+
+  async function submitMerge(): Promise<void> {
+    if (!detail || !selectedCandidate || mergeDisabled) {
+      return
+    }
+    const fate = passwordChoiceRequired
+      ? (passwordFate ?? undefined)
+      : undefined
+    if (
+      await mergeAction.run(
+        accountMerge.merge(detail.id, selectedCandidate.id, fate),
+      )
+    ) {
+      closeMerge()
+    }
+  }
 
   function openEdit(): void {
     rename.clearRenameError()
@@ -176,49 +310,73 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   return (
     <HilosAdminPage page={HilosPages.USER}>
       {detail ? (
-        <div className="card" data-id="hilos-user-detail">
-          <div className="card-header d-flex align-items-center gap-2">
-            <span
-              className={`rounded-circle flex-shrink-0 ${
-                detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
-              }`}
-              style={{ width: '10px', height: '10px' }}
-              aria-hidden="true"
-            />
-            <span className="h5 mb-0" data-id="hilos-user-name">
-              {detail.name}
-            </span>
-            <span className="badge text-bg-secondary">{detail.presence}</span>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm ms-auto"
-              data-id="hilos-user-edit"
-              onClick={openEdit}
+        <>
+          <div className="card" data-id="hilos-user-detail">
+            <div className="card-header d-flex align-items-center gap-2">
+              <span
+                className={`rounded-circle flex-shrink-0 ${
+                  detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
+                }`}
+                style={{ width: '10px', height: '10px' }}
+                aria-hidden="true"
+              />
+              <span className="h5 mb-0" data-id="hilos-user-name">
+                {detail.name}
+              </span>
+              <span className="badge text-bg-secondary">{detail.presence}</span>
+              <button
+                type="button"
+                className="btn btn-outline-primary btn-sm ms-auto"
+                data-id="hilos-user-edit"
+                onClick={openEdit}
+              >
+                Edit
+              </button>
+            </div>
+            <div className="card-body">
+              <dl className="row mb-0">
+                <dt className="col-sm-3">User ID</dt>
+                <dd className="col-sm-9" data-id="hilos-user-id">
+                  {detail.id}
+                </dd>
+                <dt className="col-sm-3">Online sessions</dt>
+                <dd className="col-sm-9" data-id="hilos-user-sessions">
+                  {detail.onlineSessionCount}
+                </dd>
+                {detail.lastActivity ? (
+                  <>
+                    <dt className="col-sm-3">Last activity</dt>
+                    <dd className="col-sm-9" data-id="hilos-user-last-activity">
+                      {detail.lastActivity}
+                    </dd>
+                  </>
+                ) : null}
+              </dl>
+            </div>
+          </div>
+          {context.accountMerge ? (
+            <section
+              className="card border-danger mt-4"
+              data-id="hilos-user-merge-zone"
             >
-              Edit
-            </button>
-          </div>
-          <div className="card-body">
-            <dl className="row mb-0">
-              <dt className="col-sm-3">User ID</dt>
-              <dd className="col-sm-9" data-id="hilos-user-id">
-                {detail.id}
-              </dd>
-              <dt className="col-sm-3">Online sessions</dt>
-              <dd className="col-sm-9" data-id="hilos-user-sessions">
-                {detail.onlineSessionCount}
-              </dd>
-              {detail.lastActivity ? (
-                <>
-                  <dt className="col-sm-3">Last activity</dt>
-                  <dd className="col-sm-9" data-id="hilos-user-last-activity">
-                    {detail.lastActivity}
-                  </dd>
-                </>
-              ) : null}
-            </dl>
-          </div>
-        </div>
+              <div className="card-body">
+                <h2 className="h5">Merge another account into this one</h2>
+                <p className="mb-3">
+                  Its sign-in methods and messages move here; the other account
+                  is closed for good.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-outline-danger"
+                  data-id="hilos-user-merge-open"
+                  onClick={openMerge}
+                >
+                  Merge an account into this…
+                </button>
+              </div>
+            </section>
+          ) : null}
+        </>
       ) : (
         <p className="text-body-secondary" data-id="hilos-user-empty">
           Loading user…
@@ -307,6 +465,182 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             dataId="hilos-user-edit-notice"
           />
         </form>
+      </HilosModal>
+
+      <HilosModal
+        open={mergeOpen}
+        title={
+          detail ? `Merge an account into ${detail.name}` : 'Merge an account'
+        }
+        confirmOnClose={selectedCandidateId !== null}
+        closeOnBackdrop={!mergeAction.busy}
+        closeOnEsc={!mergeAction.busy}
+        initialFocus="inner"
+        size="wide"
+        onClose={closeMerge}
+        actions={({ requestClose }) => (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={mergeAction.busy}
+              data-id="hilos-user-merge-cancel"
+              onClick={requestClose}
+            >
+              Cancel
+            </button>
+            {mergeStep === 1 ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={selectedCandidate === null}
+                data-id="hilos-user-merge-next"
+                onClick={nextMergeStep}
+              >
+                Next
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={mergeAction.busy}
+                  data-id="hilos-user-merge-back"
+                  onClick={previousMergeStep}
+                >
+                  Back
+                </button>
+                <LoadingButton
+                  className="btn-danger"
+                  loading={mergeAction.loading}
+                  disabled={mergeDisabled}
+                  data-id="hilos-user-merge-confirm"
+                  onClick={() => void submitMerge()}
+                >
+                  Merge
+                </LoadingButton>
+              </>
+            )}
+          </>
+        )}
+      >
+        <div className="visually-hidden" role="alert" aria-live="assertive">
+          {mergeAction.error}
+        </div>
+        <HilosActionError action={mergeAction} />
+        {mergeStep === 1 ? (
+          <div role="radiogroup" aria-label="Account to merge">
+            <HilosViewportTable
+              controller={mergeCandidates.controller}
+              autofocusSearch
+              cells={{
+                [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+                  <input
+                    type="radio"
+                    className="form-check-input"
+                    aria-label={`Merge ${row.name}`}
+                    data-id={`hilos-user-merge-row-${row.id}`}
+                    checked={selectedCandidateId === row.id}
+                    disabled={row.id === currentUserId}
+                    onChange={() => chooseCandidate(row)}
+                  />
+                ),
+                name: (row) => (
+                  <>
+                    {row.name}{' '}
+                    <span className="text-body-secondary">#{row.id}</span>
+                    {row.id === currentUserId ? (
+                      <span className="badge text-bg-secondary ms-2">you</span>
+                    ) : null}
+                  </>
+                ),
+                [USER_IDENTITIES_FIELD]: (row) => (
+                  <ul className="list-unstyled mb-0">
+                    {row.identities.map((identity) => (
+                      <li key={`${identity.type}:${identity.identifier}`}>
+                        <span className="fw-medium">
+                          {identityTitle(identity)}
+                        </span>
+                        {identity.type === 'passkey'
+                          ? null
+                          : ` · ${identity.identifier}`}
+                        {identity.verified ? (
+                          <>
+                            <span aria-hidden="true"> ✓</span>
+                            <span className="visually-hidden"> Verified</span>
+                          </>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ),
+                lastActivity: (row) => row.lastActivity ?? '—',
+              }}
+            />
+          </div>
+        ) : summaryCandidate ? (
+          <>
+            <p data-id="hilos-user-merge-summary">
+              <strong>
+                {summaryCandidate.name} (#{summaryCandidate.id})
+              </strong>{' '}
+              will be merged into{' '}
+              <strong>
+                {detail?.name} (#{detail?.id})
+              </strong>
+              .
+            </p>
+            <ul>
+              <li>
+                Its sign-in methods and everything it wrote move to the
+                survivor.
+              </li>
+              <li>
+                The other account is closed for good; it cannot sign in and its
+                open tabs sign out.
+              </li>
+              <li>This cannot be undone.</li>
+            </ul>
+            {mergeGone ? (
+              <p className="text-danger" data-id="hilos-user-merge-gone">
+                No longer available
+              </p>
+            ) : null}
+            {passwordChoiceRequired ? (
+              <fieldset className="mb-3">
+                <legend className="h6">
+                  Both accounts have a password. Which one stays?
+                </legend>
+                {(
+                  [
+                    ['survivor', 'The survivor password'],
+                    ['loser', 'The other account password'],
+                    ['none', 'Neither password; set a new one in Profile'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <div className="form-check" key={value}>
+                    <input
+                      id={`hilos-user-merge-fate-${value}-field`}
+                      className="form-check-input"
+                      type="radio"
+                      name="hilos-user-merge-password-fate"
+                      value={value}
+                      checked={passwordFate === value}
+                      data-id={`hilos-user-merge-fate-${value}`}
+                      onChange={() => setPasswordFate(value)}
+                    />
+                    <label
+                      className="form-check-label"
+                      htmlFor={`hilos-user-merge-fate-${value}-field`}
+                    >
+                      {label}
+                    </label>
+                  </div>
+                ))}
+              </fieldset>
+            ) : null}
+          </>
+        ) : null}
       </HilosModal>
     </HilosAdminPage>
   )

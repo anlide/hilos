@@ -8,8 +8,13 @@ use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Tables\Users\AbstractHilosMergeCandidatesTable;
 
 /**
  * Chat demo browser-facing context.
@@ -31,6 +36,7 @@ final class ChatBrowserContext extends BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when unavailable
+     * @throws PageInternalErrorException When a computed field cannot be resolved
      */
     protected function computeBrowserField(
         string $browserKey,
@@ -41,6 +47,14 @@ final class ChatBrowserContext extends BrowserContext
         array $browserParams,
         array $sources,
     ): mixed {
+        if ($field === AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD) {
+            try {
+                return Hilos::$db->identities->findPasswordByUser((int) $rowKey) !== null;
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Password presence could not be resolved', $exception);
+            }
+        }
+
         if (
             $field === HilosUserPresenceSummary::presence
             || $field === HilosUserPresenceSummary::onlineSessionCount

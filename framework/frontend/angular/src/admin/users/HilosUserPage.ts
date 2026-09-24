@@ -24,30 +24,44 @@ import {
 } from '@angular/core'
 import {
   HilosPages,
+  createHilosAccountMerge,
+  createHilosMergeCandidates,
   createHilosUserDetail,
   createHilosUserRename,
   keepMineRowEdit,
   openRowEdit,
   resolveRowEdit,
+  sessionUserId,
   subscribeSignal,
   takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  HilosAccountMerge,
+  HilosMergeCandidateIdentity,
+  HilosMergeCandidateRow,
+  HilosMergeCandidates,
+  HilosPasswordFate,
+  HilosUserDetailRow,
   HilosUserRename,
-  HilosUserRow,
   HilosUsersContext,
   RowEditBaseline,
   RowEditState,
   RowEditStep,
+  TableViewportController,
+  TableViewportRow,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
 import { ConflictHeader } from '../../ConflictHeader.js'
+import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 /** The one field the modal edits: the display name. */
 interface UserEditFields {
@@ -74,9 +88,12 @@ function noticeText(live: RowEditState<UserEditFields>): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
+    HilosActionError,
     HilosEditNotice,
     HilosFormError,
     HilosModal,
+    HilosTableCell,
+    HilosViewportTable,
     LoadingButton,
     ConflictActions,
     ConflictHeader,
@@ -124,6 +141,28 @@ function noticeText(live: RowEditState<UserEditFields>): string {
             </dl>
           </div>
         </div>
+        @if (context().accountMerge) {
+          <section
+            class="card border-danger mt-4"
+            data-id="hilos-user-merge-zone"
+          >
+            <div class="card-body">
+              <h2 class="h5">Merge another account into this one</h2>
+              <p class="mb-3">
+                Its sign-in methods and messages move here; the other account is
+                closed for good.
+              </p>
+              <button
+                type="button"
+                class="btn btn-outline-danger"
+                data-id="hilos-user-merge-open"
+                (click)="openMerge()"
+              >
+                Merge an account into this…
+              </button>
+            </div>
+          </section>
+        }
       } @else {
         <p class="text-body-secondary" data-id="hilos-user-empty">
           Loading user…
@@ -220,6 +259,169 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           </div>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="mergeOpen()"
+        (openChange)="onMergeOpenChange($event)"
+        [title]="
+          detail()
+            ? 'Merge an account into ' + detail()!.name
+            : 'Merge an account'
+        "
+        [confirmOnClose]="selectedCandidateId() !== null"
+        [closeOnBackdrop]="!mergeAction.busy()"
+        [closeOnEsc]="!mergeAction.busy()"
+        initialFocus="inner"
+        size="wide"
+      >
+        <div class="visually-hidden" role="alert" aria-live="assertive">
+          {{ mergeAction.error() }}
+        </div>
+        <hilos-action-error [action]="mergeAction" />
+        @if (mergeStep() === 1) {
+          <div role="radiogroup" aria-label="Account to merge">
+            @if (mergeCandidatesController(); as controller) {
+              <hilos-viewport-table
+                [controller]="controller"
+                [autofocusSearch]="true"
+              >
+                <ng-template hilosTableCell="actions" let-row>
+                  <input
+                    type="radio"
+                    class="form-check-input"
+                    [attr.aria-label]="'Merge ' + row.name"
+                    [attr.data-id]="'hilos-user-merge-row-' + row.id"
+                    [checked]="selectedCandidateId() === row.id"
+                    [disabled]="row.id === currentUserId()"
+                    (change)="chooseCandidate(row)"
+                  />
+                </ng-template>
+                <ng-template hilosTableCell="name" let-row>
+                  {{ row.name }}
+                  <span class="text-body-secondary">#{{ row.id }}</span>
+                  @if (row.id === currentUserId()) {
+                    <span class="badge text-bg-secondary ms-2">you</span>
+                  }
+                </ng-template>
+                <ng-template hilosTableCell="identities" let-row>
+                  <ul class="list-unstyled mb-0">
+                    @for (
+                      identity of row.identities;
+                      track identity.type + ':' + identity.identifier
+                    ) {
+                      <li>
+                        <span class="fw-medium">{{
+                          identityTitle(identity)
+                        }}</span>
+                        @if (identity.type !== 'passkey') {
+                          · {{ identity.identifier }}
+                        }
+                        @if (identity.verified) {
+                          <span aria-hidden="true"> ✓</span>
+                          <span class="visually-hidden"> Verified</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                </ng-template>
+                <ng-template hilosTableCell="lastActivity" let-row>
+                  {{ row.lastActivity ?? '—' }}
+                </ng-template>
+              </hilos-viewport-table>
+            }
+          </div>
+        } @else if (mergeSummaryCandidate(); as candidate) {
+          <p data-id="hilos-user-merge-summary">
+            <strong>{{ candidate.name }} (#{{ candidate.id }})</strong>
+            will be merged into
+            <strong>{{ detail()?.name }} (#{{ detail()?.id }})</strong>.
+          </p>
+          <ul>
+            <li>
+              Its sign-in methods and everything it wrote move to the survivor.
+            </li>
+            <li>
+              The other account is closed for good; it cannot sign in and its
+              open tabs sign out.
+            </li>
+            <li>This cannot be undone.</li>
+          </ul>
+          @if (mergeGone()) {
+            <p class="text-danger" data-id="hilos-user-merge-gone">
+              No longer available
+            </p>
+          }
+          @if (passwordChoiceRequired()) {
+            <fieldset class="mb-3">
+              <legend class="h6">
+                Both accounts have a password. Which one stays?
+              </legend>
+              @for (choice of passwordChoices; track choice.value) {
+                <div class="form-check">
+                  <input
+                    [id]="'hilos-user-merge-fate-' + choice.value + '-field'"
+                    class="form-check-input"
+                    type="radio"
+                    name="hilos-user-merge-password-fate"
+                    [value]="choice.value"
+                    [attr.data-id]="'hilos-user-merge-fate-' + choice.value"
+                    [checked]="passwordFate() === choice.value"
+                    (change)="passwordFate.set(choice.value)"
+                  />
+                  <label
+                    class="form-check-label"
+                    [for]="'hilos-user-merge-fate-' + choice.value + '-field'"
+                  >
+                    {{ choice.label }}
+                  </label>
+                </div>
+              }
+            </fieldset>
+          }
+        }
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="mergeAction.busy()"
+            data-id="hilos-user-merge-cancel"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          @if (mergeStep() === 1) {
+            <button
+              type="button"
+              class="btn btn-primary"
+              [disabled]="selectedCandidate() === null"
+              data-id="hilos-user-merge-next"
+              (click)="nextMergeStep()"
+            >
+              Next
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="mergeAction.busy()"
+              data-id="hilos-user-merge-back"
+              (click)="previousMergeStep()"
+            >
+              Back
+            </button>
+            <button
+              hilosLoadingButton
+              class="btn-danger"
+              [loading]="mergeAction.loading()"
+              [disabled]="mergeDisabled()"
+              data-id="hilos-user-merge-confirm"
+              (click)="submitMerge()"
+            >
+              Merge
+            </button>
+          }
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -230,11 +432,64 @@ export class HilosUserPage {
   protected readonly page = HilosPages.USER
   protected readonly nameMin = 2
   protected readonly nameMax = 64
+  protected readonly passwordChoices: readonly {
+    value: HilosPasswordFate
+    label: string
+  }[] = [
+    { value: 'survivor', label: 'The survivor password' },
+    { value: 'loser', label: 'The other account password' },
+    { value: 'none', label: 'Neither password; set a new one in Profile' },
+  ]
 
   // Mirrored from the core selectors, which derive from the context input.
-  protected readonly detail = signal<HilosUserRow | undefined>(undefined)
+  protected readonly detail = signal<HilosUserDetailRow | undefined>(undefined)
   protected readonly renameError = signal<string | null>(null)
   private rename: HilosUserRename | undefined
+  private mergeCandidates: HilosMergeCandidates | undefined
+  private accountMerge: HilosAccountMerge | undefined
+
+  protected readonly mergeCandidatesController = signal<
+    TableViewportController<HilosMergeCandidateRow> | undefined
+  >(undefined)
+  protected readonly mergeRows = signal<
+    readonly TableViewportRow<HilosMergeCandidateRow>[]
+  >([])
+  protected readonly currentUserId = signal<number | null>(null)
+  protected readonly mergeOpen = signal(false)
+  protected readonly mergeStep = signal<1 | 2>(1)
+  protected readonly selectedCandidateId = signal<number | null>(null)
+  protected readonly selectedSnapshot = signal<HilosMergeCandidateRow | null>(
+    null,
+  )
+  protected readonly passwordFate = signal<HilosPasswordFate | null>(null)
+  protected readonly mergeAction = createHilosTrackedAction()
+  protected readonly selectedCandidate = computed(() => {
+    const selected = this.mergeRows().find(
+      (entry) => entry.row?.id === this.selectedCandidateId(),
+    )
+
+    return selected?.pending === 'remove' || selected?.placeholder
+      ? null
+      : (selected?.row ?? null)
+  })
+  protected readonly mergeSummaryCandidate = computed(
+    () => this.selectedCandidate() ?? this.selectedSnapshot(),
+  )
+  protected readonly passwordChoiceRequired = computed(
+    () =>
+      this.detail()?.hasPassword === true &&
+      this.selectedCandidate()?.hasPassword === true,
+  )
+  protected readonly mergeGone = computed(
+    () => this.mergeStep() === 2 && this.selectedCandidate() === null,
+  )
+  protected readonly mergeDisabled = computed(
+    () =>
+      this.mergeAction.busy() ||
+      this.mergeGone() ||
+      this.selectedCandidate() === null ||
+      (this.passwordChoiceRequired() && this.passwordFate() === null),
+  )
 
   protected readonly editing = signal(false)
   protected readonly draft = signal('')
@@ -280,18 +535,50 @@ export class HilosUserPage {
       const context = this.context()
       const detailSignal = createHilosUserDetail(context)
       const rename = createHilosUserRename(context)
+      const mergeCandidates = createHilosMergeCandidates(context)
+      const currentUserId = sessionUserId(context.scopes)
       this.rename = rename
+      this.mergeCandidates = mergeCandidates
+      this.accountMerge = createHilosAccountMerge(context)
+      this.mergeCandidatesController.set(mergeCandidates.controller)
       this.detail.set(detailSignal.get())
       this.renameError.set(rename.renameError.get())
+      this.mergeRows.set(mergeCandidates.controller.rows.get())
+      this.currentUserId.set(currentUserId.get())
       const subscriptions = [
         subscribeSignal(detailSignal, (value) => this.detail.set(value)),
         subscribeSignal(rename.renameError, (value) =>
           this.renameError.set(value),
         ),
+        subscribeSignal(mergeCandidates.controller.rows, (value) =>
+          this.mergeRows.set(value),
+        ),
+        subscribeSignal(currentUserId, (value) =>
+          this.currentUserId.set(value),
+        ),
       ]
       onCleanup(() => {
+        mergeCandidates.dispose()
         for (const unsubscribe of subscriptions) {
           unsubscribe()
+        }
+      })
+    })
+
+    effect(() => {
+      const rows = this.mergeRows()
+      untracked(() => {
+        if (
+          this.mergeStep() === 1 &&
+          this.selectedCandidateId() !== null &&
+          !rows.some(
+            (entry) =>
+              entry.row?.id === this.selectedCandidateId() &&
+              entry.pending !== 'remove' &&
+              !entry.placeholder,
+          )
+        ) {
+          this.selectedCandidateId.set(null)
         }
       })
     })
@@ -388,5 +675,76 @@ export class HilosUserPage {
 
   protected onDraftInput(event: Event): void {
     this.draft.set((event.target as HTMLInputElement).value)
+  }
+
+  protected identityTitle(identity: HilosMergeCandidateIdentity): string {
+    return identity.provider ?? identity.type
+  }
+
+  protected openMerge(): void {
+    const survivor = this.detail()
+    if (!survivor || !this.mergeCandidates) {
+      return
+    }
+    this.mergeCandidates.dispose()
+    this.mergeAction.clearError()
+    this.mergeStep.set(1)
+    this.selectedCandidateId.set(null)
+    this.selectedSnapshot.set(null)
+    this.passwordFate.set(null)
+    this.mergeOpen.set(true)
+    this.mergeCandidates.start(survivor.id)
+  }
+
+  protected onMergeOpenChange(open: boolean): void {
+    this.mergeOpen.set(open)
+    if (!open) {
+      this.mergeCandidates?.dispose()
+    }
+  }
+
+  protected chooseCandidate(row: HilosMergeCandidateRow): void {
+    if (row.id === this.currentUserId()) {
+      return
+    }
+    this.selectedCandidateId.set(row.id)
+    this.passwordFate.set(null)
+    this.mergeAction.clearError()
+  }
+
+  protected nextMergeStep(): void {
+    const candidate = this.selectedCandidate()
+    if (!candidate) {
+      return
+    }
+    this.selectedSnapshot.set(candidate)
+    this.mergeStep.set(2)
+  }
+
+  protected previousMergeStep(): void {
+    this.mergeStep.set(1)
+    if (!this.selectedCandidate()) {
+      this.selectedCandidateId.set(null)
+      this.selectedSnapshot.set(null)
+    }
+    this.mergeAction.clearError()
+  }
+
+  protected async submitMerge(): Promise<void> {
+    const survivor = this.detail()
+    const loser = this.selectedCandidate()
+    if (!survivor || !loser || !this.accountMerge || this.mergeDisabled()) {
+      return
+    }
+    const fate = this.passwordChoiceRequired()
+      ? (this.passwordFate() ?? undefined)
+      : undefined
+    if (
+      await this.mergeAction.run(
+        this.accountMerge.merge(survivor.id, loser.id, fate),
+      )
+    ) {
+      this.onMergeOpenChange(false)
+    }
   }
 }

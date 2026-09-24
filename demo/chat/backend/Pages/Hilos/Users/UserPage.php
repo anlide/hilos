@@ -11,9 +11,7 @@ use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\HilosUser\DTO\HilosUserMergeActionDTO;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -37,7 +35,6 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
-use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Throwable;
 
@@ -57,20 +54,16 @@ final class UserPage extends AbstractHilosUserPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [
+        ...parent::ACTIONS,
         HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
-        ChatSignalConstants::ACCOUNT_MERGE => HilosUserMergeActionDTO::class,
     ];
 
     /**
-     * The library's answer to the rename this page forwarded (HIL-771).
-     *
-     * The merge next door is answered by the chat agent instead, and the difference is what
-     * each ack has to reach: a merge ends in the loser's sockets being signed out, which is the
-     * project's business, while a rename ends where it started - on this page, in the modal
-     * still waiting.
+     * The library answers to the framework merge and the chat rename this page forwarded.
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
+            ...parent::SIGNALS[SignalTypeConstants::AGENT_SIGNAL],
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => HandoverAnswerSignalData::class,
         ],
     ];
@@ -115,16 +108,8 @@ final class UserPage extends AbstractHilosUserPage
 
                 break;
 
-            case ChatSignalConstants::ACCOUNT_MERGE:
-                if (!$dto instanceof HilosUserMergeActionDTO) {
-                    throw new InvalidActionPayloadException($action, HilosUserMergeActionDTO::class, $dto);
-                }
-                $this->handleAccountMerge($acceptKey, $dto);
-
-                break;
-
             default:
-                throw new AgentUnknownActionException("Unknown action: {$action}");
+                return parent::onAction($acceptKey, $action, $dto);
         }
 
         return null;
@@ -137,6 +122,7 @@ final class UserPage extends AbstractHilosUserPage
      * @param string $action Action name that failed
      * @param ActionPayloadDTO $dto Action payload
      * @param Throwable $e Action failure
+     * @throws InvalidArgumentException When the fallback action-error frame cannot be named
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
@@ -166,7 +152,9 @@ final class UserPage extends AbstractHilosUserPage
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE) {
-            throw new AgentUnknownSignalException($name);
+            parent::onSignalAgent($data, $sender, $name);
+
+            return;
         }
 
         if (!$data->data instanceof HandoverAnswerSignalData) {
@@ -187,6 +175,12 @@ final class UserPage extends AbstractHilosUserPage
      */
     protected function answerUntracked(string $acceptKey, string $action, ?string $error): void
     {
+        if ($action !== HilosSignalConstants::HILOS_USER_UPDATE) {
+            parent::answerUntracked($acceptKey, $action, $error);
+
+            return;
+        }
+
         if ($error !== null) {
             $this->sendToUser(
                 HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
@@ -236,27 +230,4 @@ final class UserPage extends AbstractHilosUserPage
         );
     }
 
-    /**
-     * Forwards an admin account-merge request to the sessions library (HIL-378, HIL-729).
-     *
-     * The tracked client action fires-and-forwards: the transaction, the force-logout of the
-     * loser and the outcome all belong to the framework's sessions library, because the merge
-     * ends in that loser's live sessions being signed out. What this project still answers is
-     * a pair of seams - who may be merged, and what a chat keeps for a person.
-     *
-     * The library hands the outcome back to the chat agent, which acks the initiator with
-     * ACCOUNT_MERGE_SUCCESS or ACCOUNT_MERGE_FAIL; this page sends neither. The accept key
-     * travels the whole way and comes back untouched, so the ack reaches the one admin who
-     * asked.
-     *
-     * @param string $acceptKey WebSocket accept key for the requesting client
-     * @param HilosUserMergeActionDTO $dto Merge action payload (survivor row + picked loser)
-     */
-    private function handleAccountMerge(string $acceptKey, HilosUserMergeActionDTO $dto): void
-    {
-        $this->agent->sendToAgent(
-            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
-            new AccountMergeSignalData($dto->survivorUserId, $dto->loserUserId, $acceptKey),
-        );
-    }
 }

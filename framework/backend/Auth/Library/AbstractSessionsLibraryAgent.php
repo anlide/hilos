@@ -122,7 +122,6 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AdminCommandConstants;
-use Hilos\Users\DTO\AccountMergeResultSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -170,6 +169,10 @@ use Throwable;
  */
 abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 {
+    /** Browser refusal when two passwords need a choice the action did not carry (HIL-411). */
+    public const string ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE =
+        'Both accounts have a password: choose which one stays';
+
     /**
      * @var list<string> The live code behind the step a session stands on, asked about on every
      *     handshake ({@see pendingAuthStepFor()}) and again when the recovery is finished
@@ -255,7 +258,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * agent of the framework's own, and nothing about their senders changed (HIL-710).
      * {@see HilosSignalConstants::HILOS_SESSION_STATE} is deliberately absent - it is the
      * frame this library SENDS, and the project declares it. So is
-     * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT}, the answer to the ninth.
+     * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE}, the answer to the ninth.
      *
      * The eleventh has no fixed sender at all (HIL-768): a toast addressed to a session may be
      * raised by any agent that finished something a person is waiting on, and it arrives here
@@ -3589,16 +3592,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs the merge a project's admin surface asked for, and hands the outcome back to it.
+     * Runs the merge the Hilos user page asked for, and hands the outcome back to it.
      *
-     * The second way into one core (HIL-378, HIL-729). The person who asked is on a page of
-     * the project's, waiting under an ack name only that project knows, so what goes back is
-     * the outcome and their accept key - and the project says it out loud, exactly as it does
-     * for a session state.
+     * The second way into one core (HIL-378, HIL-411). The password fate is read at the write
+     * boundary. When both accounts have a password and the action named none, the browser gets
+     * its own instruction before the CLI-shaped core can emit its command-line wording.
      *
-     * No password fate travels with it and none is asked for: the admin surface has no
-     * control that names one (HIL-411), so two accounts that each hold a password are refused
-     * here and merged from a command line instead.
+     * A refusal is answered rather than thrown because the page deferred its ack. Internal
+     * failures are logged here, where the write context is known, and travel through the same
+     * sanitized refusal door as every other handed-over action.
      *
      * @param AccountMergeSignalData $request Both accounts and the connection waiting on the answer
      * @throws InvalidArgumentException When the answering frame cannot be named
@@ -3606,25 +3608,40 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function handleAccountMergeRequest(AccountMergeSignalData $request): void
     {
         try {
-            $summary = $this->mergeAccounts($request->survivorUserId, $request->loserUserId, null);
+            $passwordFate = $request->passwordFate === null ? null : PasswordFate::tryFrom($request->passwordFate);
+            if ($request->passwordFate !== null && $passwordFate === null) {
+                throw new ValidationException('Unknown account-merge password fate');
+            }
+            if (
+                $passwordFate === null
+                && Hilos::$db->identities->passwordFateNeeded($request->loserUserId, $request->survivorUserId)
+            ) {
+                throw new ValidationException(self::ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE);
+            }
+            $summary = $this->mergeAccounts($request->survivorUserId, $request->loserUserId, $passwordFate);
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
         } catch (Throwable $e) {
-            $this->answerAccountMerge(new AccountMergeResultSignalData($request->acceptKey, $e->getMessage()));
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError(
+                    "Account merge #{$request->loserUserId} into #{$request->survivorUserId} failed: {$e->getMessage()}",
+                );
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
 
             return;
         }
 
-        $this->answerAccountMerge(new AccountMergeResultSignalData($request->acceptKey, $summary));
-    }
-
-    /**
-     * Sends one merge outcome back over the seam it arrived on.
-     *
-     * @param AccountMergeResultSignalData $result What the merge did, or why it did nothing
-     * @throws InvalidArgumentException When the frame cannot be named
-     */
-    private function answerAccountMerge(AccountMergeResultSignalData $result): void
-    {
-        $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT, $result);
+        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+            acceptKey: $request->acceptKey,
+            requestId: $request->requestId,
+            action: $request->action,
+            successMessage: $summary->successMessage($request->survivorUserId, $request->loserUserId),
+            error: null,
+            errorType: null,
+            errorDetail: null,
+        ));
     }
 
     /**

@@ -63,9 +63,9 @@ final class AdminRenameOwnershipTest extends TestCase
             array_key_first(AdminUsersPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL]),
         );
 
-        self::assertSame(
+        self::assertArrayHasKey(
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
-            array_key_first(UserPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL]),
+            UserPage::SIGNALS[SignalTypeConstants::AGENT_SIGNAL],
         );
     }
 }

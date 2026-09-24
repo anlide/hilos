@@ -45,7 +45,10 @@ function router(): HilosRouter {
 // `seed` is false the table is empty and the page shows its loading state. The
 // name rides the `user` entity, so a rename elsewhere is an entity upsert and a
 // deleted user is the row leaving the table.
-function userContext(seed: boolean): HilosUsersContext & {
+function userContext(
+  seed: boolean,
+  accountMerge = false,
+): HilosUsersContext & {
   renameElsewhere: (name: string) => void
   removeRow: () => void
   sent: Array<{ action: string; data: unknown }>
@@ -84,6 +87,7 @@ function userContext(seed: boolean): HilosUsersContext & {
     connection,
     actions: new ActionLifecycle(connection),
     users,
+    accountMerge,
     renameElsewhere(name: string): void {
       page.entities.upsert({ type: 'user', id: 1 }, { name })
     },
@@ -147,6 +151,24 @@ describe('HilosUserPage', () => {
     expect(
       container.querySelector('[data-id="hilos-user-sessions"]')?.textContent,
     ).toBe('2')
+  })
+
+  it('shows the merge zone only when enabled and locks Next without a candidate', () => {
+    const disabled = renderPage(userContext(true))
+    expect(
+      disabled.container.querySelector('[data-id="hilos-user-merge-zone"]'),
+    ).toBeNull()
+    disabled.unmount()
+
+    const enabled = renderPage(userContext(true, true))
+    const open = enabled.container.querySelector(
+      '[data-id="hilos-user-merge-open"]',
+    ) as Element
+    expect(open).not.toBeNull()
+    fireEvent.click(open)
+    expect((byId('hilos-user-merge-next') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
   })
 
   it('opens the rename modal prefilled with the current name on Edit', () => {

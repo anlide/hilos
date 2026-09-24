@@ -56,6 +56,7 @@ final class UserPage extends AbstractHilosUserPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [
+        ...parent::ACTIONS,
         HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
     ];
 
@@ -67,6 +68,7 @@ final class UserPage extends AbstractHilosUserPage
      */
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
+            ...parent::SIGNALS[SignalTypeConstants::AGENT_SIGNAL],
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => HandoverAnswerSignalData::class,
         ],
     ];
@@ -112,7 +114,7 @@ final class UserPage extends AbstractHilosUserPage
                 break;
 
             default:
-                throw new AgentUnknownActionException("Unknown action: {$action}");
+                return parent::onAction($acceptKey, $action, $dto);
         }
 
         return null;
@@ -125,6 +127,7 @@ final class UserPage extends AbstractHilosUserPage
      * @param string $action Action name that failed
      * @param ActionPayloadDTO $dto Action payload
      * @param Throwable $e Action failure
+     * @throws InvalidArgumentException When the fallback action-error frame cannot be named
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
@@ -154,7 +157,9 @@ final class UserPage extends AbstractHilosUserPage
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name !== HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE) {
-            throw new AgentUnknownSignalException($name);
+            parent::onSignalAgent($data, $sender, $name);
+
+            return;
         }
 
         if (!$data->data instanceof HandoverAnswerSignalData) {
@@ -175,6 +180,12 @@ final class UserPage extends AbstractHilosUserPage
      */
     protected function answerUntracked(string $acceptKey, string $action, ?string $error): void
     {
+        if ($action !== HilosSignalConstants::HILOS_USER_UPDATE) {
+            parent::answerUntracked($acceptKey, $action, $error);
+
+            return;
+        }
+
         if ($error !== null) {
             $this->sendToUser(
                 HilosSignalConstants::HILOS_USER_UPDATE_FAIL,

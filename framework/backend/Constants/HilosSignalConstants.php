@@ -74,7 +74,6 @@ use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\HilosSmsSender;
-use Hilos\Users\DTO\AccountMergeResultSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 
@@ -287,6 +286,9 @@ final class HilosSignalConstants
     // ── Hilos users admin: single-user rename action + acks (client ↔ server) ──
     /** Client → server: rename the displayed user (handled on the HILOS_USER page). */
     public const string HILOS_USER_UPDATE = 'hilos_user_update';
+
+    /** Client → server: merge another account into the displayed user (handled on the HILOS_USER page). */
+    public const string HILOS_USER_MERGE = 'hilos_user_merge';
 
     /** Server → initiator: hilos_user_update succeeded. */
     public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
@@ -1227,28 +1229,23 @@ final class HilosSignalConstants
     public const string HILOS_SESSION_CARRYOVER_HANDOVER = 'hilos_session_carryover_handover';
 
     /**
-     * Project agent → sessions library: fold this account into that one (HIL-729).
+     * Hilos user page → sessions library: fold this account into that one (HIL-411).
      *
-     * The second way into the merge, beside {@see CliCommands::ACCOUNT_MERGE}, and the one a
-     * browser reaches: an admin table submits it as a page action, and the page forwards it
-     * here because the merge ends in the loser's live sessions being signed out - and those
-     * sessions are the library's. Carried by {@see AccountMergeSignalData}.
-     *
-     * The accept key travels with it and comes back untouched on
-     * {@see self::HILOS_ACCOUNT_MERGE_RESULT}: the person who asked is waiting on the page
-     * they asked from, and the library that does the work cannot name a project's ack.
+     * The browser's way into the same core as {@see CliCommands::ACCOUNT_MERGE}. The single-user
+     * page keeps the ADMIN gate and forwards the write because the merge ends in the loser's
+     * live sessions being signed out, which is the sessions library's state. Carried by
+     * {@see AccountMergeSignalData}, including the waiting admin and the answer name.
      */
     public const string HILOS_ACCOUNT_MERGE = 'hilos_account_merge';
 
     /**
-     * Sessions library → project agent: this is what the merge did, say it out loud.
+     * Sessions library → Hilos user page: the merge is done, or it is refused (HIL-411).
      *
-     * The way back for {@see self::HILOS_ACCOUNT_MERGE} and only for it - an operator on the
-     * command channel is answered where the work happened, on the parked socket. It carries
-     * either what moved or why nothing did ({@see AccountMergeResultSignalData}), and the
-     * project turns that into the ack its own surface waits for.
+     * The way back for {@see self::HILOS_ACCOUNT_MERGE} and only for it. The page deferred its
+     * tracked action reply when it handed the work over, so this frame finally answers the admin
+     * with the library's outcome. Carried by {@see HandoverAnswerSignalData}.
      */
-    public const string HILOS_ACCOUNT_MERGE_RESULT = 'hilos_account_merge_result';
+    public const string HILOS_ACCOUNT_MERGE_DONE = 'hilos_account_merge_done';
 
     // ── Hilos notification seam: any worker → the notifications library (agent signal) ──
     /**

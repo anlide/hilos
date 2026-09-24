@@ -44,6 +44,27 @@ final readonly class AccountMergeSummary
     }
 
     /**
+     * Composes the browser-facing account-merge outcome after every count is known.
+     *
+     * The project's row families keep their insertion order, which is the order the project
+     * reported them in. The framework identity count always leads because it is common to every
+     * project and is not one of those families.
+     *
+     * @param int $survivorUserId User id that absorbed the loser
+     * @param int $loserUserId User id that was folded into the survivor
+     * @return string Completed merge sentence for the action-success toast
+     */
+    public function successMessage(int $survivorUserId, int $loserUserId): string
+    {
+        $message = "Merged #{$loserUserId} into #{$survivorUserId}. Moved: sign-in methods {$this->identitiesMoved}";
+        foreach ($this->rowsMoved as $family => $moved) {
+            $message .= ", {$family} {$moved}";
+        }
+
+        return $message . '.';
+    }
+
+    /**
      * Rebuilds a summary from the array {@see self::toArray()} put on the wire.
      *
      * Needed since HIL-729, where the merge stopped answering in the process that asked for

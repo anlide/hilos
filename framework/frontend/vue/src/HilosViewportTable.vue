@@ -83,6 +83,8 @@ const props = withDefaults(
     searchable?: boolean
     /** Placeholder for the search box. */
     searchPlaceholder?: string
+    /** Whether the search box owns focus when this table opens inside a modal. */
+    autofocusSearch?: boolean
     /** Message shown when there are no rows. */
     emptyText?: string
     /** Label shown in a removed row's placeholder slot. */
@@ -99,6 +101,7 @@ const props = withDefaults(
     label: undefined,
     searchable: false,
     searchPlaceholder: 'Search…',
+    autofocusSearch: false,
     emptyText: 'No rows.',
     placeholderText: 'Removed',
     dataId: 'hilos-viewport-table',
@@ -443,6 +446,7 @@ function onSelectPage(event: Event): void {
       v-if="declaration"
       :controller="controller"
       :title-id="titleId"
+      :autofocus-search="autofocusSearch"
     >
       <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
         <slot name="bulk-untouched" v-bind="untouched" />
@@ -458,6 +462,7 @@ function onSelectPage(event: Event): void {
         :placeholder="searchPlaceholder"
         :aria-label="searchPlaceholder"
         :value="search"
+        :data-autofocus="autofocusSearch ? '' : undefined"
         data-id="hilos-table-search"
         @input="onSearchInput"
       />

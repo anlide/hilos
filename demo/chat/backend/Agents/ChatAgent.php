@@ -8,8 +8,6 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
-use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
@@ -33,7 +31,6 @@ use Hilos\HilosException;
 use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
-use Hilos\Users\DTO\AccountMergeResultSignalData;
 
 /**
  * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
@@ -48,9 +45,7 @@ use Hilos\Users\DTO\AccountMergeResultSignalData;
  *
  * Since HIL-729 it asks the library for nothing at all: impersonation and account merge both
  * moved there whole, because the guards and the write they need are the same process again,
- * and what this project answers is a seam apiece. The one frame it still receives back is
- * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT} - the merge is asked for on a page
- * of this project's, and only this project knows the ack name that page listens under.
+ * and what this project answers is a seam apiece.
  */
 final class ChatAgent extends AbstractAgent
 {
@@ -89,14 +84,12 @@ final class ChatAgent extends AbstractAgent
 
     public const string AGENT_TYPE = AgentType::CHAT;
 
-    // Both library frames are declared HERE and not in the library, which is what routes them
-    // to this agent: a destination is taken from whoever names a signal, and the library
-    // naming its own outgoing frame would send it back to itself. One says what a session has
-    // become, the other what a merge this project asked for did (HIL-710, HIL-729).
+    // The library frame is declared HERE and not in the library, which is what routes it to
+    // this agent: a destination is taken from whoever names a signal, and the library naming
+    // its own outgoing frame would send it back to itself (HIL-710).
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
         HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
-        HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT => AccountMergeResultSignalData::class,
     ];
 
     /**
@@ -417,15 +410,6 @@ final class ChatAgent extends AbstractAgent
                 }
                 $this->handleBotMessage($data->data);
                 return;
-            case HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT:
-                if (!$data->data instanceof AccountMergeResultSignalData) {
-                    throw new LogicException(
-                        HilosSignalConstants::HILOS_ACCOUNT_MERGE_RESULT . ' payload must be '
-                        . AccountMergeResultSignalData::class,
-                    );
-                }
-                $this->ackAccountMerge($data->data);
-                return;
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -441,42 +425,6 @@ final class ChatAgent extends AbstractAgent
     private function handleBotMessage(BotMessageSignalData $message): void
     {
         Hilos::$db->events->actions->addMessage($message->message, botId: $message->botId);
-    }
-
-    /**
-     * Tells the admin who asked for a merge what became of it (HIL-378, HIL-729).
-     *
-     * The project half of the merge seam, and the reason the frame exists at all: the work
-     * runs in {@see SessionsLibraryAgent} - it ends in the loser's sessions being signed out,
-     * and those are the library's - while the name the browser is listening under is chat's
-     * own. So the library hands back the outcome and the accept key it was given, and this
-     * turns them into the one-to-one ack the admin page waits for.
-     *
-     * The frame carries one outcome of two types, so the branch below is total: a sentence is
-     * a refusal, anything else is what moved.
-     *
-     * @param AccountMergeResultSignalData $result What the merge moved, or why it moved nothing
-     * @throws InvalidArgumentException When the ack cannot be named
-     * @throws HilosException On runtime failure while sending the ack
-     */
-    private function ackAccountMerge(AccountMergeResultSignalData $result): void
-    {
-        $outcome = $result->outcome;
-        if (is_string($outcome)) {
-            $this->sendToUser(
-                ChatSignalConstants::ACCOUNT_MERGE_FAIL,
-                $result->acceptKey,
-                new ActionFailSignalData($outcome),
-            );
-
-            return;
-        }
-
-        $this->sendToUser(
-            ChatSignalConstants::ACCOUNT_MERGE_SUCCESS,
-            $result->acceptKey,
-            new ActionSuccessSignalData($outcome->toArray()),
-        );
     }
 
     /**

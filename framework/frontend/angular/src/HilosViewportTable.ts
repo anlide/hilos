@@ -135,6 +135,7 @@ export interface BulkUntouchedContext {
         <hilos-table-bar
           [controller]="controller()"
           [titleId]="titleId"
+          [autofocusSearch]="autofocusSearch()"
           [bulkUntouched]="bulkUntouched()"
         />
       }
@@ -149,6 +150,7 @@ export interface BulkUntouchedContext {
             [placeholder]="searchPlaceholder()"
             [attr.aria-label]="searchPlaceholder()"
             [value]="search()"
+            [attr.data-autofocus]="autofocusSearch() ? '' : null"
             data-id="hilos-table-search"
             (input)="onSearchInput($event)"
           />
@@ -937,6 +939,8 @@ export class HilosViewportTable<R> {
   readonly searchable = input(false)
   /** Placeholder for the search box. */
   readonly searchPlaceholder = input('Search…')
+  /** Whether the search box owns focus when this table opens inside a modal. */
+  readonly autofocusSearch = input(false)
   /** Message shown when there are no rows and the page declared no empty state. */
   readonly emptyText = input('No rows.')
   /** Label shown in a removed row's placeholder slot. */

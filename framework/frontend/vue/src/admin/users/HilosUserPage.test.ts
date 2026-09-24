@@ -1,20 +1,20 @@
 // The rename modal on the shared row-edit helper (HIL-1050): a live rename
 // reloads a pristine modal and says so, a typed one conflicts and answers Keep
 // mine / Take theirs without Merge, a card whose row went locks save as
-// "Deleted", and the modal asks before discarding a changed draft. The merge
-// itself is the core helper's; this covers the view.
-import { mount } from '@vue/test-utils'
+// "Deleted", and the modal asks before discarding a changed draft. The account
+// merge cases below cover the separate live two-step modal.
+import { flushPromises, mount } from '@vue/test-utils'
 import { markRaw, nextTick } from 'vue'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
-  HilosConnection,
   HilosPages,
   ScopeManager,
   createSignal,
   entityCollection,
 } from '@hilos/core'
 import type {
+  HilosConnection,
   HilosRouter,
   HilosUserProfile,
   HilosUsersContext,
@@ -53,11 +53,19 @@ function router(): HilosRouter {
  * name through the `user` entity — so a rename elsewhere is an entity upsert and
  * a deleted user is the row leaving the table.
  */
-function userContext(): {
+function userContext(
+  accountMerge = false,
+  options: {
+    detailHasPassword?: boolean
+    candidateHasPassword?: boolean
+  } = {},
+): {
   context: HilosUsersContext
   renameElsewhere: (name: string) => void
   removeRow: () => void
-  sent: Array<{ action: string; data: unknown }>
+  removeCandidate: () => void
+  answerMerge: (reason?: string) => void
+  sent: Array<{ action: string; data: unknown; requestId?: string }>
 } {
   const scopes = new ScopeManager()
   const page = scopes.openPage(HilosPages.USER)
@@ -68,7 +76,9 @@ function userContext(): {
   page.tables.upsert('userDetail', 1, {
     users: { type: 'user', id: 1 },
     connections: { presence: 'online', onlineSessionCount: 1 },
+    identities: { hasPassword: options.detailHasPassword ?? false },
   })
+  scopes.session.data.set('currentUser', { type: 'user', id: 99 })
   const users = entityCollection<HilosUserProfile>(
     scopes,
     'user',
@@ -78,13 +88,96 @@ function userContext(): {
       lastActivity: (fields.lastActivity as string | null) ?? null,
     }),
   )
-  const connection = new HilosConnection({ url: 'ws://test/ws' })
-  const sent: Array<{ action: string; data: unknown }> = []
-  vi.spyOn(connection, 'sendAction').mockImplementation((action, data) => {
-    sent.push({ action, data })
+  const listeners = new Map<
+    string,
+    Set<(payload: { data?: unknown } & Record<string, unknown>) => void>
+  >()
+  const sent: Array<{
+    action: string
+    data: unknown
+    requestId?: string
+  }> = []
+  const emit = (
+    event: string,
+    payload: { data?: unknown } & Record<string, unknown>,
+  ): void => {
+    for (const listener of listeners.get(event) ?? []) {
+      listener(payload)
+    }
+  }
+  const candidateRows = () => [
+    {
+      rowKey: 2,
+      slots: {
+        users: { id: 2, name: 'Bob', lastActivity: null },
+        merge: {
+          identities: [
+            {
+              type: 'email',
+              identifier: 'bob@example.test',
+              provider: null,
+              verified: true,
+            },
+          ],
+          hasPassword: options.candidateHasPassword ?? false,
+        },
+      },
+    },
+    {
+      rowKey: 99,
+      slots: {
+        users: { id: 99, name: 'Admin', lastActivity: null },
+        merge: { identities: [], hasPassword: false },
+      },
+    },
+  ]
+  const serveCandidates = (): void => {
+    emit('tableWindow', {
+      data: {
+        page: HilosPages.USER,
+        tableKey: 'mergeCandidates',
+        rows: candidateRows(),
+        totalCount: 2,
+        totalExact: true,
+        firstAnchor: null,
+        lastAnchor: null,
+        offset: 0,
+        limit: 10,
+      },
+    })
+  }
+  const connection = {
+    sendAction(action: string, data: unknown, requestId?: string): boolean {
+      sent.push({ action, data, requestId })
 
-    return true
-  })
+      return true
+    },
+    registerTableWindow(tableKey: string): void {
+      if (tableKey === 'mergeCandidates') {
+        serveCandidates()
+      }
+    },
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
+    sendTableViewport(): boolean {
+      serveCandidates()
+
+      return true
+    },
+    sendTableRendered(): boolean {
+      return true
+    },
+    on(
+      event: string,
+      listener: (payload: { data?: unknown } & Record<string, unknown>) => void,
+    ): () => void {
+      const eventListeners = listeners.get(event) ?? new Set()
+      eventListeners.add(listener)
+      listeners.set(event, eventListeners)
+
+      return () => eventListeners.delete(listener)
+    },
+  } as unknown as HilosConnection
 
   return {
     context: {
@@ -92,12 +185,43 @@ function userContext(): {
       connection,
       actions: new ActionLifecycle(connection),
       users,
+      accountMerge,
     },
     renameElsewhere(name: string): void {
       page.entities.upsert({ type: 'user', id: 1 }, { name })
     },
     removeRow(): void {
       page.tables.delete('userDetail', 1)
+    },
+    removeCandidate(): void {
+      emit('tableViewportDelta', {
+        data: {
+          page: HilosPages.USER,
+          tableKey: 'mergeCandidates',
+          kind: 'row_removed',
+          rowKey: '2',
+          reason: 'deleted',
+        },
+      })
+    },
+    answerMerge(reason?: string): void {
+      const requestId = sent.at(-1)?.requestId
+      if (reason === undefined) {
+        emit('actionSuccess', {
+          kind: 'actionSuccess',
+          action: 'hilos_user_merge',
+          requestId,
+          message: 'Merged.',
+        })
+
+        return
+      }
+      emit('actionError', {
+        kind: 'actionError',
+        action: 'hilos_user_merge',
+        requestId,
+        reason,
+      })
     },
     sent,
   }
@@ -145,6 +269,133 @@ async function openModal(context: HilosUsersContext): Promise<void> {
 }
 
 describe('HilosUserPage rename modal', () => {
+  it('shows the merge zone only when enabled and locks Next without a candidate', async () => {
+    const disabled = userContext()
+    const disabledWrapper = mount(HilosUserPage, {
+      props: { context: markRaw(disabled.context) },
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(disabledWrapper)
+    await nextTick()
+    expect(
+      disabledWrapper.find('[data-id="hilos-user-merge-zone"]').exists(),
+    ).toBe(false)
+
+    const enabled = userContext(true)
+    const enabledWrapper = mount(HilosUserPage, {
+      props: { context: markRaw(enabled.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(enabledWrapper)
+    await nextTick()
+    expect(
+      enabledWrapper.find('[data-id="hilos-user-merge-zone"]').exists(),
+    ).toBe(true)
+    modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
+    await nextTick()
+    expect(document.activeElement).toBe(modalEl('hilos-table-search'))
+    expect(
+      document.body.querySelectorAll('[data-id="hilos-user-merge-row-2"]'),
+    ).toHaveLength(2)
+    expect(
+      modalEl('modal')
+        ?.querySelector('.modal-dialog')
+        ?.classList.contains('modal-lg'),
+    ).toBe(true)
+    expect(
+      (modalEl('hilos-user-merge-next') as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
+  it('drives password choice, tracked outcomes, and a candidate leaving live', async () => {
+    const passwordWorld = userContext(true, {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+    })
+    const passwordWrapper = mount(HilosUserPage, {
+      props: { context: markRaw(passwordWorld.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(passwordWrapper)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await nextTick()
+
+    expect(
+      (modalEl('hilos-user-merge-row-99') as HTMLInputElement).disabled,
+    ).toBe(true)
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    expect(
+      Array.from(
+        document.body.querySelectorAll<HTMLInputElement>(
+          '[data-id="hilos-user-merge-row-2"]',
+        ),
+      ).every((choice) => choice.checked),
+    ).toBe(true)
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+    expect(modalEl('hilos-user-merge-fate-survivor')).not.toBeNull()
+    expect(
+      (modalEl('hilos-user-merge-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    modalEl('hilos-user-merge-fate-loser')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-confirm')?.click()
+    expect(passwordWorld.sent.at(-1)).toMatchObject({
+      action: 'hilos_user_merge',
+      data: { survivorUserId: 1, loserUserId: 2, passwordFate: 'loser' },
+    })
+    passwordWorld.answerMerge('Merge refused')
+    await nextTick()
+    await nextTick()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(document.body.textContent).toContain('Merge refused')
+
+    passwordWorld.removeCandidate()
+    await nextTick()
+    expect(modalEl('hilos-user-merge-gone')?.textContent).toContain(
+      'No longer available',
+    )
+    expect(
+      (modalEl('hilos-user-merge-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    passwordWrapper.unmount()
+    mounted.splice(mounted.indexOf(passwordWrapper), 1)
+    const plainWorld = userContext(true, {
+      detailHasPassword: true,
+      candidateHasPassword: false,
+    })
+    const plainWrapper = mount(HilosUserPage, {
+      props: { context: markRaw(plainWorld.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(plainWrapper)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+    expect(modalEl('hilos-user-merge-fate-survivor')).toBeNull()
+    modalEl('hilos-user-merge-confirm')?.click()
+    expect(plainWorld.sent.at(-1)).toMatchObject({
+      action: 'hilos_user_merge',
+      data: { survivorUserId: 1, loserUserId: 2 },
+    })
+    plainWorld.answerMerge()
+    await flushPromises()
+    await nextTick()
+    expect(modalEl('modal')).toBeNull()
+  })
+
   it('opens on the committed name with save locked and the message line empty', async () => {
     const { context } = userContext()
     await openModal(context)

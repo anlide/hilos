@@ -15,7 +15,9 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Database\Object\Item\Identity;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Tables\Users\AbstractHilosMergeCandidatesTable;
 
 /**
  * Browser table config for a single Hilos user detail page.
@@ -34,6 +36,7 @@ final class UserDetailBrowserTable
         BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
+            ChatBrowserSource::DB_IDENTITIES,
         ],
         BrowserTableConfigKey::ROWS => [
             [
@@ -60,6 +63,19 @@ final class UserDetailBrowserTable
                 BrowserTableFieldKey::COMPUTED => [
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
+                ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_IDENTITIES,
+                BrowserTableFieldKey::ROW_KEY => Identity::userId,
+                BrowserTableFieldKey::WHERE => [
+                    Identity::userId => ChatBrowserRef::TABLE_HILOS_USER_ID,
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    Identity::userId,
+                ],
+                BrowserTableFieldKey::COMPUTED => [
+                    AbstractHilosMergeCandidatesTable::FIELD_HAS_PASSWORD,
                 ],
             ],
         ],

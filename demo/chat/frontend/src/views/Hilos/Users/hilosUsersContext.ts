@@ -16,4 +16,5 @@ export const hilosUsersContext: HilosUsersContext<User> = {
   connection,
   actions,
   users: Users,
+  accountMerge: true,
 }

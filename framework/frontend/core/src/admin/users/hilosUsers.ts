@@ -20,7 +20,12 @@ import { sessionUserId } from '../../session/sessionScope.js'
 import { type Entity } from '../../state/entity.js'
 import { type EntityCollection } from '../../state/EntityCollection.js'
 import { type EntityRef } from '../../state/EntityStore.js'
-import { readNumber } from '../../state/fieldReaders.js'
+import {
+  readBoolean,
+  readNumber,
+  readString,
+  readStringOrNull,
+} from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import {
   computedSignal,
@@ -78,6 +83,41 @@ export interface HilosUserRow {
   readonly onlineSessionCount: number
 }
 
+/** One user-detail row, including whether its account owns a password identity. */
+export interface HilosUserDetailRow extends HilosUserRow {
+  /** Whether the account currently owns a password identity. */
+  readonly hasPassword: boolean
+}
+
+/** One safe sign-in identity shown while choosing an account to merge. */
+export interface HilosMergeCandidateIdentity {
+  /** Identity kind, for example email or passkey. */
+  readonly type: string
+  /** Public identifier; hidden by the view for passkeys. */
+  readonly identifier: string
+  /** Provider name when the identity came from an external provider. */
+  readonly provider: string | null
+  /** Whether the identity has been verified. */
+  readonly verified: boolean
+}
+
+/** One account that may be merged into the user whose card is open. */
+export interface HilosMergeCandidateRow {
+  /** Candidate user id; also the table row key. */
+  readonly id: number
+  /** Candidate display name. */
+  readonly name: string
+  /** Last activity timestamp, or null when never recorded. */
+  readonly lastActivity: string | null
+  /** Safe sign-in identity metadata. */
+  readonly identities: readonly HilosMergeCandidateIdentity[]
+  /** Whether the candidate currently owns a password identity. */
+  readonly hasPassword: boolean
+}
+
+/** Password identity outcome when both accounts currently own a password. */
+export type HilosPasswordFate = 'survivor' | 'loser' | 'none'
+
 /**
  * Row payload key of the live presence, inside the inline `connections` slot.
  * Exported because it is also the table column key the three views declare, so the
@@ -93,9 +133,25 @@ export const USER_ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
 // binds its backend tables to these keys.
 const HILOS_USERS_TABLE = 'hilosUsers'
 const USER_DETAIL_TABLE = 'userDetail'
+const MERGE_CANDIDATES_TABLE = 'mergeCandidates'
 // Row slots: the user entity (typed `user` via pageEntityTypes) and the inline
 // runtime connection summary a project fills on its backend.
 const USER_SLOT = 'users'
+const USER_IDENTITIES_SLOT = 'identities'
+const MERGE_SLOT = 'merge'
+const MERGE_IDENTITY_TYPE_FIELD = 'type'
+const MERGE_IDENTITY_IDENTIFIER_FIELD = 'identifier'
+const MERGE_IDENTITY_PROVIDER_FIELD = 'provider'
+const MERGE_IDENTITY_VERIFIED_FIELD = 'verified'
+
+/** Candidate-row payload key of safe identity metadata. */
+export const USER_IDENTITIES_FIELD = 'identities'
+
+/** Candidate/detail-row payload key of password presence. */
+export const USER_HAS_PASSWORD_FIELD = 'hasPassword'
+
+/** Candidate-table filter key that excludes the account whose card is open. */
+export const USER_MERGE_SURVIVOR_FILTER = 'survivor'
 
 /**
  * Row slot key of the inline connection summary.
@@ -116,6 +172,7 @@ const HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail'
 // and the ADMIN level that closes it is a thing only a page carries), so the SDK
 // draws the control and no project restates the name.
 const HILOS_IMPERSONATE_START_ACTION = 'hilos_impersonate_start'
+const HILOS_USER_MERGE_ACTION = 'hilos_user_merge'
 
 /**
  * The project-supplied context the users admin reads from: the scope-partitioned
@@ -134,6 +191,8 @@ export interface HilosUsersContext<
   readonly actions: ActionLifecycle
   /** The typed user collection that resolves the `users` entity slot. */
   readonly users: EntityCollection<TUser>
+  /** Whether this project exposes browser account merge on the user card. */
+  readonly accountMerge?: boolean
 }
 
 /** The impersonation control a users-list view binds to. */
@@ -166,6 +225,22 @@ export interface HilosUserRename {
    * @param name The new display name.
    */
   submitRename(id: number, name: string): boolean
+}
+
+/** The account-merge action surface a user-detail view binds to. */
+export interface HilosAccountMerge {
+  /**
+   * Dispatch one merge as a tracked action.
+   *
+   * @param survivorUserId The account that remains.
+   * @param loserUserId The account merged into the survivor.
+   * @param passwordFate Which password remains, only when the choice is required.
+   */
+  merge(
+    survivorUserId: number,
+    loserUserId: number,
+    passwordFate?: HilosPasswordFate,
+  ): ActionHandle
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -203,6 +278,53 @@ export function resolveHilosUserRow<TUser extends HilosUserProfile>(
   }
 }
 
+/** Narrow a raw candidate identity to the safe view-model shape. */
+function resolveMergeIdentity(
+  value: unknown,
+): HilosMergeCandidateIdentity | null {
+  const identity = recordSlot(value)
+  if (identity === undefined) {
+    return null
+  }
+
+  return {
+    type: readString(identity, MERGE_IDENTITY_TYPE_FIELD),
+    identifier: readString(identity, MERGE_IDENTITY_IDENTIFIER_FIELD),
+    provider: readStringOrNull(identity, MERGE_IDENTITY_PROVIDER_FIELD),
+    verified: readBoolean(identity, MERGE_IDENTITY_VERIFIED_FIELD),
+  }
+}
+
+/**
+ * Resolve one raw merge-candidate row into its framework view-model.
+ *
+ * @param row The raw table row from the page-scoped table store.
+ * @param users The project's user collection resolving the `users` entity slot.
+ */
+export function resolveHilosMergeCandidateRow<TUser extends HilosUserProfile>(
+  row: TableRow,
+  users: EntityCollection<TUser>,
+): HilosMergeCandidateRow {
+  const ref = row.slots[USER_SLOT] as EntityRef | undefined
+  const user = ref ? users.signal(ref).get() : undefined
+  const merge = recordSlot(row.slots[MERGE_SLOT])
+  const identities = Array.isArray(merge?.[USER_IDENTITIES_FIELD])
+    ? merge[USER_IDENTITIES_FIELD].map(resolveMergeIdentity).filter(
+        (identity): identity is HilosMergeCandidateIdentity =>
+          identity !== null,
+      )
+    : []
+
+  return {
+    id: Number(user?.id ?? row.rowKey),
+    name: user?.name ?? '',
+    lastActivity: user?.lastActivity ?? null,
+    identities,
+    hasPassword:
+      merge === undefined ? false : readBoolean(merge, USER_HAS_PASSWORD_FIELD),
+  }
+}
+
 /** The users table handle a users view drives: the controller plus its mount lifecycle. */
 export interface HilosUsersTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
@@ -210,6 +332,20 @@ export interface HilosUsersTable {
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
+  dispose(): void
+}
+
+/** The merge-candidates table handle a user-detail view drives while its modal is open. */
+export interface HilosMergeCandidates {
+  /** The server-windowed candidate controller. */
+  readonly controller: TableViewportController<HilosMergeCandidateRow>
+  /**
+   * Bind the table to the connection for one survivor.
+   *
+   * @param survivorId The open card's account, excluded by the reset-safe preset.
+   */
+  start(survivorId: number): void
+  /** Unbind from the connection — call when the modal closes. */
   dispose(): void
 }
 
@@ -255,6 +391,30 @@ const USERS_FRAME: HilosTableFrame = {
   search: { placeholder: 'Search users…' },
   columns: USERS_COLUMNS,
   empty: { title: 'No users yet.' },
+}
+
+/** Candidate columns shared by all three account-merge views. */
+const MERGE_CANDIDATE_COLUMNS: HilosTableColumnOf<HilosMergeCandidateRow>[] = [
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    source: MERGE_SLOT,
+    reads: [USER_HAS_PASSWORD_FIELD],
+  },
+  { key: 'name', label: 'Account', card: 'title' },
+  {
+    key: USER_IDENTITIES_FIELD,
+    label: 'Sign-in methods',
+    source: MERGE_SLOT,
+  },
+  { key: 'lastActivity', label: 'Last activity' },
+]
+
+/** The merge picker frame; search is server-side through the candidate table. */
+const MERGE_CANDIDATES_FRAME: HilosTableFrame = {
+  search: { placeholder: 'Search by name, address or ID' },
+  columns: MERGE_CANDIDATE_COLUMNS,
+  empty: { title: 'No accounts match.' },
 }
 
 /**
@@ -315,6 +475,57 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
 }
 
 /**
+ * Build the server-windowed account picker for one survivor account.
+ *
+ * @param context The project context (connection, scopes, and user collection).
+ */
+export function createHilosMergeCandidates<TUser extends HilosUserProfile>(
+  context: HilosUsersContext<TUser>,
+): HilosMergeCandidates {
+  const initialFilter = { [USER_MERGE_SURVIVOR_FILTER]: 0 }
+  const controller = new TableViewportController<HilosMergeCandidateRow>({
+    resolve: (row) => resolveHilosMergeCandidateRow(row, context.users),
+    sendViewport: (descriptor) =>
+      context.connection.sendTableViewport(
+        HilosPages.USER,
+        MERGE_CANDIDATES_TABLE,
+        descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.USER,
+        MERGE_CANDIDATES_TABLE,
+        rendered,
+      ),
+    initialFilter,
+    frame: MERGE_CANDIDATES_FRAME,
+  })
+  const teardown: Array<() => void> = []
+
+  return {
+    controller,
+    start(survivorId) {
+      initialFilter[USER_MERGE_SURVIVOR_FILTER] = survivorId
+      teardown.push(
+        bindTableViewport(
+          context.connection,
+          context.scopes,
+          { page: HilosPages.USER, tableKey: MERGE_CANDIDATES_TABLE },
+          controller,
+          { entityTypes: { [USER_SLOT]: context.users.type } },
+        ),
+      )
+      controller.resetFilters()
+    },
+    dispose() {
+      for (const off of teardown.splice(0)) {
+        off()
+      }
+    },
+  }
+}
+
+/**
  * The requested user's detail row, or undefined until the single-row detail
  * table lands. The backend filters the table to the route's userId, so the first
  * (only) row is the requested user.
@@ -323,15 +534,25 @@ export function createHilosUsersTable<TUser extends HilosUserProfile>(
  */
 export function createHilosUserDetail<TUser extends HilosUserProfile>(
   context: HilosUsersContext<TUser>,
-): ReadonlySignal<HilosUserRow | undefined> {
+): ReadonlySignal<HilosUserDetailRow | undefined> {
   const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
 
   return computedSignal(() => {
     const rows = detailRows.get()
 
-    return rows.length === 0
-      ? undefined
-      : resolveHilosUserRow(rows[0], context.users)
+    if (rows.length === 0) {
+      return undefined
+    }
+    const row = rows[0]
+    const identities = recordSlot(row.slots[USER_IDENTITIES_SLOT])
+
+    return {
+      ...resolveHilosUserRow(row, context.users),
+      hasPassword:
+        identities === undefined
+          ? false
+          : readBoolean(identities, USER_HAS_PASSWORD_FIELD),
+    }
   })
 }
 
@@ -392,6 +613,25 @@ export function createHilosImpersonate(
     start(targetUserId) {
       return context.actions.dispatch(HILOS_IMPERSONATE_START_ACTION, {
         targetUserId,
+      })
+    },
+  }
+}
+
+/**
+ * The tracked account-merge action for a user-detail view.
+ *
+ * @param context The project context whose action lifecycle dispatches the merge.
+ */
+export function createHilosAccountMerge(
+  context: HilosUsersContext,
+): HilosAccountMerge {
+  return {
+    merge(survivorUserId, loserUserId, passwordFate) {
+      return context.actions.dispatch(HILOS_USER_MERGE_ACTION, {
+        survivorUserId,
+        loserUserId,
+        ...(passwordFate === undefined ? {} : { passwordFate }),
       })
     },
   }

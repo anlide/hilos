@@ -50,7 +50,7 @@ function router(): HilosRouter {
  * name through the `user` entity — so a rename elsewhere is an entity upsert and
  * a deleted user is the row leaving the table.
  */
-function userContext(): {
+function userContext(accountMerge = false): {
   context: HilosUsersContext
   renameElsewhere: (name: string) => void
   removeRow: () => void
@@ -89,6 +89,7 @@ function userContext(): {
       connection,
       actions: new ActionLifecycle(connection),
       users,
+      accountMerge,
     },
     renameElsewhere(name: string): void {
       page.entities.upsert({ type: 'user', id: 1 }, { name })
@@ -141,6 +142,20 @@ function typeDraft(fixture: ComponentFixture<unknown>, text: string): void {
 }
 
 describe('HilosUserPage rename modal', () => {
+  it('shows the merge zone only when enabled and locks Next without a candidate', () => {
+    const fixture = openModal(userContext().context)
+    expect(el(fixture, 'hilos-user-merge-zone')).toBeNull()
+
+    fixture.componentRef.setInput('context', userContext(true).context)
+    fixture.detectChanges()
+    expect(el(fixture, 'hilos-user-merge-zone')).not.toBeNull()
+    el(fixture, 'hilos-user-merge-open')?.click()
+    fixture.detectChanges()
+    expect(
+      (el(fixture, 'hilos-user-merge-next') as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
   it('opens on the committed name with save locked and the message line empty', () => {
     const { context } = userContext()
     const fixture = openModal(context)

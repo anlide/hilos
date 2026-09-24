@@ -45,6 +45,7 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -397,6 +398,15 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             UserPage::PAGE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE],
+        );
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_MERGE],
+        );
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL]
+                [HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE],
         );
     }
 

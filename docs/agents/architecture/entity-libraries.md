@@ -453,17 +453,14 @@ takeover is allowed to whoever is inside it, exactly as signing out is.
 `HilosSignalConstants::HILOS_LOGOUT` is the plainest form of the same, and the
 three session-toast controls are the same again.
 
-**The answer may leave the accepting page when only the project can name the
-ack.** Statement 1 above says the gatekeeper answers the client itself; read it as
-"the gatekeeper SIDE answers", not "the accepting class answers". The account
-merge is the legal variant: the name sits on an ADMIN page
-(`demo/chat/backend/Pages/Hilos/Users/UserPage.php:61`), the page forwards
-`HILOS_ACCOUNT_MERGE` carrying the accept key and does NOT defer (`:255`), and the
-project's own agent answers the initiator under project names — `ackAccountMerge()`
-sending `ACCOUNT_MERGE_SUCCESS` / `ACCOUNT_MERGE_FAIL`
-(`demo/chat/backend/Agents/ChatAgent.php:436`). The condition is that the ack has a
-project name and a project shape: what the framework could send back is
-`action_success` and nothing else, and the merge's outcome summary is not that.
+**The accepting page answers even when only the project can perform part of the
+write.** Account merge follows the same two-step shape as impersonation: the framework
+single-user ADMIN page owns `HILOS_USER_MERGE`, forwards `HILOS_ACCOUNT_MERGE` with
+`HandoverGatekeeperTrait`, and defers the tracked action. The sessions library calls the
+project's merge seams inside the transaction, then answers the page on
+`HILOS_ACCOUNT_MERGE_DONE` with the finished summary as the success message. The project
+does not mint a second action or ack name merely because it contributes rows to the write;
+the gatekeeper still owns the browser outcome.
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
 only.** The writer keeps its own seam for the entrance that has no page. The
