@@ -45,9 +45,9 @@ use JsonException;
  *
  * **Released by receipt, not by reading.** A take renames the fresh file aside as a batch, so a
  * notice appended while the batch is in flight is not swallowed by its removal, and the batch file
- * stays until the library's receipt names it. The price runs the other way from a loss: a batch
- * whose receipt went missing is offered again, so a letter may reach its recipient twice - which is
- * the reason its contents are notices rather than facts.
+ * stays until the library's receipt names it. An unanswered batch is offered again under the same id,
+ * and applying it once is the library's responsibility under {@see DeferredQueueHandover}; a letter
+ * may reach its recipient twice only if the library restarted between two frames.
  *
  * It lives beside the archives, under `BACKUP_DIR`: everything that queues here is part of a
  * restore, and an installation that names no backup directory runs no restores to have a letter
@@ -110,8 +110,8 @@ final class DeferredNotificationQueue
      *
      * The file is not removed here. It stays until the library's receipt names its batch
      * ({@see release()}), which makes the hand-over at-least-once: a batch whose receipt is lost
-     * is offered again, and a letter in it may reach its recipient twice. For a letter about the
-     * outcome of a restore a duplicate is the smaller harm than silence.
+     * is offered again under the same id, and the library applies it once
+     * ({@see DeferredQueueHandover}).
      *
      * The id only has to differ from the id of another batch in the same directory, and nobody
      * gains anything by guessing it, so it is drawn from the tolerant random axis.

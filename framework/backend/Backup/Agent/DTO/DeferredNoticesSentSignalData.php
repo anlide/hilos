@@ -19,7 +19,8 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
  * notice that could not be emitted is counted and logged there instead of being offered forever.
  *
  * Unlike the session receipt it feeds no master: nothing waits for a letter before the browsers
- * reload, so the two numbers are only what the holder writes in its log.
+ * reload, and neither number is read today. They count what this pass did, so a receipt for a
+ * batch the library has already applied carries two zeros.
  */
 final class DeferredNoticesSentSignalData extends BaseDTO implements SignalDataInterface
 {

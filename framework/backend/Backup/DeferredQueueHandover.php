@@ -7,6 +7,7 @@ namespace Hilos\Backup;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
+use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
 use Hilos\Backup\Agent\DTO\DeferredSessionsCarriedSignalData;
@@ -38,10 +39,20 @@ use Hilos\Utils\Logger;
  * start to ask from.
  *
  * **A receipt closes a batch; an offer does not.** A batch nobody answered - its owner stopped by the
- * freeze, not placed yet, or answering into a frame that was lost - is offered again on the next
- * pass, and only a receipt removes its file. Delivery is at least once, and both owners survive the
- * repeat: a login that already holds a row is neither carried nor lost, and for a letter about a
- * restore a duplicate is the smaller harm than silence.
+ * freeze, not placed yet, its worker busy longer than the pass so frames queue up, or answering
+ * into a frame that was lost - is offered again on the next pass, and only a receipt removes its file.
+ *
+ * **Delivered at least once, applied at most once per batch id.** A batch is offered under the id of
+ * its file, so every frame of it carries that same id ({@see DeferredNotificationQueue::take()},
+ * {@see DeferredSessionCarryoverQueue::take()}). An owner answers with a receipt to every frame,
+ * including repeats - without the receipt the holder offers forever - and applies the batch at most
+ * once per batch id. Both owners fulfill this contract: the sessions library by design
+ * ({@see SessionCarrier::carryOver()} neither carries nor loses a token that already has a row), and
+ * the notifications library by remembering the ids of applied batches
+ * ({@see AbstractNotificationsLibraryAgent}). The memory lives for the lifetime of the owner
+ * instance: a restart between two frames of the same batch will apply it again, a cost accepted
+ * against the complexity of durable memory for a rare case. Any third queue handed over here is bound
+ * by the same rule.
  *
  * **Absent and unreachable are two answers.** A project in which no agent declares a hand-over name
  * has no owner to wait for: the batch stays on disk, one line says so, and this process stops

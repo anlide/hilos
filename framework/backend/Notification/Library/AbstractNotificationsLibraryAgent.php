@@ -9,6 +9,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\DeferredNoticesSentSignalData;
+use Hilos\Backup\DeferredQueueHandover;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -221,6 +222,12 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     private ?CronRule $deliveryLogPruneRule = null;
 
     /**
+     * @var array<string, true> Ids of the handed-over batches this instance has applied, so a
+     *     repeated frame of one is answered and not applied again
+     */
+    private array $appliedHandoverBatches = [];
+
+    /**
      * @param NotificationDispatcher $dispatcher Channel-delivery dispatcher this library fans through
      */
     public function __construct(
@@ -265,7 +272,9 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
     /**
      * The library holds nothing across a stop: its state is the four collections above, which
-     * outlive the process that owns them.
+     * outlive the process that owns them, and the ids of the applied handed-over batches, which die
+     * with the instance intentionally - a restart between two frames of one batch applies it again,
+     * a cost the handover design accepts (P-318).
      */
     public function onStop(): void
     {
@@ -471,11 +480,24 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * tried. The receipt goes back after every pass, whatever became of each letter - the batch is
      * this library's once it has been through here, and unanswered it would be offered forever.
      *
+     * A frame of a batch this instance has already applied sends no letters and only answers with
+     * a receipt carrying two zeros; letters that could not be sent on the first pass are not
+     * retried by the repeat - the batch is this library's once it has been through here. The
+     * delivery and deduplication contract is described in {@see DeferredQueueHandover}.
+     *
      * @param DeferredNotificationHandoverSignalData $handover The batch and the id its receipt names
      * @throws InvalidArgumentException When the receipt cannot be named
      */
     private function emitHandedOverNotices(DeferredNotificationHandoverSignalData $handover): void
     {
+        if (isset($this->appliedHandoverBatches[$handover->batch])) {
+            $this->sendToAgent(
+                HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT,
+                new DeferredNoticesSentSignalData($handover->batch, 0, 0),
+            );
+            return;
+        }
+
         $sent = 0;
         $dropped = 0;
         foreach ($handover->notifications as $draft) {
@@ -489,6 +511,8 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                 );
             }
         }
+
+        $this->appliedHandoverBatches[$handover->batch] = true;
 
         $this->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT,
