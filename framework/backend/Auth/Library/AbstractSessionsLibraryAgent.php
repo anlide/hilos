@@ -2146,12 +2146,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Only sockets of THIS session are touched. Another session waiting on the same
      * identifier is still waiting on it.
      *
+     * The tabs told are the session's, by the same two sources as the grant
+     * ({@see self::registrationConvergeAcceptKeys()}, HIL-1065): the rows of the session,
+     * each named by the address it carries, plus every other live connection of it. A tab
+     * with no row is named by the session's own registration address, read before the
+     * durable wait is released. Without it, a tab the grant moved onto the password step
+     * would stay there after a sibling pressed "Cancel registration".
+     *
      * @param string $sessionToken Session cookie token canceling its registration
      * @param string $initiatorAcceptKey Accept key that asked, answered by its own action reply
      * @throws HilosException On runtime or database failure
      */
     private function cancelRegistration(string $sessionToken, string $initiatorAcceptKey): void
     {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+
         // Two passes for the ordering below, not for the walk: the durable release has to
         // land between reading the waiters and telling them, so the reading finishes first.
         $parked = [];
@@ -2161,13 +2170,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
         }
 
+        // The address has to be read here, before the release below clears it.
+        $identifier = $session?->pendingRegistrationIdentifier;
+        if ($identifier !== null) {
+            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+                $parked[$acceptKey] ??= $identifier;
+            }
+        }
+
         // The durable memory goes ahead of the signals, for the reason the expiry sweep
         // drops it in the same order: a tab reconnecting a moment later must be told the
         // identifier step by the handshake, not parked again on a screen this call closes.
-        Hilos::$db->sessions->findByToken($sessionToken)?->actions->releasePendingRegistration();
+        $session?->actions->releasePendingRegistration();
         $this->dropCodeSendProgress($sessionToken);
 
-        foreach ($parked as $acceptKey => $identifier) {
+        foreach ($parked as $acceptKey => $waitedIdentifier) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
             if ($acceptKey === $initiatorAcceptKey) {
                 continue;
@@ -2178,7 +2195,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $acceptKey,
                 new AuthConvergeSignalData(
                     $acceptKey,
-                    $identifier,
+                    $waitedIdentifier,
                     AuthFlowStep::IDENTIFIER,
                     AuthFlowIntent::REGISTER,
                 ),
@@ -2197,14 +2214,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Nothing is written on the rows here, unlike the recovery half: the proof of a
      * registration lives on the hold in the database, so there is no grant to mark on a
-     * socket and nothing to lose when one reconnects. The rows stay parked, and the
-     * answering connection is skipped - its caller answers it with the action reply.
+     * socket and nothing to lose when one reconnects. The rows stay parked, nor is a row
+     * parked for a tab the second source below reached, and the answering connection is
+     * skipped - its caller answers it with the action reply.
      *
-     * The recipients are picked out of everyone parked on the ADDRESS rather than out of
-     * everyone parked by the session, because that is the index this collection carries -
-     * several browsers legitimately wait on one address, so the address is what a
-     * registration wait is filed under. The pair (address, session) is the same set either
-     * way round.
+     * The tabs are the SESSION's, not the parked rows' (HIL-1065). The runtime list is a
+     * projection and not the truth, exactly as {@see self::parkedAcceptKeys()} says: a row
+     * is written only when a socket asks for a code or handshakes into a live hold, so a
+     * tab that was open before the registration began holds none, and neither does one
+     * that reached the code screen locally. Every live socket of the session is entitled
+     * to the step whether or not it was ever parked - the handshake derives it from the
+     * session ({@see self::pendingAuthStepFor()}), which is why a reload always cured such
+     * a tab - so the push reads the same two sources. The address is judged by the
+     * surface that receives the frame: it drops it unless that is the address on screen.
      *
      * @param string $identifier Normalized address that was proved (lowercased email)
      * @param string $sessionToken Session token that proved the code
@@ -2216,20 +2238,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         string $sessionToken,
         string $initiatorAcceptKey,
     ): void {
-        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
-            if ($waiter->acceptKey === $initiatorAcceptKey || $waiter->sessionToken !== $sessionToken) {
+        foreach ($this->registrationConvergeAcceptKeys($identifier, $sessionToken) as $acceptKey) {
+            if ($acceptKey === $initiatorAcceptKey) {
                 continue;
             }
 
             $this->sendToUser(
                 HilosSignalConstants::HILOS_AUTH_CONVERGE,
-                $waiter->acceptKey,
-                new AuthConvergeSignalData(
-                    $waiter->acceptKey,
-                    $identifier,
-                    AuthFlowStep::SET_PASSWORD,
-                    AuthFlowIntent::REGISTER,
-                ),
+                $acceptKey,
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::SET_PASSWORD, AuthFlowIntent::REGISTER),
             );
         }
     }
@@ -4368,10 +4385,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * is the mechanism there too. The initiator's row is made to say THIS address first: a
      * browser that reconnected between asking for the code and proving it lost the row it
      * was parked on, and one whose wait-moved frame never arrived has a row naming the
-     * address it walked away from - and the tabs below are chosen by matching that very
-     * address. Then the neighbouring tabs are moved onto the password step. The answer to
-     * the tab that submitted goes LAST, because it is what opens that step, and a converge
-     * arriving after it would move the siblings past a screen this one has not reached.
+     * address it walked away from - and the account-made converge
+     * ({@see self::parkedAcceptKeys()}) and the expiry rollback
+     * ({@see self::rollBackRegistrationWaiters()}) read the rows by that very address.
+     * Then the neighbouring tabs are moved onto the password step - the session's tabs,
+     * not only its rows (HIL-1065). The answer to the tab that submitted goes LAST,
+     * because it is what opens that step, and a converge arriving after it would move the
+     * siblings past a screen this one has not reached.
      *
      * There is no `acceptCodeForSession()` here and there will not be one: the proof of a
      * registration is DURABLE, written on the hold in the database, so a socket carries
@@ -4637,6 +4657,42 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         return $parked;
+    }
+
+    /**
+     * Names the connections a session's registration step must reach (HIL-1065).
+     *
+     * TWO sources, in the shape of {@see self::recoveryConvergeAcceptKeys()} (HIL-915) and
+     * {@see self::parkedAcceptKeys()} (HIL-486): the rows this session parked on the
+     * address, and every live connection of it. The parked source stays first and is not
+     * dropped - a row can outlive the connection registry's view of a socket for the
+     * length of one tick - and the set makes the overlap free. The rows are filtered by
+     * session because the collection is indexed by address, not by session.
+     *
+     * There is NO hold test here: the session asking is the one that just proved its own
+     * hold. The narrowing by the hold in {@see self::parkedAcceptKeys()} (HIL-833) is about
+     * OTHER sessions. A project that keeps no session-stage connection rows adds nothing
+     * through the second source.
+     *
+     * @param string $identifier Normalized address the session is registering (lowercased email)
+     * @param string $sessionToken Session token whose registration step moved
+     * @return list<string> Accept keys of the connections this session's registration step must reach
+     * @throws HilosException On runtime failure
+     */
+    private function registrationConvergeAcceptKeys(string $identifier, string $sessionToken): array
+    {
+        $keys = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            if ($waiter->sessionToken === $sessionToken) {
+                $keys[$waiter->acceptKey] = true;
+            }
+        }
+
+        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+            $keys[$acceptKey] = true;
+        }
+
+        return array_keys($keys);
     }
 
     /**

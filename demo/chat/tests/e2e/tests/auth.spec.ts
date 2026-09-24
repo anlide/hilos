@@ -1060,6 +1060,54 @@ test('carries a proved registration to its password screen, in every tab, and le
   await stranger.close()
 })
 
+test('moves a tab already standing on the address onto the password screen when another tab of the browser proves the code', async ({
+  page,
+  context,
+}) => {
+  // HIL-1065, the live half of the step the test above proves at the handshake.
+  // The step belongs to the SESSION, so a tab that was open before the
+  // registration began, and never asked for a code, follows it without a reload.
+  const email = uniqueEmail()
+
+  // Tab A opens first so the session already exists when the other tabs arrive.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // Tab B types the address BEFORE tab A holds it: typing an address that is
+  // already held jumps straight to the code step (HIL-651).
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+  await typeInto(second.getByTestId('auth-identifier'), email)
+  await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
+
+  // Tab C opens the surface and types nothing.
+  const third = await context.newPage()
+  await gotoPage(third, '/')
+  await expect(third.getByTestId('conn-state')).toHaveText('connected')
+  await third.getByTestId('message-signin').click()
+  await expect(third.getByTestId('auth-identifier')).toBeVisible()
+
+  // Tab A holds the address and the one letter goes out; taking the hold moves
+  // nobody.
+  await submitRegistration(page, email)
+  const code = await readRegisterCode(email)
+  await expect(second.getByTestId('auth-heading')).toHaveText('Create your account')
+
+  // Tab A proves the code, and tab B follows it with no reload.
+  await submitRegistrationCode(page, code)
+  await expect(page.getByTestId('auth-heading')).toHaveText('Choose a password')
+  await expect(second.getByTestId('auth-heading')).toHaveText('Choose a password')
+  await expect(second.getByTestId('auth-new-password')).toBeVisible()
+
+  // Tab C stays where it was. Asserted after tab B moved, so the frame has had
+  // its moment to arrive: it now reaches tab C too, and only the client drops it
+  // for naming an address that is not on screen.
+  await expect(third.getByTestId('auth-identifier')).toHaveValue('')
+  await expect(third.getByTestId('auth-new-password')).toHaveCount(0)
+})
+
 test('opens a fresh tab on the new-password step once the code is accepted', async ({
   page,
   context,

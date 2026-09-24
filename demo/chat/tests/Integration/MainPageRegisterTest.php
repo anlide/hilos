@@ -666,6 +666,114 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
+     * A tab of the browser that never asked for a code still follows it onto the password step (HIL-1065).
+     *
+     * The order of the opens is the whole defect, as in the recovery twin (HIL-915). The
+     * listener joins BEFORE any registration begins, so neither of the two moments that
+     * park a connection - asking for a code, or handshaking into a session already
+     * holding the address - ever happens to it, and it holds no row. The step belongs to
+     * the session, not to the rows, and a push that walked only the rows went past the
+     * tab while F5 cured it. Another browser holding the same address is not moved by
+     * this browser's proof.
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testATabOpenedBeforeTheRegistrationIsMovedOntoThePasswordStep(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'early-listener-ak');
+        $this->openSession($agent, 'actor-ak', $token);
+        $this->openSession($agent, 'stranger-ak');
+
+        try {
+            $this->register($agent, 'actor-ak', $email);
+            $this->register($agent, 'stranger-ak', $email);
+            $this->seedKnownCode($email);
+            $this->drainConvergeSignals();
+
+            ExecutionContext::setCurrentAcceptKey('actor-ak');
+            $this->confirm($agent, 'actor-ak', $email, self::CODE);
+            $converged = $this->drainConvergeSignals();
+
+            $this->assertArrayHasKey('early-listener-ak', $converged, 'The tab that never parked is moved too');
+            $this->assertSame($email, $converged['early-listener-ak']->identifier);
+            $this->assertSame(AuthFlowStep::SET_PASSWORD, $converged['early-listener-ak']->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $converged['early-listener-ak']->intent);
+            $this->assertNull($converged['early-listener-ak']->code);
+            $this->assertArrayNotHasKey(
+                'actor-ak',
+                $converged,
+                'The tab that proved the code is answered by its action reply, not by a converge',
+            );
+            $this->assertArrayNotHasKey('stranger-ak', $converged, 'Another browser is not moved by this one\'s proof');
+            $this->assertNull(
+                Hilos::$rt->hilosRegistrationWaiters['early-listener-ak'],
+                'The tab is moved, not parked: no row is written for it',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * A cancel in one tab sends a tab the grant moved back to the address field (HIL-1065).
+     *
+     * The other half of the same fix. The listener reached the password step with no row
+     * of its own, so a cancel that walked only the rows would leave it on the password
+     * screen of a registration that no longer exists. The session's own registration
+     * address names it, since it has no row to name one - and the cancel still does all
+     * it did before: the wait and the hold are gone.
+     *
+     * @throws HilosException When setup or the handling fails
+     */
+    public function testCancelInOneTabSendsAMovedTabBackToTheAddress(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'early-listener-ak');
+        $this->openSession($agent, 'actor-ak', $token);
+
+        try {
+            $this->register($agent, 'actor-ak', $email);
+            $this->seedKnownCode($email);
+            $this->drainConvergeSignals();
+
+            ExecutionContext::setCurrentAcceptKey('actor-ak');
+            $this->confirm($agent, 'actor-ak', $email, self::CODE);
+            $this->drainConvergeSignals();
+
+            $reply = $this->usersLibrary()->onAgentAction(
+                'actor-ak',
+                HilosSignalConstants::HILOS_CANCEL_REGISTRATION,
+                new CancelRegistrationActionDTO(),
+            );
+            $outcome = $reply ?? $this->deliverLibraryFrames($agent);
+            $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
+            $converged = $this->drainConvergeSignals();
+
+            $this->assertArrayHasKey('early-listener-ak', $converged, 'The tab with no row is told too');
+            $this->assertSame(
+                $email,
+                $converged['early-listener-ak']->identifier,
+                'It is named by the address the session was registering',
+            );
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $converged['early-listener-ak']->step);
+            $this->assertSame(AuthFlowIntent::REGISTER, $converged['early-listener-ak']->intent);
+            $this->assertNull($converged['early-listener-ak']->code);
+            $this->assertArrayNotHasKey(
+                'actor-ak',
+                $converged,
+                'The tab that canceled is answered by its action reply, not by a converge',
+            );
+            $this->assertNull($this->waitOf($token), 'The session stops waiting on the address it canceled');
+            $this->assertNull($this->holdOf('actor-ak'), 'And the hold goes with it');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * The race is settled by the SAVE, and the loser is told the address is taken.
      *
      * The capture HIL-608 closes, seen from the losing side, and the moment it is settled
