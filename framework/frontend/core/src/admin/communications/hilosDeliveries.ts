@@ -7,13 +7,14 @@
 //
 // The journal is the one notifications table that grows without bound, so its
 // backend serves each window straight from SQL (a ViewportTable), not from a
-// runtime projection: there are no live per-row deltas, and a refresh is a
-// re-request of the window. The channel/status/period filters and the
+// runtime projection. Its rows arrive live all the same: a new delivery and a
+// status change reach an open window as the common viewport frames. The
+// channel/status/period filters and the
 // type/recipient search ride the open viewport filter map — the per-channel route
 // opens the otherwise cross-cutting journal by presetting the channel filter. The
 // single row action is retry, valid only on a failed delivery: it dispatches as a
-// tracked action and re-queues the delivery on the backend, which returns the
-// updated row through the next window (there is no new server->client signal). A
+// tracked action and re-queues the delivery on the backend, and the re-queued
+// row arrives as a live delta (there is no new server->client signal). A
 // project supplies a HilosDeliveriesContext and the framework owns the rest.
 
 import {
@@ -157,7 +158,7 @@ export interface HilosDeliveriesActions {
    * Retry a failed delivery, as a tracked action. The backend resets its attempts
    * to zero, sets it back to pending, clears the last error, and re-sends the
    * channel's deliver signal; a non-failed delivery is rejected on the action's
-   * `::fail`. The updated row returns through the next window refresh.
+   * `::fail`. The updated row arrives as a live delta.
    *
    * @param deliveryId The delivery id (also the table row key).
    */
@@ -305,8 +306,8 @@ const DELIVERIES_FRAME: HilosTableFrame = {
  * The server-windowed controller for the delivery-logs table: search, the domain
  * filters (channel, status, period), sort, and paging change the viewport
  * descriptor sent over the connection, and the backend replies a window plus the
- * total count scoped to the table's (page, tableKey) address. There are no live
- * deltas — the journal is served from SQL. Rows resolve through
+ * total count scoped to the table's (page, tableKey) address; a new delivery and
+ * a status change arrive as live deltas. Rows resolve through
  * {@link resolveHilosDeliveryRow}. Newest first by default. The per-channel route
  * opens the journal with a channel preset through `initialFilter`. The returned
  * handle's `start` binds the table and requests the first window; `dispose`
@@ -376,8 +377,8 @@ export function createHilosDeliveriesTable(
  * The delivery mutation surface: retry submits as a tracked action over the
  * lifecycle. It returns an ActionHandle whose `done` resolves on the backend's
  * `::success` ack and rejects on `::fail` — a view surfaces the failure
- * (authoritative-backend). The re-queued row returns over the next window refresh,
- * so this surface only dispatches.
+ * (authoritative-backend). The re-queued row arrives as a live delta, so this
+ * surface only dispatches.
  *
  * @param context The project context (the action lifecycle the retry dispatches over).
  */

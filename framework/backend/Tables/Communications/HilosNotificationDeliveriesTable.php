@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -17,8 +21,11 @@ use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\InMemoryTableFilter;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableWindowPlan;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
@@ -40,9 +47,11 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
  * straight from SQL. {@see query()} runs a windowed SELECT over
  * hilos_notification_delivery joined to hilos_notification (for the recipient, type,
  * and title), with a matching COUNT for the total — the window placed by its anchor on
- * the server, no RT projection. The consequence, taken deliberately, is that the journal has no
- * live per-row deltas: {@see buildMutationForSourceEvent()} returns null and the
- * frontend refreshes by re-requesting the window.
+ * the server, no RT projection. The journal is live all the same (HIL-1049): the window comes
+ * from SQL, and every change after it arrives as a mutation built from the db_sync_* frames
+ * of the notificationDeliveries collection ({@see buildMutationForSourceEvent()}), the row
+ * read again by its id. The places of the window are written in the columns of the source
+ * ({@see anchorForRow()}, {@see placeRowAgainst()}), the way {@see query()} writes its boundaries.
  *
  * The channel/status/period filters and the declared search ride the open
  * viewport filter map ({@see TableQueryDTO::$filter}); a preset channel filter is
@@ -58,6 +67,26 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'hilosNotificationDeliveries';
 
+    /**
+     * Declares the journal's source: the notificationDeliveries collection, keyed by the delivery id.
+     *
+     * This declaration is what makes the page showing the journal a reader of notificationDeliveries
+     * in the topology (HIL-376 / HIL-750), and only therefore does the master address the journal's
+     * db_sync_* frames to the worker serving that page (HIL-717). It projects no rows - no FIELDS, no
+     * COMPUTED: the window and its mutations are built by the table itself.
+     */
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            self::DB_DELIVERIES_SOURCE,
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => self::DB_DELIVERIES_SOURCE,
+                BrowserTableFieldKey::ROW_KEY => EntityNotificationDelivery::id,
+            ],
+        ],
+    ];
+
     /** Wire slot the row payload rides under; must match the frontend delivery slot. */
     private const string ROW_SLOT = 'delivery';
 
@@ -72,6 +101,12 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
 
     /** Filter-map key: inclusive upper bound on created_at (date or SQL datetime; a bare date covers the whole day). */
     public const string FILTER_TO = 'to';
+
+    /** Source the journal's rows come from: the delivery collection of the framework database. */
+    private const array DB_DELIVERIES_SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => HilosDbContext::notificationDeliveries,
+    ];
 
     /** Delivery table alias in the windowed SQL. */
     private const string DELIVERY_TABLE = 'hilos_notification_delivery';
@@ -108,6 +143,18 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         . ' LEFT JOIN `' . self::NOTIFICATION_TABLE . '` n ON n.' . EntityNotification::id
         . ' = nd.' . EntityNotificationDelivery::notification_id;
 
+    /** Columns every row of the journal is read with, the window's and the one row a mutation reads again. */
+    private const string SELECT_COLUMNS = ' nd.' . EntityNotificationDelivery::id . ' AS id,'
+        . ' nd.' . EntityNotificationDelivery::created_at . ' AS created_at,'
+        . ' nd.' . EntityNotificationDelivery::channel . ' AS channel,'
+        . ' nd.' . EntityNotificationDelivery::status . ' AS status,'
+        . ' nd.' . EntityNotificationDelivery::attempts . ' AS attempts,'
+        . ' nd.' . EntityNotificationDelivery::delivered_at . ' AS delivered_at,'
+        . ' nd.' . EntityNotificationDelivery::last_error . ' AS last_error,'
+        . ' n.' . EntityNotification::user_id . ' AS user_id,'
+        . ' n.' . EntityNotification::type . ' AS notification_type,'
+        . ' n.' . EntityNotification::title . ' AS notification_title';
+
     /**
      * Declares how many rows the first window of the delivery journal carries.
      *
@@ -129,14 +176,44 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * The delivery journal has no live per-row source; a window refresh is a re-query.
+     * Builds a journal row mutation from a change of the notificationDeliveries collection.
      *
-     * @param SourceChange $change Source change (ignored)
-     * @return ?TableRowMutationDTO Always null — no source-driven deltas
+     * A created or updated delivery is read again by its id, over the same join the window is
+     * served by: the diff of an update carries only the delivery columns that moved, and the row
+     * of a creation is the delivery alone, without the title, type and recipient the join brings.
+     * A delivery gone between the write and this read has nothing to show and answers null; a
+     * deletion needs no row and is not read at all.
+     *
+     * A clear answers null too: nothing hands it to a viewport table, so there is no window here
+     * that could receive it.
+     *
+     * @param SourceChange $change Source change
+     * @return ?TableRowMutationDTO Journal row mutation, or null when the change does not reach this table
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When the row query fails
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        return null;
+        if ($change->kind !== SourceChange::KIND_DB || $change->sourceKey !== HilosDbContext::notificationDeliveries) {
+            return null;
+        }
+
+        $deliveryId = (int) $change->sourceId;
+        if ($deliveryId <= 0) {
+            return null;
+        }
+
+        if ($change->mutationType === TableMutationType::Delete) {
+            return $this->mutation(TableMutationType::Delete, $deliveryId);
+        }
+        if ($change->mutationType !== TableMutationType::Create && $change->mutationType !== TableMutationType::Update) {
+            return null;
+        }
+
+        $row = $this->readRow($deliveryId);
+
+        return $row === null ? null : $this->mutation($change->mutationType, $deliveryId, $row);
     }
 
     /**
@@ -204,6 +281,77 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $params[] = $rowKey;
 
         return $this->existsInSet($where, $params);
+    }
+
+    /**
+     * Names the place one delivery sits at, in the columns of the source.
+     *
+     * The places of the journal are written in the columns of hilos_notification_delivery,
+     * because that is how {@see query()} writes the boundaries of a window and how the keyset of
+     * the next window reads them. The row names the same place in the fields of its payload, so
+     * the row and the boundary live under different names, and it is the table that brings them
+     * together ({@see ViewportTable::anchorForRow()}, HIL-787): one key space for every place of a
+     * subscription - the boundaries of the snapshot, the places of its rows, and the frame around
+     * the window (HIL-1037).
+     *
+     * @param AbstractTableRow $row Delivery row to name the place of
+     * @param TableQueryDTO $query Window query whose sort names the order the place is read in
+     * @return ?TableAnchorDTO Place in the columns of the source, or null when the window asked for no
+     *     order, orders by a field without a column, or the row carries no value for it
+     */
+    public function anchorForRow(AbstractTableRow $row, TableQueryDTO $query): ?TableAnchorDTO
+    {
+        if ($query->sort === null) {
+            return null;
+        }
+
+        $fields = $row->toArray();
+        $values = [];
+        foreach (InMemoryTableFilter::anchorFields($query->sort, HilosNotificationDeliveryTableRow::keyField()) as $field) {
+            $column = self::placeColumn($field);
+            if ($column === null || !array_key_exists($field, $fields)) {
+                return null;
+            }
+            $values[$column] = $fields[$field];
+        }
+
+        return new TableAnchorDTO($values);
+    }
+
+    /**
+     * Places one delivery against a boundary written in the columns of the source.
+     *
+     * The boundary is read back onto the fields of the row and the two are compared by the one
+     * comparator every window uses, so the journal places its rows by the rule every other table
+     * places them by, only reading its own names first ({@see anchorForRow()} says why they are
+     * its own). The id of the boundary is made an integer when it is one: the database may hand
+     * it over as text, and {@see InMemoryTableFilter::compare()} settles a tie between two keys
+     * as numbers only when both are integers - as text, delivery 10 would stand above delivery 9.
+     *
+     * @param AbstractTableRow $row Delivery row to place
+     * @param TableAnchorDTO $anchor Boundary in the columns of the source
+     * @param TableQueryDTO $query Window query whose sort names the order the place is read in
+     * @return ?int Negative above the anchor, zero at it, positive below it, or null when the window
+     *     asked for no order, orders by a field without a column, or the anchor lacks the column
+     */
+    public function placeRowAgainst(AbstractTableRow $row, TableAnchorDTO $anchor, TableQueryDTO $query): ?int
+    {
+        if ($query->sort === null) {
+            return null;
+        }
+
+        $keyField = HilosNotificationDeliveryTableRow::keyField();
+        $against = [];
+        foreach (InMemoryTableFilter::anchorFields($query->sort, $keyField) as $field) {
+            $column = self::placeColumn($field);
+            if ($column === null || !array_key_exists($column, $anchor->values)) {
+                return null;
+            }
+            $value = $anchor->values[$column];
+            $against[$field] = $field === $keyField && is_string($value) && ctype_digit($value) ? (int) $value : $value;
+        }
+
+        return InMemoryTableFilter::compare($row->toArray(), $against, $query->sort, $keyField);
     }
 
     /**
@@ -280,17 +428,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             $params = array_merge($params, $keyset->getParams());
         }
 
-        $sql = 'SELECT'
-            . ' nd.' . EntityNotificationDelivery::id . ' AS id,'
-            . ' nd.' . EntityNotificationDelivery::created_at . ' AS created_at,'
-            . ' nd.' . EntityNotificationDelivery::channel . ' AS channel,'
-            . ' nd.' . EntityNotificationDelivery::status . ' AS status,'
-            . ' nd.' . EntityNotificationDelivery::attempts . ' AS attempts,'
-            . ' nd.' . EntityNotificationDelivery::delivered_at . ' AS delivered_at,'
-            . ' nd.' . EntityNotificationDelivery::last_error . ' AS last_error,'
-            . ' n.' . EntityNotification::user_id . ' AS user_id,'
-            . ' n.' . EntityNotification::type . ' AS notification_type,'
-            . ' n.' . EntityNotification::title . ' AS notification_title'
+        $sql = 'SELECT' . self::SELECT_COLUMNS
             . ' FROM ' . self::JOIN
             . $where
             . self::renderOrderBy($plan->orderBy)
@@ -345,6 +483,28 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     protected function existsInSet(string $where, array $params): bool
     {
         return Database::sql('SELECT 1 FROM ' . self::JOIN . $where . ' LIMIT 1', $params)->firstRow() !== null;
+    }
+
+    /**
+     * Reads one row of the journal by its delivery id, over the join a window is served by.
+     *
+     * The one place a mutation reaches the database, kept apart for the reason
+     * {@see existsInSet()} is: a test replaces it and reads which delivery was asked for.
+     *
+     * @param int $deliveryId Delivery id to read
+     * @return ?HilosNotificationDeliveryTableRow Journal row, or null when the delivery is gone
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When the row query fails
+     */
+    protected function readRow(int $deliveryId): ?HilosNotificationDeliveryTableRow
+    {
+        $row = Database::sql(
+            'SELECT' . self::SELECT_COLUMNS . ' FROM ' . self::JOIN . ' WHERE nd.' . EntityNotificationDelivery::id . ' = ? LIMIT 1',
+            [$deliveryId],
+        )->firstRow();
+
+        return $row === null ? null : $this->rowFromSql($row);
     }
 
     /**
@@ -506,6 +666,21 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         }
 
         return ' ORDER BY ' . implode(', ', $parts);
+    }
+
+    /**
+     * Names the column of the source one field of a delivery row is placed by.
+     *
+     * The one map of sortable fields to columns serves here too, with the row key added as the
+     * delivery id; a second inventory of columns would be a second description of one order.
+     *
+     * @param string $field Field of the delivery row
+     * @return ?string Unaliased delivery column, or null when the field has none
+     */
+    private static function placeColumn(string $field): ?string
+    {
+        return self::SORT_COLUMNS[$field]
+            ?? ($field === HilosNotificationDeliveryTableRow::keyField() ? EntityNotificationDelivery::id : null);
     }
 
     /**

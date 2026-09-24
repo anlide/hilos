@@ -145,8 +145,9 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
      * read in this worker and acted on in another, and the row is free to change in between.
      * The library judges it where it writes it, and says so on the way back.
      *
-     * No sentence is spoken on success: the re-queued row returns over the journal's next window,
-     * exactly as before the move.
+     * No sentence is spoken on success: the re-queued row arrives in the window live (HIL-1049) -
+     * at once for the author, whose connection marks the library's write as its own
+     * (the retry frame is a HandoverAskInterface), and as a delta for everyone else.
      *
      * @param string $acceptKey WebSocket accept key of the requesting admin
      * @param HilosDeliveryRetryActionDTO $dto Retry action payload

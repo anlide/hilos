@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Tables\Communications;
 
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableFacetCountDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSearchTerm;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableSortWhitelist;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
 use PHPUnit\Framework\TestCase;
@@ -23,6 +27,10 @@ use PHPUnit\Framework\TestCase;
  * status is ignored, the search runs over the fields the table declares and escapes the
  * wildcards a reader types, a numeric search also matches the recipient id, and the
  * ORDER BY follows the column the table's own map allowed, defaulting to newest first.
+ *
+ * The live half (HIL-1049): a change of the notificationDeliveries collection becomes a mutation
+ * carrying the row read again by its id, and the places of the journal are named and compared in
+ * the columns of the source, the key space its window boundaries are written in.
  */
 final class HilosNotificationDeliveriesTableTest extends TestCase
 {
@@ -257,6 +265,169 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     }
 
     /**
+     * A created or updated delivery is read again by its own id and travels with the mutation of the same type.
+     */
+    public function testACreatedOrUpdatedDeliveryIsReadAgainByItsId(): void
+    {
+        foreach ([
+            TableMutationType::Create->value => SourceChange::dbCreated(HilosDbContext::notificationDeliveries, '57', []),
+            TableMutationType::Update->value => SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '57', ['status' => 'sent']),
+        ] as $type => $change) {
+            $table = $this->table();
+            $table->storedRow = self::deliveryRow(57, '2026-09-23 10:00:00');
+
+            $mutation = $table->buildMutationForSourceEvent($change);
+
+            self::assertNotNull($mutation);
+            self::assertSame($type, $mutation->type->value);
+            self::assertSame(57, $mutation->rowKey);
+            self::assertSame($table->storedRow, $mutation->row);
+            self::assertSame([57], $table->readIds);
+        }
+    }
+
+    /**
+     * A deletion needs no row, so nothing is read for it.
+     */
+    public function testADeletedDeliveryIsRemovedWithoutAReading(): void
+    {
+        $table = $this->table();
+
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(HilosDbContext::notificationDeliveries, '57'));
+
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Delete, $mutation->type);
+        self::assertSame(57, $mutation->rowKey);
+        self::assertNull($mutation->row);
+        self::assertSame([], $table->readIds);
+    }
+
+    /**
+     * A delivery gone between the write and the reading has nothing to show.
+     */
+    public function testADeliveryGoneBeforeTheReadingBuildsNoMutation(): void
+    {
+        $table = $this->table();
+
+        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '57', [])));
+        self::assertSame([57], $table->readIds);
+    }
+
+    /**
+     * Another collection, a runtime change, a clear and an id that names no delivery reach nothing, and nothing is read.
+     */
+    public function testAChangeThatIsNotADeliveryIsIgnoredWithoutAReading(): void
+    {
+        foreach ([
+            SourceChange::dbUpdated(HilosDbContext::notifications, '57', []),
+            new SourceChange(SourceChange::KIND_RT, HilosDbContext::notificationDeliveries, '57', TableMutationType::Update),
+            SourceChange::dbCleared(HilosDbContext::notificationDeliveries),
+            SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '', []),
+            SourceChange::dbUpdated(HilosDbContext::notificationDeliveries, '0', []),
+        ] as $change) {
+            $table = $this->table();
+            $table->storedRow = self::deliveryRow(57, '2026-09-23 10:00:00');
+
+            self::assertNull($table->buildMutationForSourceEvent($change));
+            self::assertSame([], $table->readIds);
+        }
+    }
+
+    /**
+     * A delivery names its place in the columns the window's boundaries are written in.
+     */
+    public function testARowNamesItsPlaceInTheColumnsOfTheSource(): void
+    {
+        $table = $this->table();
+        $query = new TableQueryDTO(sort: $this->resolvedOrder(
+            $table,
+            new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, TableConstants::ORDER_DESC),
+        ));
+
+        $anchor = $table->anchorForRow(self::deliveryRow(57, '2026-09-23 10:00:00'), $query);
+
+        self::assertNotNull($anchor);
+        self::assertSame(['created_at' => '2026-09-23 10:00:00', 'id' => 57], $anchor->values);
+    }
+
+    /**
+     * A window that asked for no order has no place to name.
+     */
+    public function testARowOfAWindowWithNoOrderHasNoPlace(): void
+    {
+        self::assertNull($this->table()->anchorForRow(self::deliveryRow(57, '2026-09-23 10:00:00'), new TableQueryDTO()));
+    }
+
+    /**
+     * The id of a boundary the database handed over as text is compared as the number it is: delivery 10 at
+     * the same moment stands above delivery 9 newest first, where text would put "10" below "9".
+     */
+    public function testARowIsPlacedAgainstABoundaryWhoseIdCameAsText(): void
+    {
+        $table = $this->table();
+        $query = new TableQueryDTO(sort: $this->resolvedOrder(
+            $table,
+            new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, TableConstants::ORDER_DESC),
+        ));
+
+        $place = $table->placeRowAgainst(
+            self::deliveryRow(10, '2026-09-23 10:00:00'),
+            new TableAnchorDTO(['created_at' => '2026-09-23 10:00:00', 'id' => '9']),
+            $query,
+        );
+
+        self::assertNotNull($place);
+        self::assertLessThan(0, $place);
+    }
+
+    /**
+     * A boundary without the column the order needs, an order by a field without a column, and a window with no
+     * order all leave the table unable to say.
+     */
+    public function testAPlaceTheTableCannotReadIsNotGuessed(): void
+    {
+        $table = $this->table();
+        $row = self::deliveryRow(10, '2026-09-23 10:00:00');
+        $byCreatedAt = new TableQueryDTO(sort: TableSortOrderDTO::of(
+            new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, TableConstants::ORDER_DESC),
+        ));
+        $byTitle = new TableQueryDTO(sort: TableSortOrderDTO::of(
+            new TableSortDTO(HilosNotificationDeliveryTableRow::notificationTitle, TableConstants::ORDER_ASC),
+        ));
+        $boundary = new TableAnchorDTO(['created_at' => '2026-09-23 10:00:00', 'id' => 9]);
+
+        self::assertNull($table->placeRowAgainst($row, new TableAnchorDTO(['id' => 9]), $byCreatedAt));
+        self::assertNull($table->placeRowAgainst($row, new TableAnchorDTO(['createdAt' => '2026-09-23 10:00:00', 'rowKey' => 9]), $byCreatedAt));
+        self::assertNull($table->placeRowAgainst($row, $boundary, $byTitle));
+        self::assertNull($table->placeRowAgainst($row, $boundary, new TableQueryDTO()));
+    }
+
+    /**
+     * Builds one delivery row of the journal.
+     *
+     * @param int $id Delivery id
+     * @param string $createdAt Moment the delivery was created
+     * @param string $status Delivery status
+     * @return HilosNotificationDeliveryTableRow Delivery row
+     */
+    private static function deliveryRow(int $id, string $createdAt, string $status = 'pending'): HilosNotificationDeliveryTableRow
+    {
+        return new HilosNotificationDeliveryTableRow(
+            rowKey: $id,
+            createdAt: $createdAt,
+            channel: 'email',
+            status: $status,
+            attempts: 0,
+            deliveredAt: null,
+            lastError: null,
+            userId: 3,
+            userLabel: null,
+            notificationType: 'welcome',
+            notificationTitle: 'Welcome',
+        );
+    }
+
+    /**
      * Runs a requested order through the table's own map, the way getPage() does before the query.
      *
      * @param HilosNotificationDeliveriesTable $table Table whose map decides
@@ -278,7 +449,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
      *
      * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy:
      *     callable, exposedSortableFields: callable, exposedRowFromSql: callable, countedWheres: list<array{0: string, 1: list<mixed>}>,
-     *     lookedUpWheres: list<array{0: string, 1: list<mixed>}>}
+     *     lookedUpWheres: list<array{0: string, 1: list<mixed>}>, readIds: list<int>, storedRow: ?HilosNotificationDeliveryTableRow}
      *     Table with exposed builders
      */
     private function table(): HilosNotificationDeliveriesTable
@@ -289,6 +460,12 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
 
             /** @var list<array{0: string, 1: list<mixed>}> WHERE clauses one delivery was looked up under */
             public array $lookedUpWheres = [];
+
+            /** @var list<int> Delivery ids a row was read again by */
+            public array $readIds = [];
+
+            /** Row the database holds for any id asked, or null when it holds none. */
+            public ?HilosNotificationDeliveryTableRow $storedRow = null;
 
             /**
              * Records the condition a set is counted under instead of running it.
@@ -315,6 +492,19 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
                 $this->lookedUpWheres[] = [$where, $params];
 
                 return true;
+            }
+
+            /**
+             * Records which delivery was read again instead of reading it.
+             *
+             * @param int $deliveryId Delivery id to read
+             * @return ?HilosNotificationDeliveryTableRow Row standing in for the database's
+             */
+            protected function readRow(int $deliveryId): ?HilosNotificationDeliveryTableRow
+            {
+                $this->readIds[] = $deliveryId;
+
+                return $this->storedRow;
             }
 
             /**

@@ -1,17 +1,18 @@
 // HilosCommunicationsDeliveriesPage — the framework Hilos delivery-logs page
 // (HilosPages.COMMUNICATIONS_DELIVERIES): the admin journal of channel deliveries
 // inside the admin shell. The journal is served straight from SQL (an unbounded
-// table), so it has no live per-row deltas — a status / period filter or a retry
-// re-requests the window. The per-channel route ({channelId}) opens the otherwise
-// cross-cutting journal with a channel preset; the status picker, the period range,
-// and the type/recipient search are what the table declares about its frame, drawn
-// by the framework's bar, and ride the open viewport filter map (server-side, no
-// local filtering). The single row action is retry, shown only on a failed delivery:
-// it re-queues the delivery as a tracked action (createHilosDeliveriesActions) and
-// refreshes the window. All table logic, the row view-model, and that declaration
-// are the core headless's (hilosDeliveries); this view owns only the markup, so a
-// project mounts it by passing its HilosDeliveriesContext. Bootstrap classes only
-// (styling-rules.md).
+// table) and its rows arrive live: a status / period filter re-requests the
+// window, and a new delivery or a status change reaches it as a delta. The
+// per-channel route ({channelId}) opens the otherwise cross-cutting journal with
+// a channel preset; the status picker, the period range, and the type/recipient
+// search are what the table declares about its frame, drawn by the framework's
+// bar, and ride the open viewport filter map (server-side, no local filtering).
+// The single row action is retry, shown only on a failed delivery: it re-queues
+// the delivery as a tracked action (createHilosDeliveriesActions), and the
+// re-queued row arrives live. All table logic, the row view-model, and that
+// declaration are the core headless's (hilosDeliveries); this view owns only the
+// markup, so a project mounts it by passing its HilosDeliveriesContext. Bootstrap
+// classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -165,18 +166,14 @@ export class HilosCommunicationsDeliveriesPage {
     })
   }
 
-  // On success, re-request the window — the journal has no live deltas, so the
-  // re-queued row only shows after a refresh.
+  // The re-queued row arrives live — at once for the author, as a delta for
+  // everyone else — so the window is not re-requested.
   protected async doRetry(row: HilosDeliveryRow): Promise<void> {
     if (this.retry.busy()) {
       return
     }
     this.retryPendingId.set(row.rowKey)
-    if (
-      await this.retry.run(this.actions().sendDeliveryRetry(Number(row.rowKey)))
-    ) {
-      this.deliveries().controller.refresh()
-    }
+    await this.retry.run(this.actions().sendDeliveryRetry(Number(row.rowKey)))
     this.retryPendingId.set(null)
   }
 

@@ -32,6 +32,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -297,6 +298,22 @@ final class PageSourceReadinessTest extends TestCase
     }
 
     /**
+     * The delivery journal declares its collection, so the page showing it reads notificationDeliveries and
+     * the master addresses the journal's db_sync_* frames to the worker serving that page (HIL-1049).
+     */
+    public function testThePageShowingTheDeliveryJournalReadsItsCollection(): void
+    {
+        $context = new class extends BrowserContext {
+        };
+        $context->bindHilosFacade(PageSourceReadinessTestJournalHilos::class);
+
+        $this->assertSame(
+            [HilosDbContext::notificationDeliveries],
+            $context->dbSourceKeysOfPage(PageSourceReadinessTestJournalHilos::PAGE),
+        );
+    }
+
+    /**
      * Puts the test topology and the test page registry where the worker looks for them.
      *
      * @param list<string> $rtCollectionKeys RT collections the bound source projects rows from
@@ -509,6 +526,30 @@ final class PageSourceReadinessTestTablesHilos extends Hilos
 
     public const array PAGE_TABLES = [
         self::PAGE => [PageSourceReadinessTestRegisteredTable::TABLE => []],
+    ];
+
+    /**
+     * @return HilosDbContext Test DB context, for the abstract facade contract alone
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new PageSourceReadinessTestDbContext();
+    }
+}
+
+/**
+ * Project facade binding one page to the framework's delivery journal, as a project activating it does.
+ */
+final class PageSourceReadinessTestJournalHilos extends Hilos
+{
+    public const string PAGE = 'page_source_readiness_journal_page';
+
+    public const array TABLES = [
+        HilosNotificationDeliveriesTable::TABLE => HilosNotificationDeliveriesTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        self::PAGE => [HilosNotificationDeliveriesTable::TABLE => []],
     ];
 
     /**
