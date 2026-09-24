@@ -832,6 +832,38 @@ test('the named circle walks in with the tab it already had open, and nobody els
   await gotoMaintenance(stranger, '/')
   await expect(stranger.getByTestId('maintenance')).toBeVisible()
 
+  // The operator now mints a code for somebody outside the circle, with the member
+  // already working inside the window (HIL-1082). The announcement that turns the
+  // stranger's waiting sentence into the field says active, and it used to reach the
+  // member too - putting their page back under the stub, with the shell remounting it.
+  // The stranger's field is asserted FIRST: it proves the announcement has been written,
+  // so what is then asserted about the member is not a race won by being early. The
+  // window stamp proves no reload; the attribute on the page node proves no remount - a
+  // tab that got active:true and then active:false would come back with a new header.
+  await gotoMaintenance(stranger, ADMIN_URL)
+  await expect(stranger.getByTestId('maintenance-pass-pending')).toBeVisible()
+  await member.evaluate(() => {
+    ;(window as Window & { hil1082Stamp?: boolean }).hil1082Stamp = true
+  })
+  await member.getByTestId('events-header').evaluate((header) => {
+    header.setAttribute('data-hil1082', 'kept')
+  })
+
+  await mintProtectedModePass()
+
+  await expect(stranger.getByTestId('maintenance-pass-form')).toBeVisible()
+  await expectInsideMainPage(member)
+  expect(
+    await member.evaluate(
+      () => (window as Window & { hil1082Stamp?: boolean }).hil1082Stamp === true,
+    ),
+  ).toBe(true)
+  await expect(member.getByTestId('events-header')).toHaveAttribute(
+    'data-hil1082',
+    'kept',
+  )
+  await expect(page.getByTestId('maintenance')).toHaveCount(0)
+
   // Closing the window freezes the node again, and that voids the photograph with the
   // passes: both the member and the operator are back behind the stub.
   expect(await closeProtectedMode()).toBe('active')

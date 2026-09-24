@@ -33,8 +33,9 @@ use PHPUnit\Framework\TestCase;
  * broadcast keeps the stub up for everyone still outside, and a session frame carries the operator
  * back into the application without an F5. Beside it stands one announcement that moves no phase at
  * all - the first minted pass, which turns the waiting sentence on the stub into the code field
- * without the verifier touching anything. With no notifier registered the executor is inert, the
- * same way it already is with no runtime row mounted.
+ * without the verifier touching anything, and reaches only the browsers the freeze still holds.
+ * With no notifier registered the executor is inert, the same way it already is with no runtime
+ * row mounted.
  */
 final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 {
@@ -361,18 +362,17 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
         $this->executor->announcePassIssued();
 
-        $this->assertCount(1, $this->notifier->frames);
-        [$state, $excludedKey, $excludedSession] = $this->notifier->frames[0];
+        // Addressed to the held alone and not sent as the broadcast the window push made: this
+        // frame says active, and whom it reaches is the row's to say, connection by connection -
+        // pinned over real connections by ProtectedModeLockedOutDeliveryIntegrationTest.
+        $this->assertSame([], $this->notifier->frames);
+        $this->assertCount(1, $this->notifier->lockedOutFrames);
+        $state = $this->notifier->lockedOutFrames[0];
         $this->assertTrue($state->active);
         $this->assertTrue($state->acceptsPass);
         $this->assertTrue($state->passIssued);
         $this->assertSame('restore', $state->operation);
         $this->assertNotNull($state->title);
-        // The same exclusion the window push makes, and here it still earns its keep: this frame
-        // says active, and reaching the operator with it would put them back on the stub in the
-        // one phase they are inside the application.
-        $this->assertSame('accept-7', $excludedKey);
-        $this->assertSame('session-hash-7', $excludedSession);
     }
 
     public function testAPassMintedWhileTheRosterComesBackIsNotAnnouncedAway(): void
@@ -390,10 +390,40 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->executor->announcePassIssued();
         $this->executor->finishVerifying();
 
-        $this->assertCount(2, $this->notifier->frames);
-        $this->assertTrue($this->notifier->frames[1][0]->passIssued);
+        // The window broadcast only; the mint went to the held by its own address.
+        $this->assertCount(1, $this->notifier->frames);
+        $this->assertFalse($this->notifier->frames[0][0]->passIssued);
+        $this->assertCount(1, $this->notifier->lockedOutFrames);
+        $this->assertTrue($this->notifier->lockedOutFrames[0]->passIssued);
         $this->assertCount(1, $this->notifier->sessionFrames);
         $this->assertTrue($this->notifier->sessionFrames[0][0]->passIssued);
+    }
+
+    public function testTheMintLeavesEveryoneTheWindowLetInWhereTheyAre(): void
+    {
+        // The normal order: the window opens, the roster comes back and the circle walks in, and
+        // only then does the operator mint a code for somebody outside the circle. The mint is the
+        // one push saying active after those tabs have left the stub, and a frame saying so would
+        // put their page back under it - the shell remounts the page, and whatever was open in it
+        // is gone (HIL-1082). So the admitted are sent nothing at all: no broadcast they would have
+        // to be argued out of, no second frame to put them back, and no page asked to be answered
+        // again - the no-blink shape.
+        $this->executor->enterActivating($this->freeze(), 'accept-7', 'session-hash-7');
+        $this->executor->enterActive();
+        $this->photographCircle(['circle-hash-1']);
+        $this->executor->enterVerifying();
+        $this->executor->finishVerifying();
+        $this->notifier->frames = [];
+        $this->notifier->sessionFrames = [];
+        $this->notifier->reassessedSessions = [];
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
+
+        $this->executor->announcePassIssued();
+
+        $this->assertSame([], $this->notifier->sessionFrames);
+        $this->assertSame([], $this->notifier->reassessedSessions);
+        $this->assertSame([], $this->notifier->frames);
+        $this->assertCount(1, $this->notifier->lockedOutFrames);
     }
 
     public function testTheMintAnnouncementMovesNoPhaseAndWritesNoPass(): void
@@ -559,7 +589,8 @@ final class ExecutorNotifyTestRtContext extends RtContext
 }
 
 /**
- * Recording fake of the client-notifier port: captures each frame and whom it left out.
+ * Recording fake of the client-notifier port: captures each frame, by which address it went and
+ * whom it left out.
  */
 final class RecordingClientNotifier implements ProtectedModeClientNotifier
 {
@@ -571,6 +602,9 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
 
     /** @var list<array{0: ProtectedModeStateSignalData, 1: string}> Session frames, with the session addressed */
     public array $sessionFrames = [];
+
+    /** @var list<ProtectedModeStateSignalData> Frames addressed to whoever the freeze still holds */
+    public array $lockedOutFrames = [];
 
     /** @var list<string> Sessions whose open pages were asked to be answered again, in order */
     public array $reassessedSessions = [];
@@ -588,6 +622,14 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
         string $sessionTokenHash,
     ): void {
         $this->sessionFrames[] = [$state, $sessionTokenHash];
+    }
+
+    /**
+     * @param ProtectedModeStateSignalData $state Frame announced to the connections the freeze still holds
+     */
+    public function notifyProtectedModeLockedOutState(ProtectedModeStateSignalData $state): void
+    {
+        $this->lockedOutFrames[] = $state;
     }
 
     /**

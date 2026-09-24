@@ -48,8 +48,8 @@ use JsonException;
  * frames say `active: true` as well, and differ only in whether the surface may offer a code
  * field - the stub has to stay up for everyone who holds no pass. {@see announcePassIssued()} is
  * the one push that moves no phase: it re-sends the verification frame with the second bit raised
- * when the first pass lands, so a verifier already looking at the stub gets the field without
- * touching anything.
+ * when the first pass lands, addressed only to whoever the freeze still holds, so a verifier
+ * already looking at the stub gets the field without touching anything.
  *
  * Every phase this class writes is also left on disk through {@see ProtectedModeFreezeStore}, and
  * the lift removes it: the row is memory only, so a daemon restarted under a freeze would otherwise
@@ -249,14 +249,19 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     }
 
     /**
-     * Pushes the same verification frame again, now saying a pass is standing.
+     * Pushes the same verification frame again, now saying a pass is standing - to whoever the
+     * freeze still holds.
      *
      * The only announcement the mode makes without moving a phase, and it exists because the
      * verifier is normally already staring at the stub when the operator mints: the sentence turns
-     * into the field with nothing clicked and nothing reloaded. The copy and the initiator
-     * exclusion are the ones {@see enterVerifying()} used - the same frame, one bit later. The
-     * exclusion is still worth making here, where the frame says active: it would put the operator
-     * back on the stub in the one phase they are inside the application.
+     * into the field with nothing clicked and nothing reloaded. The copy is the one
+     * {@see enterVerifying()} used - the same frame, one bit later. It is addressed to the
+     * connections the row still locks out rather than broadcast with the initiator excluded,
+     * because since HIL-643 and HIL-912 the operator is not the only one inside the window - the
+     * circle and every pass holder are too - and a frame saying active takes a page down under the
+     * stub: the shell remounts it, and whatever was open in it is gone. A second frame to repair
+     * that would still take the page down and put it back, and sent before the roster is back it
+     * would let the circle out early (HIL-1012).
      */
     public function announcePassIssued(): void
     {
@@ -266,7 +271,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         }
 
         $copy = ProtectedModeStubCopy::forOperation($view->operation);
-        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
+        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeLockedOutState(
             new ProtectedModeStateSignalData(
                 active: true,
                 operation: $view->operation,
@@ -275,8 +280,6 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 acceptsPass: true,
                 passIssued: true,
             ),
-            $view->initiatorAcceptKey,
-            $view->initiatorSessionTokenHash,
         );
     }
 

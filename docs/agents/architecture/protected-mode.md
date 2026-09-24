@@ -183,7 +183,8 @@ window opens before anything is minted, and between the two moments a code field
 would be a box that accepts nothing — so on an administrative surface the stub
 carries a sentence saying to wait, and swaps it for the field the instant the
 first code lands. The push that does the swapping is the same `PROTECTED_MODE`
-frame every phase change sends, fired once at zero-to-one; later mints announce
+frame every phase change sends, fired once at zero-to-one and addressed only to
+the connections the freeze still locks out (HIL-1082); later mints announce
 nothing, because the bit already says what they would say.
 
 The second bit exists rather than a narrowed first one because `acceptsPass`
@@ -566,6 +567,11 @@ than one because an initiator with no browser behind it — a CLI trigger, a
 scheduled run — leaves the hash null. The exclusion rides the wire on
 `WebSocketSignalData` and reaches the sockets through `AllClientsDestination`, so
 a fan-out forwarded from another node spares the same browser this one does.
+The port has a third address beside those two,
+`notifyProtectedModeLockedOutState()`, which names no exclusion at all: the
+master walks this node's connections once and asks the row about each one with
+the same `locksOut()` the welcome is composed with, then queues one frame by
+accept key for every connection the row still holds (HIL-1082).
 
 **Whom to spare is the caller's, and it changes by phase (HIL-718).** Entering
 the freeze (`enterActivating()`) and closing back into it (`reenterActive()`)
@@ -573,9 +579,16 @@ spare nobody: there is no application to keep the operator in, so its tabs go to
 the same stub as everyone's. The verification window is the one caller that
 excludes, and it excludes in order to say the opposite: `enterVerifying()`
 broadcasts the stub to everyone still outside, and `finishVerifying()` then
-addresses the initiator's session on its own (see below). `announcePassIssued()` repeats that exclusion for
-the same reason — its frame says `active`, and reaching the operator with it
-would put them back on the stub in the one phase they are inside the application.
+addresses the initiator's session on its own (see below). `announcePassIssued()`
+spares nobody by argument, because its frame is the one whose verdict is meant
+for the held alone: it goes to every connection the row still locks out, and to
+nobody else. An exclusion would have to list everybody the window has let in —
+the operator by both halves of their identity, every session of the circle, every
+pass holder — and the circle, which the old exclusion missed, was put back on the
+stub by the first code with its page taken down under it (HIL-1082); a repair
+frame after it would still take the page down and put it back. On a cluster each
+node announces for the browsers attached to it, judged by its own row, and the
+announcement no longer crosses nodes.
 
 **A verifier is pushed to as well, and by session (HIL-666).** Nothing tears a
 connection down when the mode turns on (`ConnectionDropper` is called only by a

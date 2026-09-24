@@ -1842,6 +1842,49 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Tells every connection on this node the freeze still locks out what the mode holds for it.
+     *
+     * Judged here, at queue time, in memory and on the master: the row and this node's connection
+     * list, the same cost as the walk the broadcast makes - no database, no file, no socket. Whom
+     * the window has let in is asked of the row with the same locksOut() the welcome is composed
+     * with, so the push and a reload cannot disagree about a tab (HIL-1082). Queued rather than
+     * written so the frames land after everything queued before them, the window broadcast
+     * included. One frame per held connection instead of a fan-out marker, which is also why the
+     * announcement never crosses to another node: each node's own executor announces for the
+     * browsers attached to it, judged by its own row - the row its 101 reads - and a key minted here
+     * is placed locally by the client-location lookup. A socket still in its 101 is passed over: it
+     * has no key to address and no identity to ask the row about, and its own welcome tells it
+     * where it stands, as it does for every connection opened under the freeze.
+     *
+     * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
+     * @throws InvalidArgumentException When the protected-mode signal cannot be named
+     */
+    public function notifyProtectedModeLockedOutState(ProtectedModeStateSignalData $state): void
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        $webSocketServer = $this->findWebSocketServer();
+        if ($freeze === null || $webSocketServer === null) {
+            return;
+        }
+
+        foreach ($webSocketServer->getClients() as $client) {
+            if (!$client instanceof WebSocketClient || $client->acceptKey === '') {
+                continue;
+            }
+            if (!$freeze->locksOut($client->acceptKey, $client->sessionTokenHash)) {
+                continue;
+            }
+
+            Hilos::$sr?->queueSignal(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::WS_USER),
+                new SignalName(SignalTypeConstants::PROTECTED_MODE),
+                new WebSocketSignalData(data: $state, targetAcceptKey: $client->acceptKey),
+            );
+        }
+    }
+
+    /**
      * Asks every open page of one browser session on this node to be answered again.
      *
      * Queues the by-session announcement and nothing more; the dispatch pass of the same loop

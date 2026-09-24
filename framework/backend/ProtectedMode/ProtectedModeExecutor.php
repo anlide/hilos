@@ -102,8 +102,8 @@ interface ProtectedModeExecutor
      *
      * Called at zero-to-one and nowhere else: the window opens saying nothing has been minted, and
      * the first pass turns that sentence into the field with nothing clicked. Later mints announce
-     * nothing - the bit already says what they would say, and a frame per mint would broadcast to
-     * every frozen browser without changing anything on any of them. Nothing is written here: the
+     * nothing - the bit already says what they would say, and a frame per mint would reach every
+     * frozen browser without changing anything on any of them. Nothing is written here: the
      * row already holds the hash by the time this runs.
      */
     public function announcePassIssued(): void;
