@@ -6,10 +6,12 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -23,9 +25,10 @@ final class DeclaredClaimAllTest extends TestCase
 {
     public function tearDown(): void
     {
+        ExecutionContext::setCurrentAgentId(null);
         foreach (
             [
-                DeclaredClaimAllTestFourMapsAgent::AGENT_TYPE,
+                DeclaredClaimAllTestEveryMapAgent::AGENT_TYPE,
                 DeclaredClaimAllTestDbOnlyAgent::AGENT_TYPE,
                 DeclaredClaimAllTestConflictAgent::AGENT_TYPE,
             ] as $agentType
@@ -41,34 +44,54 @@ final class DeclaredClaimAllTest extends TestCase
     }
 
     /**
-     * An agent that declares all four maps holds four grants after one call: two over whole
-     * collections, two over the rows its instance named and no others.
+     * An agent that declares every map holds five grants after one call: two over whole
+     * collections, two over the rows its instance named and no others, one over the set its
+     * instance named and no other.
      */
-    public function testOneCallLaysBothHalvesInBothWidths(): void
+    public function testOneCallLaysEveryMap(): void
     {
-        $agent = new DeclaredClaimAllTestFourMapsAgent('7');
+        $agent = new DeclaredClaimAllTestEveryMapAgent('7');
 
         OwnershipDeclaration::claimAll($agent);
 
-        $this->assertTrue(TruthSourceRegistry::isTruthSource(DeclaredClaimAllTestFourMapsAgent::DB_COLLECTION, ['8']));
-        $this->assertTrue(TruthSourceRegistry::isTruthSource(DeclaredClaimAllTestFourMapsAgent::DB_ROWS_COLLECTION, ['7']));
-        $this->assertFalse(TruthSourceRegistry::isTruthSource(DeclaredClaimAllTestFourMapsAgent::DB_ROWS_COLLECTION, ['8']));
+        $this->assertTrue(TruthSourceRegistry::isTruthSource(DeclaredClaimAllTestEveryMapAgent::DB_COLLECTION, ['8']));
+        $this->assertTrue(TruthSourceRegistry::isTruthSource(DeclaredClaimAllTestEveryMapAgent::DB_ROWS_COLLECTION, ['7']));
+        $this->assertFalse(TruthSourceRegistry::isTruthSource(DeclaredClaimAllTestEveryMapAgent::DB_ROWS_COLLECTION, ['8']));
         $this->assertEqualsCanonicalizing(
-            [DeclaredClaimAllTestFourMapsAgent::DB_COLLECTION, DeclaredClaimAllTestFourMapsAgent::DB_ROWS_COLLECTION],
+            [
+                DeclaredClaimAllTestEveryMapAgent::DB_COLLECTION,
+                DeclaredClaimAllTestEveryMapAgent::DB_ROWS_COLLECTION,
+                DeclaredClaimAllTestEveryMapAgent::DB_SET_COLLECTION,
+            ],
             SourceInterestRegistry::collectionsOfConsumer(SourceConsumer::agent($agent->getId()), SourceChange::KIND_DB),
         );
         $this->assertEqualsCanonicalizing(
-            [DeclaredClaimAllTestFourMapsAgent::RT_COLLECTION, DeclaredClaimAllTestFourMapsAgent::RT_ROWS_COLLECTION],
+            [DeclaredClaimAllTestEveryMapAgent::RT_COLLECTION, DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION],
             RtTruthSourceRegistry::collectionsOf($agent->getId()),
         );
         $this->assertSame(
-            [DeclaredClaimAllTestFourMapsAgent::RT_ROWS_COLLECTION => ['7']],
+            [DeclaredClaimAllTestEveryMapAgent::RT_ROWS_COLLECTION => ['7']],
             RtTruthSourceRegistry::keysByCollectionOf($agent->getId()),
+        );
+
+        ExecutionContext::setCurrentAgentId($agent->getId());
+        TruthSourceRegistry::checkCanWriteItem(
+            DeclaredClaimAllTestEveryMapAgent::DB_SET_COLLECTION,
+            '1',
+            ['7'],
+            TruthSourceOperation::Update,
+        );
+        $this->expectException(WriteNotAllowedException::class);
+        TruthSourceRegistry::checkCanWriteItem(
+            DeclaredClaimAllTestEveryMapAgent::DB_SET_COLLECTION,
+            '1',
+            ['8'],
+            TruthSourceOperation::Update,
         );
     }
 
     /**
-     * An agent that declares one map gets that grant and nothing beside it: the three maps it left
+     * An agent that declares one map gets that grant and nothing beside it: the four maps it left
      * empty reach no registry.
      *
      * This is what made it safe to move the harnesses that laid only some of the claims by hand
@@ -115,20 +138,22 @@ final class DeclaredClaimAllTest extends TestCase
 }
 
 /**
- * An agent declaring all four maps, each over a collection of its own.
+ * An agent declaring every map, each over a collection of its own.
  */
-final class DeclaredClaimAllTestFourMapsAgent extends AbstractAgent
+final class DeclaredClaimAllTestEveryMapAgent extends AbstractAgent
 {
-    public const string AGENT_TYPE = 'unit_declared_claim_all_four_maps';
+    public const string AGENT_TYPE = 'unit_declared_claim_all_every_map';
     public const string DB_COLLECTION = 'unit_declared_claim_all_db';
     public const string DB_ROWS_COLLECTION = 'unit_declared_claim_all_db_rows';
     public const string RT_COLLECTION = 'unit_declared_claim_all_rt';
     public const string RT_ROWS_COLLECTION = 'unit_declared_claim_all_rt_rows';
+    public const string DB_SET_COLLECTION = 'unit_declared_claim_all_db_set';
 
     public const array OWNS_DB = [self::DB_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_DB_ROWS = [self::DB_ROWS_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_RT = [self::RT_COLLECTION => [TruthSourceOperation::Update]];
     public const array OWNS_RT_ROWS = [self::RT_ROWS_COLLECTION => [TruthSourceOperation::Update]];
+    public const array OWNS_DB_SET = [self::DB_SET_COLLECTION => [TruthSourceOperation::Update]];
 
     /**
      * @param string $agentIndex Row this instance holds
@@ -154,6 +179,15 @@ final class DeclaredClaimAllTestFourMapsAgent extends AbstractAgent
     public function ownedRtRowKeys(string $collection): array
     {
         return [(string)$this->agentIndex];
+    }
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        return (string)$this->agentIndex;
     }
 
     /**

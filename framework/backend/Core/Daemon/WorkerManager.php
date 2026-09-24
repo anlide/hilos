@@ -60,6 +60,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
+use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -737,8 +738,9 @@ abstract class WorkerManager extends BaseManager
      *
      * @param AgentStartDTO $data Agent start request
      * @throws AgentCreationFailedException When agent creation fails
-     * @throws ClaimWidthConflictException When the agent declares one collection both whole and by rows
+     * @throws ClaimWidthConflictException When the agent declares one collection in more than one width of a half
      * @throws ClaimedRowKeysMissingException When the agent declares a collection by rows and names none of them
+     * @throws ClaimedSetKeyMissingException When the agent declares a collection by a set and names no set key
      * @throws HilosException Whatever the roster reconcile after the start hook raises
      */
     private function handleAgentStart(AgentStartDTO $data): void

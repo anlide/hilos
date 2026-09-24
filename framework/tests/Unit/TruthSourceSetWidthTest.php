@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
@@ -43,6 +47,9 @@ final class TruthSourceSetWidthTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
         TruthSourceRegistry::unregisterAgent(self::AGENT_A);
         TruthSourceRegistry::unregisterAgent(self::AGENT_B);
+        TruthSourceRegistry::unregisterAgent(SetWidthDeclaredAgent::AGENT_TYPE);
+        // The declared claim is a reader interest too, so it is given back beside the claim itself.
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(SetWidthDeclaredAgent::AGENT_TYPE));
 
         parent::tearDown();
     }
@@ -208,6 +215,31 @@ final class TruthSourceSetWidthTest extends TestCase
         $actions->deletePublic();
 
         $this->assertTrue(TruthSourceRegistry::hasTruthSource(self::COLLECTION));
+    }
+
+    /**
+     * A row born after the agent started is covered by its set claim without another word.
+     *
+     * The claim is laid the declared way, the way a node starts the agent, and the rows are built
+     * only after it: row 99 did not exist when the seam was asked. The grant holds the key of the
+     * set and not a list gathered at start, so the door asks the new row which set it is in and
+     * lets the owner of that set write it - and still refuses a row of another set born the same way.
+     */
+    public function testARowBornAfterTheDeclaredStartIsCoveredByTheSetClaim(): void
+    {
+        $agent = new SetWidthDeclaredAgent();
+        OwnershipDeclaration::claimAll($agent);
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        $actions = $this->actionsFor(SetWidthObject::fromEntity(SetWidthEntity::stored(99, self::OWN_OWNER_ID)));
+        $actions->writePublic();
+        $actions->deletePublic();
+
+        $foreign = $this->actionsFor(SetWidthObject::fromEntity(SetWidthEntity::stored(100, self::FOREIGN_OWNER_ID)));
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("it holds set '42', and the item's set keys are [7].");
+        $foreign->writePublic();
     }
 
     public function testDoorRefusesTheSetOwnerARowOfAnotherSet(): void
@@ -448,5 +480,41 @@ final class SetWidthDbActions extends DbActions
     public function deletePublic(): void
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
+    }
+}
+
+/**
+ * An agent declaring the set-cut table by a set it may edit and remove from but not add to.
+ *
+ * Borrowed, as the agent of one person will be: the rows of its set are brought into being by
+ * somebody else, and it edits them.
+ */
+final class SetWidthDeclaredAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'unit_set_width_declared';
+
+    public const array OWNS_DB_SET = [SetWidthObjects::COLLECTION_KEY => [TruthSourceOperation::Update, TruthSourceOperation::Remove]];
+
+    /**
+     * @param string $collection Collection the resolver is asking about
+     * @return string The one set this instance answers for
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        return '42';
+    }
+
+    /**
+     * Claims nothing here: the declaration above and the seam beside it are the claim.
+     */
+    public function onStart(): void
+    {
+    }
+
+    /**
+     * Holds nothing across a stop.
+     */
+    public function onStop(): void
+    {
     }
 }

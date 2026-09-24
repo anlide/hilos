@@ -36,6 +36,7 @@ use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Daemon\DaemonApplication;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Group\Config\GroupAddressSource;
@@ -52,9 +53,12 @@ use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
+use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
@@ -191,7 +195,7 @@ final class TopologyValidator
      * where both layers stand, by the same accumulate-then-throw rule as the first moment.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
-     * @throws InvalidTopologyException When a declaration names a collection no layer mounts
+     * @throws InvalidTopologyException When a declaration names a collection no layer mounts, or an agent claims a set of a table cut by no column
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public function validateReferences(string $hilosClass): void
@@ -232,6 +236,7 @@ final class TopologyValidator
         }
 
         $this->validateBrowserJoinColumns($joins, $errors);
+        $this->validateSetClaims($this->constantArray($hilosClass, 'AGENTS', $errors), $errors);
 
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);
@@ -266,6 +271,57 @@ final class TopologyValidator
             $errors[] = "{$join['registry']}[{$join['browserKey']}]: join column '{$join['column']}'"
                 . " of source '{$join['sourceKey']}' is neither the primary key"
                 . " nor the leftmost column of an index that can answer a lookup by value";
+        }
+    }
+
+    /**
+     * Holds every claim over a set against the Entity of the collection it names.
+     *
+     * A set is the rows one column cuts out of a table, and a table whose Entity declares
+     * `Entity::SET_STANDALONE` is cut by no column: a claim over a set of it holds nothing, and
+     * would say so only when the first write of the owner is refused. Judged here rather than in
+     * {@see self::validate()} for the reason {@see self::validateBrowserJoinColumns()} is: the
+     * answer lives on the mounted collection's Entity, and nothing is mounted that early. The start
+     * of the agent cannot judge it either - what it reads is the class and its instance, not the
+     * table.
+     *
+     * Silent in three cases, and in each the refusal stands elsewhere or is not owed. A collection
+     * that is not mounted: no claim is held against the mounting today, whatever its width. A
+     * mounted collection with no Entity behind it: a broken mount, which {@see SetOwnershipGuard}
+     * passes over too. An Entity that declares no `_setVia` at all: {@see SetOwnershipGuard} has
+     * refused the node before the first agent was built ({@see DaemonApplication::run()}). Nor does
+     * it repeat that guard's cross-check of the root a column points at - a claim is judged here,
+     * not a table.
+     *
+     * @param array $agents Agent registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateSetClaims(array $agents, array &$errors): void
+    {
+        // A class the registry names wrongly is refused by validate(), which already ran.
+        $rejected = [];
+        foreach ($this->declaredOwnerClasses($agents, $rejected) as $ownerClass) {
+            foreach (array_keys(OwnershipDeclaration::dbSetCollectionsOf($ownerClass)) as $collection) {
+                $mounted = Hilos::$db?->mountedObjectCollection($collection);
+                if ($mounted === null) {
+                    continue;
+                }
+
+                $objectClass = $mounted::OBJECT_CLASS;
+                if (!is_subclass_of($objectClass, Object_::class)) {
+                    continue;
+                }
+
+                $entityClass = $objectClass::ENTITY_CLASS;
+                if (!is_subclass_of($entityClass, Entity::class) || !defined("{$entityClass}::" . Entity::META_SET_VIA)) {
+                    continue;
+                }
+
+                if (constant("{$entityClass}::" . Entity::META_SET_VIA) === Entity::SET_STANDALONE) {
+                    $errors[] = "{$ownerClass} claims db collection '{$collection}' by a set, but its Entity {$entityClass}"
+                        . " declares _setVia Entity::SET_STANDALONE: a table cut by no column has no set to claim";
+                }
+            }
         }
     }
 
@@ -992,6 +1048,7 @@ final class TopologyValidator
                 [
                     'OWNS_DB' => OwnershipDeclaration::dbCollectionsOf($ownerClass),
                     'OWNS_DB_ROWS' => OwnershipDeclaration::dbRowCollectionsOf($ownerClass),
+                    'OWNS_DB_SET' => OwnershipDeclaration::dbSetCollectionsOf($ownerClass),
                 ],
                 $errors,
             );

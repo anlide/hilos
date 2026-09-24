@@ -67,8 +67,8 @@ add owns the collection. A claim narrowed to named rows (`OWNS_DB_ROWS`,
 `OWNS_RT_ROWS`) is never borrowed: the rows it names are its own. A claim over a
 set is another matter, because the rows of a set are often brought into being by
 somebody else: it is borrowed by the same test — no `Add` among its folded
-operations — and waits at the start the same way
-(not in the code yet — HIL-1110). *A Claim Over A Set* has the case.
+operations — and waits at the start the same way. *A Claim Over A Set* has the
+case.
 
 The interest of a claim that may add is raised at the claim and not at the
 report that follows it. An agent writing its first row inside `onStart()` reads
@@ -122,11 +122,12 @@ one of the two maps of its half, and one named by both refuses the agent's
 start — see *Three Cases A Flat Constant Cannot Say* for why the rows themselves
 are not written there.
 
-A third map joins them in each half, `OWNS_DB_SET` and `OWNS_RT_SET`, of the
-same form and on `AbstractAgent` for the same reason, for a collection the owner
-holds by one set of it (not in the code yet — HIL-1110). The maps of a half are
-then three and stay exclusive: a collection stands in exactly one of them, and
-one named by two refuses the agent's start (not in the code yet — HIL-1110).
+A third map joins them in the database half, `OWNS_DB_SET`, of the same form and
+on `AbstractAgent` for the same reason, for a collection the owner holds by one
+set of it. The maps of that half are then three and stay exclusive: a collection
+stands in exactly one of them, and one named by two refuses the agent's start.
+The runtime half gets its third map, `OWNS_RT_SET`, the same way
+(not in the code yet — HIL-1115).
 
 A record naming no operation gets `TruthSourceOperation::BY_KIND` and is answered
 by the kind of the agent, which is the empty list under a name: a bare one would
@@ -226,10 +227,10 @@ held by a set is a constant on the class, `OWNS_DB_SET`, of the form
 `OWNS_DB_ROWS` beside it has — a map from collection key to operations,
 `TruthSourceOperation::BY_KIND` included — and on `AbstractAgent` rather than on
 `TruthSourceOwner` for the reason the narrow width is: a command and the
-application class have no instance to ask (not in the code yet — HIL-1110).
+application class have no instance to ask.
 WHICH set is a seam on the live instance,
 `ownedDbSetKey(string $collection): string`, asked once, at the beat
-`ownedDbRowKeys()` is asked (not in the code yet — HIL-1110). One key and not a
+`ownedDbRowKeys()` is asked. One key and not a
 list, on purpose: the table is cut by one column, so an instance holds one set
 of it, and a plural seam would quietly bring back the predicate that was turned
 down.
@@ -237,24 +238,21 @@ down.
 **A collection stands in exactly one of the three maps of its half.**
 `OWNS_DB`, `OWNS_DB_ROWS` and `OWNS_DB_SET` are three widths of one claim, and a
 collection named by more than one of them refuses the agent's start with
-`ClaimWidthConflictException`, as one named by both of today's maps does
-(not in the code yet — HIL-1110). An empty set key refuses it too, with
+`ClaimWidthConflictException`, as one named by both of the two older maps does.
+An empty set key refuses it too, with
 `ClaimedSetKeyMissingException` — the twin of `ClaimedRowKeysMissingException`,
 and for its reason: a width of no rows is already the right to create, so a set
 registered under no key would be a claim over nothing that says so only at the
-first foreign write (not in the code yet — HIL-1110).
+first foreign write.
 
 **Two floors refuse a set claim declared wrong.** The two refusals above belong
 to the start of the agent, in `OwnershipDeclaration`, because they are what a
-class and its instance can contradict between themselves
-(not in the code yet — HIL-1110). A third needs the Entity and belongs to the
-topology: a set claimed in a collection whose Entity declares
-`Entity::SET_STANDALONE`, a table cut by no column and so with no set to claim
-(not in the code yet — HIL-1110). It is judged in
-`TopologyValidator::validateReferences()` (not in the code yet — HIL-1110): that
-half runs once the collections are mounted and can walk from a mounted
-collection to its Entity, which is why `validateBrowserJoinColumns()` is judged
-there. `SetOwnershipGuard` is not the judge and gets no second subject. It
+class and its instance can contradict between themselves. A third needs the
+Entity and belongs to the topology: a set claimed in a collection whose Entity
+declares `Entity::SET_STANDALONE`, a table cut by no column and so with no set
+to claim. It is judged in `TopologyValidator::validateReferences()`: that half
+runs once the collections are mounted and can walk from a mounted collection to
+its Entity, which is why `validateBrowserJoinColumns()` is judged there. `SetOwnershipGuard` is not the judge and gets no second subject. It
 answers whether a *table* declared its set, and — where `_foreign` names the
 parent — whether that parent declared itself a root; a claim is an agent's
 statement, the guard reads no agents, and the width does not repeat its
@@ -286,7 +284,7 @@ owner of the whole table moves it — and a row whose set column is empty is in
 nobody's set and covered by no set claim. The two older widths do not look at
 the set keys. A row born after the agent's start is covered by
 construction, because the grant keeps a set key and not a list of rows collected
-at the start (not in the code yet — HIL-1110).
+at the start.
 
 **The set tree is walked upward, by default and to any depth.** A set hangs on a
 row that is itself in a set: a passkey credential is cut by `identity_id` and
@@ -309,8 +307,8 @@ methods while the users library goes on adding them, as it does today
 Such a claim carries no `Add`, and the test that exists already calls it
 borrowed — `OwnershipDeclaration::isBorrowedClaim()` reads the absence of `Add`
 off the folded operations and asks nothing about the width — so its holder waits
-for the state at the start, beside its reads (not in the code yet — HIL-1110).
-The mechanism does not change with the width. Only a claim by named keys is
+for the state at the start, beside its reads. The mechanism does not change with
+the width. Only a claim by named keys is
 never borrowed, because the rows it names are its own. Whether a person's agent
 is such a holder is not decided here — applying the width to a person is epic
 HIL-1039.
@@ -362,8 +360,9 @@ the agent that made it and never by the worker that is deciding whether to
 build it.
 
 The claims themselves are laid by one call, `OwnershipDeclaration::claimAll()`,
-between the instance being built and its `onStart()`: both halves and both
-widths, whole collections off the class and rows off the instance.
+between the instance being built and its `onStart()`: both halves in every width
+they have, whole collections off the class, and rows and the set key off the
+instance.
 `WorkerManager::handleAgentStart()` makes that call, and so does a harness that
 starts an agent outside a worker — a test case's `startAgent()` — so the beat a
 case runs under is the node's and cannot be copied in part. The call takes
@@ -453,12 +452,12 @@ a class contradicting itself.
 A set key is known only to the live instance in the same way — an agent learns
 whose agent it is when it is built — so a claim over a set is written in the
 same two halves. WHICH collection is held by a set is the constant,
-`OWNS_DB_SET` or `OWNS_RT_SET`; WHICH set is the seam, `ownedDbSetKey()` or
-`ownedRtSetKey()`, asked once at that same beat
-(not in the code yet — HIL-1110). The same two things refuse the start there: a
-seam that answers with an empty key, and a collection named by more than one of
-what are then three maps of a half (not in the code yet — HIL-1110). *A Claim
-Over A Set* has the width itself.
+`OWNS_DB_SET`; WHICH set is the seam, `ownedDbSetKey()`, asked once at that same
+beat. The same two things refuse the start there: a seam that answers with an
+empty key, and a collection named by more than one of what are then three maps
+of the half. The runtime pair, `OWNS_RT_SET` and `ownedRtSetKey()`, is declared,
+asked and refused the same way (not in the code yet — HIL-1115). *A Claim Over A
+Set* has the width itself.
 
 **The collection's name is given by the project, not by the class.** The
 framework's `AbstractUsersLibraryAgent` needs the account table, under a name
@@ -592,8 +591,8 @@ moment compares the two set keys — a class does not carry its own — and what
 receipt for such a pair looks like are HIL-1114's to name. It brings one refusal
 of the topology as well, judged a moment later than the three here, in
 `TopologyValidator::validateReferences()`, once the collections are mounted: a
-set claimed in a collection whose Entity declares `Entity::SET_STANDALONE`
-(not in the code yet — HIL-1110). See *A Claim Over A Set*.
+set claimed in a collection whose Entity declares `Entity::SET_STANDALONE`.
+See *A Claim Over A Set*.
 
 A class that names one collection both in its reads (`READS_DB`, `READS_RT`) and
 in its claims: a claim is the reader interest already, so the second list says
@@ -673,11 +672,15 @@ half never moved, and a declared claim is taken back the same way.
 the chain, over each half (`DeclaredDbOwnershipTest`,
 `DeclaredRtOwnershipTest`), over a claimant that is not an agent
 (`DeclaredCommandOwnershipTest`) and over the narrow width with its two
-refusals (`DeclaredRowOwnershipTest`), the one call that lays all four maps
+refusals (`DeclaredRowOwnershipTest`), over the set width with the three
+exclusive maps, the empty set key and the borrowed wait
+(`DeclaredSetOwnershipTest`), the one call that lays every map
 (`DeclaredClaimAllTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`), the third width answered by the row's set
-column at the value, the registry and the door (`TruthSourceSetWidthTest`), the
+column at the value, the registry and the door, a row born after the declared
+start included (`TruthSourceSetWidthTest`), the set claimed on a table cut by
+no column and the reads that repeat a claim (`TopologyValidatorTest`), the
 grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
 (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links

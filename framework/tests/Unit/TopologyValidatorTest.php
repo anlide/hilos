@@ -1272,6 +1272,49 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testAnAgentReadingTheSetItOwnsIsRefused(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyReadingItsOwnSetHilos::validateTopology();
+            },
+            [
+                TopologyReadingItsOwnSetAgent::class
+                    . " names db collection 'set_cut_rows' in both READS_DB and OWNS_DB_SET;"
+                    . ' a claim is the reader interest already',
+            ],
+        );
+    }
+
+    public function testASetClaimOnATableCutByNoColumnIsRefused(): void
+    {
+        $db = new TopologySetClaimDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologySetStandaloneClaimHilos::validateTopologyReferences();
+            },
+            [
+                TopologySetStandaloneClaimAgent::class . " claims db collection 'standalone_rows' by a set,"
+                    . ' but its Entity ' . TopologySetStandaloneEntity::class
+                    . ' declares _setVia Entity::SET_STANDALONE: a table cut by no column has no set to claim',
+            ],
+        );
+    }
+
+    public function testASetClaimOnATableCutByAColumnIsAccepted(): void
+    {
+        $db = new TopologySetClaimDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+
+        TopologySetCutClaimHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(1);
+    }
+
     private function assertTopologyErrors(callable $callback, array $expectedFragments): void
     {
         try {
@@ -3286,6 +3329,69 @@ final class TopologyMountedDbContext extends HilosDbContext
     }
 }
 
+/**
+ * Entity fixture of a table cut into sets by the column naming the row's owner.
+ */
+final class TopologySetCutEntity extends Entity
+{
+    public const string _table = 'topology_set_cut';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'owner_id'];
+    public const array _types = ['id' => 'integer', 'owner_id' => 'integer'];
+    public const string _setVia = 'owner_id';
+    public const bool _setRoot = false;
+
+    public ?int $id = null;
+    public ?int $owner_id = null;
+}
+
+final class TopologySetCutObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologySetCutEntity::class;
+}
+
+final class TopologySetCutObjects extends Objects
+{
+    public const string OBJECT_CLASS = TopologySetCutObject::class;
+}
+
+/**
+ * Entity fixture of a table whose rows belong to nobody's set.
+ */
+final class TopologySetStandaloneEntity extends Entity
+{
+    public const string _table = 'topology_set_standalone';
+    public const string _primary = 'id';
+    public const array _columns = ['id'];
+    public const array _types = ['id' => 'integer'];
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const bool _setRoot = false;
+
+    public ?int $id = null;
+}
+
+final class TopologySetStandaloneObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologySetStandaloneEntity::class;
+}
+
+final class TopologySetStandaloneObjects extends Objects
+{
+    public const string OBJECT_CLASS = TopologySetStandaloneObject::class;
+}
+
+final class TopologySetClaimDbContext extends HilosDbContext
+{
+    /**
+     * Mounts one table cut into sets and one cut by no column, for the set claims to be held against.
+     */
+    public function configure(): void
+    {
+        $this->_objectCollections['set_cut_rows'] = TopologySetCutObjects::initEmpty();
+        $this->_objectCollections['standalone_rows'] = TopologySetStandaloneObjects::initEmpty();
+    }
+}
+
 final class TopologyEmptyRtContext extends RtContext
 {
     /**
@@ -4209,6 +4315,37 @@ final class TopologyReadingItsOwnRowsAgent extends TopologyTestAgent
     ];
 }
 
+final class TopologyReadingItsOwnSetAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'reading_its_own_set_agent';
+
+    public const array OWNS_DB_SET = [
+        'set_cut_rows' => TruthSourceOperation::BY_KIND,
+    ];
+
+    public const array READS_DB = [
+        'set_cut_rows',
+    ];
+}
+
+final class TopologySetCutClaimAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'set_cut_claim_agent';
+
+    public const array OWNS_DB_SET = [
+        'set_cut_rows' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologySetStandaloneClaimAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'set_standalone_claim_agent';
+
+    public const array OWNS_DB_SET = [
+        'standalone_rows' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
 final class TopologyOwningNothingAgent extends TopologyTestAgent
 {
     public const string AGENT_TYPE = 'owning_nothing_agent';
@@ -4544,5 +4681,65 @@ final class TopologyReadingItsOwnRowsHilos extends HilosFacade
     protected static function createDb(): HilosDbContext
     {
         return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyReadingItsOwnSetHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyReadingItsOwnSetAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyReadingItsOwnSetAgent::class,
+            AgentRegistryKey::DAEMON => TopologyReadingItsOwnSetAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologySetCutClaimHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologySetCutClaimAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetCutClaimAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetCutClaimAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a DB context mounting the tables the set claims are held against.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologySetClaimDbContext();
+    }
+}
+
+final class TopologySetStandaloneClaimHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologySetStandaloneClaimAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetStandaloneClaimAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetStandaloneClaimAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a DB context mounting the tables the set claims are held against.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologySetClaimDbContext();
     }
 }

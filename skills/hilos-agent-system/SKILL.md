@@ -69,8 +69,9 @@ Use this skill for agent business logic and registration work. Start by reading 
    collection in `OWNS_RT_ROWS` and its own index in `ownedRtRowKeys()`, the
    seam the resolver asks the live instance once at start, and owns those rows
    alone — which is what makes a placed fleet's state converge across the mesh.
-   The two maps of a half are exclusive: a collection named by both, or declared
-   narrowly with a seam that names no row, refuses the agent's start.
+   The maps of a half are exclusive: a collection named by two of them refuses
+   the agent's start, as does one declared narrowly with a seam that names no
+   row, or by a set with a seam that names no set key.
    Ask which width the agent needs before writing the map. An agent that owns
    everything belonging to one instance — this person's rows, this event's —
    owns neither the table nor a list of keys but a *set*: the rows cut out by

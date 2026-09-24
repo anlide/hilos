@@ -1059,14 +1059,15 @@ abstract class Hilos implements TruthSourceOwner
     }
 
     /**
-     * Validates browser source references against the layers this node mounted.
+     * Validates browser source references and set claims against the layers this node mounted.
      *
      * The half of topology validation that cannot run with the other half: a source key names a
      * collection, and whether that collection exists is only knowable once `$db` and `$rt` are
-     * up. Same shape as the pair {@see self::validateFeatureActivation()} and
-     * {@see RtContext::assertFeatureRuntimeIntact()} already form around mounting.
+     * up - as is the Entity behind a collection an agent claims by a set. Same shape as the pair
+     * {@see self::validateFeatureActivation()} and {@see RtContext::assertFeatureRuntimeIntact()}
+     * already form around mounting.
      *
-     * @throws InvalidTopologyException When a declaration names a collection no layer mounts
+     * @throws InvalidTopologyException When a declaration names a collection no layer mounts, or an agent claims a set of a table cut by no column
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
      */
     public static function validateTopologyReferences(): void

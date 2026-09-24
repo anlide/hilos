@@ -239,3 +239,18 @@ final class TopologyOwningNothingAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'owning_nothing_agent';
 }
+
+final class TopologyReadingItsOwnSetAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'reading_its_own_set_agent';
+}
+
+final class TopologySetCutClaimAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'set_cut_claim_agent';
+}
+
+final class TopologySetStandaloneClaimAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'set_standalone_claim_agent';
+}

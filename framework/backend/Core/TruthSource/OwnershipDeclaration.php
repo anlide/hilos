@@ -7,10 +7,12 @@ namespace Hilos\Core\TruthSource;
 use Closure;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
+use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -34,7 +36,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 final class OwnershipDeclaration
 {
     /**
-     * Registers every collection the agent declares, database and runtime, whole and by rows.
+     * Registers every collection the agent declares, database and runtime, in every width.
      *
      * The order is the mechanism and not a tidiness. An agent writes its first row inside
      * {@see AbstractAgent::onStart()}, so the grant has to stand by then - which is why
@@ -42,17 +44,19 @@ final class OwnershipDeclaration
      * every write of the agent refused with "no truth source registered", however correct
      * the declaration on its class is.
      *
-     * Both halves and both widths, exactly as the worker asks for them: the whole-collection
-     * claims are read off the CLASS (which lets the declaration be answered where no instance exists),
-     * and the by-row claims off the INSTANCE, which is the only thing that knows which rows it holds.
+     * The database half in three widths and the runtime half in two, exactly as the worker asks for
+     * them: the whole-collection claims are read off the CLASS (which lets the declaration be answered
+     * where no instance exists), and the by-row and set claims off the INSTANCE, which is the only
+     * thing that knows which rows or which set it holds.
      *
      * A refusal leaves as it came, and the claims laid before it stay: taking them back belongs to
      * the caller, which also holds the reader interest raised before any claim - {@see WorkerManager}
      * gives both back in one catch.
      *
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
-     * @throws ClaimWidthConflictException When one collection is named by both widths of a half
+     * @throws ClaimWidthConflictException When one collection is named by more than one width of a half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
+     * @throws ClaimedSetKeyMissingException When the seam names no set key of a collection declared by a set
      */
     public static function claimAll(AbstractAgent $agent): void
     {
@@ -60,6 +64,7 @@ final class OwnershipDeclaration
         self::claimRt($agent::class, $agent->getId());
         self::claimDbRows($agent);
         self::claimRtRows($agent);
+        self::claimDbSet($agent);
     }
 
     /**
@@ -74,18 +79,24 @@ final class OwnershipDeclaration
     }
 
     /**
-     * The database collections a class claims whole without the right to add, its parents' claims folded in.
+     * The database collections a class claims whole or by a set without the right to add, its parents' claims folded in.
      *
      * What a start waits for beside {@see AbstractAgent::READS_DB}, and read off the class for the
      * same reason: the wait comes before the instance exists. Only the keys, because the start
      * needs to know what to wait for and not what the claim may do.
      *
-     * @param class-string<TruthSourceOwner> $agentClass Class to read the declaration off
+     * Narrower than its runtime twin in what it accepts: an agent, not any owner, because the map
+     * of sets is declared on {@see AbstractAgent} alone. Both callers hand it an agent already.
+     *
+     * @param class-string<AbstractAgent> $agentClass Class to read the declaration off
      * @return list<string> Keys of the collections its borrowed claims name
      */
     public static function borrowedDbCollectionsOf(string $agentClass): array
     {
-        return array_keys(array_filter(self::dbCollectionsOf($agentClass), self::isBorrowedClaim(...)));
+        return array_values(array_unique([
+            ...array_keys(array_filter(self::dbCollectionsOf($agentClass), self::isBorrowedClaim(...))),
+            ...array_keys(array_filter(self::dbSetCollectionsOf($agentClass), self::isBorrowedClaim(...))),
+        ]));
     }
 
     /**
@@ -148,10 +159,10 @@ final class OwnershipDeclaration
      * on a class. Asked once, at start; there is no way to widen a claim afterwards.
      *
      * Refuses on two counts rather than registering something half meant. A collection named by
-     * both maps of this half is a contradiction with no reading: the registry keeps one grant per
-     * (collection, agent) pair and a repeated registration replaces it, so the order of these two
-     * calls would silently decide the width. A seam that names no row is not a claim of nothing
-     * either - that width is the right to create ({@see TruthSourceRegistry::registerCreate()}) -
+     * more than one of the three maps of this half is a contradiction with no reading: the registry
+     * keeps one grant per (collection, agent) pair and a repeated registration replaces it, so the
+     * order of these calls would silently decide the width. A seam that names no row is not a claim
+     * of nothing either - that width is the right to create ({@see TruthSourceRegistry::registerCreate()}) -
      * and a collection registered with no rows held would go unnoticed until the first foreign
      * write.
      *
@@ -163,13 +174,13 @@ final class OwnershipDeclaration
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
      * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the rows
-     * @throws ClaimWidthConflictException When one collection is named by both widths of this half
+     * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
      * @throws ClaimedRowKeysMissingException When the seam names no row of a narrowly declared collection
      */
     public static function claimDbRows(AbstractAgent $agent): void
     {
         $narrow = self::dbRowCollectionsOf($agent::class);
-        self::refuseWidthConflict($agent, self::dbCollectionsOf($agent::class), $narrow);
+        self::refuseWidthConflict($agent, self::dbWidthsOf($agent::class));
 
         foreach ($narrow as $collection => $operations) {
             $keys = $agent->ownedDbRowKeys($collection);
@@ -183,6 +194,75 @@ final class OwnershipDeclaration
 
             SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($agent->getId()));
             SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+        }
+    }
+
+    /**
+     * The database collections a class owns BY A SET, its parents' claims folded in.
+     *
+     * Only the collections: which set of them this owner holds is not on the class at all, and is
+     * asked of the instance by {@see self::claimDbSet()}. The column that cuts the set is not here
+     * either - the collection's Entity names it, and the owner does not choose it.
+     *
+     * An agent, not any owner, for the reason {@see self::dbRowCollectionsOf()} gives: the other
+     * kinds implementing {@see TruthSourceOwner} have no instance to ask for a set key.
+     *
+     * @param class-string<AbstractAgent> $agentClass Class to read the declaration off
+     * @return array<string, TruthSourceOperations> Collection key => operations its owner may perform on the rows of its set
+     */
+    public static function dbSetCollectionsOf(string $agentClass): array
+    {
+        return self::declaredCollectionsOf($agentClass, static fn (string $class): array => $class::OWNS_DB_SET);
+    }
+
+    /**
+     * Registers every database collection the agent declares by a set, over the set it names.
+     *
+     * Two halves meeting, as in {@see self::claimDbRows()}: the map comes off the class, the set
+     * key off the live instance ({@see AbstractAgent::ownedDbSetKey()}), asked once, at start. Once
+     * is enough here where it is not for rows: the grant holds the key of the set and not a list
+     * gathered at start, so a row of the set brought into being after this call is covered by it
+     * without another word - the write door asks the row which sets it touches.
+     *
+     * Refuses on two counts rather than registering something half meant. A collection named by
+     * more than one of the three maps of this half is refused as {@see self::claimDbRows()}
+     * refuses it, and before anything is laid. A seam that names no set key is refused by name:
+     * {@see TruthSourceKeys::set()} refuses the empty key itself, and its refusal is turned into
+     * one that says which agent and which collection before it leaves - the factory's own words
+     * name neither.
+     *
+     * Each claim is its own reader interest, and whether it is a ready one depends on the claim, as
+     * in {@see self::claimDb()}: a set claim that may add is ready at once, and a borrowed one
+     * ({@see self::isBorrowedClaim()}) - its holder edits the rows of its set but somebody else
+     * brings them into being - is waited for by {@see WorkerManager} beside the reads.
+     *
+     * A class that declares nothing registers nothing - the empty map never reaches a registry.
+     *
+     * @param AbstractAgent $agent Agent whose class declares the collections and whose instance names the set
+     * @throws ClaimWidthConflictException When one collection is named by more than one width of this half
+     * @throws ClaimedSetKeyMissingException When the seam names no set key of a collection declared by a set
+     */
+    public static function claimDbSet(AbstractAgent $agent): void
+    {
+        $held = self::dbSetCollectionsOf($agent::class);
+        self::refuseWidthConflict($agent, self::dbWidthsOf($agent::class));
+
+        foreach ($held as $collection => $operations) {
+            try {
+                $keys = TruthSourceKeys::set($agent->ownedDbSetKey($collection));
+            } catch (InvalidArgumentException $noSetKey) {
+                throw new ClaimedSetKeyMissingException(
+                    $agent::class . " declares database collection '{$collection}' by a set and named no set key",
+                    previous: $noSetKey,
+                );
+            }
+
+            TruthSourceRegistry::register($collection, $keys, $agent->getId(), $operations);
+
+            SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($agent->getId()));
+            if (!self::isBorrowedClaim($operations)) {
+                SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+            }
         }
     }
 
@@ -276,7 +356,7 @@ final class OwnershipDeclaration
     public static function claimRtRows(AbstractAgent $agent): void
     {
         $narrow = self::rtRowCollectionsOf($agent::class);
-        self::refuseWidthConflict($agent, self::rtCollectionsOf($agent::class), $narrow);
+        self::refuseWidthConflict($agent, ['OWNS_RT' => self::rtCollectionsOf($agent::class), 'OWNS_RT_ROWS' => $narrow]);
 
         foreach ($narrow as $collection => $operations) {
             $keys = $agent->ownedRtRowKeys($collection);
@@ -294,12 +374,13 @@ final class OwnershipDeclaration
     }
 
     /**
-     * Whether a whole-collection claim is borrowed: its holder may not add a row.
+     * Whether a claim over the whole collection or over a set is borrowed: its holder may not add a row.
      *
      * A holder that brings no row into being only ever writes rows somebody else wrote, so it
      * holds no copy of them - the copy has to arrive, and the claim waits for it the way a read
      * does. Asked of the FOLDED operations, so a subclass that adds the right its parent's record
-     * lacked owns the collection rather than borrowing it.
+     * lacked owns the collection rather than borrowing it. A claim over named rows never comes
+     * here: the rows it names are its own ({@see self::claimDbRows()}).
      *
      * Sufficient and not complete, and the rule says so rather than promise otherwise: a co-owner
      * that may add rows as well holds no copy of the rows the other owner wrote either, and is not
@@ -309,7 +390,7 @@ final class OwnershipDeclaration
      * none of them reads another owner's rows in its start hook, so no second form of borrowing
      * exists for them until one does.
      *
-     * @param TruthSourceOperations $operations Folded operations of one whole-collection claim
+     * @param TruthSourceOperations $operations Folded operations of one claim over the whole collection or over a set
      * @return bool True when the claim may not add, and so waits for the state it edits
      */
     private static function isBorrowedClaim(TruthSourceOperations $operations): bool
@@ -318,31 +399,60 @@ final class OwnershipDeclaration
     }
 
     /**
-     * Refuses a half in which one collection is declared both whole and by rows.
+     * The database maps of a class, one per width, each folded up its chain.
      *
-     * Shared by the two halves rather than spelled out in each, for the reason the walk below is
-     * shared: one refusal is one rule, and two copies of its message would answer the same
-     * contradiction in two voices.
+     * Named by their constants, spelled as the topology validator spells them in its own refusals,
+     * so a refusal of the start and a refusal of the topology name a declaration the same way.
+     *
+     * @param class-string<AbstractAgent> $agentClass Class to read the declarations off
+     * @return array<string, array<string, TruthSourceOperations>> Declaration name => collections it holds
+     */
+    private static function dbWidthsOf(string $agentClass): array
+    {
+        return [
+            'OWNS_DB' => self::dbCollectionsOf($agentClass),
+            'OWNS_DB_ROWS' => self::dbRowCollectionsOf($agentClass),
+            'OWNS_DB_SET' => self::dbSetCollectionsOf($agentClass),
+        ];
+    }
+
+    /**
+     * Refuses a half in which one collection is declared in more than one width.
+     *
+     * One check for every map of a half, shared by the two halves rather than spelled out in each,
+     * for the reason the walk below is shared: one refusal is one rule, and two copies of its
+     * message would answer the same contradiction in two voices. Each half hands in as many maps
+     * as it has widths.
      *
      * Read on the FOLDED maps, so a contradiction between a parent and its subclass is caught as
      * readily as one written twice in a single class - the folding is what makes the two records
      * meet at all.
      *
-     * @param AbstractAgent $agent Agent both maps were read off, named in the message
-     * @param array<string, TruthSourceOperations> $whole Collections this half declares whole
-     * @param array<string, TruthSourceOperations> $byRows Collections this half declares by rows
-     * @throws ClaimWidthConflictException When the two maps name a collection in common
+     * @param AbstractAgent $agent Agent the maps were read off, named in the message
+     * @param array<string, array<string, TruthSourceOperations>> $widths Declaration name => collections it holds, one per width of the half
+     * @throws ClaimWidthConflictException When two maps of the half name a collection in common
      */
-    private static function refuseWidthConflict(AbstractAgent $agent, array $whole, array $byRows): void
+    private static function refuseWidthConflict(AbstractAgent $agent, array $widths): void
     {
-        $conflicting = array_intersect_key($whole, $byRows);
-        if ($conflicting === []) {
+        $mapsByCollection = [];
+        foreach ($widths as $declaration => $collections) {
+            foreach (array_keys($collections) as $collection) {
+                $mapsByCollection[$collection][] = $declaration;
+            }
+        }
+
+        $parts = [];
+        foreach ($mapsByCollection as $collection => $maps) {
+            if (count($maps) > 1) {
+                $parts[] = "'{$collection}' in " . implode(' and ', $maps);
+            }
+        }
+        if ($parts === []) {
             return;
         }
 
         throw new ClaimWidthConflictException(
-            $agent::class . " declares '" . implode("', '", array_keys($conflicting))
-            . "' both whole and by rows; a collection stands in exactly one of the two maps of its half",
+            $agent::class . ' declares ' . implode(', ', $parts) . '; a collection stands in exactly one of the maps of its half',
         );
     }
 

@@ -36,6 +36,7 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
+use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
@@ -132,9 +133,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @var array<string, list<TruthSourceOperation>> DB collections this agent owns NOT WHOLE but
      *     by rows, each mapped to the operations it may perform on them. The same form
      *     {@see TruthSourceOwner::OWNS_DB} has, {@see TruthSourceOperation::BY_KIND} included, and
-     *     the other width of the same half: a collection stands in exactly one of the two maps,
-     *     and one named by both refuses the agent's start
-     *     ({@see OwnershipDeclaration::claimDbRows()}).
+     *     another width of the same half: a collection stands in exactly one of the three maps -
+     *     whole, by rows, by a set ({@see self::OWNS_DB_SET}) - and one named by two of them
+     *     refuses the agent's start ({@see OwnershipDeclaration::claimDbRows()}).
      *
      *     WHICH collection is declared here; WHICH ROWS of it are not, and this map knows nothing
      *     about them: they are named by {@see self::ownedDbRowKeys()} on the live instance, asked
@@ -145,6 +146,27 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *     in the whole-collection map does not: the claim is the reader interest already.
      */
     public const array OWNS_DB_ROWS = [];
+
+    /**
+     * @var array<string, list<TruthSourceOperation>> DB collections this agent owns neither whole
+     *     nor row by row but as ONE SET of rows, each mapped to the operations it may perform on
+     *     them. The same form {@see TruthSourceOwner::OWNS_DB} has,
+     *     {@see TruthSourceOperation::BY_KIND} included, and the third width of the same half: a
+     *     collection stands in exactly one of the three maps, and one named by two of them refuses
+     *     the agent's start ({@see OwnershipDeclaration::claimDbSet()}).
+     *
+     *     WHICH collection is declared here; WHICH SET of it is named by
+     *     {@see self::ownedDbSetKey()} on the live instance, asked once when the agent starts. The
+     *     cut is not the agent's to choose: the column the collection's Entity names in `_setVia`
+     *     decides which rows a set holds, and the key only says which set.
+     *
+     *     A claim here without the right to add is borrowed - the rows of the set are brought into
+     *     being by somebody else - and the start waits for its state beside the reads.
+     *
+     *     A collection named here does not belong in {@see self::READS_DB}: the claim is the
+     *     reader interest already.
+     */
+    public const array OWNS_DB_SET = [];
 
     /**
      * @var array<string, list<TruthSourceOperation>> Runtime collections this agent owns NOT WHOLE
@@ -292,6 +314,31 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function ownedDbRowKeys(string $collection): array
     {
         return [];
+    }
+
+    /**
+     * Set of a database collection declared by a set that this instance owns.
+     *
+     * The half of a set claim a class cannot carry: {@see self::OWNS_DB_SET} says which
+     * collection, this says which set of it - the value of the collection's set column that names
+     * the one instance the agent answers for, a person's id, an event's.
+     *
+     * Asked once, between the instance being built and its {@see self::onStart()}, by
+     * {@see OwnershipDeclaration::claimDbSet()}. Public for the reason {@see self::ownedDbRowKeys()}
+     * is: the resolver stands outside the class.
+     *
+     * The base answer is the empty string, which is a REFUSAL and not a claim of nothing: a
+     * collection declared by a set whose seam names no set key stops the agent's start
+     * ({@see ClaimedSetKeyMissingException}). One key and not a list, on purpose: one column cuts
+     * the table, and a seam answering several sets would bring back the predicate the width was
+     * chosen over.
+     *
+     * @param string $collection Collection the resolver is asking about, as named in the map
+     * @return string Set key this instance claims in that collection
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        return '';
     }
 
     /**
