@@ -1,5 +1,3 @@
-import { postToGateway } from './gateway'
-
 // The stand's local model (HIL-925). The stand gateway answers the completion
 // API the daemon's local model provider calls, and what it answers is exactly
 // what a spec dictated here beforehand: the model on the stand says nothing a
@@ -10,15 +8,17 @@ import { postToGateway } from './gateway'
 // reaches a mailbox, so there is nothing to read back. A spec dictates the
 // answer and checks what the product did with it.
 
+import { postToGateway } from './standGateway.mjs'
+
 /**
  * Coin a key no other test's prompt can contain.
  *
  * Every key has the same length, so two different keys are never a substring of
  * one another — which is what the gateway matches a prompt by.
  *
- * @returns A fresh key.
+ * @returns {string} A fresh key.
  */
-export function modelKey(): string {
+export function modelKey() {
   const spread = Math.floor(Math.random() * 36 ** 8)
     .toString(36)
     .padStart(8, '0')
@@ -45,12 +45,10 @@ export function modelKey(): string {
  * reaches the model, so the dictated text would stay behind and answer the next
  * call instead. A delay, a cut or a hold combine freely.
  *
- * @param key The string the call's prompt has to contain.
- * @param response The raw text the model answers with; an empty string is a legitimate answer.
+ * @param {string} key The string the call's prompt has to contain.
+ * @param {string} response The raw text the model answers with; an empty string is a legitimate answer.
+ * @returns {Promise<void>}
  */
-export async function dictateModelAnswer(
-  key: string,
-  response: string,
-): Promise<void> {
+export async function dictateModelAnswer(key, response) {
   await postToGateway('/model/test/answer', { key, response })
 }

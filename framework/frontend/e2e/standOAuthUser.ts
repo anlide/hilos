@@ -1,17 +1,19 @@
-import { expect, type Page } from '@playwright/test'
-import type { StandOAuthAccount } from './oauth'
-import { clickSubmit } from './session'
+import type { Page } from '@playwright/test'
+
+import type { StandOAuthAccount } from '../scripts/standOAuth.mjs'
 
 // stub-oauth-user: the PERSON at the provider's window (HIL-923). The provider itself is
-// the stand gateway's resident and knows only its own world (helpers/oauth.ts); everything
-// a human does at the consent screen is here, and it is a spec that gives the orders —
-// wait for the window, pick this account, confirm, refuse, or walk away.
+// the stand gateway's resident and knows only its own world
+// (framework/frontend/scripts/standOAuth.mjs); everything a human does at the consent
+// screen is here, and it is a spec that gives the orders — wait for the window, pick this
+// account, confirm, refuse, or walk away.
 //
-// He lives in the spec's set rather than in the gateway, and that is the whole reason this
-// file exists apart. Waiting for a window to appear, pressing a button in it and closing it
-// can only be done by whoever is in the browser; a server-side half of that person could drive
-// the screen only through a script on the page, and then the button would be pressed by the
-// page rather than by a person — which is precisely what an emulator must not fake.
+// The person lives in the shared e2e toolbox rather than in the gateway, and that is the
+// whole reason this file exists apart. Waiting for a window to appear, pressing a button in
+// it and closing it can only be done by whoever is in the browser; a server-side half of
+// that person could drive the screen only through a script on the page, and then the button
+// would be pressed by the page rather than by a person — which is precisely what an emulator
+// must not fake.
 //
 // New habits of the person are added HERE, never to the gateway. The gateway gains a habit
 // only when the PROVIDER gains one.
@@ -39,7 +41,7 @@ const DENY = 'oauth-deny'
  */
 export async function waitForProviderWindow(page: Page): Promise<Page> {
   const providerWindow = await page.waitForEvent('popup')
-  await expect(providerWindow.getByTestId(CONSENT)).toBeVisible()
+  await providerWindow.getByTestId(CONSENT).waitFor({ state: 'visible' })
 
   return providerWindow
 }
@@ -54,16 +56,21 @@ export async function chooseAccount(
   providerWindow: Page,
   account: StandOAuthAccount,
 ): Promise<void> {
-  await providerWindow.getByTestId(`${ACCOUNT_PREFIX}${account.subject}`).check()
+  await providerWindow
+    .getByTestId(`${ACCOUNT_PREFIX}${account.subject}`)
+    .check()
 }
 
 /**
  * Grant the client the access it asked for.
  *
+ * A plain click: it waits for the button to be visible, stable and enabled and scrolls
+ * to it, and the emulator's consent buttons have no disabled state to wait out.
+ *
  * @param providerWindow The provider's window.
  */
 export async function confirmConsent(providerWindow: Page): Promise<void> {
-  await clickSubmit(providerWindow.getByTestId(CONFIRM))
+  await providerWindow.getByTestId(CONFIRM).click()
 }
 
 /**
@@ -72,7 +79,7 @@ export async function confirmConsent(providerWindow: Page): Promise<void> {
  * @param providerWindow The provider's window.
  */
 export async function denyConsent(providerWindow: Page): Promise<void> {
-  await clickSubmit(providerWindow.getByTestId(DENY))
+  await providerWindow.getByTestId(DENY).click()
 }
 
 /**

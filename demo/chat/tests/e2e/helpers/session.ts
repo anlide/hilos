@@ -1,7 +1,10 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 import { readRegisterCode, waitForMailCode } from './mail'
 import { gotoPage } from './page'
-import { uniquePhone, waitForSmsCode } from './sms'
+import {
+  uniquePhone,
+  waitForSmsCode,
+} from '../../../../../framework/frontend/scripts/standSms.mjs'
 
 // Shared sign-in helpers for the session≠user model (HIL-360). Since auto-guest
 // was dropped, a fresh browser context is anonymous: it reads the chat but has
@@ -441,9 +444,10 @@ const EMAIL_ADD_SUBJECT = 'Confirm your email address'
  *      code to a chosen address and, on the confirm, writes a password identity
  *      on it and marks it verified (ProfilePage::handleConfirmAddPassword).
  *
- * Both codes are read from the stand's interceptors (helpers/sms.ts,
- * helpers/mail.ts), never from a test-only backdoor: the flow under the account
- * is the product's own, so a change that breaks it for a user breaks it here too.
+ * Both codes are read from the stand's interceptors
+ * (framework/frontend/scripts/standSms.mjs, helpers/mail.ts), never from a
+ * test-only backdoor: the flow under the account is the product's own, so a
+ * change that breaks it for a user breaks it here too.
  *
  * @param page Page starting from any location (it navigates to '/' and '/profile').
  * @returns The account's proven email, its display name (the phone the user was

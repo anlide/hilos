@@ -68,11 +68,11 @@ it('lets the wrapper owner call goto, since it owns the wrappers', () => {
   ).toEqual([])
 })
 
-it('reads the stand base from the gateway helper beside the file as well', () => {
+it('reads the stand base from the shared gateway module', () => {
   expect(
     checkSource(
-      'demo/chat/tests/e2e/helpers/oauth-user.ts',
-      "import { STAND_GATEWAY_URL as BASE } from './gateway'\n" +
+      'demo/polls/tests/e2e/tests/auth.spec.ts',
+      "import { STAND_GATEWAY_URL as BASE } from '../../../../../framework/frontend/scripts/standGateway.mjs'\n" +
         'await page.goto(`${BASE}/oauth/github/authorize`)\n',
     ),
   ).toEqual([])
@@ -93,6 +93,13 @@ it('does not take a same-named constant from anywhere else for the stand base', 
       spec,
       "import { STAND_GATEWAY_URL } from '../helpers/product'\n" +
         'await page.goto(`${STAND_GATEWAY_URL}/settings`)\n',
+    ),
+  ).toEqual([`E2E-PAGE-GOTO ${spec}:2${REASON}`])
+  expect(
+    checkSource(
+      spec,
+      "import { STAND_GATEWAY_URL } from '../helpers/gateway'\n" +
+        'await page.goto(`${STAND_GATEWAY_URL}/oauth/github/authorize`)\n',
     ),
   ).toEqual([`E2E-PAGE-GOTO ${spec}:2${REASON}`])
 })

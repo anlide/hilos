@@ -7,8 +7,13 @@ import {
   readPasswordResetCode,
   readRegisterCode,
 } from '../helpers/mail'
-import { declareOAuthAccount } from '../helpers/oauth'
-import { signInAs } from '../helpers/oauth-user'
+import { signInAs } from '../../../../../framework/frontend/e2e/index.js'
+import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
+import {
+  uniquePhone,
+  waitForSmsCode,
+} from '../../../../../framework/frontend/scripts/standSms.mjs'
+import { waitForTelegramCode } from '../../../../../framework/frontend/scripts/standTelegram.mjs'
 import { PAGE_REFUSED, gotoAuthReturn, gotoPage } from '../helpers/page'
 import {
   PASSWORD,
@@ -27,8 +32,6 @@ import {
   uniqueEmail,
   waitAuthSettled,
 } from '../helpers/session'
-import { uniquePhone, waitForSmsCode } from '../helpers/sms'
-import { waitForTelegramCode } from '../helpers/telegram'
 
 // Sign-in e2e for the polls demo (HIL-634). This demo had no auth handler
 // at all until the AUTH feature was declared; nothing about the machine is this

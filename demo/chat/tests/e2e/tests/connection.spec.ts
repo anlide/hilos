@@ -9,7 +9,7 @@ import {
   typeInto,
 } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
-import { modelKey } from '../helpers/model'
+import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the

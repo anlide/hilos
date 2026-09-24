@@ -2,14 +2,21 @@ import { connect } from 'node:tls'
 
 import { test, expect, type Page } from '@playwright/test'
 
-import { dictateGatewayBehavior, STAND_GATEWAY_URL } from '../helpers/gateway'
+import {
+  chooseAccount,
+  confirmConsent,
+  denyConsent,
+} from '../../../../../framework/frontend/e2e/index.js'
+import {
+  dictateGatewayBehavior,
+  STAND_GATEWAY_URL,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import {
   declareOAuthAccount,
   orderExpiredCode,
   type StandOAuthAccount,
   type StandOAuthProfile,
-} from '../helpers/oauth'
-import { chooseAccount, confirmConsent, denyConsent } from '../helpers/oauth-user'
+} from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 
 // The stand's OAuth provider, held to its contract on the provider itself (HIL-923). The
 // product takes no part here: what is proved is that the emulator behaves like the thing it

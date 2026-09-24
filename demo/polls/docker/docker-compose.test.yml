@@ -322,6 +322,10 @@ services:
       COMMAND_PORT: "8094"
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The mail interceptor's HTTP API. The shared stand mailbox module
+      # (framework/frontend/scripts/standMailbox.mjs) reads its address from here
+      # and has no default of its own; SMS and Telegram codes arrive there as mail.
+      MAILPIT_URL: http://polls-mailpit-test:8025
       # The stand gateway's test routes: how a spec declares an account in the world
       # of the provider emulator before signing in through it (HIL-923, HIL-924).
       STAND_GATEWAY_URL: https://stand-gateway:18000

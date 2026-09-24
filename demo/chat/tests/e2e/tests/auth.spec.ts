@@ -1,6 +1,28 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 
-import { watchHeight, watchTop } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  abandonConsent,
+  denyConsent,
+  signInAs,
+  waitForProviderWindow,
+  watchHeight,
+  watchTop,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  declareOAuthAccount,
+  orderExpiredCode,
+  type StandOAuthAccount,
+  type StandOAuthProfile,
+} from '../../../../../framework/frontend/scripts/standOAuth.mjs'
+import {
+  uniquePhone,
+  waitForSmsCode,
+} from '../../../../../framework/frontend/scripts/standSms.mjs'
+import {
+  setTelegramReachable,
+  waitForTelegramCode,
+} from '../../../../../framework/frontend/scripts/standTelegram.mjs'
 import { setAdmin } from '../helpers/adminGrant'
 import {
   mailsTo,
@@ -27,21 +49,6 @@ import {
   uniqueEmail,
 } from '../helpers/session'
 import { expectPageRefused, gotoAuthReturn, gotoPage } from '../helpers/page'
-import { uniquePhone, waitForSmsCode } from '../helpers/sms'
-import { dictateGatewayBehavior } from '../helpers/gateway'
-import {
-  declareOAuthAccount,
-  orderExpiredCode,
-  type StandOAuthAccount,
-  type StandOAuthProfile,
-} from '../helpers/oauth'
-import {
-  abandonConsent,
-  denyConsent,
-  signInAs,
-  waitForProviderWindow,
-} from '../helpers/oauth-user'
-import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
 // the live daemon and built frontend. It covers the surfaces that landed with the
@@ -1241,9 +1248,10 @@ test('offers a countdown instead of a resend while the cooldown holds', async ({
 // through whichever channel can carry it, and a channel that cannot costs the person
 // nothing on the way to one that can.
 //
-// The Telegram leg goes through the stand's mock Gateway (helpers/telegram.ts) rather
-// than around it: the daemon builds a real request, posts it, and the mock refuses one
-// that carries no bearer token — so a transport quietly removed would fail here.
+// The Telegram leg goes through the stand's mock Gateway
+// (framework/frontend/scripts/standTelegram.mjs) rather than around it: the daemon
+// builds a real request, posts it, and the mock refuses one that carries no bearer
+// token — so a transport quietly removed would fail here.
 //
 // Not covered, and deliberately: a project whose registry has no Telegram at all draws
 // no icon row. That is a different build of the demo, not a state a spec can arrange,

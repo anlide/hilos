@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test'
 
-import { dictateGatewayBehavior, STAND_GATEWAY_URL } from '../helpers/gateway'
-import { dictateModelAnswer, modelKey } from '../helpers/model'
+import {
+  dictateGatewayBehavior,
+  STAND_GATEWAY_URL,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  dictateModelAnswer,
+  modelKey,
+} from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // The stand's local model, proved on the gateway itself (HIL-925). The gateway has
 // no unit suite of its own. Since HIL-927 chat moderation calls the channel too

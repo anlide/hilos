@@ -8,7 +8,7 @@ import {
   signUp,
   typeInto,
 } from '../helpers/session'
-import { modelKey } from '../helpers/model'
+import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 
 const ATTACHMENT_MIME = 'image/png'

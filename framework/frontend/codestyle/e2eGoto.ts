@@ -15,8 +15,8 @@
 // it, no subscription stands behind it, and a wrapper would wait for an answer
 // that never comes. The exemption is read off the address, not off the file: the
 // argument of the call has to be written from the `STAND_GATEWAY_URL` the file
-// imports from its demo's gateway helper, so the same spec opening a product page
-// is still reported.
+// imports from framework/frontend/scripts/standGateway.mjs, so the same spec
+// opening a product page is still reported.
 //
 // The rule has no PHP half: the specs it governs are TypeScript only.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -49,11 +49,10 @@ const WRAPPER_OWNER = 'helpers/page.ts'
 const STAND_BASE_EXPORT = 'STAND_GATEWAY_URL'
 
 /**
- * The module that exports the stand's base, without an extension. Held as a
- * path suffix for the same reason as the wrapper owner: each demo carries its
- * own copy of the helper.
+ * Repository path of the shared module that exports the stand's base, without
+ * an extension.
  */
-const STAND_BASE_OWNER = 'helpers/gateway'
+const STAND_BASE_OWNER = 'framework/frontend/scripts/standGateway'
 
 /** Extension of the files this checker reads. */
 const SOURCE_EXTENSION = '.ts'
@@ -152,18 +151,15 @@ function standBaseName(
 /**
  * @param relativePath Path of the importing file from the repository root
  * @param specifier The module an import names, as written
- * @returns Whether the specifier resolves to the demo's gateway helper
+ * @returns Whether the specifier resolves to the shared stand gateway module
  */
 function isStandBaseOwner(relativePath: string, specifier: string): boolean {
   if (!specifier.startsWith('.')) {
     return false
   }
   const target = posix.parse(posix.join(posix.dirname(relativePath), specifier))
-  const resolved = posix.join(target.dir, target.name)
 
-  return (
-    resolved === STAND_BASE_OWNER || resolved.endsWith(`/${STAND_BASE_OWNER}`)
-  )
+  return posix.join(target.dir, target.name) === STAND_BASE_OWNER
 }
 
 /**

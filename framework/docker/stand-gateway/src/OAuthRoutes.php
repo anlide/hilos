@@ -23,8 +23,8 @@ use Random\RandomException;
  *
  * The PERSON at that screen is not here, and that is a decision rather than an omission: waiting
  * for the provider's window, pressing a button in it and closing it can only be done by whoever is
- * in the browser, and the gateway has no hands there. The person lives in the spec's own set
- * (demo/chat/tests/e2e/helpers/oauth-user.ts); a server-side half of that person could only
+ * in the browser, and the gateway has no hands there. The person lives in the shared e2e toolbox
+ * (framework/frontend/e2e/standOAuthUser.ts); a server-side half of that person could only
  * drive the screen through a script on the page itself, and then the button would be pressed by
  * the page rather than by a person - exactly what this leaf exists to stop pretending.
  *

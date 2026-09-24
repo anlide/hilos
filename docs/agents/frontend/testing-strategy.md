@@ -131,9 +131,11 @@ e2e robust against copy and layout changes.
 
 `framework/frontend/e2e/` holds the e2e helpers that would read the same in any
 demo, because what they drive is the framework's own surface — the toast stack,
-the page outlet, the admin shell. A demo's own `tests/e2e/helpers/` keeps what
-belongs to that demo alone: its login, its fixtures, and its command-channel
-address and command names. The socket round trip itself is shared.
+the page outlet, the admin shell — or the screen of a stand resident, such as the
+OAuth emulator's consent window. A demo's own `tests/e2e/helpers/` keeps what
+belongs to that demo alone: its login, its fixtures, its command-channel address
+and command names, and its product-mail reads. The socket round trip itself is
+shared.
 
 **Look in the toolbox before writing driving code, and prefer what is already
 there** — a helper that exists has already been argued about once.
@@ -167,6 +169,16 @@ import-type rule above; a round trip that needs only `node:net` belongs in
 `framework/frontend/scripts/` beside `timeout-scale.mjs`. Nothing about that
 mechanic is Playwright's, and the scripts folder is a vitest project, so
 `commandChannel.mjs` carries the shared rule together with a running unit test.
+
+The helpers of the stand's residents live in the same two homes, once for every
+demo that reaches the stand: `standGateway.mjs`, `standOAuth.mjs`, `standSms.mjs`,
+`standTelegram.mjs`, `standModel.mjs` and `standMailbox.mjs` in
+`framework/frontend/scripts/`, and the person at the OAuth consent window in
+`framework/frontend/e2e/standOAuthUser.ts`. A resident's helper is born here with
+its first leaf; a demo does not copy it, and keeps only a wrapper that turns a
+resident's raw answer into its own terms. The addresses — `STAND_GATEWAY_URL` and
+`MAILPIT_URL` — come from the environment of the demo's runner, and the resident
+itself is described in [stand-services.md](../stand-services.md).
 
 ### `dismissToasts(page)` — when the notice is in the way
 
@@ -252,12 +264,12 @@ a stand resident, which a spec opens in the provider's place — the OAuth conse
 screen (HIL-923, [stand-services.md](../stand-services.md)). The gateway serves it,
 no subscription stands behind it, and `gotoPage` would wait for an answer that never
 comes. The checker lets such a call through when its address is **written from
-`STAND_GATEWAY_URL`** imported from the demo's `helpers/gateway` — the base itself,
-a template opening with it, or a concatenation starting with it — and only then. It
-reads the address and not the file: the base hidden behind a function call, placed
-further into the address, or declared by the spec itself is reported like any other
-`goto`, so a spec that opens a stand screen and a product page is still held to the
-rule for the second one.
+`STAND_GATEWAY_URL`** imported from `framework/frontend/scripts/standGateway.mjs` —
+the base itself, a template opening with it, or a concatenation starting with it —
+and only then. It reads the address and not the file: the base hidden behind a
+function call, placed further into the address, or declared by the spec itself is
+reported like any other `goto`, so a spec that opens a stand screen and a product
+page is still held to the rule for the second one.
 
 `goto` waits for the document and nothing else. The page behind it is a live
 subscription, and its answer — the payload, or a refusal the gate raises — comes

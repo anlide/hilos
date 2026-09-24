@@ -1,7 +1,9 @@
 // The e2e toolbox shared by the demo suites: helpers that drive the browser the
 // same way whatever the demo, because what they drive is the framework's own
-// surface. A demo keeps its own `tests/e2e/helpers/` for what belongs to that
-// demo alone; anything that would read the same in another demo belongs here.
+// surface — or a screen of a stand resident, like the OAuth emulator's consent
+// window, which is the same in every demo too. A demo keeps its own
+// `tests/e2e/helpers/` for what belongs to that demo alone; anything that would
+// read the same in another demo belongs here.
 //
 // The demos reach these by relative path, the way their Playwright configs
 // already reach `framework/frontend/scripts/timeout-scale.mjs` — the runner
@@ -38,3 +40,11 @@ export {
   shownByTestId,
   sidewaysOverflow,
 } from './table.js'
+export {
+  abandonConsent,
+  chooseAccount,
+  confirmConsent,
+  denyConsent,
+  signInAs,
+  waitForProviderWindow,
+} from './standOAuthUser.js'

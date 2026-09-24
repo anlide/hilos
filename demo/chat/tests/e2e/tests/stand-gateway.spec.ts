@@ -2,8 +2,11 @@ import { connect } from 'node:tls'
 
 import { test, expect } from '@playwright/test'
 
-import { dictateGatewayBehavior, STAND_GATEWAY_URL } from '../helpers/gateway'
-import { uniquePhone } from '../helpers/sms'
+import {
+  dictateGatewayBehavior,
+  STAND_GATEWAY_URL,
+} from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
 
 // The stand gateway's behavior handles, proved on the gateway itself (HIL-922). The
 // gateway has no unit suite of its own, and the product's scenarios read a lever only

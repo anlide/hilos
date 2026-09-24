@@ -253,8 +253,9 @@ own document, [stand-services.md](../stand-services.md); a code is one of its
 residents, not its definition.
 
 A spec reads the mailbox through `demo/chat/tests/e2e/helpers/mail.ts`, takes an
-SMS code through `waitForSmsCode()` in `helpers/sms.ts` and a Telegram one
-through `waitForTelegramCode()` in `helpers/telegram.ts`. A person reads on the
+SMS code through `waitForSmsCode()` in `framework/frontend/scripts/standSms.mjs`
+and a Telegram one through `waitForTelegramCode()` in
+`framework/frontend/scripts/standTelegram.mjs`. A person reads on the
 local or dev stack, where the Mailpit UI is published on a host port that each
 demo's README lists.
 

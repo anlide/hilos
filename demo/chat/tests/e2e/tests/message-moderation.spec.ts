@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-import { modelKey } from '../helpers/model'
+import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import { openBell, signUpJoined, unreadBadge } from '../helpers/notifications'
 import { clickSubmit, signUp, typeInto } from '../helpers/session'

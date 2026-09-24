@@ -1,11 +1,8 @@
-import { postToGateway } from './gateway'
-import { waitForAnyMailTo } from './mail'
-
 // The stand's window into the messenger (HIL-492, HIL-653). A Telegram code has
 // no inbox a spec can open, so the stand gateway answers the Gateway's provider
 // API and forwards every code it is given to Mailpit as a letter addressed
 // <E.164>@telegram.stand — read by this helper and by a person out of the same
-// mailbox as mail and SMS (helpers/mail.ts).
+// mailbox as mail and SMS (standMailbox.mjs).
 //
 // Reading the code back through the transport is the point: the daemon really
 // built a request, really posted it, and the gateway really refused it without a
@@ -14,6 +11,9 @@ import { waitForAnyMailTo } from './mail'
 //
 // What remains of the gateway's own API here is arrangement only: what arrived is
 // no longer asked of it.
+
+import { postToGateway } from './standGateway.mjs'
+import { waitForAnyMailTo } from './standMailbox.mjs'
 
 /** The mail domain the gateway re-addresses a caught Telegram code under. */
 const TELEGRAM_MAIL_DOMAIN = 'telegram.stand'
@@ -25,11 +25,11 @@ const TELEGRAM_MAIL_DOMAIN = 'telegram.stand'
  * the code — read off the subject and not the body, which names the recipient
  * above the text and would answer a bare digit-run with the phone number.
  *
- * @param phone Recipient number in canonical E.164, as `uniquePhone` produces it.
- * @returns The plaintext verification code.
- * @throws Error When the delivered message carries no code.
+ * @param {string} phone Recipient number in canonical E.164, as `uniquePhone` produces it.
+ * @returns {Promise<string>} The plaintext verification code.
+ * @throws {Error} When the delivered message carries no code.
  */
-export async function waitForTelegramCode(phone: string): Promise<string> {
+export async function waitForTelegramCode(phone) {
   const mail = await waitForAnyMailTo(`${phone}@${TELEGRAM_MAIL_DOMAIN}`)
   const code = /(\d{4,})/.exec(mail.subject)?.[1]
   if (code === undefined) {
@@ -46,13 +46,11 @@ export async function waitForTelegramCode(phone: string): Promise<string> {
  * put on Telegram is the ordinary case in the real world, and the flow's whole
  * promise is that it costs the person nothing — no code spent, SMS still available.
  *
- * @param phone The number to declare.
- * @param reachable Whether `checkSendAbility` should accept it.
+ * @param {string} phone The number to declare.
+ * @param {boolean} reachable Whether `checkSendAbility` should accept it.
+ * @returns {Promise<void>}
  */
-export async function setTelegramReachable(
-  phone: string,
-  reachable: boolean,
-): Promise<void> {
+export async function setTelegramReachable(phone, reachable) {
   await postToGateway('/telegram/test/reachable', {
     phone_number: phone,
     reachable,
@@ -65,8 +63,10 @@ export async function setTelegramReachable(
  * A whole-store wipe, so it is for a spec that genuinely needs a clean slate and not
  * for ordinary isolation: everything the gateway holds is keyed by number, and a
  * unique number per test isolates it already. Calling this under parallel workers
- * would clear state a neighbouring spec is still using.
+ * would clear state a neighboring spec is still using.
+ *
+ * @returns {Promise<void>}
  */
-export async function resetTelegram(): Promise<void> {
+export async function resetTelegram() {
   await postToGateway('/test/reset', {})
 }

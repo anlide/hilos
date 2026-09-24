@@ -3,10 +3,10 @@ import { test, expect, type Locator } from '@playwright/test'
 import { waitForMailCode, waitForMailTo } from '../helpers/mail'
 import { PASSWORD, clickSubmit, signUp, uniqueEmail } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
-import { modelKey } from '../helpers/model'
 import { dictateModerationVerdict } from '../helpers/moderation'
-import { declareOAuthAccount } from '../helpers/oauth'
-import { signInAs } from '../helpers/oauth-user'
+import { signInAs } from '../../../../../framework/frontend/e2e/index.js'
+import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
+import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 
 // Type into a Vue input the way a user does — clear, then key by key — so the
 // reactivity a bare fill() can miss actually fires (see helpers/session).

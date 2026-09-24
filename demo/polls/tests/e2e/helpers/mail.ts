@@ -8,9 +8,11 @@ import { mailWaitTimeout } from '../../../../../framework/frontend/scripts/timeo
 // HTTP. This is the only place a spec can prove a message actually left the node:
 // the daemon's own log saying `sent` is the daemon's word for it.
 //
-// SMS and Telegram land here too (helpers/sms.ts, helpers/telegram.ts): the stand
-// gateway forwards everything it catches to this same interceptor as a letter, so
-// one mailbox is the whole of what a spec — or a person — has to open.
+// SMS and Telegram land here too: the stand gateway forwards everything it catches
+// to this same interceptor as a letter, and the shared
+// framework/frontend/scripts/standSms.mjs and standTelegram.mjs read them out of it
+// through standMailbox.mjs — one mailbox is the whole of what a spec, or a person,
+// has to open.
 const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://polls-mailpit-test:8025'
 
 /**
@@ -99,38 +101,6 @@ export async function waitForMailTo(
   }
 
   return readMessage(id)
-}
-
-/**
- * Wait until the interceptor holds any message for this recipient, and return
- * the newest one.
- *
- * The read a channel letter needs (HIL-653). The stand gateway forwards a caught
- * SMS or Telegram message under the message's own text as its subject, so there
- * is no fixed subject to wait on — the recipient is the whole of the match, and
- * that is enough for the same reason it is enough above: every spec coins an
- * address no other one uses.
- *
- * @param address Recipient address, as the gateway addressed it.
- * @returns The newest message's subject and plain-text body.
- * @throws Error When the message vanishes between the poll and the read.
- */
-export async function waitForAnyMailTo(
-  address: string,
-): Promise<InterceptedMail> {
-  await expect
-    .poll(async () => (await entriesTo(address)).length, {
-      message: `no mail to ${address} reached the interceptor`,
-      timeout: MAIL_WAIT_TIMEOUT,
-    })
-    .toBeGreaterThan(0)
-
-  const [entry] = await entriesTo(address)
-  if (entry === undefined) {
-    throw new Error(`mail to ${address} disappeared`)
-  }
-
-  return readMessage(entry.ID)
 }
 
 /**

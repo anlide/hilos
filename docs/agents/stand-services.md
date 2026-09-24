@@ -182,8 +182,8 @@ nowhere to redirect to.
 
 **Behavior is steered through the emulator's own HTTP handles, never through
 the daemon's command channel.** A spec already holds an HTTP client —
-`demo/chat/tests/e2e/helpers/gateway.ts` posts JSON to the gateway with a bare
-`fetch` — and the test routes are the emulator's user interface. The daemon's
+`framework/frontend/scripts/standGateway.mjs` posts JSON to the gateway with a
+bare `fetch` — and the test routes are the emulator's user interface. The daemon's
 command channel is about the daemon; an external service is not configured
 through it, and a handle that lived there would make the product carry test
 wiring for a service it does not own. This is also the owner's requirement on
@@ -226,12 +226,12 @@ result; or the browser.
 **The third kind has TWO entities, and they do not live in one process.** The
 provider is a resident of the house (`src/OAuthRoutes.php`, with every difference
 between the providers it plays in `src/OAuthProfile.php`). The PERSON at its
-window is a set in the spec's own folder
-(`demo/chat/tests/e2e/helpers/oauth-user.ts`), and a spec is what gives the
+window lives in the shared e2e toolbox
+(`framework/frontend/e2e/standOAuthUser.ts`), and a spec is still what gives the
 orders — wait for the window, pick this account, confirm, refuse, walk away. The
-world that person acts in is declared through the provider's test half from
-beside them (`demo/chat/tests/e2e/helpers/oauth.ts`). Both files have twins in
-`demo/polls/tests/e2e/helpers/`, beside the twin of `gateway.ts` they stand on.
+world that person acts in is declared through the provider's test half
+(`framework/frontend/scripts/standOAuth.mjs`). Each file exists once, for every
+demo that reaches the stand.
 
 The split is forced rather than tasteful: waiting for a window to open, pressing
 a button in it and closing it can only be done by whoever is IN the browser, and
@@ -272,12 +272,16 @@ place.
   retry — rather than a success nobody can check.
 - **The mailbox is shared by every spec on the stand.** A spec names the
   recipient it waits for and coins one no other spec uses (`uniquePhone()` in
-  `helpers/sms.ts`); "the newest letter" is somebody else's as often as not.
+  `framework/frontend/scripts/standSms.mjs`); "the newest letter" is somebody
+  else's as often as not.
 - **The relay is the stand's Mailpit**, named to the gateway service by
   `MAILPIT_SMTP_HOST` / `MAILPIT_SMTP_PORT` in each stack's compose. On the test
-  stack Mailpit publishes no host port, on purpose; the runner reads it over
-  `MAILPIT_URL` (`helpers/mail.ts`), and a person reads on the local or dev
-  stack, where the UI is published on a host port each demo's README lists.
+  stack Mailpit publishes no host port, on purpose; every runner that reaches
+  the stand names it in `MAILPIT_URL` in its `docker-compose.test.yml`. The
+  stand's letters are read by `framework/frontend/scripts/standMailbox.mjs`, the
+  product's letters by subject in `demo/*/tests/e2e/helpers/mail.ts`, and a
+  person reads on the local or dev stack, where the UI is published on a host
+  port each demo's README lists.
 
 **There is no handle that lists what was delivered, and there will not be one.**
 There was one, and HIL-653 removed it (`src/StandGatewayTlsServer.php`, class
@@ -315,7 +319,7 @@ needs a clean slate and not for ordinary isolation: everything the store holds i
 keyed by the value a spec coined (a number, an account id, the string a model's
 prompt carries), and a unique value per test isolates it already. Calling reset
 under parallel workers would clear state a neighboring spec is still using
-(`helpers/telegram.ts`, `resetTelegram()`).
+(`resetTelegram()` in `framework/frontend/scripts/standTelegram.mjs`).
 
 The rule for the next resident: **its state goes into the same file, under the
 same lock, and is gone on the same reset.** A resident does not open a store of
@@ -475,8 +479,8 @@ makes the red certain.
 The levers work on the local model's `POST /model/api/generate` like on any other
 provider route, keyed by the same string its dictated answer is (see
 [the halves](#the-halves-of-a-residents-routes)). Two consequences are the
-spec's to know, and they are written into `dictateModelAnswer()`'s TSDoc rather
-than changed in the house: a dictated status and a dictated answer on one key do
+spec's to know, and they are written into `dictateModelAnswer()`'s JSDoc in
+`framework/frontend/scripts/standModel.mjs` rather than changed in the house: a dictated status and a dictated answer on one key do
 not combine — a refused call never reaches the resident, so the text would be left
 behind for the next call — and a key announced ONLY by a behavior is gone once
 the behavior is taken, so a delay with no dictated text is an undictated call and
@@ -491,7 +495,7 @@ gives because a provider refuses a code in a form of its own. The declaration is
 `src/Behavior.php`, the queues live in `Store`, `GatewayRoutes::provider()` takes
 the declaration on the call, and `src/StandGatewayHttpClient.php` plays the delay,
 the cut and the hold out on the connection. A spec dictates through
-`dictateGatewayBehavior()` in `demo/chat/tests/e2e/helpers/gateway.ts`; the
+`dictateGatewayBehavior()` in `framework/frontend/scripts/standGateway.mjs`; the
 gateway's own mechanics are held to this contract by
 `demo/chat/tests/e2e/tests/stand-gateway.spec.ts`.
 
@@ -548,26 +552,35 @@ and name it before writing.
    project configures by hand keeps its own addresses. The
    address keeps `https://`, and a client that could not speak TLS is taught to
    (the local model's was, in HIL-925), because the gateway will not speak plain.
-7. **A spec helper** beside `demo/chat/tests/e2e/helpers/sms.ts` and
-   `telegram.ts` (and their twins under `demo/polls/tests/e2e/helpers/`): for a
-   message channel, a `waitFor<Channel>…()` that reads the letter by recipient,
-   and one function per test handle; for an interlocutor, the one function that
-   dictates the answer (`dictateModelAnswer()` in `helpers/model.ts`), with the
-   key coined by `modelKey()` of the same helper. A demo whose product PARSES the
-   answer wraps the answer's shape in a helper of its own — chat's is
-   `dictateModerationVerdict()` in `helpers/moderation.ts` — because the gateway
-   hands back raw text and belongs to no demo. The price is paid by every spec:
+7. **A spec helper, born in the shared home** — in `framework/frontend/scripts/`
+   beside `standSms.mjs` and `standTelegram.mjs`: a `.mjs` module with JSDoc and
+   a unit test beside it, importing nothing from `@playwright/test`. A helper
+   that drives the browser — the person at the window of a third-kind resident —
+   goes to `framework/frontend/e2e/` instead, under its `import type` rule
+   ([testing-strategy.md](frontend/testing-strategy.md), "The shared toolbox").
+   It is born there with its first leaf, even while one demo alone reaches the
+   resident: a helper that waits for a second demo before moving is born a copy,
+   which is how the per-demo copies of HIL-924 came to be. For a message channel, the
+   helper is a `waitFor<Channel>…()` that reads the letter by recipient (through
+   `standMailbox.mjs`), and one function per test handle; for an interlocutor,
+   the one function that dictates the answer (`dictateModelAnswer()` in
+   `standModel.mjs`), with the key coined by `modelKey()` of the same module.
+   A demo keeps only a wrapper that turns the resident's raw answer into its own
+   terms: a demo whose product PARSES the answer wraps the answer's shape in a
+   helper of its own — chat's is `dictateModerationVerdict()` in
+   `demo/chat/tests/e2e/helpers/moderation.ts` — because the gateway hands back
+   raw text and belongs to no demo. The price is paid by every spec:
    each chat spec that sends a message or renames a user from the profile
    dictates a verdict BEFORE the action, and one that does not reads "Moderation
    unavailable" instead of the outcome it was written for. The
    behavior levers are not a test handle of the resident: a spec dictates them
-   through `helpers/gateway.ts`, and the resident brings no helper of its own for
+   through `standGateway.mjs`, and the resident brings no helper of its own for
    them.
    **A resident of the third kind brings TWO helpers, and they are not to be
-   merged**: the world of the provider (`helpers/oauth.ts`) and the person acting
-   at its window (`helpers/oauth-user.ts`). The first is arrangement, the second
-   is somebody the spec gives orders to, and one file holding both would read as
-   an emulator that presses its own buttons.
+   merged**: the world of the provider (`framework/frontend/scripts/standOAuth.mjs`)
+   and the person acting at its window (`framework/frontend/e2e/standOAuthUser.ts`).
+   The first is arrangement, the second is somebody the spec gives orders to, and
+   one file holding both would read as an emulator that presses its own buttons.
 
 What a resident does NOT bring:
 

@@ -1,4 +1,4 @@
-import { dictateModelAnswer } from './model'
+import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // Chat moderation on the stand (HIL-927). The moderator agent asks the stand's
 // local model with a real call, so every verdict a spec sees is one a spec

@@ -13,7 +13,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
-import { modelKey } from '../helpers/model'
+import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import {
   emitNotification,

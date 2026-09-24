@@ -5,9 +5,9 @@
 // product address, the base hidden behind a call, and a base the file made up.
 //
 // This file sits outside every scanned root, so only the fixture test reads it.
-// The module it imports is not there: the checker reads how the file is written
-// and resolves nothing.
-import { STAND_GATEWAY_URL } from './helpers/gateway'
+// The module it imports is the real one, but the checker still reads only how
+// the file is written and resolves nothing.
+import { STAND_GATEWAY_URL } from '../../scripts/standGateway.mjs'
 
 /** The shape of the Playwright page this fixture pretends to drive. */
 interface FakePage {
