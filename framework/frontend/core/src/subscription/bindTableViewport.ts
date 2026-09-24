@@ -1,11 +1,11 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
 // connection by its (page, tableKey) address. A table's controller only ever
-// sees the windows, deltas, counts, appends, own-creates, announcements, their
+// sees the windows, refusals, deltas, counts, appends, own-creates, announcements, their
 // withdrawals and progress bars addressed to it — there is no central
 // switchboard holding every table and handing each its data
 // (table-subscription.md). The binder subscribes the connection's table_window
-// / table_viewport_delta / table_viewport_count / table_viewport_append /
-// table_viewport_own_create / table_viewport_announce /
+// / table_window_refused / table_viewport_delta / table_viewport_count /
+// table_viewport_append / table_viewport_own_create / table_viewport_announce /
 // table_viewport_unannounce / table_progress / table_facet_counts signals,
 // drops everything not addressed to this table or whose page is no longer
 // current, normalizes the rows into the page scope, and feeds the sink. The
@@ -85,6 +85,21 @@ export function bindTableViewport(
     )
   })
 
+  const unsubscribeWindowRefused = connection.on(
+    'tableWindowRefused',
+    (signal) => {
+      const data = signal.data
+      if (data.tableKey !== address.tableKey || data.page !== address.page) {
+        return
+      }
+      const scope = currentScope()
+      if (!scope) {
+        return
+      }
+      sink.ingestRefusal(data.errorCode)
+    },
+  )
+
   // The sixth road into the same sink, and the one a cold entry arrives by: the page's own
   // answer carries the first window of every table it declares, so nothing is asked for it
   // and nothing waits a round trip for it (HIL-642). A frame for another page, or one whose
@@ -100,24 +115,34 @@ export function bindTableViewport(
       return
     }
     const window = data.payload?.windows?.[address.tableKey]
-    if (window === undefined) {
+    if (window !== undefined) {
+      const scope = currentScope()
+      if (!scope) {
+        return
+      }
+      sink.ingestSubscriptionWindow(
+        window.rows.map((row) => normalizeTableRow(scope, row, options)),
+        window.totalCount,
+        window.totalExact,
+        window.firstAnchor,
+        window.lastAnchor,
+        window.limit,
+        toSortOrder(window.sort),
+        toProgressFrames(window.progress),
+        window.rowsBefore ?? null,
+      )
+
+      return
+    }
+    const refusal = data.payload?.refusedWindows?.[address.tableKey]
+    if (refusal === undefined) {
       return
     }
     const scope = currentScope()
     if (!scope) {
       return
     }
-    sink.ingestSubscriptionWindow(
-      window.rows.map((row) => normalizeTableRow(scope, row, options)),
-      window.totalCount,
-      window.totalExact,
-      window.firstAnchor,
-      window.lastAnchor,
-      window.limit,
-      toSortOrder(window.sort),
-      toProgressFrames(window.progress),
-      window.rowsBefore ?? null,
-    )
+    sink.ingestRefusal(refusal.errorCode)
   })
 
   // The connection reports this window on its next page subscribe, so a tab coming back
@@ -265,6 +290,7 @@ export function bindTableViewport(
 
   return () => {
     unsubscribeWindow()
+    unsubscribeWindowRefused()
     unsubscribePageWindow()
     unsubscribeDelta()
     unsubscribeCount()

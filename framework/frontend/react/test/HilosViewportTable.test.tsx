@@ -2373,6 +2373,31 @@ describe('HilosViewportTable drawing the states of the body', () => {
     ).toBeNull()
   })
 
+  it('draws List unavailable in both branches when the window was refused, with no footer', () => {
+    const { controller } = makeController(STATE_FRAME)
+    twoRows(controller)
+    const { container } = renderStates(controller)
+
+    act(() => controller.ingestRefusal('internal_error'))
+
+    const tiles = container.querySelectorAll(
+      '[data-id="hilos-table-unavailable"]',
+    )
+    expect(tiles).toHaveLength(2)
+    expect(tiles[0]?.getAttribute('role')).toBe('status')
+    expect(
+      container.querySelector('[data-id="hilos-table-unavailable-title"]')
+        ?.textContent,
+    ).toBe('List unavailable')
+    expect(
+      container.querySelector('[data-id="hilos-table-unavailable-hint"]')
+        ?.textContent,
+    ).toBe(
+      'The rows of this list could not be fetched. The rest of the page still works.',
+    )
+    expect(container.querySelector('[data-id="hilos-table-count"]')).toBeNull()
+  })
+
   it('says nothing was found on a table that still draws its frame from props', () => {
     const { controller } = makeController()
     const { container } = render(

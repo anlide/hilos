@@ -6,7 +6,7 @@ import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
 import { HilosTableEmptyState } from '../src/HilosTableEmptyState.js'
 
 // The React port of vue/src/HilosTableEmptyState.test.ts, under the same case
-// names, for the three worded states of the body of a table.
+// names, for the four worded states of the body of a table.
 
 afterEach(() => cleanup())
 
@@ -148,6 +148,22 @@ describe('HilosTableEmptyState', () => {
 
     // The same thing Back in the footer does, and it asks for a place rather than a filter.
     expect(sent.at(-1)?.pageIndex).toBe(1)
+  })
+
+  it('says the list is unavailable when the server refused the window', () => {
+    const { controller } = makeController()
+    controller.ingestRefusal('internal_error')
+    render(<HilosTableEmptyState controller={controller} kind="unavailable" />)
+
+    const state = byId('hilos-table-unavailable') as HTMLElement
+    expect(state.getAttribute('role')).toBe('status')
+    expect(byId('hilos-table-unavailable-title')?.textContent).toBe(
+      'List unavailable',
+    )
+    expect(byId('hilos-table-unavailable-hint')?.textContent).toBe(
+      'The rows of this list could not be fetched. The rest of the page still works.',
+    )
+    expect(state.querySelector('button')).toBeNull()
   })
 
   it('resets the search and the filters back to the ones the table opened with', () => {

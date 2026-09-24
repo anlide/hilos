@@ -55,14 +55,12 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Exception\TableBulkActionNotOfferedException;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
-use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Hilos;
-use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -536,15 +534,14 @@ class PageSignalRouter
      * strictest condition ({@see self::parkUntilIdentified}): the window delivery
      * re-checks the page guards, and those guards judge by the params of the page
      * subscription, so this frame waits for its subscription as well as for the
-     * identity. A refusal here answers nothing at all to the client, which is why it
-     * now leaves a log line instead of only an absence.
+     * identity. A table that cannot build its window is answered with a refusal
+     * frame from sendTableWindow; this door still leaves a log line of its own so
+     * a missing table is not only an absence.
      *
      * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address, drawn fields)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
-     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
-     * @throws HilosException When the table's own sources refuse the reads its window rows need
-     * @throws InvalidArgumentException When the table-window signal cannot be named
+     * @throws InvalidArgumentException When the table-window or refusal signal cannot be named
      */
     public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
@@ -565,8 +562,7 @@ class PageSignalRouter
      * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, limit, address, drawn fields)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
-     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
-     * @throws InvalidArgumentException When the table-window signal cannot be named
+     * @throws InvalidArgumentException When the table-window or refusal signal cannot be named
      */
     private function runTableViewportFrame(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
@@ -583,10 +579,11 @@ class PageSignalRouter
         );
         Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
         if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport) === false) {
-            // The client asked for this window and gets no answer of any kind - not an
-            // error frame, not an empty one. Without this line the refusal exists
-            // nowhere, and a page silently missing its table looks the same as a page
-            // whose table is genuinely empty.
+            // The refusal frame already left sendTableWindow when the table is not served
+            // or the window could not be built. This line is the door's own trace: a page
+            // silently missing its table used to look the same as a page whose table is
+            // genuinely empty. Facet counts are not recounted — there is no window to
+            // count beside.
             Logger::info(
                 "Table window refused: page={$name}, table={$data->tableKey}, acceptKey={$data->acceptKey}",
             );

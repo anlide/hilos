@@ -9,8 +9,9 @@ namespace Hilos\Core\Page\DTO;
  *
  * Carries the page scope split by kind: `entities` (fragments per source key,
  * each with its id), plain `data`, `lists` (ordered item collections),
- * `tables` (row collections), and `windows` (the first window of each viewport
- * table). A page contributes the entity/data sections from
+ * `tables` (row collections), `windows` (the first window of each viewport
+ * table), and `refusedWindows` (the refusal of every viewport table whose first
+ * window could not be built). A page contributes the entity/data sections from
  * AbstractPage::buildPagePayload(); the browser layer contributes lists/tables/
  * data from its kind-classified sources. The framework wraps the payload in a
  * PageResponseSignalData with the page key. Every section is a wire payload and
@@ -32,6 +33,14 @@ final class PagePayload
      * inside `tables`, it would be stored twice and drift apart on the first delta.
      */
     public const string windows = 'windows';
+
+    /**
+     * Sixth section: the refusal of every viewport table whose first window could not be built — HIL-943.
+     *
+     * A refusal is not a window: it has no rows and no coordinates, so it does not travel inside
+     * `windows`. A table stands in this section or in `windows`, never in both.
+     */
+    public const string refusedWindows = 'refusedWindows';
 
     /** Table section: the row set. */
     public const string rows = 'rows';
@@ -70,6 +79,7 @@ final class PagePayload
      * @param array<string, mixed> $lists Ordered list collections per list key
      * @param array<string, mixed> $tables Row collections per table key
      * @param array<string, mixed> $windows First window per viewport-table key
+     * @param array<string, mixed> $refusedWindows Refusal of each viewport table whose first window could not be built
      */
     public function __construct(
         public readonly array $entities = [],
@@ -77,6 +87,7 @@ final class PagePayload
         public readonly array $lists = [],
         public readonly array $tables = [],
         public readonly array $windows = [],
+        public readonly array $refusedWindows = [],
     ) {
     }
 
@@ -91,7 +102,8 @@ final class PagePayload
             && $this->data === []
             && $this->lists === []
             && $this->tables === []
-            && $this->windows === [];
+            && $this->windows === []
+            && $this->refusedWindows === [];
     }
 
     /**
@@ -116,6 +128,9 @@ final class PagePayload
         }
         if ($this->windows !== []) {
             $payload[self::windows] = $this->windows;
+        }
+        if ($this->refusedWindows !== []) {
+            $payload[self::refusedWindows] = $this->refusedWindows;
         }
 
         return $payload;

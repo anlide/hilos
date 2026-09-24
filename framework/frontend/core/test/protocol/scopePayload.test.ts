@@ -125,6 +125,20 @@ describe('scopePayloadSchema', () => {
     }
   })
 
+  it('accepts a refusedWindows section', () => {
+    const result = scopePayloadSchema.safeParse({
+      refusedWindows: {
+        settings: { errorCode: 'internal_error' },
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.refusedWindows?.settings).toEqual({
+        errorCode: 'internal_error',
+      })
+    }
+  })
+
   it('stays assignable to the normalizer ScopePayload type', () => {
     const wire: ScopePayloadWire = {
       entities: { currentUser: { id: 7 } },

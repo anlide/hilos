@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Table\DTO\TableWindowRefusedSignalData;
+use Hilos\Core\Table\TableWindowRefusalCode;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -71,6 +73,7 @@ final class PageResponseSignalDataTest extends TestCase
             PagePayload::lists => ['feed' => [PagePayload::items => []]],
             PagePayload::tables => ['bots' => [PagePayload::rows => []]],
             PagePayload::windows => ['settings' => [PagePayload::rows => []]],
+            PagePayload::refusedWindows => ['logs' => [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR]],
         ];
 
         $restored = PageResponseSignalData::fromArray(
@@ -80,6 +83,7 @@ final class PageResponseSignalDataTest extends TestCase
                 lists: $sections[PagePayload::lists],
                 tables: $sections[PagePayload::tables],
                 windows: $sections[PagePayload::windows],
+                refusedWindows: $sections[PagePayload::refusedWindows],
             ))->toArray(),
         );
 

@@ -127,6 +127,20 @@ export const tableWindowSectionSchema = z.looseObject({
 export type TableWindowSectionWire = z.infer<typeof tableWindowSectionSchema>
 
 /**
+ * One table's refused first window on the wire, as a page subscription answers with it.
+ *
+ * A refusal is not a window: it carries the machine-readable reason and nothing of the
+ * slice a window would name. The view does not branch on the code.
+ */
+export const tableWindowRefusalSectionSchema = z.looseObject({
+  errorCode: z.string(),
+})
+
+export type TableWindowRefusalSectionWire = z.infer<
+  typeof tableWindowRefusalSectionSchema
+>
+
+/**
  * A scope-shaped payload as the backend serializes it. Every section is
  * optional because empty sections are omitted on the wire (PHP would
  * serialize an empty map as a JSON array).
@@ -147,6 +161,11 @@ export const scopePayloadSchema = z.looseObject({
   // The fifth section, and the one the page scope does not store: a window is held by the
   // table's own controller, and a copy of it in the scope would drift on the first delta.
   windows: z.record(z.string(), tableWindowSectionSchema).optional(),
+  // The sixth section: a refusal is not a window. A table whose first window could not be
+  // built stands here rather than under `windows`.
+  refusedWindows: z
+    .record(z.string(), tableWindowRefusalSectionSchema)
+    .optional(),
 })
 
 export type ScopePayloadWire = z.infer<typeof scopePayloadSchema>

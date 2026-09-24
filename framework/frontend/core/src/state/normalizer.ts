@@ -105,6 +105,14 @@ export interface ScopePayload {
    * and the two would part company on the first delta.
    */
   windows?: Record<string, unknown>
+
+  /**
+   * The refusal of each viewport table whose first window could not be built, by
+   * table key (HIL-943). Declared so the wire schema and this type stay one shape,
+   * and ignored here on purpose: a refusal is held by the table's own controller,
+   * the same way a window is.
+   */
+  refusedWindows?: Record<string, unknown>
 }
 
 export interface NormalizerOptions {

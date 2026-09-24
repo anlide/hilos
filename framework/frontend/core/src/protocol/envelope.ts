@@ -159,6 +159,23 @@ export const tableWindowSignalDataSchema = z.looseObject({
 export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>
 
 /**
+ * Payload of the framework table-window refusal (`type: 'table_window_refused'`,
+ * PHP `TableWindowRefusedSignalData`): the page and table whose window could not
+ * be built, plus the machine-readable reason (`errorCode`, PHP
+ * `TableWindowRefusalCode`). The view does not branch on the code — one phrase
+ * covers every reason. Sent only in reply, never live.
+ */
+export const tableWindowRefusedSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  errorCode: z.string(),
+})
+
+export type TableWindowRefusedSignalData = z.infer<
+  typeof tableWindowRefusedSignalDataSchema
+>
+
+/**
  * Payload of the framework table viewport delta (`type: 'table_viewport_delta'`,
  * PHP `TableViewportDeltaDTO`): the addressed live row change for one table,
  * discriminated by `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`). A

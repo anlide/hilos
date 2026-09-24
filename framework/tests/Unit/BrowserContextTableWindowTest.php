@@ -35,10 +35,12 @@ use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableWindowRefusedSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
+use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -137,18 +139,32 @@ final class BrowserContextTableWindowTest extends TestCase
         $this->assertSame(3, $signal->data->data->rowsBefore);
     }
 
-    public function testSendTableWindowIgnoresAMissingTable(): void
+    public function testSendTableWindowRefusesATableThatIsNotServed(): void
     {
         Hilos::$sr = new SignalRouter();
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
-        new TableWindowUnitBrowserContext()->sendTableWindow(
+        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             new TableViewportSubscription(tableKey: 'no_such_table'),
         );
 
+        $this->assertFalse($delivered);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::TABLE_WINDOW_REFUSED, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(TableWindowRefusedSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                TableWindowRefusedSignalData::page => TableWindowUnitBrowserContext::PAGE,
+                TableWindowRefusedSignalData::tableKey => 'no_such_table',
+                TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::NOT_SERVED,
+            ],
+            $signal->data->data->toArray(),
+        );
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
@@ -224,31 +240,63 @@ final class BrowserContextTableWindowTest extends TestCase
         );
     }
 
-    public function testSendTableWindowNamesTheTableWhoseRowRefusedItsOwnPayload(): void
+    public function testSendTableWindowRefusesWhenARowRefusedItsOwnPayload(): void
     {
         Hilos::$sr = new SignalRouter();
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
         // A row class refusing a payload it cannot be built from lands in the same
-        // catch a broken declaration does, and that catch answers by not sending.
-        // Without the log line the connection would simply never receive its window
-        // and nothing anywhere would say why.
+        // catch a failed getPage does. The connection is told the window will not
+        // arrive, and the line in the log is where the failure is said at all.
         ob_start();
-        new TableWindowUnitBrowserContext()->sendTableWindow(
+        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             new TableViewportSubscription(tableKey: TableWindowRefusedRowTable::TABLE, limit: 10),
         );
         $logged = (string)ob_get_clean();
 
-        $this->assertNull(
-            Hilos::$sr->getNextQueuedSignal(),
-            'a refused row must receive no table window',
-        );
+        $this->assertFalse($delivered);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::TABLE_WINDOW_REFUSED, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(TableWindowRefusedSignalData::class, $signal->data->data);
+        $this->assertSame(TableWindowRefusalCode::INTERNAL_ERROR, $signal->data->data->errorCode);
+        $this->assertSame(TableWindowRefusedRowTable::TABLE, $signal->data->data->tableKey);
         $this->assertStringContainsString(TableWindowRefusedRowTable::TABLE, $logged);
         $this->assertStringContainsString(TableWindowUnitBrowserContext::PAGE, $logged);
         $this->assertStringContainsString('label', $logged);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testSendTableWindowRefusesWhenGetPageThrowsAndLogsOnce(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new TableWindowUnitTableContext([]);
+        Hilos::$table->configure();
+
+        ob_start();
+        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowRefusingReadTable::TABLE, limit: 10),
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertFalse($delivered);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::TABLE_WINDOW_REFUSED, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(TableWindowRefusedSignalData::class, $signal->data->data);
+        $this->assertSame(TableWindowRefusalCode::INTERNAL_ERROR, $signal->data->data->errorCode);
+        $this->assertSame(
+            1,
+            substr_count($logged, 'Browser window skipped a table that failed to build'),
+        );
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     public function testTheCountsGoToTheConnectionThatAskedInAFrameOfTheirOwn(): void
@@ -447,6 +495,7 @@ final class TableWindowUnitTableContext extends TableContext
     {
         $this->register(TableWindowUnitTable::TABLE, new TableWindowUnitTable($this->rows));
         $this->register(TableWindowRefusedRowTable::TABLE, new TableWindowRefusedRowTable());
+        $this->register(TableWindowRefusingReadTable::TABLE, new TableWindowRefusingReadTable());
     }
 }
 
@@ -647,3 +696,48 @@ final class TableWindowRefusedRowTable extends TableDefinition implements SelfSn
         return $this->filterInMemory([['key' => 'a']], $query);
     }
 }
+
+/**
+ * Table whose window build refuses in getPage, standing for a source that cannot be read.
+ */
+final class TableWindowRefusingReadTable extends TableDefinition implements SelfSnapshotTable
+{
+    public const string TABLE = 'windowRefusingReadTable';
+
+    /**
+     * No source-change reaction in this fixture.
+     *
+     * @param SourceChange $change Source change (unused)
+     * @return ?TableRowMutationDTO Always null
+     */
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Never reached: the window build refuses first.
+     *
+     * @param AbstractTableRow $row Self-snapshot row
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+            BrowserPageSignalData::sources => [],
+        ];
+    }
+
+    /**
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Never returned
+     * @throws InvalidFormatException Always, standing for a source that refuses its read
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        throw new InvalidFormatException('This table cannot read its rows');
+    }
+}
+

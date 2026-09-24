@@ -29,8 +29,9 @@
 // a cell (mockups/components/table section 4). A card opens into its own panel,
 // inside its own body and off an id base of its own. The body is drawn from the
 // state the core decides (HilosTableBody): rows, a skeleton of rows while a window
-// change is late, or one of the three worded states drawn by HilosTableEmptyState —
-// the page's own "nothing here yet" and the framework's "Nothing found"
+// change is late, or one of the four worded states drawn by HilosTableEmptyState —
+// the page's own "nothing here yet", the framework's "Nothing found", and
+// "List unavailable"
 // (mockups/components/table section 10). Bootstrap classes only.
 import { NgTemplateOutlet } from '@angular/common'
 import {
@@ -834,7 +835,7 @@ export interface BulkUntouchedContext {
               }
             </div>
           } @else if (body() === 'loading') {
-            <!-- The skeleton and the three states a table says in words live
+            <!-- The skeleton and the four states a table says in words live
             inside the table in the wide branch, so a narrow screen would hide
             them along with it and the phone would be left with a blank space
             where they are (Flow F12). A card of the skeleton is one bar, as the
@@ -1144,21 +1145,25 @@ export class HilosViewportTable<R> {
   protected readonly hasNextPage = signal(false)
   protected readonly hasPreviousPage = signal(false)
   protected readonly pendingCount = signal(0)
-  // Which state the body is in — rows, the skeleton, or one of the three worded
+  // Which state the body is in — rows, the skeleton, or one of the four worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches read this one
   // answer.
   protected readonly body = signal<HilosTableBody>('loading')
-  // Which worded state the tile draws. The three that carry words pass through as they
+  // Which worded state the tile draws. The four that carry words pass through as they
   // are; 'loading' never reaches the tile — the skeleton stands in its place — but the
   // type has to be narrowed somewhere, and doing it here keeps both branches of the
   // table reading one answer instead of each spelling the narrowing out again.
   protected readonly emptyKind = computed<
-    'empty' | 'empty_filtered' | 'empty_page'
+    'empty' | 'empty_filtered' | 'empty_page' | 'unavailable'
   >(() => {
     const body = this.body()
 
-    return body === 'empty_filtered' || body === 'empty_page' ? body : 'empty'
+    return body === 'empty_filtered' ||
+      body === 'empty_page' ||
+      body === 'unavailable'
+      ? body
+      : 'empty'
   })
   protected readonly pageSize = signal(0)
   // As many skeleton rows as the window had rows, so the height of the table does

@@ -106,6 +106,19 @@
   bottom: -0.2rem;
 }
 
+// WHY: the mark sits over the corner of an icon, so it needs a font-size below
+// every Bootstrap step (.fs-6 is already 1rem) and an overhang past the icon's
+// own box, which no offset utility expresses — the stock .bottom-0/.end-0 sit
+// flush and carry !important besides.
+// WHAT: the small circle over the gear on a table whose window the server
+// refused (HIL-943). Position and color stay stock utilities; only what they
+// cannot say lives here.
+.hilos-table-unavailable-mark {
+  font-size: 0.6rem;
+  right: -0.35rem;
+  bottom: -0.2rem;
+}
+
 // WHY: the stock .bottom-0 and .top-0 utilities carry !important, so a media
 // query in this layer cannot outrank them without a second one — and the
 // vertical edge of the toast stack has to flip on a narrow screen.

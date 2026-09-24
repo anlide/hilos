@@ -217,7 +217,7 @@ on a narrow screen is a fourth and has its own section below:
   map and has its own field, and a route preset counts only when a control is
   declared for its key;
 - **the state of the body** — `loading`, `empty`, `empty_filtered`, `empty_page`,
-  or `rows`.
+  `unavailable`, or `rows`.
   Deciding this in the core is the point: three view layers deciding it apart
   would drift. `loading` holds while a window change has gone unanswered for
   longer than 400 ms (`WINDOW_SKELETON_MS`), or before any window has arrived —
@@ -230,13 +230,19 @@ on a narrow screen is a fourth and has its own section below:
   the declared `empty` and `mainAction`, or the page's own words where nothing
   is declared — the `empty` slot in Vue, the `empty` prop in React, the `#empty`
   template in Angular, each falling back to `emptyText`.
-  `empty_page` is the fifth and the only one about the WINDOW rather than the
-  set: the window came back empty while the count says the set has rows — its
-  address landed past the end, or the rows moved out from under it. Saying
-  "nothing here yet" there tells the reader the set is gone beside a footer
-  counting it, and offering to create a row answers a question nobody asked; what
-  it offers instead is the way back to the rows, which is `prevPage()` — the same
-  thing Back does (HIL-1093). A page that refuses altogether is none of these — that is
+  `empty_page` is about the WINDOW rather than the set: the window came back
+  empty while the count says the set has rows — its address landed past the
+  end, or the rows moved out from under it. Saying "nothing here yet" there
+  tells the reader the set is gone beside a footer counting it, and offering to
+  create a row answers a question nobody asked; what it offers instead is the
+  way back to the rows, which is `prevPage()` — the same thing Back does
+  (HIL-1093).
+  `unavailable` is the sixth: the server refused this table's window — a
+  `table_window_refused` frame, or the `refusedWindows` section of the page
+  answer. The body draws the "List unavailable" tile; the way out is the next
+  window that arrives. Frames that belong to a window (`table_viewport_delta`,
+  count, append, own-create, announce, unannounce) are dropped while the
+  refusal stands. A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
 
 ### The card a row projects to
@@ -1037,7 +1043,8 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   and `hilos-table-empty-action`; `hilos-table-no-matches` with
   `hilos-table-no-matches-terms` and `hilos-table-no-matches-reset`;
   `hilos-table-empty-page` with `hilos-table-empty-page-back`;
-  `hilos-table-unavailable` (HIL-943);
+  `hilos-table-unavailable` with `hilos-table-unavailable-title` and
+  `hilos-table-unavailable-hint`;
 - **a source that went quiet:** `hilos-table-stale` — the bar,
   `hilos-table-stale-column-<key>` — the snowflake in a header,
   `hilos-table-stale-row-<rowKey>` — the snowflake in a row-state cell. There is
@@ -1054,10 +1061,11 @@ and everything below is addressed to the one connection it concerns:
 | Frame | Direction | Carries |
 |---|---|---|
 | `page_subscribe` | client → server | `page`, `params`, and an optional `tableWindows`: a map of `tableKey` → the body of a `table_viewport` frame without its address, `rendered` included — the windows this tab is already holding |
-| `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each of the page's viewport tables, and the work running on it |
+| `page_response` | server → client, reply only | the page payload, whose fifth section `windows` is a map of `tableKey` → `rows`, `sort`, `limit`, `totalCount`, `totalExact`, `firstAnchor`, `lastAnchor`, `rowsBefore`, `progress` — the first window of each of the page's viewport tables, and the work running on it — and whose sixth section `refusedWindows` is a map of `tableKey` → `{ errorCode }` for each viewport table whose first window could not be built |
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
 | `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
+| `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`) |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row`, `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount` — sent **only** when the row's place is the end of the window and the window has room |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount` |
@@ -1071,7 +1079,10 @@ A **full window snapshot never travels on the live stream**. It travels on one o
 two roads and no other: in reply to a `table_viewport` request, which is a window
 the reader changed, and in the `windows` section of the page's own
 `page_response`, which is the first window of every viewport table the page
-declares — a cold load and a reconnect alike. A bulk action is still an ordinary
+declares — a cold load and a reconnect alike. A refusal of that window travels
+the same two roads: `table_window_refused` in reply to a request, and the
+`refusedWindows` section of `page_response`. A table stands in one of those,
+never both. A bulk action is still an ordinary
 `action` in the shape given above, but its OUTCOME has a frame of its own,
 `table_bulk_report`: the acceptance travels on the reply and the report cannot,
 because the run outlives the timeout the reply is bound by. That frame is a

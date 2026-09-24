@@ -2389,6 +2389,37 @@ describe('HilosViewportTable drawing the states of the body', () => {
     expect(all(fixture, '[data-id="hilos-table-no-matches"]')).toHaveLength(0)
   })
 
+  it('draws List unavailable in both branches when the window was refused, with no footer', () => {
+    const { controller } = makeStates(STATE_FRAME)
+    twoRows(controller)
+    const fixture = mountStates(controller)
+
+    controller.ingestRefusal('internal_error')
+    fixture.detectChanges()
+
+    expect(all(fixture, '[data-id="hilos-table-unavailable"]')).toHaveLength(2)
+    expect(
+      all(fixture, '[data-id="hilos-table-unavailable"]')[0]?.getAttribute(
+        'role',
+      ),
+    ).toBe('status')
+    expect(
+      all(
+        fixture,
+        '[data-id="hilos-table-unavailable-title"]',
+      )[0]?.textContent?.trim(),
+    ).toBe('List unavailable')
+    expect(
+      all(
+        fixture,
+        '[data-id="hilos-table-unavailable-hint"]',
+      )[0]?.textContent?.trim(),
+    ).toBe(
+      'The rows of this list could not be fetched. The rest of the page still works.',
+    )
+    expect(all(fixture, '[data-id="hilos-table-count"]')).toHaveLength(0)
+  })
+
   it('says nothing was found on a table that still draws its frame from props', () => {
     const { controller } = makeStates()
     const fixture = TestBed.createComponent(ViewportTableHost)

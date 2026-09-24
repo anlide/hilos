@@ -21,6 +21,7 @@ import {
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
   SIGNAL_TYPE_TABLE_WINDOW,
+  SIGNAL_TYPE_TABLE_WINDOW_REFUSED,
 } from './constants.js'
 import {
   signalEnvelopeSchema,
@@ -28,6 +29,7 @@ import {
   actionErrorSignalDataSchema,
   actionSuccessSignalDataSchema,
   tableWindowSignalDataSchema,
+  tableWindowRefusedSignalDataSchema,
   tableViewportDeltaSignalDataSchema,
   tableFacetCountsSignalDataSchema,
   tableViewportCountSignalDataSchema,
@@ -40,6 +42,7 @@ import {
   sessionRotateSignalDataSchema,
   type SignalEnvelope,
   type TableWindowSignalData,
+  type TableWindowRefusedSignalData,
   type TableViewportDeltaSignalData,
   type TableFacetCountsSignalData,
   type TableViewportCountSignalData,
@@ -118,6 +121,11 @@ export type ParsedSignal =
       envelope: SignalEnvelope
     }
   | {
+      kind: 'tableWindowRefused'
+      data: TableWindowRefusedSignalData
+      envelope: SignalEnvelope
+    }
+  | {
       kind: 'tableViewportDelta'
       data: TableViewportDeltaSignalData
       envelope: SignalEnvelope
@@ -181,6 +189,10 @@ export type ActionSuccessSignal = Extract<
 >
 export type ActionErrorSignal = Extract<ParsedSignal, { kind: 'actionError' }>
 export type TableWindowSignal = Extract<ParsedSignal, { kind: 'tableWindow' }>
+export type TableWindowRefusedSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableWindowRefused' }
+>
 export type TableViewportDeltaSignal = Extract<
   ParsedSignal,
   { kind: 'tableViewportDelta' }
@@ -451,6 +463,31 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableWindow',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_WINDOW_REFUSED: {
+      const data = tableWindowRefusedSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_WINDOW_REFUSED,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableWindowRefused',
           data: data.data,
           envelope: envelope.data,
         },

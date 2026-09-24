@@ -349,6 +349,14 @@ export interface TableWindowSink {
     totalExact: boolean,
   ): void
   ingestUnannounce(rowKey: string): void
+  /**
+   * Ingest a refusal of this table's window (`table_window_refused`, or the
+   * `refusedWindows` section of a page answer). The view does not branch on the
+   * code — one phrase covers every reason.
+   *
+   * @param errorCode Machine-readable reason the server named.
+   */
+  ingestRefusal(errorCode: string): void
 }
 
 export interface TableViewportControllerOptions<R> {
@@ -478,6 +486,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** False until the first window arrives — lets the view tell "loading" from "empty". */
   private readonly loadedSignal = createSignal(false)
+
+  /** The refusal code the table is standing in, or null while a window holds. */
+  private readonly refusalSignal = createSignal<string | null>(null)
 
   private readonly placeholderKeysSignal = createSignal<ReadonlySet<string>>(
     new Set(),
@@ -932,6 +943,9 @@ export class TableViewportController<R> implements TableWindowSink {
         if (this.windowPendingSignal.get() || !this.loadedSignal.get()) {
           return 'loading'
         }
+        if (this.refusalSignal.get() !== null) {
+          return 'unavailable'
+        }
         if (this.windowSignal.get().length > 0) {
           return 'rows'
         }
@@ -946,6 +960,7 @@ export class TableViewportController<R> implements TableWindowSink {
           ? 'empty_filtered'
           : 'empty'
       }),
+      refusal: this.refusalSignal,
     }
     // A table has marks exactly when its page declared bulk operations: one sign,
     // the one that already exists. A second one ("this table is selectable") would
@@ -1386,6 +1401,36 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
+   * Ingest a refusal of this table's window (`table_window_refused`, or the
+   * `refusedWindows` section of a page answer).
+   *
+   * The table stands empty and loaded: there is no window to draw, and waiting
+   * for one would be the skeleton that never ends. Filter, search, order, page
+   * and the bars of work stay — changing the window is how the reader asks again.
+   * Any window that arrives next is the way out.
+   *
+   * @param errorCode Machine-readable reason the server named. The view does not
+   *   branch on it — one phrase covers every code.
+   */
+  ingestRefusal(errorCode: string): void {
+    this.refusalSignal.set(errorCode)
+    this.windowSignal.set([])
+    this.totalCountSignal.set(0)
+    this.totalExactSignal.set(true)
+    this.firstAnchor = null
+    this.lastAnchor = null
+    this.rowsBeforeSignal.set(null)
+    this.placeholderKeysSignal.set(new Set())
+    this.loadedSignal.set(true)
+    this.clearWindowPending()
+    this.clearHighlights()
+    this.clearPending()
+    this.clearAnnounced()
+    this.selectedKeysSignal.set(new Set())
+    this.expandedKeysSignal.set(new Set())
+  }
+
+  /**
    * Ingest a window snapshot from the backend (`table_window`): replace the
    * displayed rows and the total count, and drop any leftover pending, placeholders
    * and marks — the fresh window is authoritative. Called by the subscription
@@ -1417,6 +1462,7 @@ export class TableViewportController<R> implements TableWindowSink {
     limit: number,
     rowsBefore: number | null = null,
   ): void {
+    this.refusalSignal.set(null)
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
@@ -1569,6 +1615,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    */
   ingestCount(totalCount: number, totalExact: boolean): void {
+    if (this.refusalSignal.get() !== null) {
+      return
+    }
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
   }
@@ -1596,6 +1645,9 @@ export class TableViewportController<R> implements TableWindowSink {
     totalCount: number,
     totalExact: boolean,
   ): void {
+    if (this.refusalSignal.get() !== null) {
+      return
+    }
     this.ingestCount(totalCount, totalExact)
     if (this.announcedAbove.has(rowKey) || this.announcedInside.has(rowKey)) {
       return
@@ -1621,6 +1673,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param rowKey Key of the deleted row.
    */
   ingestUnannounce(rowKey: string): void {
+    if (this.refusalSignal.get() !== null) {
+      return
+    }
     const above = this.announcedAbove.delete(rowKey)
     const inside = this.announcedInside.delete(rowKey)
     if (!above && !inside) {
@@ -1721,6 +1776,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param totalExact Whether that total is the size of the set rather than the ceiling it stopped at.
    */
   ingestAppend(row: TableRow, totalCount: number, totalExact: boolean): void {
+    if (this.refusalSignal.get() !== null) {
+      return
+    }
     this.windowSignal.set([...this.windowSignal.get(), row])
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
@@ -1763,6 +1821,9 @@ export class TableViewportController<R> implements TableWindowSink {
     totalExact: boolean,
     requestId?: string | null,
   ): void {
+    if (this.refusalSignal.get() !== null) {
+      return
+    }
     this.ownCreateRequestIdSignal.set(requestId ?? null)
     const rows = this.windowSignal
       .get()
@@ -1821,6 +1882,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param delta The normalized viewport delta.
    */
   ingestDelta(delta: TableViewportDelta): void {
+    if (this.refusalSignal.get() !== null) {
+      return
+    }
     if (delta.kind === 'row_stale') {
       this.applyRowStaleness(delta.rowKey, delta.staleSources)
 

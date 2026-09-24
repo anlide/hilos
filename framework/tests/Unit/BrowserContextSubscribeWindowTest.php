@@ -35,12 +35,14 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowRefusedSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableProgressScope;
+use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -262,7 +264,7 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         $this->assertCount(2, $window[TableWindowSignalData::rows]);
     }
 
-    public function testATableThatCannotBuildItsWindowIsLeftOutAndSaidSoInTheLog(): void
+    public function testATableThatCannotBuildItsWindowGoesIntoRefusedWindows(): void
     {
         Hilos::$sr = new SignalRouter();
         Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
@@ -276,10 +278,49 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         );
         $logged = (string) ob_get_clean();
 
-        // The page still ships; the tab is left in the state it reads as "the window has not
-        // arrived yet", and the line in the log is the only place the refusal is said at all.
         $this->assertStringContainsString('Browser window skipped a table', $logged);
-        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $answer = self::answer();
+        $payload = $answer[PageResponseSignalData::payload] ?? [];
+        $this->assertIsArray($payload);
+        $this->assertArrayNotHasKey(
+            SubscribeWindowRefusingTable::TABLE,
+            $payload[PagePayload::windows] ?? [],
+        );
+        $this->assertSame(
+            [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
+            self::refusalOf($answer, SubscribeWindowRefusingTable::TABLE),
+        );
+    }
+
+    public function testAPageWithTwoTablesKeepsTheLiveWindowAndRefusesTheBrokenOne(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        ob_start();
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::MIXED_PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+        ob_end_clean();
+
+        $answer = self::answer();
+        $payload = $answer[PageResponseSignalData::payload] ?? [];
+        $this->assertIsArray($payload);
+        $windows = $payload[PagePayload::windows] ?? [];
+        $this->assertIsArray($windows);
+        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $windows);
+        $this->assertArrayNotHasKey(SubscribeWindowRefusingTable::TABLE, $windows);
+        $this->assertSame(
+            [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
+            self::refusalOf($answer, SubscribeWindowRefusingTable::TABLE),
+        );
+        $this->assertArrayNotHasKey(
+            SubscribeWindowUnitTable::TABLE,
+            $payload[PagePayload::refusedWindows] ?? [],
+        );
     }
 
     /**
@@ -323,6 +364,23 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         self::assertIsArray($windows[$tableKey]);
 
         return $windows[$tableKey];
+    }
+
+    /**
+     * @param array<string, mixed> $answer Wire payload of a page_response
+     * @param string $tableKey Table whose refusal is read out of it
+     * @return array<string, mixed> The `refusedWindows` entry for that table
+     */
+    private static function refusalOf(array $answer, string $tableKey): array
+    {
+        $payload = $answer[PageResponseSignalData::payload] ?? [];
+        self::assertIsArray($payload);
+        $refused = $payload[PagePayload::refusedWindows] ?? [];
+        self::assertIsArray($refused);
+        self::assertArrayHasKey($tableKey, $refused);
+        self::assertIsArray($refused[$tableKey]);
+
+        return $refused[$tableKey];
     }
 
     public function testTheCountsATabReportedAskingForFollowTheAnswerInAFrameOfTheirOwn(): void
@@ -409,6 +467,7 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
     public const string PAGE = 'subscribe_window_unit_page';
     public const string OTHER_PAGE = 'subscribe_window_unit_other_page';
     public const string REFUSING_PAGE = 'subscribe_window_unit_refusing_page';
+    public const string MIXED_PAGE = 'subscribe_window_unit_mixed_page';
     public const string SIGNAL = 'subscribe_window_unit_signal';
 
     /**
@@ -420,7 +479,7 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
-        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE], true)) {
+        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE, self::MIXED_PAGE], true)) {
             return null;
         }
 
@@ -438,6 +497,10 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
         return match ($page) {
             self::PAGE => BrowserPageBindings::fromArray([SubscribeWindowUnitTable::TABLE => []]),
             self::REFUSING_PAGE => BrowserPageBindings::fromArray([SubscribeWindowRefusingTable::TABLE => []]),
+            self::MIXED_PAGE => BrowserPageBindings::fromArray([
+                SubscribeWindowUnitTable::TABLE => [],
+                SubscribeWindowRefusingTable::TABLE => [],
+            ]),
             default => BrowserPageBindings::empty(),
         };
     }

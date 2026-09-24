@@ -30,12 +30,16 @@ import {
   type TableViewportOwnCreateSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
+  type TableWindowRefusedSignal,
   type ProjectSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting the nine table signals, with real unsubscribe. */
+/** A connection double emitting the table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
+  const windowRefusedListeners = new Set<
+    (signal: TableWindowRefusedSignal) => void
+  >()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
   const countListeners = new Set<(signal: TableViewportCountSignal) => void>()
   const appendListeners = new Set<(signal: TableViewportAppendSignal) => void>()
@@ -73,6 +77,14 @@ function fakeConnection() {
           windowListeners.add(typed)
 
           return () => windowListeners.delete(typed)
+        }
+        case 'tableWindowRefused': {
+          const typed = listener as unknown as (
+            signal: TableWindowRefusedSignal,
+          ) => void
+          windowRefusedListeners.add(typed)
+
+          return () => windowRefusedListeners.delete(typed)
         }
         case 'tableViewportCount': {
           const typed = listener as unknown as (
@@ -170,6 +182,11 @@ function fakeConnection() {
         listener({ data } as unknown as TableWindowSignal)
       }
     },
+    emitWindowRefused(data: TableWindowRefusedSignal['data']): void {
+      for (const listener of windowRefusedListeners) {
+        listener({ data } as unknown as TableWindowRefusedSignal)
+      }
+    },
     emitDelta(data: TableViewportDeltaSignal['data']): void {
       for (const listener of deltaListeners) {
         listener({ data } as unknown as TableViewportDeltaSignal)
@@ -250,6 +267,7 @@ function fakeSink(): TableWindowSink & {
   snapshots: Array<readonly HilosTableProgressFrame[]>
   bulkReports: HilosTableBulkReport[]
   facetCounts: TableFacetCountsByFilter[]
+  refusals: string[]
 } {
   const windows: Array<{
     rows: readonly TableRow[]
@@ -285,6 +303,7 @@ function fakeSink(): TableWindowSink & {
   const snapshots: Array<readonly HilosTableProgressFrame[]> = []
   const bulkReports: HilosTableBulkReport[] = []
   const facetCounts: TableFacetCountsByFilter[] = []
+  const refusals: string[] = []
 
   return {
     windows,
@@ -298,6 +317,7 @@ function fakeSink(): TableWindowSink & {
     snapshots,
     bulkReports,
     facetCounts,
+    refusals,
     ingestFacetCounts(facets) {
       facetCounts.push(facets)
     },
@@ -364,6 +384,9 @@ function fakeSink(): TableWindowSink & {
     },
     ingestBulkReport(report): void {
       bulkReports.push(report)
+    },
+    ingestRefusal(errorCode): void {
+      refusals.push(errorCode)
     },
   }
 }
@@ -443,6 +466,105 @@ describe('bindTableViewport', () => {
     expect(sink.windows[0]?.sort).toEqual([{ field: 'key', direction: 'asc' }])
     const ref = sink.windows[0]?.rows[0]?.slots['user'] as EntityRef
     expect(scopes.entitySignal(ref).get()?.fields['name']).toBe('Ada')
+  })
+
+  it('routes a refusal frame to this table and leaves a neighbour on the same page alone', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const settings = fakeSink()
+    const backups = fakeSink()
+    bind(connection, scopes, settings)
+    bindTableViewport(
+      connection as unknown as HilosConnection,
+      scopes,
+      { page: 'main', tableKey: 'backups' },
+      backups,
+    )
+
+    connection.emitWindowRefused({
+      page: 'main',
+      tableKey: 'settings',
+      errorCode: 'internal_error',
+    })
+
+    expect(settings.refusals).toEqual(['internal_error'])
+    expect(backups.refusals).toEqual([])
+    expect(backups.windows).toHaveLength(0)
+  })
+
+  it('routes a page answer that refused one table and opened another', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const settings = fakeSink()
+    const backups = fakeSink()
+    bind(connection, scopes, settings)
+    bindTableViewport(
+      connection as unknown as HilosConnection,
+      scopes,
+      { page: 'main', tableKey: 'backups' },
+      backups,
+    )
+
+    connection.emitPageResponse({
+      page: 'main',
+      payload: {
+        windows: {
+          backups: {
+            rows: [{ rowKey: 'b1', slots: {} }],
+            sort: [],
+            limit: 10,
+            totalCount: 1,
+            totalExact: true,
+            firstAnchor: { id: 1 },
+            lastAnchor: { id: 1 },
+          },
+        },
+        refusedWindows: {
+          settings: { errorCode: 'internal_error' },
+        },
+      },
+    })
+
+    expect(settings.refusals).toEqual(['internal_error'])
+    expect(settings.windows).toHaveLength(0)
+    expect(backups.windows).toHaveLength(1)
+    expect(backups.windows[0]?.rows[0]?.rowKey).toBe('b1')
+    expect(backups.refusals).toEqual([])
+  })
+
+  it('drops a refusal addressed to another page', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitWindowRefused({
+      page: 'other',
+      tableKey: 'settings',
+      errorCode: 'table_not_served',
+    })
+
+    expect(sink.refusals).toHaveLength(0)
+  })
+
+  it('drops a refusal once the page scope is no longer the table page', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+    scopes.openPage('profile')
+
+    connection.emitWindowRefused({
+      page: 'main',
+      tableKey: 'settings',
+      errorCode: 'internal_error',
+    })
+
+    expect(sink.refusals).toHaveLength(0)
   })
 
   it('drops a page answer that carries no window for this table', () => {
@@ -740,6 +862,11 @@ describe('bindTableViewport', () => {
       firstAnchor: { id: 1 },
       lastAnchor: { id: 10 },
     })
+    connection.emitWindowRefused({
+      page: 'main',
+      tableKey: 'settings',
+      errorCode: 'internal_error',
+    })
     connection.emitCount({
       page: 'main',
       tableKey: 'settings',
@@ -760,6 +887,7 @@ describe('bindTableViewport', () => {
     expect(sink.deltas).toHaveLength(0)
     expect(sink.counts).toHaveLength(0)
     expect(sink.appends).toHaveLength(0)
+    expect(sink.refusals).toHaveLength(0)
   })
 
   it('routes a count addressed to the table', () => {

@@ -248,6 +248,9 @@ export interface HilosTableFooter {
  *   offer is "Nothing found" and a way to reset;
  * - `empty_page` — the window is empty over a set that is not, so what to offer
  *   is a way back to the rows;
+ * - `unavailable` — the server refused this table's window (a `table_window_refused`
+ *   frame or a `refusedWindows` section); the view draws the tile. The next window
+ *   that arrives is the way out;
  * - `rows` — there are rows to draw.
  *
  * `empty_page` is about the PAGE, where the other two empties are about the set,
@@ -266,6 +269,7 @@ export type HilosTableBody =
   | 'empty'
   | 'empty_filtered'
   | 'empty_page'
+  | 'unavailable'
   | 'rows'
 
 /**
@@ -313,4 +317,9 @@ export interface HilosTableFrameState {
   readonly footer: ReadonlySignal<HilosTableFooter>
   /** Which state the body of the table is in. */
   readonly body: ReadonlySignal<HilosTableBody>
+  /**
+   * The refusal code the table is standing in, or null while it is not refused.
+   * The view does not draw it — one phrase covers every code.
+   */
+  readonly refusal: ReadonlySignal<string | null>
 }

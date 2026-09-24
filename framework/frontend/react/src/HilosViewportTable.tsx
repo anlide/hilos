@@ -26,8 +26,8 @@
 // section 4). A card opens into its own panel, inside its own body and off an id
 // base of its own. The body is drawn from the state the core decides
 // (HilosTableBody): rows, a skeleton of rows while a window change is late, or one
-// of the three worded states drawn by HilosTableEmptyState — the page's own "nothing
-// here yet" and the framework's "Nothing found" (mockups/components/table section
+// of the four worded states drawn by HilosTableEmptyState — the page's own "nothing
+// here yet", the framework's "Nothing found", and "List unavailable" (mockups/components/table section
 // 10). Bootstrap classes only.
 import { Fragment, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
@@ -164,7 +164,7 @@ export function HilosViewportTable<R>({
   const hasNextPage = useSignal(controller.hasNextPage)
   const hasPreviousPage = useSignal(controller.hasPreviousPage)
   const pendingCount = useSignal(controller.pendingCount)
-  // Which state the body is in — rows, the skeleton, or one of the three worded
+  // Which state the body is in — rows, the skeleton, or one of the four worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
   // view layers cannot decide it three ways, and both branches below read this one
   // answer.
@@ -993,7 +993,9 @@ export function HilosViewportTable<R>({
                     <HilosTableEmptyState
                       controller={controller}
                       kind={
-                        body === 'empty_filtered' || body === 'empty_page'
+                        body === 'empty_filtered' ||
+                        body === 'empty_page' ||
+                        body === 'unavailable'
                           ? body
                           : 'empty'
                       }
@@ -1056,7 +1058,7 @@ export function HilosViewportTable<R>({
               })}
             </div>
           ) : body === 'loading' ? (
-            // The skeleton and the three states a table says in words live inside
+            // The skeleton and the four states a table says in words live inside
             // the table in the wide branch, so a narrow screen would hide them
             // along with it and the phone would be left with a blank space where
             // they are (Flow F12). A card of the skeleton is one bar, as the
@@ -1082,7 +1084,9 @@ export function HilosViewportTable<R>({
             <HilosTableEmptyState
               controller={controller}
               kind={
-                body === 'empty_filtered' || body === 'empty_page'
+                body === 'empty_filtered' ||
+                body === 'empty_page' ||
+                body === 'unavailable'
                   ? body
                   : 'empty'
               }

@@ -30,7 +30,6 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\DTO\TableFacetCountsSignalData;
 use Hilos\Core\Table\DTO\TableFacetsDTO;
 use Hilos\Database\Context\DbContext;
-use Hilos\HilosException;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -72,8 +71,10 @@ use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowRefusedSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableRowPlacement;
@@ -330,6 +331,7 @@ abstract class BrowserContext
 
         $tables = [];
         $windows = [];
+        $refusedWindows = [];
         foreach ($this->pageBindings($page) as $pageBinding) {
             $browserKey = $pageBinding->browserKey;
 
@@ -348,6 +350,10 @@ abstract class BrowserContext
                 );
                 if ($window !== null) {
                     $windows[$browserKey] = $window;
+                } else {
+                    $refusedWindows[$browserKey] = [
+                        TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR,
+                    ];
                 }
 
                 continue;
@@ -370,7 +376,7 @@ abstract class BrowserContext
             ];
         }
 
-        $payload = $this->pagePayloadFromBrowser($tables, $windows);
+        $payload = $this->pagePayloadFromBrowser($tables, $windows, $refusedWindows);
         if ($payload->isEmpty()) {
             return;
         }
@@ -407,8 +413,10 @@ abstract class BrowserContext
      *
      * The answer is the verdict on one delivery, not a success flag: a window that does
      * not arrive is a normal outcome here — a guard-failed subscription is kept alive
-     * and served nothing until the guard passes. It is answered rather than swallowed
-     * because the caller is owed something to log ({@see PageSignalRouter::dispatchTableViewport}):
+     * and served nothing until the guard passes. When the table is not served or the
+     * window cannot be built, the connection is told so with a table_window_refused
+     * frame rather than with silence. It is answered rather than swallowed because the
+     * caller is owed something to log ({@see PageSignalRouter::dispatchTableViewport}):
      * refusing a client's own viewport frame in silence left no trace anywhere on the
      * server, which is why this door's share of the identity race was found by accident
      * twice and never by its own log line. The update door settled the same question the
@@ -420,9 +428,7 @@ abstract class BrowserContext
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
      * @return bool Whether the window was delivered to the connection
-     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
-     * @throws HilosException When the table's own sources refuse the reads its rows need
-     * @throws InvalidArgumentException When the table-window signal cannot be named
+     * @throws InvalidArgumentException When the table-window or refusal signal cannot be named
      */
     public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
     {
@@ -432,6 +438,13 @@ abstract class BrowserContext
 
         $table = Hilos::$table?->get($viewport->tableKey);
         if (!$table instanceof ViewportTable) {
+            $this->sendTableWindowRefusal(
+                $page,
+                $acceptKey,
+                $viewport->tableKey,
+                TableWindowRefusalCode::NOT_SERVED,
+            );
+
             return false;
         }
 
@@ -481,6 +494,13 @@ abstract class BrowserContext
 
         $window = $this->buildTableWindow($table, $viewport, $page);
         if ($window === null) {
+            $this->sendTableWindowRefusal(
+                $page,
+                $acceptKey,
+                $viewport->tableKey,
+                TableWindowRefusalCode::INTERNAL_ERROR,
+            );
+
             return false;
         }
 
@@ -647,6 +667,41 @@ abstract class BrowserContext
     }
 
     /**
+     * Replies that one table's window will not arrive.
+     *
+     * The client asked for this window; a missing answer used to leave it in the state it
+     * reads as "the rows are still coming". The refusal is the answer, addressed to the
+     * same connection that asked, and carries a code rather than a sentence: the server's
+     * own error text does not go on the wire.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection that asked for the window
+     * @param string $tableKey Table whose window is refused
+     * @param string $errorCode Machine-readable reason ({@see TableWindowRefusalCode})
+     * @throws InvalidArgumentException When the refusal signal cannot be named
+     */
+    private function sendTableWindowRefusal(
+        string $page,
+        string $acceptKey,
+        string $tableKey,
+        string $errorCode,
+    ): void {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalTypeConstants::TABLE_WINDOW_REFUSED),
+            signalData: new WebSocketSignalData(
+                data: new TableWindowRefusedSignalData(
+                    page: $page,
+                    tableKey: $tableKey,
+                    errorCode: $errorCode,
+                ),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
+    }
+
+    /**
      * Runs one window and records what it delivered to the connection that asked for it.
      *
      * Both frames that carry a window end here — the page subscription's `windows` section and
@@ -656,25 +711,50 @@ abstract class BrowserContext
      * this would drift apart at the first change to the row shape.
      *
      * A table that cannot build its window answers null rather than throwing: a window that
-     * does not arrive is a normal outcome on both roads — the page still ships without that
-     * section, and the viewport reply is refused — and the line in the log is the only place
-     * the refusal is said at all.
+     * does not arrive is a normal outcome on both roads — the page ships the table in
+     * `refusedWindows`, and the viewport reply is a table_window_refused frame — and the
+     * line in the log is where the failure is said at all.
      *
      * @param ViewportTable $table Table the window is taken from
      * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
      * @param string $page Page the table belongs to, named in the failure line
      * @return ?BrowserTableWindow The built window, or null when the table could not build it
-     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
-     * @throws HilosException When the table's own sources refuse the reads its rows need
      */
     private function buildTableWindow(
         ViewportTable $table,
         TableViewportSubscription $viewport,
         string $page,
     ): ?BrowserTableWindow {
-        $query = $this->viewportQuery($viewport);
         try {
+            $query = $this->viewportQuery($viewport);
             $snapshot = $table->getPage($query);
+
+            $rows = [];
+            $wireRows = [];
+            $rowAnchors = [];
+            foreach ($snapshot->rows as $row) {
+                if (!$row instanceof AbstractTableRow) {
+                    continue;
+                }
+                $browserRow = $table->browserRow($row);
+                $wireRow = $this->browserRowToWire($browserRow);
+                $rowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
+                $rows[] = $wireRow;
+                $wireRows[$rowKey] = $wireRow;
+                $rowAnchors[$rowKey] = $table->anchorForRow($row, $query);
+            }
+
+            $viewport->recordWindow(
+                $wireRows,
+                $snapshot->totalCount,
+                $snapshot->totalExact,
+                $snapshot->firstAnchor,
+                $snapshot->lastAnchor,
+                $rowAnchors,
+                $snapshot->frame,
+            );
+
+            return new BrowserTableWindow($rows, $snapshot);
         } catch (Throwable $e) {
             // The window simply does not arrive, and without this line nothing
             // anywhere says so: a row that refuses its own payload would trade
@@ -686,33 +766,6 @@ abstract class BrowserContext
 
             return null;
         }
-
-        $rows = [];
-        $wireRows = [];
-        $rowAnchors = [];
-        foreach ($snapshot->rows as $row) {
-            if (!$row instanceof AbstractTableRow) {
-                continue;
-            }
-            $browserRow = $table->browserRow($row);
-            $wireRow = $this->browserRowToWire($browserRow);
-            $rowKey = (string) $browserRow[BrowserPageSignalData::rowKey];
-            $rows[] = $wireRow;
-            $wireRows[$rowKey] = $wireRow;
-            $rowAnchors[$rowKey] = $table->anchorForRow($row, $query);
-        }
-
-        $viewport->recordWindow(
-            $wireRows,
-            $snapshot->totalCount,
-            $snapshot->totalExact,
-            $snapshot->firstAnchor,
-            $snapshot->lastAnchor,
-            $rowAnchors,
-            $snapshot->frame,
-        );
-
-        return new BrowserTableWindow($rows, $snapshot);
     }
 
     /**
@@ -731,8 +784,8 @@ abstract class BrowserContext
      * reader to the first page would be a window nobody asked for. The third is the cold entry.
      *
      * Nothing is thrown out of here: the page answers with the sections it could build, and a
-     * table that could not build its window is left out of the `windows` section entirely,
-     * which is the state the tab reads as "the window has not arrived yet" (HIL-781, HIL-943).
+     * table that could not build its window goes into `refusedWindows` rather than `windows`,
+     * which is the state the tab reads as "this list is unavailable" (HIL-781, HIL-943).
      *
      * The work this table has running rides out with the window, under the section's `progress`
      * key, so a tab opening in the middle of a run sees the bars at once instead of at the next
@@ -763,20 +816,7 @@ abstract class BrowserContext
             Hilos::$sr?->setTableFacets($acceptKey, $tableKey, $reported->facets);
         }
 
-        try {
-            $window = $this->buildTableWindow($table, $viewport, $page);
-        } catch (Throwable $e) {
-            // Contained rather than propagated: this runs inside the page's own answer, and a
-            // row that refuses its payload would otherwise cost the subscriber the whole page
-            // instead of one table on it.
-            Logger::error(
-                "Browser window skipped a table whose rows refused their payload: table={$tableKey}, "
-                . "page={$page}, error={$e->getMessage()}",
-            );
-
-            return null;
-        }
-
+        $window = $this->buildTableWindow($table, $viewport, $page);
         if ($window === null) {
             return null;
         }
@@ -4641,9 +4681,10 @@ abstract class BrowserContext
      *
      * @param array<string, array<string, mixed>> $browserByKey Per-table rows and deletes keyed by table key
      * @param array<string, array<string, mixed>> $windows First window per viewport-table key, already in wire shape
+     * @param array<string, array<string, mixed>> $refusedWindows Refusal of each viewport table whose first window could not be built
      * @return PagePayload Page payload split by section
      */
-    private function pagePayloadFromBrowser(array $browserByKey, array $windows = []): PagePayload
+    private function pagePayloadFromBrowser(array $browserByKey, array $windows = [], array $refusedWindows = []): PagePayload
     {
         $lists = [];
         $tables = [];
@@ -4697,7 +4738,13 @@ abstract class BrowserContext
             }
         }
 
-        return new PagePayload(data: $data, lists: $lists, tables: $tables, windows: $windows);
+        return new PagePayload(
+            data: $data,
+            lists: $lists,
+            tables: $tables,
+            windows: $windows,
+            refusedWindows: $refusedWindows,
+        );
     }
 
     /**

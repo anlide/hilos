@@ -1,7 +1,8 @@
-<!-- HilosTableEmptyState — the three states the body of a table says in words:
+<!-- HilosTableEmptyState — the four states the body of a table says in words:
 the set is empty and nothing filters it ("data is not here yet"), it is empty
-under a search or a filter ("Nothing found"), or the WINDOW is empty over a set
-that is not ("Nothing on this page"). Which of the three holds is decided by the
+under a search or a filter ("Nothing found"), the WINDOW is empty over a set
+that is not ("Nothing on this page"), or the server refused this table's window
+("List unavailable"). Which of the four holds is decided by the
 core (tableFrame.ts, HilosTableBody); this view only draws it, and the table
 draws it in both of its branches, wide and narrow. The first state speaks the
 page's own words — the title and hint of its declared empty state, and its main
@@ -10,7 +11,9 @@ names what was searched for, because resetting is only an offer when the reader
 can see what will be reset (mockups/components/table section 10). The third is
 the framework's too, and offers neither of those: the set has rows, so creating
 one answers nothing and there may be no filter to reset — what the reader needs
-is the way back to the rows. Internal to the Vue view layer on purpose: it is
+is the way back to the rows. The fourth is the framework's as well and offers
+nothing: the rows could not be fetched, and the way out is the next window, not
+a button. Internal to the Vue view layer on purpose: it is
 not exported from index.ts, for the reason the bar is not. -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
@@ -21,8 +24,8 @@ import { useSignal } from './useSignal.js'
 const props = defineProps<{
   /** The headless server-windowed controller the state reads and resets. */
   controller: TableViewportController<R>
-  /** Which of the three worded states of the body to draw. */
-  kind: 'empty' | 'empty_filtered' | 'empty_page'
+  /** Which of the four worded states of the body to draw. */
+  kind: 'empty' | 'empty_filtered' | 'empty_page' | 'unavailable'
 }>()
 
 // What the page declared about the frame, or null when it declared nothing. It
@@ -148,6 +151,30 @@ function pressMainAction(): void {
     >
       Back to the rows
     </button>
+  </div>
+
+  <div
+    v-else-if="kind === 'unavailable'"
+    class="text-center py-4"
+    role="status"
+    data-id="hilos-table-unavailable"
+  >
+    <span class="position-relative d-inline-block mb-2" aria-hidden="true">
+      <i class="bi bi-gear fs-1 text-warning"></i>
+      <i
+        class="bi bi-exclamation-circle-fill text-danger position-absolute hilos-table-unavailable-mark"
+      ></i>
+    </span>
+    <div class="fw-semibold small mb-1" data-id="hilos-table-unavailable-title">
+      List unavailable
+    </div>
+    <p
+      class="small text-body-secondary mb-0"
+      data-id="hilos-table-unavailable-hint"
+    >
+      The rows of this list could not be fetched. The rest of the page still
+      works.
+    </p>
   </div>
 
   <div

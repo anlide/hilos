@@ -105,6 +105,16 @@ describe('HilosTableFooter', () => {
     expect(byId('hilos-table-prev')).toBeNull()
   })
 
+  it('draws nothing at all when the window was refused', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(20), 128, true, null, null, 20)
+    controller.ingestRefusal('internal_error')
+    renderFooter(controller)
+
+    expect(byId('hilos-table-count')).toBeNull()
+    expect(byId('hilos-table-prev')).toBeNull()
+  })
+
   it('disables the step back on the first page and the step on at the last', () => {
     const { controller } = makeController()
     controller.ingestWindow(window(20), 21, true, null, null, 20)

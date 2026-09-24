@@ -624,6 +624,27 @@ describe('signal routing', () => {
     expect(connection.state).toBe('connected')
   })
 
+  it('emits tableWindowRefused for a table_window_refused frame', () => {
+    const { connection } = createConnection()
+    const received: { page: string; tableKey: string; errorCode: string }[] = []
+    connection.on('tableWindowRefused', (signal) => received.push(signal.data))
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      '{"type":"table_window_refused","data":{"page":"hilos_settings","tableKey":"settings","errorCode":"internal_error"}}',
+    )
+
+    expect(received).toEqual([
+      {
+        page: 'hilos_settings',
+        tableKey: 'settings',
+        errorCode: 'internal_error',
+      },
+    ])
+    expect(connection.state).toBe('connected')
+  })
+
   it('emits unknownSignal for unknown types and stays connected', () => {
     const { connection } = createConnection()
     const unknown: string[] = []
@@ -705,6 +726,27 @@ describe('page frame buffer', () => {
     // the replay the window is delivered to nobody and the table never draws a row.
     expect(received).toHaveLength(1)
     expect(received[0]?.type).toBe('page_response')
+  })
+
+  it('replays a page_response that only refused table windows', () => {
+    const connection = connected()
+    MockWebSocket.last.message(
+      '{"type":"page_response","data":{"page":"hilos_settings","payload":{"refusedWindows":{"settings":{"errorCode":"internal_error"}}}}}',
+    )
+
+    const received: { type: string; data: unknown }[] = []
+    connection.on('projectSignal', (signal) =>
+      received.push({ type: signal.type, data: signal.data }),
+    )
+
+    expect(received).toHaveLength(1)
+    expect(received[0]?.type).toBe('page_response')
+    expect(received[0]?.data).toEqual({
+      page: 'hilos_settings',
+      payload: {
+        refusedWindows: { settings: { errorCode: 'internal_error' } },
+      },
+    })
   })
 
   it('buffers no page_response that carries no window', () => {

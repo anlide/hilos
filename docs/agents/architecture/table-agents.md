@@ -244,15 +244,15 @@ writes in its *Refusals*, at the same boundary, and it is the finding the whole
 epic was raised on: HIL-781 was six rows in the database, an empty list on the
 screen, neither an error nor a log line — and nobody to ask, because the browser
 context that assembled the list is no one's agent. Today a window that cannot
-be built logs a line and answers no
-(`BrowserContext::tellPageDeliveryFailed()`), so the tab shows a skeleton that
-never ends; and the page-level `subscription_page_error` is the wrong address
-for it — a page may carry two tables, and one of them failing is not the page
-failing.
+be built logs a line and answers `table_window_refused` (or lands in
+`refusedWindows` of the page answer), so the tab draws "List unavailable" in
+that table's body and leaves the rest of the page standing; the page-level
+`subscription_page_error` is the wrong address for it — a page may carry two
+tables, and one of them failing is not the page failing.
 
 The refusal frame a table answers with, addressed by `(page, table)`, is
-HIL-943's contract, and its first source is the window that could not be built
-(not in the code yet — HIL-943). The table agent becomes the second source of
+HIL-943's contract, and its first source is the window that could not be built.
+The table agent becomes the second source of
 the same frame: a holder that is missing answers exactly as a window that could
 not be built does, and the epic raises no refusal leaf of its own.
 

@@ -96,6 +96,16 @@ describe('HilosTableFooter', () => {
     expect(wrapper.find('[data-id="hilos-table-prev"]').exists()).toBe(false)
   })
 
+  it('draws nothing at all when the window was refused', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(window(20), 128, true, null, null, 20)
+    controller.ingestRefusal('internal_error')
+    const wrapper = mountFooter(controller)
+
+    expect(wrapper.find('[data-id="hilos-table-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-prev"]').exists()).toBe(false)
+  })
+
   it('disables the step back on the first page and the step on at the last', async () => {
     const { controller } = makeController()
     controller.ingestWindow(window(20), 21, true, null, null, 20)

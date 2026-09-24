@@ -550,6 +550,14 @@ describe('TableViewportController frame body', () => {
     expect(controller.frame.body.get()).toBe('empty_page')
   })
 
+  it('calls a refused window unavailable', () => {
+    const { controller } = makeController(backupsFrame)
+    controller.ingestRefusal('internal_error')
+
+    expect(controller.frame.body.get()).toBe('unavailable')
+    expect(controller.frame.refusal.get()).toBe('internal_error')
+  })
+
   it('still calls an empty filtered set filtered when no window of it could hold rows', () => {
     const { controller, open } = makeController(backupsFrame)
     controller.setFilter('kind', 'full')

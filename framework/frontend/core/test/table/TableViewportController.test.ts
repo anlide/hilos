@@ -1488,6 +1488,71 @@ describe('TableViewportController', () => {
     expect(controller.frame.body.get()).toBe('empty_filtered')
   })
 
+  it('stands unavailable on a refusal, with the code on the frame and an empty footer range', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+
+    controller.ingestRefusal('internal_error')
+
+    expect(controller.frame.body.get()).toBe('unavailable')
+    expect(controller.frame.refusal.get()).toBe('internal_error')
+    expect(controller.frame.footer.get().firstRow).toBe(0)
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.loaded.get()).toBe(true)
+  })
+
+  it('takes a window after a refusal as the way out', () => {
+    const { controller, open } = makeController()
+    controller.ingestRefusal('internal_error')
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+
+    expect(controller.frame.body.get()).toBe('rows')
+    expect(controller.frame.refusal.get()).toBeNull()
+    expect(controller.rows.get()[0]?.rowKey).toBe('a')
+  })
+
+  it('drops window frames while refused and still takes a progress bar', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestRefusal('table_not_served')
+
+    controller.ingestCount(9, true)
+    controller.ingestAnnounce('b', 'above', 9, true)
+    controller.ingestUnannounce('b')
+    controller.ingestAppend({ rowKey: 'c', slots: {} }, 2, true)
+    controller.ingestOwnCreate({ rowKey: 'd', slots: {} }, 0, 2, true)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 3,
+      total: 11,
+    })
+
+    expect(controller.frame.body.get()).toBe('unavailable')
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.totalCount.get()).toBe(0)
+    expect(controller.progress.table.get()?.progressKey).toBe('nightly')
+  })
+
+  it('says loading after the skeleton threshold when the window changes under a refusal', () => {
+    vi.useFakeTimers()
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestRefusal('internal_error')
+
+    controller.setSort('name')
+    vi.advanceTimersByTime(399)
+    expect(controller.frame.body.get()).toBe('unavailable')
+
+    vi.advanceTimersByTime(1)
+    expect(controller.frame.body.get()).toBe('loading')
+  })
+
   it('gives the window size the last window was served at', () => {
     const { controller, open } = makeController(25)
     expect(controller.pageSize.get()).toBe(1)

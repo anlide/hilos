@@ -151,6 +151,26 @@ describe('HilosTableEmptyState', () => {
     expect(sent.at(-1)?.pageIndex).toBe(1)
   })
 
+  it('says the list is unavailable when the server refused the window', () => {
+    const { controller } = makeController()
+    controller.ingestRefusal('internal_error')
+    const wrapper = mount(HilosTableEmptyState, {
+      props: { controller, kind: 'unavailable' },
+    })
+
+    const state = wrapper.find('[data-id="hilos-table-unavailable"]')
+    expect(state.attributes('role')).toBe('status')
+    expect(
+      wrapper.find('[data-id="hilos-table-unavailable-title"]').text(),
+    ).toBe('List unavailable')
+    expect(
+      wrapper.find('[data-id="hilos-table-unavailable-hint"]').text(),
+    ).toBe(
+      'The rows of this list could not be fetched. The rest of the page still works.',
+    )
+    expect(state.find('button').exists()).toBe(false)
+  })
+
   it('resets the search and the filters back to the ones the table opened with', async () => {
     const { controller, sent } = makeController(FILTERED_FRAME)
     controller.setSearch('night')

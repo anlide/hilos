@@ -90,6 +90,7 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
                 lists: self::optionalArray($payload, PagePayload::lists) ?? [],
                 tables: self::optionalArray($payload, PagePayload::tables) ?? [],
                 windows: self::optionalArray($payload, PagePayload::windows) ?? [],
+                refusedWindows: self::optionalArray($payload, PagePayload::refusedWindows) ?? [],
             ),
         );
     }

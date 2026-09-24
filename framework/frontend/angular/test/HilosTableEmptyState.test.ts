@@ -1,5 +1,5 @@
 // The Angular port of vue/src/HilosTableEmptyState.test.ts, under the same case
-// names the Vue reference and the React port run, for the three worded states of
+// names the Vue reference and the React port run, for the four worded states of
 // the body of a table. Every case mounts a host that binds the inputs and hands
 // the page's own words over as a template, the way the table does.
 import { Component } from '@angular/core'
@@ -25,7 +25,7 @@ import { HilosTableEmptyState } from '../src/HilosTableEmptyState.js'
 })
 class EmptyStateHost {
   controller!: TableViewportController<unknown>
-  kind: 'empty' | 'empty_filtered' | 'empty_page' = 'empty'
+  kind: 'empty' | 'empty_filtered' | 'empty_page' | 'unavailable' = 'empty'
 }
 
 function makeController(frame?: HilosTableFrame): {
@@ -46,7 +46,7 @@ function makeController(frame?: HilosTableFrame): {
 
 function mountState(
   controller: TableViewportController<unknown>,
-  kind: 'empty' | 'empty_filtered' | 'empty_page',
+  kind: 'empty' | 'empty_filtered' | 'empty_page' | 'unavailable',
 ): ComponentFixture<EmptyStateHost> {
   const fixture = TestBed.createComponent(EmptyStateHost)
   fixture.componentInstance.controller = controller
@@ -182,6 +182,24 @@ describe('HilosTableEmptyState', () => {
 
     // The same thing Back in the footer does, and it asks for a place rather than a filter.
     expect(sent.at(-1)?.pageIndex).toBe(1)
+  })
+
+  it('says the list is unavailable when the server refused the window', () => {
+    const { controller } = makeController()
+    controller.ingestRefusal('internal_error')
+    const fixture = mountState(controller, 'unavailable')
+
+    const state = byId(fixture, 'hilos-table-unavailable')
+    expect(state?.getAttribute('role')).toBe('status')
+    expect(
+      byId(fixture, 'hilos-table-unavailable-title')?.textContent?.trim(),
+    ).toBe('List unavailable')
+    expect(
+      byId(fixture, 'hilos-table-unavailable-hint')?.textContent?.trim(),
+    ).toBe(
+      'The rows of this list could not be fetched. The rest of the page still works.',
+    )
+    expect(state?.querySelector('button')).toBeNull()
   })
 
   it('resets the search and the filters back to the ones the table opened with', () => {

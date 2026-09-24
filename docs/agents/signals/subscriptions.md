@@ -198,6 +198,12 @@ it: the subscription that opens the page also opens each of its windows, and
 the tab's controller reads its own out of that frame (see
 [table-subscription.md](../frontend/table-subscription.md)).
 
+A viewport table whose first window could not be built is a sixth section,
+`refusedWindows` — one entry per such table, keyed by table key, carrying the
+error code a `table_window_refused` reply carries. A table stands in `windows`
+or in `refusedWindows`, never both. The section is omitted when empty, as every
+payload section is.
+
 The window a tab is already holding travels the other way in the same pair of
 frames: `page_subscribe` carries an optional `tableWindows` map, one descriptor
 per table key, and the server serves back the window each descriptor names.

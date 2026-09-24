@@ -52,6 +52,7 @@ import {
   type TableViewportCountSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
+  type TableWindowRefusedSignal,
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
 import {
@@ -233,6 +234,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   projectSignal: ProjectSignal
   /** A table window snapshot reply (`table_window`): the rows in the requested window. */
   tableWindow: TableWindowSignal
+  /** A table window refusal (`table_window_refused`): the server could not build this table's window. */
+  tableWindowRefused: TableWindowRefusedSignal
   /** A live table pending change (`table_viewport_delta`): scoped to the connection's window. */
   tableViewportDelta: TableViewportDeltaSignal
   /** A live table count update (`table_viewport_count`): the new total/page count for the window. */
@@ -308,34 +311,48 @@ const FIRST_FRAME_HOLD_TIMEOUT_MS = 1500
  * and the condition is what keeps the rule above true of it. That name carries two
  * different frames: the answer to a subscription, which is whole state, and a live
  * flush, which is a delta of changed rows and removed keys. Only the first of them
- * builds the windows of the page's tables, so a `windows` section is exactly the mark
- * of the whole-state one — and buffering by that mark keeps a delta out of the buffer
- * while keeping the answer in it.
+ * builds the windows of the page's tables — or refuses them — so a `windows` or
+ * `refusedWindows` section is exactly the mark of the whole-state one, and buffering
+ * by that mark keeps a delta out of the buffer while keeping the answer in it.
  *
  * It has to be buffered at all since HIL-642, because the first window of every table
  * rides in that answer and a table's binder registers when its view mounts — which is
- * after the answer that carries its rows has already arrived.
+ * after the answer that carries its rows (or the refusal of them) has already arrived.
  */
 const PAGE_FRAME_PREFIX = 'subscription_page_'
 
 /**
- * Whether a `page_response` is the answer that opened this page's table windows.
+ * Whether a `page_response` is the answer that opened this page's table windows
+ * or refused them.
  *
  * The one frame of that name a late listener has to be given, and the one that is whole
  * state rather than a delta. The two are the same frame for a reason and not by luck: the
- * windows are built where the page's whole answer is assembled, and a live flush has none
- * to carry.
+ * windows (and the refusals) are built where the page's whole answer is assembled, and a
+ * live flush has none to carry. A table's view mounts after that answer, so the answer
+ * that opened windows or refused them has to be held for it.
  *
  * @param data The frame's payload as the parse boundary left it.
- * @return Whether the frame carries a windows section.
+ * @return Whether the frame carries a windows or refusedWindows section.
  */
 function opensTableWindows(data: unknown): boolean {
-  const payload = (data as { payload?: { windows?: unknown } } | null)?.payload
+  const payload = (
+    data as {
+      payload?: { windows?: unknown; refusedWindows?: unknown }
+    } | null
+  )?.payload
 
   return (
-    typeof payload?.windows === 'object' &&
-    payload.windows !== null &&
-    Object.keys(payload.windows).length > 0
+    hasNamedSection(payload?.windows) ||
+    hasNamedSection(payload?.refusedWindows)
+  )
+}
+
+/** True when a page-answer section is a non-empty object of table keys. */
+function hasNamedSection(section: unknown): boolean {
+  return (
+    typeof section === 'object' &&
+    section !== null &&
+    Object.keys(section).length > 0
   )
 }
 
@@ -984,6 +1001,9 @@ export class HilosConnection {
         break
       case 'tableWindow':
         this.emitter.emit('tableWindow', signal)
+        break
+      case 'tableWindowRefused':
+        this.emitter.emit('tableWindowRefused', signal)
         break
       case 'tableViewportDelta':
         this.emitter.emit('tableViewportDelta', signal)
