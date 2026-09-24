@@ -34,10 +34,11 @@ off at startup rather than mid-restore.
 
 The verifier circle belongs to the mode, not to `HilosFeature::BACKUP`, and its
 table is the second unconditional thing after the freeze row: the verification
-window admits people by it, so every installation that can freeze carries it
-(not in the code yet — HIL-1118). Today `BackupFeature` lists it in
-`requiredDbTables` and `VerifierCircleSnapshot::capture()` returns early without
-`BACKUP`, so there the circle is empty for want of a place to ask.
+window admits people by it, so every installation that can freeze carries it. A
+project that builds an RT context is refused by its own topology unit test
+without the `hilos_verifier_circle` migration — the second invariant of
+`Hilos::validateDeferredFeatureRequirements()` that belongs to no feature
+([../app-topology.md](../app-topology.md)).
 
 ## The Agent Owns The Entry; CLI Is Only The Trigger
 
@@ -450,32 +451,37 @@ session later would mean reading a session table the restore has replaced.
 The read and the write sit on opposite sides of a process boundary and neither
 may cross it. The circle is three database queries, which the master is forbidden
 (`antipatterns/heavy-work-in-master.md`), while the freeze row is the master's to
-write. So the initiator agent photographs it in its worker and sends the result
-on the `PROTECTED_MODE_CIRCLE` frame — the twin of `PROTECTED_MODE_PASS`, whole
-rather than one entry at a time, because there is exactly one moment when the
-list is knowable. Only hashes and a count travel; no address of anybody named
-reaches the master. In a cluster the photograph stays on the row of the node that
+write. So the worker that hosts the initiator photographs it on the ready relay
+and sends the result under the initiator's name on the `PROTECTED_MODE_CIRCLE`
+frame — the twin of `PROTECTED_MODE_PASS`, whole rather than one entry at a
+time, because there is exactly one moment when the list is knowable. No agent
+sends the circle itself. Only hashes and a count travel; no address of anybody
+named reaches the master. In a cluster the photograph stays on the row of the node that
 froze and is fanned nowhere, exactly as the initiator's own session hash is: a
 browser is attached to the node it connected to, and a member who reached another
 node meets the stub there.
 
-Whatever the operation, the initiator of the freeze takes the photograph, on the
-freeze's own ready path; a restore is today's only destructive operation, not a
-condition (not in the code yet — HIL-1118). Today two carriers each take it:
-`BackupAgent::captureVerifierCircle()` and `captureVerifierCircleForTest()` of
-`ProtectedModeTestDriverTrait`, the latter under a freeze that restores nothing.
-Both read it by one rule — a process-wide read of the framework, *Readers Past
-The Agent* in [truth-source.md](truth-source.md) — and no initiator declares
-it (not in the code yet — HIL-1118): declared by one agent instead, the read
-is refused in every other worker, the initiator's included (HIL-1096). A
-photograph that could not be taken is a line in the initiator's error log and
-nothing to the operator — past the seam the refusal cannot happen, and a
-database failure there fails the operation itself, which is reported — so the
-row then carries `circleNamedCount = 0`.
+Whatever the operation, the photograph is taken for the initiator of the
+freeze, on the freeze's own ready path; a restore is today's only destructive
+operation, not a condition. `WorkerManager::handleProtectedModeReady()` takes it
+before it calls the initiator's `onProtectedModeReady()` — the relay is the one
+point every ready passes on its way to any initiator, while the hook is
+overridden without `parent::` — and queues the frame, so whatever the hook
+queues next, a test drive's answer to its enter among it, leaves after the
+circle. Until HIL-1118 two carriers each took it in their own hook, the backup
+agent and the test drive, each under a declaration of its own; declared by one
+agent, the read was refused in every other worker, the initiator's included
+(HIL-1096). Now it is read by one rule — a process-wide read of the framework,
+*Readers Past The Agent* in [truth-source.md](truth-source.md) — and no
+initiator declares it. A photograph that could not be taken is a line in the
+initiator's error log and nothing to the operator, a refused read named apart
+from any other failure — past the seam the refusal cannot happen, and a database
+failure there fails the operation itself, which is reported — so the row then
+carries `circleNamedCount = 0`.
 
 Without `HilosFeature::BACKUP` the circle loses nothing: the freeze alone admits
-its member (not in the code yet — HIL-1118), people are named in the same
-section (not in the code yet — HIL-1119), and empty means nobody was named.
+its member, people are named in the same section (not in the code yet —
+HIL-1119), and empty means nobody was named.
 
 **Both presented doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
 first phase with anything behind them.** Under `PHASE_ACTIVATING` and

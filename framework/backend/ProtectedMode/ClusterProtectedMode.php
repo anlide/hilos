@@ -342,7 +342,7 @@ final class ClusterProtectedMode implements
      * the pass - an initiator sitting on a follower stays on `activating` for the whole freeze by
      * design, and gating on `active` would drop the circle on exactly the topology that has one.
      *
-     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */

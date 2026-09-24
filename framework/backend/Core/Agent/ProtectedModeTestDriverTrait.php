@@ -12,7 +12,6 @@ use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
-use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\CommandClient;
@@ -150,12 +149,9 @@ trait ProtectedModeTestDriverTrait
      * is the leader-local marker that every node has quiesced. Ready means every node has
      * quiesced, on every topology, which is exactly what the caller asked.
      *
-     * The verifier circle is photographed here too (HIL-643), on the same relay a restore takes
-     * it on, and that is the whole reason a test can reach the circle at all: the drive freezes
-     * without replacing any database, so this is the only path on which the window opens over a
-     * circle nobody restored.
-     *
-     * @throws InvalidArgumentException When the circle frame to this node's master cannot be named
+     * The verifier circle is photographed before this hook, by the worker's ready relay
+     * (HIL-1118), so the drive sees the circle without a line of its own: it freezes without
+     * replacing any database, and the window opens over the same circle the relay read.
      */
     public function onProtectedModeReady(): void
     {
@@ -163,7 +159,6 @@ trait ProtectedModeTestDriverTrait
             return;
         }
 
-        $this->captureVerifierCircleForTest();
         $this->answerProtectedModeTest(StateProtectedModeRuntime::PHASE_ACTIVE);
     }
 
@@ -181,34 +176,6 @@ trait ProtectedModeTestDriverTrait
         $correlationId = $this->protectedModeTestCorrelationId;
         $this->clearProtectedModeTest();
         $this->refuseProtectedModeTest($correlationId, $reason);
-    }
-
-    /**
-     * Photographs the verifier circle under the test freeze, exactly as a restore does.
-     *
-     * Same read and same failure stance the restore takes: a circle that cannot be read leaves the
-     * window reachable by code alone, which is a worse test rather than a broken system, so the
-     * failure is written down and the drive continues. What differs is that nothing is restored
-     * afterwards - the photograph is taken against the very database it was read from, which is
-     * what makes the circle observable from an e2e at all.
-     *
-     * @throws InvalidArgumentException When the circle frame to this node's master cannot be named
-     */
-    private function captureVerifierCircleForTest(): void
-    {
-        try {
-            $snapshot = VerifierCircleSnapshot::capture();
-        } catch (Throwable $e) {
-            $this->logAgentError('Protected-mode test drive could not photograph the verifier circle: ' . $e->getMessage());
-
-            return;
-        }
-
-        if ($snapshot->namedCount === 0) {
-            return;
-        }
-
-        $this->requestProtectedModeCircle($snapshot);
     }
 
     /**

@@ -163,6 +163,9 @@ remembered:
   block source behind account blocks — a database collection that must also be
   among the project's process-wide reads. Each project calls it from its own
   topology unit test, passing the four layout facts the facade does not own.
+  Two invariants there belong to no feature: a non-empty `PAGES` must keep its
+  connections on the framework base (HIL-509), and a project that builds an RT
+  context — and so can freeze — must migrate `hilos_verifier_circle` (HIL-1118).
 
 Runtime state that belongs to a feature is mounted by the framework from the
 declaration; a project must not mount it in `configure()`. See

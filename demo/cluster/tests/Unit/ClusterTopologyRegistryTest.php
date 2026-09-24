@@ -208,7 +208,9 @@ final class ClusterTopologyRegistryTest extends TestCase
         // The deferred half of the same check. It stays here on a project that declares no
         // feature precisely because that is a state worth guarding: the demo carries a historical
         // hilos_settings migration, and the day someone declares SETTINGS over it, this test is
-        // what asks for the rest.
+        // what asks for the rest. Without a single feature it is still asked for the verifier
+        // circle table: the demo builds a runtime context, so it can freeze, and the circle
+        // belongs to the freeze (HIL-1118).
         Hilos::validateDeferredFeatureRequirements(
             __DIR__ . '/../../backend/Database/Migration/Schema',
             CliManager::class,

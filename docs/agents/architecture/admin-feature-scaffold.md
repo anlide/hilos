@@ -168,8 +168,10 @@ also registers those. Generate, in any order:
    ([../runtime/rt-context.md](../runtime/rt-context.md), *Feature-Owned Runtime
    State*). The verifier circle's table is no part of this activation: it
    belongs to the freeze ([protected-mode.md](protected-mode.md)), so every
-   installation carries it, backup or not (not in the code yet — HIL-1118), and
-   its surface is a section of its own (not in the code yet — HIL-1119).
+   installation that can freeze carries it, backup or not — a copy of the stub
+   `create_hilos_verifier_circle.sql` among the project's migrations, as with
+   settings, which the project's own topology unit test asks for — and its
+   surface is a section of its own (not in the code yet — HIL-1119).
 2. A backup catalog — `final class … implements
    Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
    `BACKUP_CATALOG` constant on the project `Hilos` facade (the framework default

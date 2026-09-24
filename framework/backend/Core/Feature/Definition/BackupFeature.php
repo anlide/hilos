@@ -9,7 +9,6 @@ use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
-use Hilos\Database\Entity\Item\VerifierCircleMember;
 use Hilos\Pages\Backup\AbstractHilosBackupPage;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
@@ -46,14 +45,8 @@ final class BackupFeature extends FeatureDefinition
      * {@see CliManager} registers backup:run and backup:restore-run itself, so there is nothing
      * left for a project to forget and nothing for the deferred check to ask it about.
      *
-     * The verifier circle table is named here rather than beside a feature of its own: the
-     * circle is collected on the backup page and read by the freeze a restore starts, so an
-     * installation that declares backup and skips the migration has a page with a block that
-     * cannot be filled. Naming it does not tie backup to any other feature - the circle is
-     * kept in identity pairs precisely so it needs none.
-     *
      * @return FeatureRequirements Backup page and its history table binding, the agent pair,
-     *     the catalog, and the verifier circle table
+     *     and the catalog
      */
     public function requirements(): FeatureRequirements
     {
@@ -63,7 +56,6 @@ final class BackupFeature extends FeatureDefinition
             requiredTables: [HilosBackupHistoryTable::class],
             requiredPageTables: [AbstractHilosBackupPage::class => HilosBackupHistoryTable::class],
             requiredCatalogConstant: 'BACKUP_CATALOG',
-            requiredDbTables: [VerifierCircleMember::_table],
         );
     }
 

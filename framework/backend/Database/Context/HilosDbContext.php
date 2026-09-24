@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Context;
 
 use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
@@ -154,10 +155,11 @@ abstract class HilosDbContext extends DbContext
      * where nobody looks a provider up, so a project without hilos_oauth_provider never
      * reads it.
      *
-     * The verifier circle is the one collection here that IS read whole, and it stays
-     * inert for a different reason: only an installation that declares the backup feature
-     * has anything that reads it, and that is also the only one the hilos_verifier_circle
-     * migration is copied into.
+     * The verifier circle is read whole, and it stays inert for a different reason: nothing
+     * reads it but the photograph a freeze takes, so a node that never freezes never loads it.
+     * Its table is in every installation that builds a runtime context - the one that can
+     * freeze - because the project's own unit test refuses such a project without the
+     * hilos_verifier_circle migration (HIL-1118).
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -250,7 +252,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * Names the framework collections read from any process at all.
      *
-     * Five, and each for its own seam. Sessions and identities answer "whose session is this",
+     * Six, and each for its own seam. Sessions and identities answer "whose session is this",
      * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
      * and before any page subscription, so nothing else declares them. Settings is read by seams
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
@@ -269,6 +271,12 @@ abstract class HilosDbContext extends DbContext
      * next build in each of them, so each has to hold the rows as they are now: they hold
      * them in memory and receive their changes by synchronization.
      *
+     * The verifier circle (HIL-1118) is read by the photograph a freeze takes, in the worker of
+     * whichever agent asked for the freeze - and any agent may ask. Declaring it per initiator is
+     * the silent trap of {@see AbstractAgent::READS_DB}, where a subclass list replaces the
+     * parent's; declared by one agent, the read was refused in every other worker, the
+     * initiator's own included (HIL-1096).
+     *
      * Named rather than counted: what is here is what the framework is known to read that way,
      * and a seam this list forgets shows up as a refused read rather than as a stale row.
      *
@@ -283,6 +291,7 @@ abstract class HilosDbContext extends DbContext
             self::sessions,
             self::notifications,
             self::oauthProviders,
+            self::verifierCircle,
         ];
     }
 }

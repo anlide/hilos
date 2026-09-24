@@ -92,7 +92,11 @@ the canonical minimal set (~24 files); mirror it file by file:
    migration 001 = a copy of
    `framework/backend/Database/Migration/Stub/create_hilos_setting.sql`
    (+`_down`). The settings table is mandatory because `HilosDbContext`
-   registers the collection unconditionally.
+   registers the collection unconditionally. A project that builds an RT
+   context owes a second one: a copy of `create_hilos_verifier_circle.sql`
+   (+`_down`) from the same directory — the context mounts the freeze row, a
+   node that can freeze admits its verification window by the circle, and the
+   topology unit test below refuses the project without it.
 8. **Topology registry unit test** (`tests/Unit/`): pins registry/class-constant
    consistency and asserts that the action/signal/table routes the project has not
    opted into yet stay empty. Transport-only is a starting state, not a permanent

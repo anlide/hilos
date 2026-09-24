@@ -70,8 +70,8 @@ final class VerifierCircleSnapshotIntegrationTest extends HilosSessionIntegratio
         $rt->configure();
         Hilos::$rt = $rt;
 
-        // The photograph is skipped outright by a project that does not declare backup, so every
-        // case that expects a query needs a facade that does.
+        // A facade that declares no feature at all: the circle belongs to the freeze, not to
+        // backup (HIL-1118), so every case below runs where nothing but the freeze could ask.
         VerifierCircleTestHilos::initBrowser();
     }
 
@@ -219,22 +219,23 @@ final class VerifierCircleSnapshotIntegrationTest extends HilosSessionIntegratio
     }
 
     /**
-     * @throws HilosException When the snapshot fails
+     * @throws HilosException When a step against the database fails
      */
-    public function testAProjectWithoutTheBackupFeatureIsAskedNothing(): void
+    public function testAProjectWithoutTheBackupFeatureIsPhotographedTheSameWay(): void
     {
-        // The circle table only exists where backup is declared, so the early return is what keeps
-        // the other demos free of a query for a table their migrations never created. Asserted by
-        // dropping the table first: a photograph that queried it would fail rather than come back
-        // empty, which is the only way to tell "asked and found nothing" from "never asked".
-        self::runCircleStub(down: true);
-        Hilos::initBrowser();
-        Hilos::resetBrowser();
+        // Until HIL-1118 a project without backup was asked nothing and its circle came back empty
+        // whoever it named. The freeze owns the circle now, so the same named member with a tab
+        // open is let in where no restore could ever start.
+        $this->assertFalse(Hilos::hasFeature(HilosFeature::BACKUP));
+        self::seedCircle(self::EMAIL_TYPE, self::MEMBER_EMAIL);
+        self::seedIdentity(self::MEMBER_USER_ID, self::EMAIL_TYPE, self::MEMBER_EMAIL);
+        self::seedSession(self::TOKEN, self::MEMBER_USER_ID, self::CREATED_AT, self::EXPIRES_AT);
+        $this->connect('accept-1', self::MEMBER_USER_ID, self::TOKEN);
 
         $snapshot = VerifierCircleSnapshot::capture();
 
-        $this->assertSame(0, $snapshot->namedCount);
-        $this->assertSame([], $snapshot->sessionTokenHashes);
+        $this->assertSame(1, $snapshot->namedCount);
+        $this->assertSame([ProtectedModeRuntime::hashSessionToken(self::TOKEN)], $snapshot->sessionTokenHashes);
     }
 
     /**
@@ -285,11 +286,11 @@ final class VerifierCircleSnapshotIntegrationTest extends HilosSessionIntegratio
 }
 
 /**
- * Project facade fixture declaring the feature the circle table belongs to.
+ * Project facade fixture declaring no feature at all: the circle belongs to the freeze.
  */
 final class VerifierCircleTestHilos extends Hilos
 {
-    protected const array FEATURES = [HilosFeature::BACKUP];
+    protected const array FEATURES = [];
 
     /**
      * Creates a no-op DB context for the abstract facade contract.

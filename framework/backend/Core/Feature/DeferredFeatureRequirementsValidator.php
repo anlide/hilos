@@ -9,6 +9,7 @@ use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Entity\Item\VerifierCircleMember;
 use Hilos\Database\View\Collection\HilosUserBlockSource;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -43,6 +44,12 @@ use Hilos\Runtime\View\Context\RtContext;
  * them on the framework connection base. It is not in the registry because it is not optional and
  * has nothing to declare - the non-empty PAGES is the declaration. A headless project (demo
  * cluster, PAGES = []) legitimately has no connections and is not asked for any.
+ *
+ * A second one belongs to no feature either (HIL-1118): a project that builds a runtime context
+ * carries the freeze row, and therefore can freeze, and therefore must migrate the verifier circle
+ * table - the verification window admits people by it, which makes it the second unconditional
+ * thing after the freeze row (docs/agents/architecture/protected-mode.md). The context class is
+ * the declaration here as PAGES is above; a project that builds none cannot freeze and is not asked.
  */
 final class DeferredFeatureRequirementsValidator
 {
@@ -65,8 +72,8 @@ final class DeferredFeatureRequirementsValidator
      * @param ?class-string<RtContext> $rtContextClass Runtime context the project builds, or null when it builds none
      * @param ?class-string<DbContext> $dbContextClass Database context the project builds, or null when it builds none
      * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command, a presence
-     *     source or a process-wide block source, or when a project that serves pages keeps its connections off the
-     *     framework base
+     *     source or a process-wide block source, when a project that serves pages keeps its connections off the
+     *     framework base, or when a project that can freeze migrates no verifier circle table
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      * @throws HilosException When building the database context fails to register the project's collections
@@ -128,6 +135,14 @@ final class DeferredFeatureRequirementsValidator
             $errors[] = 'PAGES is not empty but no runtime state collection of '
                 . ($rtContextClass ?? 'a project without a runtime context')
                 . ' extends ' . HilosConnections::class;
+        }
+
+        if ($rtContextClass !== null) {
+            $createdTables ??= $this->createdTables($migrationsPath);
+            if (!in_array(VerifierCircleMember::_table, $createdTables, true)) {
+                $errors[] = "{$rtContextClass} lets this project freeze, but no migration in {$migrationsPath}"
+                    . ' creates table ' . VerifierCircleMember::_table;
+            }
         }
 
         if ($errors !== []) {

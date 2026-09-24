@@ -49,6 +49,11 @@ use PHPUnit\Framework\TestCase;
  */
 final class DeferredFeatureRequirementsValidatorTest extends TestCase
 {
+    /** @var array<string, string> Migration of the verifier circle table every project with a runtime context owes */
+    private const array CIRCLE_MIGRATION = [
+        '000_create_hilos_verifier_circle.sql' => 'CREATE TABLE `hilos_verifier_circle` (`id` INT);',
+    ];
+
     /** @var list<string> Temporary migration directories created by the running test */
     private array $migrationPaths = [];
 
@@ -71,7 +76,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
     public function testProjectThatOwesNothingElsePasses(): void
     {
         DeferredRequirementsValidHilos::validateDeferredFeatureRequirements(
-            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
             DeferredRequirementsTestDbContext::class,
@@ -82,7 +87,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
 
     public function testUnmigratedTableOfADeclaredFeatureIsReported(): void
     {
-        $path = $this->migrationsPath(['001_create_other.sql' => 'CREATE TABLE `unrelated` (`id` INT);']);
+        $path = $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_other.sql' => 'CREATE TABLE `unrelated` (`id` INT);']);
 
         $this->expectException(IncompleteFeatureActivationException::class);
         $this->expectExceptionMessage(
@@ -102,6 +107,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         // A rollback that rebuilds a table on the way down still leaves the schema without it,
         // so the CREATE it contains must not read as an activation.
         $path = $this->migrationsPath([
+            ...self::CIRCLE_MIGRATION,
             '001_create_deferred_down.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);',
         ]);
 
@@ -121,6 +127,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         // Migrations open with a prose header, and a statement is sometimes parked in a comment
         // while it is reworked; neither creates a table, so neither may satisfy the check.
         $path = $this->migrationsPath([
+            ...self::CIRCLE_MIGRATION,
             '001_create_deferred.sql' => "-- CREATE TABLE `deferred_test_table` — planned, not written yet\n",
         ]);
 
@@ -144,7 +151,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         );
 
         DeferredRequirementsValidHilos::validateDeferredFeatureRequirements(
-            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             CliManager::class,
             DeferredRequirementsPresentContext::class,
             DeferredRequirementsTestDbContext::class,
@@ -160,7 +167,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         );
 
         DeferredRequirementsValidHilos::validateDeferredFeatureRequirements(
-            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsAbsentContext::class,
             DeferredRequirementsTestDbContext::class,
@@ -186,7 +193,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
     public function testProjectThatServesPagesOnTheConnectionBasePasses(): void
     {
         DeferredRequirementsPagedHilos::validateDeferredFeatureRequirements(
-            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsConnectedContext::class,
             DeferredRequirementsTestDbContext::class,
@@ -204,7 +211,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         );
 
         DeferredRequirementsPagedHilos::validateDeferredFeatureRequirements(
-            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
             DeferredRequirementsTestDbContext::class,
@@ -216,7 +223,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         // demo/cluster: PAGES = [], no WebSocket, no connections. The invariant reads the empty
         // PAGES as the project saying it serves no browsers, and asks it for nothing.
         DeferredRequirementsValidHilos::validateDeferredFeatureRequirements(
-            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
             DeferredRequirementsTestCliManager::class,
             DeferredRequirementsPresentContext::class,
             DeferredRequirementsTestDbContext::class,
@@ -227,13 +234,62 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
 
     public function testProjectWithoutFeaturesReadsNothingAtAll(): void
     {
-        // Nothing declared means nothing owed: no directory is scanned, no CLI manager is built
-        // and no runtime or database context is constructed - which is why the arguments below can be junk.
+        // Nothing declared and no runtime context means nothing owed: no directory is scanned, no
+        // CLI manager is built and no runtime or database context is constructed - which is why the
+        // arguments below can be junk.
         DeferredRequirementsEmptyHilos::validateDeferredFeatureRequirements(
             '/nonexistent/migrations',
             'NoSuchCliManagerClass',
-            'NoSuchRtContextClass',
+            null,
             'NoSuchDbContextClass',
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * No feature is declared, and the circle is owed all the same: a runtime context mounts the
+     * freeze row, and a node that can freeze admits its verification window by the circle.
+     */
+    public function testProjectThatCanFreezeWithoutTheCircleMigrationIsReported(): void
+    {
+        $path = $this->migrationsPath(['001_create_other.sql' => 'CREATE TABLE `unrelated` (`id` INT);']);
+
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            DeferredRequirementsPresentContext::class . " lets this project freeze, but no migration in {$path}"
+            . ' creates table hilos_verifier_circle',
+        );
+
+        DeferredRequirementsEmptyHilos::validateDeferredFeatureRequirements(
+            $path,
+            'NoSuchCliManagerClass',
+            DeferredRequirementsPresentContext::class,
+            'NoSuchDbContextClass',
+        );
+    }
+
+    public function testProjectThatCanFreezeWithTheCircleMigrationAndNoFeaturePasses(): void
+    {
+        DeferredRequirementsEmptyHilos::validateDeferredFeatureRequirements(
+            $this->migrationsPath(self::CIRCLE_MIGRATION),
+            'NoSuchCliManagerClass',
+            DeferredRequirementsPresentContext::class,
+            'NoSuchDbContextClass',
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testProjectWithoutARuntimeContextIsNotAskedForTheCircle(): void
+    {
+        // No runtime context, no freeze row: the node cannot freeze, so migrations that create
+        // other tables but not the circle are not held against it.
+        DeferredRequirementsBlockHilos::validateDeferredFeatureRequirements(
+            $this->migrationsPath(['001_create_other.sql' => 'CREATE TABLE `unrelated` (`id` INT);']),
+            'NoSuchCliManagerClass',
+            null,
+            DeferredRequirementsBlockReadDbContext::class,
         );
 
         $this->addToAssertionCount(1);

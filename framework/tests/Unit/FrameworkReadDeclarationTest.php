@@ -61,6 +61,7 @@ final class FrameworkReadDeclarationTest extends TestCase
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::identities));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::sessions));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::notifications));
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(HilosDbContext::verifierCircle));
 
         parent::tearDown();
     }
@@ -182,6 +183,12 @@ final class FrameworkReadDeclarationTest extends TestCase
         $this->assertTrue(SourceInterestRegistry::isDeclared(
             SourceChange::KIND_DB,
             HilosDbContext::settings,
+        ));
+        // The freeze photographs the circle in whichever worker hosts the agent that asked for
+        // it, and any agent may ask (HIL-1096, HIL-1118).
+        $this->assertTrue(SourceInterestRegistry::isDeclared(
+            SourceChange::KIND_DB,
+            HilosDbContext::verifierCircle,
         ));
     }
 

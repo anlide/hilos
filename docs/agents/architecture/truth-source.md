@@ -413,12 +413,13 @@ merged map made the fork unnecessary, and HIL-897 spent it: the base declares
 only what every sessions library owns — the session set, the rotations, the
 toast stacks and the identity rows a merge moves — and each project subclass
 with a sign-in surface declares the three collections behind that question in
-its own `OWNS_DB` and `OWNS_RT`. The same shape one section over, where the
-verifier circle left `AbstractHilosIndexAgent` for the demos that declare
-`HilosFeature::BACKUP`: a class constant has no feature flag to ask, so the
-project that knows the answer says it. That shows the shape, not who owns the
-circle: the tie to `BACKUP` is today's and leaves when the circle moves under
-the freeze (not in the code yet — HIL-1118).
+its own `OWNS_DB` and `OWNS_RT`. The verifier circle once took the same shape
+and has since left it: while its table came only with `HilosFeature::BACKUP`,
+the claim lived on the demos that declared the feature, because a class constant
+has no feature flag to ask. When the circle moved under the freeze (HIL-1118)
+its table became every freezing installation's, the question disappeared, and
+`AbstractHilosIndexAgent` declares the circle itself — the merged map carries it
+to every project subclass.
 
 ## Three Cases A Flat Constant Cannot Say
 
@@ -507,8 +508,8 @@ most of them. The process-wide list is where a layer says so:
 `DbContext::processWideReadCollections()` names them, and
 `DbContext::declareProcessWideReads()` registers an interest for each under a
 feature consumer. The framework's own entries are in `HilosDbContext` —
-settings, identities, sessions, notifications and the verifier circle
-(not in the code yet — HIL-1118) — and a project adds to the list by
+settings, identities, sessions, notifications, OAuth providers and the
+verifier circle — and a project adds to the list by
 overriding the method and calling the parent. The circle is here because the
 freeze photographs it in the initiator's worker and any agent that asks for a
 freeze is an initiator: the read runs in whichever process asked, and naming

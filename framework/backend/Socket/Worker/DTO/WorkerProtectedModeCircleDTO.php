@@ -13,8 +13,9 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerProtectedModeCircleDTO - worker -> daemon delivery of the verifier circle photograph.
  *
- * The initiator agent reads the circle against the live connections while the node is frozen and
- * the database is still the old one, and sends the result on; the daemon hands the payload to
+ * The worker that hosts the initiator reads the circle against the live connections on the ready
+ * relay (HIL-1118), while the node is frozen and the database is still the old one, and sends the
+ * result on under the initiator's name; the daemon hands the payload to
  * {@see ProtectedModeSwitch::requestCircle()}. The frame is a thin transport envelope; the
  * contract-gated field shape lives in the wrapped payload.
  */
@@ -27,7 +28,7 @@ class WorkerProtectedModeCircleDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_PROTECTED_MODE_CIRCLE;
 
     /**
-     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
      */
     public function __construct(
         public readonly ProtectedModeCircleSignalData $data,

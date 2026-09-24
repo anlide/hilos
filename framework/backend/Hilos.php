@@ -1149,8 +1149,8 @@ abstract class Hilos implements TruthSourceOwner
      * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
      * @param ?class-string<HilosDbContext> $dbContextClass Database context this project builds, or null when it builds none
      * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command, a presence
-     *     source or a process-wide block source, or when a project that serves pages keeps its connections off the
-     *     framework base
+     *     source or a process-wide block source, when a project that serves pages keeps its connections off the
+     *     framework base, or when a project that can freeze migrates no verifier circle table
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      * @throws HilosException When building the database context fails to register the project's collections

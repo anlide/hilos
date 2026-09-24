@@ -38,17 +38,25 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 
     /**
-     * The OAuth provider rows, which the provider page this agent serves writes (HIL-286).
+     * The OAuth provider rows, which the provider page this agent serves writes (HIL-286), and
+     * the verifier circle.
      *
      * The page's actions run in this agent, and the rows are what an administrator entered on
      * that page and nowhere else, so their writer is this agent and no library stands between:
      * there is no other process that brings a provider row into being or edits one. Every
      * other process reads them process-wide ({@see HilosDbContext::processWideReadCollections()}).
      *
+     * The circle is written by the actions of a page this agent serves too - the backup page
+     * today, the maintenance section tomorrow (HIL-1119) - and it is claimed here rather than
+     * by each project because its table is in every installation that can freeze (HIL-1118):
+     * a project that builds a runtime context is refused by its own unit test without the
+     * migration, so there is nothing left to ask it before the claim is legal.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
         HilosDbContext::oauthProviders => TruthSourceOperation::BY_KIND,
+        HilosDbContext::verifierCircle => TruthSourceOperation::BY_KIND,
     ];
 
     /**

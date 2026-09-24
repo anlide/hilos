@@ -28,10 +28,10 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  */
 final class ProtectedModeCircleSignalData extends BaseDTO implements SignalDataInterface
 {
-    /** Payload key: the agent type that photographed the circle. */
+    /** Payload key: the type of the initiator the circle was photographed for. */
     public const string initiatorAgentType = 'initiatorAgentType';
 
-    /** Payload key: the agent index that photographed the circle. */
+    /** Payload key: the index of the initiator the circle was photographed for. */
     public const string initiatorAgentIndex = 'initiatorAgentIndex';
 
     /** Payload key: how many people the circle named at the freeze. */
@@ -41,7 +41,7 @@ final class ProtectedModeCircleSignalData extends BaseDTO implements SignalDataI
     public const string sessionTokenHashes = 'sessionTokenHashes';
 
     /**
-     * @param string $initiatorAgentType Agent type that photographed the circle
+     * @param string $initiatorAgentType Type of the initiator the circle was photographed for
      * @param ?int $initiatorAgentIndex Agent index, or null for a singleton agent
      * @param int $namedCount How many people the circle named at the freeze
      * @param list<string> $sessionTokenHashes Session token hashes of the named people who were online

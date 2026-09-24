@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Auth\Session\SessionCarrier;
-use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -16,10 +15,12 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 /**
  * The verifier circle as it was the moment a node froze (HIL-643).
  *
- * Photographed by the same pass that photographs the hall ({@see SessionCarrier::capture()}),
- * under the freeze and before the database is replaced, because that is the only moment when
- * both halves of the question are still true: the circle table is about to be overwritten by
- * the archive's own, and the set of live connections has stopped growing.
+ * Photographed by the worker that hosts the initiator of the freeze, on the ready relay and
+ * before the initiator's own hook runs ({@see WorkerManager::handleProtectedModeReady()}), because
+ * that is the first moment the answer is final for any freeze - the set of live connections has
+ * stopped growing - and, for a restore, the last one it exists at all: the circle table is about
+ * to be overwritten by the archive's own. The hall ({@see SessionCarrier::capture()}) is
+ * photographed later, by a restore's hook, and that is a pass of its own.
  *
  * Two numbers come out of it and both are needed, which is why this is an object rather than a
  * bare list. The hashes are what the verification window lets in; the count of named members is
@@ -42,12 +43,10 @@ final readonly class VerifierCircleSnapshot
     /**
      * Photographs the circle against the hall, before the database is replaced.
      *
-     * An installation that does not declare backup has no circle table at all, so it is asked
-     * nothing: the early return is what keeps three of the four demos free of a query for a
-     * table their migrations never created ({@see AnonymizationStartupGuard} refuses the same
-     * way for the same reason). A project with no session-carrying connections yields an empty
-     * photograph for the reason {@see SessionCarrier::capture()} does - there are no browsers to
-     * recognize.
+     * Asked of every installation, backup or not: the circle belongs to the freeze, and every
+     * installation that can freeze migrates its table (HIL-1118). A project with no
+     * session-carrying connections yields an empty photograph for the reason
+     * {@see SessionCarrier::capture()} does - there are no browsers to recognize.
      *
      * The owner of a session is read the way the carry-over reads it: the impersonator when
      * there is one, because the right to look at somebody else's account was granted in a
@@ -64,10 +63,6 @@ final readonly class VerifierCircleSnapshot
      */
     public static function capture(): self
     {
-        if (!Hilos::hasFeature(HilosFeature::BACKUP)) {
-            return new self(0, []);
-        }
-
         $namedUserIds = [];
         $namedCount = 0;
         foreach (Hilos::$db->verifierCircle->listAll() as $member) {

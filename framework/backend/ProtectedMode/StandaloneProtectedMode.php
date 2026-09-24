@@ -202,7 +202,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     }
 
     /**
-     * Records the verifier circle this node's initiator photographed under the freeze (HIL-643).
+     * Records the verifier circle photographed for this node's initiator under the freeze (HIL-643).
      *
      * Authorized by the recorded initiator like every other request here, and for a sharper reason
      * than most: the payload is a list of session hashes that the verification window will let in
@@ -213,7 +213,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * having quiesced - and a circle written outside a settled freeze would sit on the row waiting
      * for a window whose entry clears it anyway.
      *
-     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */

@@ -112,7 +112,7 @@ interface ProtectedModeSwitch
      * and the only one at which the photograph is both taken and still true. It is written whole,
      * so a second photograph of the same hall replaces the first instead of doubling it.
      *
-     * @param ProtectedModeCircleSignalData $data Photographing agent identity and the circle it saw
+     * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source

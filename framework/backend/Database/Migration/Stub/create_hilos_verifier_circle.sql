@@ -1,7 +1,7 @@
 -- Migration: Create hilos_verifier_circle table (stub/reference)
 -- Copy this SQL to project migration (e.g. 0NN_create_hilos_verifier_circle.sql)
 --
--- The people an operator named as verifiers of the system after a restore (HIL-643).
+-- The people an operator named as verifiers of the system after a freeze (HIL-643).
 -- One row is one person, named by the same (type, identifier) pair `hilos_identity` is
 -- keyed by. A member signed in when the freeze starts is let into the verification
 -- window with the tab already open, without being handed a one-time code.

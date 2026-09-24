@@ -143,6 +143,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -151,6 +152,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
+use Hilos\WiringRefusal;
 use Hilos\Utils\WorkerTickFailureLog;
 use Throwable;
 
@@ -1010,7 +1012,15 @@ abstract class WorkerManager extends BaseManager
      * initiator's enter, so dropping it here is the difference between a caller being refused and
      * a caller being told nothing at all.
      *
+     * The same fact is why the verifier circle is photographed here and not in the hook it calls
+     * (HIL-1118): every ready reaches every initiator through this relay, on either topology,
+     * while the hook is overridden without `parent::` - the backup agent's and the test drive's
+     * both are - so a photograph taken in a base-class hook would be guaranteed by nothing. The
+     * photograph comes first, and a restore's hook starts the child that replaces the database
+     * only after it.
+     *
      * @param ProtectedModeReadyDTO $data Ready relay naming the initiator agent
+     * @throws InvalidArgumentException When the circle frame to this node's master cannot be named
      */
     private function handleProtectedModeReady(ProtectedModeReadyDTO $data): void
     {
@@ -1026,7 +1036,74 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
+        $this->photographVerifierCircle($agent);
         $agent->onProtectedModeReady();
+    }
+
+    /**
+     * Photographs the verifier circle for the initiator of a freeze and hands it to the master.
+     *
+     * Read here and written there: the circle is three database queries, which the master is
+     * forbidden, and the freeze row is the master's to write, so only hashes and a count travel -
+     * under the initiator's name, which is what the master checks the frame against. Nothing is
+     * sent for a circle that names nobody, and an empty intersection under a named circle is
+     * written down, because afterwards it reads exactly like "nobody was named".
+     *
+     * Queued rather than sent, for the order it keeps: whatever the hook queues next - the test
+     * drive's answer to its enter - leaves after the circle, so a caller told the node is frozen
+     * already reads the circle admitted.
+     *
+     * A photograph that cannot be taken stops nothing: the freeze stands and the operation behind
+     * it was asked for. It is a line in the initiator's own error log and nothing to the operator,
+     * so the row keeps a named count of zero; a refused read is named apart from any other
+     * failure, because the empty photograph it leaves looks like a circle nobody filled.
+     *
+     * @param AgentInterface $initiator Agent the ready is addressed to
+     * @throws InvalidArgumentException When the circle frame to this node's master cannot be named
+     */
+    private function photographVerifierCircle(AgentInterface $initiator): void
+    {
+        try {
+            $snapshot = VerifierCircleSnapshot::capture();
+        } catch (WiringRefusal $refusal) {
+            Logger::logAgentError(
+                $initiator->getId(),
+                'Protected mode cannot photograph the verifier circle here: ' . $refusal->getMessage(),
+            );
+
+            return;
+        } catch (Throwable $e) {
+            Logger::logAgentError(
+                $initiator->getId(),
+                'Protected mode could not photograph the verifier circle: ' . $e->getMessage(),
+            );
+
+            return;
+        }
+
+        if ($snapshot->namedCount === 0) {
+            return;
+        }
+
+        $index = $initiator->getIndex();
+        Hilos::$sr?->queueSignal(
+            signalSource: new SignalSource(source: SignalSource::AGENT, type: $initiator->getType(), index: $index),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_CIRCLE),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_CIRCLE),
+            signalData: new ProtectedModeCircleSignalData(
+                initiatorAgentType: $initiator->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+                namedCount: $snapshot->namedCount,
+                sessionTokenHashes: $snapshot->sessionTokenHashes,
+            ),
+        );
+
+        if ($snapshot->sessionTokenHashes === []) {
+            Logger::logAgentWarning(
+                $initiator->getId(),
+                "Verifier circle admitted 0 of {$snapshot->namedCount} named member(s)",
+            );
+        }
     }
 
     /**
