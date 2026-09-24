@@ -6,6 +6,8 @@ import type { Page } from '@playwright/test'
 // the step just performed can therefore cover the control the next step aims at,
 // and Playwright answers that by retrying the click until the card expires on
 // its own — twenty seconds later, because the countdown measures reading time.
+// While a modal is open the stack takes no clicks at all, so a notice can cover
+// only the page's own controls, and this helper is for those.
 //
 // Those twenty seconds prove nothing. The stack has its own specs, which assert
 // that a notice appears, that the cross closes it, and that a second tab sees

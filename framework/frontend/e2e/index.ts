@@ -17,7 +17,13 @@
 // of @playwright/test anywhere under e2e/, so `npm run lint` goes red before
 // any demo runner does.
 
-export { watchFirstRowTop, watchHeight, watchTop, Watched } from './geometry.js'
+export {
+  overlapSpot,
+  watchFirstRowTop,
+  watchHeight,
+  watchTop,
+  Watched,
+} from './geometry.js'
 export { dismissToasts } from './toasts.js'
 export {
   clearCustomSetting,

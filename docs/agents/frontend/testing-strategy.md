@@ -221,6 +221,13 @@ when taking the bookmark and when checking it. Measurements are single reads,
 with no polling for the layout to return: wait for the expected state in the
 spec before measuring or checking, as for any other assertion.
 
+One more question has a helper, and it is not a bookmark: where one element
+lies over another. `overlapSpot(over, under)` returns the middle of the area the
+two share, as a click `position` on `under`, and refuses when they share none —
+for a spec proving that a click passes through something drawn over its target.
+Aim the click there: two boxes that share a strip along an edge leave the
+target's middle, where a plain click goes, uncovered (HIL-1097).
+
 **Never call `boundingBox()` or `getBoundingClientRect()` in a demo spec or its
 helpers.** `E2E-BOX-MEASURE` (`framework/frontend/codestyle/boxMeasure.ts`)
 reports direct calls throughout `demo/*/tests/e2e`, with no file exceptions.

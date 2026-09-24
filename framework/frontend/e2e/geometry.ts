@@ -64,12 +64,58 @@ export async function watchHeight(element: Locator): Promise<Watched> {
   return take(what, () => measureBox(element, 'height', what))
 }
 
+/**
+ * Find the point of `under` that `over` lies on, as a click position on `under`.
+ *
+ * A spec proving that a click passes through something drawn on top of its
+ * target proves nothing when the click lands where nothing lies: two boxes can
+ * share a strip along one edge while the target's center, where a plain click
+ * goes, stays clear (HIL-1097 — a toast card over a dialog's footer covers the
+ * lower edge of its button and never the middle). So the spec clicks here, in
+ * the middle of the shared area, and a missing meeting refuses instead of
+ * turning into a click that proves nothing. One read each, no polling: wait in
+ * the spec for the state that puts both on screen.
+ *
+ * @param over The element drawn on top, such as a toast card.
+ * @param under The element it covers, such as a dialog's button.
+ * @returns The point, relative to the top left corner of `under`.
+ */
+export async function overlapSpot(
+  over: Locator,
+  under: Locator,
+): Promise<{ x: number; y: number }> {
+  const top = await readBox(over, `${over.toString()} box`)
+  const bottom = await readBox(under, `${under.toString()} box`)
+  const left = Math.max(top.x, bottom.x)
+  const right = Math.min(top.x + top.width, bottom.x + bottom.width)
+  const upper = Math.max(top.y, bottom.y)
+  const lower = Math.min(top.y + top.height, bottom.y + bottom.height)
+  if (left >= right || upper >= lower) {
+    throw new Error(
+      `${over.toString()} does not lie over ${under.toString()}: ${JSON.stringify(top)} and ${JSON.stringify(bottom)} share no area`,
+    )
+  }
+
+  return {
+    x: (left + right) / 2 - bottom.x,
+    y: (upper + lower) / 2 - bottom.y,
+  }
+}
+
 /** Read a box field, refusing an absent box on both the first and later reads. */
 async function measureBox(
   element: Locator,
   field: 'y' | 'height',
   what: string,
 ): Promise<number> {
+  return (await readBox(element, what))[field]
+}
+
+/** Read the element's whole box, refusing one that is not on screen. */
+async function readBox(
+  element: Locator,
+  what: string,
+): Promise<{ x: number; y: number; width: number; height: number }> {
   const box = await element.boundingBox()
   if (box === null) {
     throw new Error(
@@ -77,7 +123,7 @@ async function measureBox(
     )
   }
 
-  return box[field]
+  return box
 }
 
 /**

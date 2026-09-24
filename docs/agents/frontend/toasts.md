@@ -301,7 +301,12 @@ right — the bottom of a phone is occupied by the form's buttons, and the
 keyboard rises from there. A project may move the corner **once, at build
 time**, never per call: different corners in different sections of one product
 is a reliable way to make the notices stop being noticed. The stack sits above
-a modal and is not covered by its backdrop.
+a modal and is not covered by its backdrop. While a modal is open the stack
+takes no pointer: a card that lands on the dialog's footer — any window narrower
+than about 1230px puts the bottom-right corner there — would otherwise take the
+click meant for the dialog's button (HIL-1097). The cost is accepted: while a
+modal is open a card cannot be closed, followed or held by the pointer — it lives
+out its twenty seconds, and an error waits for the modal to close.
 
 ## Accessibility
 

@@ -129,6 +129,18 @@
   top: 0;
 }
 
+// WHY: the stack stands above a modal by rule (docs/agents/frontend/toasts.md),
+// and on a window narrower than about 1230px its bottom-right card lands on the
+// dialog's footer, where the main button is, and takes the click meant for it
+// (HIL-1097). Bootstrap has no utility that holds only while a modal is open,
+// and the stack's service line carries .pe-auto, which is !important itself.
+// WHAT: while a modal is open (body.modal-open, held by the core scroll lock
+// until the last one closes), every card and the service line stay drawn over
+// the dialog but let the pointer through to it.
+body.modal-open .toast-container > * {
+  pointer-events: none !important;
+}
+
 // WHY: Bootstrap's white-space utilities stop at .text-wrap (normal) and
 // .text-nowrap (nowrap) — there is none for pre-wrap, and a <pre> without it
 // wraps a long line nowhere at all: pre breaks only where the text already
