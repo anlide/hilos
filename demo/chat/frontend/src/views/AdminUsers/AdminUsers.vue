@@ -6,19 +6,37 @@ only action is a rename (edit) — no add or delete. The server-windowed table a
 the framework user row view-model live with the page (adminUsersPage.ts), the
 rename submit in adminUsersActions.ts. Authoritative-backend: a submit dispatches
 a tracked action and the dialog closes on its `::success` reply (useTrackedAction,
-step 7.4); a failure surfaces in the dialog. Bootstrap classes only
-(styling-rules.md). -->
+step 7.4); a failure surfaces in the dialog. The dialog merges against the live
+row through the shared row-edit helper (rowEdit.ts, conflict-resolution.md) and
+says what happened elsewhere on one line of room held in advance
+(HilosEditNotice); Save stays locked while nothing changed. Bootstrap classes
+only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  ConflictActions,
+  ConflictHeader,
   HilosActionError,
   HilosAdminPage,
+  HilosEditNotice,
   HilosModal,
   HilosViewportTable,
   LoadingButton,
+  useSignal,
   useTrackedAction,
 } from '@hilos/vue'
-import { type HilosTableColumn, type HilosUserRow } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import {
+  findLiveRow,
+  keepMineRowEdit,
+  openRowEdit,
+  resolveRowEdit,
+  takeTheirsRowEdit,
+  type HilosTableColumn,
+  type HilosUserRow,
+  type RowEditBaseline,
+  type RowEditState,
+  type RowEditStep,
+} from '@hilos/core'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { PAGE_ADMIN_USERS } from '../../pages/keys'
 import { sendAdminUserUpdate } from './adminUsersActions'
@@ -49,10 +67,32 @@ const columns: HilosTableColumn[] = [
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
+/** The one field the dialog edits: the display name. */
+interface UserEditFields {
+  name: string
+}
+
+/** The one line the dialog says about the other side, for what the helper found. */
+function noticeText(live: RowEditState<UserEditFields>): string {
+  switch (live.notice?.kind) {
+    case 'deleted':
+      return 'Deleted elsewhere — your text stays to copy.'
+    case 'conflict':
+      return `Changed elsewhere to "${live.fields.name.incoming}".`
+    case 'updated':
+      return 'Updated just now'
+    default:
+      return ''
+  }
+}
+
 // Edit dialog: rename one user.
 const editOpen = ref(false)
 const editRow = ref<HilosUserRow | null>(null)
 const editName = ref('')
+const editBaseline = ref<RowEditBaseline<UserEditFields>>(
+  openRowEdit<UserEditFields>({ name: '' }),
+)
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -61,11 +101,28 @@ const {
   clearError: clearEditError,
 } = editAction
 
-const editDirty = computed(() => {
-  const name = editName.value.trim()
-
-  return !!editRow.value && name !== '' && name !== editRow.value.name
-})
+const viewRows = useSignal(adminUsersTable.rows)
+// The live row the dialog edits; gone once the window no longer has it.
+const liveRow = computed(() =>
+  findLiveRow(viewRows.value, editRow.value ? String(editRow.value.id) : ''),
+)
+const live = computed(() =>
+  resolveRowEdit(
+    liveRow.value ? { name: liveRow.value.name } : undefined,
+    editBaseline.value,
+    { name: editName.value.trim() },
+  ),
+)
+const editEmpty = computed(() => editName.value.trim() === '')
+// The title and "Last activity" follow the live row while it is there, and
+// keep the row the dialog opened with once it is gone.
+const editShown = computed(() => liveRow.value ?? editRow.value)
+const editTitle = computed(() =>
+  editShown.value ? `Edit · ${editShown.value.name}` : 'Edit user',
+)
+const editNotice = computed(() => live.value.notice?.kind ?? null)
+const editNoticeText = computed(() => noticeText(live.value))
+const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 
 function openEdit(row: HilosUserRow): void {
   // Flush pending so the form edits the latest committed row; a row removed by
@@ -77,6 +134,7 @@ function openEdit(row: HilosUserRow): void {
   clearEditError()
   editRow.value = fresh
   editName.value = fresh.name
+  editBaseline.value = openRowEdit<UserEditFields>({ name: fresh.name })
   editOpen.value = true
 }
 
@@ -84,20 +142,50 @@ function closeEdit(): void {
   editOpen.value = false
 }
 
+// Put a step of the helper into the dialog: the snapshot moves, and a name the
+// step takes lands in the input.
+function applyStep(step: RowEditStep<UserEditFields>): void {
+  editBaseline.value = step.baseline
+  if (step.take.name !== undefined) {
+    editName.value = step.take.name
+  }
+}
+
+// The helper hands a step whenever the other side moved the name while the
+// person left it alone, or both arrived at the same one; the dialog applies it
+// at once.
+watch(
+  () => live.value.settle,
+  (settle) => {
+    if (editOpen.value && settle) {
+      applyStep(settle)
+    }
+  },
+)
+
+function acceptMine(): void {
+  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+}
+
+function acceptTheirs(): void {
+  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+}
+
 // Authoritative-backend: dispatch the tracked action, close on its `::success`
-// reply; a failure stays open with the reason shown.
+// reply; a failure stays open with the reason shown. An untouched edit closes
+// without a round trip — there is nothing to save (rules-and-violations.md,
+// section E).
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value) {
+  if (!row || editBusy.value || live.value.gone || editEmpty.value) {
     return
   }
-  const name = editName.value.trim()
-  if (name === '' || name === row.name) {
+  if (!live.value.dirty) {
     closeEdit()
 
     return
   }
-  if (await runEditAction(sendAdminUserUpdate(row.id, name))) {
+  if (await runEditAction(sendAdminUserUpdate(row.id, editName.value.trim()))) {
     closeEdit()
   }
 }
@@ -147,12 +235,14 @@ async function submitEdit(): Promise<void> {
 
       <HilosModal
         v-model="editOpen"
-        :title="editRow ? `Edit · ${editRow.name}` : 'Edit user'"
-        :confirm-on-close="editDirty"
+        :confirm-on-close="live.dirty"
         @cancel="closeEdit"
       >
+        <template #header>
+          <ConflictHeader :title="editTitle" :conflict="live.conflict" />
+        </template>
         <HilosActionError :action="editAction" />
-        <form v-if="editRow" @submit.prevent="submitEdit">
+        <form v-if="editShown" @submit.prevent="submitEdit">
           <div class="mb-3">
             <label class="form-label" for="admin-users-name">Name</label>
             <input
@@ -167,10 +257,15 @@ async function submitEdit(): Promise<void> {
               data-autofocus
             />
           </div>
+          <HilosEditNotice
+            :kind="editNotice"
+            :text="editNoticeText"
+            data-id="admin-users-edit-notice"
+          />
           <div class="mb-0">
             <span class="form-label d-block">Last activity</span>
             <div class="form-control-plaintext">
-              {{ editRow.lastActivity ?? '—' }}
+              {{ editShown.lastActivity ?? '—' }}
             </div>
           </div>
         </form>
@@ -183,15 +278,27 @@ async function submitEdit(): Promise<void> {
           >
             Cancel
           </button>
-          <LoadingButton
-            class="btn-primary"
-            :loading="editLoading"
-            :disabled="!editDirty || editBusy"
-            data-id="admin-users-save"
-            @click="submitEdit"
+          <ConflictActions
+            :conflict="live.conflict"
+            :disable-save="editEmpty || !live.dirty || editBusy || live.gone"
+            :mergeable="false"
+            :save-label="editSaveLabel"
+            @save="submitEdit"
+            @accept-mine="acceptMine"
+            @accept-theirs="acceptTheirs"
           >
-            Save
-          </LoadingButton>
+            <template #save-button="{ disabled, onSave }">
+              <LoadingButton
+                class="btn-primary"
+                :loading="editLoading"
+                :disabled="disabled"
+                data-id="admin-users-save"
+                @click="onSave"
+              >
+                {{ editSaveLabel }}
+              </LoadingButton>
+            </template>
+          </ConflictActions>
         </template>
       </HilosModal>
     </section>

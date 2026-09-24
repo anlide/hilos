@@ -67,6 +67,9 @@ the canonical rules below. Every edit surface is a modal — never an inline for
   it is a gross violation.
 - Save commits only on the backend echo — never optimistic, never the tables'
   Apply path.
+- Save is unavailable while there is nothing to save — an untouched edit, an
+  empty required input of an add, a save in flight
+  (`docs/agents/frontend/rules-and-violations.md`, section E).
 - Entity deleted mid-edit: keep the modal open and the draft extractable.
 
 ## Contract Gate

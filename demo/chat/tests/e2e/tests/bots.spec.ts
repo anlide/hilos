@@ -126,6 +126,25 @@ async function editBotDescription(
 }
 
 /**
+ * Rename a bot through the edit dialog. The caller picks a name that keeps the
+ * row where it stands in the order.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param rowKey The bot's row key.
+ * @param name The new name.
+ */
+async function renameBot(
+  page: Page,
+  rowKey: string,
+  name: string,
+): Promise<void> {
+  await page.getByTestId(`admin-bots-edit-${rowKey}`).click()
+  await typeInto(page.getByTestId('admin-bots-name'), name)
+  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+}
+
+/**
  * Delete a bot this page shows and wait for it to leave the window.
  *
  * Its controls are what says it left, not its slot: the deleting tab keeps the
@@ -449,6 +468,109 @@ test('a value edited in another tab lands in place, highlighted and with no gate
   // Cleanup: A shows the bot it made.
   await tabB.close()
   await deleteBot(page, key)
+})
+
+// HIL-1051: the edit and the delete dialogs merge against the live row through
+// the shared row-edit helper. Two tabs of one context over a bot A creates first
+// in the window; every value B writes keeps the row there, so A's dialogs keep
+// their live row throughout. The edit dialog has six fields, so what it says
+// names the field.
+test('an open edit follows the other tab field by field, and a delete dialog reads Deleted', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const name = nameBeforeAll(stamp)
+  const renamed = `${name} renamed`
+
+  await signUpAdmin(page)
+  await openBots(page)
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+
+  // A opens the edit and touches nothing; B changes the description: it lands
+  // in A's form, the message line names the field, and there is nothing to save.
+  await page.getByTestId(`admin-bots-edit-${key}`).click()
+  await expect(page.getByTestId('admin-bots-description')).toBeVisible()
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  await editBotDescription(tabB, key, `elsewhere one ${stamp}`)
+  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+    `elsewhere one ${stamp}`,
+  )
+  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+    'Updated just now: Description',
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+
+  // A changes the style; B changes the description again: A left that field
+  // alone, so it takes the new value silently, and the style stays A's.
+  await typeInto(page.getByTestId('admin-bots-style'), `style of A ${stamp}`)
+  await expect(page.getByTestId('admin-bots-save')).toBeEnabled()
+  await editBotDescription(tabB, key, `elsewhere two ${stamp}`)
+  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+    `elsewhere two ${stamp}`,
+  )
+  await expect(page.getByTestId('admin-bots-style')).toHaveValue(
+    `style of A ${stamp}`,
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+
+  // A changes the description too; B changes it a third time: a conflict on
+  // that field, Save locked, no Merge.
+  await typeInto(
+    page.getByTestId('admin-bots-description'),
+    `description of A ${stamp}`,
+  )
+  await editBotDescription(tabB, key, `elsewhere three ${stamp}`)
+  await expect(page.getByTestId('conflict-badge')).toBeVisible()
+  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+    `Description changed elsewhere to "elsewhere three ${stamp}".`,
+  )
+  await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+
+  // Take theirs puts B's description into the form; the style is still A's, so
+  // Save opens and sends both. B then sees A's style beside its own description.
+  await page.getByTestId('conflict-accept-theirs').click()
+  await expect(page.getByTestId('admin-bots-description')).toHaveValue(
+    `elsewhere three ${stamp}`,
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+  await tabB.getByTestId(`admin-bots-edit-${key}`).click()
+  await expect(tabB.getByTestId('admin-bots-style')).toHaveValue(
+    `style of A ${stamp}`,
+  )
+  await expect(tabB.getByTestId('admin-bots-description')).toHaveValue(
+    `elsewhere three ${stamp}`,
+  )
+  await expect(tabB.getByTestId('admin-bots-save')).toBeDisabled()
+  await tabB.getByTestId('modal-close').click()
+  await expect(tabB.getByTestId('admin-bots-save')).toHaveCount(0)
+
+  // The delete dialog reads the live row: B renames the bot and A's dialog
+  // shows the new name; B deletes it and A's button reads Deleted, locked, with
+  // the reason on the message line. Cancel is all that is left to press.
+  await page.getByTestId(`admin-bots-delete-${key}`).click()
+  await expect(page.getByTestId('admin-bots-delete-confirm')).toBeEnabled()
+  await renameBot(tabB, key, renamed)
+  await expect(page.getByTestId('modal')).toContainText(renamed)
+  await deleteBot(tabB, key)
+  await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveText(
+    'Deleted',
+  )
+  await expect(page.getByTestId('admin-bots-delete-confirm')).toBeDisabled()
+  await expect(page.getByTestId('admin-bots-delete-notice')).toContainText(
+    'Deleted elsewhere.',
+  )
+  await page.getByTestId('modal-close').click()
+  await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
+  await tabB.close()
 })
 
 test('reaches the bots admin from the dashboard', async ({ page }) => {

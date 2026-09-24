@@ -3,6 +3,8 @@ import { test, expect, type Page } from '@playwright/test'
 import { dismissToasts } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
+import { clickSubmit, typeInto } from '../helpers/session'
+import { tableRowKeyByText } from '../helpers/table'
 
 // Moderation admin e2e: /hilos/app/moderator renders the prompt-pieces table
 // over the live socket, and the create / edit / delete dialogs round-trip through
@@ -80,23 +82,19 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
 
-test('saving an edit with no changes still closes the dialog', async ({
+test('an untouched edit keeps Save locked and closes without a question', async ({
   page,
 }) => {
   await signUpAdmin(page)
-  await gotoPage(page, '/hilos/app/moderator')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await openModerator(page)
 
-  // Open a seed row and save without changing anything. The row never re-emits
-  // (a no-op write produces no DB sync), so the old state-driven close hung
-  // here forever; the action's ::success reply still arrives and closes it.
-  await page
-    .locator('tbody tr')
-    .first()
-    .getByRole('button', { name: 'Edit' })
-    .click()
-  await page.getByTestId('admin-moderator-save').click()
+  // Open a seed row and change nothing: there is nothing to save, so Save stays
+  // locked (rules-and-violations.md, section E) and nothing goes to the backend;
+  // the close asks no question, because no draft differs from the live row.
+  await page.locator('[data-id^="admin-moderator-edit-"]').first().click()
+  await expect(page.getByTestId('admin-moderator-prompt')).toBeVisible()
+  await expect(page.getByTestId('admin-moderator-save')).toBeDisabled()
+  await page.getByTestId('modal-close').click()
   await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
 })
 
@@ -160,5 +158,102 @@ test('an edit in one tab lands at once in another, raising no Apply', async ({
     .click()
   await tabB.getByTestId('admin-moderator-delete-confirm').click()
   await expect(tabB.locator('tbody tr', { hasText: edited })).toHaveCount(0)
+  await tabB.close()
+})
+
+/**
+ * Change a piece's text through the edit dialog and settle on its close.
+ *
+ * @param page The Playwright page on the moderation admin.
+ * @param rowKey The piece's row key.
+ * @param text The new prompt text.
+ */
+async function editPiece(
+  page: Page,
+  rowKey: string,
+  text: string,
+): Promise<void> {
+  await page.getByTestId(`admin-moderator-edit-${rowKey}`).click()
+  await typeInto(page.getByTestId('admin-moderator-prompt'), text)
+  await clickSubmit(page.getByTestId('admin-moderator-save'))
+  await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
+}
+
+/**
+ * Delete a piece through its dialog and settle on the dialog's close.
+ *
+ * @param page The Playwright page on the moderation admin.
+ * @param rowKey The piece's row key.
+ */
+async function deletePiece(page: Page, rowKey: string): Promise<void> {
+  await page.getByTestId(`admin-moderator-delete-${rowKey}`).click()
+  await clickSubmit(page.getByTestId('admin-moderator-delete-confirm'))
+  await expect(page.getByTestId('admin-moderator-delete-confirm')).toHaveCount(
+    0,
+  )
+}
+
+// HIL-1051: the edit dialog merges against the live row through the shared
+// row-edit helper. Two tabs of one context over a piece A creates: a typed edit
+// conflicts with B's write and Keep mine sends A's text; a deleted row locks
+// Save under the word Deleted and keeps the draft to copy.
+test('an open edit conflicts with the other tab, keeps mine, then reads Deleted', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const text = `E2E merge ${stamp}`
+  const theirs = `E2E merge theirs ${stamp}`
+  const mine = `E2E merge mine ${stamp}`
+
+  await signUpAdmin(page)
+  await openModerator(page)
+  await page.getByTestId('admin-moderator-add').click()
+  await page.getByTestId('admin-moderator-section').selectOption('name_rule')
+  await typeInto(page.getByTestId('admin-moderator-prompt'), text)
+  await clickSubmit(page.getByTestId('admin-moderator-save'))
+  await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
+  const key = await tableRowKeyByText(page, text)
+  await dismissToasts(page)
+
+  const tabB = await page.context().newPage()
+  await openModerator(tabB)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+
+  // A opens the edit and types its own text; B writes another: a conflict on
+  // the prompt, Save locked.
+  await page.getByTestId(`admin-moderator-edit-${key}`).click()
+  await typeInto(page.getByTestId('admin-moderator-prompt'), mine)
+  await editPiece(tabB, key, theirs)
+  await expect(page.getByTestId('conflict-badge')).toBeVisible()
+  await expect(page.getByTestId('admin-moderator-edit-notice')).toContainText(
+    `Prompt piece changed elsewhere to "${theirs}".`,
+  )
+  await expect(page.getByTestId('admin-moderator-save')).toBeDisabled()
+
+  // Keep mine ends the conflict with A's text in place: Save opens, sends it,
+  // and both tabs show it.
+  await page.getByTestId('conflict-accept-mine').click()
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await clickSubmit(page.getByTestId('admin-moderator-save'))
+  await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(mine)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(mine)
+  await dismissToasts(page)
+  await dismissToasts(tabB)
+
+  // A opens the edit again; B deletes the piece: Save reads Deleted and is
+  // locked, the line says why, the draft stays to copy, and the close asks no
+  // question.
+  await page.getByTestId(`admin-moderator-edit-${key}`).click()
+  await expect(page.getByTestId('admin-moderator-prompt')).toHaveValue(mine)
+  await deletePiece(tabB, key)
+  await expect(page.getByTestId('admin-moderator-save')).toHaveText('Deleted')
+  await expect(page.getByTestId('admin-moderator-save')).toBeDisabled()
+  await expect(page.getByTestId('admin-moderator-edit-notice')).toContainText(
+    'Deleted elsewhere — your text stays to copy.',
+  )
+  await expect(page.getByTestId('admin-moderator-prompt')).toHaveValue(mine)
+  await page.getByTestId('modal-close').click()
+  await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
   await tabB.close()
 })

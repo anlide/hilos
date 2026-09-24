@@ -202,6 +202,16 @@ Topic documents are referenced by filename; several are still being authored.
   blocked, the primary button reads "Deleted", and the user's draft stays
   visible and extractable — never silently discarded. See
   [conflict-resolution.md](conflict-resolution.md).
+- **Save is unavailable while there is nothing to save.** This holds for any
+  button that saves what a form holds — an edit modal, a settings form, an add
+  dialog. Nothing to save is an edit whose draft equals what is saved (for a
+  modal over a live row, the helper's `dirty` — see
+  [conflict-resolution.md](conflict-resolution.md)), an add whose required
+  field is still empty, and a save that is already in flight. Enter in such a
+  form sends nothing either: an untouched edit closes without a round trip to
+  the backend, and an empty write is never the way a dialog gets closed. A live
+  button over an untouched form promises there is something to lose, and an
+  empty write that closes the dialog hides whether anything was saved at all.
 - **A modal that edits nothing closes with one Close button.** A legend, a
   refusal reason, the output of a command — a surface that only shows something
   carries a single secondary `Close` in the footer, going through

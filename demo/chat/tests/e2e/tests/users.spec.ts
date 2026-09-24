@@ -3,6 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
+import { goToLastPage } from '../helpers/table'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -156,6 +157,62 @@ test('an open rename follows the other tab, then conflicts and takes theirs', as
   await expect(page.getByTestId('hilos-user-name')).toHaveText(
     'E2E Elsewhere Two',
   )
+  await tabB.close()
+})
+
+// HIL-1051: the chat admin's rename modal over the users table merges against
+// the live row the same way. Tab A holds the modal open on the row of the user
+// this test registers itself; tab B renames that user from the card. A pristine
+// modal follows and says so, a typed one conflicts and locks Save, and Keep mine
+// sends the draft over the other tab's name. The table orders by id, so the
+// rename moves the row nowhere and the modal keeps its live row.
+test('an open admin rename follows the other tab, then conflicts and keeps mine', async ({
+  page,
+}) => {
+  const userId = await signUpAdmin(page)
+  const tabB = await page.context().newPage()
+  await gotoPage(page, '/hilos/app/users')
+  await gotoPage(tabB, `/hilos/user/${userId}`)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(tabB.getByTestId('hilos-user-detail')).toBeVisible()
+
+  // The user registered a moment ago has the highest id, so its row is on the
+  // last page of the window.
+  await goToLastPage(page)
+  await page.getByTestId(`admin-users-edit-${userId}`).click()
+  await expect(page.getByTestId('admin-users-name')).toBeVisible()
+  await expect(page.getByTestId('admin-users-save')).toBeDisabled()
+  await renameUser(tabB, 'E2E Elsewhere One')
+
+  // A pristine modal follows the live row and says so on its message line.
+  await expect(page.getByTestId('admin-users-name')).toHaveValue(
+    'E2E Elsewhere One',
+  )
+  await expect(page.getByTestId('admin-users-edit-notice')).toContainText(
+    'Updated just now',
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(page.getByTestId('admin-users-save')).toBeDisabled()
+
+  // Tab A types; tab B renames again: a conflict, Save locked, no Merge.
+  await typeInto(page.getByTestId('admin-users-name'), 'E2E Mine')
+  await renameUser(tabB, 'E2E Elsewhere Two')
+  await expect(page.getByTestId('conflict-badge')).toBeVisible()
+  await expect(page.getByTestId('admin-users-edit-notice')).toContainText(
+    'Changed elsewhere to "E2E Elsewhere Two"',
+  )
+  await expect(page.getByTestId('conflict-merge')).toHaveCount(0)
+  await expect(page.getByTestId('admin-users-save')).toBeDisabled()
+
+  // Keep mine ends the conflict with the draft in place: Save opens, sends it,
+  // and the card in tab B shows the name tab A kept.
+  await page.getByTestId('conflict-accept-mine').click()
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await clickSubmit(page.getByTestId('admin-users-save'))
+  await expect(page.getByTestId('admin-users-name')).toHaveCount(0)
+  await expect(tabB.getByTestId('hilos-user-name')).toHaveText('E2E Mine')
   await tabB.close()
 })
 
