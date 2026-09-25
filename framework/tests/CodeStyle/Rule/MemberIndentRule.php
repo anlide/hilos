@@ -26,6 +26,10 @@ use Hilos\Tests\CodeStyle\Violation;
  * Non-member constructs are deliberately out of scope: method and closure bodies,
  * multiline expressions, member braces, ordinary single-line and multi-line comments,
  * and top-level file declarations (such as class or global function keywords).
+ * Indentation there is legitimately irregular, and a rule reaching into it would
+ * collect a baseline the size of PSR-12. php-cs-fixer and PSR-12 as a whole were
+ * rejected at the review of 18.09.2026: a new dependency, and a mass formatting
+ * commit across every open branch.
  *
  * Origin: HIL-959 (HOTFIX 3fe609f8b), where a mis-indented method signature in
  * OwnershipDeclaration landed unnoticed.
@@ -35,8 +39,6 @@ final class MemberIndentRule implements CodeStyleRule
     public const string ID = 'MEMBER-INDENT';
 
     private const string DOC = 'docs/code-style.md';
-
-    private const int INDENT_STEP_SPACES = 4;
 
     private const string INDENT_STEP = '    ';
 
