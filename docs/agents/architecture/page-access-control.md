@@ -173,6 +173,9 @@ internal-error sentence for a 500). The frontend picks what to show by the codes
 (`docs/agents/frontend/wire-protocol.md`):
 
 - 404 `not_found` — `PageResourceNotFoundException`: the resource is missing.
+- 404 `not_served` — no page class registered by the project serves the key, including a page of an inactive feature. The master answers when
+  the subscription has no destination; a fallback page agent answers when its factory has no page. This is not a guard verdict, and the client
+  does not wait for an access reassessment that nobody can answer.
 - 403 `forbidden` — `PageForbiddenException`: authenticated but lacks rights.
   This is the admin gate — a guest is authenticated by its cookie, just not admin.
 - 401 `unauthorized` — `PageUnauthorizedException`: not authenticated at all.

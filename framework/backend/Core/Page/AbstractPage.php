@@ -940,6 +940,21 @@ abstract class AbstractPage implements ActionHostInterface
     }
 
     /**
+     * Keeps catalog cards whose page keys the active project serves.
+     *
+     * @param list<array<string, mixed>> $cards Catalog cards in display order
+     * @param string $pageKey Field carrying each card's page key
+     * @return list<array<string, mixed>> Cards whose pages are registered by the project
+     */
+    protected static function servedPageCards(array $cards, string $pageKey): array
+    {
+        return array_values(array_filter(
+            $cards,
+            static fn (array $card): bool => Hilos::$sr->servesPage($card[$pageKey]),
+        ));
+    }
+
+    /**
      * Lays this page's catalog identity under the payload the page built.
      *
      * Union rather than merge, so a key the page already wrote wins over the catalog: the
@@ -964,7 +979,10 @@ abstract class AbstractPage implements ActionHostInterface
                 PageCatalogConstants::WIRE_PAGE_LABEL => $identity[PageCatalogConstants::CATALOG_ENTRY_LABEL],
                 PageCatalogConstants::WIRE_PAGE_LEAD => $identity[PageCatalogConstants::CATALOG_ENTRY_LEAD],
                 PageCatalogConstants::WIRE_PAGE_BREADCRUMB => PageCatalogResolver::breadcrumb(static::PAGE),
-                PageCatalogConstants::WIRE_PAGE_CHILDREN => PageCatalogResolver::children(static::PAGE),
+                PageCatalogConstants::WIRE_PAGE_CHILDREN => static::servedPageCards(
+                    PageCatalogResolver::children(static::PAGE),
+                    PageCatalogConstants::WIRE_CHILD_PAGE,
+                ),
             ],
             lists: $payload->lists,
             tables: $payload->tables,

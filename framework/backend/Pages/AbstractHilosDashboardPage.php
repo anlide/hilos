@@ -34,9 +34,9 @@ abstract class AbstractHilosDashboardPage extends AbstractHilosPage
      *
      * The dashboard is the one page that needs more of the catalog than its own entry, and it is
      * also the only page the cards are drawn on, so they ride its subscription rather than a
-     * delivery of their own. A card is drawn for a section item whether or not the project
-     * registered that page - hiding what a project has not activated is a question for the
-     * feature registry, not for the catalog.
+     * delivery of their own. A card is drawn only when the project serves its page, the same
+     * question the signal router asks a subscription. Feature activation needs no second list:
+     * its validator prevents an inactive feature's page from being registered.
      *
      * The item lookup is not guarded: topology validation refuses a section naming a page with no
      * catalog entry before the daemon serves anything, so a card without identity cannot reach
@@ -54,6 +54,11 @@ abstract class AbstractHilosDashboardPage extends AbstractHilosPage
             foreach ($section[PageCatalogConstants::SECTION_ITEMS] as $page) {
                 $items[] = [PageCatalogConstants::WIRE_ITEM_PAGE => $page]
                     + PageCatalogResolver::identity($page);
+            }
+
+            $items = static::servedPageCards($items, PageCatalogConstants::WIRE_ITEM_PAGE);
+            if ($items === []) {
+                continue;
             }
 
             $sections[] = [

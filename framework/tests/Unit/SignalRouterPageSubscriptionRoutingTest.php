@@ -46,6 +46,16 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
         );
     }
 
+    public function testRegisteredPageIsServed(): void
+    {
+        $this->assertTrue(new SignalRouterTopologyTestRouter()->servesPage(SignalRouterTopologyTestPage::PAGE));
+    }
+
+    public function testUnregisteredPageIsNotServedEvenWhenAFallbackAgentWouldReceiveIt(): void
+    {
+        $this->assertFalse(new SignalRouterTopologyFallbackTestRouter()->servesPage('unregistered_page'));
+    }
+
     public function testTableViewportRoutesThroughProjectTopology(): void
     {
         $this->assertEquals(

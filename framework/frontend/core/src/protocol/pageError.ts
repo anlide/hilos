@@ -7,6 +7,9 @@
 // parse-boundary kind, because it is routed into the page scope the same way.
 import { z } from 'zod'
 
+/** No page class registered by the project serves the requested key. */
+export const PAGE_ERROR_NOT_SERVED = 'not_served'
+
 /**
  * The page-subscription error payload (PHP `PageSubscriptionErrorSignalData`):
  * the page the error is for — so a late one for a page already left is dropped,

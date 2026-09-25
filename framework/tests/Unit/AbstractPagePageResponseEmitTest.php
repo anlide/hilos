@@ -17,6 +17,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Pages\AbstractHilosDashboardPage;
@@ -30,7 +31,7 @@ final class AbstractPagePageResponseEmitTest extends TestCase
 {
     protected function setUp(): void
     {
-        Hilos::$sr = new SignalRouter();
+        Hilos::$sr = new AbstractPagePageResponseEmitTestRouter();
         // Binds the base facade, whose page catalog provider adds nothing, so the identity a page
         // gets here is the framework catalog and not whatever project fixture ran before. The
         // base creates no browser context, so this clears the browser in the same call.
@@ -205,6 +206,43 @@ final class AbstractPagePageResponseEmitTest extends TestCase
         );
     }
 
+    public function testTheDashboardOmitsCardsForPagesTheProjectDoesNotServe(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestDashboardPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $sections = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data]
+            [PageCatalogConstants::WIRE_DASHBOARD_SECTIONS];
+
+        $this->assertSame(
+            [HilosPageConstants::HILOS_USERS],
+            array_column($sections[0][PageCatalogConstants::SECTION_ITEMS], PageCatalogConstants::WIRE_ITEM_PAGE),
+        );
+    }
+
+    public function testTheDashboardOmitsASectionWithNoServedCards(): void
+    {
+        Hilos::$sr = new AbstractPagePageResponseEmitTestUsersOnlyRouter();
+        $page = new AbstractPagePageResponseEmitTestDashboardPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $sections = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data]
+            [PageCatalogConstants::WIRE_DASHBOARD_SECTIONS];
+
+        $this->assertCount(1, $sections);
+        $this->assertSame('Access & identity', $sections[0][PageCatalogConstants::SECTION_TITLE]);
+    }
+
     /**
      * A section answers with the cards of the pages under it, in the order the catalog declares
      * them - that is the navigation of the twenty-five screens that are not the dashboard, and it
@@ -244,6 +282,26 @@ final class AbstractPagePageResponseEmitTest extends TestCase
         );
     }
 
+    public function testASectionOmitsCardsForChildrenTheProjectDoesNotServe(): void
+    {
+        Hilos::$sr = new AbstractPagePageResponseEmitTestLogsKeyOnlyRouter();
+        $page = new AbstractPagePageResponseEmitTestSectionPage(new AbstractPagePageResponseEmitTestAgent());
+
+        $page->onSubscribe('ak-1', new PageRouteParams([]));
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $children = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data]
+            [PageCatalogConstants::WIRE_PAGE_CHILDREN];
+
+        $this->assertSame(
+            [HilosPageConstants::HILOS_LOGS_KEYS],
+            array_column($children, PageCatalogConstants::WIRE_CHILD_PAGE),
+        );
+    }
+
     /**
      * The children key follows the same rule as the heading: a page that wrote its own list keeps
      * it, which is how a section whose subsections depend on the row being viewed narrows them.
@@ -262,7 +320,10 @@ final class AbstractPagePageResponseEmitTest extends TestCase
 
         $data = $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data];
 
-        $this->assertSame([], $data[PageCatalogConstants::WIRE_PAGE_CHILDREN]);
+        $this->assertSame(
+            [[PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_BACKUP]],
+            $data[PageCatalogConstants::WIRE_PAGE_CHILDREN],
+        );
     }
 
     /**
@@ -332,6 +393,41 @@ final class AbstractPagePageResponseEmitTest extends TestCase
 }
 
 /**
+ * Database context page-route fixture facades never initialize.
+ */
+final class AbstractPagePageResponseEmitTestDbContext extends HilosDbContext
+{
+    /**
+     * Configures no collections for these catalog-only tests.
+     */
+    public function configure(): void
+    {
+    }
+}
+
+/**
+ * Facade base that gives page-route fixtures a no-op database context.
+ */
+abstract class AbstractPagePageResponseEmitTestBaseHilos extends Hilos
+{
+    /**
+     * @return HilosDbContext Empty fixture database context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new AbstractPagePageResponseEmitTestDbContext();
+    }
+}
+
+/**
+ * Base for pages present only to make fixture topology routes explicit.
+ */
+abstract class AbstractPagePageResponseEmitTestRegisteredPage extends AbstractPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = 'test';
+}
+
+/**
  * Test page contributing an entity-only page payload on subscription.
  */
 final class AbstractPagePageResponseEmitTestPayloadPage extends AbstractPage
@@ -355,7 +451,7 @@ final class AbstractPagePageResponseEmitTestDefaultPage extends AbstractPage
 /**
  * Test page standing on a framework admin key, so the catalog holds an entry for it.
  */
-final class AbstractPagePageResponseEmitTestCatalogPage extends AbstractPage
+final class AbstractPagePageResponseEmitTestCatalogPage extends AbstractPagePageResponseEmitTestRegisteredPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS_KEYS;
 }
@@ -377,7 +473,11 @@ final class AbstractPagePageResponseEmitTestOwnChildrenPage extends AbstractPage
 
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
-        return new PagePayload(data: [PageCatalogConstants::WIRE_PAGE_CHILDREN => []]);
+        return new PagePayload(data: [
+            PageCatalogConstants::WIRE_PAGE_CHILDREN => [
+                [PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_BACKUP],
+            ],
+        ]);
     }
 }
 
@@ -435,6 +535,132 @@ final class AbstractPagePageResponseEmitTestRefusingPage extends AbstractPage
  */
 final class AbstractPagePageResponseEmitTestDashboardPage extends AbstractHilosDashboardPage
 {
+}
+
+/**
+ * Router fixture backed by the pages needed by the catalog assertions.
+ */
+final class AbstractPagePageResponseEmitTestRouter extends SignalRouter
+{
+    /**
+     * @return class-string<Hilos> Fixture facade class
+     */
+    protected function hilosClass(): string
+    {
+        return AbstractPagePageResponseEmitTestHilos::class;
+    }
+}
+
+/**
+ * Router fixture serving only the first dashboard section's first card.
+ */
+final class AbstractPagePageResponseEmitTestUsersOnlyRouter extends SignalRouter
+{
+    /**
+     * @return class-string<Hilos> Fixture facade class
+     */
+    protected function hilosClass(): string
+    {
+        return AbstractPagePageResponseEmitTestUsersOnlyHilos::class;
+    }
+}
+
+/**
+ * Router fixture serving only one child of the logs section.
+ */
+final class AbstractPagePageResponseEmitTestLogsKeyOnlyRouter extends SignalRouter
+{
+    /**
+     * @return class-string<Hilos> Fixture facade class
+     */
+    protected function hilosClass(): string
+    {
+        return AbstractPagePageResponseEmitTestLogsKeyOnlyHilos::class;
+    }
+}
+
+/**
+ * Facade fixture registering the catalog pages the existing response assertions exercise.
+ */
+final class AbstractPagePageResponseEmitTestHilos extends AbstractPagePageResponseEmitTestBaseHilos
+{
+    public const array PAGES = [
+        AbstractPagePageResponseEmitTestUsersPage::PAGE => AbstractPagePageResponseEmitTestUsersPage::class,
+        AbstractPagePageResponseEmitTestI18nPage::PAGE => AbstractPagePageResponseEmitTestI18nPage::class,
+        AbstractPagePageResponseEmitTestSecurityPage::PAGE => AbstractPagePageResponseEmitTestSecurityPage::class,
+        AbstractPagePageResponseEmitTestSettingsPage::PAGE => AbstractPagePageResponseEmitTestSettingsPage::class,
+        AbstractPagePageResponseEmitTestAnalyticsPage::PAGE => AbstractPagePageResponseEmitTestAnalyticsPage::class,
+        AbstractPagePageResponseEmitTestCatalogPage::PAGE => AbstractPagePageResponseEmitTestCatalogPage::class,
+        AbstractPagePageResponseEmitTestLogsWorkersPage::PAGE => AbstractPagePageResponseEmitTestLogsWorkersPage::class,
+        AbstractPagePageResponseEmitTestLogsRotationsPage::PAGE => AbstractPagePageResponseEmitTestLogsRotationsPage::class,
+        AbstractPagePageResponseEmitTestLogsSettingsPage::PAGE => AbstractPagePageResponseEmitTestLogsSettingsPage::class,
+        AbstractPagePageResponseEmitTestLogsViewPage::PAGE => AbstractPagePageResponseEmitTestLogsViewPage::class,
+    ];
+}
+
+/**
+ * Facade fixture with one served dashboard card.
+ */
+final class AbstractPagePageResponseEmitTestUsersOnlyHilos extends AbstractPagePageResponseEmitTestBaseHilos
+{
+    public const array PAGES = [
+        AbstractPagePageResponseEmitTestUsersPage::PAGE => AbstractPagePageResponseEmitTestUsersPage::class,
+    ];
+}
+
+/**
+ * Facade fixture with one served logs child.
+ */
+final class AbstractPagePageResponseEmitTestLogsKeyOnlyHilos extends AbstractPagePageResponseEmitTestBaseHilos
+{
+    public const array PAGES = [
+        AbstractPagePageResponseEmitTestCatalogPage::PAGE => AbstractPagePageResponseEmitTestCatalogPage::class,
+    ];
+}
+
+final class AbstractPagePageResponseEmitTestUsersPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_USERS;
+}
+
+final class AbstractPagePageResponseEmitTestI18nPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_I18N;
+}
+
+final class AbstractPagePageResponseEmitTestSecurityPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_SECURITY;
+}
+
+final class AbstractPagePageResponseEmitTestSettingsPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_SETTINGS;
+}
+
+final class AbstractPagePageResponseEmitTestAnalyticsPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_ANALYTICS;
+}
+
+final class AbstractPagePageResponseEmitTestLogsWorkersPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS_WORKERS;
+}
+
+final class AbstractPagePageResponseEmitTestLogsRotationsPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS_ROTATIONS;
+}
+
+final class AbstractPagePageResponseEmitTestLogsSettingsPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS_SETTINGS;
+}
+
+final class AbstractPagePageResponseEmitTestLogsViewPage extends AbstractPagePageResponseEmitTestRegisteredPage
+{
+    public const string PAGE = HilosPageConstants::HILOS_LOGS_VIEW;
 }
 
 /**

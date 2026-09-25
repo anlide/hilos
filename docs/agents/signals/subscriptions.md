@@ -291,3 +291,5 @@ final class BotPage extends AbstractPage
 
 Use `SignalRouter::getDefaultPageSubscriptionAgentType()` only as a project
 fallback for subscriptions to unregistered pages.
+Without that fallback the master refuses an unregistered page with 404 `not_served`; with it the fallback agent gives the same answer.
+Dashboard and child cards include only pages for which `SignalRouter::servesPage()` is true.

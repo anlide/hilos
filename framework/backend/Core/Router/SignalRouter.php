@@ -1402,6 +1402,21 @@ class SignalRouter
     }
 
     /**
+     * Reports whether the project registered a page class that serves this key.
+     *
+     * Dashboard and child cards ask the same question as subscription routing. The
+     * fallback agent is deliberately excluded: it receives an unregistered key only
+     * to refuse it, not to serve a page the project did not register.
+     *
+     * @param string $page Page key from the catalog or subscription
+     * @return bool Whether the project serves the page
+     */
+    public function servesPage(string $page): bool
+    {
+        return isset($this->hilosClass()::getPageRoutes()[$page]);
+    }
+
+    /**
      * Get agent destinations for group subscription signals (subscribe/unsubscribe/update).
      *
      * Uses the active project topology to resolve per-group agent type.

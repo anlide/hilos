@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Page\AbstractPage;
@@ -16,6 +17,7 @@ use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageErrorCode;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
@@ -107,6 +109,26 @@ final class PageSubscriptionRefusalTextTest extends TestCase
         $this->assertSame(400, $frame->httpCode);
         $this->assertSame('invalid_page_route_param', $frame->errorCode);
         $this->assertStringNotContainsString(SubscriptionRefusalTextTestUserPage::USER_ID_PARAM, $frame->message);
+    }
+
+    public function testAnUnservedPageIsRefusedByTheFallbackAgent(): void
+    {
+        $router = new PageSignalRouter(
+            new SubscriptionRefusalTextTestPageFactory(new SubscriptionRefusalTextTestAgent()),
+            new ActionRouteConfig(),
+        );
+
+        $router->dispatchPageSubscribe(
+            new WebSocketPageSubscribeSignalDTO('ak-1', 'unserved_page'),
+            'websocket',
+            'unserved_page',
+        );
+
+        $frame = $this->takeSubscriptionError();
+        $this->assertSame('unserved_page', $frame->page);
+        $this->assertSame(HttpConstants::HTTP_NOT_FOUND, $frame->httpCode);
+        $this->assertSame(PageErrorCode::NOT_SERVED, $frame->errorCode);
+        $this->assertSame(SignalConstants::SUBSCRIPTION_FAILED_REASON, $frame->message);
     }
 
     public function testTheFamilyDoorIsShutForSubscriptionExceptions(): void

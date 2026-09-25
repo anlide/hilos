@@ -124,6 +124,8 @@ final class Hilos extends HilosFacade
 
     protected const ?string LEGAL_CATALOG = PollsLegalCatalog::class;
 
+    // TODO(HIL-1090): switch HilosFeature::BACKUP on in polls once more than six demos are implemented.
+    // Until then, its page answers 404 and has no dashboard card.
     protected const array FEATURES = [
         HilosFeature::SETTINGS,
         HilosFeature::HILOS_USERS,

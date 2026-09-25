@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { bindAccessReaction } from '../../src/subscription/bindAccessReaction.js'
 import { type HilosRouter } from '../../src/routing/HilosRouter.js'
-import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
+import {
+  PAGE_ERROR_NOT_SERVED,
+  type PageSubscriptionError,
+} from '../../src/protocol/pageError.js'
 import { type PageRouteMatch } from '../../src/routing/PageRouter.js'
 import { computedSignal, createSignal } from '../../src/state/signal.js'
 
@@ -48,6 +51,14 @@ const forbidden: PageSubscriptionError = {
   message: 'Access forbidden',
 }
 
+/** The 404 used when this project registered no page class for the route. */
+const notServed: PageSubscriptionError = {
+  page: 'hilos_backup',
+  httpCode: 404,
+  errorCode: PAGE_ERROR_NOT_SERVED,
+  message: 'Subscription failed',
+}
+
 /** An administrator standing on an administrative page. */
 const administrator: FakeSessionUser = { id: 7, admin: true }
 
@@ -69,6 +80,19 @@ describe('bindAccessReaction', () => {
       { page: 'profile', params: {}, admin: false },
       administrator,
     )
+    bindAccessReaction(router, isAdmin, userId)
+
+    session.set({ id: 7, admin: false })
+
+    expect(calls).toEqual([])
+  })
+
+  it('keeps an unserved-page 404 when the admin marker is lost', () => {
+    const { router, pageError, session, isAdmin, userId, calls } = fakeRouter(
+      { page: 'hilos_backup', params: {}, admin: true },
+      administrator,
+    )
+    pageError.set(notServed)
     bindAccessReaction(router, isAdmin, userId)
 
     session.set({ id: 7, admin: false })
@@ -98,6 +122,37 @@ describe('bindAccessReaction', () => {
     session.set(null)
 
     expect(calls).toEqual([])
+  })
+
+  it('keeps an unserved-page 404 when the identity is lost', () => {
+    const { router, pageError, session, isAdmin, userId, calls } = fakeRouter(
+      { page: 'hilos_backup', params: {}, admin: true },
+      administrator,
+    )
+    pageError.set(notServed)
+    bindAccessReaction(router, isAdmin, userId)
+
+    session.set(null)
+
+    expect(calls).toEqual([])
+  })
+
+  it('still waits after identity loss on an ordinary not-found page', () => {
+    const { router, pageError, session, isAdmin, userId, calls } = fakeRouter(
+      { page: 'hilos_backup', params: {}, admin: true },
+      administrator,
+    )
+    pageError.set({
+      page: 'hilos_backup',
+      httpCode: 404,
+      errorCode: 'not_found',
+      message: 'No such backup',
+    })
+    bindAccessReaction(router, isAdmin, userId)
+
+    session.set(null)
+
+    expect(calls).toEqual(['await'])
   })
 
   it('returns the page to its just-navigated state when the marker is gained', () => {

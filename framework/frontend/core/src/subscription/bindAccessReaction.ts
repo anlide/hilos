@@ -17,6 +17,7 @@
 // marker and the person on the handshake response — and one thing it knows about
 // itself: the surface type of the route it is standing on.
 
+import { PAGE_ERROR_NOT_SERVED } from '../protocol/pageError.js'
 import { type HilosRouter } from '../routing/HilosRouter.js'
 import {
   subscribeSignal,
@@ -43,6 +44,10 @@ const FORBIDDEN = 403
  * defense: a page marked administrative but served at a softer level answers
  * with data, and that answer clears whatever this drew.
  *
+ * An unserved page keeps its 404 through both reactions: nobody can re-decide a
+ * page with no registered owner, and awaiting that answer would leave a permanent
+ * placeholder.
+ *
  * @param router The navigator, for the current route and the two page controls.
  * @param isAdmin Whether the session holds the admin privilege; one trigger.
  * @param userId The person behind the session, or `null` for a guest; the other.
@@ -54,6 +59,9 @@ export function bindAccessReaction(
   userId: ReadonlySignal<number | null>,
 ): Unsubscribe {
   const stopAdmin = subscribeSignal(isAdmin, (admin) => {
+    if (router.pageError.get()?.errorCode === PAGE_ERROR_NOT_SERVED) {
+      return
+    }
     if (!admin) {
       // Signing out drops both, and both listeners run off the one write. The
       // 403 belongs to the visitor who is still here and may no longer look;
@@ -69,6 +77,9 @@ export function bindAccessReaction(
     }
   })
   const stopIdentity = subscribeSignal(userId, (id) => {
+    if (router.pageError.get()?.errorCode === PAGE_ERROR_NOT_SERVED) {
+      return
+    }
     if (id === null && router.currentRoute.get().admin) {
       router.awaitPageAnswer()
     }

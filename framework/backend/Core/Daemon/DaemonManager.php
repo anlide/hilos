@@ -80,6 +80,7 @@ use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\PageAccessReassessment;
+use Hilos\Core\Page\PageErrorCode;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
@@ -2416,6 +2417,10 @@ abstract class DaemonManager extends BaseManager implements
                 $this->refuseUnservedGroupSubscription($signal, $signalName);
             }
 
+            if (empty($destinations) && $signalType === SignalTypeConstants::PAGE_SUBSCRIBE) {
+                $this->answerUnservedSubscription($signal);
+            }
+
             if (empty($destinations) && Hilos::$sr->expectsDestination($signal)) {
                 // A signal whose route is declared, not subscribed to, was supposed to reach
                 // somebody: an empty list means it is being dropped, and the only way anyone
@@ -4102,6 +4107,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         $this->answerRefusedSubscription(
             $signal,
+            HttpConstants::HTTP_SERVICE_UNAVAILABLE,
             self::SUBSCRIPTION_NODE_UNREACHABLE_CODE,
             self::SUBSCRIPTION_NODE_UNREACHABLE_MESSAGE,
             'the node serving it is unreachable',
@@ -4125,6 +4131,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         $this->answerRefusedSubscription(
             $signal,
+            HttpConstants::HTTP_SERVICE_UNAVAILABLE,
             self::SUBSCRIPTION_AGENT_UNAVAILABLE_CODE,
             self::SUBSCRIPTION_AGENT_UNAVAILABLE_MESSAGE,
             'the agent serving it could not be started on this node',
@@ -4132,20 +4139,46 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Answers a page subscription that no page class registered by the project serves.
+     *
+     * Protected for the same reason as the other subscription refusals: a test
+     * subclass observes what the master answers without opening a socket.
+     *
+     * @param SignalDTO $signal Subscription with no page route
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    protected function answerUnservedSubscription(SignalDTO $signal): void
+    {
+        $this->answerRefusedSubscription(
+            $signal,
+            HttpConstants::HTTP_NOT_FOUND,
+            PageErrorCode::NOT_SERVED,
+            SignalConstants::SUBSCRIPTION_FAILED_REASON,
+            'no page of this project serves it',
+        );
+    }
+
+    /**
      * Sends the subscription error a page waiting on an undelivered subscribe is owed.
      *
-     * Shared by the two refusal doors above; what differs between them is the code, the
-     * sentence and the reason the journal line gives. Anything but a PAGE_SUBSCRIBE is left
-     * alone - an update travels on a page whose agent is already up.
+     * Shared by the refusal doors above; what differs between them is the status, the code,
+     * the sentence and the reason the journal line gives. Anything but a PAGE_SUBSCRIBE is
+     * left alone - an update travels on a page whose agent is already up.
      *
      * @param SignalDTO $signal Signal that could not be delivered, a subscribe or not
+     * @param int $httpCode HTTP status of the refusal
      * @param string $errorCode Error code of the refusal, one of the SUBSCRIPTION_* codes
      * @param string $message Sentence the browser is answered with, one of the SUBSCRIPTION_* messages
      * @param string $reason Why the subscription went unanswered, as the journal line ends
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
-    private function answerRefusedSubscription(SignalDTO $signal, string $errorCode, string $message, string $reason): void
-    {
+    private function answerRefusedSubscription(
+        SignalDTO $signal,
+        int $httpCode,
+        string $errorCode,
+        string $message,
+        string $reason,
+    ): void {
         if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
             return;
         }
@@ -4167,7 +4200,7 @@ abstract class DaemonManager extends BaseManager implements
             signalData: new WebSocketSignalData(
                 data: new PageSubscriptionErrorSignalData(
                     page: $page,
-                    httpCode: HttpConstants::HTTP_SERVICE_UNAVAILABLE,
+                    httpCode: $httpCode,
                     errorCode: $errorCode,
                     message: $message,
                 ),

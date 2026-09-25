@@ -80,7 +80,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
     {
         parent::setUp();
 
-        Hilos::$sr = new SignalRouter();
+        Hilos::$sr = new LogsPageSubscribeTestRouter();
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
         // base creates no browser context, so this clears the browser in the same call.
         Hilos::initBrowser();
@@ -1074,6 +1074,27 @@ final class HilosLogsPageSubscribeTest extends TestCase
  */
 final class LogsPageSubscribeTestPage extends AbstractHilosLogsPage
 {
+}
+
+/**
+ * Router fixture serving every child whose catalog identity this suite asserts.
+ */
+final class LogsPageSubscribeTestRouter extends SignalRouter
+{
+    /**
+     * @param string $page Page key from the logs catalog
+     * @return bool Whether the fixture serves the logs child
+     */
+    public function servesPage(string $page): bool
+    {
+        return in_array($page, [
+            HilosPageConstants::HILOS_LOGS_KEYS,
+            HilosPageConstants::HILOS_LOGS_WORKERS,
+            HilosPageConstants::HILOS_LOGS_ROTATIONS,
+            HilosPageConstants::HILOS_LOGS_SETTINGS,
+            HilosPageConstants::HILOS_LOGS_VIEW,
+        ], true);
+    }
 }
 
 /**

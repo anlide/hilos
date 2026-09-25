@@ -41,6 +41,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -283,6 +284,14 @@ class PageSignalRouter
 
         $pageInstance = $this->resolvePage($page);
         if ($pageInstance === null) {
+            $this->sendSubscriptionError(
+                $this->pageFactory->getAgent()->getAgentSignalSource(),
+                $page,
+                $data->acceptKey,
+                HttpConstants::HTTP_NOT_FOUND,
+                PageErrorCode::NOT_SERVED,
+                SignalConstants::SUBSCRIPTION_FAILED_REASON,
+            );
             return;
         }
 
@@ -313,7 +322,7 @@ class PageSignalRouter
             // already carries 500 and `internal_error`.
             Logger::error("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
-                $pageInstance,
+                $pageInstance->getAgent()->getAgentSignalSource(),
                 $page,
                 $data->acceptKey,
                 $e->httpCode,
@@ -333,7 +342,7 @@ class PageSignalRouter
             // instant it passes.
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
-                $pageInstance,
+                $pageInstance->getAgent()->getAgentSignalSource(),
                 $page,
                 $data->acceptKey,
                 $e->httpCode,
@@ -343,7 +352,7 @@ class PageSignalRouter
         } catch (Throwable $e) {
             Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
-                $pageInstance,
+                $pageInstance->getAgent()->getAgentSignalSource(),
                 $page,
                 $data->acceptKey,
                 HttpConstants::HTTP_INTERNAL_ERROR,
@@ -453,7 +462,7 @@ class PageSignalRouter
             // words stay inside.
             Logger::error("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
-                $pageInstance,
+                $pageInstance->getAgent()->getAgentSignalSource(),
                 $page,
                 $data->acceptKey,
                 $e->httpCode,
@@ -463,7 +472,7 @@ class PageSignalRouter
         } catch (PageSubscriptionException $e) {
             Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError(
-                $pageInstance,
+                $pageInstance->getAgent()->getAgentSignalSource(),
                 $page,
                 $data->acceptKey,
                 $e->httpCode,
@@ -473,7 +482,7 @@ class PageSignalRouter
         } catch (Throwable $e) {
             Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
-                $pageInstance,
+                $pageInstance->getAgent()->getAgentSignalSource(),
                 $page,
                 $data->acceptKey,
                 HttpConstants::HTTP_INTERNAL_ERROR,
@@ -2036,7 +2045,7 @@ class PageSignalRouter
      * Shared by the subscribe and update-subscription dispatchers so both emit
      * the same SUBSCRIPTION_PAGE_ERROR contract without tearing down the connection.
      *
-     * @param AbstractPage $pageInstance Page whose agent owns the signal source
+     * @param SignalSourceInterface $signalSource Page agent source for the refusal
      * @param string $page Page name that failed
      * @param string $acceptKey Target connection acceptKey
      * @param int $httpCode HTTP status code for the error
@@ -2044,7 +2053,7 @@ class PageSignalRouter
      * @param string $message Human-readable error message
      */
     private function sendSubscriptionError(
-        AbstractPage $pageInstance,
+        SignalSourceInterface $signalSource,
         string $page,
         string $acceptKey,
         int $httpCode,
@@ -2052,7 +2061,7 @@ class PageSignalRouter
         string $message,
     ): void {
         Hilos::$sr->queueSignal(
-            signalSource: $pageInstance->getAgent()->getAgentSignalSource(),
+            signalSource: $signalSource,
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
             signalData: new WebSocketSignalData(

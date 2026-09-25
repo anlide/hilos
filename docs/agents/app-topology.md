@@ -136,6 +136,9 @@ infers activation from an artifact it happens to find. Ask with
 `Hilos::hasFeature(HilosFeature::BACKUP)`, never by testing whether some
 registry entry or runtime row exists.
 
+A page of an inactive feature answers 404 and has no card. Card filtering asks whether the project serves the page, not whether a feature is on,
+so pages outside the feature catalog follow the same rule without weakening the single activation switch above.
+
 `FEATURES` is not a deployment switch. It says the feature is built into this
 project; whether it runs at an installation stays with env and settings.
 
