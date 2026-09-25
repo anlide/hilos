@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -19,6 +21,8 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -125,6 +129,34 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             ],
             new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::FRAME_BINARY),
+                new SignalName(SignalTypeConstants::FRAME_BINARY),
+                new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
+            )),
+        );
+    }
+
+    public function testBinaryFrameGoesToTheUploadsAgentWhenUploadsAreDeclared(): void
+    {
+        $this->assertEquals(
+            [
+                new AgentDestination(HilosAgentType::HILOS_UPLOADS),
+            ],
+            new SignalRouterUploadsTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::FRAME_BINARY),
+                new SignalName(SignalTypeConstants::FRAME_BINARY),
+                new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
+            )),
+        );
+    }
+
+    public function testBinaryFrameOfTheWrongSourceIsNotAnUploadChunk(): void
+    {
+        $this->assertEquals(
+            [],
+            new SignalRouterUploadsTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
                 new SignalType(SignalTypeConstants::FRAME_BINARY),
                 new SignalName(SignalTypeConstants::FRAME_BINARY),
                 new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
@@ -452,3 +484,42 @@ final class SignalRouterTopologyTestActionPayloadDTO extends ActionPayloadDTO
         return [];
     }
 }
+
+final class SignalRouterUploadsTestRouter extends SignalRouter
+{
+    /**
+     * Returns the fixture facade that declares uploads.
+     *
+     * @return class-string<HilosFacade> Fixture facade class
+     */
+    protected function hilosClass(): string
+    {
+        return SignalRouterUploadsTestHilos::class;
+    }
+}
+
+/**
+ * Facade of a project that declares uploads and has no page claiming binary frames.
+ */
+final class SignalRouterUploadsTestHilos extends HilosFacade
+{
+    protected const array FEATURES = [HilosFeature::UPLOADS];
+
+    public const array AGENTS = [
+        UploadsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UploadsAgent::class,
+            AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new SignalRouterTopologyTestDbContext();
+    }
+}
+

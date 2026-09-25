@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Hilos;
 
 /**
@@ -94,6 +96,13 @@ final class FeatureActivationValidator
                 $errors[] = $this->name($feature) . ' is declared but no feature definition describes it';
             }
         }
+
+        $this->validateUploads(
+            in_array(HilosFeature::UPLOADS, $declared, true),
+            $this->constantArray($hilosClass, 'UPLOAD_TARGETS'),
+            $pages,
+            $errors,
+        );
 
         if ($errors !== []) {
             throw IncompleteFeatureActivationException::forErrors($hilosClass, $errors);
@@ -426,6 +435,54 @@ final class FeatureActivationValidator
         $value = constant("{$hilosClass}::{$constant}");
 
         return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Checks what HilosFeature::UPLOADS needs beyond an agent: its targets, and the frame to itself (HIL-135).
+     *
+     * The agent pair is judged with every feature through its requirements; what is peculiar to
+     * uploads is judged here. The targets are declared in a facade registry of their own, which
+     * no requirement names, and frame_binary is routed by type - a page that claims it and the
+     * uploads agent cannot both receive it, so a project cannot hold both kinds of upload.
+     *
+     * @param bool $declared Whether the facade declares HilosFeature::UPLOADS
+     * @param array<mixed> $targets The facade's UPLOAD_TARGETS
+     * @param array<mixed> $pages The facade's PAGES
+     * @param list<string> $errors Collected validation errors
+     */
+    private function validateUploads(bool $declared, array $targets, array $pages, array &$errors): void
+    {
+        $feature = $this->name(HilosFeature::UPLOADS);
+        if (!$declared) {
+            if ($targets !== []) {
+                $errors[] = "UPLOAD_TARGETS names targets, but {$feature} is not declared";
+            }
+
+            return;
+        }
+
+        if ($targets === []) {
+            $errors[] = "{$feature} is declared but UPLOAD_TARGETS names no target";
+        }
+
+        foreach ($targets as $name => $class) {
+            if (!is_string($name) || $name === '') {
+                $errors[] = "{$feature} is declared but UPLOAD_TARGETS has a target without a name";
+                continue;
+            }
+            if (!is_string($class) || !is_subclass_of($class, AbstractUploadTarget::class)) {
+                $errors[] = "{$feature} is declared but UPLOAD_TARGETS[{$name}] is not a subclass of " . AbstractUploadTarget::class;
+            }
+        }
+
+        foreach ($pages as $pageName => $pageClass) {
+            if (is_string($pageClass) && is_subclass_of($pageClass, AbstractPage::class)
+                && array_key_exists(SignalTypeConstants::FRAME_BINARY, $pageClass::SIGNALS)) {
+                $errors[] = "{$feature} is declared but page {$pageName} ({$pageClass}) routes "
+                    . 'frame_binary: frame_binary is routed by type - a page upload and '
+                    . "{$feature} cannot share a project";
+            }
+        }
     }
 
     /**

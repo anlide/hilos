@@ -45,6 +45,9 @@ use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
 use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
+use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\DTO\UploadStateSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
@@ -1147,6 +1150,36 @@ final class HilosSignalConstants
      * subsystem learns about auth. Carried by {@see CodeSendStepSignalData}.
      */
     public const string HILOS_CODE_SEND_STEP = 'hilos_code_send_step';
+
+    // ── Hilos uploads: one connection ⇄ the uploads agent (HIL-135) ──────────
+    /**
+     * Client → uploads agent: declare a file; tracked; success = send its chunks.
+     *
+     * An agent action rather than a page one, because an upload lives on the connection and not
+     * on the page that started it: a navigation inside the application does not cut it. Carried
+     * by {@see UploadInitActionDTO}; every refusal of the start is the action's own error, and no
+     * upload row is left behind by one.
+     */
+    public const string HILOS_UPLOAD_INIT = 'hilos_upload_init';
+
+    /**
+     * Client → uploads agent: drop one upload and its file; idempotent.
+     *
+     * Cancelling an upload that is already gone succeeds: the cancel races the upload's own
+     * completion and the agent's cleanup, and whichever came first has done what was asked.
+     * Carried by {@see UploadCancelActionDTO}.
+     */
+    public const string HILOS_UPLOAD_CANCEL = 'hilos_upload_cancel';
+
+    /**
+     * Uploads agent → the one connection: the WHOLE state of one upload; phase null = the upload is gone.
+     *
+     * Sent on every change of the row - the phase, the throttled progress, a failure - and
+     * always whole, so a frame that was missed costs nothing the next one does not repair. A
+     * refused declaration never travels here: it is the answer of the action. Carried by
+     * {@see UploadStateSignalData}.
+     */
+    public const string HILOS_UPLOAD_STATE = 'hilos_upload_state';
 
     // ── Hilos auth throttle: worker ⇄ throttle agent (agent signals) ─────────
     /**

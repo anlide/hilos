@@ -64,6 +64,14 @@ abstract class FsContext
     }
 
     /**
+     * @return bool Whether a tmp directory is configured
+     */
+    public function hasTmp(): bool
+    {
+        return $this->_tmp !== null;
+    }
+
+    /**
      * @return FsTmpDirectory Configured tmp directory
      *
      * @throws DirectoryNotFoundException If tmp path has not been configured

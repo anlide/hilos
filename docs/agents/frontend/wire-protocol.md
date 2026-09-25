@@ -377,6 +377,12 @@ stays pure UX (see [rules-and-violations.md](rules-and-violations.md)).
 Files are uploaded only over the WebSocket `frame_binary` channel. Uploading
 through any other channel (HTTP multipart, etc.) is a gross violation.
 
+With `HilosFeature::UPLOADS` the channel has a protocol of its own: the
+tracked actions `hilos_upload_init` (declare a file) and `hilos_upload_cancel`,
+every chunk signed `[1 byte L][L bytes clientUploadId][file bytes]`, and the
+`hilos_upload_state` frame carrying the whole state of one upload (`phase: null`
+= gone). See [architecture/uploads.md](../architecture/uploads.md).
+
 ## Build-version check and forced refresh
 
 A build timestamp lives in `.env` (`HILOS_BUILD_TIMESTAMP`, `dev` when unset),

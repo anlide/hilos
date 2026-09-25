@@ -105,6 +105,8 @@ table contexts when they can read the project registry.
 - `Hilos::PAGE_TABLES` declares which registered table or browser-only table is
   used by each page, including browser table params. Page classes must not put
   table bindings in `BROWSER[BrowserConfigKey::TABLES]`.
+- `Hilos::UPLOAD_TARGETS` names the upload targets of a project that declares
+  `HilosFeature::UPLOADS` ([architecture/uploads.md](architecture/uploads.md)).
 
 `Hilos::validateTopology()` runs before layer initialization and checks the
 registry for missing classes, mismatched keys, duplicate signal ownership,
@@ -119,7 +121,7 @@ facades.
 ## Feature Declaration
 
 Framework features — `settings`, `hilos_users`, `backup`, `logs`,
-`notifications`, `notification_delivery` — are switched on in one place:
+`notifications`, `notification_delivery`, `uploads` — are switched on in one place:
 
 ```php
 protected const array FEATURES = [

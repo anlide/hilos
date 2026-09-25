@@ -121,6 +121,10 @@ AgentType::*` fallback when action ownership can be derived from pages.
 
 For page-owned non-action frames such as `FRAME_BINARY`, the framework router
 reads the page signal registry at dispatch time before service-signal default hooks.
+A project that declares `HilosFeature::UPLOADS` is the exception: its
+`FRAME_BINARY` goes to the uploads agent whatever page is open, and a page
+routing it beside the feature is refused at start
+([architecture/uploads.md](../architecture/uploads.md)).
 
 ## Agent → agent
 

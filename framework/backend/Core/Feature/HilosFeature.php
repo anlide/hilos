@@ -58,4 +58,7 @@ enum HilosFeature: string
 
     /** The sign-in surface's commands and the users library that owns them and the user set. */
     case AUTH = 'auth';
+
+    /** Upload sessions: declaring a file, receiving its signed chunks, checks, the temporary file until a consumer takes it (HIL-135). */
+    case UPLOADS = 'uploads';
 }

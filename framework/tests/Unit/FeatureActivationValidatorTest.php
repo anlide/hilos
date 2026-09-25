@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRegistry;
@@ -19,6 +21,9 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Files\Upload\AbstractUploadTarget;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use PHPUnit\Framework\TestCase;
 
@@ -175,6 +180,70 @@ final class FeatureActivationValidatorTest extends TestCase
 
         FeatureActivationUnmetDependencyHilos::validateFeatureActivation();
     }
+
+    public function testDeclaredUploadsWithItsAgentAndATargetPasses(): void
+    {
+        FeatureActivationUploadsHilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDeclaredUploadsWithoutItsAgentIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::UPLOADS is declared but agent ' . HilosAgentType::HILOS_UPLOADS . ' is not registered in AGENTS',
+        );
+
+        FeatureActivationUploadsWithoutAgentHilos::validateFeatureActivation();
+    }
+
+    public function testUploadsAgentWithoutTheDeclarationIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'AGENTS registers ' . HilosAgentType::HILOS_UPLOADS . ' but HilosFeature::UPLOADS is not declared in FEATURES',
+        );
+
+        FeatureActivationUploadsAgentOnlyHilos::validateFeatureActivation();
+    }
+
+    public function testDeclaredUploadsWithoutATargetIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::UPLOADS is declared but UPLOAD_TARGETS names no target');
+
+        FeatureActivationUploadsWithoutTargetsHilos::validateFeatureActivation();
+    }
+
+    public function testTargetsWithoutTheDeclarationAreReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('UPLOAD_TARGETS names targets, but HilosFeature::UPLOADS is not declared');
+
+        FeatureActivationTargetsOnlyHilos::validateFeatureActivation();
+    }
+
+    public function testATargetThatIsNoUploadTargetIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::UPLOADS is declared but UPLOAD_TARGETS[avatar] is not a subclass of ' . AbstractUploadTarget::class,
+        );
+
+        FeatureActivationForeignTargetHilos::validateFeatureActivation();
+    }
+
+    public function testAPageRoutingBinaryFramesBesideUploadsIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::UPLOADS is declared but page ' . FeatureActivationBinaryPage::PAGE
+            . ' (' . FeatureActivationBinaryPage::class . ') routes frame_binary',
+        );
+
+        FeatureActivationPageUploadHilos::validateFeatureActivation();
+    }
 }
 
 /**
@@ -192,6 +261,7 @@ final class FeatureActivationTestRegistry extends FeatureRegistry
             new FeatureActivationDependentFeature(),
             new FeatureActivationSessionsLibraryFeature(),
             new FeatureActivationFragmentFeature(),
+            new UploadsFeature(),
         ];
     }
 }
@@ -685,3 +755,114 @@ final class FeatureActivationHostlessHilos extends FeatureActivationValidHilos
 {
     protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::AUTH];
 }
+
+/**
+ * Upload target of the activation tests; its policy is never asked.
+ */
+final class FeatureActivationUploadTarget extends AbstractUploadTarget
+{
+    /**
+     * @return int One kilobyte
+     */
+    public function maxBytes(): int
+    {
+        return 1024;
+    }
+
+    /**
+     * @return bool False: anyone may upload
+     */
+    public function requiresSignIn(): bool
+    {
+        return false;
+    }
+}
+
+/**
+ * Page claiming binary frames by type, the way a page-level upload does.
+ */
+final class FeatureActivationBinaryPage extends AbstractPage
+{
+    public const string PAGE = 'feature_activation_binary_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'feature_activation_agent';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::FRAME_BINARY => [],
+    ];
+}
+
+/**
+ * Facade that declares uploads with the agent pair and one target.
+ */
+class FeatureActivationUploadsHilos extends FeatureActivationValidHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS, HilosFeature::UPLOADS];
+
+    public const array AGENTS = [
+        FeatureActivationTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FeatureActivationTestAgent::class,
+            AgentRegistryKey::DAEMON => FeatureActivationTestAgentDaemon::class,
+        ],
+        UploadsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UploadsAgent::class,
+            AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+        ],
+    ];
+
+    public const array UPLOAD_TARGETS = ['avatar' => FeatureActivationUploadTarget::class];
+}
+
+/**
+ * Facade that declares uploads without registering the uploads agent.
+ */
+final class FeatureActivationUploadsWithoutAgentHilos extends FeatureActivationUploadsHilos
+{
+    public const array AGENTS = FeatureActivationValidHilos::AGENTS;
+}
+
+/**
+ * Facade that registers the uploads agent without declaring the feature.
+ */
+final class FeatureActivationUploadsAgentOnlyHilos extends FeatureActivationUploadsHilos
+{
+    protected const array FEATURES = [HilosFeature::SETTINGS];
+
+    public const array UPLOAD_TARGETS = [];
+}
+
+/**
+ * Facade that declares uploads and names no target.
+ */
+final class FeatureActivationUploadsWithoutTargetsHilos extends FeatureActivationUploadsHilos
+{
+    public const array UPLOAD_TARGETS = [];
+}
+
+/**
+ * Facade that names a target without declaring uploads.
+ */
+final class FeatureActivationTargetsOnlyHilos extends FeatureActivationValidHilos
+{
+    public const array UPLOAD_TARGETS = ['avatar' => FeatureActivationUploadTarget::class];
+}
+
+/**
+ * Facade whose target is a class that is no upload target.
+ */
+final class FeatureActivationForeignTargetHilos extends FeatureActivationUploadsHilos
+{
+    public const array UPLOAD_TARGETS = ['avatar' => FeatureActivationProjectTable::class];
+}
+
+/**
+ * Facade that declares uploads beside a page claiming binary frames.
+ */
+final class FeatureActivationPageUploadHilos extends FeatureActivationUploadsHilos
+{
+    public const array PAGES = [
+        FeatureActivationProjectPage::PAGE => FeatureActivationProjectPage::class,
+        FeatureActivationBinaryPage::PAGE => FeatureActivationBinaryPage::class,
+    ];
+}
+

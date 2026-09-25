@@ -10,7 +10,9 @@ use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRegistry;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -103,6 +105,54 @@ final class FeatureRuntimeMountTest extends TestCase
 
         $this->addToAssertionCount(1);
     }
+
+    public function testDeclaringUploadsWithoutATmpDirectoryIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::UPLOADS keeps chunks in the tmp directory, but the FS context configures none',
+        );
+
+        $this->withFs(new FeatureUploadsTestFsContext(withTmp: false), FeatureUploadsHilos::refuseForTest(...));
+    }
+
+    public function testDeclaringUploadsWithoutAnFsContextIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+
+        $this->withFs(null, FeatureUploadsHilos::refuseForTest(...));
+    }
+
+    public function testDeclaringUploadsWithATmpDirectoryPasses(): void
+    {
+        $this->withFs(new FeatureUploadsTestFsContext(withTmp: true), FeatureUploadsHilos::refuseForTest(...));
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAProjectWithoutUploadsNeedsNoTmpDirectory(): void
+    {
+        $this->withFs(null, FeatureRuntimeContextlessHilos::refuseUploadsForTest(...));
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Runs one check with the FS context set, and puts the previous one back whatever happens.
+     *
+     * @param ?FsContext $fs FS context the check sees
+     * @param callable(): void $check Check to run
+     */
+    private function withFs(?FsContext $fs, callable $check): void
+    {
+        $previous = HilosFacade::$fs;
+        HilosFacade::$fs = $fs;
+        try {
+            $check();
+        } finally {
+            HilosFacade::$fs = $previous;
+        }
+    }
 }
 
 /**
@@ -140,6 +190,16 @@ final class FeatureRuntimeContextlessHilos extends HilosFacade
     }
 
     /**
+     * Runs the uploads tmp check the way init() does, on a project that declares no uploads.
+     *
+     * @throws IncompleteFeatureActivationException When UPLOADS is declared and no tmp directory is configured
+     */
+    public static function refuseUploadsForTest(): void
+    {
+        static::refuseUploadsWithoutTmp();
+    }
+
+    /**
      * Creates a no-op DB context; the fixture never reaches a layer.
      *
      * @return HilosDbContext Test DB context
@@ -162,3 +222,55 @@ final class FeatureRuntimeTestDbContext extends HilosDbContext
     {
     }
 }
+
+/**
+ * Facade standing in for a project that declares uploads; only its tmp check is run.
+ */
+final class FeatureUploadsHilos extends HilosFacade
+{
+    protected const array FEATURES = [HilosFeature::UPLOADS];
+
+    /**
+     * Runs the uploads tmp check the way init() does.
+     *
+     * @throws IncompleteFeatureActivationException When no tmp directory is configured
+     */
+    public static function refuseForTest(): void
+    {
+        static::refuseUploadsWithoutTmp();
+    }
+
+    /**
+     * Creates a no-op DB context; the fixture never reaches a layer.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FeatureRuntimeTestDbContext();
+    }
+}
+
+/**
+ * FS context with or without a tmp directory; nothing is ever written through it.
+ */
+final class FeatureUploadsTestFsContext extends FsContext
+{
+    /**
+     * @param bool $withTmp Whether the context configures a tmp directory
+     */
+    public function __construct(bool $withTmp)
+    {
+        if ($withTmp) {
+            $this->setTmpPath(sys_get_temp_dir());
+        }
+    }
+
+    /**
+     * The constructor already configured what this fixture has.
+     */
+    public function configure(): void
+    {
+    }
+}
+

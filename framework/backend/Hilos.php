@@ -62,6 +62,7 @@ use Hilos\LLM\Routing\LlmProfileCatalogStub;
 use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
 use Hilos\Sms\HilosSmsSender;
@@ -329,6 +330,16 @@ abstract class Hilos implements TruthSourceOwner
 
     /** Browser data source config classes keyed by data key. */
     public const array BROWSER_DATA = [];
+
+    /**
+     * Upload targets keyed by the name a client declares in hilos_upload_init (HIL-135).
+     *
+     * Declared only together with {@see HilosFeature::UPLOADS}; each class extends
+     * {@see AbstractUploadTarget}.
+     *
+     * @var array<string, class-string<AbstractUploadTarget>>
+     */
+    public const array UPLOAD_TARGETS = [];
 
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];
@@ -1059,6 +1070,7 @@ abstract class Hilos implements TruthSourceOwner
         if (static::$fs === null) {
             static::$fs = static::createFs();
             static::$fs?->configure();
+            static::refuseUploadsWithoutTmp();
         }
 
         SourceChangeBus::reset();
@@ -1137,6 +1149,28 @@ abstract class Hilos implements TruthSourceOwner
         if ($errors !== []) {
             throw IncompleteFeatureActivationException::forErrors(static::class, $errors);
         }
+    }
+
+    /**
+     * Refuses HilosFeature::UPLOADS on a project whose FS context has no tmp directory (HIL-135).
+     *
+     * Checked here rather than by the activation validator for the reason the runtime refusal
+     * above is: whether a tmp directory is configured is known only once createFs() has been
+     * asked and the context configured. An upload with nowhere to keep its chunks would be
+     * accepted and then fail on its first byte.
+     *
+     * @throws IncompleteFeatureActivationException When UPLOADS is declared and no tmp directory is configured
+     */
+    protected static function refuseUploadsWithoutTmp(): void
+    {
+        if (!in_array(HilosFeature::UPLOADS, static::FEATURES, true) || static::$fs?->hasTmp() === true) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::UPLOADS keeps chunks in the tmp directory, but the FS context configures none'],
+        );
     }
 
     /**

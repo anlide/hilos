@@ -13,6 +13,7 @@ use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
 use Hilos\Core\Feature\Definition\NotificationsFeature;
 use Hilos\Core\Feature\Definition\SettingsFeature;
+use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Hilos;
 
@@ -94,6 +95,7 @@ class FeatureRegistry
             new AuthThrottleFeature(),
             new CodeChannelsFeature(),
             new AuthFeature(),
+            new UploadsFeature(),
         ];
     }
 }

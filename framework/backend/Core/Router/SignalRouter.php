@@ -15,6 +15,7 @@ use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
@@ -1162,11 +1163,22 @@ class SignalRouter
      * Resolve agent destination for page-owned non-action signals, falling back to
      * service-signal defaults when no page owns the signal.
      *
+     * A binary frame of a project that declares HilosFeature::UPLOADS is not page-owned: it is a
+     * signed chunk of an upload, and uploads live on the connection, so it goes to the uploads
+     * agent whatever page is open (HIL-135). The activation validator refuses a page that would
+     * claim the frame beside the feature.
+     *
      * @param SignalDTO $signal Signal DTO
      * @return list<AgentDestination> Agent destinations for the page-owned signal, or the service-signal fallback
      */
     private function getPageOwnedSignalDestinations(SignalDTO $signal): array
     {
+        if ($signal->signalType->getType() === SignalTypeConstants::FRAME_BINARY
+            && $this->acceptsSource($signal)
+            && in_array(HilosFeature::UPLOADS, Hilos::featuresOf($this->hilosClass()), true)) {
+            return [new AgentDestination(HilosAgentType::HILOS_UPLOADS)];
+        }
+
         $pageSignalDestinations = $this->getPageSignalDestinations($signal);
 
         return $pageSignalDestinations !== []
