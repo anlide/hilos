@@ -19,6 +19,9 @@ final class GuestsActionsTest extends IntegrationTestCase
     /** Session token of a second, unrelated browser. */
     private const string OTHER_SESSION_TOKEN = 'dddddddddddddddddddddddddddddddd';
 
+    /** Session token whose guest row is outside a batch removal. */
+    private const string KEPT_SESSION_TOKEN = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+
     /**
      * A first sight of a session mints a guest row with a generated name.
      *
@@ -84,5 +87,28 @@ final class GuestsActionsTest extends IntegrationTestCase
         $after = Hilos::$db->guests->actions->ensureForSession(self::SESSION_TOKEN);
 
         $this->assertNotSame($before->id, $after->id);
+    }
+
+    /**
+     * A sweep frame removes all named guests in one action and leaves the rest alone.
+     *
+     * @throws HilosException On database error
+     */
+    public function testDeleteForSessionsRemovesNamedRowsAndToleratesAnEmptyList(): void
+    {
+        $first = Hilos::$db->guests->actions->ensureForSession(self::SESSION_TOKEN);
+        $other = Hilos::$db->guests->actions->ensureForSession(self::OTHER_SESSION_TOKEN);
+        $kept = Hilos::$db->guests->actions->ensureForSession(self::KEPT_SESSION_TOKEN);
+
+        $deleted = Hilos::$db->guests->actions->deleteForSessions([
+            self::SESSION_TOKEN,
+            self::OTHER_SESSION_TOKEN,
+        ]);
+
+        $this->assertSame(2, $deleted);
+        $this->assertNotSame($first->id, Hilos::$db->guests->actions->ensureForSession(self::SESSION_TOKEN)->id);
+        $this->assertNotSame($other->id, Hilos::$db->guests->actions->ensureForSession(self::OTHER_SESSION_TOKEN)->id);
+        $this->assertSame($kept->id, Hilos::$db->guests->actions->ensureForSession(self::KEPT_SESSION_TOKEN)->id);
+        $this->assertSame(0, Hilos::$db->guests->actions->deleteForSessions([]));
     }
 }

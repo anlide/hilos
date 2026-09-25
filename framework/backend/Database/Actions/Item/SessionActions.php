@@ -9,8 +9,11 @@ use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\SessionsActions;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\View\Item\Session;
@@ -370,6 +373,29 @@ final class SessionActions extends DbActions
         $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
         $this->object->expiresAt = SessionsActions::expiryFromNow();
         $this->object->sync();
+    }
+
+    /**
+     * Removes this session row and its in-memory object.
+     *
+     * @throws ItemNotFoundForDeleteException When the session is not persisted (id is null)
+     * @throws ObjectCollectionNullException When the action is detached from its object collection
+     * @throws HilosException On database, ownership, or collection failure
+     */
+    public function delete(): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForDeleteException('Session not found for delete (id is null)');
+        }
+
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Object collection is null');
+
+        $idString = $this->object->getIdString();
+        $this->object->delete();
+        unset($objectCollection[$idString]);
     }
 
     /**

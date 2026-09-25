@@ -17,6 +17,8 @@ use Hilos\Database\PhpType;
  * `user_id` is null, or authenticated once bound to a user at login/register.
  * Framework holds the contract; projects activate the table thinly (copy the
  * migration stub) and the framework DbContext exposes the collection.
+ * The row lives until the sessions library sweep removes it after its cookie
+ * lifetime ends or after an anonymous browser never returns.
  *
  * When `impersonator_user_id` is set, an admin is acting as another user through
  * this session (HIL-166): `user_id` is the impersonation target and the marker
@@ -107,6 +109,10 @@ final class Session extends Entity
         'idx_session_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
         'idx_session_pending_registration' => [
             Entity::INDEX_COLUMNS => [self::pending_registration_identifier],
+        ],
+        'idx_session_expires' => [Entity::INDEX_COLUMNS => [self::expires_at]],
+        'idx_session_anonymous_seen' => [
+            Entity::INDEX_COLUMNS => [self::user_id, self::last_seen_at],
         ],
         'idx_session_pending_second_factor' => [
             Entity::INDEX_COLUMNS => [self::pending_second_factor_user_id],

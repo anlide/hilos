@@ -12,6 +12,7 @@ use Hilos\Database\Entity\Collection\Sessions as EntitySessions;
 use Hilos\Database\Entity\Item\Session as EntitySession;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\SqlSortDirection;
 
 /**
  * Sessions object collection.
@@ -92,6 +93,51 @@ final class Sessions extends Objects
         return $this->hydrateAll(
             EntitySession::get([EntitySession::pending_registration_identifier => $identifier]),
         );
+    }
+
+    /**
+     * Lists sessions whose cookie lifetime has ended, oldest row first.
+     *
+     * A null expiry is deliberately open-ended and does not belong to the sweep.
+     *
+     * @param string $nowSql Current moment as an SQL datetime
+     * @param int $limit Maximum rows to load
+     * @return list<ObjectSession> Expired session objects, empty when none
+     * @throws DatabaseException When the lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findExpired(string $nowSql, int $limit): array
+    {
+        return $this->hydrateAll(EntitySession::get(
+            '`' . EntitySession::expires_at . '` IS NOT NULL AND `' . EntitySession::expires_at . '` <= ?',
+            [$nowSql],
+            [EntitySession::id => SqlSortDirection::ASC],
+            $limit,
+        ));
+    }
+
+    /**
+     * Lists old anonymous sessions whose browser never returned, oldest row first.
+     *
+     * `last_seen_at = created_at` is the durable proof that only the opening handshake
+     * touched the row; the cutoff is applied to the indexed last-seen column.
+     *
+     * @param string $cutoffSql Latest first-handshake moment eligible for removal
+     * @param int $limit Maximum rows to load
+     * @return list<ObjectSession> Never-returned session objects, empty when none
+     * @throws DatabaseException When the lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findNeverReturned(string $cutoffSql, int $limit): array
+    {
+        return $this->hydrateAll(EntitySession::get(
+            '`' . EntitySession::user_id . '` IS NULL'
+                . ' AND `' . EntitySession::last_seen_at . '` <= ?'
+                . ' AND `' . EntitySession::last_seen_at . '` = `' . EntitySession::created_at . '`',
+            [$cutoffSql],
+            [EntitySession::id => SqlSortDirection::ASC],
+            $limit,
+        ));
     }
 
     /**

@@ -139,6 +139,43 @@ final class Guests extends Objects
     }
 
     /**
+     * Removes guest rows for a batch of session tokens in one lookup.
+     *
+     * @param list<string> $sessionTokens Session cookie tokens whose guest rows go
+     * @return int Number of guest rows removed
+     * @throws DatabaseException If the lookup or a delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteBySessionTokens(array $sessionTokens): int
+    {
+        if ($sessionTokens === []) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach (EntityGuest::get(
+            '`' . EntityGuest::session_token . '` IN ('
+                . implode(', ', array_fill(0, count($sessionTokens), '?')) . ')',
+            $sessionTokens,
+        ) as $entityGuest) {
+            if ($entityGuest->id === null) {
+                continue;
+            }
+
+            $guest = $this->hydrateGuest($entityGuest);
+            $id = $guest->id;
+            $guest->delete();
+            if ($id !== null) {
+                unset($this[$id]);
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
      * Returns the object already standing for a guest row, wrapping it on first sight.
      *
      * @param EntityGuest $entityGuest Row to wrap, whose id is known to be set

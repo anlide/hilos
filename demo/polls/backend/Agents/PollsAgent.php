@@ -14,6 +14,7 @@ use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -48,7 +49,7 @@ final class PollsAgent extends AbstractAgent
      * @var array<string, list<TruthSourceOperation>> The accounts it serves and the guest rows
      *     behind them, so their changes fan out to the browser. The guest table is this agent's
      *     own: it is the one process that mints a guest row for a session and drops it when that
-     *     session signs in (HIL-716).
+     *     session signs in or its session row is swept (HIL-716, HIL-1075).
      */
     public const array OWNS_DB = [
         PollsDbContext::users => TruthSourceOperation::BY_KIND,
@@ -60,11 +61,12 @@ final class PollsAgent extends AbstractAgent
 
     public const string AGENT_TYPE = AgentType::POLLS;
 
-    // The session frame is declared HERE and not in the library, which is what routes it to
-    // this agent: a destination is taken from whoever names a signal, and the library naming
-    // its own outgoing frame would send it back to itself.
+    // The two session frames are declared HERE and not in the library, which is what routes
+    // them to this agent: a destination is taken from whoever names a signal, and the library
+    // naming its own outgoing frame would send it back to itself.
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
+        HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class,
     ];
 
     /**
@@ -239,7 +241,7 @@ final class PollsAgent extends AbstractAgent
     }
 
     /**
-     * Routes the one frame this agent is addressed by.
+     * Routes the session state and session-row cleanup frames this agent owns.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -252,17 +254,32 @@ final class PollsAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== HilosSignalConstants::HILOS_SESSION_STATE) {
-            throw new AgentUnknownSignalException($name);
-        }
+        switch ($name) {
+            case HilosSignalConstants::HILOS_SESSION_STATE:
+                if (!$data->data instanceof SessionStateSignalData) {
+                    throw new LogicException(
+                        HilosSignalConstants::HILOS_SESSION_STATE . ' payload must be ' . SessionStateSignalData::class,
+                    );
+                }
 
-        if (!$data->data instanceof SessionStateSignalData) {
-            throw new LogicException(
-                HilosSignalConstants::HILOS_SESSION_STATE . ' payload must be ' . SessionStateSignalData::class,
-            );
-        }
+                $this->applySessionState($data->data);
 
-        $this->applySessionState($data->data);
+                return;
+
+            case HilosSignalConstants::HILOS_SESSIONS_SWEPT:
+                if (!$data->data instanceof SessionsSweptSignalData) {
+                    throw new LogicException(
+                        HilosSignalConstants::HILOS_SESSIONS_SWEPT . ' payload must be ' . SessionsSweptSignalData::class,
+                    );
+                }
+
+                Hilos::$db->guests->actions->deleteForSessions($data->data->sessionTokens);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**

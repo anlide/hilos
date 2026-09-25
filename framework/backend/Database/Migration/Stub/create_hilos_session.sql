@@ -46,6 +46,11 @@
 -- session already in hand - and holds one of a closed set of values written by the
 -- framework, so the default collation is enough.
 --
+-- The sessions library sweeps rows no browser can present any more every 15
+-- minutes. `expires_at` finds rows whose cookie lifetime ended; (`user_id`,
+-- `last_seen_at`) finds anonymous rows whose only handshake was over seven days
+-- ago without scanning the hot session table.
+--
 -- The `pending_second_factor_*` group (HIL-494) is the sign-in this browser proved and
 -- has not been let through yet, because the person has a second factor to show first:
 -- whose sign-in it is, which of the three screens it waits on ('verify' - the code
@@ -77,5 +82,7 @@ CREATE TABLE `hilos_session` (
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),
     KEY `idx_session_pending_registration` (`pending_registration_identifier`),
+    KEY `idx_session_expires` (`expires_at`),
+    KEY `idx_session_anonymous_seen` (`user_id`, `last_seen_at`),
     KEY `idx_session_pending_second_factor` (`pending_second_factor_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

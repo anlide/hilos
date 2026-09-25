@@ -51,6 +51,7 @@ use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
@@ -165,7 +166,8 @@ use Throwable;
  * token alive. The session-expiry drop (HIL-398) is enforced in
  * {@see resolveHandshakeSession()}: a cookie that resolves to an authenticated but expired
  * session is downgraded to anonymous before it is handed back, so a stale cookie can never
- * resume an authenticated identity.
+ * resume an authenticated identity. A session row is removed only by this library's sweep,
+ * after its cookie lifetime ends or after an anonymous browser never returns.
  */
 abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 {
@@ -433,6 +435,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Name of the cron rule that frees the registration holds whose deadline passed. */
     private const string RESERVATION_SWEEP_RULE = 'hilos_sweep_registration_reservations';
 
+    /** Name of the cron rule that removes ended session rows. */
+    private const string SESSION_SWEEP_RULE = 'hilos_sessions_expire';
+
+    /** Every 15 minutes, matching the daemon cron catalog. */
+    private const string SESSION_SWEEP_CRON = '*/15 * * * *';
+
+    /** Maximum session rows considered by one tick. */
+    private const int SESSION_SWEEP_BATCH = 500;
+
+    /** Age after which an anonymous browser with one handshake is considered abandoned. */
+    private const int NEVER_RETURNED_GRACE_SECONDS = 7 * TimeConstants::SECONDS_PER_DAY;
+
     /**
      * How often the expired registration holds are swept.
      *
@@ -453,8 +467,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var ?CronRule Schedule of the expired-hold sweep, or null when this project has no registration */
     private ?CronRule $reservationSweepRule = null;
 
+    /** @var ?CronRule Schedule that removes ended session rows */
+    private ?CronRule $sessionSweepRule = null;
+
+    /** Whether a full sweep batch with removals asks the next tick to continue immediately */
+    private bool $sessionSweepBacklog = false;
+
     /**
-     * Arms the two sweeps that keep the session set honest, and ends what a predecessor left open.
+     * Arms the three scheduled sweeps, and ends what a predecessor left open.
      *
      * A restore's logins are not replayed here any more (HIL-846): they arrive as a frame from the
      * agent holding them ({@see carryOverHandedOverSessions()}), and they arrive after this hook has
@@ -474,6 +494,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $this->armPendingRegistrationSweep();
         $this->armReservationSweep();
+        $this->armSessionSweep();
         if ($this->hasSignInSurface()) {
             $this->endOpenSignIns(null);
         }
@@ -555,15 +576,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Reclaims what nobody came back for, and rolls back the browsers waiting on it.
      *
-     * Two of the four walks are over in-memory collections that hold one row per login in
-     * the last thirty seconds and one per sign-in surface parked on a confirmation code, so
-     * they are measured in microseconds and skipped outright while nobody is registering or
-     * recovering - which is almost always. The two that read the database are behind cron
-     * rules of their own instead of running every pass.
+     * The in-memory walks are bounded by short-lived auth work and skipped outright while
+     * nobody is registering or recovering. Database walks are behind cron rules instead of
+     * running every pass.
      *
-     * Everything but the rotations and the toast stacks is behind the sign-in surface, because
-     * everything but those two is a row the surface makes. A project without one reaches this method just
-     * as often - it has sessions like any other - and the walk it would take there is over a
+     * The session-row sweep joins the rotations and toast stacks before the sign-in gate: every
+     * project carrying this library has sessions. Everything else is behind the sign-in surface,
+     * because those rows are made by that surface. A project without one reaches this method just
+     * as often, and the later walks would be over a
      * collection that was never mounted, which raises rather than answering empty. That is
      * the runtime collections doing their job: an unmounted collection is not an empty one.
      *
@@ -575,6 +595,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         $this->sweepSessionRotations();
         $this->sweepSessionToasts();
+        $this->sweepEndedSessions();
         if (!$this->hasSignInSurface()) {
             return;
         }
@@ -608,6 +629,122 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->pendingRegistrationSweepRule = new CronRule(self::PENDING_REGISTRATION_SWEEP_RULE, $expression);
+    }
+
+    /**
+     * Arms the fixed schedule that removes ended session rows.
+     */
+    private function armSessionSweep(): void
+    {
+        $this->sessionSweepRule = new CronRule(self::SESSION_SWEEP_RULE, self::SESSION_SWEEP_CRON);
+    }
+
+    /**
+     * Removes one bounded batch of sessions no browser can present any more.
+     *
+     * Expiry is safe without a connection roster because the cookie dies with the row.
+     * The never-returned criterion needs that roster: without it an old open tab and an
+     * abandoned one are indistinguishable. A row reached by both queries is removed once.
+     *
+     * @throws HilosException On database or runtime failure
+     * @throws InvalidArgumentException When the project notification cannot be named
+     */
+    private function sweepEndedSessions(): void
+    {
+        if (!$this->sessionSweepBacklog && $this->sessionSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        $liveSessionTokens = [];
+        if ($connections !== null) {
+            foreach ($connections as $connection) {
+                $sessionToken = $connection->sessionToken;
+                if ($sessionToken !== null && $sessionToken !== '') {
+                    $liveSessionTokens[$sessionToken] = true;
+                }
+            }
+        }
+
+        $expired = Hilos::$db->sessions->findExpired(self::SESSION_SWEEP_BATCH);
+        $neverReturned = $connections === null
+            ? []
+            : Hilos::$db->sessions->findNeverReturned(
+                date('Y-m-d H:i:s', time() - self::NEVER_RETURNED_GRACE_SECONDS),
+                self::SESSION_SWEEP_BATCH,
+            );
+        $deletedSessionIds = [];
+        $deletedSessionTokens = [];
+        $expiredCount = 0;
+        $neverReturnedCount = 0;
+
+        try {
+            foreach ($expired as $session) {
+                if ($session->id === null
+                    || isset($deletedSessionIds[$session->id])
+                    || isset($liveSessionTokens[$session->token])
+                ) {
+                    continue;
+                }
+
+                $sessionId = $session->id;
+                $sessionToken = $session->token;
+                $session->actions->delete();
+                $deletedSessionIds[$sessionId] = true;
+                $deletedSessionTokens[] = $sessionToken;
+                $expiredCount++;
+            }
+
+            foreach ($neverReturned as $session) {
+                if ($session->id === null
+                    || isset($deletedSessionIds[$session->id])
+                    || isset($liveSessionTokens[$session->token])
+                ) {
+                    continue;
+                }
+
+                $sessionId = $session->id;
+                $sessionToken = $session->token;
+                $session->actions->delete();
+                $deletedSessionIds[$sessionId] = true;
+                $deletedSessionTokens[] = $sessionToken;
+                $neverReturnedCount++;
+            }
+        } finally {
+            $this->announceSweptSessions($deletedSessionTokens);
+        }
+
+        $deletedCount = $expiredCount + $neverReturnedCount;
+        $this->sessionSweepBacklog = (
+            count($expired) === self::SESSION_SWEEP_BATCH
+            || count($neverReturned) === self::SESSION_SWEEP_BATCH
+        ) && $deletedCount > 0;
+
+        if ($deletedCount > 0) {
+            $this->logAgentInfo(
+                "Session sweep: removed {$expiredCount} expired, {$neverReturnedCount} never returned",
+            );
+        }
+    }
+
+    /**
+     * Tells a project that declares the cleanup frame which browser tokens went away.
+     *
+     * @param list<string> $sessionTokens Removed session tokens
+     * @throws InvalidArgumentException When the signal name cannot be queued
+     */
+    private function announceSweptSessions(array $sessionTokens): void
+    {
+        if ($sessionTokens === []
+            || !isset(Hilos::appClass()::getAgentSignalRoutes()[HilosSignalConstants::HILOS_SESSIONS_SWEPT])
+        ) {
+            return;
+        }
+
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_SESSIONS_SWEPT,
+            new SessionsSweptSignalData($sessionTokens),
+        );
     }
 
     /**
@@ -1575,8 +1712,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             && $expiresAt <= TimeHelper::getSqlDateTime()
         ) {
             // The cookie resolved to an authenticated session that has outlived its
-            // expiry: drop it to anonymous before handing it back, so a stale cookie
-            // can never resume an authenticated identity. A null expiry is open-ended.
+            // expiry: drop it to anonymous before handing it back, then slide the row
+            // with the cookie already returned on this 101. Otherwise the sweep could
+            // delete a row that this browser will present again. A null expiry is open-ended.
             $this->logAgentInfo('session_expired ' . json_encode([
                 'event' => 'session_expired',
                 'session' => $session->id,
@@ -1584,7 +1722,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ]));
             $this->deauthenticateSession($sessionToken);
 
-            return Hilos::$db->sessions->findByToken($sessionToken) ?? $session;
+            $session = Hilos::$db->sessions->findByToken($sessionToken) ?? $session;
+            $session->actions->touch();
+
+            return $session;
         }
 
         $session->actions->touch();

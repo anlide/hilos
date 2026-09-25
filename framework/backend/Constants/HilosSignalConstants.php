@@ -31,6 +31,7 @@ use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
@@ -1179,6 +1180,16 @@ final class HilosSignalConstants
      * the identity it announces.
      */
     public const string HILOS_SESSION_STATE = 'hilos_session_state';
+
+    /**
+     * Sessions library → project agent: these browser session rows were swept.
+     *
+     * Carries the tokens of rows removed after their cookie lifetime ended or after an
+     * anonymous browser never returned ({@see SessionsSweptSignalData}). A project agent
+     * declares this frame when it stores data by browser token; when nobody declares it,
+     * the library sends nothing.
+     */
+    public const string HILOS_SESSIONS_SWEPT = 'hilos_sessions_swept';
 
     /**
      * Sessions library → every tab of one browser session: this is the whole toast stack now

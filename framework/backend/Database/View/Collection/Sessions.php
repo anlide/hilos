@@ -11,6 +11,7 @@ use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\View\Item\Session;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Sessions - Db collection of Session items.
@@ -98,6 +99,53 @@ final class Sessions extends DbCollection
     {
         $result = [];
         foreach ($this->objectCollection->findAwaitingRegistration($identifier) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Lists sessions whose cookie lifetime has ended, oldest row first.
+     *
+     * @param int $limit Maximum rows to load
+     * @return list<Session> Expired session Db items, empty when none
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object or order direction is invalid
+     * @throws DatabaseException When the lookup or lazy session load fails
+     */
+    public function findExpired(int $limit): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findExpired(TimeHelper::getSqlDateTime(), $limit) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Lists old anonymous sessions whose browser never returned, oldest row first.
+     *
+     * @param string $cutoffSql Latest first-handshake moment eligible for removal
+     * @param int $limit Maximum rows to load
+     * @return list<Session> Never-returned session Db items, empty when none
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object or order direction is invalid
+     * @throws DatabaseException When the lookup or lazy session load fails
+     */
+    public function findNeverReturned(string $cutoffSql, int $limit): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findNeverReturned($cutoffSql, $limit) as $objectSession) {
             $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
             if ($item === null) {
                 continue;

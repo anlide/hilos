@@ -41,6 +41,7 @@ use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
 use Demo\Tasks\Tables\TasksTableContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosAgentType;
@@ -147,9 +148,9 @@ final class TasksTopologyRegistryTest extends TestCase
         // features (settings, users, logs) own their actions/signals/browser tables —
         // asserted separately below.
         //
-        // The one frame the worker is addressed by is not its surface but the seam the
-        // sessions moved behind (HIL-710): the library says what a session became, and this
-        // agent is what turns that into a connection row and an identity on the wire.
+        // The two frames the worker is addressed by are not its surface but the seam the
+        // sessions moved behind (HIL-710): the library says what a session became or removed,
+        // and this agent updates the connection or guest rows that belong to the project.
         // The one group is not the application's own surface either: it is the framework's
         // notification channel, activated by the same feature that mounts the bell (HIL-721).
         $this->assertSame(
@@ -159,12 +160,16 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame(
-            [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
+            [
+                HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
+                HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class,
+            ],
             TasksAgent::AGENT_SIGNALS,
         );
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::TASKS,
+                HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::TASKS,
                 // The other half of the seam, and the eight endings the users library hands
                 // over: what a sign-in became reaches the library that owns the session.
                 HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,

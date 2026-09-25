@@ -692,6 +692,11 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   are hot where users are cold and the two have to be placed apart. What it does
   NOT own is the connection rows, so it speaks to the project holding them in two
   frames: `hilos_session_state` out, `hilos_session_rebind` back.
+  A session row is born on the handshake of an unknown token and deleted only by this library's sweep
+  (`hilos_sessions_expire`, every 15 minutes): a row whose expiry passed - the cookie slides with the row
+  on every handshake and dies with it - and an anonymous row that never came back, seven days after its only
+  handshake. A row with a live connection is never deleted. The deleted tokens go to the project in
+  `hilos_sessions_swept`, sent only where an agent declares it, so a project can drop what it keeps per browser.
 - `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
   the third (HIL-771): the notifications library, which owns the notification rows,
   the channel preferences, the delivery journal and the push endpoints. It is the

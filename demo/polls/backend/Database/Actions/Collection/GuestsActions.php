@@ -85,4 +85,19 @@ final class GuestsActions extends DbActions
 
         $this->objectCollection->deleteBySessionToken($sessionToken);
     }
+
+    /**
+     * Drops the guest rows of the session tokens removed by the framework sweep.
+     *
+     * @param list<string> $sessionTokens Session cookie tokens whose guest rows go
+     * @return int Number of guest rows removed
+     * @throws HilosException On database error
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     */
+    public function deleteForSessions(array $sessionTokens): int
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        return $this->objectCollection->deleteBySessionTokens($sessionTokens);
+    }
 }
