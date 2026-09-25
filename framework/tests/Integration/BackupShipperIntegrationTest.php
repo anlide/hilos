@@ -233,8 +233,9 @@ final class BackupShipperIntegrationTest extends TestCase
         $deletedBase = basename($archiveStep->localPath, BackupHistoryScanner::ARCHIVE_EXTENSION);
 
         // A pair this node never deleted: archives of a dead node, or history from before a
-        // disk replacement. The mirror must leave it. Pushed onto the receiver, kept locally,
-        // and not named by a marker.
+        // disk replacement. The mirror must leave it. It lives on the receiver alone - pushed
+        // there, then gone from this disk - and no marker names it: a pair on both sides would
+        // outlive a mirror that forgot to exclude everything it was not told to delete.
         $keptId = '2026-08-16_04-00-00';
         $keptBase = BackupCreator::archiveBaseName($keptId, self::BACKUP_ENV, BackupScope::FULL);
         $keptDir = $this->storeRoot . '/' . BackupScope::FULL->value;
@@ -245,6 +246,8 @@ final class BackupShipperIntegrationTest extends TestCase
         $shipper = $this->shipper();
         $this->runToSuccess($shipper->pushCommand($keptArchive, BackupScope::FULL->value));
         $this->runToSuccess($shipper->pushCommand($keptSidecar, BackupScope::FULL->value));
+        unlink($keptArchive);
+        unlink($keptSidecar);
 
         BackupDeletionMarker::write(dirname($archiveStep->localPath), $deletedBase);
         unlink($archiveStep->localPath);
