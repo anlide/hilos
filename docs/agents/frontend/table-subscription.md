@@ -645,9 +645,12 @@ of exactly the ceiling would be reported as approximate.
 
 ### What moves the count while the window sits there
 
-A live change moves the count only when it can be settled by a question about
-**one row** — never by counting the set again, which is the pass this whole
-section exists to avoid. The question is `containsRow`, and it is asked of the
+Where a single row decides the total, row-level arithmetic settles the count
+without re-querying the set. Where one row cannot decide the total (a row outside
+the window under search or filter, a table that cannot answer or refused, a mutation
+other than create, update or delete, or when the count is already capped past the
+ceiling and something other than create arrives), the set is counted again once
+at the end of the flush. The question is `containsRow`, and it is asked of the
 row source rather than answered from the filter map: two descriptions of one
 condition drift apart silently. The same answer decides more than the number: a
 created row in a filtered window is placed, and so appended or announced, only
@@ -662,22 +665,28 @@ The question is put once per change, whichever of the two needs it first.
 - **A change or a removal of a row outside the window** — nobody can place it.
   Whether it was in the set before the change is a question about its previous
   state, and no previous state is kept: a source update carries the changed
-  columns and a delete need carry no row at all. **The count stands still and no
-  frame is sent.** It becomes right again at the next window request — a page
-  turn, a new search or sort, a resubscribe.
+  columns and a delete need carry no row at all. The window is marked for a single
+  recount at the end of the flush, and a `table_viewport_count` frame is sent if
+  the total moved.
 - **A table that does not implement the question** answers "cannot say", and
-  keeps the whole-set re-query it always had. That is what the default is for: a
-  project table that never heard of this contract must not quietly stop counting.
-- **A refused question** is logged as an error with the table, page and row key.
-  A silent "the count did not change" is otherwise indistinguishable from a
-  source that failed to answer.
+  marks the window for that same single recount at the end of the flush (at most
+  once per window per flush, rather than on every change). That is what the default
+  is for: a project table that never heard of this contract must not quietly stop counting.
+- **A refused question** is logged as an error with the table, page and row key,
+  and marks the window for the end-of-flush recount. A silent "the count did not change"
+  is otherwise indistinguishable from a source that failed to answer.
 
-### Silence above the ceiling
+Under active search on a large database set, an unresolvable change means a pass
+over the database — at most once per flush per window. That cost is accepted
+because the reload rule (*F5 is not a way to learn the truth*, line 38) ranks
+above economizing queries (owner decision 24.09.2026, HIL-1089).
 
-While `totalExact` is false **no count frame is sent at all**. "At least 500" is
-neither truer nor newer for one more row, and finding out whether the set has
-fallen back under the ceiling would cost exactly the pass the ceiling avoids. A
-window in that state becomes exact again only by asking for a window.
+### Above the ceiling
+
+While `totalExact` is false, **a create sends no count frame at all**: "at least 500"
+plus one row is still "at least 500". A removal or an update marks the window for
+recount at the end of the flush; if the set has fallen below the ceiling, the count
+returns to exact and emits `table_viewport_count` with `pageCount`.
 
 The one crossing that does travel is **upward**: an exact count that grows past
 the ceiling sends one frame — `totalCount` = the ceiling, `totalExact: false`,
@@ -763,11 +772,15 @@ By the server, without being asked again:
 - **after the `page_response` of a subscription whose reported window names
   `facets`** — a tab coming back after a broken socket reports its options with
   its window (`TableViewportDescriptor.facets`) and gets its counts back. The
-  counts follow the answer: before it the table has no window to hold them.
+  counts follow the answer: before it the table has no window to hold them;
+- **at the end of a flush of live changes that reached the window** — every declared
+  filter.
 
-A live change of a row does not move the counts. Correcting a number would take
-the row's previous value — the per-source mechanism the count's ceiling declined
-— and the numbers catch up with the next change of the set.
+Live changes move the counts by recalculation rather than by incremental adjustment:
+each option has its own set, and a delete does not carry the row's previous values.
+Each count is capped at the ceiling plus one. The `table_facet_counts` frame is sent
+even when numbers match what was previously sent: the server does not store past facet
+frames, and the client overlays the frame filter by filter.
 
 ### What the client holds
 

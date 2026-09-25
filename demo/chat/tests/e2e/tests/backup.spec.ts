@@ -354,6 +354,100 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   ).toHaveCount(0)
 })
 
+// HIL-1089: a live backup creation and deletion move the option numbers in an open
+// scope dropdown without reloading the page.
+test('moves the scope counts when a backup lands and when it goes, without a reload', async ({
+  page,
+}) => {
+  await openBackups(page)
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Backups')
+
+  let fullLoads = 0
+  page.on('load', () => {
+    fullLoads += 1
+  })
+
+  const scopeFilter = page.locator('[data-id="hilos-table-filter-scope"]')
+  const scopeToggle = scopeFilter.locator('[data-id="hilos-dropdown-toggle"]')
+
+  const openScope = async (): Promise<void> => {
+    if ((await scopeToggle.getAttribute('aria-expanded')) !== 'true') {
+      await scopeToggle.click()
+    }
+  }
+
+  const anyFacet = page.locator('[data-id="hilos-table-facet-scope-any"]')
+  const schemaOnlyFacet = page.locator(
+    '[data-id="hilos-table-facet-scope-schema-only"]',
+  )
+
+  const readScopeCounts = async (): Promise<{
+    any: number
+    schemaOnly: number
+  }> => {
+    await openScope()
+    await expect(anyFacet).toBeVisible()
+    await expect(schemaOnlyFacet).toBeVisible()
+    const anyText = (await anyFacet.innerText()).trim()
+    const schemaOnlyText = (await schemaOnlyFacet.innerText()).trim()
+
+    return {
+      any: parseInt(anyText, 10),
+      schemaOnly: parseInt(schemaOnlyText, 10),
+    }
+  }
+
+  const initial = await readScopeCounts()
+
+  // Create a schema-only backup from the page dialog
+  await askCreate(page)
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('is ready.'),
+  ).toBeVisible({ timeout: 60_000 })
+  await dismissToasts(page)
+
+  // Re-open scope dropdown and assert counts grew without a reload
+  await expect
+    .poll(
+      async () => {
+        const current = await readScopeCounts()
+
+        return (
+          current.any > initial.any && current.schemaOnly > initial.schemaOnly
+        )
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true)
+
+  const afterCreate = await readScopeCounts()
+
+  // Identify the created archive row to delete it
+  const createdRow = page.locator('[data-id^="hilos-table-row-"]').first()
+  const createdKey = await createdRow.getAttribute('data-id')
+  expect(createdKey).toBeTruthy()
+
+  await deleteBackup(page, createdKey!)
+
+  // Assert counts returned down
+  await expect
+    .poll(
+      async () => {
+        const current = await readScopeCounts()
+
+        return (
+          current.any < afterCreate.any &&
+          current.schemaOnly < afterCreate.schemaOnly
+        )
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true)
+
+  expect(fullLoads).toBe(0)
+})
+
 // HIL-1021 acceptance, the half the leaf was raised for. A create used to be refused
 // only by a toast in the corner, gone in seconds; asked in a dialog, the refusal
 // stands as the first line of the dialog's body for as long as the dialog is open,

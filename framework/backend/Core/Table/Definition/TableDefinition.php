@@ -645,8 +645,8 @@ abstract class TableDefinition implements ArrayAccess
      * there is not a cheaper count but word of a new row: a window with a filter or a search has
      * its arriving rows placed only once the set is known to hold them, so a table that cannot
      * say leaves such a window with a count and no announcement. The count gets cheaper on the
-     * way - "cannot say" makes it re-read the whole window, sort and slice included, on every
-     * foreign write.
+     * way - "cannot say" makes it re-read the whole window, sort and slice included, once per
+     * flush of changes that reach the window.
      *
      * @param string|int $rowKey Row key to place against the set
      * @param TableQueryDTO $query Window query whose search and filters describe the set

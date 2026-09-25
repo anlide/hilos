@@ -131,6 +131,10 @@ interface ViewportTable
      * table does not count is absent from the map it returns, and a filter it was not asked about
      * is absent too.
      *
+     * The method is also called at the end of every flush of live changes that reached a window
+     * with declared options, so every count must stop at the ceiling (for SQL —
+     * {@see TableFacetTally::cappedSqlCount()}), as required by table-subscription.md:717.
+     *
      * @param TableQueryDTO $query Window query whose search and filters describe the set, its search
      *     scoped by {@see scopeSearch()}
      * @param array<string, list<int|float|string|bool>> $wanted Options to count, by filter key

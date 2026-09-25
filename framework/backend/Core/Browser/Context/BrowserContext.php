@@ -135,6 +135,27 @@ abstract class BrowserContext
      */
     private array $staleness = [];
 
+    /**
+     * Viewport windows whose total count could not be settled by one-row mutation arithmetic this tick,
+     * by accept key and browser table key, holding the subscribed page key.
+     *
+     * A window marked here is recounted once at the end of the flush, via viewportFilteredTotal().
+     *
+     * @var array<string, array<string, string>>
+     */
+    private array $totalRecounts = [];
+
+    /**
+     * Viewport windows whose declared filter facet counts must be recounted this tick,
+     * by accept key and browser table key, holding the subscribed page key.
+     *
+     * A window marked here recalculates its declared facets once at the end of the flush,
+     * via sendTableFacetCounts().
+     *
+     * @var array<string, array<string, string>>
+     */
+    private array $facetRecounts = [];
+
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
     private string $hilosClass = Hilos::class;
 
@@ -536,6 +557,11 @@ abstract class BrowserContext
      * over is the one its window describes, so every number agrees with the window the reader is
      * looking at. `$only` narrows the counts to the filters whose numbers moved: changing one filter
      * moves the counts of every other filter and leaves its own where they were.
+     *
+     * The counts are sent on three occasions:
+     * - when a window request asks for them alongside a new window ({@see self::recountFacets()});
+     * - when a table_facets signal declares or changes the options for an existing window;
+     * - at the end of a flush of live changes that reached the window, for all declared filters ({@see self::recountMarkedWindows()}).
      *
      * The page guards are re-checked first, as a window re-checks them: the counts are data from the
      * table, and a subscription the guards refuse is served none of it.
@@ -1011,6 +1037,8 @@ abstract class BrowserContext
             // the same frame again on the next tick, and on every tick after that one.
             $this->changes = new SourceChangeSet();
             $this->staleness = [];
+            $this->totalRecounts = [];
+            $this->facetRecounts = [];
         }
     }
 
@@ -1115,6 +1143,11 @@ abstract class BrowserContext
      * over the same subscriptions and into the same accumulator, so a row that both changed
      * and froze in one tick reaches its reader in one page answer (HIL-800).
      *
+     * Any viewport windows marked for recount this flush (total counts where mutation arithmetic
+     * could not settle the number, and declared facet counts for any window that received live
+     * mutations) are recalculated after the freshness loop and before page response payloads are
+     * emitted ({@see self::recountMarkedWindows()}).
+     *
      * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
@@ -1198,6 +1231,8 @@ abstract class BrowserContext
                 }
             }
         }
+
+        $this->recountMarkedWindows($failedSubscriptions);
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
             if (isset($failedSubscriptions[$acceptKey])) {
@@ -2338,6 +2373,11 @@ abstract class BrowserContext
      * someone reads it: the classifier of an arriving row, the count, and the classifier of an
      * edit share one answer.
      *
+     * Any mutation the table builds marks the window for a facet count recalculation when the
+     * connection has declared filters for it: whether a changed or removed row affected a particular
+     * option cannot be known without the row's previous record, so all declared facets are recalculated
+     * at the end of the flush.
+     *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param SourceChange $change Grouped DB/RT source change
@@ -2373,6 +2413,10 @@ abstract class BrowserContext
 
         if ($mutation === null) {
             return;
+        }
+
+        if (Hilos::$sr->getTableFacets($acceptKey, $browserKey) !== []) {
+            $this->facetRecounts[$acceptKey][$browserKey] = $page;
         }
 
         $own = $change->origin !== null && $change->origin === $acceptKey;
@@ -3076,25 +3120,28 @@ abstract class BrowserContext
     }
 
     /**
-     * Emits the live count signal when a mutation shifts the filtered total.
+     * Emits a viewport count shift if mutation arithmetic can settle it, or marks the window for recount.
      *
-     * The count is navigation metadata, not row content, so it is delivered live
-     * and never gated as pending. Unfiltered, the total moves by the mutation's
-     * row-level type (create +1, delete -1, update none) with no re-query — the
-     * type is row-level faithful because each table builds it that way (a presence
-     * or other secondary-source change is always an update). With a filter active,
-     * the row is placed against the set by asking the table about that one row, and
-     * only a table that cannot answer falls back to the whole-set re-query.
+     * In an exact window with no filter active, the type of the change settles the count by
+     * row-level type (create +1, delete -1, update none) with no re-query — the type is row-level
+     * faithful because each table builds it that way. With a filter active, the row is placed
+     * against the set by asking the table about that one row; if that one row settles the count,
+     * the count is updated and emitted immediately.
      *
-     * A window whose count already stopped at its ceiling is sent nothing at all. "At least 500"
-     * is neither truer nor newer for one more row, and finding out whether the set has fallen
-     * back under the ceiling would cost precisely the pass over it this path exists to avoid.
-     * Such a window becomes exact again the next time it asks for a window - a page turn, a new
-     * search, a resubscribe - and not before.
+     * Where one row cannot decide the total (row outside the window under search/filter, a table that
+     * cannot say or refused, mutations other than create/update/delete, or when the count is already
+     * capped past the ceiling and something other than create arrives), the window is marked for a
+     * single whole-set recount at the end of the flush ({@see self::recountMarkedWindows()}). This
+     * honours the F5 rule (table-subscription.md:38-41) while keeping the recount down to at most one
+     * per window per flush.
      *
-     * The one signal that does cross that line is the crossing itself: an exact total that grows
-     * past the ceiling is sent once, as the ceiling with the word that it is not exact, and after
-     * that the window is silent. Without it the pager would sit on an exact number it outgrew.
+     * A window whose count already stopped at its ceiling sends nothing on create ("at least 500"
+     * plus one is still "at least 500"). On update or delete, the window is marked for recount at the
+     * end of the flush so it returns to exact if the set dropped below the ceiling.
+     *
+     * The one signal that does cross that line upward is the crossing itself: an exact total that grows
+     * past the ceiling is sent once, as the ceiling with the word that it is not exact, and after that
+     * the window is silent until it drops below or is re-queried.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its total is updated in place
@@ -3103,6 +3150,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
+     * @throws InvalidArgumentException When the viewport count signal cannot be named
      */
     private function emitViewportCount(
         ViewportTable $table,
@@ -3114,14 +3162,99 @@ abstract class BrowserContext
         Closure $membership,
     ): void {
         if (!$viewport->totalExact()) {
+            if ($mutation->type !== TableMutationType::Create) {
+                $this->totalRecounts[$acceptKey][$browserKey] = $page;
+            }
+
             return;
         }
 
-        $total = $this->viewportTotalAfterMutation($table, $viewport, $mutation, $page, $acceptKey, $membership);
+        $total = $this->viewportTotalAfterMutation(
+            $table,
+            $viewport,
+            $mutation,
+            $page,
+            $acceptKey,
+            $browserKey,
+            $membership,
+        );
         if ($total === null) {
             return;
         }
 
+        $this->sendViewportTotal($viewport, $total, $acceptKey, $page, $browserKey);
+    }
+
+    /**
+     * Recalculates total count and declared facet counts for windows marked during this flush.
+     *
+     * @param array<string, true> $failedSubscriptions Subscriptions whose fan-out failed during this flush
+     * @throws InvalidArgumentException When an emitted signal cannot be named
+     */
+    private function recountMarkedWindows(array $failedSubscriptions): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        /** @var array<string, array<string, string>> $allWindows */
+        $allWindows = [];
+        foreach ($this->totalRecounts as $acceptKey => $tables) {
+            foreach ($tables as $tableKey => $page) {
+                $allWindows[$acceptKey][$tableKey] = $page;
+            }
+        }
+        foreach ($this->facetRecounts as $acceptKey => $tables) {
+            foreach ($tables as $tableKey => $page) {
+                $allWindows[$acceptKey][$tableKey] = $page;
+            }
+        }
+
+        foreach ($allWindows as $acceptKey => $tables) {
+            if (isset($failedSubscriptions[$acceptKey])) {
+                continue;
+            }
+
+            foreach ($tables as $tableKey => $page) {
+                $viewport = Hilos::$sr->getTableViewport((string) $acceptKey, (string) $tableKey);
+                if ($viewport === null) {
+                    continue;
+                }
+
+                if (isset($this->totalRecounts[$acceptKey][$tableKey])) {
+                    $table = $this->viewportTable((string) $tableKey);
+                    if ($table !== null) {
+                        $total = $this->viewportFilteredTotal($table, $viewport, (string) $page, (string) $acceptKey);
+                        if ($total !== null) {
+                            $this->sendViewportTotal($viewport, $total, (string) $acceptKey, (string) $page, (string) $tableKey);
+                        }
+                    }
+                }
+
+                if (isset($this->facetRecounts[$acceptKey][$tableKey])) {
+                    $this->sendTableFacetCounts((string) $page, (string) $acceptKey, $viewport);
+                }
+            }
+        }
+    }
+
+    /**
+     * Records a new total count on the viewport and emits table_viewport_count if it changed.
+     *
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param array{totalCount: int, totalExact: bool} $total Resolved total count and exactness
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     * @throws InvalidArgumentException When the viewport count signal cannot be named
+     */
+    private function sendViewportTotal(
+        TableViewportSubscription $viewport,
+        array $total,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
         $totalCount = $total[TableConstants::RESULT_KEY_TOTAL_COUNT];
         $totalExact = $total[TableConstants::RESULT_KEY_TOTAL_EXACT];
         if ($totalCount === $viewport->totalCount() && $totalExact === $viewport->totalExact()) {
@@ -3164,35 +3297,31 @@ abstract class BrowserContext
     }
 
     /**
-     * Resolves the filtered total after a mutation, or null to leave it unchanged.
+     * Resolves the filtered total after a mutation when one row decides it, or null/marks for recount.
      *
      * With no filter of any kind the mutation type settles it: every row is in the set, so a
      * create is one more and a delete is one fewer.
      *
      * With a filter active the set is not every row, and what the count needs is one bit — is
      * this row in the set now? That is asked of the table, and the answer decides:
+     * - a created row moves the count by one when it belongs to the set and not at all when it does not;
+     * - a row the window is holding was in the set by construction, so a delete takes one off and an
+     *   update takes one off if the row has left the set, while staying in the set moves nothing;
+     * - a row outside the window cannot be settled: whether it was in the set before this change is a
+     *   question about its previous state, which is not kept anywhere. The window is marked for a recount
+     *   at the end of the flush.
      *
-     * - a created row is one the set did not hold a moment ago, so it moves the count by one
-     *   when it belongs to the set and not at all when it does not;
-     * - a row the window is holding was in the set by construction, the window being part of it,
-     *   so a delete takes one off and an update takes one off only if the row has left the set;
-     * - a row outside the window is one nobody can place: whether it was in the set before this
-     *   change is a question about its previous state, and no previous state is kept anywhere -
-     *   a source update carries the changed columns and a delete need carry no row at all. The
-     *   count stands still, and the next window request makes it right again.
-     *
-     * A table that does not answer keeps the whole-set re-query it always had, which is the
-     * point of letting it not answer: a project table that never heard of this contract must not
-     * quietly stop counting. A table that refused the question is read the same way, since the
-     * answer is shared with the classifier and "cannot say" is the only reading a refusal has.
+     * A table that cannot answer or refuses the question also has its window marked for recount at the
+     * end of the flush, rather than re-querying the whole set on every change.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
      * @param string $acceptKey Target accept key
+     * @param string $browserKey Browser table key
      * @param Closure(): ?bool $membership Whether the row is in the set now, asked at most once per change, null when the table would not say
-     * @return ?array{totalCount: int, totalExact: bool} New total with the word on it, or null when it does not change
+     * @return ?array{totalCount: int, totalExact: bool} New total with the word on it, or null when unchanged/marked
      */
     private function viewportTotalAfterMutation(
         ViewportTable $table,
@@ -3200,6 +3329,7 @@ abstract class BrowserContext
         TableRowMutationDTO $mutation,
         string $page,
         string $acceptKey,
+        string $browserKey,
         Closure $membership,
     ): ?array {
         $query = $this->viewportQuery($viewport);
@@ -3208,13 +3338,13 @@ abstract class BrowserContext
                 TableMutationType::Create => $this->countedTotal($viewport, $viewport->totalCount() + 1),
                 TableMutationType::Delete => $this->countedTotal($viewport, max(0, $viewport->totalCount() - 1)),
                 TableMutationType::Update => null,
-                default => $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey),
+                default => $this->markTotalRecount($acceptKey, $browserKey, $page),
             };
         }
 
         $contains = $membership();
         if ($contains === null) {
-            return $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey);
+            return $this->markTotalRecount($acceptKey, $browserKey, $page);
         }
 
         $inWindow = $viewport->hasRow((string) $mutation->rowKey);
@@ -3222,10 +3352,27 @@ abstract class BrowserContext
 
         return match ($mutation->type) {
             TableMutationType::Create => $contains ? $this->countedTotal($viewport, $viewport->totalCount() + 1) : null,
-            TableMutationType::Delete => $inWindow ? $oneFewer : null,
-            TableMutationType::Update => $inWindow && !$contains ? $oneFewer : null,
-            default => $this->viewportFilteredTotal($table, $viewport, $page, $acceptKey),
+            TableMutationType::Delete => $inWindow ? $oneFewer : $this->markTotalRecount($acceptKey, $browserKey, $page),
+            TableMutationType::Update => $inWindow
+                ? ($contains ? null : $oneFewer)
+                : $this->markTotalRecount($acceptKey, $browserKey, $page),
+            default => $this->markTotalRecount($acceptKey, $browserKey, $page),
         };
+    }
+
+    /**
+     * Marks a viewport window for a total count recalculation at the end of the flush.
+     *
+     * @param string $acceptKey Target accept key
+     * @param string $browserKey Browser table key
+     * @param string $page Subscribed page key
+     * @return null Always null to signal no immediate count arithmetic frame
+     */
+    private function markTotalRecount(string $acceptKey, string $browserKey, string $page): null
+    {
+        $this->totalRecounts[$acceptKey][$browserKey] = $page;
+
+        return null;
     }
 
     /**

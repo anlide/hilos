@@ -21,6 +21,7 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
+use Hilos\Core\Table\DTO\TableViewportUnannounceDTO;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
@@ -50,17 +51,100 @@ final class BrowserContextViewportCountTest extends TestCase
         parent::tearDown();
     }
 
-    public function testAChangeToARowOutsideTheWindowLeavesTheCountAlone(): void
+    public function testAChangeToARowOutsideTheWindowRecountsTheTotalAtEndOfFlush(): void
     {
         $viewport = $this->searchingViewport(40);
-        $context = $this->boot($viewport, inSet: ['alpha']);
+        $context = $this->boot($viewport, inSet: ['alpha'], totalCount: 41);
 
         $context->record(SourceChange::dbUpdated(CountingUnitTable::SOURCE_KEY, 'gamma', ['label' => 'Gamma']));
         $context->flushToSignalRouter();
 
         // Whether gamma was in the set a moment ago is a question about its previous state, and
-        // nobody keeps that. The count stands still rather than guessing, and says nothing.
+        // nobody keeps that. The total is re-queried once at the end of the flush.
+        $count = $this->nextCount();
+        $this->assertSame(41, $count->totalCount);
+        $this->assertTrue($count->totalExact);
+        $this->assertSame(5, $count->pageCount);
+        $this->assertSame(41, $viewport->totalCount());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testADeleteToARowOutsideTheWindowRecountsTheTotalAtEndOfFlush(): void
+    {
+        $viewport = $this->searchingViewport(40);
+        $context = $this->boot($viewport, inSet: ['alpha'], totalCount: 39);
+
+        $context->record(SourceChange::dbDeleted(CountingUnitTable::SOURCE_KEY, 'gamma', ['key' => 'gamma']));
+        $context->flushToSignalRouter();
+
+        $this->nextUnannounce();
+        $count = $this->nextCount();
+        $this->assertSame(39, $count->totalCount);
+        $this->assertTrue($count->totalExact);
+        $this->assertSame(4, $count->pageCount);
+        $this->assertSame(39, $viewport->totalCount());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTwoUnresolvableChangesInOneFlushTriggerOneQuery(): void
+    {
+        $viewport = $this->searchingViewport(40);
+        $context = $this->boot($viewport, inSet: ['alpha'], totalCount: 42);
+
+        $context->record(SourceChange::dbUpdated(CountingUnitTable::SOURCE_KEY, 'gamma', ['label' => 'Gamma']));
+        $context->record(SourceChange::dbDeleted(CountingUnitTable::SOURCE_KEY, 'delta', ['key' => 'delta']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(1, $this->table()->queryCount);
+        $this->nextUnannounce();
+        $count = $this->nextCount();
+        $this->assertSame(42, $count->totalCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testRecountMatchingRecordedTotalEmitsNoFrame(): void
+    {
+        $viewport = $this->searchingViewport(40);
+        $context = $this->boot($viewport, inSet: ['alpha'], totalCount: 40);
+
+        $context->record(SourceChange::dbUpdated(CountingUnitTable::SOURCE_KEY, 'gamma', ['label' => 'Gamma']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(1, $this->table()->queryCount);
         $this->assertSame(40, $viewport->totalCount());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testDeleteWhenCountPastCeilingFallingBelowCeilingEmitsExactCount(): void
+    {
+        $viewport = $this->searchingViewport(TableConstants::COUNT_CEILING, totalExact: false);
+        $context = $this->boot($viewport, inSet: ['alpha'], totalCount: 499, totalExact: true);
+
+        $context->record(SourceChange::dbDeleted(CountingUnitTable::SOURCE_KEY, 'gamma', ['key' => 'gamma']));
+        $context->flushToSignalRouter();
+
+        $this->nextUnannounce();
+        $count = $this->nextCount();
+        $this->assertSame(499, $count->totalCount);
+        $this->assertTrue($count->totalExact);
+        $this->assertSame(50, $count->pageCount);
+        $this->assertSame(499, $viewport->totalCount());
+        $this->assertTrue($viewport->totalExact());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testTableUnableToAnswerTriggersOneRecountForTwoChangesInFlush(): void
+    {
+        $viewport = $this->searchingViewport(40);
+        $context = $this->boot($viewport, inSet: null, totalCount: 42);
+
+        $context->record(SourceChange::dbCreated(CountingUnitTable::SOURCE_KEY, 'delta', ['key' => 'delta']));
+        $context->record(SourceChange::dbCreated(CountingUnitTable::SOURCE_KEY, 'epsilon', ['key' => 'epsilon']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(1, $this->table()->queryCount);
+        $count = $this->nextCount();
+        $this->assertSame(42, $count->totalCount);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -147,8 +231,8 @@ final class BrowserContextViewportCountTest extends TestCase
         $context->record(SourceChange::dbCreated(CountingUnitTable::SOURCE_KEY, 'epsilon', ['key' => 'epsilon']));
         $context->flushToSignalRouter();
 
-        // "At least 500" is no truer for one more row, and checking whether the set has fallen
-        // back under the ceiling would cost the very pass over it the ceiling exists to avoid.
+        // "At least 500" plus one row is still "at least 500", so a create above the ceiling
+        // sends nothing and does not mark the window for recount.
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -183,13 +267,19 @@ final class BrowserContextViewportCountTest extends TestCase
      * Boots the registry, the counting table and one connection holding the given viewport.
      *
      * @param TableViewportSubscription $viewport Viewport to register for the connection
-     * @param list<string> $inSet Row-id keys the table answers as belonging to the searched set
+     * @param ?list<string> $inSet Row-id keys the table answers as belonging to the searched set
+     * @param int $totalCount Total count returned by query()
+     * @param bool $totalExact Whether the query() total is exact
      * @return CountingUnitContext Booted browser context
      */
-    private function boot(TableViewportSubscription $viewport, array $inSet): CountingUnitContext
-    {
+    private function boot(
+        TableViewportSubscription $viewport,
+        ?array $inSet,
+        int $totalCount = 0,
+        bool $totalExact = true,
+    ): CountingUnitContext {
         Hilos::$sr = new SignalRouter();
-        Hilos::$table = new CountingUnitTableContext($inSet);
+        Hilos::$table = new CountingUnitTableContext($inSet, $totalCount, $totalExact);
         Hilos::$table->configure();
         Hilos::$sr->subscribeToPage(
             CountingUnitContext::PAGE,
@@ -198,6 +288,17 @@ final class BrowserContextViewportCountTest extends TestCase
         Hilos::$sr->setTableViewport('ak-1', $viewport);
 
         return new CountingUnitContext();
+    }
+
+    /**
+     * @return CountingUnitTable The booted fixture table
+     */
+    private function table(): CountingUnitTable
+    {
+        $table = Hilos::$table?->get(CountingUnitTable::TABLE);
+        $this->assertInstanceOf(CountingUnitTable::class, $table);
+
+        return $table;
     }
 
     /**
@@ -214,6 +315,24 @@ final class BrowserContextViewportCountTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
         $this->assertInstanceOf(TableViewportCountDTO::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
+     * Asserts the next queued signal is an addressed table viewport unannouncement and returns it.
+     *
+     * @return TableViewportUnannounceDTO The unannounce payload
+     */
+    private function nextUnannounce(): TableViewportUnannounceDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_UNANNOUNCE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportUnannounceDTO::class, $signal->data->data);
 
         return $signal->data->data;
     }
@@ -263,15 +382,23 @@ final class CountingUnitContext extends BrowserContext
 final class CountingUnitTableContext extends TableContext
 {
     /**
-     * @param list<string> $inSet Row-id keys the table answers as belonging to the searched set
+     * @param ?list<string> $inSet Row-id keys the table answers as belonging to the searched set
+     * @param int $totalCount Total count to return from query()
+     * @param bool $totalExact Whether the total returned from query() is exact
      */
-    public function __construct(private readonly array $inSet = [])
-    {
+    public function __construct(
+        private readonly ?array $inSet = [],
+        private readonly int $totalCount = 0,
+        private readonly bool $totalExact = true,
+    ) {
     }
 
     public function configure(): void
     {
-        $this->register(CountingUnitTable::TABLE, new CountingUnitTable($this->inSet));
+        $this->register(
+            CountingUnitTable::TABLE,
+            new CountingUnitTable($this->inSet, $this->totalCount, $this->totalExact),
+        );
     }
 }
 
@@ -284,11 +411,18 @@ final class CountingUnitTable extends TableDefinition implements SelfSnapshotTab
     public const string SLOT = 'countingRows';
     public const string SOURCE_KEY = 'countingSource';
 
+    public int $queryCount = 0;
+
     /**
-     * @param list<string> $inSet Row-id keys that belong to the searched set
+     * @param ?list<string> $inSet Row-id keys that belong to the searched set, null when containsRow cannot say
+     * @param int $totalCount Total count to return from query()
+     * @param bool $totalExact Whether the total returned from query() is exact
      */
-    public function __construct(private readonly array $inSet = [])
-    {
+    public function __construct(
+        private readonly ?array $inSet = [],
+        private readonly int $totalCount = 0,
+        private readonly bool $totalExact = true,
+    ) {
         parent::__construct();
     }
 
@@ -305,10 +439,14 @@ final class CountingUnitTable extends TableDefinition implements SelfSnapshotTab
      *
      * @param string|int $rowKey Row key to place against the set
      * @param TableQueryDTO $query Window query (ignored: the fixture states the set outright)
-     * @return ?bool Whether the row is in the set
+     * @return ?bool Whether the row is in the set, or null when the table cannot say
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
+        if ($this->inSet === null) {
+            return null;
+        }
+
         return in_array((string) $rowKey, $this->inSet, true);
     }
 
@@ -356,14 +494,21 @@ final class CountingUnitTable extends TableDefinition implements SelfSnapshotTab
     }
 
     /**
-     * Serves an empty window: these tests are about the count, and never re-read the set.
+     * Serves an empty window with the total configured for the test.
      *
      * @param TableQueryDTO $query Window query parameters
-     * @return TableSnapshotDTO Empty window
+     * @return TableSnapshotDTO Window snapshot
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return new TableSnapshotDTO(rows: [], totalCount: 0, limit: $query->limit);
+        $this->queryCount++;
+
+        return new TableSnapshotDTO(
+            rows: [],
+            totalCount: $this->totalCount,
+            totalExact: $this->totalExact,
+            limit: $query->limit,
+        );
     }
 }
 

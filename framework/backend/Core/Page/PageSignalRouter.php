@@ -622,9 +622,10 @@ class PageSignalRouter
      * Records the options a connection asked counts beside, and answers with the counts at once.
      *
      * The list is kept beside the connection's window rather than inside it, and after this the
-     * server sends the counts again on its own whenever the set changes ({@see self::recountFacets()}):
-     * the client never comes back for them. A table with no window on this connection yet gets its
-     * counts with its first window instead.
+     * server sends the counts again on its own whenever the set changes — either when a new window arrives
+     * ({@see self::recountFacets()}) or when live row mutations reach the window at the end of a flush
+     * ({@see BrowserContext::flushToSignalRouter()}): the client never comes back for them. A table with no
+     * window on this connection yet gets its counts with its first window instead.
      *
      * @param WebSocketTableFacetsSignalDTO $data Signal data
      * @param string $source Signal source
