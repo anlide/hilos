@@ -173,7 +173,8 @@ running),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
 the CLI process itself has nothing to read or write), `test:table:lag` (the master answers
 it out of memory and writes its own node's lag row, so the CLI process has nothing to read or
-write either — HIL-1020), `protected-mode:inspect` (reads
+write either — HIL-1020), `test:table:refuse` (the same shape: the master answers it out of
+memory and writes its own node's refusal row — HIL-1131), `protected-mode:inspect` (reads
 in-memory state and has to answer on a frozen node, which is exactly where a connect would
 hang), the protected-mode drive family `test:protected-mode:enter` / `:leave` / `:open` /
 `:pass` / `:close` (the drive commands write nothing from this process, and the rows the mint

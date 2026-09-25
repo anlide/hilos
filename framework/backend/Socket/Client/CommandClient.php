@@ -289,6 +289,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::TABLE_TEST_REFUSE) {
+                // Test-only: refuse the windows of one table on this node (HIL-1131). Answered here
+                // rather than parked, because the refused table is a row of the master's own runtime
+                // state and no agent owns it.
+                $reply = $this->answerTableRefusal($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);
@@ -382,6 +391,41 @@ class CommandClient extends AbstractClient implements CommandClientInterface
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_WINDOW_MS => $row->windowMs,
             CommandConstants::FIELD_FACETS_MS => $row->facetsMs,
+        ]);
+    }
+
+    /**
+     * Writes the table whose windows this request refuses and answers with the row as written (HIL-1131).
+     *
+     * Every request names the whole state: a request without a table takes the refusal off. The key
+     * is not checked against the tables this node serves - the master serves none, and a key no
+     * table wears simply refuses nothing. The reply is read back from the row rather than echoed
+     * from the request, so what the caller is told is what the workers of this node will read.
+     *
+     * @param CommandRequestDTO $request Refusal request naming the table by its wire key
+     * @return CommandReplyDTO Reply carrying the refused table after the write, or the error to answer instead
+     */
+    private function answerTableRefusal(CommandRequestDTO $request): CommandReplyDTO
+    {
+        // external-boundary: a test harness's command line, checked on the very next line; absent means off
+        $tableKey = $request->payload[CommandConstants::FIELD_TABLE_KEY] ?? '';
+        if (!is_string($tableKey)) {
+            return CommandReplyDTO::error($request->correlationId, 'tableKey must be a string');
+        }
+
+        $row = Hilos::$rt?->hilosTableRefusalRuntime;
+        if ($row === null) {
+            return CommandReplyDTO::error($request->correlationId, 'This node holds no runtime state for a table refusal');
+        }
+
+        try {
+            $row->actions->set($tableKey);
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_TABLE_KEY => $row->tableKey,
         ]);
     }
 

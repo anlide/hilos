@@ -1,10 +1,11 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
+import {
+  armSocketDrop,
+  dropSocket,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
-
-/** Name of the page-side hook {@link armSocketDrop} installs for {@link dropSocket}. */
-const DROP_SOCKET_HOOK = '__hilosE2eDropSocket'
 
 /** Wire key of the framework users table, the one table of the `/hilos/users` page. */
 const HILOS_USERS_TABLE = 'hilosUsers'
@@ -78,43 +79,6 @@ test('cold-loads a parametrized admin page through the framework shell', async (
   expect(new URL(page.url()).pathname).toBe('/hilos/billing')
 })
 
-// The e2e needs one thing the browser will not give it: a socket that dies while
-// the page stays put. Playwright's offline emulation was the obvious way and does
-// not work — Chromium blocks new requests but leaves an established WebSocket
-// running, so the client never notices and `conn-state` stays `connected`
-// (measured: three runs, 15 s each, never a transition). The connection object is
-// deliberately not exposed on `window`, so the remaining seam is the one the page
-// itself goes through: wrap the constructor before the app loads, keep the sockets
-// it makes, and close them on demand. The product is untouched — only the drop is
-// simulated, and everything after it is the real client's own reconnect.
-async function armSocketDrop(page: Page): Promise<void> {
-  await page.addInitScript((hook: string) => {
-    const sockets: WebSocket[] = []
-    const NativeWebSocket = window.WebSocket
-    class TrackedWebSocket extends NativeWebSocket {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols)
-        sockets.push(this)
-      }
-    }
-    window.WebSocket = TrackedWebSocket
-    Object.defineProperty(window, hook, {
-      value: () => {
-        for (const socket of sockets.splice(0)) {
-          socket.close()
-        }
-      },
-    })
-  }, DROP_SOCKET_HOOK)
-}
-
-/** Closes every socket the page has opened, the way a dropped network would. */
-function dropSocket(page: Page): Promise<void> {
-  return page.evaluate((hook) => {
-    ;(window as unknown as Record<string, () => void>)[hook]()
-  }, DROP_SOCKET_HOOK)
-}
-
 // Identity-race e2e (HIL-599): an admin page whose socket drops comes back with
 // fresh rows and no false refusal. The reconnect is the whole point — the page
 // re-subscribes the instant the socket reports `connected`, reporting the window
@@ -163,7 +127,7 @@ test('re-serves an admin page after a dropped socket, with no false refusal', as
 
   // Kill the socket and let the client notice on its own. Nothing in the product
   // is touched: the connection object is not on `window`, so the drop reaches it
-  // through the constructor the page itself used (see dropSocket above). The
+  // through the constructor the page itself used (see dropSocket). The
   // proof of the drop is the NEXT socket rather than a glimpse of the
   // disconnected label, which a fast reconnect can pass through unseen.
   await dropSocket(page)

@@ -28,6 +28,7 @@ export {
   watchTopWithin,
   Watched,
 } from './geometry.js'
+export { armSocketDrop, dropSocket } from './socket.js'
 export { dismissToasts } from './toasts.js'
 export {
   clearCustomSetting,

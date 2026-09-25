@@ -53,6 +53,9 @@ final class CommandConstants
     /** @var string Payload key: milliseconds a facet count is held back by the test-only table lag */
     public const string FIELD_FACETS_MS = 'facetsMs';
 
+    /** @var string Payload key: wire key of the table whose windows the test-only table refusal refuses; empty when off */
+    public const string FIELD_TABLE_KEY = 'tableKey';
+
     /** @var string Reply status: command handled successfully */
     public const string STATUS_OK = 'ok';
 

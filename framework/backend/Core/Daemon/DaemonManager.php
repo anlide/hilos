@@ -139,6 +139,7 @@ use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
+use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
 use Hilos\TruthSource\RtClusterClaimRegistry;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtReplicaOriginMap;
@@ -593,6 +594,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->registerBackupCronRules();
         $this->registerProtectedModeTruthSource();
         $this->registerTableLagTruthSource();
+        $this->registerTableRefusalTruthSource();
         $this->registerSessionRotationTruthSource();
         $this->registerClusterNodesTruthSource();
         $this->restoreProtectedModeFreeze();
@@ -6588,6 +6590,26 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         RtTruthSourceRegistry::registerDaemon(StateTableLagRuntime::RT_ITEM);
+    }
+
+    /**
+     * Registers the daemon master as the non-agent truth source for the test-only table refusal
+     * singleton (HIL-1131).
+     *
+     * The master answers `test:table:refuse` itself, the way it answers `test:table:lag`, so no
+     * owner agent stands behind the write, and the RT write-guard accepts such an agent-less writer
+     * only for a collection-wide source. Like the lag row it is node-local: the refusal holds on the
+     * node whose master took the command, and a replica of it would be one node's refusal
+     * overwriting another's. The early return means Hilos::$rt is null - the framework mounts the
+     * row for every project that has an RT context.
+     */
+    private function registerTableRefusalTruthSource(): void
+    {
+        if (Hilos::$rt?->hilosTableRefusalRuntime === null) {
+            return;
+        }
+
+        RtTruthSourceRegistry::registerDaemon(StateTableRefusalRuntime::RT_ITEM);
     }
 
     /**

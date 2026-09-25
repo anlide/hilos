@@ -44,6 +44,9 @@ use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -56,8 +59,19 @@ use PHPUnit\Framework\TestCase;
  */
 final class BrowserContextSubscribeWindowTest extends TestCase
 {
+    private ?RtContext $previousRt = null;
+
+    public function setUp(): void
+    {
+        parent::setUp();
+
+        $this->previousRt = Hilos::$rt;
+    }
+
     public function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(StateTableRefusalRuntime::RT_ITEM);
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = null;
         Hilos::$table = null;
 
@@ -323,6 +337,46 @@ final class BrowserContextSubscribeWindowTest extends TestCase
         );
     }
 
+    public function testATableTheTestLeverRefusesGoesIntoRefusedWindowsBesideItsLiveSibling(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        // Written outside any agent, as the master writes it in answer to test:table:refuse; the
+        // RT sync frame the write queues is drained so the answer is the next frame out.
+        Hilos::$rt = new SubscribeWindowUnitRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(StateTableRefusalRuntime::RT_ITEM);
+        Hilos::$rt->hilosTableRefusalRuntime?->actions->set(SubscribeWindowUnitTable::SIBLING_TABLE);
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            continue;
+        }
+
+        ob_start();
+        new SubscribeWindowUnitBrowserContext()->subscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::SIBLINGS_PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+        $logged = (string) ob_get_clean();
+
+        // Both tables can build their window; the one the lever names is refused the way a broken
+        // one is, and its sibling on the same page answers with its rows as if nothing happened.
+        $this->assertStringContainsString('test:table:refuse', $logged);
+        $answer = self::answer();
+        $payload = $answer[PageResponseSignalData::payload] ?? [];
+        $this->assertIsArray($payload);
+        $windows = $payload[PagePayload::windows] ?? [];
+        $this->assertIsArray($windows);
+        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::SIBLING_TABLE, $windows);
+        $this->assertSame(
+            [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
+            self::refusalOf($answer, SubscribeWindowUnitTable::SIBLING_TABLE),
+        );
+        $this->assertCount(2, self::windowOf($answer, SubscribeWindowUnitTable::TABLE)[TableWindowSignalData::rows]);
+        $this->assertArrayNotHasKey(SubscribeWindowUnitTable::TABLE, $payload[PagePayload::refusedWindows] ?? []);
+    }
+
     /**
      * @return list<SubscribeWindowUnitRow> Three rows in the order the table hands them over
      */
@@ -468,10 +522,11 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
     public const string OTHER_PAGE = 'subscribe_window_unit_other_page';
     public const string REFUSING_PAGE = 'subscribe_window_unit_refusing_page';
     public const string MIXED_PAGE = 'subscribe_window_unit_mixed_page';
+    public const string SIBLINGS_PAGE = 'subscribe_window_unit_siblings_page';
     public const string SIGNAL = 'subscribe_window_unit_signal';
 
     /**
-     * Resolves a page config for each of the three test pages.
+     * Resolves a page config for each of the test pages.
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Page metadata, or null when absent
@@ -479,7 +534,7 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
-        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE, self::MIXED_PAGE], true)) {
+        if (!in_array($page, [self::PAGE, self::OTHER_PAGE, self::REFUSING_PAGE, self::MIXED_PAGE, self::SIBLINGS_PAGE], true)) {
             return null;
         }
 
@@ -500,6 +555,10 @@ final class SubscribeWindowUnitBrowserContext extends BrowserContext
             self::MIXED_PAGE => BrowserPageBindings::fromArray([
                 SubscribeWindowUnitTable::TABLE => [],
                 SubscribeWindowRefusingTable::TABLE => [],
+            ]),
+            self::SIBLINGS_PAGE => BrowserPageBindings::fromArray([
+                SubscribeWindowUnitTable::TABLE => [],
+                SubscribeWindowUnitTable::SIBLING_TABLE => [],
             ]),
             default => BrowserPageBindings::empty(),
         };
@@ -527,12 +586,27 @@ final class SubscribeWindowUnitTableContext extends TableContext
             new SubscribeWindowUnitTable($this->rows, $this->progress, $this->progressRefuses),
         );
         $this->register(SubscribeWindowRefusingTable::TABLE, new SubscribeWindowRefusingTable());
+        $this->register(SubscribeWindowUnitTable::SIBLING_TABLE, new SubscribeWindowUnitTable($this->rows));
+    }
+}
+
+/**
+ * Runtime context of a project that mounts nothing of its own; the table refusal row comes with the framework.
+ */
+final class SubscribeWindowUnitRtContext extends RtContext
+{
+    public function configure(): void
+    {
     }
 }
 
 final class SubscribeWindowUnitTable extends TableDefinition implements SelfSnapshotTable
 {
     public const string TABLE = 'subscribeWindowUnitTable';
+
+    /** Key the same healthy table is registered under a second time, as a sibling on one page. */
+    public const string SIBLING_TABLE = 'subscribeWindowSiblingTable';
+
     public const string SLOT = 'subscribeWindowUnitRows';
 
     /** Filter key the fixture counts its rows by. */

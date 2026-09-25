@@ -132,13 +132,14 @@ owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 
 ### Framework-Owned Singleton Aliases
 
-Three aliases exist on every `RtContext` without any project registration:
+Four aliases exist on every `RtContext` without any project registration:
 
 | Alias | View item | Backing state |
 |---|---|---|
 | `hilosBackupRuntime` | `Runtime/View/Item/BackupRuntime` | `Runtime/State/Item/BackupRuntime` |
 | `hilosProtectedModeRuntime` | `Runtime/View/Item/ProtectedModeRuntime` | `Runtime/State/Item/ProtectedModeRuntime` |
 | `hilosTableLagRuntime` | `Runtime/View/Item/TableLagRuntime` | `Runtime/State/Item/TableLagRuntime` |
+| `hilosTableRefusalRuntime` | `Runtime/View/Item/TableRefusalRuntime` | `Runtime/State/Item/TableRefusalRuntime` |
 
 The framework declares their representation in the base `RtContext` constructor,
 because it owns these rows and every caller that reads them; the project decides
@@ -175,6 +176,11 @@ is the test lever `test:table:lag` pulls to hold a browser table's changed windo
 and its facet counts back, and the tables it slows are the framework's own. On
 production it is inert — only the master writes it, and the command socket
 refuses every `test:` command there — so it stays at zero for good.
+
+`hilosTableRefusalRuntime` is its twin (HIL-1131), mounted the same way and inert
+the same way: it is the test lever `test:table:refuse` pulls to make every window
+of one named table fail to build, so the table's "List unavailable" state can be
+seen on a stand. On production it stays empty for good.
 
 ## Backing-State Boundary
 
@@ -422,7 +428,7 @@ inside its scope that the owner does not send is a row that no longer exists.
 
 **What travels is what an agent owns.** The node announces a write only for the
 collections its own agents registered, so a project's collection is replicated
-by having an owner, and nothing else has to be declared. Three framework
+by having an owner, and nothing else has to be declared. Four framework
 keys stand outside that rule, because the daemon master registers them on every
 node and no agent stands behind them:
 
@@ -433,6 +439,9 @@ node and no agent stands behind them:
 - **`hilosTableLagRuntime` is node-local and never travels either.** The master
   answering `test:table:lag` writes its own node's lag, and the lag holds only
   on that node: a test slows the tables of the node it talks to.
+- **`hilosTableRefusalRuntime` is node-local and never travels, for the same
+  reason.** The master answering `test:table:refuse` writes its own node's
+  refusal, and only that node's workers refuse the table's windows.
 - **`hilosSessionRotations` travels both ways.** One cluster-wide store with a
   second writer by act: the agent owning the session seam announces a rotation
   from a worker, and whichever master receives the handshake that spends the
@@ -441,7 +450,7 @@ node and no agent stands behind them:
   as a split — or the spent ticket would survive there and buy a second
   handshake inside its lifetime.
 
-All three are framework-owned and all three are named in `DaemonManager`; an
+All four are framework-owned and all four are named in `DaemonManager`; an
 application collection has no such case, and adding one is not a knob that exists.
 
 **Ownership is claimed on two axes: which rows, and which operations.** A claim

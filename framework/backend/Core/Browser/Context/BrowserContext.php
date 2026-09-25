@@ -79,6 +79,7 @@ use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowRefusedSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Exception\TableWindowTestRefusalException;
 use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
@@ -937,7 +938,9 @@ abstract class BrowserContext
      * A table that cannot build its window answers null rather than throwing: a window that
      * does not arrive is a normal outcome on both roads — the page ships the table in
      * `refusedWindows`, and the viewport reply is a table_window_refused frame — and the
-     * line in the log is where the failure is said at all.
+     * line in the log is where the failure is said at all. The test lever `test:table:refuse`
+     * drops the build here, inside the trap, so a window it refuses takes the same road as a
+     * real failure.
      *
      * @param ViewportTable $table Table the window is taken from
      * @param TableViewportSubscription $viewport Window descriptor; its delivered rows are updated
@@ -950,6 +953,7 @@ abstract class BrowserContext
         string $page,
     ): ?BrowserTableWindow {
         try {
+            $this->refuseUnderTestLever($viewport->tableKey);
             $query = $this->viewportQuery($viewport);
             $snapshot = $table->getPage($query);
 
@@ -989,6 +993,24 @@ abstract class BrowserContext
             );
 
             return null;
+        }
+    }
+
+    /**
+     * Refuses the window of the table the test lever `test:table:refuse` names (HIL-1131).
+     *
+     * The lever is read on every build rather than once, so taking it off lets the very next
+     * window through. A node without runtime state and a lever that names no table refuse
+     * nothing, which is the path every production window takes.
+     *
+     * @param string $tableKey Wire key of the table whose window is being built
+     * @throws TableWindowTestRefusalException When the lever names this table
+     */
+    private function refuseUnderTestLever(string $tableKey): void
+    {
+        $refused = Hilos::$rt?->hilosTableRefusalRuntime?->tableKey;
+        if ($refused !== '' && $refused === $tableKey) {
+            throw new TableWindowTestRefusalException($tableKey);
         }
     }
 

@@ -44,9 +44,11 @@ use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
+use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -81,6 +83,7 @@ final class BrowserContextTableWindowTest extends TestCase
     {
         ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterDaemon(StateTableLagRuntime::RT_ITEM);
+        RtTruthSourceRegistry::unregisterDaemon(StateTableRefusalRuntime::RT_ITEM);
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = null;
         Hilos::$table = null;
@@ -324,6 +327,78 @@ final class BrowserContextTableWindowTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testAWindowTheTestLeverRefusesIsRefusedTheWayARealFailureIs(): void
+    {
+        $this->mountLabelledRows();
+        $this->refuseTable(TableWindowUnitTable::TABLE);
+
+        // The lever drops the build inside its trap, so what the connection and the log see is
+        // exactly what a table failing on its own produces - and the log line says who did it.
+        $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 10);
+        ob_start();
+        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            $viewport,
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertFalse($delivered);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::TABLE_WINDOW_REFUSED, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(TableWindowRefusedSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                TableWindowRefusedSignalData::page => TableWindowUnitBrowserContext::PAGE,
+                TableWindowRefusedSignalData::tableKey => TableWindowUnitTable::TABLE,
+                TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR,
+            ],
+            $signal->data->data->toArray(),
+        );
+        $this->assertSame(1, substr_count($logged, 'Browser window skipped a table that failed to build'));
+        $this->assertStringContainsString('table=' . TableWindowUnitTable::TABLE, $logged);
+        $this->assertStringContainsString('page=' . TableWindowUnitBrowserContext::PAGE, $logged);
+        $this->assertStringContainsString('test:table:refuse', $logged);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertSame([], $viewport->rowIds());
+    }
+
+    /**
+     * @return array<string, array{0: string}> Table key the lever names, none of which is the window's
+     */
+    public static function leversThatSpareTheWindow(): array
+    {
+        return [
+            'another table' => ['table_window_other'],
+            'no table' => [''],
+        ];
+    }
+
+    /**
+     * @param string $refusedTable Table key the lever names
+     */
+    #[DataProvider('leversThatSpareTheWindow')]
+    public function testAWindowTheLeverDoesNotNameArrivesAsItDoesToday(string $refusedTable): void
+    {
+        $this->mountLabelledRows();
+        $this->refuseTable($refusedTable);
+
+        $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 10);
+        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            $viewport,
+        );
+
+        $this->assertTrue($delivered);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::TABLE_WINDOW, $signal->signalName->getName());
+        $this->assertSame(['a', 'b', 'c'], $viewport->rowIds());
+    }
+
     public function testTheCountsGoToTheConnectionThatAskedInAFrameOfTheirOwn(): void
     {
         $this->mountLabelledRows();
@@ -559,6 +634,25 @@ final class BrowserContextTableWindowTest extends TestCase
     }
 
     /**
+     * Names the table the test lever refuses, as the master does in answer to test:table:refuse.
+     *
+     * Written outside any agent, as the master writes it, and the RT sync frame the write queues
+     * is drained so the assertions read only what the browser context sent.
+     *
+     * @param string $tableKey Wire key of the table to refuse; empty takes the refusal off
+     */
+    private function refuseTable(string $tableKey): void
+    {
+        Hilos::$rt = new TableWindowUnitRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(StateTableRefusalRuntime::RT_ITEM);
+        Hilos::$rt->hilosTableRefusalRuntime?->actions->set($tableKey);
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            continue;
+        }
+    }
+
+    /**
      * Mounts a router and the fixture tables over three rows, two of which share a label.
      */
     private function mountLabelledRows(): void
@@ -579,7 +673,7 @@ final class TableWindowUnitBrowserContext extends BrowserContext
 }
 
 /**
- * Runtime context of a project that mounts nothing of its own; the table lag row comes with the framework.
+ * Runtime context of a project that mounts nothing of its own; the table lag and refusal rows come with the framework.
  */
 final class TableWindowUnitRtContext extends RtContext
 {

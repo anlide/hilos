@@ -34,6 +34,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
+use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
 use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionToastStacksActions;
@@ -43,6 +44,7 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Actions\Item\TableLagRuntimeActions;
+use Hilos\Runtime\View\Actions\Item\TableRefusalRuntimeActions;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosClusterNodes;
@@ -62,6 +64,7 @@ use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Runtime\View\Item\TableLagRuntime;
+use Hilos\Runtime\View\Item\TableRefusalRuntime;
 use OutOfBoundsException;
 
 /**
@@ -84,6 +87,7 @@ use OutOfBoundsException;
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted
  * @property-read ?TableLagRuntime $hilosTableLagRuntime Test-only table lag singleton, or null when unmounted
+ * @property-read ?TableRefusalRuntime $hilosTableRefusalRuntime Test-only table refusal singleton, or null when unmounted
  */
 abstract class RtContext
 {
@@ -175,6 +179,10 @@ abstract class RtContext
             'itemClass' => TableLagRuntime::class,
             'itemActionsClass' => TableLagRuntimeActions::class,
         ];
+        $this->_rtItems[StateTableRefusalRuntime::RT_ITEM] = [
+            'itemClass' => TableRefusalRuntime::class,
+            'itemActionsClass' => TableRefusalRuntimeActions::class,
+        ];
     }
 
     /**
@@ -205,7 +213,7 @@ abstract class RtContext
      * declaration the only switch: a project cannot forget a row of a feature it declared, and
      * cannot quietly replace one either - the check names the key and the line to delete.
      *
-     * Five of these are mounted unconditionally and before any feature, because none is an
+     * Six of these are mounted unconditionally and before any feature, because none is an
      * opt-in surface. The protected mode singleton is there because a node freezing itself for
      * a destructive operation is a data-integrity guarantee: every project that can run such an
      * operation must be able to freeze. The session rotations are there because the login token
@@ -224,6 +232,8 @@ abstract class RtContext
      * The table lag (HIL-1020) is there because it is a test lever over the framework's own
      * browser tables, which any project may draw, and it is inert on production: only the master
      * writes it, in answer to a `test:` command the command socket refuses there.
+     * The table refusal (HIL-1131) is there for the same reason and is inert in the same way: it
+     * is the test lever that makes the windows of one of those tables fail to build.
      *
      * A project whose createRuntime() returns null has no context to mount into; declaring a
      * feature that brings runtime state there is refused by the facade instead, since there is
@@ -236,6 +246,7 @@ abstract class RtContext
     {
         $this->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
         $this->mountFeatureItem(StateTableLagRuntime::RT_ITEM, StateTableLagRuntime::create());
+        $this->mountFeatureItem(StateTableRefusalRuntime::RT_ITEM, StateTableRefusalRuntime::create());
         $this->mountFeatureCollection(StateHilosSessionRotation::RT_COLLECTION, StateHilosSessionRotations::init());
         $this->setRepresent(
             StateHilosSessionRotation::RT_COLLECTION,

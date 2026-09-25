@@ -193,6 +193,22 @@ spec, before the step that clicks what it may be covering. A spec that **is**
 about a notice asserts on it instead and never calls this — sweeping is how a
 spec says "this step is not about the notices", not a way to hide them.
 
+### `armSocketDrop(page)` / `dropSocket(page)` — a socket that dies while the page stands
+
+Some specs need the connection to drop under a page that stays put: the reconnect
+indicator, the re-subscribe that follows, a page re-sent into a table that stood
+refused. Playwright's offline emulation does not give that — Chromium blocks new
+requests but leaves an established WebSocket running, so the client never
+notices. The seam left is the one the page itself goes through:
+`armSocketDrop(page)` wraps the WebSocket constructor, so call it **before the
+page loads** — a socket opened before the wrap is out of reach — and
+`dropSocket(page)` closes every socket the page opened. Nothing in the product is
+touched; everything after the drop is the real client's own reconnect.
+
+Prove the drop by the **next socket**, counted with `page.on('websocket')`, not
+by a glimpse of the disconnected label, which a fast reconnect can pass through
+unseen.
+
 ### The settings edit form — open, draft, set and clear
 
 The toolbox owns the moves of the framework settings dialog through
