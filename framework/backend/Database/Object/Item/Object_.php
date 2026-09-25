@@ -4,6 +4,7 @@ namespace Hilos\Database\Object\Item;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
@@ -17,9 +18,11 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
 use Hilos\HilosException;
 
@@ -228,7 +231,7 @@ abstract class Object_
 
         $idString = $this->getIdString();
 
-        DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(), TruthSourceOperation::Remove);
+        DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(...), TruthSourceOperation::Remove);
 
         // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
         // available from the object collection after the physical delete.
@@ -357,7 +360,7 @@ abstract class Object_
         DbWriteGuard::guardItemWrite(
             $collectionKey,
             $this->getIdString(),
-            $this->touchedSetKeys(),
+            $this->touchedSetKeys(...),
             TruthSourceOperation::Update,
         );
     }
@@ -497,25 +500,31 @@ abstract class Object_
     }
 
     /**
-     * Set keys a write of this row touches: the value of the table's set column the row is stored
-     * under, and the one an unsaved edit moves it to, each once.
+     * Set keys a write of this row touches: the key at the top of the table's set tree the row is
+     * stored under, and the one an unsaved edit moves it to, each once.
      *
-     * Empty when the table is cut by no set column - it declares {@see Entity::SET_STANDALONE}, or
-     * declares no `_setVia` at all - and when either value is null: a row that stands, or is about
-     * to stand, outside every set is in nobody's set. The write guard reads the empty list as
-     * belonging to no claim over a set.
+     * The row names its set by its pointer: the `_setShortPath` column when the Entity declares
+     * one, which carries the top as it is, and the `_setVia` column otherwise, whose value is
+     * climbed to the top by {@see SetTree::topOfSetKey()}. Empty when the table is cut by no set
+     * column - it declares {@see Entity::SET_STANDALONE}, or declares no `_setVia` at all - when
+     * either value is null, and when a value reaches no top because the parent it names is gone:
+     * such a row is in nobody's set, and the write guard reads the empty list as belonging to no
+     * claim over a set. A write that moves the row under another top names two keys, so only the
+     * owner of the whole table may make it.
      *
-     * @return list<string> Set keys the write touches, empty for a row outside every set
+     * The write doors hand this method over uncalled ({@see DbWriteGuard::guardItemWrite()}): the
+     * climb reads the parent's table, and only a claim over a set asks for it.
+     *
+     * @return list<string> Keys at the top of the set tree the write touches, empty for a row in nobody's set
+     * @throws DbCollectionNotReadableException When this process does not read a table the climb passes through
+     * @throws LogicException When the collection of a parent table has no entity collection configured
+     * @throws DatabaseException When loading a parent row fails
      */
     public function touchedSetKeys(): array
     {
-        $setViaName = static::ENTITY_CLASS . '::' . Entity::META_SET_VIA;
-        if (!defined($setViaName)) {
-            return [];
-        }
-
-        $column = constant($setViaName);
-        if ($column === Entity::SET_STANDALONE) {
+        $shortPath = SetTree::shortPathOf(static::ENTITY_CLASS);
+        $column = $shortPath ?? SetTree::setColumnOf(static::ENTITY_CLASS);
+        if ($column === null) {
             return [];
         }
 
@@ -525,7 +534,49 @@ abstract class Object_
             return [];
         }
 
-        return array_values(array_unique([(string)$stored, (string)$edited]));
+        $values = array_values(array_unique([(string)$stored, (string)$edited]));
+        if ($shortPath !== null) {
+            return $values;
+        }
+
+        $tops = [];
+        foreach ($values as $value) {
+            $top = SetTree::topOfSetKey(static::ENTITY_CLASS, $value);
+            if ($top === null) {
+                return [];
+            }
+            $tops[] = $top;
+        }
+
+        return array_values(array_unique($tops));
+    }
+
+    /**
+     * The key at the top of the set tree this row is stored under.
+     *
+     * Asked of a parent by the climb of its child ({@see SetTree::topOfSetKey()}), and read by the
+     * pointer as the table holds it: the truth of a parent is the table, not an unsaved edit in
+     * this process.
+     *
+     * @return ?string Key at the top of the set tree, null when the row is in nobody's set
+     * @throws DbCollectionNotReadableException When this process does not read a table the climb passes through
+     * @throws LogicException When the collection of a parent table has no entity collection configured
+     * @throws DatabaseException When loading a parent row fails
+     */
+    public function storedSetTop(): ?string
+    {
+        $shortPath = SetTree::shortPathOf(static::ENTITY_CLASS);
+        $column = $shortPath ?? SetTree::setColumnOf(static::ENTITY_CLASS);
+        if ($column === null) {
+            return null;
+        }
+
+        $stored = $this->entitySync->$column;
+        if ($stored === null) {
+            return null;
+        }
+
+        return $shortPath !== null ? (string)$stored : SetTree::topOfSetKey(static::ENTITY_CLASS, (string)$stored);
     }
 
     /**

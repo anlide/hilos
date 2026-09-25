@@ -179,7 +179,7 @@ final class OAuthProvider extends Object_
         }
 
         $idString = (string)$this->entity->id;
-        DbWriteGuard::guardItemWrite(static::getCollectionKey(), $idString, $this->touchedSetKeys(), TruthSourceOperation::Update);
+        DbWriteGuard::guardItemWrite(static::getCollectionKey(), $idString, $this->touchedSetKeys(...), TruthSourceOperation::Update);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::auto($secret));

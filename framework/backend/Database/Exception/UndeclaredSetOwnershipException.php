@@ -14,7 +14,9 @@ use Hilos\HilosException;
  * The declaration is a pair of constants on the Entity - `_setVia` naming the column the set
  * is cut by, `_setRoot` saying whether other tables may hang their sets off this one - and a
  * table shipped without them leaves the question "did all the rows of this set arrive" with
- * nobody to ask. The message names every table at fault at once, because the reader is the
+ * nobody to ask. The same refusal names an optional `_setShortPath` that is not another column of
+ * a table in a set, and a chain of parents that returns to its own table. The message names every
+ * table at fault at once, because the reader is the
  * author of the Entity or of the migration that added it, and one edit answers all of them.
  *
  * Raised by {@see SetOwnershipGuard::assertMountedSetsDeclared()} at the startup of a node,

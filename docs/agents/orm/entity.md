@@ -194,12 +194,15 @@ on:
 ## Whose set the table is part of
 
 An Entity also declares which larger set its rows belong to, in two more constants
-beside `_indexes`:
+beside `_indexes` and an optional third:
 
 - `_setVia` — the column the table's set is cut by (`Identity` names `user_id`,
   `EventMessage` names `event_id`), or `Entity::SET_STANDALONE` when its rows belong to
   nobody's set;
-- `_setRoot` — whether other tables may hang their sets off this one.
+- `_setRoot` — whether other tables may hang their sets off this one;
+- `_setShortPath` — optional: another column that carries the key at the top of the
+  set tree directly, so the right reads it off the row instead of walking up; declared
+  only where that column is kept true.
 
 Two constants and not one, because a table is often both at once: `hilos_notification`
 is cut by `user_id` and is itself the root `hilos_notification_delivery` hangs on.
@@ -213,8 +216,9 @@ live schema, not of a constant, and the rule is applied by whoever writes the En
 The declaration names the column and not the parent class, because the framework does not
 know the class of a project's `user` — the collection key is the project's to name, and it
 does so in the `OWNS_DB` of its own users library. Who stands behind the column is said by
-`_foreign` where there is one; framework Entities have none on purpose, `user_id` being a
-soft reference across the framework/project boundary.
+`_foreign` where there is one, and the right climbs along it to the top of the set tree;
+a soft reference is the top — framework Entities hang on the person that way, `user_id`
+staying soft while the person table belongs to the project.
 
 Both constants are mandatory on every Entity of a mounted collection. A node refuses to
 start over a table missing either of them (`SetOwnershipGuard`), because the gap is born
@@ -222,8 +226,8 @@ on the day of a migration and a refusal at the read would surface it on the day 
 opened a page.
 
 The declaration is not a fact of the schema alone. The right to write is cut by it: the
-set an agent may claim is the one declared here — the rows whose `_setVia` column carries
-the agent's set key — and the agent does not choose the cut. So think of the owner when naming the column: a table
+set an agent may claim is the one declared here — the rows whose set tree ends at the
+agent's set key — and the agent does not choose the cut. So think of the owner when naming the column: a table
 that has to be owned along another one changes its `_setVia`, for every reader at once,
 and a table that declares `SET_STANDALONE` leaves no set to claim. The width itself:
 [../architecture/truth-source.md](../architecture/truth-source.md), *A Claim Over A Set*.

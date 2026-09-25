@@ -26,7 +26,8 @@ use Hilos\Utils\Helpers\RandomHelper;
 /**
  * A passkey leaves as one thing, anchor and crypto half together (HIL-722).
  *
- * A passkey is two rows in two tables with no foreign key between them, so "the
+ * A passkey is two rows in two tables, and the foreign key between them (HIL-1111)
+ * only refuses to strand the credential - it takes nothing out by itself - so "the
  * passkey is gone" is a statement about both of them and only a real database can
  * answer it. What is pinned here is that unlinking takes the credential out and not
  * just the anchor, that the anchor cannot be taken out alone through the primitive
@@ -42,7 +43,7 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTestCase
 {
-    /** @var list<string> Framework tables this case needs */
+    /** @var list<string> Framework tables this case needs, each after the table its foreign key names */
     private const array TABLES = ['hilos_identity', 'hilos_passkey_credential'];
 
     private const string PASSWORD = 'anchor-secret-42';
@@ -362,6 +363,9 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
     /**
      * Runs one direction of the stub file of every table this case uses.
      *
+     * The drop goes in reverse: a table named by a foreign key cannot be dropped before the
+     * table that holds the key.
+     *
      * @param bool $down Run the down (drop) stubs when true, the create stubs when false
      * @throws HilosException When a stub statement fails
      */
@@ -369,7 +373,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
     {
         // external-boundary: the neutral element of the name being built - the up file carries no suffix
         $suffix = $down ? '_down' : '';
-        foreach (self::TABLES as $table) {
+        foreach ($down ? array_reverse(self::TABLES) : self::TABLES as $table) {
             $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
             Database::sqlRun((string)file_get_contents($stub));
         }

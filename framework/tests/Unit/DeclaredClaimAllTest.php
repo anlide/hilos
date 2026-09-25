@@ -78,14 +78,14 @@ final class DeclaredClaimAllTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(
             DeclaredClaimAllTestEveryMapAgent::DB_SET_COLLECTION,
             '1',
-            ['7'],
+            static fn(): array => ['7'],
             TruthSourceOperation::Update,
         );
         $this->expectException(WriteNotAllowedException::class);
         TruthSourceRegistry::checkCanWriteItem(
             DeclaredClaimAllTestEveryMapAgent::DB_SET_COLLECTION,
             '1',
-            ['8'],
+            static fn(): array => ['8'],
             TruthSourceOperation::Update,
         );
     }

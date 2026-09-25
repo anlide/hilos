@@ -7,11 +7,13 @@
 -- keeps the identity contract lean and shared across all auth methods while this
 -- table carries the WebAuthn-specific material.
 --
--- No DB-level foreign key to `hilos_identity` or the project `user` table: framework
--- stubs never FK across the framework/project boundary. `identity_id` links the
--- anchor row and `user_id` is denormalized for the per-user credential list
--- (HIL-404) and the resident-key resolution (HIL-400); both carry an INDEX for the
--- application-side cascade.
+-- `identity_id` links the anchor row by a foreign key (HIL-1111): the write right of
+-- a set walks up through it to the person. ON DELETE RESTRICT and not CASCADE - a
+-- credential is removed through its object so the profile screen hears of it, and a
+-- cascade would take the row out silently. `user_id` is denormalized for the
+-- per-user credential list (HIL-404) and the resident-key resolution (HIL-400); it
+-- stays a soft reference only while the person table still belongs to the project
+-- (epic HIL-1133), and carries an INDEX for the application-side cascade.
 --
 -- `credential_id` (the authenticator's base64url credential id) uses utf8mb4_bin so
 -- it compares exactly and is UNIQUE across the table (an assertion resolves the row
@@ -46,5 +48,6 @@ CREATE TABLE `hilos_passkey_credential` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_passkey_credential_id` (`credential_id`),
     KEY `idx_passkey_identity` (`identity_id`),
-    KEY `idx_passkey_user` (`user_id`)
+    KEY `idx_passkey_user` (`user_id`),
+    CONSTRAINT `fk_passkey_credential_identity` FOREIGN KEY (`identity_id`) REFERENCES `hilos_identity` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

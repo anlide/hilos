@@ -224,16 +224,23 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
 }
 
 /**
- * Minimal single-column entity fixture for the guard cases.
+ * Minimal entity fixture for the guard cases, cut into sets by its owner column.
+ *
+ * The set door climbs the value it is handed by the table's set column (HIL-1111), so a table
+ * that declared none would be in nobody's set and refuse every claim over one. The column is a
+ * soft reference: the value is the top as it is.
  */
 final class GuardedEntity extends Entity
 {
     public const string _table = 'guard_lazy_test';
     public const string _primary = 'id';
-    public const array _columns = ['id'];
-    public const array _types = ['id' => 'integer'];
+    public const array _columns = ['id', 'owner_id'];
+    public const array _types = ['id' => 'integer', 'owner_id' => 'integer'];
+    public const string _setVia = 'owner_id';
+    public const bool _setRoot = false;
 
     public ?int $id = null;
+    public ?int $owner_id = null;
 }
 
 /**

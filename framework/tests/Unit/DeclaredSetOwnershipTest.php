@@ -61,7 +61,7 @@ final class DeclaredSetOwnershipTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(
             DeclaredSetOwnershipTestAgent::COLLECTION,
             '1',
-            ['42'],
+            static fn(): array => ['42'],
             TruthSourceOperation::Update,
         );
         $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_DB, DeclaredSetOwnershipTestAgent::COLLECTION));
@@ -72,7 +72,7 @@ final class DeclaredSetOwnershipTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(
             DeclaredSetOwnershipTestAgent::COLLECTION,
             '2',
-            ['7'],
+            static fn(): array => ['7'],
             TruthSourceOperation::Update,
         );
     }

@@ -105,8 +105,8 @@ final class TruthSourceSetWidthTest extends TestCase
         TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [self::OWN_SET], TruthSourceOperation::Update);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [self::OWN_SET], TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [self::OWN_SET], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
 
         $this->assertTrue(TruthSourceRegistry::hasTruthSource(self::COLLECTION));
     }
@@ -121,7 +121,7 @@ final class TruthSourceSetWidthTest extends TestCase
             "Write operation not allowed: agent '" . self::AGENT_A . "' is not a truth source for table '"
             . self::COLLECTION . "' item '2': it holds set '42', and the item's set keys are [7]."
         );
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', [self::FOREIGN_SET], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', static fn(): array => [self::FOREIGN_SET], TruthSourceOperation::Update);
     }
 
     public function testSetOwnerIsRefusedAMoveBetweenSets(): void
@@ -134,7 +134,7 @@ final class TruthSourceSetWidthTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(
             self::COLLECTION,
             '1',
-            [self::OWN_SET, self::FOREIGN_SET],
+            static fn(): array => [self::OWN_SET, self::FOREIGN_SET],
             TruthSourceOperation::Update,
         );
     }
@@ -146,7 +146,7 @@ final class TruthSourceSetWidthTest extends TestCase
 
         $this->expectException(WriteNotAllowedException::class);
         $this->expectExceptionMessage("it holds set '42', and the item's set keys are [].");
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [], TruthSourceOperation::Update);
     }
 
     public function testSetOwnerIsJudgedOnTheOperationAxisAfterBelonging(): void
@@ -159,11 +159,11 @@ final class TruthSourceSetWidthTest extends TestCase
         );
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [self::OWN_SET], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [self::OWN_SET], TruthSourceOperation::Update);
 
         $this->expectException(WriteNotAllowedException::class);
         $this->expectExceptionMessage('may not remove item');
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [self::OWN_SET], TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
     }
 
     public function testSetClaimWithAddDoesNotMintRows(): void
@@ -193,11 +193,11 @@ final class TruthSourceSetWidthTest extends TestCase
             TruthSourceOperations::of(TruthSourceOperation::Update),
         );
 
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [self::OWN_SET], TruthSourceOperation::Remove);
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '3', ['9'], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '3', static fn(): array => ['9'], TruthSourceOperation::Update);
 
         try {
-            TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '3', ['9'], TruthSourceOperation::Remove);
+            TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '3', static fn(): array => ['9'], TruthSourceOperation::Remove);
             $this->fail('Expected the operations of the covering set claim alone to be asked');
         } catch (WriteNotAllowedException $e) {
             $this->assertStringContainsString('has operations [update] and may not remove item', $e->getMessage());
@@ -205,7 +205,65 @@ final class TruthSourceSetWidthTest extends TestCase
 
         $this->expectException(WriteNotAllowedException::class);
         $this->expectExceptionMessage("no truth source covers table '" . self::COLLECTION . "' item '2'.");
-        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', [self::FOREIGN_SET], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', static fn(): array => [self::FOREIGN_SET], TruthSourceOperation::Update);
+    }
+
+    /**
+     * The set keys may read a parent row, so the claims that look at no set key never ask for them.
+     */
+    public function testTheWholeTableAndNamedRowsWriteWithoutAskingTheSetKeys(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $trap = static fn(): array => throw new LogicException('the set keys were asked of a claim that reads none');
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT_A);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::listed('2'), self::AGENT_B);
+
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', $trap, TruthSourceOperation::Update);
+
+        ExecutionContext::setCurrentAgentId(self::AGENT_B);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', $trap, TruthSourceOperation::Update);
+
+        ExecutionContext::setCurrentAgentId(null);
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', $trap, TruthSourceOperation::Update);
+    }
+
+    public function testTheAgentlessPathAsksTheSetKeysOnceAcrossEveryClaimOverASet(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set('9'), self::AGENT_A);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_B);
+        $calls = 0;
+        $setKeys = static function () use (&$calls): array {
+            $calls++;
+
+            return [self::OWN_SET];
+        };
+
+        TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', $setKeys, TruthSourceOperation::Update);
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function testASetOwnerRefusedNamesTheSetKeysAskedOnce(): void
+    {
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
+        $calls = 0;
+        $setKeys = static function () use (&$calls): array {
+            $calls++;
+
+            return [self::FOREIGN_SET];
+        };
+
+        try {
+            TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '2', $setKeys, TruthSourceOperation::Update);
+            $this->fail('Expected a row of another set to be refused');
+        } catch (WriteNotAllowedException $e) {
+            $this->assertStringContainsString("and the item's set keys are [7].", $e->getMessage());
+        }
+
+        $this->assertSame(1, $calls);
     }
 
     public function testCoversEveryRowOfSetAnswersEachWidthByItsOwnQuestion(): void
@@ -229,8 +287,8 @@ final class TruthSourceSetWidthTest extends TestCase
         TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Update);
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
 
         $this->assertTrue(TruthSourceRegistry::hasTruthSource(self::COLLECTION));
     }
@@ -245,7 +303,12 @@ final class TruthSourceSetWidthTest extends TestCase
             "Write operation not allowed: agent '" . self::AGENT_A . "' is not a truth source for table '"
             . self::COLLECTION . "' set '7': it holds set '42'."
         );
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::FOREIGN_SET, TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteSet(
+            self::COLLECTION,
+            self::FOREIGN_SET,
+            static fn(): array => [self::FOREIGN_SET],
+            TruthSourceOperation::Update,
+        );
     }
 
     /**
@@ -271,7 +334,7 @@ final class TruthSourceSetWidthTest extends TestCase
             "Write operation not allowed: agent '" . self::AGENT_A . "' is not a truth source for table '"
             . self::COLLECTION . "' set '42'."
         );
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Update);
     }
 
     public function testTheWholeTableCoversAStatementOverAnySet(): void
@@ -279,9 +342,14 @@ final class TruthSourceSetWidthTest extends TestCase
         TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::all(), self::AGENT_A);
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Remove);
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::FOREIGN_SET, TruthSourceOperation::Remove);
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, '', TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteSet(
+            self::COLLECTION,
+            self::FOREIGN_SET,
+            static fn(): array => [self::FOREIGN_SET],
+            TruthSourceOperation::Remove,
+        );
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, '', static fn(): array => [''], TruthSourceOperation::Remove);
 
         $this->assertTrue(TruthSourceRegistry::hasTruthSource(self::COLLECTION));
     }
@@ -296,10 +364,15 @@ final class TruthSourceSetWidthTest extends TestCase
         );
         ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Update);
 
         try {
-            TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::FOREIGN_SET, TruthSourceOperation::Remove);
+            TruthSourceRegistry::checkCanWriteSet(
+                self::COLLECTION,
+                self::FOREIGN_SET,
+                static fn(): array => [self::FOREIGN_SET],
+                TruthSourceOperation::Remove,
+            );
             $this->fail('Expected belonging to be asked before the operation');
         } catch (WriteNotAllowedException $e) {
             $this->assertStringContainsString("set '7': it holds set '42'.", $e->getMessage());
@@ -307,7 +380,7 @@ final class TruthSourceSetWidthTest extends TestCase
 
         $this->expectException(WriteNotAllowedException::class);
         $this->expectExceptionMessage("with operations [update] and may not remove rows of set '42'.");
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
     }
 
     public function testAgentlessPathCoversAStatementOverAHeldSetAndNotOverAnother(): void
@@ -320,11 +393,11 @@ final class TruthSourceSetWidthTest extends TestCase
             TruthSourceOperations::of(TruthSourceOperation::Update),
         );
 
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, TruthSourceOperation::Remove);
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, '9', TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::OWN_SET, static fn(): array => [self::OWN_SET], TruthSourceOperation::Remove);
+        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, '9', static fn(): array => ['9'], TruthSourceOperation::Update);
 
         try {
-            TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, '9', TruthSourceOperation::Remove);
+            TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, '9', static fn(): array => ['9'], TruthSourceOperation::Remove);
             $this->fail('Expected the operations of the covering set claim alone to be asked');
         } catch (WriteNotAllowedException $e) {
             $this->assertStringContainsString("has operations [update] and may not remove rows of set '9'.", $e->getMessage());
@@ -332,7 +405,12 @@ final class TruthSourceSetWidthTest extends TestCase
 
         $this->expectException(WriteNotAllowedException::class);
         $this->expectExceptionMessage("no truth source covers table '" . self::COLLECTION . "' set '7'.");
-        TruthSourceRegistry::checkCanWriteSet(self::COLLECTION, self::FOREIGN_SET, TruthSourceOperation::Update);
+        TruthSourceRegistry::checkCanWriteSet(
+            self::COLLECTION,
+            self::FOREIGN_SET,
+            static fn(): array => [self::FOREIGN_SET],
+            TruthSourceOperation::Update,
+        );
     }
 
     public function testDoorLetsTheSetOwnerWriteARowOfItsSet(): void

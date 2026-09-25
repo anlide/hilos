@@ -18,9 +18,13 @@ use Hilos\Hilos;
  *
  * Every mounted table owes two declarations: `_setVia` names the column its set is cut by, or
  * says {@see Entity::SET_STANDALONE} when its rows belong to nobody's set, and `_setRoot` says
- * whether other tables may hang their sets off this one. Both are constants, so the whole
- * question is answered without a single query - what this reads is the map of collections a
- * {@see DbContext} mounted, not a schema.
+ * whether other tables may hang their sets off this one. A third is optional - `_setShortPath`
+ * names another column that carries the key at the top of the set tree directly - and is judged
+ * when present. The parents a set column points at are followed too, and a chain of them that
+ * returns to the table it started from is refused: the climb to the top of the tree
+ * ({@see SetTree}) would never end. All of it is constants, so the whole question is answered
+ * without a single query - what this reads is the map of collections a {@see DbContext}
+ * mounted, not a schema.
  *
  * The refusal is unconditional, unlike the coverage gate of anonymization it is modelled on:
  * there is no feature to hide behind, because every installation reads sets. It refuses the
@@ -34,10 +38,11 @@ use Hilos\Hilos;
  * is the author of an Entity or of a migration, not the operator who started the node.
  *
  * Two things it deliberately stays silent about:
- * - A child naming a column that carries no `_foreign` entry gets no cross-check. Framework
- *   Entities have none on purpose - `user_id` is a soft reference without a foreign key across
- *   the framework/project boundary ({@see Notification}) - so the set of `hilos_identity` on a
- *   project's own `user` is a named hole, not an oversight.
+ * - A child naming a column that carries no `_foreign` entry gets no cross-check, and its set
+ *   is not climbed: the value is the top. Framework Entities hang their sets on the person that
+ *   way - `user_id` is a soft reference while the person table belongs to the project
+ *   ({@see Notification}) - so the set of `hilos_identity` on a project's own `user` is a named
+ *   hole, not an oversight.
  * - A mounted collection that resolves to no Entity is passed over. That is a broken mount
  *   rather than an undeclared set, and this gate answers one question only.
  *
@@ -55,8 +60,9 @@ final class SetOwnershipGuard
      * no sets and has none to answer for.
      *
      * @throws UndeclaredSetOwnershipException When a mounted table declares no ownership, names a
-     *     column it does not have, declares a non-boolean root, or hangs its set on a table that
-     *     does not declare itself a root
+     *     column it does not have, declares a non-boolean root, hangs its set on a table that does
+     *     not declare itself a root, declares a short path that is not another column of a table in
+     *     a set, or hangs its set on a chain of parents that returns to itself
      */
     public static function assertMountedSetsDeclared(): void
     {
@@ -72,6 +78,9 @@ final class SetOwnershipGuard
         $problems = [];
         foreach ($entityClasses as $entityClass) {
             array_push($problems, ...self::problemsOf($entityClass, $rootByTable));
+        }
+        foreach ($entityClasses as $entityClass) {
+            array_push($problems, ...self::cycleOf($entityClass, $rootByTable));
         }
 
         if ($problems !== []) {
@@ -140,6 +149,7 @@ final class SetOwnershipGuard
         }
 
         $column = constant("{$entityClass}::" . Entity::META_SET_VIA);
+        array_push($problems, ...self::shortPathProblemsOf($entityClass, $column));
         if ($column === Entity::SET_STANDALONE) {
             return $problems;
         }
@@ -173,5 +183,89 @@ final class SetOwnershipGuard
         }
 
         return $problems;
+    }
+
+    /**
+     * Judges the optional short path of one Entity, naming what is wrong with it.
+     *
+     * A short path is another column of a table in a set that carries the key at the top of its
+     * set tree: a table in nobody's set has no top to carry, and the set column itself is not a
+     * path around anything.
+     *
+     * @param class-string<Entity> $entityClass Entity to judge
+     * @param string $setVia Its `_setVia` declaration
+     * @return list<string> Findings about the short path, empty when none is declared or it is sound
+     */
+    private static function shortPathProblemsOf(string $entityClass, string $setVia): array
+    {
+        if (!defined("{$entityClass}::" . Entity::META_SET_SHORT_PATH)) {
+            return [];
+        }
+
+        if ($setVia === Entity::SET_STANDALONE) {
+            return ["{$entityClass} declares " . Entity::META_SET_SHORT_PATH
+                . " on a table that belongs to nobody's set (Entity::SET_STANDALONE)"];
+        }
+
+        $shortPath = constant("{$entityClass}::" . Entity::META_SET_SHORT_PATH);
+        if (!is_string($shortPath)) {
+            return ["{$entityClass} declares a non-string " . Entity::META_SET_SHORT_PATH];
+        }
+
+        $columns = defined("{$entityClass}::" . Entity::META_COLUMNS)
+            ? constant("{$entityClass}::" . Entity::META_COLUMNS)
+            : [];
+        if (!in_array($shortPath, $columns, true)) {
+            return ["{$entityClass} names column '{$shortPath}' in " . Entity::META_SET_SHORT_PATH
+                . ', which is not among its ' . Entity::META_COLUMNS];
+        }
+
+        if ($shortPath === $setVia) {
+            return ["{$entityClass} names its " . Entity::META_SET_VIA . " column '{$shortPath}' as "
+                . Entity::META_SET_SHORT_PATH . ': a short path is another column that carries the top of the set tree'];
+        }
+
+        return [];
+    }
+
+    /**
+     * Follows the parents one Entity's set column points at, naming a chain that returns to it.
+     *
+     * The parent is the mounted table the `_foreign` entry of the set column names; the chain ends
+     * at a soft reference, at a table that is not mounted, and at a table in nobody's set. A chain
+     * that runs into a loop further up without coming back here is named by the tables of that
+     * loop, each on its own walk, and so is left alone on this one.
+     *
+     * @param class-string<Entity> $entityClass Entity whose set column starts the chain
+     * @param array<string, class-string<Entity>> $rootByTable Mounted Entity per table name
+     * @return list<string> The finding about this Entity's chain, empty when it ends
+     */
+    private static function cycleOf(string $entityClass, array $rootByTable): array
+    {
+        if (!defined("{$entityClass}::" . Entity::META_TABLE)) {
+            return [];
+        }
+
+        $tables = [constant("{$entityClass}::" . Entity::META_TABLE)];
+        $class = $entityClass;
+        while (($column = SetTree::setColumnOf($class)) !== null) {
+            $foreign = defined("{$class}::" . Entity::META_FOREIGN) ? constant("{$class}::" . Entity::META_FOREIGN) : [];
+            $parentTable = $foreign[$column] ?? null;
+            if ($parentTable === null || !isset($rootByTable[$parentTable])) {
+                return [];
+            }
+
+            if (in_array($parentTable, $tables, true)) {
+                return $parentTable === $tables[0]
+                    ? ["{$entityClass} hangs its set on a chain that returns to itself: "
+                        . implode(' -> ', [...$tables, $parentTable])]
+                    : [];
+            }
+
+            $tables[] = $parentTable;
+            $class = $rootByTable[$parentTable];
+        }
+
+        return [];
     }
 }

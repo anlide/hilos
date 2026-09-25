@@ -205,7 +205,7 @@ final class DeclaredCommandOwnershipTestCommand extends TestOnlyCommand
     private static function updateOfRowOneIsAllowed(): bool
     {
         try {
-            TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', [], TruthSourceOperation::Update);
+            TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1', static fn(): array => [], TruthSourceOperation::Update);
 
             return true;
         } catch (WriteNotAllowedException) {

@@ -1315,6 +1315,40 @@ final class TopologyValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testASetClaimClimbingThroughATableTheAgentCannotReachIsRefused(): void
+    {
+        $db = new TopologySetTreeDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologySetTreeRefusedHilos::validateTopologyReferences();
+            },
+            [
+                TopologySetTreeBlindAgent::class . " claims db collection 'set_tree_children' by a set, and the set tree of "
+                    . TopologySetTreeChildEntity::class
+                    . " climbs through db collection 'set_tree_parents', which it neither reads nor claims",
+                TopologySetTreeStrayAgent::class . " claims db collection 'set_tree_strays' by a set, and the set tree of "
+                    . TopologySetTreeStrayEntity::class
+                    . " climbs through table 'topology_set_tree_elsewhere', which is not mounted: no row of it can be"
+                    . ' walked to the top',
+            ],
+        );
+    }
+
+    public function testASetClaimClimbingThroughATableTheAgentReadsOrHoldsIsAccepted(): void
+    {
+        $db = new TopologySetTreeDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+
+        TopologySetTreeReadingHilos::validateTopologyReferences();
+        TopologySetTreeHoldingHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(2);
+    }
+
     private function assertTopologyErrors(callable $callback, array $expectedFragments): void
     {
         try {
@@ -4741,5 +4775,206 @@ final class TopologySetStandaloneClaimHilos extends HilosFacade
     protected static function createDb(): HilosDbContext
     {
         return new TopologySetClaimDbContext();
+    }
+}
+
+/**
+ * Entity fixture of a parent floor: its own set hangs on the owner by a soft reference.
+ */
+final class TopologySetTreeParentEntity extends Entity
+{
+    public const string _table = 'topology_set_tree_parent';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'owner_id'];
+    public const array _types = ['id' => 'integer', 'owner_id' => 'integer'];
+    public const string _setVia = 'owner_id';
+    public const bool _setRoot = true;
+
+    public ?int $id = null;
+    public ?int $owner_id = null;
+}
+
+final class TopologySetTreeParentObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologySetTreeParentEntity::class;
+}
+
+final class TopologySetTreeParentObjects extends Objects
+{
+    public const string OBJECT_CLASS = TopologySetTreeParentObject::class;
+    public const string COLLECTION_KEY = 'set_tree_parents';
+}
+
+/**
+ * Entity fixture of a child floor hung on the parent by a foreign key: its set climbs through the parent.
+ */
+final class TopologySetTreeChildEntity extends Entity
+{
+    public const string _table = 'topology_set_tree_child';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'parent_id'];
+    public const array _types = ['id' => 'integer', 'parent_id' => 'integer'];
+    public const array _foreign = ['parent_id' => TopologySetTreeParentEntity::_table];
+    public const string _setVia = 'parent_id';
+    public const bool _setRoot = false;
+
+    public ?int $id = null;
+    public ?int $parent_id = null;
+}
+
+final class TopologySetTreeChildObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologySetTreeChildEntity::class;
+}
+
+final class TopologySetTreeChildObjects extends Objects
+{
+    public const string OBJECT_CLASS = TopologySetTreeChildObject::class;
+    public const string COLLECTION_KEY = 'set_tree_children';
+}
+
+/**
+ * Entity fixture hung by a foreign key on a table the installation did not mount.
+ */
+final class TopologySetTreeStrayEntity extends Entity
+{
+    public const string _table = 'topology_set_tree_stray';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'elsewhere_id'];
+    public const array _types = ['id' => 'integer', 'elsewhere_id' => 'integer'];
+    public const array _foreign = ['elsewhere_id' => 'topology_set_tree_elsewhere'];
+    public const string _setVia = 'elsewhere_id';
+    public const bool _setRoot = false;
+
+    public ?int $id = null;
+    public ?int $elsewhere_id = null;
+}
+
+final class TopologySetTreeStrayObject extends Object_
+{
+    public const string ENTITY_CLASS = TopologySetTreeStrayEntity::class;
+}
+
+final class TopologySetTreeStrayObjects extends Objects
+{
+    public const string OBJECT_CLASS = TopologySetTreeStrayObject::class;
+    public const string COLLECTION_KEY = 'set_tree_strays';
+}
+
+final class TopologySetTreeDbContext extends HilosDbContext
+{
+    /**
+     * Mounts a two-floor set tree and a table hung on one that is not mounted.
+     */
+    public function configure(): void
+    {
+        $this->_objectCollections['set_tree_parents'] = TopologySetTreeParentObjects::initEmpty();
+        $this->_objectCollections['set_tree_children'] = TopologySetTreeChildObjects::initEmpty();
+        $this->_objectCollections['set_tree_strays'] = TopologySetTreeStrayObjects::initEmpty();
+    }
+}
+
+final class TopologySetTreeBlindAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'set_tree_blind_agent';
+
+    public const array OWNS_DB_SET = [
+        'set_tree_children' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologySetTreeStrayAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'set_tree_stray_agent';
+
+    public const array OWNS_DB_SET = [
+        'set_tree_strays' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologySetTreeReadingAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'set_tree_reading_agent';
+
+    public const array OWNS_DB_SET = [
+        'set_tree_children' => TruthSourceOperation::BY_KIND,
+    ];
+
+    public const array READS_DB = [
+        'set_tree_parents',
+    ];
+}
+
+final class TopologySetTreeHoldingAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'set_tree_holding_agent';
+
+    public const array OWNS_DB_SET = [
+        'set_tree_children' => TruthSourceOperation::BY_KIND,
+        'set_tree_parents' => TruthSourceOperation::BY_KIND,
+    ];
+}
+
+final class TopologySetTreeRefusedHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologySetTreeBlindAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetTreeBlindAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetTreeBlindAgentDaemon::class,
+        ],
+        TopologySetTreeStrayAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetTreeStrayAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetTreeStrayAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a DB context mounting the set tree the claims are held against.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologySetTreeDbContext();
+    }
+}
+
+final class TopologySetTreeReadingHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologySetTreeReadingAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetTreeReadingAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetTreeReadingAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a DB context mounting the set tree the claim is held against.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologySetTreeDbContext();
+    }
+}
+
+final class TopologySetTreeHoldingHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologySetTreeHoldingAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySetTreeHoldingAgent::class,
+            AgentRegistryKey::DAEMON => TopologySetTreeHoldingAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a DB context mounting the set tree the claim is held against.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologySetTreeDbContext();
     }
 }

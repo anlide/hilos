@@ -181,7 +181,7 @@ final class Identity extends Object_
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
             (string)$this->entity->id,
-            $this->touchedSetKeys(),
+            $this->touchedSetKeys(...),
             TruthSourceOperation::Update,
         );
 
@@ -217,7 +217,7 @@ final class Identity extends Object_
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
             (string)$this->entity->id,
-            $this->touchedSetKeys(),
+            $this->touchedSetKeys(...),
             TruthSourceOperation::Update,
         );
 
@@ -253,7 +253,7 @@ final class Identity extends Object_
         DbWriteGuard::guardItemWrite(
             static::getCollectionKey(),
             (string)$this->entity->id,
-            $this->touchedSetKeys(),
+            $this->touchedSetKeys(...),
             TruthSourceOperation::Update,
         );
 

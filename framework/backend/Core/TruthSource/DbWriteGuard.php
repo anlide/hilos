@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\TruthSource;
 
+use Closure;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 
@@ -66,38 +67,56 @@ class DbWriteGuard
      * the set column itself writes into two sets and asks {@see guardCollectionWrite()} instead -
      * only the owner of the whole table moves rows between sets.
      *
+     * Beside the value comes the key it reaches at the top of the set tree, as a closure: a claim
+     * over a set is laid by that top, and reaching it may read a parent row that the owner of the
+     * whole table has no need to read. The registry calls it only when a claim over a set judges
+     * the statement.
+     *
      * @param string $collection Collection key, empty for a manual collection nobody owns
      * @param string $setKey Value of the set column the statement cuts the table by, empty for nobody's set
+     * @param Closure(): list<string> $topSetKeys The key that value reaches at the top of the set tree,
+     *     empty when it reaches none; called only when a claim over a set judges the statement, and
+     *     whatever it raises reaches the caller
      * @param TruthSourceOperation $operation Operation the caller is about to perform on every row of the set
      * @throws WriteNotAllowedException When no grant in this process covers every row of that set with that operation
      */
-    public static function guardSetWrite(string $collection, string $setKey, TruthSourceOperation $operation): void
-    {
+    public static function guardSetWrite(
+        string $collection,
+        string $setKey,
+        Closure $topSetKeys,
+        TruthSourceOperation $operation,
+    ): void {
         if ($collection === '') {
             return;
         }
 
-        TruthSourceRegistry::checkCanWriteSet($collection, $setKey, $operation);
+        TruthSourceRegistry::checkCanWriteSet($collection, $setKey, $topSetKeys, $operation);
     }
 
     /**
      * Judges one operation on one row that already exists.
      *
      * The door hands over, beside the row's id, the set keys the write touches, because a claim
-     * over a set is answered by the row's set column and not by its id: the key the row is stored
-     * under, and the one an unsaved edit moves it to. Each is named once, so a write that keeps
-     * the row in its set names one key and a move between two sets names both.
+     * over a set is answered by the row's set and not by its id: the key at the top of the set tree
+     * the row is stored under, and the one an unsaved edit moves it to. Each is named once, so a
+     * write that keeps the row under its top names one key and a move under another top names both.
+     *
+     * The keys come as a closure and not as a list: reaching the top may read the row's parent, and
+     * a writer that owns the whole table, or names the row, may not read that parent at all. The
+     * registry calls it only when a claim over a set judges the write, and at most once.
      *
      * @param string $collection Collection key, empty for a manual collection nobody owns
      * @param string $idString Row id as string, composite keys joined with ':'
-     * @param list<string> $setKeys Set keys the write touches, each once; empty for a row outside every set
+     * @param Closure(): list<string> $setKeys Set keys at the top of the set tree the write touches,
+     *     each once, empty for a row outside every set; called only when a claim over a set judges
+     *     the write, and whatever it raises reaches the caller
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws WriteNotAllowedException When no grant in this process covers that row and operation
      */
     public static function guardItemWrite(
         string $collection,
         string $idString,
-        array $setKeys,
+        Closure $setKeys,
         TruthSourceOperation $operation,
     ): void {
         if ($collection === '') {

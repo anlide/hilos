@@ -95,7 +95,7 @@ abstract class DbActions
             DbWriteGuard::guardItemWrite(
                 $collectionKey,
                 $this->object->getIdString(),
-                $this->object->touchedSetKeys(),
+                $this->object->touchedSetKeys(...),
                 $operation,
             );
         } else {

@@ -291,10 +291,11 @@ final class PasskeyCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
 
-        // A credential whose identity anchor is gone is not a way in (HIL-722). The
-        // cascade takes both rows out together, but the orphans made before it existed
-        // are still stored, and this ceremony never asks the anchor: it would sign a
-        // person in on a passkey their profile no longer lists and cannot unlink again.
+        // A credential whose identity anchor is gone is not a way in (HIL-722). Since
+        // HIL-1111 no such row can exist: a foreign key holds the credential to its
+        // anchor, and the migration that set it deleted the orphans made before. The
+        // check stays so the ceremony refuses in its own words rather than trusting
+        // the schema of whichever project runs it.
         if (!isset(Hilos::$db->identities[$credential->identityId])) {
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }

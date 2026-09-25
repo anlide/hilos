@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\TruthSource;
 
+use Closure;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -28,7 +29,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  *
  *   // In DbActions (automatic check)
  *   TruthSourceRegistry::checkCanWrite($tableName, $operation);
- *   TruthSourceRegistry::checkCanWriteSet($tableName, $setKey, $operation);
+ *   TruthSourceRegistry::checkCanWriteSet($tableName, $setKey, $topSetKeys, $operation);
  *   TruthSourceRegistry::checkCanCreate($tableName);
  */
 class TruthSourceRegistry extends AbstractTruthSourceRegistry
@@ -248,18 +249,25 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      * The first question is asked of the row's id for a claim over the whole table or over named
      * rows, and of the row's set keys for a claim over a set: an id says nothing about whose set a
      * row is in. Every set key the write touches has to be the claim's own, so a write that moves a
-     * row from one set to another is refused to the owner of either set - it writes into both.
+     * row under another top of the set tree is refused to the owner of either set - it writes into
+     * both.
+     *
+     * The set keys are asked of the closure only when a claim over a set is what decides - the
+     * writer's own claim on the agent path, a claim over a set among the table's grants on the path
+     * with no agent - and at most once: reaching the top may read the row's parent, which a writer
+     * that owns the whole table or names the row may not read at all.
      *
      * @param string $collection Table name
      * @param string $idString Item id string
-     * @param list<string> $setKeys Set keys the write touches, each once; empty for a row outside every set
+     * @param Closure(): list<string> $setKeys Set keys at the top of the set tree the write touches,
+     *     each once, empty for a row outside every set; whatever it raises reaches the caller
      * @param TruthSourceOperation $operation Operation the caller is about to perform
      * @throws WriteNotAllowedException If the item or the operation is not the caller's
      */
     public static function checkCanWriteItem(
         string $collection,
         string $idString,
-        array $setKeys,
+        Closure $setKeys,
         TruthSourceOperation $operation,
     ): void {
         if (!self::hasTruthSource($collection)) {
@@ -269,15 +277,16 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
+        $setKeysOnce = self::once($setKeys);
         $agentId = ExecutionContext::currentAgentId();
         if ($agentId === null) {
-            if (!self::isRowCovered($collection, $idString, $setKeys)) {
+            if (!self::isRowCovered($collection, $idString, $setKeysOnce)) {
                 throw new WriteNotAllowedException(
                     "Write operation not allowed: no truth source covers table '{$collection}' item '{$idString}'."
                 );
             }
 
-            $covering = self::operationsCoveringRow($collection, $idString, $setKeys);
+            $covering = self::operationsCoveringRow($collection, $idString, $setKeysOnce);
             if ($covering->allows($operation)) {
                 return;
             }
@@ -290,13 +299,13 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         $grant = self::grantOf($collection, $agentId);
-        if ($grant === null || !$grant->keys->coversRow($idString, $setKeys)) {
+        if ($grant === null || !self::grantCoversRow($grant, $idString, $setKeysOnce)) {
             $reason = "Write operation not allowed: agent '{$agentId}' is not a truth source for " .
                 "table '{$collection}' item '{$idString}'";
             if ($grant !== null && $grant->keys->coversSet()) {
                 throw new WriteNotAllowedException(
                     "{$reason}: it holds set '{$grant->keys->setKey()}', and the item's set keys are [" .
-                    implode(', ', $setKeys) . "]."
+                    implode(', ', $setKeysOnce()) . "]."
                 );
             }
 
@@ -319,16 +328,24 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * The same three questions in the same order as for one item: whether the table has a truth
      * source at all, whether the writer holds every row of that set, then whether its right covers
-     * this operation. A claim over the whole table holds every set, a claim over a set holds its
-     * own, and named rows hold none.
+     * this operation. A claim over the whole table holds every set, a claim over a set holds the
+     * statement when the value it cuts by reaches that claim's key at the top of the set tree, and
+     * named rows hold none. The climb is asked of the closure only for a claim over a set, and at
+     * most once.
      *
      * @param string $collection Table name
      * @param string $setKey Value of the set column the statement cuts the table by, empty for nobody's set
+     * @param Closure(): list<string> $topSetKeys The key that value reaches at the top of the set tree,
+     *     empty when it reaches none; whatever it raises reaches the caller
      * @param TruthSourceOperation $operation Operation the caller is about to perform on every row of the set
      * @throws WriteNotAllowedException If the set or the operation is not the caller's
      */
-    public static function checkCanWriteSet(string $collection, string $setKey, TruthSourceOperation $operation): void
-    {
+    public static function checkCanWriteSet(
+        string $collection,
+        string $setKey,
+        Closure $topSetKeys,
+        TruthSourceOperation $operation,
+    ): void {
         if (!self::hasTruthSource($collection)) {
             throw new WriteNotAllowedException(
                 "Write operation not allowed: no truth source registered for table '{$collection}'. " .
@@ -336,15 +353,16 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
+        $topSetKeysOnce = self::once($topSetKeys);
         $agentId = ExecutionContext::currentAgentId();
         if ($agentId === null) {
-            if (!self::isSetCovered($collection, $setKey)) {
+            if (!self::isSetCovered($collection, $setKey, $topSetKeysOnce)) {
                 throw new WriteNotAllowedException(
                     "Write operation not allowed: no truth source covers table '{$collection}' set '{$setKey}'."
                 );
             }
 
-            $covering = self::operationsCoveringSet($collection, $setKey);
+            $covering = self::operationsCoveringSet($collection, $setKey, $topSetKeysOnce);
             if ($covering->allows($operation)) {
                 return;
             }
@@ -357,7 +375,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         $grant = self::grantOf($collection, $agentId);
-        if ($grant === null || !$grant->keys->coversEveryRowOfSet($setKey)) {
+        if ($grant === null || !self::grantCoversSet($grant, $setKey, $topSetKeysOnce)) {
             $reason = "Write operation not allowed: agent '{$agentId}' is not a truth source for " .
                 "table '{$collection}' set '{$setKey}'";
             if ($grant !== null && $grant->keys->coversSet()) {
@@ -387,14 +405,14 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * @param string $collection Table name
      * @param string $idString Item id string
-     * @param list<string> $setKeys Set keys the write touches, each once; empty for a row outside every set
+     * @param Closure(): list<string> $setKeys Set keys the write touches, called once at most across the check
      * @return bool True when at least one grant covers the write
      */
-    private static function isRowCovered(string $collection, string $idString, array $setKeys): bool
+    private static function isRowCovered(string $collection, string $idString, Closure $setKeys): bool
     {
         $sources = &self::getSources();
         foreach ($sources[$collection] ?? [] as $grant) {
-            if ($grant->keys->coversRow($idString, $setKeys)) {
+            if (self::grantCoversRow($grant, $idString, $setKeys)) {
                 return true;
             }
         }
@@ -410,24 +428,55 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * @param string $collection Table name
      * @param string $idString Item id string
-     * @param list<string> $setKeys Set keys the write touches, each once; empty for a row outside every set
+     * @param Closure(): list<string> $setKeys Set keys the write touches, called once at most across the check
      * @return TruthSourceOperations Operations any covering grant allows, each named once
      */
     private static function operationsCoveringRow(
         string $collection,
         string $idString,
-        array $setKeys,
+        Closure $setKeys,
     ): TruthSourceOperations {
         $sources = &self::getSources();
         $operations = new TruthSourceOperations();
         foreach ($sources[$collection] ?? [] as $grant) {
-            if (!$grant->keys->coversRow($idString, $setKeys)) {
+            if (!self::grantCoversRow($grant, $idString, $setKeys)) {
                 continue;
             }
             $operations = $operations->merge($grant->operations);
         }
 
         return $operations;
+    }
+
+    /**
+     * Whether one grant covers a write of one row, asking the set keys only of a claim over a set.
+     *
+     * A claim over the whole table or over named rows looks at no set key, so it is handed none
+     * and the closure is not called for it.
+     *
+     * @param TruthSourceGrant $grant Grant to judge
+     * @param string $idString Item id string
+     * @param Closure(): list<string> $setKeys Set keys the write touches
+     * @return bool True when the grant covers the write
+     */
+    private static function grantCoversRow(TruthSourceGrant $grant, string $idString, Closure $setKeys): bool
+    {
+        return $grant->keys->coversRow($idString, $grant->keys->coversSet() ? $setKeys() : []);
+    }
+
+    /**
+     * Wraps the set keys of one check so they are computed at most once, however many grants ask.
+     *
+     * @param Closure(): list<string> $setKeys Set keys the write touches
+     * @return Closure(): list<string> The same keys, remembered after the first call
+     */
+    private static function once(Closure $setKeys): Closure
+    {
+        $keys = null;
+
+        return static function () use ($setKeys, &$keys): array {
+            return $keys ??= $setKeys();
+        };
     }
 
     /**
@@ -438,13 +487,14 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * @param string $collection Table name
      * @param string $setKey Value of the set column the statement cuts the table by, empty for nobody's set
+     * @param Closure(): list<string> $topSetKeys The key that value reaches at the top, called once at most across the check
      * @return bool True when at least one grant covers every row of the set
      */
-    private static function isSetCovered(string $collection, string $setKey): bool
+    private static function isSetCovered(string $collection, string $setKey, Closure $topSetKeys): bool
     {
         $sources = &self::getSources();
         foreach ($sources[$collection] ?? [] as $grant) {
-            if ($grant->keys->coversEveryRowOfSet($setKey)) {
+            if (self::grantCoversSet($grant, $setKey, $topSetKeys)) {
                 return true;
             }
         }
@@ -457,19 +507,43 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      *
      * @param string $collection Table name
      * @param string $setKey Value of the set column the statement cuts the table by, empty for nobody's set
+     * @param Closure(): list<string> $topSetKeys The key that value reaches at the top, called once at most across the check
      * @return TruthSourceOperations Operations any covering grant allows, each named once
      */
-    private static function operationsCoveringSet(string $collection, string $setKey): TruthSourceOperations
+    private static function operationsCoveringSet(string $collection, string $setKey, Closure $topSetKeys): TruthSourceOperations
     {
         $sources = &self::getSources();
         $operations = new TruthSourceOperations();
         foreach ($sources[$collection] ?? [] as $grant) {
-            if (!$grant->keys->coversEveryRowOfSet($setKey)) {
+            if (!self::grantCoversSet($grant, $setKey, $topSetKeys)) {
                 continue;
             }
             $operations = $operations->merge($grant->operations);
         }
 
         return $operations;
+    }
+
+    /**
+     * Whether one grant covers one statement over every row of one set.
+     *
+     * The whole table and named rows answer by the value the statement cuts by, as they always did,
+     * and never ask for the climb. A claim over a set answers by the key that value reaches at the
+     * top of the set tree, and only when it reaches exactly one.
+     *
+     * @param TruthSourceGrant $grant Grant to judge
+     * @param string $setKey Value of the set column the statement cuts the table by
+     * @param Closure(): list<string> $topSetKeys The key that value reaches at the top
+     * @return bool True when the grant covers every row of the set
+     */
+    private static function grantCoversSet(TruthSourceGrant $grant, string $setKey, Closure $topSetKeys): bool
+    {
+        if (!$grant->keys->coversSet()) {
+            return $grant->keys->coversEveryRowOfSet($setKey);
+        }
+
+        $tops = $topSetKeys();
+
+        return count($tops) === 1 && $grant->keys->coversEveryRowOfSet($tops[0]);
     }
 }

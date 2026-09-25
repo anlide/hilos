@@ -21,6 +21,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\SetTree;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Hilos;
@@ -213,7 +214,8 @@ abstract class DbActions
      *
      * The door for a bulk write cut by one set - the rows of one person, say - where
      * ensureCanWrite() would ask for the whole table. The set column is the entity's own, so only its value is
-     * named here, and the delete or edit that follows has to cut the table by that column alone.
+     * named here, and the delete or edit that follows has to cut the table by that column alone. A claim over a set
+     * is judged by the key that value reaches at the top of the set tree, climbed only when such a claim asks.
      *
      * @param string $setKey Value of the set column the write cuts the table by
      * @param TruthSourceOperation $operation Operation the caller performs on every row of the set: Update for a bulk
@@ -225,7 +227,13 @@ abstract class DbActions
      */
     protected function ensureCanWriteSet(string $setKey, TruthSourceOperation $operation): void
     {
-        DbWriteGuard::guardSetWrite($this->objectCollection->getCollectionKey(), $setKey, $operation);
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        DbWriteGuard::guardSetWrite(
+            $this->objectCollection->getCollectionKey(),
+            $setKey,
+            SetTree::climb($objectClass::ENTITY_CLASS, $setKey),
+            $operation,
+        );
 
         $this->loadForWrite();
     }

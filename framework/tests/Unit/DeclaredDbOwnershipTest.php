@@ -49,7 +49,7 @@ final class DeclaredDbOwnershipTest extends TestCase
         TruthSourceRegistry::checkCanWriteItem(
             DeclaredDbOwnershipTestAgent::COLLECTION,
             '1',
-            [],
+            static fn(): array => [],
             TruthSourceOperation::Update,
         );
 

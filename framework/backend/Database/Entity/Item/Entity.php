@@ -39,6 +39,9 @@ use Hilos\Database\SqlSortDirection;
  *   when its rows belong to nobody's set. A nullable column is not an owner: a row that can
  *   fall out of the set was never in it.
  * - const bool _setRoot — whether other tables may hang their sets off this one.
+ * - const string _setShortPath — optional: a column beside _setVia that carries the key at the
+ *   top of the table's set tree directly, so the right reads it off the row instead of walking
+ *   up. Declared only where that column is kept true.
  *
  * @property-read bool $_related
  */
@@ -55,6 +58,7 @@ abstract class Entity
     public const string META_PII_NOT_PERSONAL = '_piiNotPersonal';
     public const string META_SET_VIA = '_setVia';
     public const string META_SET_ROOT = '_setRoot';
+    public const string META_SET_SHORT_PATH = '_setShortPath';
 
     // The _setVia value of a table whose rows belong to nobody's set. The leading underscore
     // is what keeps it apart from a real column: column names in this project carry none.

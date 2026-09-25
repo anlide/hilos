@@ -59,6 +59,7 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Schema\SetOwnershipGuard;
+use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
@@ -279,7 +280,10 @@ final class TopologyValidator
      *
      * A set is the rows one column cuts out of a table, and a table whose Entity declares
      * `Entity::SET_STANDALONE` is cut by no column: a claim over a set of it holds nothing, and
-     * would say so only when the first write of the owner is refused. Judged here rather than in
+     * would say so only when the first write of the owner is refused. A table whose set column
+     * points at a table in a set of its own is claimed by the key at the top of that tree, and the
+     * claim is refused when a table of the climb is not mounted or is one the agent neither reads
+     * nor claims ({@see self::validateSetClimb()}). Judged here rather than in
      * {@see self::validate()} for the reason {@see self::validateBrowserJoinColumns()} is: the
      * answer lives on the mounted collection's Entity, and nothing is mounted that early. The start
      * of the agent cannot judge it either - what it reads is the class and its instance, not the
@@ -320,7 +324,50 @@ final class TopologyValidator
                 if (constant("{$entityClass}::" . Entity::META_SET_VIA) === Entity::SET_STANDALONE) {
                     $errors[] = "{$ownerClass} claims db collection '{$collection}' by a set, but its Entity {$entityClass}"
                         . " declares _setVia Entity::SET_STANDALONE: a table cut by no column has no set to claim";
+
+                    continue;
                 }
+
+                $this->validateSetClimb($ownerClass, $collection, $entityClass, $errors);
+            }
+        }
+    }
+
+    /**
+     * Holds one claim over a set against the tables its set tree climbs through.
+     *
+     * A write under the claim reaches the top of the tree by reading each parent row through the
+     * guarded entrance ({@see SetTree::topOfSetKey()}), so every table of the climb has to be one
+     * the agent reads or holds - otherwise its first write is refused by the read guard instead of
+     * its start. A table of the climb that is not mounted leaves no row of the claimed table able to
+     * reach the top. One rule for tables with a short path and without: the statement over one set
+     * climbs the value of the set column there too.
+     *
+     * @param class-string<AbstractAgent> $ownerClass Class that claims the set
+     * @param string $collection Collection the claim names
+     * @param class-string<Entity> $entityClass Entity of that collection
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateSetClimb(string $ownerClass, string $collection, string $entityClass, array &$errors): void
+    {
+        $reachable = [
+            ...$ownerClass::READS_DB,
+            ...array_keys(OwnershipDeclaration::dbCollectionsOf($ownerClass)),
+            ...array_keys(OwnershipDeclaration::dbRowCollectionsOf($ownerClass)),
+            ...array_keys(OwnershipDeclaration::dbSetCollectionsOf($ownerClass)),
+        ];
+
+        foreach (SetTree::walkOf($entityClass) as $table => $parent) {
+            if ($parent === null) {
+                $errors[] = "{$ownerClass} claims db collection '{$collection}' by a set, and the set tree of {$entityClass}"
+                    . " climbs through table '{$table}', which is not mounted: no row of it can be walked to the top";
+
+                return;
+            }
+
+            if (!in_array($parent, $reachable, true)) {
+                $errors[] = "{$ownerClass} claims db collection '{$collection}' by a set, and the set tree of {$entityClass}"
+                    . " climbs through db collection '{$parent}', which it neither reads nor claims";
             }
         }
     }

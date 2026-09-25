@@ -99,6 +99,78 @@ final class SetOwnershipGuardTest extends TestCase
         SetOwnershipGuard::assertMountedSetsDeclared();
     }
 
+    public function testASoundShortPathPasses(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $this->mount([SetGuardParents::class, SetGuardShortcuts::class]);
+
+        SetOwnershipGuard::assertMountedSetsDeclared();
+    }
+
+    public function testEveryCrookedShortPathIsNamed(): void
+    {
+        $this->mount([
+            SetGuardParents::class,
+            SetGuardNumericShortPaths::class,
+            SetGuardStrangeShortPaths::class,
+            SetGuardSetViaShortPaths::class,
+            SetGuardStandaloneShortPaths::class,
+        ]);
+
+        $message = '';
+        try {
+            SetOwnershipGuard::assertMountedSetsDeclared();
+            $this->fail('A mounted context of four crooked short paths was accepted');
+        } catch (UndeclaredSetOwnershipException $refusal) {
+            $message = $refusal->getMessage();
+        }
+
+        $this->assertStringContainsString(
+            SetGuardNumericShortPathEntity::class . ' declares a non-string ' . Entity::META_SET_SHORT_PATH,
+            $message,
+        );
+        $this->assertStringContainsString(
+            SetGuardStrangeShortPathEntity::class . " names column 'top_id' in " . Entity::META_SET_SHORT_PATH
+            . ', which is not among its ' . Entity::META_COLUMNS,
+            $message,
+        );
+        $this->assertStringContainsString(
+            SetGuardSetViaShortPathEntity::class . ' names its ' . Entity::META_SET_VIA . " column 'parent_id' as "
+            . Entity::META_SET_SHORT_PATH . ': a short path is another column that carries the top of the set tree',
+            $message,
+        );
+        $this->assertStringContainsString(
+            SetGuardStandaloneShortPathEntity::class . ' declares ' . Entity::META_SET_SHORT_PATH
+            . " on a table that belongs to nobody's set (Entity::SET_STANDALONE)",
+            $message,
+        );
+    }
+
+    public function testAChainOfParentsThatReturnsToItsTableIsRefused(): void
+    {
+        $this->mount([SetGuardLoopFirsts::class, SetGuardLoopSeconds::class]);
+
+        $message = '';
+        try {
+            SetOwnershipGuard::assertMountedSetsDeclared();
+            $this->fail('A chain of set columns running in a circle was accepted');
+        } catch (UndeclaredSetOwnershipException $refusal) {
+            $message = $refusal->getMessage();
+        }
+
+        $this->assertStringContainsString(
+            SetGuardLoopFirstEntity::class . ' hangs its set on a chain that returns to itself: '
+            . 'set_guard_loop_first -> set_guard_loop_second -> set_guard_loop_first',
+            $message,
+        );
+        $this->assertStringContainsString(
+            SetGuardLoopSecondEntity::class . ' hangs its set on a chain that returns to itself: '
+            . 'set_guard_loop_second -> set_guard_loop_first -> set_guard_loop_second',
+            $message,
+        );
+    }
+
     public function testASetHungOnATableThatIsNoRootIsRefused(): void
     {
         $this->mount([SetGuardLeaves::class, SetGuardStrays::class]);
@@ -448,4 +520,265 @@ final class SetGuardStrays extends Objects
 final class SetGuardMisnamedColumns extends Objects
 {
     public const string OBJECT_CLASS = SetGuardMisnamedColumn::class;
+}
+
+/**
+ * A child that also carries the top of its set tree on the row, declared as a short path.
+ */
+final class SetGuardShortcutEntity extends Entity
+{
+    public const string id = 'id';
+    public const string parent_id = 'parent_id';
+    public const string top_id = 'top_id';
+
+    public const string _table = 'set_guard_shortcut';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::parent_id, self::top_id];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::parent_id => PhpType::INTEGER->value,
+        self::top_id => PhpType::INTEGER->value,
+    ];
+    public const array _foreign = [self::parent_id => SetGuardParentEntity::_table];
+
+    public const string _setVia = self::parent_id;
+    public const string _setShortPath = self::top_id;
+    public const bool _setRoot = false;
+}
+
+/**
+ * A short path named by something that is not a column name at all.
+ */
+final class SetGuardNumericShortPathEntity extends Entity
+{
+    public const string id = 'id';
+    public const string parent_id = 'parent_id';
+
+    public const string _table = 'set_guard_numeric_short_path';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::parent_id];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::parent_id => PhpType::INTEGER->value,
+    ];
+    public const array _foreign = [self::parent_id => SetGuardParentEntity::_table];
+
+    public const string _setVia = self::parent_id;
+    public const int _setShortPath = 7;
+    public const bool _setRoot = false;
+}
+
+/**
+ * A short path naming a column the table does not have.
+ */
+final class SetGuardStrangeShortPathEntity extends Entity
+{
+    public const string id = 'id';
+    public const string parent_id = 'parent_id';
+
+    public const string _table = 'set_guard_strange_short_path';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::parent_id];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::parent_id => PhpType::INTEGER->value,
+    ];
+    public const array _foreign = [self::parent_id => SetGuardParentEntity::_table];
+
+    public const string _setVia = self::parent_id;
+    public const string _setShortPath = 'top_id';
+    public const bool _setRoot = false;
+}
+
+/**
+ * A short path naming the set column itself, which is a path around nothing.
+ */
+final class SetGuardSetViaShortPathEntity extends Entity
+{
+    public const string id = 'id';
+    public const string parent_id = 'parent_id';
+
+    public const string _table = 'set_guard_set_via_short_path';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::parent_id];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::parent_id => PhpType::INTEGER->value,
+    ];
+    public const array _foreign = [self::parent_id => SetGuardParentEntity::_table];
+
+    public const string _setVia = self::parent_id;
+    public const string _setShortPath = self::parent_id;
+    public const bool _setRoot = false;
+}
+
+/**
+ * A short path on a table whose rows belong to nobody's set, so there is no top to carry.
+ */
+final class SetGuardStandaloneShortPathEntity extends Entity
+{
+    public const string id = 'id';
+
+    public const string _table = 'set_guard_standalone_short_path';
+    public const string _primary = self::id;
+    public const array _columns = [self::id];
+    public const array _types = [self::id => PhpType::INTEGER->value];
+
+    public const string _setVia = Entity::SET_STANDALONE;
+    public const string _setShortPath = self::id;
+    public const bool _setRoot = false;
+}
+
+/**
+ * One half of a circle: hangs its set on the second table, which hangs its set back on this one.
+ */
+final class SetGuardLoopFirstEntity extends Entity
+{
+    public const string id = 'id';
+    public const string second_id = 'second_id';
+
+    public const string _table = 'set_guard_loop_first';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::second_id];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::second_id => PhpType::INTEGER->value,
+    ];
+    public const array _foreign = [self::second_id => 'set_guard_loop_second'];
+
+    public const string _setVia = self::second_id;
+    public const bool _setRoot = true;
+}
+
+/**
+ * The other half of the circle.
+ */
+final class SetGuardLoopSecondEntity extends Entity
+{
+    public const string id = 'id';
+    public const string first_id = 'first_id';
+
+    public const string _table = 'set_guard_loop_second';
+    public const string _primary = self::id;
+    public const array _columns = [self::id, self::first_id];
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::first_id => PhpType::INTEGER->value,
+    ];
+    public const array _foreign = [self::first_id => SetGuardLoopFirstEntity::_table];
+
+    public const string _setVia = self::first_id;
+    public const bool _setRoot = true;
+}
+
+/**
+ * @extends Object_<SetGuardShortcutEntity>
+ */
+final class SetGuardShortcut extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardShortcutEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardShortcut>
+ */
+final class SetGuardShortcuts extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardShortcut::class;
+}
+
+/**
+ * @extends Object_<SetGuardNumericShortPathEntity>
+ */
+final class SetGuardNumericShortPath extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardNumericShortPathEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardNumericShortPath>
+ */
+final class SetGuardNumericShortPaths extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardNumericShortPath::class;
+}
+
+/**
+ * @extends Object_<SetGuardStrangeShortPathEntity>
+ */
+final class SetGuardStrangeShortPath extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardStrangeShortPathEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardStrangeShortPath>
+ */
+final class SetGuardStrangeShortPaths extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardStrangeShortPath::class;
+}
+
+/**
+ * @extends Object_<SetGuardSetViaShortPathEntity>
+ */
+final class SetGuardSetViaShortPath extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardSetViaShortPathEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardSetViaShortPath>
+ */
+final class SetGuardSetViaShortPaths extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardSetViaShortPath::class;
+}
+
+/**
+ * @extends Object_<SetGuardStandaloneShortPathEntity>
+ */
+final class SetGuardStandaloneShortPath extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardStandaloneShortPathEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardStandaloneShortPath>
+ */
+final class SetGuardStandaloneShortPaths extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardStandaloneShortPath::class;
+}
+
+/**
+ * @extends Object_<SetGuardLoopFirstEntity>
+ */
+final class SetGuardLoopFirst extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardLoopFirstEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardLoopFirst>
+ */
+final class SetGuardLoopFirsts extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardLoopFirst::class;
+}
+
+/**
+ * @extends Object_<SetGuardLoopSecondEntity>
+ */
+final class SetGuardLoopSecond extends Object_
+{
+    public const string ENTITY_CLASS = SetGuardLoopSecondEntity::class;
+}
+
+/**
+ * @extends Objects<SetGuardLoopSecond>
+ */
+final class SetGuardLoopSeconds extends Objects
+{
+    public const string OBJECT_CLASS = SetGuardLoopSecond::class;
 }

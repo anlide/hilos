@@ -211,9 +211,9 @@ the Entity, one answer for everybody. *Which value of that column is mine* stays
 runtime, on the grant. No reader chooses the declaration, so nothing in it bends
 to a reader.
 
-**The sets of one table are a partition.** One column cuts the table, so every
-row stands in exactly one set, and whether two claims meet is answered by
-comparing two set keys — no query, no look at the rows. Two owners of different
+**The sets of one table are a partition.** Every row reaches exactly one top of
+its set tree, so every row stands in exactly one set, and whether two claims
+meet is answered by comparing two set keys — no query, no look at the rows. Two owners of different
 sets of one table are therefore lawful, and are the width doing its work: the
 agent of each instance holding the rows of its own. Two owners holding one set
 in full — every operation, the word as *What The Start Refuses* uses it — are
@@ -250,11 +250,15 @@ to the start of the agent, in `OwnershipDeclaration`, because they are what a
 class and its instance can contradict between themselves. A third needs the
 Entity and belongs to the topology: a set claimed in a collection whose Entity
 declares `Entity::SET_STANDALONE`, a table cut by no column and so with no set
-to claim. It is judged in `TopologyValidator::validateReferences()`: that half
+to claim — and so does a claim whose set tree climbs through a table that is not
+mounted or that the claimant neither reads nor claims. It is judged in
+`TopologyValidator::validateReferences()`: that half
 runs once the collections are mounted and can walk from a mounted collection to
 its Entity, which is why `validateBrowserJoinColumns()` is judged there. `SetOwnershipGuard` is not the judge and gets no second subject. It
 answers whether a *table* declared its set, and — where `_foreign` names the
-parent — whether that parent declared itself a root; a claim is an agent's
+parent — whether that parent declared itself a root, whether a declared
+`_setShortPath` is another column of a table in a set, and whether the chain of
+parents ends rather than returning to itself; a claim is an agent's
 statement, the guard reads no agents, and the width does not repeat its
 cross-check.
 
@@ -271,17 +275,19 @@ a set covers the rows its key is carried by.
 
 **Belonging is asked of the row's set column, not of its key.** The key of a row
 says nothing about whose set it is in, so `TruthSourceKeys::covers()` has no
-answer at this width: the guard is asked with the value the row carries in its
-`_setVia` column, and compares it with the set key of the grant. That value is
-already in hand at the door — `DbActions::ensureCanWrite()` holds the object it
-is about to write, not only its id, and so does every door that writes one row.
-Beside the id, the door hands the guard the set keys the write touches
-(`Object_::touchedSetKeys()`): the key the row is stored under and the key an
-unsaved edit moves it to, each once. A claim over a set covers the write only
-when every one of them is its key. A row moved from one set to another is
-therefore not the write of a set's owner — it writes into two sets, and only the
-owner of the whole table moves it — and a row whose set column is empty is in
-nobody's set and covered by no set claim. The two older widths do not look at
+answer at this width: the guard is asked with the key at the top of the row's
+set tree, reached from the value in its `_setVia` column, and compares it with
+the set key of the grant. That value is already in hand at the door —
+`DbActions::ensureCanWrite()` holds the object it is about to write, not only its
+id, and so does every door that writes one row. Beside the id, the door hands the
+guard the set keys the write touches as a closure (`$this->touchedSetKeys(...)`):
+the top the row is stored under and the top an unsaved edit moves it to, each
+once. The registry calls it only when a claim over a set decides, at most once:
+reaching the top may read a parent that the owner of the whole table never reads.
+A claim over a set covers the write only when every key is its own. A row moved
+under another top is therefore not the write of a set's owner — it writes into
+two sets, and only the owner of the whole table moves it — and a row whose set
+column is empty is in nobody's set and covered by no set claim. The two older widths do not look at
 the set keys. A row born after the agent's start is covered by
 construction, because the grant keeps a set key and not a list of rows collected
 at the start.
@@ -294,7 +300,9 @@ and the collection door would demand the whole table. It asks
 `TruthSourceKeys::coversEveryRowOfSet()`: the whole table covers every set,
 nobody's empty key included; a set covers its own; named rows cover none, since
 the statement touches rows the claim does not name, born after it included. The
-column comes from the Entity; the door is handed only its value. A statement
+column comes from the Entity; the door is handed only its value, and beside it
+the climb of that value (`SetTree::climb()`), which a claim over a set alone asks
+for: it holds the statement when the value reaches its key at the top of the tree. A statement
 across the table, and one moving rows between sets, still asks the collection
 door, which keeps its one width. The living callers are
 `Notifications::markAllReadForUser()` and the three `deleteForUser()` of the
@@ -302,17 +310,20 @@ second factor, through `DbActions::ensureCanWriteSet()`.
 
 **The set tree is walked upward, by default and to any depth.** A set hangs on a
 row that is itself in a set: a passkey credential is cut by `identity_id` and
-the identity by `user_id`, so a credential is two steps from its person. The
-owner of a set owns what hangs below it, and the walk up the `_setVia` chain is
-allowed by default, for any number of steps (not in the code yet — HIL-1111).
-Where a row carries a short path to its root beside its owning column, declaring
-that path is the preferred form, because it answers without the walk
-(not in the code yet — HIL-1111). `PasskeyCredential` is the living case:
-`user_id` lies on the row beside `identity_id`, a short path to the same owner.
-Owner's decision, 2026-09-19: declaring the path is better, and walking is
-allowed by default. Forbidding the walk and demanding a direct column to the
-root was weighed and not chosen; how a row declares its short path is HIL-1111's
-to name.
+the identity by `user_id`, so a credential is two steps from its person. A claim
+over a set is laid by the key at the top of the tree — the person, the room — and
+covers every row whose walk ends there (`SetTree::topOfSetKey()`). The parent of
+a set column is the table its `_foreign` names; a soft reference, or a parent
+whose rows are in nobody's set, is the top. The parent row is read by its stored
+pointer through the guarded entrance, so a set claimant has to read every table
+of the walk, and `validateSetClaims()` refuses its start otherwise; a row whose
+parent is gone is in nobody's set. An Entity may declare `_setShortPath`, a
+column that carries the top directly, and its rows answer without the walk — the
+preferred form wherever such a column is kept true. `PasskeyCredential` walks
+through its foreign key to the identity: its `user_id` stays undeclared until an
+account merge keeps it true (HIL-1132). Owner's decision, 2026-09-19: declaring
+the path is better and walking is allowed by default; forbidding the walk for a
+direct column to the root was weighed and not chosen.
 
 **A claim over a set may be borrowed.** The rows of a set are often brought into
 being by somebody else: the agent of one person would edit that person's sign-in
@@ -603,10 +614,12 @@ The width over a set brings a case that can be judged. The sets of one table are
 a partition, so two owners of different sets never meet, and two owners holding
 one set in full are this same refusal (not in the code yet — HIL-1114). Which
 moment compares the two set keys — a class does not carry its own — and what a
-receipt for such a pair looks like are HIL-1114's to name. It brings one refusal
+receipt for such a pair looks like are HIL-1114's to name. It brings refusals
 of the topology as well, judged a moment later than the three here, in
 `TopologyValidator::validateReferences()`, once the collections are mounted: a
-set claimed in a collection whose Entity declares `Entity::SET_STANDALONE`.
+set claimed in a collection whose Entity declares `Entity::SET_STANDALONE`, and
+one whose set tree climbs through a table that is not mounted or that the agent
+neither reads nor claims.
 See *A Claim Over A Set*.
 
 A class that names one collection both in its reads (`READS_DB`, `READS_RT`) and
@@ -696,8 +709,12 @@ exclusive maps, the empty set key and the borrowed wait
 there), the third width answered by the row's set column at the value, the
 registry and the door, a row born after the declared start included, and one
 statement over one set asked at the value and the registry
-(`TruthSourceSetWidthTest`), the set claimed on a table cut by
-no column and the reads that repeat a claim (`TopologyValidatorTest`), the
+(`TruthSourceSetWidthTest`, with the set keys asked lazily and once), the walk
+up the set tree, the short path, the parent that is gone and the statement over
+a set below the top (`SetTreeTest`), the short path and the chain of parents the
+startup gate refuses (`SetOwnershipGuardTest`), the set claimed on a table cut by
+no column, through a table the claimant cannot reach, and the reads that repeat a
+claim (`TopologyValidatorTest`), the
 grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
 (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links

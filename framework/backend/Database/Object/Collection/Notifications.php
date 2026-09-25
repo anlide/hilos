@@ -18,6 +18,7 @@ use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\SetTree;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -193,7 +194,12 @@ final class Notifications extends Objects
 
         $now = TimeHelper::getSqlDateTime();
 
-        DbWriteGuard::guardSetWrite(static::COLLECTION_KEY, (string)$userId, TruthSourceOperation::Update);
+        DbWriteGuard::guardSetWrite(
+            static::COLLECTION_KEY,
+            (string)$userId,
+            SetTree::climb(EntityNotification::class, (string)$userId),
+            TruthSourceOperation::Update,
+        );
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($now));

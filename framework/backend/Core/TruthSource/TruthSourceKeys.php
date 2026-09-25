@@ -55,7 +55,8 @@ final readonly class TruthSourceKeys
     }
 
     /**
-     * @param string $setKey Value of the table's set column that names the owner's set
+     * @param string $setKey Key at the top of the table's set tree that names the owner's set; for a
+     *     table whose set column points at no set, the value of that column
      * @return self A claim over the rows of that one set
      * @throws InvalidArgumentException When the set key is empty and so names nobody's set
      */

@@ -32,7 +32,8 @@ touched ORM surfaces.
   `docs/agents/architecture/backup-anonymization.md` or
   `$hilos-backup-anonymization`
 - A new table also needs to say whose set it is part of, in `_setVia` and
-  `_setRoot` on the same Entity; a node refuses to start without them:
+  `_setRoot` on the same Entity (a column carrying the top of the set tree
+  may be named in the optional `_setShortPath`); a node refuses to start without them:
   `docs/agents/orm/entity.md`
 - Repository/service anti-pattern: `docs/agents/antipatterns/no-repository-service.md`
 - Test commands: use `$hilos-testing-cli`

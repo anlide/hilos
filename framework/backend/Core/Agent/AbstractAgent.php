@@ -155,8 +155,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      *     WHICH collection is declared here; WHICH SET of it is named by
      *     {@see self::ownedDbSetKey()} on the live instance, asked once when the agent starts. The
-     *     cut is not the agent's to choose: the column the collection's Entity names in `_setVia`
-     *     decides which rows a set holds, and the key only says which set.
+     *     cut is not the agent's to choose: the set tree of the collection's Entity decides which
+     *     rows a set holds - its `_setVia` column, climbed up the `_foreign` of each floor, or the
+     *     row's `_setShortPath` - and the key at the top only says which set.
      *
      *     A claim here without the right to add is borrowed - the rows of the set are brought into
      *     being by somebody else - and the start waits for its state beside the reads.
@@ -318,8 +319,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Set of a database collection declared by a set that this instance owns.
      *
      * The half of a set claim a class cannot carry: {@see self::OWNS_DB_SET} says which
-     * collection, this says which set of it - the value of the collection's set column that names
-     * the one instance the agent answers for, a person's id, an event's.
+     * collection, this says which set of it - the key at the top of the collection's set tree that
+     * names the one instance the agent answers for, a person's id, an event's. For a table whose
+     * set column points at no set it is that column's value.
      *
      * Asked once, between the instance being built and its {@see self::onStart()}, by
      * {@see OwnershipDeclaration::claimDbSet()}. Public for the reason {@see self::ownedDbRowKeys()}
@@ -327,9 +329,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      * The base answer is the empty string, which is a REFUSAL and not a claim of nothing: a
      * collection declared by a set whose seam names no set key stops the agent's start
-     * ({@see ClaimedSetKeyMissingException}). One key and not a list, on purpose: one column cuts
-     * the table, and a seam answering several sets would bring back the predicate the width was
-     * chosen over.
+     * ({@see ClaimedSetKeyMissingException}). One key and not a list, on purpose: every row has one
+     * top, and a seam answering several sets would bring back the predicate the width was chosen
+     * over.
      *
      * @param string $collection Collection the resolver is asking about, as named in the map
      * @return string Set key this instance claims in that collection

@@ -137,12 +137,18 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     /**
      * Runs one direction of every covered entity's stub file.
      *
+     * The drop goes in reverse: a table named by a foreign key cannot be dropped before the
+     * table that holds the key (hilos_passkey_credential -> hilos_identity, HIL-1111). The
+     * create goes in name order, which puts every referenced table first today; a key that
+     * named a table sorting later would fail the create loudly here.
+     *
      * @param bool $down Run the down (drop) stubs when true, the create stubs when false
      * @throws DatabaseException When a stub statement fails
      */
     private static function runStubDirection(bool $down): void
     {
-        foreach (EntitySchemaAudit::frameworkEntities() as $entityClass) {
+        $entities = EntitySchemaAudit::frameworkEntities();
+        foreach ($down ? array_reverse($entities) : $entities as $entityClass) {
             $table = constant("{$entityClass}::" . Entity::META_TABLE);
             Database::sqlRun(file_get_contents(self::stubPath($table, $down)));
         }

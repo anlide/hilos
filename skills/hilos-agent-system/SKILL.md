@@ -74,8 +74,9 @@ Use this skill for agent business logic and registration work. Start by reading 
    row, or by a set with a seam that names no set key.
    Ask which width the agent needs before writing the map. An agent that owns
    everything belonging to one instance — this person's rows, this event's —
-   owns neither the table nor a list of keys but a *set*: the rows cut out by
-   the column the Entity names in `_setVia`. That third width names the
+   owns neither the table nor a list of keys but a *set*: the rows whose set
+   tree — the `_setVia` column climbed along `_foreign`, or the row's
+   `_setShortPath` — ends at the agent's key. That third width names the
    collection in `OWNS_DB_SET` (`OWNS_RT_SET` for the runtime half) and its set
    key in `ownedDbSetKey()` (`ownedRtSetKey()`), and the agent does not choose
    the cut. It is specified in *A Claim Over A Set* of

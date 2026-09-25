@@ -246,7 +246,7 @@ final class UserVerifications extends Objects
             throw new DatabaseException('Verification insert did not assign an id');
         }
 
-        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, $verification->touchedSetKeys(), TruthSourceOperation::Update);
+        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, $verification->touchedSetKeys(...), TruthSourceOperation::Update);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string(password_hash($plainCode, PASSWORD_DEFAULT)));

@@ -80,14 +80,19 @@ final class PasskeyCredential extends Entity
         self::created_at => PhpType::DATETIME->value,
     ];
 
+    public const array _foreign = [
+        self::identity_id => Identity::_table,
+    ];
+
     public const array _indexes = [
         'uk_passkey_credential_id' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::credential_id]],
         'idx_passkey_identity' => [Entity::INDEX_COLUMNS => [self::identity_id]],
         'idx_passkey_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
-    // The owner is identity_id and not user_id: the credential is tied to the hilos_identity
-    // anchor row, and user_id beside it is a short path to that same owner.
+    // The owner is identity_id: it hangs on hilos_identity by a foreign key, and the right walks
+    // up through it. user_id beside it is a short path to the same owner, left undeclared until
+    // an account merge keeps it true (HIL-1132).
     public const string _setVia = self::identity_id;
     public const bool _setRoot = false;
 
