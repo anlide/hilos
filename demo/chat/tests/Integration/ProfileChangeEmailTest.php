@@ -14,6 +14,8 @@ use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeCurrentCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestEmailChangeNewCodeActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Library\Command\AuthMessages;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -33,6 +35,7 @@ use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\EmailChangedMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -60,7 +63,7 @@ final class ProfileChangeEmailTest extends IntegrationTestCase
     private const string NEW_CODE = '535353';
     private const string WRONG_CODE = '000000';
     private const string PASSWORD = 'a-long-enough-secret';
-    private const string RESTART = 'Your confirmation has expired. Close this window and start again.';
+    private const string RESTART = StepUpMessages::EXPIRED;
     private const int MAX_ATTEMPTS = 5;
     private const int TTL_SECONDS = 3600;
 
@@ -122,6 +125,7 @@ final class ProfileChangeEmailTest extends IntegrationTestCase
         $token = $this->openSession($agent, 'change-none-ak');
         $userId = (int)Hilos::$db->users->actions->createWithName('Phone User')->id;
         $this->authenticateSession($agent, $token, $userId, null);
+        $this->confirmStepUp('change-none-ak', $userId);
 
         $this->assertRefused(
             'Confirm an email address first',
@@ -151,6 +155,24 @@ final class ProfileChangeEmailTest extends IntegrationTestCase
         $this->assertNotNull(
             $this->verifications()->findActive(VerificationType::EMAIL_CHANGE_CURRENT, $current, self::MAX_ATTEMPTS),
             'A proven code must survive step 2',
+        );
+    }
+
+    /**
+     * A password account must freshly confirm the email-change operation before step 1.
+     *
+     * @throws HilosException When setup fails
+     */
+    public function testStepOneRefusesAPasswordAccountWithoutStepUpConfirmation(): void
+    {
+        [$userId, $current] = $this->signInWithVerifiedEmail('change-password-unconfirmed-ak');
+        Hilos::$db->identities->createPasswordIdentity($userId, $current, self::PASSWORD)->markVerified();
+
+        $this->assertRefused(
+            StepUpMessages::EXPIRED,
+            'change-password-unconfirmed-ak',
+            ChatSignalConstants::CHANGE_EMAIL_CURRENT_REQUEST,
+            new RequestEmailChangeCurrentCodeActionDTO(),
         );
     }
 
@@ -265,6 +287,7 @@ final class ProfileChangeEmailTest extends IntegrationTestCase
     {
         [$userId, $current] = $this->signInWithVerifiedEmail('change-4-ak');
         Hilos::$db->identities->createPasswordIdentity($userId, $current, self::PASSWORD)->markVerified();
+        $this->confirmStepUp('change-4-ak', $userId);
         $email = $this->seedBothCodes($userId, $current);
 
         $this->submit(
@@ -398,6 +421,25 @@ final class ProfileChangeEmailTest extends IntegrationTestCase
         $this->seedCode(VerificationType::EMAIL_CHANGE, $email, $userId, self::NEW_CODE);
 
         return $email;
+    }
+
+    /**
+     * Seeds the operation confirmation the real step-up command would write.
+     *
+     * @param string $acceptKey Connection whose browser session is confirmed
+     * @param int $userId Person confirming the operation
+     * @throws HilosException When the session lookup or confirmation write fails
+     */
+    private function confirmStepUp(string $acceptKey, int $userId): void
+    {
+        $session = $this->sessionOf($acceptKey);
+        $this->assertNotNull($session);
+        Hilos::$db->stepUps->actions->confirm(
+            ProtectedModeRuntime::hashSessionToken($session->token),
+            $userId,
+            StepUpOperationKey::CHANGE_EMAIL,
+            date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
+        );
     }
 
     /**

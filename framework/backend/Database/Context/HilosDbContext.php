@@ -23,6 +23,7 @@ use Hilos\Database\Object\Collection\SecondFactorSettings as ObjectSecondFactorS
 use Hilos\Database\Object\Collection\SecondFactorTrusts as ObjectSecondFactorTrusts;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
+use Hilos\Database\Object\Collection\StepUps as ObjectStepUps;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
@@ -42,6 +43,7 @@ use Hilos\Database\View\Collection\SecondFactorSettings as DbCollectionSecondFac
 use Hilos\Database\View\Collection\SecondFactorTrusts as DbCollectionSecondFactorTrusts;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
+use Hilos\Database\View\Collection\StepUps as DbCollectionStepUps;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
@@ -55,6 +57,7 @@ use Hilos\Database\Actions\Collection\SecondFactorSettingsActions;
 use Hilos\Database\Actions\Collection\SecondFactorTrustsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
+use Hilos\Database\Actions\Collection\StepUpsActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
@@ -91,6 +94,7 @@ use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
  * @property-read DbCollectionSecondFactorTrusts $secondFactorTrusts
  * @property-read DbCollectionSecondFactorResets $secondFactorResets
  * @property-read DbCollectionSecondFactorSettings $secondFactorSettings
+ * @property-read DbCollectionStepUps $stepUps
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -129,12 +133,14 @@ abstract class HilosDbContext extends DbContext
     public const string secondFactorReset = 'secondFactorReset';
     public const string secondFactorSettings = 'secondFactorSettings';
     public const string secondFactorSetting = 'secondFactorSetting';
+    public const string stepUps = 'stepUps';
+    public const string stepUp = 'stepUp';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
      * notification preferences, push subscriptions, the verifier circle, auth blocks,
-     * OAuth providers, and the five tables of the second factor).
+     * OAuth providers, the five tables of the second factor, and operation confirmations).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
      * notification deliveries, notification preferences, push subscriptions and auth
@@ -149,6 +155,8 @@ abstract class HilosDbContext extends DbContext
      * The second factor's five tables (HIL-494) - authenticators, backup codes, trusted
      * browsers, delayed removals and each person's own removal wait - load by key or by person
      * too, and stay inert for the same reason where nobody signs in.
+     * Operation confirmations (HIL-495) load by their browser/person/operation tuple and
+     * stay inert until a protected account command asks for one.
      *
      * OAuth providers are read whole on the first lookup of a provider in the process
      * (HIL-1080) - a row per declared provider, asked on every handshake - and stay inert
@@ -247,6 +255,9 @@ abstract class HilosDbContext extends DbContext
             DbCollectionSecondFactorSettings::class,
             SecondFactorSettingsActions::class,
         );
+
+        $this->_objectCollections[self::stepUps] = ObjectStepUps::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::stepUps, DbCollectionStepUps::class, StepUpsActions::class);
     }
 
     /**

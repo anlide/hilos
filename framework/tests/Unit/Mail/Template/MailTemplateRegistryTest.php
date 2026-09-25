@@ -38,6 +38,7 @@ final class MailTemplateRegistryTest extends TestCase
             MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE,
             MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
             MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
+            MailTemplateCatalogConstants::AUTH_STEP_UP,
         ] as $key) {
             $content = $registry->render($key, $params, null);
 
@@ -108,6 +109,7 @@ final class MailTemplateRegistryTest extends TestCase
                 MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
                 MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
                 MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
+                MailTemplateCatalogConstants::AUTH_STEP_UP,
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
                 MailTemplateCatalogConstants::PROTECTED_MODE_STUCK,
                 MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
@@ -125,6 +127,7 @@ final class MailTemplateRegistryTest extends TestCase
         self::assertSame('auth.magic_link', MailTemplateCatalogConstants::AUTH_MAGIC_LINK);
         self::assertSame('auth.email_add', MailTemplateCatalogConstants::AUTH_EMAIL_ADD);
         self::assertSame('auth.email_change_current', MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT);
+        self::assertSame('auth.step_up', MailTemplateCatalogConstants::AUTH_STEP_UP);
     }
 
     public function testUnknownKeyThrowsDomainException(): void

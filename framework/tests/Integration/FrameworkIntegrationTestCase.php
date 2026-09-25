@@ -50,6 +50,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         HilosDbContext::secondFactorTrusts,
         HilosDbContext::secondFactorResets,
         HilosDbContext::secondFactorSettings,
+        HilosDbContext::stepUps,
     ];
 
     /**

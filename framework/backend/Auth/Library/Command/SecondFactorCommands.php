@@ -645,7 +645,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Refuses a profile action whose code proves nothing.
+     * Refuses a profile or operation action whose second-factor code proves nothing.
      *
      * @param int $userId Person
      * @param string $code Code as typed
@@ -653,7 +653,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When the code matches nothing
      * @throws HilosException When a lookup or the write fails
      */
-    private function assertProof(int $userId, string $code, bool $backupCode): void
+    public function assertProof(int $userId, string $code, bool $backupCode): void
     {
         $proven = $backupCode
             ? $this->spendBackupCode($userId, $code)

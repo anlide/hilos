@@ -27,6 +27,9 @@ final class SmsTemplateCatalogConstants
     /** Template key: a one-time code confirming a phone added to a signed-in user. */
     public const string AUTH_SMS_ADD = 'auth.' . VerificationType::SMS_ADD;
 
+    /** Template key: confirm identity by phone before a protected operation. */
+    public const string AUTH_SMS_STEP_UP = 'auth.' . VerificationType::STEP_UP_SMS;
+
     /** Template key: a durable notification delivered by SMS. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 }

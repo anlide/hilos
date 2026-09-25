@@ -181,6 +181,31 @@ abstract class BaseDTO
     }
 
     /**
+     * Reads a required payload field whose value may explicitly be null.
+     *
+     * Absence is still a broken payload: null is one of the values the sender may choose,
+     * not a substitute the reader invents when the sender omitted the field.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?array<string, mixed> Array value, or null when the sender explicitly wrote null
+     * @throws InvalidFormatException When the key is absent or holds neither an array nor null
+     */
+    protected static function requireNullableArray(array $data, string $key): ?array
+    {
+        if (!array_key_exists($key, $data)) {
+            throw new InvalidFormatException('Payload carries no array or null under key ' . $key);
+        }
+
+        $value = $data[$key];
+        if ($value !== null && !is_array($value)) {
+            throw new InvalidFormatException('Payload carries no array or null under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
      * Reads a boolean payload field the DTO cannot be built without.
      *
      * `false` is a value the sender chose, not the absence of one, so it passes

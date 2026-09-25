@@ -10,6 +10,18 @@
 // page-subscription manager.
 
 export {
+  HILOS_STEP_UP_START_ACTION,
+  HILOS_STEP_UP_CONFIRM_ACTION,
+  HILOS_STEP_UP_COPY,
+  createHilosStepUpActions,
+  createHilosStepUpStep,
+  type HilosStepUpMethod,
+  type HilosStepUpOpening,
+  type HilosStepUpAnswer,
+  type HilosStepUpActions,
+  type HilosStepUpStep,
+} from './auth/stepUp.js'
+export {
   createSignal,
   computedSignal,
   subscribeSignal,
@@ -993,6 +1005,16 @@ export {
   type HilosTwoFactorActions,
   type HilosTwoFactorTable,
 } from './admin/security/hilosSecurityTwoFactor.js'
+export {
+  resolveHilosStepUpOperationRow,
+  createHilosSecurityStepUpTable,
+  createHilosSecurityStepUpActions,
+  HilosStepUpOperationRowKey,
+  HILOS_STEP_UP_ADMIN_COPY,
+  type HilosStepUpOperationRow,
+  type HilosStepUpTable,
+  type HilosSecurityStepUpActions,
+} from './admin/security/hilosSecurityStepUp.js'
 export {
   resolveHilosLogKeyRow,
   createHilosLogKeysTable,

@@ -90,6 +90,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
             VerificationType::EMAIL_CHANGE_CURRENT => MailTemplateCatalogConstants::AUTH_EMAIL_CHANGE_CURRENT,
             VerificationType::MAGIC_LINK => MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
             VerificationType::EMAIL_ADD => MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
+            VerificationType::STEP_UP => MailTemplateCatalogConstants::AUTH_STEP_UP,
             default => null,
         };
     }

@@ -481,6 +481,9 @@ final class HilosSignalConstants
      */
     public const string SECURITY_2FA_SETTING_SET = 'security_2fa_setting_set';
 
+    /** Client → server: switch operation-level confirmation on or off. */
+    public const string SECURITY_STEP_UP_OPERATION_SET = 'security_step_up_operation_set';
+
     // ── Hilos profile: second factor (client → server, signed in, HIL-494) ──
     /**
      * Client → server: start connecting an authenticator app. A further app is proven by a code
@@ -831,6 +834,13 @@ final class HilosSignalConstants
 
     /** Client → server: the "it was not me" link of a delayed removal, without signing in (throttled). */
     public const string HILOS_SECOND_FACTOR_RESET_CANCEL_LINK = 'hilos_second_factor_reset_cancel_link';
+
+    // ── Hilos operation step-up (client → server, signed in, HIL-495) ──
+    /** Client → server: resolve and, when needed, begin proof for one protected operation. */
+    public const string HILOS_STEP_UP_START = 'hilos_step_up_start';
+
+    /** Client → server: submit the proof selected while opening a protected operation. */
+    public const string HILOS_STEP_UP_CONFIRM = 'hilos_step_up_confirm';
 
     // ── Hilos profile: OAuth account linking (client → server) ──
     /** Client → server: begin linking an OAuth provider to the signed-in account (authenticated, HIL-401). */

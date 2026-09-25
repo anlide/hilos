@@ -11,6 +11,7 @@ import { signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
 import { enableEmailChannel } from '../helpers/notifications'
 import { expectPageReady, gotoAuthReturn, gotoPage } from '../helpers/page'
+import { connectFirstApp } from '../helpers/secondFactor'
 import {
   PASSWORD,
   clickSubmit,
@@ -26,51 +27,8 @@ import { nextTotpCode, totpStep } from '../helpers/totp'
 const RESET_REQUESTED_SUBJECT = 'Removal of two-step verification requested'
 
 /** The "it was not me" link in that notice. */
-const CANCEL_LINK_PATTERN = /(https?:\/\/\S+\/auth\/second-factor\/cancel\?token=\S+)/
-
-/** What connecting an app leaves behind: its secret, the step spent on it, the codes. */
-interface ConnectedApp {
-  secret: string
-  spent: number
-  backupCodes: string[]
-}
-
-/**
- * Connect the first authenticator app from the profile security page, keep the
- * backup codes it issues, and close the modal on its "connect another?" step.
- *
- * @param page A signed-in page.
- */
-async function connectFirstApp(page: Page): Promise<ConnectedApp> {
-  await gotoPage(page, '/profile/security')
-  await expect(page.getByTestId('profile-2fa-off')).toBeVisible()
-
-  await clickSubmit(page.getByTestId('profile-2fa-add'))
-  await typeInto(page.getByTestId('profile-2fa-enroll-label'), 'Work phone')
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
-
-  const secret = (
-    await page.getByTestId('profile-2fa-enroll-secret').textContent()
-  )?.trim()
-  expect(secret).toBeTruthy()
-  const { code, step } = await nextTotpCode(secret ?? '', totpStep() - 1)
-  await typeInto(page.getByTestId('profile-2fa-enroll-code'), code)
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
-
-  const list = page.getByTestId('backup-codes-list').locator('li')
-  await expect(list).toHaveCount(10)
-  const backupCodes = (await list.allTextContents()).map((text) => text.trim())
-  await page.getByTestId('backup-codes-saved').check()
-  await clickSubmit(page.getByTestId('profile-2fa-enroll-submit'))
-  await expect(page.getByTestId('profile-2fa-enroll-more')).toBeVisible()
-  await page.getByTestId('modal-close').click()
-
-  await expect(page.getByTestId('profile-2fa-codes-left')).toHaveText(
-    '10 of 10 left',
-  )
-
-  return { secret: secret ?? '', spent: step, backupCodes }
-}
+const CANCEL_LINK_PATTERN =
+  /(https?:\/\/\S+\/auth\/second-factor\/cancel\?token=\S+)/
 
 /**
  * Sign in with a password and stop where the surface asks for the second factor.

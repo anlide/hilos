@@ -8,8 +8,9 @@ use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
-use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
+use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
+use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
@@ -133,6 +134,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),
+            StepUpSettingsCatalog::getCatalog(),
         );
     }
 }

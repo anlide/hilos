@@ -19,7 +19,7 @@ use Hilos\Sms\Template\SmsVerificationCodeTemplate;
  * SmsVerificationDeliverer - the deliverer that texts a verification code (HIL-285).
  *
  * The SMS mirror of {@see MailVerificationDeliverer}: it maps the SMS-delivered
- * {@see VerificationType} values (sms_login, sms_add) to their `auth.*` SMS template key
+ * {@see VerificationType} values (sms_login, sms_add, step_up_sms) to their `auth.*` SMS template key
  * (the same `'auth.' . $type` rule the catalog is keyed by) and hands the code to the SMS
  * subsystem through {@see Hilos::$sms} as a raw-send. The template is resolved agent-side, so
  * the plaintext code travels only in the queued signal params, never through a log.
@@ -80,6 +80,7 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
         return match ($type) {
             VerificationType::SMS_LOGIN => SmsTemplateCatalogConstants::AUTH_SMS_LOGIN,
             VerificationType::SMS_ADD => SmsTemplateCatalogConstants::AUTH_SMS_ADD,
+            VerificationType::STEP_UP_SMS => SmsTemplateCatalogConstants::AUTH_SMS_STEP_UP,
             default => null,
         };
     }

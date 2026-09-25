@@ -101,6 +101,24 @@ final class SmsVerificationDelivererTest extends TestCase
         );
     }
 
+    public function testStepUpSmsTypeMapsToItsTemplateKey(): void
+    {
+        $router = new SmsVerificationDelivererTestSignalRouter();
+        Hilos::$sr = $router;
+
+        new SmsVerificationDeliverer()->deliver(
+            '+15551234567',
+            VerificationType::STEP_UP_SMS,
+            VerificationDeliverable::code('333444'),
+        );
+
+        self::assertCount(1, $router->captured);
+        self::assertSame(
+            SmsTemplateCatalogConstants::AUTH_SMS_STEP_UP,
+            $router->captured[0]['data']->data->templateKey,
+        );
+    }
+
     public function testEmailTypeIsNoOp(): void
     {
         $router = new SmsVerificationDelivererTestSignalRouter();

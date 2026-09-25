@@ -69,6 +69,34 @@ final class WebAuthnChallengeSignerTest extends TestCase
     }
 
     /**
+     * A login challenge does not prove an operation.
+     *
+     * @throws RandomException When the CSPRNG cannot produce a challenge
+     */
+    public function testLoginChallengeCannotVerifyAsStepUp(): void
+    {
+        $signer = new WebAuthnChallengeSigner(self::SECRET);
+        $login = $signer->issue(WebAuthnChallengeSigner::PURPOSE_LOGIN, self::SESSION, 42, 300);
+
+        $this->expectException(WebAuthnChallengeException::class);
+        $signer->verify($login->token, WebAuthnChallengeSigner::PURPOSE_STEP_UP, self::SESSION);
+    }
+
+    /**
+     * An operation challenge cannot sign a person in.
+     *
+     * @throws RandomException When the CSPRNG cannot produce a challenge
+     */
+    public function testStepUpChallengeCannotVerifyAsLogin(): void
+    {
+        $signer = new WebAuthnChallengeSigner(self::SECRET);
+        $stepUp = $signer->issue(WebAuthnChallengeSigner::PURPOSE_STEP_UP, self::SESSION, 42, 300);
+
+        $this->expectException(WebAuthnChallengeException::class);
+        $signer->verify($stepUp->token, WebAuthnChallengeSigner::PURPOSE_LOGIN, self::SESSION);
+    }
+
+    /**
      * A challenge bound to one session does not verify for another.
      *
      * @throws RandomException When the CSPRNG cannot produce a challenge

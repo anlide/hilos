@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Demo\Polls\Database\Settings;
 
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
-use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
+use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
+use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
@@ -52,6 +53,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),
             SecondFactorSettingsCatalog::getCatalog(),
+            StepUpSettingsCatalog::getCatalog(),
         );
     }
 }

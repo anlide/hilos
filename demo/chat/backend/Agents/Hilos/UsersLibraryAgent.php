@@ -6,6 +6,7 @@ namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Auth\ChatOAuthConfig;
+use Demo\Chat\Auth\ChatStepUpOperationKey;
 use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
@@ -34,6 +35,8 @@ use Hilos\Auth\Library\Command\IdentityCommands;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\PhoneNumber;
+use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -214,7 +217,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * fifteen minutes ran out, another tab spent it, or the account's address already moved.
      * None of them is a typo the person can fix on the spot, so the answer is to start over.
      */
-    private const string EMAIL_CHANGE_RESTART = 'Your confirmation has expired. Close this window and start again.';
+    private const string EMAIL_CHANGE_RESTART = StepUpMessages::EXPIRED;
 
     /**
      * Runs one of the chat's own profile submits, or hands the name back to the framework.
@@ -516,6 +519,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         $connection = $this->actingConnection($acceptKey);
+        $this->requireStepUp($acceptKey, ChatStepUpOperationKey::CHANGE_NAME);
 
         if ($connection->renameModerationPhase === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING) {
             throw new ValidationException('Another rename is already being moderated');
@@ -817,6 +821,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     private function requestEmailChangeCurrentCode(string $acceptKey): void
     {
         $userId = $this->requireUserId($acceptKey);
+        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($userId);
 
         if (new VerificationService()->issue(VerificationType::EMAIL_CHANGE_CURRENT, $current, $userId)->capReached) {
@@ -841,6 +846,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     private function confirmEmailChangeCurrentCode(string $acceptKey, ConfirmEmailChangeCurrentCodeActionDTO $dto): void
     {
         $userId = $this->requireUserId($acceptKey);
+        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($userId);
 
         if (!new VerificationService()->matchCode(VerificationType::EMAIL_CHANGE_CURRENT, $current, $dto->code)) {
@@ -868,6 +874,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     private function requestEmailChangeNewCode(string $acceptKey, RequestEmailChangeNewCodeActionDTO $dto): void
     {
         $userId = $this->requireUserId($acceptKey);
+        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($userId);
         $email = $this->acceptNewEmail($userId, $current, $dto->email);
         $this->requireCurrentEmailProof($current, $dto->currentCode);
@@ -901,6 +908,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
     private function confirmEmailChangeNewCode(string $acceptKey, ConfirmEmailChangeNewCodeActionDTO $dto): void
     {
         $userId = $this->requireUserId($acceptKey);
+        $this->requireStepUp($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($userId);
         $email = $this->acceptNewEmail($userId, $current, $dto->email);
         $this->requireCurrentEmailProof($current, $dto->currentCode);

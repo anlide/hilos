@@ -24,6 +24,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
+use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -51,6 +52,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
  * @property-read HilosSecuritySignInMethodsTable $hilosSecuritySignInMethods
  * @property-read HilosSecurityTwoFactorTable $hilosSecurityTwoFactor
+ * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  */
 final class ChatTableContext extends TableContext
 {
@@ -73,6 +75,7 @@ final class ChatTableContext extends TableContext
     public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;
     public const string hilosSecuritySignInMethods = HilosSecuritySignInMethodsTable::TABLE;
     public const string hilosSecurityTwoFactor = HilosSecurityTwoFactorTable::TABLE;
+    public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.

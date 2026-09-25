@@ -7,12 +7,13 @@ until the backend lands the rename (the committed name reaches the draft) or
 rejects it (a framework action_error shown in the modal). Bootstrap classes
 only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import {
   createOAuthLogin,
   createPasskeyCeremony,
   describeOAuthError,
+  focusInitial,
   HILOS_PAGE_ROUTES,
   HilosPages,
   hilosToasts,
@@ -26,6 +27,7 @@ import {
   HilosLink,
   HilosModal,
   HilosNotificationPreferences,
+  HilosStepUpStep,
   LoadingButton,
   useSignal,
 } from '@hilos/vue'
@@ -41,6 +43,7 @@ import {
 import {
   clearRenameError,
   clearSetPasswordError,
+  profileStepUp,
   renameError,
   sendAddPasswordConfirm,
   sendAddPasswordRequest,
@@ -104,6 +107,9 @@ const committed = useSignal(committedName)
 const identities = useSignal(profileIdentities)
 const error = useSignal(renameError)
 const unlinkError = useSignal(unlinkIdentityError)
+const stepUpOpening = useSignal(profileStepUp.opening)
+const stepUpRefusal = useSignal(profileStepUp.refusal)
+const stepUpBusy = useSignal(profileStepUp.busy)
 
 // Link an account (HIL-401): the configured OAuth providers not yet attached to
 // this account. Linking is the redirect start pattern — the button dispatches
@@ -221,6 +227,8 @@ watch(identities, (list) => {
 })
 
 const editing = ref(false)
+const renameReady = ref(false)
+const renameBody = ref<HTMLElement | null>(null)
 const draft = ref('')
 // The committed name captured when the modal opened — the 3-way merge baseline.
 const baseline = ref('')
@@ -349,6 +357,13 @@ const {
   submit: submitEmailStep,
   again: changeEmailAgain,
 } = useEmailChange()
+const emailBody = ref<HTMLElement | null>(null)
+
+watch(emailStep, (step, previous) => {
+  if (previous === 0 && step === 1) {
+    focusStep(emailBody.value)
+  }
+})
 
 // Password (HIL-402): a signed-in user adds or changes their own password. The
 // form mode comes from the loaded identities — Change when a password exists, Add
@@ -494,12 +509,31 @@ onUnmounted(() => {
   teardownNotificationPreferences?.()
 })
 
-function openEdit(): void {
+/** Focus the field of a dialog step after its previous body has been replaced. */
+function focusStep(body: HTMLElement | null): void {
+  void nextTick(() => {
+    const dialog = body?.closest<HTMLElement>('[role="dialog"]')
+    if (dialog) {
+      focusInitial(dialog)
+    }
+  })
+}
+
+async function openEdit(): Promise<void> {
   clearRenameError()
   baseline.value = committed.value
   draft.value = committed.value
   loading.value = false
+  const outcome = await profileStepUp.open('change_name')
+  renameReady.value = outcome === 'skip'
   editing.value = true
+}
+
+async function confirmRenameStepUp(): Promise<void> {
+  if (await profileStepUp.confirm()) {
+    renameReady.value = true
+    focusStep(renameBody.value)
+  }
 }
 
 function submit(): void {
@@ -624,14 +658,14 @@ function mergeBoth(): void {
             {{ detail.name }}
           </dd>
         </dl>
-        <button
-          type="button"
-          class="btn btn-outline-primary btn-sm flex-shrink-0"
+        <LoadingButton
+          class="btn-outline-primary btn-sm flex-shrink-0"
+          :loading="stepUpBusy"
           data-id="profile-edit"
           @click="openEdit"
         >
           Edit
-        </button>
+        </LoadingButton>
       </div>
       <!-- The account's email (HIL-299): the address the change flow proves first,
       shown only while the account has a verified one. -->
@@ -645,14 +679,14 @@ function mergeBoth(): void {
             {{ password.verifiedEmail }} · verified
           </dd>
         </dl>
-        <button
-          type="button"
-          class="btn btn-outline-primary btn-sm flex-shrink-0"
+        <LoadingButton
+          class="btn-outline-primary btn-sm flex-shrink-0"
+          :loading="emailLoading"
           data-id="profile-email-change"
           @click="startEmailChange(password.verifiedEmail)"
         >
           Change
-        </button>
+        </LoadingButton>
       </div>
     </div>
     <p v-else class="text-body-secondary" data-id="profile-loading">
@@ -1058,9 +1092,16 @@ function mergeBoth(): void {
       </div>
     </section>
 
-    <HilosModal v-model="editing" :confirm-on-close="dirty">
+    <HilosModal
+      v-model="editing"
+      :confirm-on-close="renameReady && dirty"
+      initial-focus="inner"
+    >
       <template #header>
-        <ConflictHeader title="Change name" :conflict="conflict" />
+        <h2 v-if="!renameReady" class="modal-title h5 mb-0">
+          Confirm it's you
+        </h2>
+        <ConflictHeader v-else title="Change name" :conflict="conflict" />
       </template>
 
       <!-- This dialog's own voice: the page region above is under the backdrop,
@@ -1072,37 +1113,62 @@ function mergeBoth(): void {
         aria-live="assertive"
         data-id="profile-rename-live-assertive"
       >
-        {{ error }}
+        {{ renameReady ? error : stepUpRefusal }}
       </div>
 
-      <form @submit.prevent="submit">
-        <label class="form-label" for="profile-name-field">Display name</label>
-        <input
-          id="profile-name-field"
-          v-model="draft"
-          type="text"
-          class="form-control"
-          data-autofocus
-          data-id="profile-name-input"
-          :minlength="NAME_MIN"
-          :maxlength="NAME_MAX"
-        />
-        <div class="form-text">
-          Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
-        </div>
-        <div
-          v-if="conflict"
-          class="alert alert-warning mt-2 mb-0"
-          data-id="profile-conflict-note"
-        >
-          The name changed elsewhere to “{{ committed }}”. Choose how to
-          resolve.
-        </div>
-        <HilosFormError :message="error" data-id="profile-rename-error" />
-      </form>
+      <div ref="renameBody">
+        <HilosStepUpStep v-if="!renameReady" :controller="profileStepUp" />
+        <form v-else @submit.prevent="submit">
+          <label class="form-label" for="profile-name-field"
+            >Display name</label
+          >
+          <input
+            id="profile-name-field"
+            v-model="draft"
+            type="text"
+            class="form-control"
+            data-autofocus
+            data-id="profile-name-input"
+            :minlength="NAME_MIN"
+            :maxlength="NAME_MAX"
+          />
+          <div class="form-text">
+            Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
+          </div>
+          <div
+            v-if="conflict"
+            class="alert alert-warning mt-2 mb-0"
+            data-id="profile-conflict-note"
+          >
+            The name changed elsewhere to “{{ committed }}”. Choose how to
+            resolve.
+          </div>
+          <HilosFormError :message="error" data-id="profile-rename-error" />
+        </form>
+      </div>
 
-      <template #actions>
+      <template #actions="{ requestClose }">
+        <template v-if="!renameReady">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-id="profile-name-step-up-cancel"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            v-if="stepUpOpening !== null"
+            class="btn-primary"
+            :loading="stepUpBusy"
+            data-id="profile-name-step-up-confirm"
+            @click="confirmRenameStepUp"
+          >
+            Confirm
+          </LoadingButton>
+        </template>
         <ConflictActions
+          v-else
           :conflict="conflict"
           :disable-save="!valid || !dirty"
           @save="submit"
@@ -1213,9 +1279,14 @@ function mergeBoth(): void {
     <HilosModal
       v-model="changingEmail"
       :title="
-        emailStep === EMAIL_STEP_DONE ? 'Email changed' : 'Change your email'
+        emailStep === 0
+          ? 'Confirm it\'s you'
+          : emailStep === EMAIL_STEP_DONE
+            ? 'Email changed'
+            : 'Change your email'
       "
       :confirm-on-close="emailAsksBeforeClosing"
+      initial-focus="inner"
     >
       <!-- This dialog's own voice, as for the two dialogs above; one region for
       all the steps, since only one step is on screen at a time. -->
@@ -1225,106 +1296,136 @@ function mergeBoth(): void {
         aria-live="assertive"
         data-id="profile-email-live-assertive"
       >
-        {{ emailError }}
+        {{ emailStep === 0 ? stepUpRefusal : emailError }}
       </div>
 
-      <ol
-        v-if="emailStep !== EMAIL_STEP_DONE"
-        class="list-unstyled d-flex flex-column gap-1 mb-3 small"
-        data-id="profile-email-steps"
-      >
-        <li
-          v-for="(label, index) in EMAIL_STEP_LABELS"
-          :key="label"
-          class="d-flex align-items-center gap-2"
-          :class="
-            index + 1 === emailStep ? 'fw-semibold' : 'text-body-secondary'
-          "
-          :aria-current="index + 1 === emailStep ? 'step' : undefined"
+      <div ref="emailBody">
+        <HilosStepUpStep v-if="emailStep === 0" :controller="profileStepUp" />
+        <ol
+          v-if="emailStep !== 0 && emailStep !== EMAIL_STEP_DONE"
+          class="list-unstyled d-flex flex-column gap-1 mb-3 small"
+          data-id="profile-email-steps"
         >
-          <span
-            class="badge rounded-pill"
+          <li
+            v-for="(label, index) in EMAIL_STEP_LABELS"
+            :key="label"
+            class="d-flex align-items-center gap-2"
             :class="
-              index + 1 === emailStep ? 'text-bg-primary' : 'text-bg-secondary'
+              index + 1 === emailStep ? 'fw-semibold' : 'text-body-secondary'
             "
-            >{{ index + 1 }}</span
+            :aria-current="index + 1 === emailStep ? 'step' : undefined"
           >
-          <span>{{ label }}</span>
-        </li>
-      </ol>
+            <span
+              class="badge rounded-pill"
+              :class="
+                index + 1 === emailStep
+                  ? 'text-bg-primary'
+                  : 'text-bg-secondary'
+              "
+              >{{ index + 1 }}</span
+            >
+            <span>{{ label }}</span>
+          </li>
+        </ol>
 
-      <form v-if="emailStep === 1" @submit.prevent="submitEmailStep">
-        <p class="small text-body-secondary mb-0">
-          We will send a code to <strong>{{ emailWas }}</strong> to make sure it
-          is you.
-        </p>
-        <HilosFormError :message="emailError" data-id="profile-email-error" />
-      </form>
+        <form v-if="emailStep === 1" @submit.prevent="submitEmailStep">
+          <p class="small text-body-secondary mb-0">
+            We will send a code to <strong>{{ emailWas }}</strong> to make sure
+            it is you.
+          </p>
+          <HilosFormError :message="emailError" data-id="profile-email-error" />
+        </form>
 
-      <form v-else-if="emailStep === 2" @submit.prevent="submitEmailStep">
-        <label class="form-label" for="profile-email-code-current">Code</label>
-        <input
-          id="profile-email-code-current"
-          v-model="emailCurrentCode"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          class="form-control"
-          data-autofocus
-          data-id="profile-email-code-current"
-        />
-        <div class="form-text">Sent to {{ emailWas }}.</div>
-        <HilosFormError :message="emailError" data-id="profile-email-error" />
-      </form>
+        <form v-else-if="emailStep === 2" @submit.prevent="submitEmailStep">
+          <label class="form-label" for="profile-email-code-current"
+            >Code</label
+          >
+          <input
+            id="profile-email-code-current"
+            v-model="emailCurrentCode"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            class="form-control"
+            data-autofocus
+            data-id="profile-email-code-current"
+          />
+          <div class="form-text">Sent to {{ emailWas }}.</div>
+          <HilosFormError :message="emailError" data-id="profile-email-error" />
+        </form>
 
-      <form v-else-if="emailStep === 3" @submit.prevent="submitEmailStep">
-        <label class="form-label" for="profile-email-new">New email</label>
-        <input
-          id="profile-email-new"
-          v-model="emailNew"
-          type="email"
-          autocomplete="email"
-          class="form-control"
-          data-autofocus
-          data-id="profile-email-new"
-        />
-        <div class="form-text">
-          A notice of the change will go to your old address.
+        <form v-else-if="emailStep === 3" @submit.prevent="submitEmailStep">
+          <label class="form-label" for="profile-email-new">New email</label>
+          <input
+            id="profile-email-new"
+            v-model="emailNew"
+            type="email"
+            autocomplete="email"
+            class="form-control"
+            data-autofocus
+            data-id="profile-email-new"
+          />
+          <div class="form-text">
+            A notice of the change will go to your old address.
+          </div>
+          <HilosFormError :message="emailError" data-id="profile-email-error" />
+        </form>
+
+        <form v-else-if="emailStep === 4" @submit.prevent="submitEmailStep">
+          <label class="form-label" for="profile-email-code-new">Code</label>
+          <input
+            id="profile-email-code-new"
+            v-model="emailNewCode"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            class="form-control"
+            data-autofocus
+            data-id="profile-email-code-new"
+          />
+          <div class="form-text">Sent to {{ emailNew.trim() }}.</div>
+          <HilosFormError :message="emailError" data-id="profile-email-error" />
+        </form>
+
+        <div
+          v-else-if="emailStep === EMAIL_STEP_DONE"
+          class="text-center py-2"
+          data-id="profile-email-outcome"
+        >
+          <i
+            class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"
+            aria-hidden="true"
+          ></i>
+          <div class="fw-semibold mb-1">Address changed</div>
+          <p class="small text-body-secondary mb-0">
+            Was <s data-id="profile-email-was">{{ emailWas }}</s
+            >, now <strong data-id="profile-email-now">{{ emailNow }}</strong
+            >. A notice went to both.
+          </p>
         </div>
-        <HilosFormError :message="emailError" data-id="profile-email-error" />
-      </form>
-
-      <form v-else-if="emailStep === 4" @submit.prevent="submitEmailStep">
-        <label class="form-label" for="profile-email-code-new">Code</label>
-        <input
-          id="profile-email-code-new"
-          v-model="emailNewCode"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          class="form-control"
-          data-autofocus
-          data-id="profile-email-code-new"
-        />
-        <div class="form-text">Sent to {{ emailNew.trim() }}.</div>
-        <HilosFormError :message="emailError" data-id="profile-email-error" />
-      </form>
-
-      <div v-else class="text-center py-2" data-id="profile-email-outcome">
-        <i
-          class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"
-          aria-hidden="true"
-        ></i>
-        <div class="fw-semibold mb-1">Address changed</div>
-        <p class="small text-body-secondary mb-0">
-          Was <s data-id="profile-email-was">{{ emailWas }}</s
-          >, now <strong data-id="profile-email-now">{{ emailNow }}</strong
-          >. A notice went to both.
-        </p>
       </div>
 
       <template #actions="{ requestClose }">
-        <template v-if="emailStep !== EMAIL_STEP_DONE">
+        <template v-if="emailStep === 0">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-id="profile-email-cancel"
+            @click="requestClose"
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            v-if="stepUpOpening !== null"
+            class="btn-primary"
+            :loading="emailLoading"
+            data-id="profile-email-step-up-confirm"
+            @click="submitEmailStep"
+          >
+            Confirm
+          </LoadingButton>
+        </template>
+        <template v-else-if="emailStep !== EMAIL_STEP_DONE">
           <button
             type="button"
             class="btn btn-outline-secondary"

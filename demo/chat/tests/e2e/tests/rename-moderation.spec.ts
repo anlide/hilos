@@ -1,10 +1,17 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import { openBell, unreadBadge } from '../helpers/notifications'
 import { gotoPage } from '../helpers/page'
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import { PASSWORD, clickSubmit, signUp, typeInto } from '../helpers/session'
+
+/** Open rename and pass the password-backed protected-operation step. */
+async function openRename(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('profile-edit'))
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-name-step-up-confirm'))
+}
 
 // Rename moderation on a real call to the stand's model (HIL-928): a refusal
 // with a retry, and a model that does not answer. A permitting rename is
@@ -35,7 +42,7 @@ test('a name the model refuses is not taken, and a retry it permits renames the 
   const newName = `Renamed ${key}`
   await dictateModerationVerdict(key, false, 'spam')
 
-  await page.getByTestId('profile-edit').click()
+  await openRename(page)
   await typeInto(page.getByTestId('profile-name-input'), newName)
   await clickSubmit(page.getByTestId('profile-rename-save'))
 
@@ -84,7 +91,7 @@ test('a rename nobody dictated a verdict for comes back as moderation unavailabl
   const key = modelKey()
   const newName = `Unmoderated ${key}`
 
-  await page.getByTestId('profile-edit').click()
+  await openRename(page)
   await typeInto(page.getByTestId('profile-name-input'), newName)
   await clickSubmit(page.getByTestId('profile-rename-save'))
 

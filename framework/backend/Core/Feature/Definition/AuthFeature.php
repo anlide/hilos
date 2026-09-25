@@ -18,6 +18,7 @@ use Hilos\Database\Entity\Item\SecondFactorBackupCode;
 use Hilos\Database\Entity\Item\SecondFactorReset;
 use Hilos\Database\Entity\Item\SecondFactorSetting;
 use Hilos\Database\Entity\Item\SecondFactorTrust;
+use Hilos\Database\Entity\Item\StepUp;
 use Hilos\Database\Entity\Item\UserVerification;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
@@ -96,6 +97,7 @@ final class AuthFeature extends FeatureDefinition
                 SecondFactorTrust::_table,
                 SecondFactorReset::_table,
                 SecondFactorSetting::_table,
+                StepUp::_table,
             ],
         );
     }

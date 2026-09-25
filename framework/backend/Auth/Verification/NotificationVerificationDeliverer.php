@@ -12,7 +12,8 @@ use Hilos\Hilos;
  * NotificationVerificationDeliverer - the routing deliverer over the code channels (HIL-285).
  *
  * The framework default behind {@see VerificationService::createDeliverer()}: it dispatches a
- * freshly issued code to the channel its type belongs to - the SMS types (sms_login, sms_add)
+ * freshly issued code to the channel its type belongs to - the SMS types (sms_login, sms_add,
+ * step_up_sms)
  * to {@see SmsVerificationDeliverer} ({@see Hilos::$sms}), every other type to
  * {@see MailVerificationDeliverer} ({@see Hilos::$mail}). This generalizes the former
  * mail-only default now that a second raw-send channel exists (HIL-197 email, HIL-285 SMS),
@@ -59,7 +60,7 @@ final class NotificationVerificationDeliverer implements VerificationDeliverer
     private function delivererFor(string $type): VerificationDeliverer
     {
         return match ($type) {
-            VerificationType::SMS_LOGIN, VerificationType::SMS_ADD => $this->sms,
+            VerificationType::SMS_LOGIN, VerificationType::SMS_ADD, VerificationType::STEP_UP_SMS => $this->sms,
             default => $this->mail,
         };
     }

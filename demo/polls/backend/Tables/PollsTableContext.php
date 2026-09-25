@@ -16,6 +16,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
+use Hilos\Tables\Security\HilosSecurityStepUpTable;
 
 /**
  * PollsTableContext - App-specific table context ($table layer) for polls.
@@ -34,6 +35,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
  * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
  * @property-read HilosSecuritySignInMethodsTable $hilosSecuritySignInMethods
  * @property-read HilosSecurityTwoFactorTable $hilosSecurityTwoFactor
+ * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  */
 final class PollsTableContext extends TableContext
 {
@@ -47,6 +49,7 @@ final class PollsTableContext extends TableContext
     public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;
     public const string hilosSecuritySignInMethods = HilosSecuritySignInMethodsTable::TABLE;
     public const string hilosSecurityTwoFactor = HilosSecurityTwoFactorTable::TABLE;
+    public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
 
     /**
      * Registers polls table definitions from the project topology registry.

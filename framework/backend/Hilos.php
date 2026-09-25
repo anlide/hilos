@@ -7,6 +7,7 @@ namespace Hilos;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
+use Hilos\Auth\StepUp\StepUpOperationDirectory;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -175,6 +176,17 @@ abstract class Hilos implements TruthSourceOwner
      * @var class-string<AuthMethodDirectory>
      */
     protected const string AUTH_METHOD_DIRECTORY = AuthMethodDirectory::class;
+
+    /**
+     * Step-up operation directory class (HIL-495).
+     *
+     * The framework default declares its three account operations. A project points this
+     * at its own subclass to append protected operations without editing the framework;
+     * an administrator may narrow the resulting list, never widen it.
+     *
+     * @var class-string<StepUpOperationDirectory>
+     */
+    protected const string STEP_UP_OPERATION_DIRECTORY = StepUpOperationDirectory::class;
 
     /**
      * OAuth provider directory class (HIL-286).
@@ -517,6 +529,16 @@ abstract class Hilos implements TruthSourceOwner
     public static function authMethodDirectoryClass(): string
     {
         return static::appClass()::AUTH_METHOD_DIRECTORY;
+    }
+
+    /**
+     * Returns the project's step-up operation directory class (HIL-495).
+     *
+     * @return class-string<StepUpOperationDirectory> Step-up operation directory class
+     */
+    public static function stepUpOperationDirectoryClass(): string
+    {
+        return static::appClass()::STEP_UP_OPERATION_DIRECTORY;
     }
 
     /**

@@ -13,12 +13,15 @@ import {
   sendEmailChangeCurrentRequest,
   sendEmailChangeNewConfirm,
   sendEmailChangeNewRequest,
+  profileStepUp,
   type WizardStepOutcome,
 } from './profileActions'
 
-/** The five steps, in the order the modal walks them. */
-export type EmailChangeStep = 1 | 2 | 3 | 4 | 5
+/** Step zero confirms the person; the other five steps change the address. */
+export type EmailChangeStep = 0 | 1 | 2 | 3 | 4 | 5
 
+/** Fresh proof of identity before the address flow starts. */
+const STEP_CONFIRM_IDENTITY: EmailChangeStep = 0
 /** The first step: a code to the address the account holds now. */
 const STEP_SEND_CURRENT: EmailChangeStep = 1
 /** The step that types back the current address's code. */
@@ -73,12 +76,12 @@ export interface EmailChange {
   canSubmit: ComputedRef<boolean>
   /** Whether closing asks first: a code is already out on steps 2 to 4. */
   asksBeforeClosing: ComputedRef<boolean>
-  /** Open the modal on step 1 for the given current address. */
-  start: (address: string) => void
+  /** Ask whether confirmation is needed, then open the modal on step 0 or 1. */
+  start: (address: string) => Promise<void>
   /** Submit the step on screen. */
   submit: () => Promise<void>
   /** Walk the flow again from step 1, the address just set now being the current one. */
-  again: () => void
+  again: () => Promise<void>
 }
 
 /**
@@ -114,14 +117,16 @@ export function useEmailChange(): EmailChange {
     () => step.value > STEP_SEND_CURRENT && step.value < STEP_DONE,
   )
 
-  function start(address: string): void {
-    step.value = STEP_SEND_CURRENT
+  async function start(address: string): Promise<void> {
     was.value = address
     currentCode.value = ''
     newEmail.value = ''
     newCode.value = ''
     now.value = ''
     error.value = null
+    loading.value = true
+    const outcome = await profileStepUp.open('change_email')
+    step.value = outcome === 'skip' ? STEP_SEND_CURRENT : STEP_CONFIRM_IDENTITY
     loading.value = false
     open.value = true
   }
@@ -157,6 +162,15 @@ export function useEmailChange(): EmailChange {
     }
     loading.value = true
     error.value = null
+    if (step.value === STEP_CONFIRM_IDENTITY) {
+      const confirmed = await profileStepUp.confirm()
+      loading.value = false
+      if (confirmed) {
+        step.value = STEP_SEND_CURRENT
+      }
+
+      return
+    }
     const outcome = await dispatchStep()
     loading.value = false
     if (!outcome.ok) {
@@ -171,8 +185,8 @@ export function useEmailChange(): EmailChange {
     step.value = stepAfter(step.value)
   }
 
-  function again(): void {
-    start(now.value)
+  async function again(): Promise<void> {
+    await start(now.value)
   }
 
   return {

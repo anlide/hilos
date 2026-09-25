@@ -107,6 +107,30 @@ final class BaseDtoPayloadFieldsTest extends TestCase
         PayloadFieldsProbeDTO::readRequiredArray(['payload' => 'hi'], 'payload');
     }
 
+    public function testRequiredNullableArrayTellsAnExplicitNullFromAnAbsentField(): void
+    {
+        self::assertNull(PayloadFieldsProbeDTO::readRequiredNullableArray(['payload' => null], 'payload'));
+        self::assertSame(
+            ['id' => 'credential'],
+            PayloadFieldsProbeDTO::readRequiredNullableArray(['payload' => ['id' => 'credential']], 'payload'),
+        );
+    }
+
+    public function testRequiredNullableArrayRefusesAnAbsentField(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('payload');
+
+        PayloadFieldsProbeDTO::readRequiredNullableArray([], 'payload');
+    }
+
+    public function testRequiredNullableArrayRefusesAScalar(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PayloadFieldsProbeDTO::readRequiredNullableArray(['payload' => 'none'], 'payload');
+    }
+
     public function testRequiredBoolReadsATrueValue(): void
     {
         $this->assertTrue(PayloadFieldsProbeDTO::readRequiredBool(['admin' => true], 'admin'));
@@ -410,6 +434,17 @@ final class PayloadFieldsProbeDTO extends BaseDTO
     public static function readRequiredArray(array $data, string $key): array
     {
         return self::requireArray($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?array<string, mixed> Array value, or null when explicitly sent
+     * @throws InvalidFormatException When the key is absent or holds neither an array nor null
+     */
+    public static function readRequiredNullableArray(array $data, string $key): ?array
+    {
+        return self::requireNullableArray($data, $key);
     }
 
     /**

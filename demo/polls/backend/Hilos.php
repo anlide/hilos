@@ -91,6 +91,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
+use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -284,6 +285,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         PollsTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         PollsTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        PollsTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -316,6 +318,7 @@ final class Hilos extends HilosFacade
         ],
         SecurityTwoFactorPage::PAGE => [
             PollsTableContext::hilosSecurityTwoFactor => [],
+            PollsTableContext::hilosSecurityStepUp => [],
         ],
         UsersPage::PAGE => [
             PollsTableContext::hilosUsers => [],

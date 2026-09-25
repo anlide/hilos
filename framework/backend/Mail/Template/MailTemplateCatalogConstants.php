@@ -39,6 +39,9 @@ final class MailTemplateCatalogConstants
     /** Template key: confirm an email being added to a signed-in user. */
     public const string AUTH_EMAIL_ADD = 'auth.' . VerificationType::EMAIL_ADD;
 
+    /** Template key: confirm identity before a protected operation. */
+    public const string AUTH_STEP_UP = 'auth.' . VerificationType::STEP_UP;
+
     /** Template key: a durable notification delivered by email. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
 

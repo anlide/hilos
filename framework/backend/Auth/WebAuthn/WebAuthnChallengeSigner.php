@@ -29,6 +29,7 @@ final class WebAuthnChallengeSigner
 {
     public const string PURPOSE_REGISTER = 'register';
     public const string PURPOSE_LOGIN = 'login';
+    public const string PURPOSE_STEP_UP = 'step_up';
 
     private const int CHALLENGE_BYTES = 32;
     private const string FIELD_SEPARATOR = '|';

@@ -58,6 +58,7 @@ use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Auth\ChatAuthMethodDirectory;
 use Demo\Chat\Auth\ChatCodeChannelRegistry;
 use Demo\Chat\Auth\ChatOAuthProviderDirectory;
+use Demo\Chat\Auth\ChatStepUpOperationDirectory;
 use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
@@ -203,6 +204,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
+use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -255,6 +257,8 @@ final class Hilos extends HilosFacade
     protected const string CODE_CHANNEL_REGISTRY = ChatCodeChannelRegistry::class;
 
     protected const string AUTH_METHOD_DIRECTORY = ChatAuthMethodDirectory::class;
+
+    protected const string STEP_UP_OPERATION_DIRECTORY = ChatStepUpOperationDirectory::class;
 
     protected const string OAUTH_PROVIDER_DIRECTORY = ChatOAuthProviderDirectory::class;
 
@@ -532,6 +536,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
         ChatTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
         ChatTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+        ChatTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -680,6 +685,7 @@ final class Hilos extends HilosFacade
         ],
         SecurityTwoFactorPage::PAGE => [
             ChatTableContext::hilosSecurityTwoFactor => [],
+            ChatTableContext::hilosSecurityStepUp => [],
         ],
         LogsKeysPage::PAGE => [
             ChatTableContext::hilosLogKeys => [],

@@ -66,6 +66,7 @@ use Hilos\Tables\Security\HilosSecurityOAuthProvidersTable;
 use Hilos\Tables\Security\HilosSecurityOAuthRedirectTable;
 use Hilos\Tables\Security\HilosSecuritySignInMethodsTable;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
+use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -358,6 +359,8 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_STEP_UP_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_STEP_UP_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -379,6 +382,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
             TasksTableContext::hilosSecuritySignInMethods => HilosSecuritySignInMethodsTable::class,
             TasksTableContext::hilosSecurityTwoFactor => HilosSecurityTwoFactorTable::class,
+            TasksTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(

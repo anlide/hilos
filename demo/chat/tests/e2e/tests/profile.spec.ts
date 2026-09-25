@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 
 import { waitForMailCode, waitForMailTo } from '../helpers/mail'
 import {
@@ -19,6 +19,12 @@ import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/s
 async function typeInto(field: Locator, value: string): Promise<void> {
   await field.fill('')
   await field.pressSequentially(value, { delay: 10 })
+}
+
+/** Confirm a password-backed protected operation inside an open profile modal. */
+async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
+  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+  await clickSubmit(page.getByTestId(confirmId))
 }
 
 // Profile e2e: the framework-owned profile page (hilos_profile) reached from the
@@ -65,6 +71,7 @@ test('renames the current user through the edit modal', async ({ page }) => {
   await dictateModerationVerdict(key, true, 'ok')
 
   await page.getByTestId('profile-edit').click()
+  await confirmStepUp(page, 'profile-name-step-up-confirm')
   await typeInto(page.getByTestId('profile-name-input'), newName)
   await page.getByTestId('profile-rename-save').click()
 
@@ -155,7 +162,8 @@ test('surfaces a conflict when the name changes in another tab', async ({
 
   // Tab B starts editing with a divergent draft, but does not submit.
   await tabB.getByTestId('profile-edit').click()
-  await tabB.getByTestId('profile-name-input').fill('Tab B Name')
+  await confirmStepUp(tabB, 'profile-name-step-up-confirm')
+  await typeInto(tabB.getByTestId('profile-name-input'), 'Tab B Name')
 
   // Tab A renames the same user. Only its name goes to moderation — tab B never
   // submits — so only its name carries a key and a dictated permission.
@@ -223,6 +231,7 @@ test('changes the account email in five steps (HIL-299)', async ({ page }) => {
 
   // Steps 1 and 2: the current address answers for itself first.
   await page.getByTestId('profile-email-change').click()
+  await confirmStepUp(page, 'profile-email-step-up-confirm')
   await clickSubmit(page.getByTestId('profile-email-send-current'))
   const currentCode = await waitForMailCode(
     was,

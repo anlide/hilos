@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Pages\Security;
 
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -25,7 +26,11 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Hilos;
 use Hilos\Pages\Security\DTO\HilosSecondFactorSettingSetActionDTO;
+use Hilos\Pages\Security\DTO\HilosStepUpOperationSetActionDTO;
 use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 
 /**
@@ -38,8 +43,7 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
  * page keeps the ADMIN level and narrows the write to its own six keys, and each key's rule refuses
  * a value in the dialog with the same words wherever else it is written.
  *
- * The sections of the screen that belong to other leaves - operations that ask for confirmation,
- * working in somebody else's account - are not here.
+ * The protected-operation section is backed by the same settings owner and table fan-out.
  */
 abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
 {
@@ -51,6 +55,7 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
 
     public const array ACTIONS = [
         HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosSecondFactorSettingSetActionDTO::class,
+        HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => HilosStepUpOperationSetActionDTO::class,
     ];
 
     /** The library's answer to the setting write this page forwarded. */
@@ -78,19 +83,29 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the key is not one of the six
      * @throws InvalidArgumentException When the write cannot be handed to the library
+     * @throws DatabaseException When the disabled operation list cannot be read
+     * @throws SettingException When its setting catalog or stored value is invalid
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
-        if ($action !== HilosSignalConstants::SECURITY_2FA_SETTING_SET) {
-            throw new AgentUnknownActionException("Unknown action: {$action}");
-        }
-        if (!$dto instanceof HilosSecondFactorSettingSetActionDTO) {
-            throw new InvalidActionPayloadException($action, HilosSecondFactorSettingSetActionDTO::class, $dto);
-        }
+        switch ($action) {
+            case HilosSignalConstants::SECURITY_2FA_SETTING_SET:
+                if (!$dto instanceof HilosSecondFactorSettingSetActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosSecondFactorSettingSetActionDTO::class, $dto);
+                }
+                $this->handleSet($acceptKey, $dto);
+                return null;
 
-        $this->handleSet($acceptKey, $dto);
+            case HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET:
+                if (!$dto instanceof HilosStepUpOperationSetActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosStepUpOperationSetActionDTO::class, $dto);
+                }
+                $this->handleStepUpSet($acceptKey, $dto);
+                return null;
 
-        return null;
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
     }
 
     /**
@@ -143,6 +158,40 @@ abstract class AbstractHilosSecurityTwoFactorPage extends AbstractHilosPage
                 successMessage: 'Two-factor setting saved.',
                 key: $dto->key,
                 value: $dto->key === SecondFactorSettings::REQUIRED_KEY ? $dto->value : $this->wholeNumber($dto->value),
+            ),
+        );
+    }
+
+    /**
+     * @param string $acceptKey Requesting administrator
+     * @param HilosStepUpOperationSetActionDTO $dto Operation switch payload
+     * @throws TableActionException When the operation is not declared
+     * @throws InvalidArgumentException When the write cannot be handed to the library
+     * @throws DatabaseException When the disabled operation list cannot be read
+     * @throws SettingException When its setting catalog or stored value is invalid
+     */
+    private function handleStepUpSet(string $acceptKey, HilosStepUpOperationSetActionDTO $dto): void
+    {
+        $keys = Hilos::stepUpOperationDirectoryClass()::keys();
+        if (!in_array($dto->operationKey, $keys, true)) {
+            throw new TableActionException("Unknown operation: {$dto->operationKey}");
+        }
+
+        $disabled = StepUpSettings::disabledKeys();
+        $disabled = $dto->enabled
+            ? array_diff($disabled, [$dto->operationKey])
+            : [...$disabled, $dto->operationKey];
+
+        $this->forward(
+            HilosSignalConstants::HILOS_SETTING_WRITE,
+            new SettingWriteSignalData(
+                replySignal: HilosSignalConstants::HILOS_SECOND_FACTOR_SETTING_WRITE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET,
+                successMessage: null,
+                key: StepUpSettings::DISABLED_KEY,
+                value: StepUpSettings::format(array_values(array_intersect($keys, $disabled))),
             ),
         );
     }

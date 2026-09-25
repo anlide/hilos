@@ -8,6 +8,9 @@ use Hilos\Auth\Library\DTO\PasskeyDiscoverableLoginOptionsActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyLoginConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
+use Hilos\Auth\StepUp\DTO\StepUpPasskeyAnswer;
+use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\AttestationVerifier;
 use Hilos\Auth\WebAuthn\Base64Url;
@@ -335,6 +338,96 @@ final class PasskeyCommands extends AbstractLibraryCommands
         }
 
         $this->library->grantSession($acting, $credential->userId);
+    }
+
+    /**
+     * Mints request options for proving the acting person with one of their device keys.
+     *
+     * @param ActingSession $acting Signed-in browser starting the proof
+     * @return array{signedChallenge: string, publicKeyOptions: array<string, mixed>} Signed challenge and request options
+     * @throws RandomException When the platform CSPRNG cannot produce a challenge
+     * @throws HilosException When WebAuthn configuration or credential lookup fails
+     */
+    public function stepUpOptions(ActingSession $acting): array
+    {
+        $config = WebAuthnConfig::fromEnv();
+        $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
+            WebAuthnChallengeSigner::PURPOSE_STEP_UP,
+            $acting->sessionToken,
+            $acting->userId,
+            $config->challengeTtlSeconds,
+        );
+
+        return [
+            StepUpOpeningReplyDTO::signedChallenge => $challenge->token,
+            StepUpOpeningReplyDTO::publicKeyOptions => [
+                'challenge' => $challenge->challenge,
+                'rpId' => $config->rpId,
+                'allowCredentials' => array_map(
+                    fn(PasskeyCredential $credential): array => $this->credentialDescriptor($credential),
+                    Hilos::$db->passkeyCredentials->listByUser($acting->userId),
+                ),
+                'userVerification' => $config->userVerification,
+                'timeout' => $config->timeoutMs,
+            ],
+        ];
+    }
+
+    /**
+     * Verifies a device-key assertion for the acting person and advances its counter.
+     *
+     * @param ActingSession $acting Signed-in browser completing the proof
+     * @param StepUpPasskeyAnswer $answer Browser assertion
+     * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid
+     * @throws HilosException When WebAuthn configuration, credential lookup, or counter persistence fails
+     */
+    public function assertStepUp(ActingSession $acting, StepUpPasskeyAnswer $answer): void
+    {
+        $config = WebAuthnConfig::fromEnv();
+        try {
+            $claims = new WebAuthnChallengeSigner($config->challengeSecret)->verify(
+                $answer->signedChallenge,
+                WebAuthnChallengeSigner::PURPOSE_STEP_UP,
+                $acting->sessionToken,
+            );
+        } catch (WebAuthnChallengeException) {
+            throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
+        }
+        if ($claims->userId !== $acting->userId) {
+            throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
+        }
+
+        $credential = Hilos::$db->passkeyCredentials->findByCredentialId($answer->credentialId);
+        if ($credential === null || $credential->userId !== $acting->userId) {
+            throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
+        }
+
+        if ($answer->userHandle !== null) {
+            $userHandle = Base64Url::decode($answer->userHandle);
+            if ($userHandle === null
+                || Hilos::$db->passkeyCredentials->findUserByUserHandle($userHandle) !== $acting->userId) {
+                throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
+            }
+        }
+
+        $authenticatorData = Base64Url::decode($answer->authenticatorData);
+        $clientDataJson = Base64Url::decode($answer->clientDataJson);
+        $signature = Base64Url::decode($answer->signature);
+        if ($authenticatorData === null || $clientDataJson === null || $signature === null) {
+            throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
+        }
+
+        try {
+            $credential->verifyAssertion(
+                new AssertionVerifier($config),
+                $claims->challenge,
+                $clientDataJson,
+                $authenticatorData,
+                $signature,
+            );
+        } catch (WebAuthnVerificationException) {
+            throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
+        }
     }
 
     /**

@@ -77,6 +77,8 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorRemoveActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -375,6 +377,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => PageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => HilosPageConstants::HILOS_SECURITY_2FA,
+            HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => HilosPageConstants::HILOS_SECURITY_2FA,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_SET => PageConstants::HILOS_SECURITY_OAUTH,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_RESET => PageConstants::HILOS_SECURITY_OAUTH,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_SET => PageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
@@ -425,6 +428,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_2FA_SETTING_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SECURITY_STEP_UP_OPERATION_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_REDIRECT_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_OAUTH_PROVIDER_SET => AgentType::HILOS_INDEX,
@@ -731,6 +735,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_STEP_UP_START => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_STEP_UP_CONFIRM => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::UNLINK_IDENTITY => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::SET_PASSWORD => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -812,6 +818,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => ProfileSecondFactorResetWaitSetActionDTO::class,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => ProfileSecondFactorResetRequestActionDTO::class,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => ProfileSecondFactorResetCancelActionDTO::class,
+            HilosSignalConstants::HILOS_STEP_UP_START => StepUpStartActionDTO::class,
+            HilosSignalConstants::HILOS_STEP_UP_CONFIRM => StepUpConfirmActionDTO::class,
             ChatSignalConstants::RENAME => RenameActionDTO::class,
             ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
             ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,

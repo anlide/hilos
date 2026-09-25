@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Auth\ChatStepUpOperationKey;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
@@ -14,12 +16,16 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for user-initiated rename moderation.
@@ -37,9 +43,29 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
-            Hilos::$rt->connections->actions->register('rename-start-ak', $user->id);
-
+            ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
             Hilos::initSignalRouter(new ChatSignalRouter());
+            Hilos::initBrowser();
+            $agent = new ChatAgent();
+            $token = RandomHelper::hex(16);
+            $this->deliverHandshake($agent, new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: 'rename-start-ak',
+                cookies: [],
+                clientIp: '127.0.0.1',
+                queryParams: RequestQueryParams::empty(),
+                sessionToken: $token,
+            ));
+            $this->authenticateSession($agent, $token, (int)$user->id, null);
+            $session = $this->sessionOf('rename-start-ak');
+            $this->assertNotNull($session);
+            Hilos::$db->stepUps->actions->confirm(
+                ProtectedModeRuntime::hashSessionToken($session->token),
+                (int)$user->id,
+                ChatStepUpOperationKey::CHANGE_NAME,
+                date('Y-m-d H:i:s', time() + 3600),
+            );
+
             ExecutionContext::setCurrentAcceptKey('rename-start-ak');
             $this->usersLibrary()->onAgentAction(
                 'rename-start-ak',

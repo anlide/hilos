@@ -26,6 +26,8 @@ final class VerificationTypeTest extends TestCase
         self::assertSame('sms_add', VerificationType::SMS_ADD);
         self::assertSame('email_add', VerificationType::EMAIL_ADD);
         self::assertSame('email_change_current', VerificationType::EMAIL_CHANGE_CURRENT);
+        self::assertSame('step_up', VerificationType::STEP_UP);
+        self::assertSame('step_up_sms', VerificationType::STEP_UP_SMS);
     }
 
     public function testValuesAreDistinct(): void
@@ -40,6 +42,8 @@ final class VerificationTypeTest extends TestCase
             VerificationType::SMS_ADD,
             VerificationType::EMAIL_ADD,
             VerificationType::EMAIL_CHANGE_CURRENT,
+            VerificationType::STEP_UP,
+            VerificationType::STEP_UP_SMS,
         ];
 
         self::assertSame($values, array_values(array_unique($values)));
@@ -58,6 +62,8 @@ final class VerificationTypeTest extends TestCase
                 VerificationType::SMS_ADD,
                 VerificationType::EMAIL_ADD,
                 VerificationType::EMAIL_CHANGE_CURRENT,
+                VerificationType::STEP_UP,
+                VerificationType::STEP_UP_SMS,
             ],
             VerificationType::values(),
         );
@@ -81,6 +87,7 @@ final class VerificationTypeTest extends TestCase
     {
         self::assertTrue(VerificationType::isSms(VerificationType::SMS_LOGIN));
         self::assertTrue(VerificationType::isSms(VerificationType::SMS_ADD));
+        self::assertTrue(VerificationType::isSms(VerificationType::STEP_UP_SMS));
     }
 
     public function testIsSmsRejectsEveryOtherKnownType(): void
@@ -92,6 +99,7 @@ final class VerificationTypeTest extends TestCase
         self::assertFalse(VerificationType::isSms(VerificationType::MAGIC_LINK_CODE));
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_ADD));
         self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_CHANGE_CURRENT));
+        self::assertFalse(VerificationType::isSms(VerificationType::STEP_UP));
     }
 
     public function testIsSmsRejectsUnknownAndEmptyType(): void

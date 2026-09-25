@@ -7,6 +7,8 @@
 // committed name arrives over the self-connection data (profilePage.ts).
 import {
   ActionError,
+  createHilosStepUpActions,
+  createHilosStepUpStep,
   type ProjectSignal,
   type ReadonlySignal,
 } from '@hilos/core'
@@ -17,6 +19,11 @@ import {
   type PasswordUpdatedSignalData,
 } from '../../auth/passwordSignals'
 import { actionErrors, actions, connection } from '../../bootstrap/connection'
+
+/** Reusable protected-operation confirmation step shared by the profile dialogs. */
+export const profileStepUp = createHilosStepUpStep(
+  createHilosStepUpActions(actions),
+)
 
 /** The outcome of a profile two-step wizard step: ok, plus the inline reason on failure. */
 export interface WizardStepOutcome {

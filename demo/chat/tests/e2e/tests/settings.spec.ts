@@ -86,50 +86,39 @@ test('paginates the server window by its page numbers and its neighbors', async 
   await signUpAdmin(page)
   await openSettings(page)
 
-  // The catalog spans six pages of ten; the first page opens with the sign-in
-  // method list (HIL-427) and holds the chat_* keys, the default_bot_* keys
-  // sort onto the second next to the example_* keys, and the logs.* and
-  // notifications.* keys trail onto the rest. The row read on the second page
-  // is taken from its middle, so an uncataloged row a neighboring spec leaves
-  // behind does not carry it across a page boundary.
-  const firstPageRow = page.getByTestId(
-    'hilos-table-row-chat_attachment_max_file_bytes',
-  )
-  const secondPageRow = page.getByTestId('hilos-table-row-default_bot_provider')
+  // Compare the windows themselves: catalog additions legitimately move a
+  // named setting across a page boundary, while page 1 → page 2 must still
+  // replace the ten row keys and both neighbor controls must restore them.
+  const rows = page.locator('[data-id^="hilos-table-row-"]')
+  const rowIds = (): Promise<(string | null)[]> =>
+    rows.evaluateAll((found) => found.map((row) => row.getAttribute('data-id')))
   const pageOne = page.getByTestId('hilos-table-page-1')
   const pageTwo = page.getByTestId('hilos-table-page-2')
 
-  // A cataloged set is counted whole, so the count is exact and the footer draws
-  // a number for every page — six fit the pager without a gap — with the page on
-  // screen as the one that says so (HIL-802). Nothing past the sixth: a number
-  // with no page behind it would lead nowhere.
+  await expect(rows).toHaveCount(10)
   await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByTestId('hilos-table-page-6')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-page-7')).toHaveCount(0)
-  await expect(firstPageRow).toBeVisible()
-  await expect(secondPageRow).toHaveCount(0)
+  await expect(pageTwo).toBeVisible()
+  const firstPageIds = await rowIds()
 
   // A number leads to its own page. The row is what says the window arrived: the
   // current number moves the moment it is pressed, the rows only with the answer.
   await pageTwo.click()
   await expect(pageTwo).toHaveAttribute('aria-current', 'page')
-  await expect(secondPageRow).toBeVisible()
-  await expect(firstPageRow).toHaveCount(0)
+  await expect.poll(rowIds).not.toEqual(firstPageIds)
+  const secondPageIds = await rowIds()
 
   await pageOne.click()
   await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect(firstPageRow).toBeVisible()
-  await expect(secondPageRow).toHaveCount(0)
+  await expect.poll(rowIds).toEqual(firstPageIds)
 
   // Previous and Next stand beside the numbers and still walk one page at a time.
   await page.getByTestId('hilos-table-next').click()
   await expect(pageTwo).toHaveAttribute('aria-current', 'page')
-  await expect(secondPageRow).toBeVisible()
-  await expect(firstPageRow).toHaveCount(0)
+  await expect.poll(rowIds).toEqual(secondPageIds)
 
   await page.getByTestId('hilos-table-prev').click()
   await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect(firstPageRow).toBeVisible()
+  await expect.poll(rowIds).toEqual(firstPageIds)
 })
 
 test('a third click on a sorted header returns the table to its initial order', async ({

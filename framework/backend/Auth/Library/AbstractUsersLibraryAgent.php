@@ -17,6 +17,7 @@ use Hilos\Auth\Library\Command\PasswordCommands;
 use Hilos\Auth\Library\Command\PhoneCodeCommands;
 use Hilos\Auth\Library\Command\RecoveryCommands;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
+use Hilos\Auth\Library\Command\StepUpCommands;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryWaitMovedSignalData;
@@ -75,6 +76,8 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\SecondFactor\SecondFactorResetSweeper;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosAgentType;
@@ -155,6 +158,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * nothing else. The fifth, the browsers trusted to skip the step, is keyed by a session row
      * and belongs to the session holder.
      *
+     * A step-up confirmation is another proof owned here (HIL-495): this library derives,
+     * checks and records it while executing the protected account command. Its browser key is
+     * a token hash, but its set is the person whose operation it opens.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
@@ -166,6 +173,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactorBackupCodes => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorResets => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
+        HilosDbContext::stepUps => TruthSourceOperation::ALL,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
@@ -231,6 +239,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET => ProfileSecondFactorResetWaitSetActionDTO::class,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST => ProfileSecondFactorResetRequestActionDTO::class,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL => ProfileSecondFactorResetCancelActionDTO::class,
+        HilosSignalConstants::HILOS_STEP_UP_START => StepUpStartActionDTO::class,
+        HilosSignalConstants::HILOS_STEP_UP_CONFIRM => StepUpConfirmActionDTO::class,
     ];
 
     /**
@@ -247,6 +257,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * first code of an enrolment, the token of a cancel link, and the five profile submits that
      * start with a code. Its other submits spend nothing and only move the caller's own wait or
      * the caller's own choice.
+     *
+     * Operation step-up adds its confirm submit: it guesses a password, authenticator,
+     * delivered code, or device-key assertion, so it passes the same throttle before work.
      */
     public const array THROTTLED_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER,
@@ -273,13 +286,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+        HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
     ];
 
     /**
      * The commands that add to an account rather than open one, and so need a signed-in
      * session. Everything else here is a guest's way in and must stay open to one. The
      * profile's second-factor commands are here whole (HIL-494): they act on the person the
-     * session belongs to and on nobody else.
+     * session belongs to and on nobody else. The two step-up actions are authenticated for
+     * the same reason: they prove and open an operation of the signed-in person.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
@@ -293,6 +308,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_CANCEL,
+        HilosSignalConstants::HILOS_STEP_UP_START,
+        HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
     ];
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
@@ -337,6 +354,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
     /** The second factor's commands, built on first use. */
     private ?SecondFactorCommands $secondFactorCommands = null;
+
+    /** Operation-level confirmation commands, built on first use. */
+    private ?StepUpCommands $stepUpCommands = null;
 
     /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
     private ?CronRule $secondFactorResetSweepRule = null;
@@ -523,6 +543,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function oauthService(): ?OAuthService
     {
         return $this->buildOAuthService();
+    }
+
+    /**
+     * Requires a live confirmation before a project-owned protected action runs.
+     *
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param string $operation Protected operation key
+     * @throws ValidationException When impersonation is active or confirmation is absent or expired
+     * @throws HilosException When the acting session, settings, proofs, or confirmation cannot be read
+     */
+    protected function requireStepUp(string $acceptKey, string $operation): void
+    {
+        $this->stepUpCommands()->require($acceptKey, $operation);
     }
 
     /**
@@ -1134,6 +1167,42 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return null;
 
             default:
+                return $this->runStepUpAction($acceptKey, $action, $dto);
+        }
+    }
+
+    /**
+     * Runs operation-level confirmation actions, then delegates older names to the second factor.
+     *
+     * @param string $acceptKey Accept key of the connection that submitted
+     * @param string $action Owned action name from {@see AGENT_ACTIONS}
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO Opening reply, or null after confirmation
+     * @throws AgentUnknownActionException When the action is not one this library owns
+     * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws ValidationException When the command refuses what was submitted
+     * @throws RandomException When a code, challenge, secret, backup code, or token cannot be drawn
+     * @throws HilosException When a command exposes database, runtime, env, or settings failure
+     */
+    private function runStepUpAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case HilosSignalConstants::HILOS_STEP_UP_START:
+                if (!$dto instanceof StepUpStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, StepUpStartActionDTO::class, $dto);
+                }
+
+                return $this->stepUpCommands()->start($acceptKey, $dto);
+
+            case HilosSignalConstants::HILOS_STEP_UP_CONFIRM:
+                if (!$dto instanceof StepUpConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, StepUpConfirmActionDTO::class, $dto);
+                }
+                $this->stepUpCommands()->confirm($acceptKey, $dto);
+
+                return null;
+
+            default:
                 return $this->runSecondFactorAction($acceptKey, $action, $dto);
         }
     }
@@ -1281,6 +1350,18 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     protected function secondFactorCommands(): SecondFactorCommands
     {
         return $this->secondFactorCommands ??= new SecondFactorCommands($this);
+    }
+
+    /**
+     * @return StepUpCommands Operation-level confirmation commands, built once per process
+     */
+    protected function stepUpCommands(): StepUpCommands
+    {
+        return $this->stepUpCommands ??= new StepUpCommands(
+            $this,
+            $this->secondFactorCommands(),
+            $this->passkeyCommands(),
+        );
     }
 
     /**

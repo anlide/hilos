@@ -42,6 +42,9 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             MailTemplateCatalogConstants::AUTH_EMAIL_ADD => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => EmailAddMailTemplate::class,
             ],
+            MailTemplateCatalogConstants::AUTH_STEP_UP => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => StepUpMailTemplate::class,
+            ],
             MailTemplateCatalogConstants::NOTIFICATION_GENERIC => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => GenericNotificationMailTemplate::class,
             ],

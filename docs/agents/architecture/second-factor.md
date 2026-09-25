@@ -59,6 +59,8 @@ opens the factor; hashing the codes would add work and protect nothing.
 until now + the administrator's days (0 offers no trust). The session row
 survives token rotation, so a trusted browser stays trusted; signing out does
 not end the trust, switching the factor off and a carried-out removal do.
+Trust does not remove a protected operation's fresh confirmation; step-up asks a
+different question and deliberately ignores trust ([step-up.md](step-up.md)).
 
 ## The delayed removal
 

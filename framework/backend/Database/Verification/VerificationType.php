@@ -39,6 +39,9 @@ use Hilos\Auth\Verification\VerificationService;
  * that `user_id` and it verifies through {@see VerificationService::verify()} (the
  * handler asserts the resolved user matches the session user, then writes the
  * password identity on the now-proven email).
+ * `step_up` and `step_up_sms` prove the person again immediately before a protected
+ * operation (HIL-495). Both carry the acting user id; the first is delivered to the
+ * account email and the second to its phone.
  * `magic_link_code` is the companion of `magic_link` (HIL-606) — the six digits that
  * ride in the same letter as the link, for the person who reads the mail on one device
  * and stands on the sign-in screen on another. It is minted inside the SAME issue as
@@ -59,6 +62,8 @@ final class VerificationType
     public const string SMS_ADD = 'sms_add';
     public const string EMAIL_ADD = 'email_add';
     public const string EMAIL_CHANGE_CURRENT = 'email_change_current';
+    public const string STEP_UP = 'step_up';
+    public const string STEP_UP_SMS = 'step_up_sms';
 
     /**
      * Returns the fixed set of verification type values in declaration order.
@@ -77,6 +82,8 @@ final class VerificationType
             self::SMS_ADD,
             self::EMAIL_ADD,
             self::EMAIL_CHANGE_CURRENT,
+            self::STEP_UP,
+            self::STEP_UP_SMS,
         ];
     }
 
@@ -91,7 +98,7 @@ final class VerificationType
      */
     public static function isSms(string $type): bool
     {
-        return $type === self::SMS_LOGIN || $type === self::SMS_ADD;
+        return $type === self::SMS_LOGIN || $type === self::SMS_ADD || $type === self::STEP_UP_SMS;
     }
 
     /**
