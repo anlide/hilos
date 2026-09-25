@@ -393,6 +393,18 @@ final class HilosSignalConstants
      */
     public const string BACKUP_CIRCLE_REMOVE = 'backup_circle_remove';
 
+    // ── Hilos maintenance section: the verifier circle (client → server) ──
+    /**
+     * Client -> server: name one more person to the verifier circle from the maintenance
+     * section (HIL-1120).
+     *
+     * Carries the address as the operator typed it and nothing else. Who that address
+     * belongs to is resolved on the server against the confirmed identities, and the circle
+     * holds one person by one row: an address whose owner is already named under another
+     * address is refused rather than added beside it.
+     */
+    public const string MAINTENANCE_CIRCLE_ADD = 'maintenance_circle_add';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

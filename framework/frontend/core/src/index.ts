@@ -914,9 +914,11 @@ export {
 export {
   resolveHilosMaintenanceCircleRow,
   createHilosMaintenanceCircleTable,
+  createHilosMaintenanceActions,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
+  type HilosMaintenanceActions,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceCircleTable,
   type HilosMaintenanceContext,

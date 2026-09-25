@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
+  type HilosMaintenanceContext,
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
+import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
@@ -57,6 +60,7 @@ describe('createHilosMaintenanceCircleTable', () => {
     const circle = createHilosMaintenanceCircleTable({
       connection,
       scopes: new ScopeManager(),
+      actions: {} as unknown as ActionLifecycle,
     })
 
     circle.start()
@@ -70,5 +74,38 @@ describe('createHilosMaintenanceCircleTable', () => {
       tableKey: 'hilosVerifierCircle',
     })
     circle.dispose()
+  })
+})
+
+describe('createHilosMaintenanceActions', () => {
+  /** A context whose action lifecycle records what was dispatched over it. */
+  function dispatchContext(
+    sent: Array<{ action: string; payload: unknown }>,
+  ): HilosMaintenanceContext {
+    const actions = {
+      dispatch(action: string, payload: unknown) {
+        sent.push({ action, payload })
+
+        return { done: Promise.resolve(), loading: null }
+      },
+    } as unknown as ActionLifecycle
+
+    return { actions } as unknown as HilosMaintenanceContext
+  }
+
+  it('names a verifier by the address exactly as the operator typed it', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+
+    createHilosMaintenanceActions(
+      dispatchContext(sent),
+    ).sendMaintenanceCircleAdd('+7 900 000-00-00')
+
+    // The stored form is the server's answer: the client neither trims nor normalizes.
+    expect(sent).toEqual([
+      {
+        action: 'maintenance_circle_add',
+        payload: { identifier: '+7 900 000-00-00' },
+      },
+    ])
   })
 })

@@ -7,11 +7,17 @@
 // The section has no on-switch: the freeze under it is core, so a project mounts it
 // by registering the page and binding the circle table to it. Its one block today is
 // the verifier circle - who will check the system after a freeze - delivered through
-// the page-scoped `hilosVerifierCircle` viewport table. The rows are read-only here,
-// and the online mark on them is live: a named person opening or closing a tab
-// re-draws that person's row. A project supplies a HilosMaintenanceContext - its
-// scope stores and its live connection - and the framework owns the rest.
+// the page-scoped `hilosVerifierCircle` viewport table. The section names a verifier
+// as a tracked action (HIL-1120) and the named row arrives over the live table;
+// taking one out is still done on the backup page (HIL-1121). The online mark on the
+// rows is live: a named person opening or closing a tab re-draws that person's row.
+// A project supplies a HilosMaintenanceContext - its scope stores, its live
+// connection and its action lifecycle - and the framework owns the rest.
 
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { readBoolean, readString } from '../../state/fieldReaders.js'
@@ -24,6 +30,8 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 // after the circle's DB source. A project binds its backend to these keys.
 const HILOS_MAINTENANCE_CIRCLE_TABLE = 'hilosVerifierCircle'
 const HILOS_MAINTENANCE_CIRCLE_SLOT = 'verifierCircle'
+// Wire action name: byte-equal to the backend HilosSignalConstants::MAINTENANCE_CIRCLE_ADD.
+const MAINTENANCE_CIRCLE_ADD_ACTION = 'maintenance_circle_add'
 
 // Row payload keys of the verifier circle slot. The membership id is not among them
 // and is not missing either: it is the row key, and it stays off the slot because a
@@ -41,15 +49,33 @@ export const MAINTENANCE_CIRCLE_ONLINE_FIELD = 'online'
 
 /**
  * The project-supplied context the maintenance section reads from: the scope-partitioned
- * stores that own the page-scoped circle table, and the live connection the table sends
- * its viewport over. Everything else (the table key, slot name, view-model, and words)
- * is the framework's; the circle is produced on its backend.
+ * stores that own the page-scoped circle table, the live connection the table sends its
+ * viewport over, and the action lifecycle the circle's tracked actions dispatch over.
+ * Everything else (the table key, slot name, view-model, and words) is the framework's;
+ * the circle is produced on its backend.
  */
 export interface HilosMaintenanceContext {
   /** The connection the table sends its viewport over and receives its window / deltas from. */
   readonly connection: HilosConnection
   /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
+  /** The action lifecycle the circle's tracked actions dispatch over. */
+  readonly actions: ActionLifecycle
+}
+
+/** The verifier circle mutation surface a maintenance view binds to. */
+export interface HilosMaintenanceActions {
+  /**
+   * Name one more person to the verifier circle, as a tracked action. The address
+   * travels as the operator typed it: which identity proves it, and the form it is
+   * stored in, are the server's answer. A refusal - an unproven address, one already
+   * in the circle, a second address of a person already named - comes back with the
+   * ack; on success the ack carries the sentence the toast shows and the row arrives
+   * over the live table.
+   *
+   * @param identifier The email or phone number the person is named by, as typed.
+   */
+  sendMaintenanceCircleAdd(identifier: string): ActionHandle
 }
 
 /** One row of the verifier circle table — a person named to check the system after a freeze. */
@@ -89,6 +115,25 @@ export const HILOS_MAINTENANCE_CIRCLE_COPY = {
   online: 'signed in',
   /** Row mark for a member who holds none. */
   offline: 'not signed in',
+  /** Label of the button in the block's header that opens the add dialog. */
+  addButton: 'Add a verifier',
+  /** Title of the add dialog. */
+  addTitle: 'Add a verifier',
+  /** What the dialog finds a person by, and why an unproven address will not do. */
+  addLead:
+    'A person is found by an address they have proven - an email or a phone number. ' +
+    'An unproven address will not do: it cannot tell who that is.',
+  /** Label of the dialog's one field. */
+  addField: 'Address',
+  /** Placeholder hint of that field. */
+  addPlaceholder: 'ops@example.com',
+  /** Label of the dialog's confirm button. */
+  addConfirm: 'Add',
+  /**
+   * Title of the refusal details window of the add dialog. SCAFFOLD: not read yet -
+   * the refusal plate takes a details title with HIL-1052, which passes this one.
+   */
+  addRefusalTitle: "Couldn't add the verifier",
 } as const
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -173,6 +218,26 @@ export function createHilosMaintenanceCircleTable(
       for (const off of teardown.splice(0)) {
         off()
       }
+    },
+  }
+}
+
+/**
+ * The verifier circle mutation surface: naming a person submits as a tracked action
+ * over the lifecycle, returning an ActionHandle whose `done` resolves on the backend's
+ * success ack and rejects on its refusal. The action is answered in its own ack, so
+ * no listener for addressed failures is set here, and the toast is the driver's.
+ *
+ * @param context The project context (the action lifecycle the action dispatches over).
+ */
+export function createHilosMaintenanceActions(
+  context: HilosMaintenanceContext,
+): HilosMaintenanceActions {
+  return {
+    sendMaintenanceCircleAdd(identifier) {
+      return context.actions.dispatch(MAINTENANCE_CIRCLE_ADD_ACTION, {
+        identifier,
+      })
     },
   }
 }

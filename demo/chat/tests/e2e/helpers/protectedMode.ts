@@ -349,9 +349,10 @@ function protectedModeReAskError(
   )
 }
 
-// The verifier circle is named and emptied through the block the backup page carries -
-// its add and remove modals live there until HIL-1120 and HIL-1121 bring them to the
-// maintenance section - so these steps expect the operator's page on /hilos/backup.
+// The verifier circle is named from the maintenance section (HIL-1120) and still taken
+// out through the block the backup page carries, until HIL-1121 brings removal to the
+// section - so the removal steps and `addToCircle` expect the operator's page on
+// /hilos/backup, and `addToMaintenanceCircle` expects it on /hilos/maintenance.
 
 /**
  * Drives the confirmation of a removal modal that is already open.
@@ -424,6 +425,34 @@ export async function addToCircle(page: Page, identifier: string): Promise<void>
   await field.pressSequentially(identifier, { delay: 10 })
 
   const submit = page.getByTestId('hilos-backup-circle-add-confirm')
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeVisible()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+  // The modal closes on the ack and stays open on a refusal, so waiting for the field
+  // to go is waiting for the write to have landed rather than for a fixed moment.
+  await expect(field).toHaveCount(0)
+}
+
+/**
+ * Names one address to the verifier circle through the maintenance section's own modal.
+ *
+ * @param page The operator's page, already on the maintenance section.
+ * @param identifier The address to name.
+ */
+export async function addToMaintenanceCircle(
+  page: Page,
+  identifier: string,
+): Promise<void> {
+  await page.getByTestId('hilos-maintenance-circle-add').click()
+
+  const field = page.getByTestId('hilos-maintenance-circle-add-field')
+  await expect(field).toBeVisible()
+  await field.fill('')
+  await field.pressSequentially(identifier, { delay: 10 })
+
+  const submit = page.getByTestId('hilos-maintenance-circle-add-confirm')
   await submit.scrollIntoViewIfNeeded()
   await expect(submit).toBeVisible()
   await expect(submit).toBeEnabled()

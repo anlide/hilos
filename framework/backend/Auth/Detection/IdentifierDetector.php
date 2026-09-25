@@ -110,6 +110,29 @@ final class IdentifierDetector
     }
 
     /**
+     * Reduces a classified identifier to the form the identity layer stores.
+     *
+     * Static and public for the reason {@see self::kindOf()} is (HIL-1120): the verifier circle
+     * brings an address the operator typed to the form it is stored in by this same rule, so a
+     * number typed with spaces and dashes finds the identity it belongs to. A second copy of the
+     * rule elsewhere would be a second opinion about the same string.
+     *
+     * @param string $identifier Identifier as submitted
+     * @param string $kind Classification from {@see self::kindOf()}
+     * @return string Lowercased address, or an E.164 number
+     * @throws InvalidFormatException When a number that classified stops normalizing
+     */
+    public static function normalize(string $identifier, string $kind): string
+    {
+        if ($kind === IdentifierDetection::KIND_EMAIL) {
+            return mb_strtolower(trim($identifier));
+        }
+
+        return PhoneNumber::normalize($identifier)
+            ?? throw new InvalidFormatException('Enter an email address or a phone number');
+    }
+
+    /**
      * Looks an identifier up and reports what the surface should offer for it.
      *
      * @param string $identifier Identifier as submitted; echoed back verbatim
@@ -123,7 +146,7 @@ final class IdentifierDetector
     public function detect(string $identifier, string $sessionToken): IdentifierDetection
     {
         $kind = self::kindOf($identifier);
-        $normalized = $this->normalize($identifier, $kind);
+        $normalized = self::normalize($identifier, $kind);
 
         $delivery = new CodeDeliveryAvailability();
 
@@ -156,24 +179,6 @@ final class IdentifierDetector
             $registerable,
             $this->registrationBlock($kind, $registerable),
         );
-    }
-
-    /**
-     * Reduces a classified identifier to the form the identity layer stores.
-     *
-     * @param string $identifier Identifier as submitted
-     * @param string $kind Classification from {@see self::kindOf()}
-     * @return string Lowercased address, or an E.164 number
-     * @throws InvalidFormatException When a number that classified stops normalizing
-     */
-    private function normalize(string $identifier, string $kind): string
-    {
-        if ($kind === IdentifierDetection::KIND_EMAIL) {
-            return mb_strtolower(trim($identifier));
-        }
-
-        return PhoneNumber::normalize($identifier)
-            ?? throw new InvalidFormatException('Enter an email address or a phone number');
     }
 
     /**

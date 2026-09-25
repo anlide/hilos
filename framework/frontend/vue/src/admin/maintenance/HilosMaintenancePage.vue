@@ -1,15 +1,18 @@
 <!-- HilosMaintenancePage — the framework Hilos maintenance section
 (HilosPages.MAINTENANCE, HIL-1119): the admin section of the node freeze, inside the
 admin shell. Its one block today is the verifier circle — who will check the system
-after a freeze — read-only here: adding and removing a member are separate leaves.
-The list is live, and so is the online mark on it: a named person opening or closing
-a tab re-draws that person's row without a reload. All table logic, the row
-view-model, and the block's words — the column labels included — are the core
-headless's (createHilosMaintenanceCircleTable, HILOS_MAINTENANCE_CIRCLE_COPY); this
-view owns only the markup, so a project mounts it by passing its
-HilosMaintenanceContext. Bootstrap classes only (styling-rules.md). -->
+after a freeze. A verifier is named here in a dialog (HIL-1120); taking one out is
+still done on the backup page (HIL-1121). The list is live, and so is the online mark
+on it: a named person opening or closing a tab re-draws that person's row without a
+reload, and a named person arrives as a row the same way. All table logic, the row
+view-model, the action, and the block's words — the column labels and the dialog's
+included — are the core headless's (createHilosMaintenanceCircleTable,
+createHilosMaintenanceActions, HILOS_MAINTENANCE_CIRCLE_COPY); this view owns only the
+markup, so a project mounts it by passing its HilosMaintenanceContext. Bootstrap
+classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
@@ -19,13 +22,17 @@ import {
   type HilosMaintenanceContext,
   type HilosTableColumnOf,
 } from '@hilos/core'
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
+import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
+import LoadingButton from '../../LoadingButton.vue'
+import { useTrackedAction } from '../../useTrackedAction.js'
 
 const props = defineProps<{
-  /** The project context: scope stores and the connection. */
+  /** The project context: scope stores, the connection, and the action lifecycle. */
   context: HilosMaintenanceContext
 }>()
 
@@ -40,6 +47,45 @@ onMounted(() => {
 onUnmounted(() => {
   circle.dispose()
 })
+
+const { sendMaintenanceCircleAdd } = createHilosMaintenanceActions(
+  props.context,
+)
+
+// The add dialog. It closes on the server's word only: a refusal keeps it open with
+// what was typed, and the named row arrives over the live table, not from here.
+const circleAddOpen = ref(false)
+const circleAddIdentifier = ref('')
+const circleAddAction = useTrackedAction()
+const {
+  loading: circleAddLoading,
+  busy: circleAddBusy,
+  run: runCircleAddAction,
+  clearError: clearCircleAddError,
+} = circleAddAction
+
+function openCircleAdd(): void {
+  clearCircleAddError()
+  circleAddIdentifier.value = ''
+  circleAddOpen.value = true
+}
+
+function closeCircleAdd(): void {
+  circleAddOpen.value = false
+}
+
+async function submitCircleAdd(): Promise<void> {
+  if (circleAddBusy.value || circleAddIdentifier.value.trim() === '') {
+    return
+  }
+  if (
+    await runCircleAddAction(
+      sendMaintenanceCircleAdd(circleAddIdentifier.value),
+    )
+  ) {
+    closeCircleAdd()
+  }
+}
 
 const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
   {
@@ -58,12 +104,28 @@ const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
   <HilosAdminPage :page="HilosPages.MAINTENANCE">
     <div class="card mb-3" data-id="hilos-maintenance-circle-panel">
       <div class="card-body">
-        <div class="fw-semibold">{{ HILOS_MAINTENANCE_CIRCLE_COPY.title }}</div>
-        <div class="small text-body-secondary">
-          {{ HILOS_MAINTENANCE_CIRCLE_COPY.rule }}
-        </div>
-        <div class="small text-body-secondary">
-          {{ HILOS_MAINTENANCE_CIRCLE_COPY.volatile }}
+        <div
+          class="d-flex align-items-start justify-content-between gap-2 flex-wrap"
+        >
+          <div>
+            <div class="fw-semibold">
+              {{ HILOS_MAINTENANCE_CIRCLE_COPY.title }}
+            </div>
+            <div class="small text-body-secondary">
+              {{ HILOS_MAINTENANCE_CIRCLE_COPY.rule }}
+            </div>
+            <div class="small text-body-secondary">
+              {{ HILOS_MAINTENANCE_CIRCLE_COPY.volatile }}
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm text-nowrap"
+            data-id="hilos-maintenance-circle-add"
+            @click="openCircleAdd"
+          >
+            {{ HILOS_MAINTENANCE_CIRCLE_COPY.addButton }}
+          </button>
         </div>
         <div class="mt-3">
           <HilosViewportTable
@@ -93,5 +155,51 @@ const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
         </div>
       </div>
     </div>
+
+    <HilosModal
+      v-model="circleAddOpen"
+      :title="HILOS_MAINTENANCE_CIRCLE_COPY.addTitle"
+      :close-on-backdrop="!circleAddBusy"
+      :close-on-esc="!circleAddBusy"
+      @cancel="closeCircleAdd"
+    >
+      <HilosActionError :action="circleAddAction" />
+      <p class="mb-2 text-body-secondary">
+        {{ HILOS_MAINTENANCE_CIRCLE_COPY.addLead }}
+      </p>
+      <label class="form-label" for="hilos-maintenance-circle-add-field">
+        {{ HILOS_MAINTENANCE_CIRCLE_COPY.addField }}
+      </label>
+      <input
+        id="hilos-maintenance-circle-add-field"
+        v-model="circleAddIdentifier"
+        type="text"
+        class="form-control"
+        autocomplete="off"
+        :placeholder="HILOS_MAINTENANCE_CIRCLE_COPY.addPlaceholder"
+        :disabled="circleAddBusy"
+        data-id="hilos-maintenance-circle-add-field"
+        data-autofocus
+      />
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="circleAddBusy"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-primary"
+          :loading="circleAddLoading"
+          :disabled="circleAddIdentifier.trim() === ''"
+          data-id="hilos-maintenance-circle-add-confirm"
+          @click="submitCircleAdd"
+        >
+          {{ HILOS_MAINTENANCE_CIRCLE_COPY.addConfirm }}
+        </LoadingButton>
+      </template>
+    </HilosModal>
   </HilosAdminPage>
 </template>
