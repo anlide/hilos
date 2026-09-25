@@ -6,12 +6,12 @@ package is separate and lives in [sdk-packaging.md](sdk-packaging.md).
 
 ## The environment and test matrix
 
-| Environment      | Runs against                           |
-| ---------------- | -------------------------------------- |
-| dev              | the Vite dev server (HMR), from source |
-| unit (vitest)    | source                                 |
-| e2e (Playwright) | the built artifact + a booted daemon   |
-| staging / prod   | the built artifact                     |
+| Environment | Runs against |
+|---|---|
+| dev | the Vite dev server (HMR), from source |
+| unit (vitest) | source |
+| e2e (Playwright) | the built artifact + a booted daemon |
+| staging / prod | the built artifact |
 
 Source is used only for dev and unit tests; everything that resembles production
 — e2e, staging, prod — runs the build.
@@ -39,10 +39,10 @@ in a volume breaks that resolution.
 
 A demo's local stack reads two different `.env` files, and confusing them is a
 silent trap. The demo's `../.env` (next to `composer.json`) is wired into each
-service as its **`env_file`**: it populates the _container_ environment and is
+service as its **`env_file`**: it populates the *container* environment and is
 read only after a container starts. Compose's own `${VAR:-default}`
 **interpolation** — which resolves the host-side port publishes, the network
-subnet, and other compose-level values _before any container exists_ — does not
+subnet, and other compose-level values *before any container exists* — does not
 look at that file at all. Compose interpolation reads the shell environment and a
 `.env` sitting **next to the compose file**, i.e. `docker/.env`.
 
@@ -158,7 +158,8 @@ auth). The public, SEO-relevant surface — the framework's footer pages (About,
 Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**,
 all four pages, through the view framework's own server renderer. A public page
 is no longer prose alone — three of the four carry framework-owned behavior and
-Terms a line that differs per reader ([sdk-packaging.md](sdk-packaging.md), tier 2) — and no page leaves the prerendered set for having a per-reader part. What
+Terms a line that differs per reader ([sdk-packaging.md](sdk-packaging.md), tier
+2) — and no page leaves the prerendered set for having a per-reader part. What
 is prerendered is the **guest view**: what a person with no session sees. The
 per-reader part arrives over the page subscription once the SPA has mounted, on
 a page that is by then a live SPA page like any other. /terms and /privacy are
@@ -198,11 +199,10 @@ the page for the line. Three rules follow, and every public page keeps them:
   project's own two lockfiles (`composer.lock` and `frontend/package-lock.json`)
   — and a `link:`-ed SDK package in the latter is a door rather than a row, so
   what the SDK itself brings in is read out of
-  `framework/frontend/package-lock.json`. The snapshot also carries the project's
-  name from its own `package-lock.json`, and downloads from the page are named
-  after it. The hook is `prebuild`, `predev` and
-  `precheck`, so the file exists before a build, a dev start or a type check
-  reads it.
+  `framework/frontend/package-lock.json`. The snapshot also carries the
+  project's name from its own `package-lock.json`, and downloads from the page
+  are named after it. The hook is `prebuild`, `predev` and `precheck`, so the
+  file exists before a build, a dev start or a type check reads it.
 
 What each static file contains: /about the prose, the support block and the
 modal in its closed state; /privacy the prose and the erase block, button
@@ -280,7 +280,7 @@ and `ng-package.json` are covered without enumerating them — is newer than the
 leaves fresh files beside stale ones, and only the oldest of them reports that
 the artifact as a whole predates its sources. An install is skippable when
 `node_modules` carries a stamp naming the sha256 of the current
-`package-lock.json` _and_ the npm mode (`ci` or `install`) that produced it. The
+`package-lock.json` *and* the npm mode (`ci` or `install`) that produced it. The
 modes are **ordered, not merely different**: `npm ci` wipes `node_modules` and
 installs the lockfile exactly, so the tree it leaves also satisfies an
 `npm install` of that lockfile — never the reverse. Treating them as simply
@@ -319,11 +319,11 @@ optimization-bailout warning. The Vite demos handle it through their own bundler
 Measured 2026-07-27, each step alone in its own container on an otherwise idle
 machine (WSL2, docker, `node:22-bookworm-slim`):
 
-|                 | app build                 | typecheck        | together  |
-| --------------- | ------------------------- | ---------------- | --------- |
-| Angular (polls) | 7.3–8.4s `ng build`       | inside the build | **~8s**   |
-| React (tasks)   | 5.3s (2.60 + 1.91 + 0.76) | 3.0s `tsc`       | **8.3s**  |
-| Vue (chat)      | 5.8s (3.14 + 1.90 + 0.75) | 4.3s `vue-tsc`   | **10.1s** |
+| | app build | typecheck | together |
+|---|---|---|---|
+| Angular (polls) | 7.3–8.4s `ng build` | inside the build | **~8s** |
+| React (tasks) | 5.3s (2.60 + 1.91 + 0.76) | 3.0s `tsc` | **8.3s** |
+| Vue (chat) | 5.8s (3.14 + 1.90 + 0.75) | 4.3s `vue-tsc` | **10.1s** |
 
 Full `npm run build`, SDK prebuild included: Angular 15.8s, React 10.3s,
 Vue 12.3s. The dev server starts in 4.5–5.5s (`ng serve`) against 0.7–0.8s for
