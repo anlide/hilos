@@ -287,6 +287,24 @@ final class ClusterPlacementRequestTest extends TestCase
     }
 
     /**
+     * A rebuild query moves later stop reports to the leader that now owns the placement record.
+     */
+    public function testAStoppedAgentIsReportedToTheLeaderThatRebuiltThisNodesPicture(): void
+    {
+        $mesh = $this->mesh();
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlacementQuery('node-c');
+
+        $placement->noteAgentStopped('render', '9');
+
+        [$nodeId, $frame] = $this->lastSent($mesh);
+        $this->assertSame('node-c', $nodeId);
+        $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
+        $this->assertSame(PlacementState::Stopped, $frame->state);
+    }
+
+    /**
      * On the leader there is nobody to tell: it forgets the record itself, the same write an
      * inbound stopped status would have made.
      */

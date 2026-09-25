@@ -687,7 +687,11 @@ survivors keep working under the new leader.
 - **Slave grace.** On a leader change a slave keeps working (if it was) until a bounded
   grace deadline (`CLUSTER_SLAVE_WORK_GRACE_MS`) while it awaits the new leader's
   work-decision, so an isolated slave does not run forever. Now consumed by the self-fence
-  below (HIL-183).
+  below (HIL-183). The new leader's `peer_placement_query` is that decision (HIL-440): a
+  slave answers to whichever leader placed its work or rebuilt its picture from it, so after
+  a re-election it answers to the new one, and a fence it had armed against the old one is
+  called off (`Self-fence called off: leader '<new>' took over this node's placements from
+  '<old>'`).
 
 ## Node health and failover (HIL-183)
 
@@ -745,9 +749,11 @@ alone, so a fleet of equal free agents does not pile onto one node.
   pair of nodes). Deadlines are derived by sweeping the registry each `tick()` rather than armed
   where the registry is written, because eight paths write it and one that forgot to arm would
   leave its record waiting forever.
-- **Slave self-fence (no double-run).** A slave that loses the link to the leader that
-  placed its work stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects
-  via the existing peer dial. The self-fence grace is held **at or below** the failover
+- **Slave self-fence (no double-run).** A slave that loses the link to the leader it answers
+  to — the one that placed its work, or the one that took it over with a
+  `peer_placement_query` after a re-election (HIL-440) — stops those agents after
+  `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects via the existing peer dial. The self-fence
+  grace is held **at or below** the failover
   grace, so the old copy of a truth source is stopped before the leader starts a new one.
   On rejoin the node reports what it still hosts (`PeerPlacementReportDTO`) and the leader
   reconciles against its view in both directions. The report is a COMPLETE snapshot and goes
@@ -764,6 +770,13 @@ alone, so a fleet of equal free agents does not pile onto one node.
   flight — but only until `CLUSTER_PLACEMENT_ACK_TIMEOUT_MS` elapses: a `Placing` the leader has
   already asked this node about is judged by the snapshot exactly as a `Started` one, because
   the snapshot is the answer to that question (HIL-930).
+  A node that leads answers to nobody and never fences; one that wins with a fence armed calls
+  it off (`Self-fence called off: this node leads now`). The same leader is the one told when a
+  hosted agent stops on its own or goes down with its worker (`peer_agent_status` `stopped`,
+  which forgets the record so the agent's owner places it again), so after a term change the
+  report reaches the leader holding the record. Before HIL-440 it went to the leader that first
+  placed the work, and a slave that had answered the new leader's query still fenced itself
+  against the dead one, stopping a fleet the new leader had just recorded as started.
 - **Degrade gracefully.** When re-placement finds no capable+online node, the agent is
   marked `PlacementState::Unplaced`, logged, and the project `onPlacementDegraded()` hook
   fires; the leader retries automatically when a capable node joins (`onNodeJoined`).

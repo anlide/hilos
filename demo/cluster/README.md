@@ -44,7 +44,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 17-scenario matrix
+demo/cluster/docker/cluster scenarios          # the scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -57,7 +57,9 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 2. master-master — one leader among masters, slaves never lead
 3. placement — the no-op agent is placed and started on a data-plane node
 4. slave-kill failover — the leader re-places the agent onto the other slave
-5. leader-kill re-election — survivors elect a new leader within the timeout
+5. leader-kill re-election — survivors elect a new leader within the timeout,
+   and the fleet the new leader inherits keeps running past its slaves' fence
+   window (HIL-440)
 6. hot-join — a returning node is admitted; inspect shows the full roster
 7. quorum-loss — an isolated minority master stops leading; no new leader
 8. split-brain prevention — the majority keeps one leader; the minority steps down
@@ -81,10 +83,17 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 17. foreign certificate refused — a node certified by an authority the cluster does
    not trust is refused on both ends of the link, named in the log of both, and
    listed by nobody, while the five still converge (HIL-1034)
+18. capacity is consumed — ballast fills the slaves in proportion to their declared
+   ram, never lands on a master, and a full cluster places no more (HIL-448)
+19. worker death on a live node — one worker process of a slave is SIGKILLed:
+   the node names the agents it lost, the leader places exactly those again, and
+   the members on its other workers run on untouched (HIL-440)
 
 They run in the order the driver lists them, which is not the order they are
-numbered: the three RT scenarios go right after placement, while the fleet the
-leader just placed is still alive. That order was forced by a defect — the matrix
+numbered: the three RT scenarios and scenario 19 go right after placement, while
+the fleet the leader just placed is still spread over both slaves. Scenario 19
+therefore keeps members on workers of its victim that survive. That order was
+forced by a defect — the matrix
 used to leave the fleet dead behind it (P-152) — and it is kept now that the defect
 is gone, because moving a scenario moves its timing with it. Every run still starts
 from a fresh stack: the matrix kills, partitions and recreates every node it

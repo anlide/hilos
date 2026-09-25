@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
 # cluster - host-side controller for the multi-node daemon-cluster e2e harness
-# (HIL-185). Preview-style: a thin orchestrator over `docker compose` plus the three
+# (HIL-185). Preview-style: a thin orchestrator over `docker compose` plus the four
 # fault switches the scenarios need — `docker kill -9` (node-down / failover),
 # `docker network disconnect` (partition / split-brain), and a SIGKILL of the daemon
-# inside a live container (crash recovery). Assertions live in the Python scenario
-# driver (cluster_e2e.py), which reads each node's `test:cluster:inspect` reply and
-# compares against the expected invariants.
+# or one worker inside a live container (crash recovery / partial failure). Assertions
+# live in the Python scenario driver (cluster_e2e.py), which reads each node's
+# `test:cluster:inspect` reply and compares against the expected invariants.
 #
 # Usage:
 #   cluster up                 build + start mysql, migrate the schema, start the 5
@@ -22,13 +22,14 @@
 #   cluster start <node>       (re)start a node container, reusing it as it is
 #   cluster recreate <node>    replace a node with a pristine container
 #   cluster crash-daemon <n>   SIGKILL the daemon inside a live node container
+#   cluster kill-worker <n> <i> SIGKILL worker #i inside a live node container, its daemon kept
 #   cluster container-id <n>   print a node's docker container id
 #   cluster partition <node>   disconnect a node from the cluster network
 #   cluster heal <node>        reconnect a node to the cluster network (static IP)
 #   cluster logs <node>        follow a node's container logs
 #   cluster intruder up|down   start / remove cluster-x1, a node certified by an authority the
 #                              cluster does not trust (HIL-1034, scenario 17)
-#   cluster scenarios          run the full 17-scenario matrix (drives cluster_e2e.py)
+#   cluster scenarios          run the scenario matrix (drives cluster_e2e.py)
 
 set -euo pipefail
 
@@ -253,6 +254,51 @@ cmd_crash_daemon() {
   echo "cluster: SIGKILLed daemon pid $pid inside cluster-$n"
 }
 
+kill_worker_php='
+$self = getmypid();
+$workerIndex = getenv("HILOS_KILL_WORKER");
+$workerArgument = "--worker-id=" . $workerIndex;
+$pid = null;
+foreach (glob("/proc/[0-9]*/cmdline") ?: [] as $file) {
+    $candidate = (int)basename(dirname($file));
+    if ($candidate === $self) {
+        continue;
+    }
+    $cmdline = file_get_contents($file);
+    if ($cmdline === false) {
+        continue;
+    }
+    $arguments = explode("\0", $cmdline);
+    $isWorker = false;
+    $hasIndex = false;
+    foreach ($arguments as $argument) {
+        $isWorker = $isWorker || str_ends_with($argument, "Bootstrap/worker.php");
+        $hasIndex = $hasIndex || $argument === $workerArgument;
+    }
+    if (!$isWorker || !$hasIndex) {
+        continue;
+    }
+    $pid = $candidate;
+    break;
+}
+if ($pid === null) {
+    fwrite(STDERR, "no worker #" . $workerIndex . " found" . PHP_EOL);
+    exit(1);
+}
+posix_kill($pid, SIGKILL);
+echo $pid, PHP_EOL;
+'
+cmd_kill_worker() {
+  local n="${1:-}"; valid_node "$n"
+  local idx="${2:-}"
+  [[ "$idx" =~ ^[0-9]+$ ]] || die "usage: cluster kill-worker <node> <worker-index>"
+  local pid
+  pid="$(docker exec -e HILOS_KILL_WORKER="$idx" "cluster-$n" \
+    php -d display_errors=stderr -r "$kill_worker_php")" \
+    || die "no worker #$idx inside cluster-$n"
+  echo "cluster: SIGKILLed worker #$idx pid $pid inside cluster-$n"
+}
+
 cmd_partition() { local n="${1:-}"; valid_node "$n"; docker network disconnect "$net" "cluster-$n" && echo "cluster: partitioned cluster-$n"; }
 cmd_heal() { local n="${1:-}"; valid_node "$n"; docker network connect --ip "${NODE_IP[$n]}" "$net" "cluster-$n" && echo "cluster: reconnected cluster-$n"; }
 cmd_logs() { local n="${1:-}"; valid_node "$n"; dc logs -f "cluster-$n"; }
@@ -303,11 +349,12 @@ case "${1:-}" in
   start)     shift; cmd_start "$@" ;;
   recreate)  shift; cmd_recreate "$@" ;;
   crash-daemon) shift; cmd_crash_daemon "$@" ;;
+  kill-worker) shift; cmd_kill_worker "$@" ;;
   container-id) shift; cmd_container_id "$@" ;;
   partition) shift; cmd_partition "$@" ;;
   heal)      shift; cmd_heal "$@" ;;
   logs)      shift; cmd_logs "$@" ;;
   intruder)  shift; cmd_intruder "$@" ;;
   scenarios) shift; cmd_scenarios ;;
-  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|container-id|partition|heal|logs|intruder|scenarios} [args]" ;;
+  *)         die "usage: cluster {up|down|restart|status|inspect|client|kill|start|recreate|crash-daemon|kill-worker|container-id|partition|heal|logs|intruder|scenarios} [args]" ;;
 esac

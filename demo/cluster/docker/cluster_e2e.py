@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 17-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
 scenario it perturbs the cluster through the sibling `cluster` bash controller
-(docker kill -9 for node-down, docker network disconnect for partition, a SIGKILL
-of the daemon inside a live container for an internal crash), polls each node's
+(docker kill -9 for node-down, docker network disconnect for partition, and a
+SIGKILL of the daemon or one worker inside a live container), polls each node's
 `test:cluster:inspect` reply until the topology converges (bounded by a hard cap),
 and asserts the expected invariants against the machine-readable reply. Destructive
 scenarios restore the cluster and re-converge before the next.
@@ -52,12 +52,16 @@ Plus scenarios beyond that matrix:
     refused                    refused on both ends of every link and admitted by nobody (HIL-1034)
  18 capacity is consumed       ballast fills the slaves in proportion to their declared ram,
                                never lands on a master, and a full cluster places no more (HIL-448)
+ 19 worker death on a live     one worker of a slave is SIGKILLed: the node names the loss,
+    node                       the leader re-places exactly those members, and the rest of the
+                               node runs on (HIL-440)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -84,6 +88,11 @@ WORKER_FLEET_SIZE = 10
 WORKER_STATUSES = "workerStatuses"
 # Seconds a fleet member waits between reports; mirrors WorkerAgent::REPORT_INTERVAL_SEC.
 WORKER_REPORT_INTERVAL_SEC = 5.0
+# Seconds a slave keeps its work after losing the leader it answers to; mirrors
+# CLUSTER_SLAVE_WORK_GRACE_MS in docker-compose.cluster.yml.
+SLAVE_WORK_GRACE_SEC = 4.0
+AGENT_STARTED_ON_WORKER = re.compile(r"Agent '([^']+)' started on worker #(\d+)")
+WORKER_DIED_HOSTING = re.compile(r"Worker #(\d+) died hosting \d+ agent\(s\): (.*)")
 
 # The settings row the per-node probe writes and reads. Non-catalog by construction - this demo
 # registers no settings catalog - so it is a true orphan row and nothing else in the stand is
@@ -393,6 +402,39 @@ def reading_nodes(views, nodes=ALL_NODES, key=WORKER_STATUSES):
     return [n for n in nodes if rt_read_by(views, n, key)]
 
 
+def fleet_workers_on(node, members):
+    """Fleet members last reported on each worker of one node."""
+    latest = {}
+    for agent_id, worker_index in AGENT_STARTED_ON_WORKER.findall(node_log(node)):
+        if agent_id in members:
+            latest[agent_id] = int(worker_index)
+
+    by_worker = {}
+    for agent_id, worker_index in latest.items():
+        by_worker.setdefault(worker_index, set()).add(agent_id)
+    return by_worker
+
+
+def newest_row_updates(views):
+    """Newest update time reported for every runtime row across the nodes reading it."""
+    newest = {}
+    for node in reading_nodes(views, nodes=views):
+        for row_id, row in rt_rows(views, node).items():
+            newest[row_id] = max(newest.get(row_id, 0), row.get("updatedAt", 0))
+    return newest
+
+
+def assert_table_names_running_nodes(views):
+    """Every node named by the placement table holds the live fleet's full runtime view."""
+    for node in sorted({row["nodeId"] for row in worker_placements(views).values()}):
+        assert rt_read_by(views, node), \
+            f"the leader places fleet members on {node}, which reports reading no '{WORKER_STATUSES}' at all"
+        held = len(rt_rows(views, node))
+        assert held == WORKER_FLEET_SIZE, \
+            (f"{node} hosts fleet members by the leader's table but holds {held} of "
+             f"{WORKER_FLEET_SIZE} rows: the table is naming a node that runs nothing")
+
+
 def fleet_rows_where_read(views, nodes=ALL_NODES):
     """Predicate: the nodes reading the collection hold every fleet member's row, and the
     nodes reading none hold nothing (HIL-717).
@@ -639,7 +681,8 @@ def scenario_4_slave_kill_failover():
 
 
 def scenario_5_leader_kill_reelection():
-    views = wait_converge(ALL_NODES)
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the leader dies")
+    carriers = sorted({row["nodeId"] for row in worker_placements(views).values()} & set(SLAVES))
     old_leader = leaders(views)[0]
     surviving_masters = [n for n in MASTERS if n != old_leader]
     offsets = {n: node_log_size(n) for n in surviving_masters}
@@ -654,8 +697,45 @@ def scenario_5_leader_kill_reelection():
                            "a new leader with quorum", nodes=survivors)
         new_leader = [n for n in MASTERS if n != old_leader and is_leader(views.get(n))][0]
         assert_reelection_logged(new_leader, views[new_leader]["term"], surviving_masters, offsets)
+
+        def carriers_saw_old_leader_offline(v):
+            for carrier in carriers:
+                old = next((node for node in (v.get(carrier) or {}).get("nodes", [])
+                            if node.get("nodeId") == old_leader), None)
+                if old is None or old.get("online") is not False:
+                    return False
+            return True
+
+        wait_until(carriers_saw_old_leader_offline, CONVERGE_TIMEOUT,
+                   f"every fleet carrier sees {old_leader} offline", nodes=carriers)
+        seen_at = time.time()
+        fenced_by = int(seen_at + SLAVE_WORK_GRACE_SEC)
+
+        def fleet_wrote_past_fence(v):
+            updates = newest_row_updates(v)
+            return all(updates.get(str(index), 0) > fenced_by for index in range(WORKER_FLEET_SIZE))
+
+        try:
+            views = wait_until(
+                fleet_wrote_past_fence,
+                SLAVE_WORK_GRACE_SEC + 3 * WORKER_REPORT_INTERVAL_SEC * TIMEOUT_SCALE,
+                "the inherited fleet writes past its slaves' fence window",
+                nodes=survivors,
+            )
+        except ScenarioTimeout as error:
+            updates = newest_row_updates(inspect_all(survivors))
+            silent = [f"{WORKER_AGENT_TYPE}:{index}" for index in range(WORKER_FLEET_SIZE)
+                      if updates.get(str(index), 0) <= fenced_by]
+            raise AssertionError(
+                f"fleet member(s) {silent} stopped writing after {new_leader} took them over: "
+                "fenced by its slave after the new leader took it over"
+            ) from error
+
+        assert fleet_started(views), "the inherited fleet no longer has every member started"
+        assert_table_names_running_nodes(views)
         return (f"re-elected {new_leader} after {old_leader} died; "
-                f"its log carries the candidacy, the term and the winning vote")
+                f"its log carries the candidacy, the term and the winning vote, and the fleet "
+                f"it inherited kept running past its slaves' fence window")
     finally:
         ctl("start", old_leader)
         wait_converge(ALL_NODES)
@@ -1344,13 +1424,7 @@ def scenario_16_recreated_node_leaves_no_phantom_fleet():
     # And the table has to be about running agents rather than about records of them: every node
     # it names is a node whose fleet members are writing their rows again.
     views = wait_fleet_rows()
-    for node in sorted({row["nodeId"] for row in worker_placements(views).values()}):
-        assert rt_read_by(views, node), \
-            f"the leader places fleet members on {node}, which reports reading no '{WORKER_STATUSES}' at all"
-        held = len(rt_rows(views, node))
-        assert held == WORKER_FLEET_SIZE, \
-            (f"{node} hosts fleet members by the leader's table but holds {held} of "
-             f"{WORKER_FLEET_SIZE} rows: the table is naming a node that runs nothing")
+    assert_table_names_running_nodes(views)
 
     hosts = ", ".join(f"{n}={len(hosted_by(views, n))}" for n in sorted(SLAVES))
     return (f"{victim} came back as {after_id[:12]} without the {len(lost)} agent(s) it had; the "
@@ -1392,9 +1466,9 @@ def scenario_17_foreign_certificate_refused():
     return f"{STRANGER} refused on both ends of the link; nobody lists it; the five still converge"
 
 
-# Numbered by when they were written, ORDERED by what they need. The three RT scenarios run
-# right after placement, while the fleet the leader just placed is still alive: they are the
-# only ones that need running agents rather than a converged topology. That order was once
+# Numbered by when they were written, ORDERED by what they need. The three RT scenarios and
+# scenario 19 run right after placement, while the fleet the leader just placed is still alive
+# and spread over both slaves: they need running agents rather than a converged topology. That order was once
 # forced on them - a recreated data-plane container came back without its agents and the leader
 # went on calling them started (P-152), so everything after scenario 9 met a dead fleet. Since
 # HIL-719 it does not: the returning node reports its empty hosted set, the fleet goes back to
@@ -1476,6 +1550,64 @@ def scenario_18_capacity_is_consumed():
             f"master, and found no room for {last}")
 
 
+def scenario_19_worker_death_on_live_node():
+    """One dead worker is reported and only its fleet members are placed again (HIL-440)."""
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before a worker dies")
+    victim = max(SLAVES, key=lambda slave: len(hosted_by(views, slave)))
+    on_victim = hosted_by(views, victim)
+    by_worker = fleet_workers_on(victim, on_victim)
+    assert by_worker, f"{victim} carries {sorted(on_victim)} but its log names none of their workers"
+    worker_index, lost = max(by_worker.items(), key=lambda item: len(item[1]))
+    untouched = on_victim - lost
+    victim_rows = rt_rows(views, victim)
+    jobs_before = {
+        agent_id: victim_rows[agent_id.split(":", 1)[1]].get("jobsDone", 0)
+        for agent_id in untouched
+    }
+    offset = node_log_size(victim)
+    killed_at = time.time()
+
+    out = ctl_out("kill-worker", victim, str(worker_index))
+    assert "SIGKILLed" in out, f"the worker kill did not report success: {out}"
+
+    def worker_death_reported(_views):
+        return any(int(match.group(1)) == worker_index
+                   for match in WORKER_DIED_HOSTING.finditer(node_log(victim, offset)))
+
+    wait_until(worker_death_reported, CONVERGE_TIMEOUT,
+               f"{victim} names the agents lost with worker #{worker_index}", nodes=[victim])
+    reports = [match for match in WORKER_DIED_HOSTING.finditer(node_log(victim, offset))
+               if int(match.group(1)) == worker_index]
+    named = {agent_id.strip() for agent_id in reports[-1].group(2).split(",")
+             if agent_id.strip().startswith(f"{WORKER_AGENT_TYPE}:")}
+    assert named == lost, \
+        f"the node named {sorted(named)} instead of {sorted(lost)} for worker #{worker_index}"
+
+    def lost_members_run_again(v):
+        updates = newest_row_updates(v)
+        return (fleet_started(v)
+                and all(updates.get(agent_id.split(":", 1)[1], 0) > int(killed_at)
+                        for agent_id in lost))
+
+    views = wait_until(lost_members_run_again, FAILOVER_TIMEOUT,
+                       f"the members lost with worker #{worker_index} run again")
+    assert node_online(views, victim), f"{victim} fell out of the cluster after one worker died"
+
+    victim_rows = rt_rows(views, victim)
+    for agent_id in untouched:
+        assert placement_row(views, agent_id).get("nodeId") == victim, \
+            f"{agent_id} moved off {victim} although its worker survived"
+        row_id = agent_id.split(":", 1)[1]
+        assert victim_rows[row_id].get("jobsDone", 0) >= jobs_before[agent_id], \
+            f"{agent_id} reset its jobsDone although its worker survived"
+
+    assert_table_names_running_nodes(views)
+    spread = ", ".join(f"{node}={len(hosted_by(views, node))}" for node in SLAVES)
+    return (f"worker #{worker_index} of {victim} died with {sorted(lost)}; the node named them, "
+            f"the leader placed them again ({spread}), and {len(untouched)} member(s) on its "
+            "other workers ran on untouched")
+
+
 SCENARIOS = [
     ("1 master-slave mesh", scenario_1_master_slave_mesh),
     ("2 master-master", scenario_2_master_master),
@@ -1483,6 +1615,7 @@ SCENARIOS = [
     ("12 rt replication", scenario_12_rt_replication),
     ("14 rt claim refused", scenario_14_rt_claim_refused),
     ("13 rt partition converges", scenario_13_rt_partition_converges),
+    ("19 worker death on a live node", scenario_19_worker_death_on_live_node),
     ("4 slave-kill failover", scenario_4_slave_kill_failover),
     ("5 leader-kill re-election", scenario_5_leader_kill_reelection),
     ("6 hot-join", scenario_6_hot_join),

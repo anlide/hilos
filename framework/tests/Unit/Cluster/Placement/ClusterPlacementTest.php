@@ -526,6 +526,107 @@ final class ClusterPlacementTest extends TestCase
     }
 
     /**
+     * A rebuild query transfers the placement picture and cancels isolation from the old leader.
+     */
+    public function testARebuildQueryFromANewLeaderCallsOffTheFenceArmedAgainstTheOldOne(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader', 'leader-b']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->onPlacementQuery('leader-b');
+        $placement->tick(1000.6);
+
+        $this->assertSame([], $executor->revoked);
+        $this->assertSame([
+            "Self-fence armed: placing leader 'leader' went offline, 1 placed agent(s) stop in 0.5s unless it returns",
+            "Self-fence called off: leader 'leader-b' took over this node's placements from 'leader'",
+        ], $this->selfFenceLines($logFile));
+    }
+
+    /**
+     * After a rebuild, only losing the new owner of the placement picture arms the fence.
+     */
+    public function testANodeTakenOverByANewLeaderFencesAgainstItAndNotTheOldOne(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader', 'leader-b']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlacementQuery('leader-b');
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->tick(1000.6);
+        $this->assertSame([], $executor->revoked, 'The old leader no longer owns this node');
+
+        $placement->noteNodeOffline('leader-b', 1001.0);
+        $placement->tick(1001.6);
+        $this->assertSame([['render', '9']], $executor->revoked, 'The new owner is the fence target');
+    }
+
+    /**
+     * A placement from a new leader transfers ownership and cancels the old leader's deadline.
+     */
+    public function testANewLeaderPlacingOntoTheNodeCallsOffTheFenceArmedAgainstTheOldOne(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader', 'leader-b']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->onPlaceAgent('leader-b', new PeerPlaceAgentDTO('render', '7'));
+        $placement->tick(1000.6);
+
+        $this->assertSame([], $executor->revoked);
+    }
+
+    /**
+     * Promotion cancels a follower fence and prevents the leader from fencing against any peer.
+     */
+    public function testANodeThatBecomesLeaderFencesAgainstNobody(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->onBecameLeader();
+        $placement->tick(1000.6);
+        $placement->noteNodeOffline('leader', 1001.0);
+
+        $this->assertSame([], $executor->revoked);
+        $this->assertSame([
+            "Self-fence armed: placing leader 'leader' went offline, 1 placed agent(s) stop in 0.5s unless it returns",
+            'Self-fence called off: this node leads now',
+        ], $this->selfFenceLines($logFile));
+    }
+
+    /**
+     * A leader answers a rival's rebuild query without accepting that rival as its own leader.
+     */
+    public function testALeadingNodeTakesNoLeaderFromARivalsQuery(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['rival']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+
+        $placement->onPlacementQuery('rival');
+        $placement->noteNodeOffline('rival', 1000.0);
+
+        [$nodeId, $frame] = $mesh->sent[array_key_last($mesh->sent)];
+        $this->assertSame('rival', $nodeId);
+        $this->assertInstanceOf(PeerPlacementReportDTO::class, $frame);
+        $this->assertSame([], $this->selfFenceLines($logFile));
+    }
+
+    /**
      * A placement accepted while the agent waits for a worker is not in the hosted set, and used
      * to leave the node unfenced if the placing leader vanished in those seconds (HIL-1041).
      */

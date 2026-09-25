@@ -73,7 +73,8 @@ use Throwable;
  * leader re-places a dead node's agents onto another capable node after
  * `CLUSTER_FAILOVER_GRACE_MS`, degrading an agent to {@see PlacementState::Unplaced} (and
  * notifying the {@see PlacementObserver}) when no capable node is online; a node isolated
- * from the leader that placed its work self-fences those agents after
+ * from the leader it answers to — the one that placed its work or took it over with a rebuild
+ * query (HIL-440) — self-fences those agents after
  * `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover grace, so the old copy stops
  * before the leader starts a new one). On rejoin a node reports what it still hosts
  * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
@@ -158,7 +159,13 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var ?string Fingerprint of the view this leader last published, or null when it has published none */
     private ?string $publishedViewFingerprint = null;
 
-    /** @var ?string Node id of the leader that placed this node's hosted agents, for self-fence detection */
+    /**
+     * Node id of the leader this node answers to: the one that placed its hosted agents or took
+     * them over with a rebuild query; null on a leader and after a self-fence. Stop reports go
+     * to it, and the self-fence is armed against it.
+     *
+     * @var ?string
+     */
     private ?string $placingLeaderId = null;
 
     /** @var ?float Self-fence deadline (microtime) after the placing leader was lost, or null when not isolated */
@@ -481,12 +488,14 @@ final class ClusterPlacement implements WorkerPlacement
      * anybody, which is what filters out the node stops that reach here for a replica, a
      * leader-hosted singleton, or anything else placement never put here.
      *
-     * The report is addressed to the leader that PLACED this node's work, exactly as
+     * The report is addressed to the leader this node answers to — the one that placed this
+     * node's work or took it over with a rebuild query ({@see onPlacementQuery()}) — exactly as
      * {@see onStopAgent()} answers the leader that asked, and not to whoever leads at this
-     * instant — that would make this class read a global to say something about its own state.
-     * The difference only shows after a term change, and it corrects itself: the agent is gone
-     * from what this node hosts, so the next rebuild query answers without it, and a frame
-     * addressed to the agent in the meantime restarts it on the node the stale view still names.
+     * instant, which would make this class read a global to say something about its own state.
+     * A term change moves the addressee with it: a fresh leader queries every node on winning,
+     * so the report reaches the leader that holds the record (HIL-440). What is left is a query
+     * from a deposed leader overtaking the new one's on another link; the next query of the new
+     * leader corrects it.
      *
      * @param string $agentType Agent type that stopped
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -640,7 +649,7 @@ final class ClusterPlacement implements WorkerPlacement
             PlacementState::Started,
         );
         // Remember which leader placed our work so its loss triggers the self-fence.
-        $this->placingLeaderId = $fromNodeId;
+        $this->answerTo($fromNodeId);
         $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::started($agentType, $agentIndex, $workerId));
     }
 
@@ -658,7 +667,7 @@ final class ClusterPlacement implements WorkerPlacement
     private function deferPlacementAnswer(?string $fromNodeId, string $agentType, ?string $agentIndex): void
     {
         if ($fromNodeId !== null) {
-            $this->placingLeaderId = $fromNodeId;
+            $this->answerTo($fromNodeId);
         }
 
         $this->deferredPlacementAnswers[$this->agentId($agentType, $agentIndex)] = [
@@ -755,10 +764,19 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Node side: answers a leader's rebuild query with this node's hosted-agent set.
      *
+     * A node that does not lead answers to the asker from this point: the query is when a fresh
+     * leader takes this node's agents into its registry after winning, or when a current leader
+     * rebuilds a placement whose acknowledgement timed out. A leader answers the query without
+     * answering to its asker, because it owns its own placement view.
+     *
      * @param string $fromNodeId Id of the leader node that asked
      */
     public function onPlacementQuery(string $fromNodeId): void
     {
+        if (!$this->isLeader) {
+            $this->answerTo($fromNodeId);
+        }
+
         $this->mesh->sendToNode($fromNodeId, new PeerPlacementReportDTO($this->hostedEntries()));
     }
 
@@ -986,10 +1004,18 @@ final class ClusterPlacement implements WorkerPlacement
      * Placement tracking is soft-state, so a fresh leader starts from nothing: it seeds
      * the view with its own hosted agents, then broadcasts a rebuild query so every other
      * node reports the placements it is running. Called from the leadership transition.
+     *
+     * A winning node answers to nobody. Any self-fence armed against its former leader is
+     * canceled before this method records the hosted agents as started in the new registry.
      */
     public function onBecameLeader(): void
     {
         $this->isLeader = true;
+        if ($this->selfFenceDeadline !== null) {
+            Logger::info('Self-fence called off: this node leads now');
+            $this->selfFenceDeadline = null;
+        }
+        $this->placingLeaderId = null;
         $this->registry->clear();
         // The copy this node held as a follower is somebody else's answer to the question it
         // now owns; from here the registry above is the original.
@@ -1028,8 +1054,9 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * Leader side — for every placed agent the offline node hosted, arms a failover deadline
      * one grace period out, absorbing a brief flap before {@see tick()} re-places it. Node
-     * side — if the offline node is the leader that placed this node's work, arms the
-     * self-fence deadline so those agents stop before the leader could start copies elsewhere.
+     * side — if this node does not lead and the offline node is the leader it answers to (the
+     * one that placed its work or took it over with a rebuild query), arms the self-fence
+     * deadline so those agents stop before the leader could start copies elsewhere.
      * Both are idempotent: a deadline already armed is left as it stands.
      *
      * @param string $nodeId Node id the transport just marked offline
@@ -1050,7 +1077,8 @@ final class ClusterPlacement implements WorkerPlacement
             }
         }
 
-        if ($nodeId === $this->placingLeaderId
+        if (!$this->isLeader
+            && $nodeId === $this->placingLeaderId
             && ($this->hosted !== [] || $this->deferredPlacementAnswers !== [])
             && $this->selfFenceDeadline === null) {
             $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
@@ -1112,6 +1140,32 @@ final class ClusterPlacement implements WorkerPlacement
         if ($calledOff > 0) {
             Logger::info("Failover of {$calledOff} agent(s) on '{$nodeId}' called off: the node is back before the grace elapsed");
         }
+    }
+
+    /**
+     * Makes this node answer to the leader that owns the picture of its agents.
+     *
+     * A leader owns that picture by placing work here or rebuilding it from this node. Taking
+     * over from another leader ends the isolation the old leader's loss armed, because this node
+     * is no longer cut off from the leader responsible for its placements (HIL-440).
+     *
+     * @param string $leaderNodeId Id of the leader that owns this node's placement picture
+     */
+    private function answerTo(string $leaderNodeId): void
+    {
+        if ($leaderNodeId === $this->placingLeaderId) {
+            return;
+        }
+
+        if ($this->selfFenceDeadline !== null) {
+            Logger::info(
+                "Self-fence called off: leader '{$leaderNodeId}' took over this node's placements"
+                . " from '{$this->placingLeaderId}'",
+            );
+            $this->selfFenceDeadline = null;
+        }
+
+        $this->placingLeaderId = $leaderNodeId;
     }
 
     /**
@@ -1615,7 +1669,7 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
-     * Node side: stops every agent this node hosts when it is isolated from its placing leader.
+     * Node side: stops every agent this node hosts when isolated from the leader it answers to.
      *
      * Prevents a double-run: an isolated node stops its (possibly truth-source) agents before
      * the leader's failover could start copies elsewhere. Reconnect is left to the existing
