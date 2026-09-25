@@ -26,6 +26,8 @@ import { type HilosRouteDeclaration } from './PageRouter.js'
 export const HilosPages = {
   DASHBOARD: 'hilos',
   PROFILE: 'hilos_profile',
+  PROFILE_SESSIONS: 'hilos_profile_sessions',
+  PROFILE_DEVICES: 'hilos_profile_devices',
   PROFILE_SECURITY: 'hilos_profile_security',
   SETTINGS: 'hilos_settings',
   ANALYTICS: 'hilos_analytics',
@@ -115,6 +117,8 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
 > = {
   [HilosPages.DASHBOARD]: { path: '/hilos', admin: true },
   [HilosPages.PROFILE]: { path: '/profile', admin: false },
+  [HilosPages.PROFILE_SESSIONS]: { path: '/profile/sessions', admin: false },
+  [HilosPages.PROFILE_DEVICES]: { path: '/profile/devices', admin: false },
   [HilosPages.PROFILE_SECURITY]: { path: '/profile/security', admin: false },
   [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },
   [HilosPages.ANALYTICS]: { path: '/hilos/analytics', admin: true },

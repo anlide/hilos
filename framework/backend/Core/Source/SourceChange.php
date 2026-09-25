@@ -27,6 +27,7 @@ final class SourceChange extends BaseDTO
     public const string FIELD_SOURCE_ID = 'sourceId';
     public const string FIELD_MUTATION_TYPE = 'mutationType';
     public const string FIELD_ROW = 'row';
+    public const string FIELD_PREVIOUS = 'previous';
     public const string FIELD_ORIGIN = 'origin';
     public const string FIELD_ORIGIN_REQUEST_ID = 'originRequestId';
 
@@ -38,6 +39,7 @@ final class SourceChange extends BaseDTO
      * @param string $sourceId Row id or runtime state id, always serialized as string
      * @param TableMutationType $mutationType Source mutation type
      * @param array<string, mixed> $row Full row for create, diff for update, previous row for delete when available
+     * @param array<string, mixed> $previous Previous values of fields carried by an update
      * @param ?string $origin Accept key of the connection whose write caused this change, or null when unattended
      * @param ?string $originRequestId Request id of the action that caused this change, or null when no action is behind it
      */
@@ -47,6 +49,7 @@ final class SourceChange extends BaseDTO
         public readonly string $sourceId,
         public readonly TableMutationType $mutationType,
         public readonly array $row = [],
+        public readonly array $previous = [],
         public readonly ?string $origin = null,
         public readonly ?string $originRequestId = null,
     ) {
@@ -69,7 +72,16 @@ final class SourceChange extends BaseDTO
         ?string $origin = null,
         ?string $originRequestId = null,
     ): self {
-        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Create, $row, $origin, $originRequestId);
+        return new self(
+            self::KIND_DB,
+            $collectionKey,
+            $idString,
+            TableMutationType::Create,
+            $row,
+            [],
+            $origin,
+            $originRequestId,
+        );
     }
 
     /**
@@ -80,6 +92,7 @@ final class SourceChange extends BaseDTO
      * @param array<string, mixed> $row Changed columns
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
+     * @param array<string, mixed> $previous Previous values of the changed columns
      * @return self Source change for the updated DB row
      */
     public static function dbUpdated(
@@ -88,8 +101,18 @@ final class SourceChange extends BaseDTO
         array $row,
         ?string $origin = null,
         ?string $originRequestId = null,
+        array $previous = [],
     ): self {
-        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Update, $row, $origin, $originRequestId);
+        return new self(
+            self::KIND_DB,
+            $collectionKey,
+            $idString,
+            TableMutationType::Update,
+            $row,
+            $previous,
+            $origin,
+            $originRequestId,
+        );
     }
 
     /**
@@ -109,7 +132,16 @@ final class SourceChange extends BaseDTO
         ?string $origin = null,
         ?string $originRequestId = null,
     ): self {
-        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Delete, $row, $origin, $originRequestId);
+        return new self(
+            self::KIND_DB,
+            $collectionKey,
+            $idString,
+            TableMutationType::Delete,
+            $row,
+            [],
+            $origin,
+            $originRequestId,
+        );
     }
 
     /**
@@ -125,7 +157,7 @@ final class SourceChange extends BaseDTO
      */
     public static function dbCleared(string $collectionKey, ?string $origin = null, ?string $originRequestId = null): self
     {
-        return new self(self::KIND_DB, $collectionKey, '', TableMutationType::Clear, [], $origin, $originRequestId);
+        return new self(self::KIND_DB, $collectionKey, '', TableMutationType::Clear, [], [], $origin, $originRequestId);
     }
 
     /**
@@ -145,7 +177,16 @@ final class SourceChange extends BaseDTO
         ?string $origin = null,
         ?string $originRequestId = null,
     ): self {
-        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Create, $row, $origin, $originRequestId);
+        return new self(
+            self::KIND_RT,
+            $collectionKey,
+            $stateId,
+            TableMutationType::Create,
+            $row,
+            [],
+            $origin,
+            $originRequestId,
+        );
     }
 
     /**
@@ -156,6 +197,7 @@ final class SourceChange extends BaseDTO
      * @param array<string, mixed> $row Changed runtime fields
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
+     * @param array<string, mixed> $previous Previous values of the changed runtime fields
      * @return self Source change for the updated runtime row
      */
     public static function rtUpdated(
@@ -164,8 +206,18 @@ final class SourceChange extends BaseDTO
         array $row,
         ?string $origin = null,
         ?string $originRequestId = null,
+        array $previous = [],
     ): self {
-        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Update, $row, $origin, $originRequestId);
+        return new self(
+            self::KIND_RT,
+            $collectionKey,
+            $stateId,
+            TableMutationType::Update,
+            $row,
+            $previous,
+            $origin,
+            $originRequestId,
+        );
     }
 
     /**
@@ -185,7 +237,16 @@ final class SourceChange extends BaseDTO
         ?string $origin = null,
         ?string $originRequestId = null,
     ): self {
-        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Delete, $row, $origin, $originRequestId);
+        return new self(
+            self::KIND_RT,
+            $collectionKey,
+            $stateId,
+            TableMutationType::Delete,
+            $row,
+            [],
+            $origin,
+            $originRequestId,
+        );
     }
 
     /**
@@ -221,6 +282,7 @@ final class SourceChange extends BaseDTO
             self::FIELD_SOURCE_ID => $this->sourceId,
             self::FIELD_MUTATION_TYPE => $this->mutationType->value,
             self::FIELD_ROW => $this->row,
+            self::FIELD_PREVIOUS => $this->previous,
             self::FIELD_ORIGIN => $this->origin,
             self::FIELD_ORIGIN_REQUEST_ID => $this->originRequestId,
         ];
@@ -251,6 +313,7 @@ final class SourceChange extends BaseDTO
             mutationType: TableMutationType::tryFrom($mutationType)
                 ?? throw new InvalidFormatException('Payload names no known mutation type: ' . $mutationType),
             row: self::requireArray($data, self::FIELD_ROW),
+            previous: self::requireArray($data, self::FIELD_PREVIOUS),
             origin: self::optionalString($data, self::FIELD_ORIGIN),
             originRequestId: self::optionalString($data, self::FIELD_ORIGIN_REQUEST_ID),
         );

@@ -49,8 +49,10 @@ use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
 use Hilos\Auth\Session\DTO\RaiseSessionToastSignalData;
+use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\DTO\SessionToastExpiredActionDTO;
 use Hilos\Auth\Session\DTO\SessionToastReadingActionDTO;
@@ -71,6 +73,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -88,6 +91,7 @@ use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Http\DeviceName;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -124,6 +128,7 @@ use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\WiringRefusal;
@@ -328,10 +333,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     ];
 
     /**
-     * The page-independent controls a browser has over its own session, by wire name.
+     * The page-independent controls a browser has over its own session set, by wire name.
      *
-     * Every one of them resolves its session from the ACTING connection, so a client can
-     * only ever end, dismiss or vacate its own. They are the library's rather than a project's
+     * Every one resolves the acting session from the connection, so any target session is
+     * constrained to the same signed-in user. They are the library's rather than a project's
      * because what they write is a session (HIL-710, HIL-729), and a name may sit here at all
      * only when both halves hold: the right is no stronger than "you have a session", and no
      * page could own the control.
@@ -362,9 +367,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * sign-in after a reconnect (HIL-1044). It passes both halves as plainly as the sign-out: the
      * person presenting it is usually nobody yet, and the trip it presents is this library's row.
      * It is not throttled - the key is 128 random bits and presenting one spends nothing.
+     * Ending one other session or all others is authenticated rather than merely
+     * session-bound: both operations act on the signed-in user's session set.
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_LOGOUT => LogoutActionDTO::class,
+        HilosSignalConstants::HILOS_SESSION_END => SessionEndActionDTO::class,
+        HilosSignalConstants::HILOS_SESSIONS_END_OTHERS => SessionsEndOthersActionDTO::class,
         HilosSignalConstants::HILOS_BROWSER_ERASE => BrowserEraseActionDTO::class,
         HilosSignalConstants::HILOS_DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         HilosSignalConstants::HILOS_IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
@@ -372,6 +381,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_TOAST_EXPIRED => SessionToastExpiredActionDTO::class,
         HilosSignalConstants::HILOS_TOAST_READING => SessionToastReadingActionDTO::class,
         HilosSignalConstants::HILOS_OAUTH_RESUME => OAuthResumeActionDTO::class,
+    ];
+
+    /** Actions that require an authenticated user in the acting session. */
+    public const array AUTH_ACTIONS = [
+        HilosSignalConstants::HILOS_SESSION_END,
+        HilosSignalConstants::HILOS_SESSIONS_END_OTHERS,
     ];
 
     /**
@@ -1004,6 +1019,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         SessionToken::ensureValid($sessionToken);
 
         $session = $this->resolveHandshakeSession($sessionToken);
+        $deviceName = DeviceName::fromUserAgent(
+            HttpHeaderHelper::get($data->headers, HttpConstants::HEADER_USER_AGENT),
+        );
+        if ($session->deviceName !== $deviceName) {
+            $session->actions->setDeviceName($deviceName);
+        }
         $this->parkPendingAuthStep($data->acceptKey, $session);
 
         $pendingAuthStep = $this->pendingAuthStepFor($session);
@@ -1014,6 +1035,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $session->token,
+            sessionId: $session->id,
             userId: $session->userId,
             acceptKeys: [$data->acceptKey],
             pendingAck: $this->sessionPendingAck($session),
@@ -1637,6 +1659,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $session = Hilos::$db?->sessions->findByToken((string)$sessionToken);
                 $this->publishSessionState(new SessionStateSignalData(
                     sessionToken: (string)$sessionToken,
+                    sessionId: $session?->id,
                     userId: $userId,
                     acceptKeys: $acceptKeys,
                     pendingAck: $session === null ? null : $this->sessionPendingAck($session),
@@ -1856,6 +1879,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // that session have to learn who they are now.
             $this->publishSessionState(new SessionStateSignalData(
                 sessionToken: $sessionToken,
+                sessionId: $session->id,
                 userId: $userId,
                 acceptKeys: $this->sessionConnectionKeys($sessionToken),
                 pendingAck: $ack ?? $this->sessionPendingAck($session),
@@ -1881,6 +1905,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $rotated,
+            sessionId: $session->id,
             userId: $userId,
             acceptKeys: [$initiatorAcceptKey],
             pendingAck: $ack ?? $this->sessionPendingAck($session),
@@ -2024,6 +2049,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $sessionToken,
+            sessionId: $session->id,
             userId: null,
             acceptKeys: $this->sessionConnectionKeys($sessionToken),
             pendingAck: $this->sessionPendingAck($session),
@@ -2075,7 +2101,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             new RegistrationReservationService()->release($sessionToken);
         }
 
-        $token = $this->mintAnonymousSession();
+        $session = $this->mintAnonymousSession();
 
         // The connection that acted is left out of the drops for the reason a sign-in leaves
         // it out: it is the rightful holder of the one-time ticket and reconnects itself once
@@ -2087,36 +2113,35 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ));
 
         $this->publishSessionState(new SessionStateSignalData(
-            sessionToken: $token,
+            sessionToken: $session->token,
+            sessionId: $session->id,
             userId: null,
             acceptKeys: [$acceptKey],
-            rotationTicket: $this->announceRotation($token, $keysToDrop),
+            rotationTicket: $this->announceRotation($session->token, $keysToDrop),
             requestId: $requestId,
             action: HilosSignalConstants::HILOS_BROWSER_ERASE,
         ));
     }
 
     /**
-     * Creates the anonymous session an erased browser is handed, and returns its token.
+     * Creates the anonymous session an erased browser is handed.
      *
      * Retried on a token another session already holds, bounded and exhausting into an
      * exception, exactly as {@see self::rotateSessionToken()} is and for the same reason: a
      * 128-bit collision is a theoretical event, and carrying on with the old token "so the
      * person gets something" would hand back the identifier the erase was asked to change.
      *
-     * @return string Token the new anonymous session answers to
+     * @return Session New anonymous session row
      * @throws RandomException When the platform's secure random source refuses a mint
      * @throws SessionTokenExhaustedException When every attempt hit a token already in use
      * @throws HilosException On database or runtime failure
      */
-    private function mintAnonymousSession(): string
+    private function mintAnonymousSession(): Session
     {
         for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
             $candidate = SessionToken::mint();
             try {
-                Hilos::$db->sessions->actions->createAnonymous($candidate);
-
-                return $candidate;
+                return Hilos::$db->sessions->actions->createAnonymous($candidate);
             } catch (DuplicateValueException) {
                 // Another session holds the minted value; mint again.
             }
@@ -2128,7 +2153,65 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Reverts every session of a user to anonymous EXCEPT one (HIL-416).
+     * Ends one other ordinary session owned by the acting user.
+     *
+     * @param string $actingSessionToken Session token of the connection that asked
+     * @param int $targetSessionId Database id of the session to end
+     * @throws ValidationException When the acting or target session cannot be ended
+     * @throws HilosException On database or runtime failure
+     */
+    private function endSession(string $actingSessionToken, int $targetSessionId): void
+    {
+        $actingSession = Hilos::$db->sessions->findByToken($actingSessionToken);
+        if ($actingSession === null || $actingSession->userId === null) {
+            throw new ValidationException('This session has already ended');
+        }
+
+        $targetSession = null;
+        foreach (Hilos::$db->sessions->findByUserId($actingSession->userId) as $session) {
+            if ($session->id === $targetSessionId) {
+                $targetSession = $session;
+                break;
+            }
+        }
+        if ($targetSession === null) {
+            throw new ValidationException('This session has already ended');
+        }
+        if ($targetSession->token === $actingSessionToken) {
+            throw new ValidationException('This is the session you are using — sign out instead');
+        }
+        if ($targetSession->impersonatorUserId !== null) {
+            throw new ValidationException("An administrator's session cannot be ended from here");
+        }
+
+        $this->deauthenticateSession($targetSession->token);
+        $this->setActionSuccessMessage("Session #{$targetSessionId} ended");
+    }
+
+    /**
+     * Ends every other ordinary session owned by the acting user.
+     *
+     * @param string $actingSessionToken Session token of the connection that asked
+     * @throws ValidationException When the acting session no longer names a signed-in user
+     * @throws HilosException On database or runtime failure
+     */
+    private function endOtherSessions(string $actingSessionToken): void
+    {
+        $actingSession = Hilos::$db->sessions->findByToken($actingSessionToken);
+        if ($actingSession === null || $actingSession->userId === null) {
+            throw new ValidationException('This session has already ended');
+        }
+
+        $ended = $this->deauthenticateOtherSessions($actingSession->userId, $actingSessionToken);
+        $this->setActionSuccessMessage(match ($ended) {
+            0 => 'No other sessions were signed in',
+            1 => 'Signed out of 1 session',
+            default => "Signed out of {$ended} sessions",
+        });
+    }
+
+    /**
+     * Reverts every ordinary session of a user to anonymous EXCEPT one (HIL-416).
      *
      * What a finished password recovery owes the account. A password is reset when
      * access to it has leaked, so returning the account means returning it whole: the
@@ -2142,6 +2225,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * anonymous and the live connections learn about it. The kept token does not have
      * to be one of the user's sessions - a token that is not among them simply keeps
      * nothing, which is the honest answer for a caller that has none.
+     * Sessions carrying an impersonator are skipped as well: a person may not end the
+     * administrator's work through password recovery or the profile controls.
      *
      * Reaches the connections of THIS node only, exactly like the logout it is built
      * from; a session held open on another node of a cluster keeps its socket until
@@ -2150,17 +2235,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $userId User whose other sessions are dropped
      * @param string $keepSessionToken Session token that stays signed in
+     * @return int Number of ordinary sessions reverted to anonymous
      * @throws HilosException On database or runtime failure
      */
-    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): void
+    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): int
     {
+        $ended = 0;
         foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
-            if ($session->token === $keepSessionToken) {
+            if ($session->token === $keepSessionToken || $session->impersonatorUserId !== null) {
                 continue;
             }
 
             $this->deauthenticateSession($session->token);
+            $ended++;
         }
+
+        return $ended;
     }
 
     /**
@@ -2227,6 +2317,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $sessionToken,
+            sessionId: $session->id,
             userId: $session->userId,
             acceptKeys: $this->sessionConnectionKeys($sessionToken),
             pendingAck: $ack,
@@ -3261,20 +3352,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Every one of them takes its session from the ACTING connection, read off the project's
      * own connection rows - which this library may read but never write. A connection carrying
-     * no session is refused for all six, because there is nothing to end, dismiss, vacate or
+     * no session is refused for every control, because there is nothing to end, dismiss, vacate or
      * answer about, and returning was read by the browser as having done it (HIL-730). Signing
      * out is not the exception it looks like: the token is gone from the runtime but the cookie
      * is still in the browser, so "you are signed out" would be undone by the next reload.
      *
-     * One sentence covers all six, because the reason is not about the action: the connection
+     * One sentence covers them all, because the reason is not about the action: the connection
      * does not carry a session.
      *
-     * None of them answers here. The first three end in a session state, which the project
-     * puts on the wire, so the answer is carried in that frame and leaves behind the
-     * identity it announces (HIL-622); ending a takeover is the third of them, and it is the
-     * same shape - what the browser asked for is answered by the identity it gets back, not
-     * by an ack - so the correlation id it hands the core is null, and only an operator on
-     * the command socket has one (HIL-729). The three toast controls end in a toast frame
+     * Most do not answer here. Logout, erase, dismissing an ack and ending a takeover finish
+     * in a state frame which the project puts on the wire, so the answer leaves behind the
+     * identity it announces (HIL-622). The three toast controls finish in a toast frame
      * instead (HIL-768), and it goes to the whole SESSION rather than to the tab that spoke:
      * the tabs agreeing is the answer, and a tab that only heard about its own click would be
      * the disagreement again.
@@ -3291,11 +3379,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * and only with whether the key is known: the outcome it hands over leaves on its own frame
      * - the result signal, or the state frame of a sign-in - exactly as it would have without a
      * reconnect, and the tab reads it the same way.
+     * Ending one other session or all others is the exception: the target sessions receive
+     * their state frames, while the acting tab receives the ordinary tracked action ack.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Null for all but the trip presentation: their answer travels on a state or toast frame instead
+     * @return ?ActionReplyDTO Null except for the trip presentation's domain reply
      * @throws SessionNotOnConnectionException When the acting connection carries no session
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
@@ -3317,6 +3407,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
                 }
                 $this->deauthenticateSession($sessionToken, $this->currentActionRequestId(), $action);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_SESSION_END:
+                if (!$dto instanceof SessionEndActionDTO) {
+                    throw new InvalidActionPayloadException($action, SessionEndActionDTO::class, $dto);
+                }
+                $this->endSession($sessionToken, $dto->sessionId);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_SESSIONS_END_OTHERS:
+                if (!$dto instanceof SessionsEndOthersActionDTO) {
+                    throw new InvalidActionPayloadException($action, SessionsEndOthersActionDTO::class, $dto);
+                }
+                $this->endOtherSessions($sessionToken);
 
                 return null;
 
@@ -4354,6 +4460,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($others !== []) {
             $this->publishSessionState(new SessionStateSignalData(
                 sessionToken: $session->token,
+                sessionId: $session->id,
                 userId: $session->userId,
                 acceptKeys: $others,
                 pendingAck: $this->sessionPendingAck($session),
@@ -4363,6 +4470,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($answered !== null) {
             $this->publishSessionState(new SessionStateSignalData(
                 sessionToken: $session->token,
+                sessionId: $session->id,
                 userId: $session->userId,
                 acceptKeys: [$answered],
                 pendingAck: $this->sessionPendingAck($session),
@@ -4869,6 +4977,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $session->token,
+            sessionId: $session->id,
             userId: $userId,
             acceptKeys: [$acceptKey],
             pendingAck: $this->sessionPendingAck($session),
@@ -5299,6 +5408,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         $this->publishSessionState(new SessionStateSignalData(
             sessionToken: $sessionToken,
+            sessionId: $session?->id,
             userId: $session?->userId,
             acceptKeys: [$acceptKey],
             pendingAck: $session === null ? null : $this->sessionPendingAck($session),

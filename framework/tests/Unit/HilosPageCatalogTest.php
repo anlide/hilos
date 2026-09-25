@@ -22,15 +22,15 @@ final class HilosPageCatalogTest extends TestCase
 {
     /**
      * Number of entries in the catalog. Sixty of them came over from the frontend when the
-     * identity moved to the backend (HIL-624) - seven of the 67 routed keys carry no entry on
-     * purpose, four public footer pages, the profile, and the guardian pair HIL-345 answers - and
+     * identity moved to the backend (HIL-624); the profile tree joined in HIL-288, while six
+     * routed keys still carry no entry on purpose - four public footer pages and the guardian pair - and
      * every page declared since is one more, the logging modes of HIL-762 being the first.
      *
      * It is a deliberate-addition guard rather than a count worth knowing: a page that reaches the
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 63;
+    private const int CATALOG_ENTRIES = 66;
 
     /** Number of dashboard sections carried over in the same transfer. */
     private const int TRANSFERRED_SECTIONS = 5;
@@ -64,8 +64,7 @@ final class HilosPageCatalogTest extends TestCase
     }
 
     /**
-     * The dashboard is the one page allowed to have no parent: the breadcrumb walk stops where
-     * the chain stops, and a second root would give one of the two trees no way up.
+     * The admin dashboard and the current-user profile are separate catalog roots.
      */
     public function testTheDashboardIsTheOnlyRoot(): void
     {
@@ -76,7 +75,7 @@ final class HilosPageCatalogTest extends TestCase
             }
         }
 
-        self::assertSame([HilosPageConstants::HILOS_DASHBOARD], $roots);
+        self::assertSame([HilosPageConstants::HILOS_DASHBOARD, HilosPageConstants::HILOS_PROFILE], $roots);
     }
 
     public function testEverySectionItemIsAnEntry(): void

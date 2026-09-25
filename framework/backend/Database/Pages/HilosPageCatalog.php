@@ -18,9 +18,8 @@ use Hilos\Constants\HilosPageConstants;
  * source. Once i18n lands, a translation is laid over it and this table stays as the fallback,
  * which is why it lives beside the database layer rather than in `Constants/`.
  *
- * Seven routed pages carry no entry on purpose: `hilos_about`, `hilos_terms`, `hilos_privacy`
- * and `hilos_license` are public footer pages rather than admin ones, `hilos_profile` belongs to
- * the signed-in user rather than to the admin tree, and `hilos_guardian` with
+ * Six routed pages carry no entry on purpose: `hilos_about`, `hilos_terms`, `hilos_privacy`
+ * and `hilos_license` are public footer pages rather than catalog sections, and `hilos_guardian` with
  * `hilos_guardian_agent` are the mirror gap HIL-345 answers. A page without an entry is not an
  * error - its subscription simply answers without identity.
  *
@@ -41,6 +40,21 @@ final class HilosPageCatalog
         HilosPageConstants::HILOS_DASHBOARD => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Hilos',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Administrative sections for the project.',
+        ],
+
+        HilosPageConstants::HILOS_PROFILE => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Profile',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Your account, sessions, devices, and sign-in methods.',
+        ],
+        HilosPageConstants::HILOS_PROFILE_SESSIONS => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Sessions',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where you are signed in. End one sign-in or all others at once.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
+        ],
+        HilosPageConstants::HILOS_PROFILE_DEVICES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Devices',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where push notifications are delivered. Not the same as sessions.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_PROFILE,
         ],
 
         // — Access & identity —

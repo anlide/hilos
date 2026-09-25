@@ -80,10 +80,15 @@ final class WorkerManagerBrowserContextTest extends TestCase
 
         foreach ([
             new DbSyncCreatedSignalData('users', '1', ['name' => 'Ada']),
-            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Grace']),
+            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Grace'], previous: ['name' => 'Ada']),
             new DbSyncDeletedSignalData('users', '1', ['name' => 'Grace']),
             new RtSyncCreatedSignalData('connections', 'ak-1', ['userId' => 1]),
-            new RtSyncUpdatedSignalData('connections', 'ak-1', ['presence' => 'online']),
+            new RtSyncUpdatedSignalData(
+                'connections',
+                'ak-1',
+                ['presence' => 'online'],
+                previous: ['presence' => 'away'],
+            ),
             new RtSyncDeletedSignalData('connections', 'ak-1', ['presence' => 'online']),
         ] as $signalData) {
             $recordSourceChange($manager, $signalData);
@@ -114,6 +119,40 @@ final class WorkerManagerBrowserContextTest extends TestCase
         );
         $this->assertSame(['name' => 'Grace'], $changes[0]->row);
         $this->assertSame(['userId' => 1, 'presence' => 'online'], $changes[1]->row);
+    }
+
+    public function testWorkerCarriesPreviousValuesIntoBrowserSourceChanges(): void
+    {
+        $browser = new WorkerManagerBrowserContextTestBrowserContext();
+        Hilos::$browser = $browser;
+
+        $manager = new WorkerManagerBrowserContextTestManager(new WorkerManagerBrowserContextTestAgent());
+        $recordSourceChange = Closure::bind(
+            static function (WorkerManager $manager, SyncSignalDataInterface $signalData): void {
+                $manager->recordBrowserSourceChange($signalData);
+            },
+            null,
+            WorkerManager::class,
+        );
+
+        $recordSourceChange(
+            $manager,
+            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Grace'], previous: ['name' => 'Ada']),
+        );
+        $recordSourceChange(
+            $manager,
+            new RtSyncUpdatedSignalData(
+                'connections',
+                'ak-1',
+                ['presence' => 'online'],
+                previous: ['presence' => 'away'],
+            ),
+        );
+        $browser->flushToSignalRouter();
+
+        $changes = $browser->emittedChangeSets[0]->all();
+        $this->assertSame(['name' => 'Ada'], $changes[0]->previous);
+        $this->assertSame(['presence' => 'away'], $changes[1]->previous);
     }
 
     public function testAnUpdateThatMovedNoColumnStillReachesTheBrowserContext(): void

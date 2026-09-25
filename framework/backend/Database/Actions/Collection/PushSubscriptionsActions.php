@@ -6,7 +6,11 @@ namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
@@ -38,23 +42,70 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When the write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
+     * @throws WriteNotAllowedException When the notifications library cannot add subscriptions
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
+        $this->ensureCanWrite(TruthSourceOperation::Add);
         $this->objectCollection->subscribe($userId, $endpoint, $p256dh, $auth, $userAgent);
     }
 
     /**
-     * Removes the subscription of an endpoint (device opt-out or stale endpoint).
+     * Marks transport-expired endpoints while keeping their rows visible.
      *
-     * @param string $endpoint Browser push endpoint URL
-     * @throws DatabaseException When the delete query fails
+     * @param list<string> $endpoints Endpoints reported gone by the push service
+     * @return int Rows newly marked gone
+     * @throws DatabaseException When a lookup or write query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
+     * @throws WriteNotAllowedException When the notifications library cannot update subscriptions
      */
-    public function unsubscribe(string $endpoint): void
+    public function markGone(array $endpoints): int
     {
-        $this->objectCollection->unsubscribe($endpoint);
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+
+        return $this->objectCollection->markGone($endpoints);
+    }
+
+    /**
+     * Removes one subscription only when it belongs to the acting user.
+     *
+     * @param int $userId Acting user id
+     * @param int $id Subscription row id
+     * @return bool Whether an owned row was removed
+     * @throws DatabaseException When the lookup or delete query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
+     * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
+     */
+    public function removeOwned(int $userId, int $id): bool
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        return $this->objectCollection->removeOwned($userId, $id);
+    }
+
+    /**
+     * Removes the acting user's subscription for one endpoint.
+     *
+     * @param int $userId Acting user id
+     * @param string $endpoint Browser push endpoint URL
+     * @throws DatabaseException When the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
+     * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
+     */
+    public function unsubscribeOwned(int $userId, string $endpoint): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        $this->objectCollection->unsubscribeOwned($userId, $endpoint);
     }
 
     /**
@@ -64,9 +115,13 @@ final class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When a delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the collection has no usable object metadata
+     * @throws UnknownLazyStrategyException When the collection has an unknown loading strategy
+     * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
      */
     public function deleteForUser(int $userId): void
     {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
         $this->objectCollection->deleteForUser($userId);
     }
 }

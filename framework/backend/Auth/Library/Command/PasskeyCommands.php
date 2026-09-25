@@ -15,10 +15,10 @@ use Hilos\Auth\WebAuthn\DTO\PasskeyOptionsSignalData;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
-use Hilos\Auth\WebAuthn\PasskeyDeviceName;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Http\DeviceName;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -120,7 +120,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * the user is already signed in.
      *
      * The credential is labeled with the enrolling device, read off the client's
-     * User-Agent ({@see PasskeyDeviceName}) so the profile can list "Chrome on
+     * User-Agent ({@see DeviceName}) so the profile can list "Chrome on
      * macOS" instead of a credential id (HIL-418). An unrecognized agent labels
      * nothing — the row simply reads "Passkey".
      *
@@ -178,7 +178,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
                     $acting->userId,
                     Hilos::$db->passkeyCredentials->listByUser($acting->userId),
                 ),
-                PasskeyDeviceName::fromUserAgent($dto->userAgent),
+                DeviceName::fromUserAgent($dto->userAgent),
             );
         } catch (DuplicateValueException) {
             throw new ValidationException(AuthMessages::PASSKEY_ALREADY_REGISTERED);

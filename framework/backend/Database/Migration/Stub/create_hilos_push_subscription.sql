@@ -6,16 +6,17 @@
 -- browser push manager, and sends the endpoint plus its `p256dh` / `auth` keys; the
 -- row is the address a push delivery is sent to.
 --
--- `endpoint` is the device identity and is UNIQUE: a re-subscribe (rotated keys, or
+-- `endpoint` is the delivery address and is UNIQUE: a re-subscribe (rotated keys, or
 -- the same endpoint arriving under a new owner) upserts the one row rather than
--- inserting a duplicate. A stale endpoint the push transport reports gone (404/410)
--- is deleted.
+-- inserting a duplicate. `endpoint_hash` is the SHA-256 fingerprint the browser can
+-- compare without receiving the address. A 404/410 marks `gone_at`; the row remains
+-- visible as expired until its owner removes it, while delivery ignores it.
 --
 -- No DB-level foreign key to the project `user` table: framework stubs never FK
 -- across the framework/project boundary. `user_id` is a soft ref, indexed so a
 -- recipient's subscriptions resolve for delivery; rows are cleaned up best-effort
--- with the user (soft ref, no cascade). `user_agent` and `last_seen_at` are
--- informational (which device, last refreshed).
+-- with the user (soft ref, no cascade). `device_name` is the shared browser/platform
+-- label derived from `user_agent`; both it and `last_seen_at` are informational.
 
 CREATE TABLE `hilos_push_subscription` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -24,6 +25,9 @@ CREATE TABLE `hilos_push_subscription` (
     `p256dh` VARCHAR(255) NOT NULL,
     `auth` VARCHAR(255) NOT NULL,
     `user_agent` VARCHAR(255) DEFAULT NULL,
+    `device_name` VARCHAR(64) DEFAULT NULL,
+    `endpoint_hash` CHAR(64) NOT NULL,
+    `gone_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `last_seen_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),

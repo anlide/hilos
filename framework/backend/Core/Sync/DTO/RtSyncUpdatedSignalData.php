@@ -22,6 +22,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
      * @param array<string, mixed> $row Only changed fields
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
+     * @param array<string, mixed> $previous Previous values of the changed fields
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -29,6 +30,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
         public readonly array $row,
         public readonly ?string $origin = null,
         public readonly ?string $originRequestId = null,
+        public readonly array $previous = [],
     ) {
     }
 
@@ -43,6 +45,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
             SyncSignalDataKey::STATE_ID => $this->stateId,
             SyncSignalDataKey::ROW => $this->row,
+            SyncSignalDataKey::PREVIOUS => $this->previous,
             SyncSignalDataKey::ORIGIN => $this->origin,
             SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
         ];
@@ -53,7 +56,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no collection key, no state id or no row
+     * @throws InvalidFormatException When the payload carries no collection key, state id, row or previous values
      */
     public static function fromArray(array $data): static
     {
@@ -63,6 +66,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
             row: self::requireArray($data, SyncSignalDataKey::ROW),
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
             originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
+            previous: self::requireArray($data, SyncSignalDataKey::PREVIOUS),
         );
     }
 }

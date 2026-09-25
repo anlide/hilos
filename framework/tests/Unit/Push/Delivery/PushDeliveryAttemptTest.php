@@ -116,19 +116,23 @@ final class PushDeliveryAttemptTest extends TestCase
         self::assertFalse($attempt->isDelivered());
     }
 
-    public function testGoneEndpointSettlesWithoutPruningWhenNoDbContext(): void
+    public function testGoneEndpointIsReportedWithoutWritingFromTheAttempt(): void
     {
+        $gone = [];
         $goneClient = $this->createMock(AsyncHttpClient::class);
         $goneClient->method('tick')->willThrowException(new AsyncHttpStatusException(410, ''));
         $attempt = new PushDeliveryAttempt([
             new PushEndpointSend('https://push.example/gone', $goneClient),
-        ]);
+        ], static function (array $endpoints) use (&$gone): void {
+            $gone = $endpoints;
+        });
 
         $attempt->tick(1.0);
 
         self::assertFalse($attempt->isBusy());
         self::assertFalse($attempt->isDelivered());
         self::assertSame('1 of 1 push endpoints failed: push service returned status 410', $attempt->errorDetail());
+        self::assertSame(['https://push.example/gone'], $gone);
     }
 
     public function testCloseReleasesEveryEndpointSend(): void

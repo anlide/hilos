@@ -168,6 +168,14 @@ export {
   HilosProfileSecurityPage,
   type HilosProfileSecurityPageProps,
 } from './profile/HilosProfileSecurityPage.js'
+export {
+  HilosProfileSessions,
+  type HilosProfileSessionsProps,
+} from './profile/HilosProfileSessions.js'
+export {
+  HilosProfileDevices,
+  type HilosProfileDevicesProps,
+} from './profile/HilosProfileDevices.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
 export { HilosLongText, type HilosLongTextProps } from './HilosLongText.js'
 export {

@@ -29,12 +29,14 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertSame('ak-1', $connection->getId());
         $this->assertSame('ak-1', $connection->acceptKey);
         $this->assertSame(42, $connection->userId);
+        $this->assertGreaterThan(0, $connection->connectedAt);
         $this->assertSame('seeded', $connection->label);
         $this->assertSame(1, $connection->baselineMarks);
         $this->assertSame(
             [
                 HilosConnection::acceptKey => 'ak-1',
                 HilosConnection::userId => 42,
+                HilosConnection::connectedAt => $connection->connectedAt,
                 PresenceConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),
@@ -46,6 +48,7 @@ final class HilosConnectionStateTest extends TestCase
         $connection = PresenceConnectionFixture::fromRow([
             HilosConnection::acceptKey => 'ak-2',
             HilosConnection::userId => null,
+            HilosConnection::connectedAt => 1710000000,
             PresenceConnectionFixture::label => 'guest',
         ]);
 
@@ -61,6 +64,7 @@ final class HilosConnectionStateTest extends TestCase
 
         PresenceConnectionFixture::fromRow([
             HilosConnection::userId => 42,
+            HilosConnection::connectedAt => 1710000000,
             PresenceConnectionFixture::label => 'guest',
         ]);
     }
@@ -86,20 +90,24 @@ final class HilosConnectionStateTest extends TestCase
     public function testPresenceStageCarriesNoSessionToken(): void
     {
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionToken));
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionId));
         $this->assertFalse(method_exists(PresenceConnectionFixtures::class, 'findAllBySessionToken'));
     }
 
     public function testSessionStageCarriesTheTokenOnTopOfTheBaseFields(): void
     {
-        $connection = SessionConnectionFixture::create('ak-4', 5, 'tok-a');
+        $connection = SessionConnectionFixture::create('ak-4', 5, 'tok-a', 17);
 
         $this->assertSame('tok-a', $connection->sessionToken);
+        $this->assertSame(17, $connection->sessionId);
         $this->assertSame(1, $connection->baselineMarks);
         $this->assertSame(
             [
                 HilosConnection::acceptKey => 'ak-4',
                 HilosConnection::userId => 5,
+                HilosConnection::connectedAt => $connection->connectedAt,
                 HilosSessionConnection::sessionToken => 'tok-a',
+                HilosSessionConnection::sessionId => 17,
                 SessionConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),
@@ -107,9 +115,14 @@ final class HilosConnectionStateTest extends TestCase
 
         $hydrated = SessionConnectionFixture::fromRow($connection->toArray());
         $this->assertSame('tok-a', $hydrated->sessionToken);
+        $this->assertSame(17, $hydrated->sessionId);
 
-        $hydrated->applyDiff([HilosSessionConnection::sessionToken => 'tok-b']);
+        $hydrated->applyDiff([
+            HilosSessionConnection::sessionToken => 'tok-b',
+            HilosSessionConnection::sessionId => 19,
+        ]);
         $this->assertSame('tok-b', $hydrated->sessionToken);
+        $this->assertSame(19, $hydrated->sessionId);
     }
 
     public function testSessionCreateLeavesTheTokenNullWhenTheSocketBelongsToNoSession(): void
@@ -117,6 +130,7 @@ final class HilosConnectionStateTest extends TestCase
         $connection = SessionConnectionFixture::create('ak-5', null);
 
         $this->assertNull($connection->sessionToken);
+        $this->assertNull($connection->sessionId);
     }
 
     public function testPresenceCollectionLooksUpByUser(): void

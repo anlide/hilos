@@ -9,6 +9,8 @@ use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DismissSessionAckActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\Session\DTO\SessionEndActionDTO;
+use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
 use Hilos\Auth\Session\Exception\SessionNotOnConnectionException;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -77,6 +79,8 @@ final class SessionsLibraryActionRefusalTest extends TestCase
     {
         return [
             'logout' => [HilosSignalConstants::HILOS_LOGOUT, new LogoutActionDTO()],
+            'end session' => [HilosSignalConstants::HILOS_SESSION_END, new SessionEndActionDTO(1)],
+            'end other sessions' => [HilosSignalConstants::HILOS_SESSIONS_END_OTHERS, new SessionsEndOthersActionDTO()],
             'browser erase' => [HilosSignalConstants::HILOS_BROWSER_ERASE, new BrowserEraseActionDTO()],
             'dismiss ack' => [HilosSignalConstants::HILOS_DISMISS_SESSION_ACK, new DismissSessionAckActionDTO()],
             'impersonate stop' => [HilosSignalConstants::HILOS_IMPERSONATE_STOP, new ImpersonateStopActionDTO()],

@@ -214,8 +214,9 @@ abstract class RtActions
     protected function applyDiffToState(RtState $state, array $diff): void
     {
         $this->ensureCanWriteState($state->getId(), TruthSourceOperation::Update);
+        $previous = array_intersect_key($state->toArray(), $diff);
         $state->applyDiff($diff);
-        $this->queueRtSyncUpdated($state->getId(), $diff);
+        $this->queueRtSyncUpdated($state->getId(), $diff, $previous);
         $state->markRtSyncBaseline();
     }
 
@@ -271,8 +272,9 @@ abstract class RtActions
      *
      * @param string $stateId State ID
      * @param array<string, mixed> $diff Changed fields and values
+     * @param array<string, mixed> $previous Previous values of changed fields
      */
-    private function queueRtSyncUpdated(string $stateId, array $diff): void
+    private function queueRtSyncUpdated(string $stateId, array $diff, array $previous): void
     {
         $collectionName = $this->getCollectionName();
         if ($collectionName === null) {
@@ -286,6 +288,7 @@ abstract class RtActions
                 $diff,
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
+                previous: $previous,
             ),
         );
     }

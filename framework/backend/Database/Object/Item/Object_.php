@@ -185,16 +185,18 @@ abstract class Object_
             $changedColumns = $this->getChangedColumns();
             $currentData = $this->entity->toArray();
             $diff = array_intersect_key($currentData, array_flip($changedColumns));
+            $previous = array_intersect_key($this->entitySync->toArray(), array_flip($changedColumns));
             $this->entity->saveDiff($this->entitySync);
             $this->entitySync = clone $this->entity;
             $result = $diff;
         } else {
+            $previous = [];
             $this->entity->save();
             $this->entitySync = clone $this->entity;
             $result = $this->entity->toArray();
         }
 
-        $this->broadcastDbSyncAfterSync($isCreate, $result);
+        $this->broadcastDbSyncAfterSync($isCreate, $result, $previous);
     }
 
     /**
@@ -326,13 +328,14 @@ abstract class Object_
         }
 
         $idString = $this->getIdString();
-        $this->queueDbSyncUpdated($collectionKey, $idString, []);
+        $this->queueDbSyncUpdated($collectionKey, $idString, [], []);
         SourceChangeBus::publish(SourceChange::dbUpdated(
             $collectionKey,
             $idString,
             [],
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
+            previous: [],
         ));
     }
 
@@ -377,10 +380,11 @@ abstract class Object_
      *
      * @param bool $isCreate True if this was a create (new row)
      * @param array<string, mixed> $result Full row for create, diff for update
+     * @param array<string, mixed> $previous Previous values of updated columns
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
-    private function broadcastDbSyncAfterSync(bool $isCreate, array $result): void
+    private function broadcastDbSyncAfterSync(bool $isCreate, array $result, array $previous): void
     {
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '' || $result === []) {
@@ -394,13 +398,14 @@ abstract class Object_
             return;
         }
 
-        $this->queueDbSyncUpdated($collectionKey, $idString, $result);
+        $this->queueDbSyncUpdated($collectionKey, $idString, $result, $previous);
         SourceChangeBus::publish(SourceChange::dbUpdated(
             $collectionKey,
             $idString,
             $result,
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
+            previous: $previous,
         ));
     }
 
@@ -431,8 +436,9 @@ abstract class Object_
      * @param string $collectionKey Collection key for broadcast
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Diff row data
+     * @param array<string, mixed> $previous Previous values of changed columns
      */
-    private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row): void
+    private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row, array $previous): void
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_UPDATED,
@@ -442,6 +448,7 @@ abstract class Object_
                 $row,
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
+                previous: $previous,
             ),
         );
     }

@@ -1509,6 +1509,7 @@ abstract class WorkerManager extends BaseManager
                 $signalData->row,
                 $signalData->origin,
                 $signalData->originRequestId,
+                previous: $signalData->previous,
             ),
             $signalData instanceof DbSyncDeletedSignalData => SourceChange::dbDeleted(
                 $signalData->collectionKey,
@@ -1535,6 +1536,7 @@ abstract class WorkerManager extends BaseManager
                 $signalData->row,
                 $signalData->origin,
                 $signalData->originRequestId,
+                previous: $signalData->previous,
             ),
             $signalData instanceof RtSyncDeletedSignalData => SourceChange::rtDeleted(
                 $signalData->collectionKey,

@@ -1,7 +1,13 @@
 import { test, expect, type Locator } from '@playwright/test'
 
 import { waitForMailCode, waitForMailTo } from '../helpers/mail'
-import { PASSWORD, clickSubmit, signUp, uniqueEmail } from '../helpers/session'
+import {
+  PASSWORD,
+  clickSubmit,
+  login,
+  signUp,
+  uniqueEmail,
+} from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import { signInAs } from '../../../../../framework/frontend/e2e/index.js'
@@ -42,6 +48,8 @@ test('the navbar links the current user to the profile page', async ({
   // Reached over the live socket with no document reload.
   expect(new URL(page.url()).pathname).toBe('/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('profile-sessions-open')).toBeVisible()
+  await expect(page.getByTestId('profile-devices-open')).toBeVisible()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(fullLoads).toBe(loadsAfterColdLoad)
 })
@@ -118,9 +126,9 @@ test('links a GitHub account to the current profile (HIL-401)', async ({
     'oauth:github',
     { timeout: 30000 },
   )
-  await expect(
-    page.getByTestId('profile-oauth-link-oauth:github'),
-  ).toHaveCount(0)
+  await expect(page.getByTestId('profile-oauth-link-oauth:github')).toHaveCount(
+    0,
+  )
   await expect(page.getByTestId('auth-oauth-wait')).toHaveCount(0)
 
   // The whole trip happened beside this page, not through it: still /profile, and
@@ -181,7 +189,10 @@ test('changes the current user password from the profile (HIL-402)', async ({
   const newPassword = 'a-fresh-passphrase'
 
   // The wrong current password is refused with an inline error; no success toast.
-  await typeInto(page.getByTestId('profile-password-current'), 'not the password')
+  await typeInto(
+    page.getByTestId('profile-password-current'),
+    'not the password',
+  )
   await typeInto(page.getByTestId('profile-password-new'), newPassword)
   await typeInto(page.getByTestId('profile-password-confirm'), newPassword)
   await page.getByTestId('profile-password-save').click()
@@ -238,4 +249,68 @@ test('changes the account email in five steps (HIL-299)', async ({ page }) => {
   // The notice went to both mailboxes.
   await waitForMailTo(was, 'Your email address was changed')
   await waitForMailTo(now, 'Your email address was changed')
+})
+
+test('ends one other browser session from the sessions page', async ({
+  browser,
+}) => {
+  const contextA = await browser.newContext()
+  const contextB = await browser.newContext()
+  try {
+    const pageA = await contextA.newPage()
+    const account = await signUp(pageA)
+    const pageB = await contextB.newPage()
+    await gotoPage(pageB, '/profile/sessions')
+    await login(pageB, account.email)
+    await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
+
+    await gotoPage(pageA, '/profile/sessions')
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
+    await expect(pageA.getByTestId('profile-session-this')).toHaveCount(1)
+    await expect(
+      pageA.getByTestId('profile-session-device').first(),
+    ).not.toHaveText('Unknown device')
+
+    await pageA.getByTestId('profile-session-revoke').click()
+    await clickSubmit(pageA.getByTestId('profile-session-end-confirm'))
+    await expect(pageA.getByTestId('modal')).toBeHidden()
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
+    await expect(pageB.getByTestId('auth-surface')).toBeVisible()
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})
+
+test('signs out every other browser session at once', async ({ browser }) => {
+  const contextA = await browser.newContext()
+  const contextB = await browser.newContext()
+  try {
+    const pageA = await contextA.newPage()
+    const account = await signUp(pageA)
+    const pageB = await contextB.newPage()
+    await gotoPage(pageB, '/profile/sessions')
+    await login(pageB, account.email)
+    await expect(pageB.getByTestId('profile-sessions')).toBeVisible()
+
+    await gotoPage(pageA, '/profile/sessions')
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(2)
+    await clickSubmit(pageA.getByTestId('profile-sessions-end-others'))
+
+    await expect(pageA.getByTestId('profile-session-row')).toHaveCount(1)
+    await expect(pageB.getByTestId('auth-surface')).toBeVisible()
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})
+
+test('opens the push devices page', async ({ page }) => {
+  await signUp(page)
+  await gotoPage(page, '/profile/devices')
+
+  await expect(page.getByTestId('profile-devices')).toBeVisible()
+  await expect(page.getByTestId('profile-devices-heading')).toHaveText(
+    'Devices',
+  )
 })

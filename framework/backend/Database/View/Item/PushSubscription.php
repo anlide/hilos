@@ -22,6 +22,9 @@ use Hilos\HilosException;
  * @property-read string $p256dh
  * @property-read string $auth
  * @property-read ?string $userAgent
+ * @property-read ?string $deviceName
+ * @property-read string $endpointHash
+ * @property-read ?string $goneAt
  * @property-read string $createdAt
  * @property-read ?string $lastSeenAt
  */
@@ -45,6 +48,9 @@ final class PushSubscription extends DbItem
             ObjectPushSubscription::p256dh => $this->_object->p256dh,
             ObjectPushSubscription::auth => $this->_object->auth,
             ObjectPushSubscription::userAgent => $this->_object->userAgent,
+            ObjectPushSubscription::deviceName => $this->_object->deviceName,
+            ObjectPushSubscription::endpointHash => $this->_object->endpointHash,
+            ObjectPushSubscription::goneAt => $this->_object->goneAt,
             ObjectPushSubscription::createdAt => $this->_object->createdAt,
             ObjectPushSubscription::lastSeenAt => $this->_object->lastSeenAt,
             default => parent::__get($name),

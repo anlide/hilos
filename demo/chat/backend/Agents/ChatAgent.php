@@ -190,15 +190,24 @@ final class ChatAgent extends AbstractAgent
     {
         $connection = Hilos::$rt->connections[$acceptKey] ?? null;
         if ($connection === null) {
-            Hilos::$rt->connections->actions->register($acceptKey, $frame->userId, $frame->sessionToken);
+            Hilos::$rt->connections->actions->register(
+                $acceptKey,
+                $frame->userId,
+                $frame->sessionToken,
+                $frame->sessionId,
+            );
             if ($frame->userId !== null) {
                 Hilos::$ac?->identifyBrowserSessionUser($frame->sessionToken, $frame->userId);
             }
         } else {
-            if ($connection->sessionToken !== $frame->sessionToken) {
+            if ($connection->sessionToken !== $frame->sessionToken || $connection->sessionId !== $frame->sessionId) {
                 // The session did not change, its secret name did: a login rotated the token
                 // out from under a value somebody may have planted (HIL-582).
-                Hilos::$rt->connections->actions->repointSessionToken($acceptKey, $frame->sessionToken);
+                Hilos::$rt->connections->actions->repointSessionToken(
+                    $acceptKey,
+                    $frame->sessionToken,
+                    $frame->sessionId,
+                );
             }
             if ($connection->userId !== $frame->userId) {
                 $connection->actions->bindUser($frame->userId);

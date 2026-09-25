@@ -37,8 +37,11 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  */
 final class SessionStateSignalData extends BaseDTO implements SignalDataInterface
 {
+    public const string sessionId = 'sessionId';
+
     /**
      * @param string $sessionToken Session cookie token the named sockets belong to now
+     * @param ?int $sessionId Database session row id, or null when no session row exists
      * @param ?int $userId User the session is bound to, or null when it is anonymous
      * @param list<string> $acceptKeys Accept keys of the live connections this state applies to
      * @param ?string $pendingAck Ack the session owes (a {@see SessionAck} value), or null for none
@@ -53,6 +56,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      */
     public function __construct(
         public readonly string $sessionToken,
+        public readonly ?int $sessionId,
         public readonly ?int $userId,
         public readonly array $acceptKeys,
         public readonly ?string $pendingAck = null,
@@ -73,6 +77,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     {
         return [
             'sessionToken' => $this->sessionToken,
+            self::sessionId => $this->sessionId,
             'userId' => $this->userId,
             'acceptKeys' => $this->acceptKeys,
             'pendingAck' => $this->pendingAck,
@@ -97,8 +102,13 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      */
     public static function fromArray(array $data): static
     {
+        if (!array_key_exists(self::sessionId, $data)) {
+            throw new InvalidFormatException('Payload carries no session id field');
+        }
+
         return new static(
             sessionToken: self::requireString($data, 'sessionToken'),
+            sessionId: self::optionalInt($data, self::sessionId),
             userId: self::optionalInt($data, 'userId'),
             acceptKeys: array_values(array_map(
                 static fn(mixed $acceptKey): string => (string)$acceptKey,

@@ -24,6 +24,8 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     // profile pages. Every other Hilos page is admin and lives under /hilos.
     const rootPages = new Set<string>([
       HilosPages.PROFILE,
+      HilosPages.PROFILE_SESSIONS,
+      HilosPages.PROFILE_DEVICES,
       HilosPages.PROFILE_SECURITY,
       ...HILOS_FOOTER_LINKS.map((l) => l.page),
     ])

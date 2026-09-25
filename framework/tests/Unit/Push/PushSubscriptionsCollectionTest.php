@@ -43,7 +43,7 @@ final class PushSubscriptionsCollectionTest extends TestCase
     {
         $subscriptions = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
 
-        $subscriptions->unsubscribe('');
+        $subscriptions->unsubscribeOwned(1, '');
 
         $this->expectNotToPerformAssertions();
     }

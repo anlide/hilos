@@ -12,8 +12,9 @@ use Hilos\HilosException;
  *
  * The framework-owned base every project's connection stands on: it owns the pair
  * that presence is made of — the WebSocket `acceptKey` (the collection id,
- * immutable) and the authenticated `userId` (null while the connection is
- * anonymous, re-pointed by the authenticate/deauthenticate seam). A project that
+ * immutable), the authenticated `userId` (null while the connection is
+ * anonymous, re-pointed by the authenticate/deauthenticate seam), and when the
+ * socket opened. A project that
  * also carries browser sessions stands on {@see HilosSessionConnection} instead,
  * the stage above this one; choosing the stage is the only way to not carry a
  * field, because a subclass cannot drop a property its parent declares.
@@ -37,12 +38,16 @@ abstract class HilosConnection extends RtState
 {
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
+    public const string connectedAt = 'connectedAt';
 
     /** WebSocket accept key (primary id). */
     private(set) string $acceptKey = '';
 
     /** Authenticated database user id, or null while the connection is anonymous. */
     public ?int $userId = null;
+
+    /** Unix timestamp when this socket row was created. */
+    private(set) int $connectedAt = 0;
 
     /**
      * Creates a connection row for a freshly opened socket.
@@ -152,6 +157,7 @@ abstract class HilosConnection extends RtState
     {
         $this->acceptKey = $acceptKey;
         $this->userId = $userId;
+        $this->connectedAt = time();
     }
 
     /**
@@ -164,18 +170,20 @@ abstract class HilosConnection extends RtState
     {
         $this->acceptKey = self::requireString($row, self::acceptKey);
         $this->userId = self::optionalInt($row, self::userId);
+        $this->connectedAt = self::requireInt($row, self::connectedAt);
     }
 
     /**
      * Returns the base fields {@see toArray()} merges the project ones over.
      *
-     * @return array<string, mixed> Base fields (acceptKey, userId)
+     * @return array<string, mixed> Base fields (acceptKey, userId, connectedAt)
      */
     protected function baseToArray(): array
     {
         return [
             self::acceptKey => $this->acceptKey,
             self::userId => $this->userId,
+            self::connectedAt => $this->connectedAt,
         ];
     }
 
@@ -191,5 +199,6 @@ abstract class HilosConnection extends RtState
     protected function applyBaseDiff(array $diff): void
     {
         $this->userId = self::patchOptionalInt($diff, self::userId, $this->userId);
+        $this->connectedAt = self::patchInt($diff, self::connectedAt, $this->connectedAt);
     }
 }

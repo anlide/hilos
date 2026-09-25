@@ -141,15 +141,15 @@ final class PageCatalogResolverTest extends TestCase
     }
 
     /**
-     * A routed page the catalog does not carry is not an error: the public footer pages and the
-     * profile live outside the admin tree, and their subscription answers without identity.
+     * A routed page the catalog does not carry is not an error: the guardian mirror gap answers
+     * without identity until its own catalog leaf lands.
      */
     public function testAPageWithoutAnEntryHasNoIdentityAndNoBreadcrumb(): void
     {
         PageCatalogResolverTestHilos::initBrowser();
 
-        self::assertNull(PageCatalogResolver::identity(HilosPageConstants::HILOS_PROFILE));
-        self::assertSame([], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_PROFILE));
+        self::assertNull(PageCatalogResolver::identity(HilosPageConstants::HILOS_GUARDIAN));
+        self::assertSame([], PageCatalogResolver::breadcrumb(HilosPageConstants::HILOS_GUARDIAN));
     }
 
     public function testASectionListsItsChildrenInCatalogOrder(): void
@@ -204,7 +204,7 @@ final class PageCatalogResolverTest extends TestCase
     {
         PageCatalogResolverTestHilos::initBrowser();
 
-        self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_PROFILE));
+        self::assertSame([], PageCatalogResolver::children(HilosPageConstants::HILOS_GUARDIAN));
     }
 
     /**

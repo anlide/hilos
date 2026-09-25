@@ -36,6 +36,7 @@ use Hilos\Database\SqlParamCollection;
  * @property ?string $pendingSecondFactorUntil
  * @property int $pendingSecondFactorAttempts
  * @property ?string $pendingSecondFactorAck
+ * @property ?string $deviceName
  */
 final class Session extends Object_
 {
@@ -56,6 +57,7 @@ final class Session extends Object_
     public const string pendingSecondFactorUntil = 'pendingSecondFactorUntil';
     public const string pendingSecondFactorAttempts = 'pendingSecondFactorAttempts';
     public const string pendingSecondFactorAck = 'pendingSecondFactorAck';
+    public const string deviceName = 'deviceName';
 
     /**
      * Returns the database collection key for this object type.
@@ -95,6 +97,7 @@ final class Session extends Object_
             self::pendingSecondFactorUntil => $this->entity->pending_second_factor_until,
             self::pendingSecondFactorAttempts => $this->entity->pending_second_factor_attempts,
             self::pendingSecondFactorAck => $this->entity->pending_second_factor_ack,
+            self::deviceName => $this->entity->device_name,
             default => parent::__get($property),
         };
     }
@@ -129,6 +132,7 @@ final class Session extends Object_
             self::pendingSecondFactorAttempts => $this->entity->pending_second_factor_attempts = (int)$value,
             self::pendingSecondFactorAck => $this->entity->pending_second_factor_ack
                 = is_scalar($value) ? (string)$value : null,
+            self::deviceName => $this->entity->device_name = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };
     }
@@ -154,6 +158,7 @@ final class Session extends Object_
             self::createdAt => $this->entity->created_at,
             self::lastSeenAt => $this->entity->last_seen_at,
             self::expiresAt => $this->entity->expires_at,
+            self::deviceName => $this->entity->device_name,
         ];
     }
 

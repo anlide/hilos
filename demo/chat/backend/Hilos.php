@@ -41,6 +41,8 @@ use Demo\Chat\Browser\List\MainBotsBrowserList;
 use Demo\Chat\Browser\List\MainEventsBrowserList;
 use Demo\Chat\Browser\List\MainUsersBrowserList;
 use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
+use Demo\Chat\Browser\List\ProfileDevicesBrowserList;
+use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
@@ -122,6 +124,8 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
 use Demo\Chat\Pages\Hilos\PrivacyPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfileDevicesPage;
+use Demo\Chat\Pages\Hilos\ProfileSessionsPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -271,6 +275,8 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         ProfilePage::PAGE => ProfilePage::class,
+        ProfileSessionsPage::PAGE => ProfileSessionsPage::class,
+        ProfileDevicesPage::PAGE => ProfileDevicesPage::class,
         ChatUserPage::PAGE => ChatUserPage::class,
         BotPage::PAGE => BotPage::class,
         ModeratorPage::PAGE => ModeratorPage::class,
@@ -534,6 +540,8 @@ final class Hilos extends HilosFacade
         MainBotsBrowserList::LIST => MainBotsBrowserList::class,
         AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
         ProfileIdentitiesBrowserList::LIST => ProfileIdentitiesBrowserList::class,
+        ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
+        ProfileDevicesBrowserList::LIST => ProfileDevicesBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -565,6 +573,30 @@ final class Hilos extends HilosFacade
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
+            ProfileSessionsBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+            ProfileDevicesBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfileSessionsPage::PAGE => [
+            ProfileSessionsBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfileDevicesPage::PAGE => [
+            ProfileDevicesBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
         ],
     ];
 
@@ -577,6 +609,13 @@ final class Hilos extends HilosFacade
             ],
         ],
         ProfilePage::PAGE => [
+            SelfConnectionBrowserData::DATA => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfileSessionsPage::PAGE => [
             SelfConnectionBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,

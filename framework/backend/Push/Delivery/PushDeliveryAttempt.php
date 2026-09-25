@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Push\Delivery;
 
+use Closure;
 use Hilos\API\Exception\AsyncHttpResultUnavailableException;
-use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Exception\DbCollectionNotReadableException;
-use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
-use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 
 /**
@@ -19,9 +15,9 @@ use Hilos\Notification\Delivery\DeliveryAttempt;
  * holds one {@see PushEndpointSend} per subscribed device and pumps them all each {@see tick}. It
  * settles when every endpoint has, and reports {@see isDelivered()} true when at least one device
  * accepted the push - the delivery row is one row for the whole `push` channel, so any reachable
- * device counts as delivered. As it settles it prunes every endpoint the transport reported gone
- * (404/410) from {@see ObjectPushSubscriptions}, best-effort: a prune that fails leaves the stale row
- * to be reported gone and pruned on the next send. An attempt built over zero endpoints (a
+ * device counts as delivered. As it settles it reports every endpoint the transport returned
+ * gone (404/410) to its owning delivery agent; persistence stays with the notifications library.
+ * An attempt built over zero endpoints (a
  * subscription list that emptied between dispatch and send, or a channel that could not be
  * configured) settles immediately as a non-delivered failure.
  */
@@ -35,9 +31,12 @@ final class PushDeliveryAttempt implements DeliveryAttempt
 
     /**
      * @param list<PushEndpointSend> $sends Per-endpoint sends for this notification (possibly empty)
+     * @param ?Closure(list<string>): void $onGone Handler for endpoints reported gone
      */
-    public function __construct(private readonly array $sends)
-    {
+    public function __construct(
+        private readonly array $sends,
+        private readonly ?Closure $onGone = null,
+    ) {
     }
 
     /**
@@ -45,7 +44,6 @@ final class PushDeliveryAttempt implements DeliveryAttempt
      *
      * @param float $nowMs Current time in milliseconds
      * @throws AsyncHttpResultUnavailableException When a client reports a result it then withholds
-     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     public function tick(float $nowMs): void
     {
@@ -100,8 +98,7 @@ final class PushDeliveryAttempt implements DeliveryAttempt
     }
 
     /**
-     * Latches the aggregate outcome and prunes every gone endpoint.
-     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
+     * Latches the aggregate outcome and reports every gone endpoint.
      */
     private function settle(): void
     {
@@ -131,28 +128,16 @@ final class PushDeliveryAttempt implements DeliveryAttempt
     }
 
     /**
-     * Removes every gone endpoint from the subscription store, best-effort.
+     * Reports every gone endpoint to the owning delivery agent.
      *
      * @param list<string> $endpoints Endpoints the transport reported gone (404/410)
-     * @throws DbCollectionNotReadableException When nothing here reads the subscriptions collection, or its readiness is on its way
      */
     private function pruneGone(array $endpoints): void
     {
-        if ($endpoints === []) {
+        if ($endpoints === [] || $this->onGone === null) {
             return;
         }
 
-        $subscriptions = Hilos::$db?->getObjectCollection(HilosDbContext::pushSubscriptions);
-        if (!$subscriptions instanceof ObjectPushSubscriptions) {
-            return;
-        }
-
-        foreach ($endpoints as $endpoint) {
-            try {
-                $subscriptions->unsubscribe($endpoint);
-            } catch (DatabaseException) {
-                // Best-effort prune: a stale row is reported gone and pruned again on the next send.
-            }
-        }
+        ($this->onGone)($endpoints);
     }
 }

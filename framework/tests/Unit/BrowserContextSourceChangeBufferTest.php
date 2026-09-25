@@ -59,9 +59,14 @@ final class BrowserContextSourceChangeBufferTest extends TestCase
     {
         $context = new BrowserContextSourceChangeBufferTestContext();
 
-        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Ada']));
-        $context->record(SourceChange::dbUpdated('users', '1', ['lastActivity' => '2026-05-12 10:00:00']));
-        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Grace']));
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Ada'], previous: ['name' => 'Lin']));
+        $context->record(SourceChange::dbUpdated(
+            'users',
+            '1',
+            ['lastActivity' => '2026-05-12 10:00:00'],
+            previous: ['lastActivity' => '2026-05-11 09:00:00'],
+        ));
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Grace'], previous: ['name' => 'Ada']));
         $context->record(SourceChange::dbUpdated('users', '2', ['name' => 'Lin']));
 
         $context->flushToSignalRouter();
@@ -76,6 +81,13 @@ final class BrowserContextSourceChangeBufferTest extends TestCase
                 'lastActivity' => '2026-05-12 10:00:00',
             ],
             $changes[0]->row,
+        );
+        $this->assertSame(
+            [
+                'name' => 'Lin',
+                'lastActivity' => '2026-05-11 09:00:00',
+            ],
+            $changes[0]->previous,
         );
         $this->assertSame('2', $changes[1]->sourceId);
         $this->assertSame(['name' => 'Lin'], $changes[1]->row);

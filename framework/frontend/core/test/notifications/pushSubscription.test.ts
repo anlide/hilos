@@ -16,6 +16,9 @@ const SNAPSHOT: HilosPushSubscriptionSnapshot = {
   auth: 'auth-secret',
 }
 
+const SNAPSHOT_ENDPOINT_HASH =
+  'f7a263f8786e9f9540c48a757245e31290708979548c369f207cbcff9e23bb86'
+
 interface FakeEnvironmentOptions {
   supported?: boolean
   permission?: HilosPushPermission
@@ -99,6 +102,7 @@ describe('push subscription store', () => {
     expect(store.supported.get()).toBe(false)
     expect(store.permission.get()).toBe('unsupported')
     expect(store.subscribed.get()).toBe(false)
+    expect(store.refreshed.get()).toBe(true)
   })
 
   it('reflects an existing subscription and permission on refresh', async () => {
@@ -113,6 +117,8 @@ describe('push subscription store', () => {
     expect(store.supported.get()).toBe(true)
     expect(store.permission.get()).toBe('granted')
     expect(store.subscribed.get()).toBe(true)
+    expect(store.endpointHash.get()).toBe(SNAPSHOT_ENDPOINT_HASH)
+    expect(store.refreshed.get()).toBe(true)
   })
 
   it('subscribes and registers the device server-side on enable', async () => {
@@ -124,6 +130,7 @@ describe('push subscription store', () => {
 
     expect(ok).toBe(true)
     expect(store.subscribed.get()).toBe(true)
+    expect(store.endpointHash.get()).toBe(SNAPSHOT_ENDPOINT_HASH)
     expect(store.busy.get()).toBe(false)
     expect(calls.subscribe).toEqual(['vapid-public'])
     expect(sent).toEqual([
@@ -235,6 +242,7 @@ describe('push subscription store', () => {
 
     expect(ok).toBe(true)
     expect(store.subscribed.get()).toBe(false)
+    expect(store.endpointHash.get()).toBeNull()
     expect(calls.unsubscribe).toBe(1)
     expect(sent).toEqual([
       {
@@ -270,6 +278,8 @@ describe('push subscription store', () => {
     expect(store.supported.get()).toBe(false)
     expect(store.permission.get()).toBe('default')
     expect(store.subscribed.get()).toBe(false)
+    expect(store.endpointHash.get()).toBeNull()
+    expect(store.refreshed.get()).toBe(false)
     expect(store.busy.get()).toBe(false)
   })
 })

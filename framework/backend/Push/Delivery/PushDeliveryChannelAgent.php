@@ -26,6 +26,7 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\Exception\PushException;
 use Hilos\Push\PushChannelConfig;
 use Hilos\Push\WebPushRequestFactory;
@@ -147,7 +148,15 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             $sends[] = $this->openSend($subscription, $payload);
         }
 
-        return new PushDeliveryAttempt($sends);
+        return new PushDeliveryAttempt(
+            $sends,
+            function (array $endpoints): void {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE,
+                    new PushSubscriptionsGoneSignalData($endpoints),
+                );
+            },
+        );
     }
 
     /**

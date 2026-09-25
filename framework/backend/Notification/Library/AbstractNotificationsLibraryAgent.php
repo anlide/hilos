@@ -72,6 +72,8 @@ use Hilos\Notification\NotificationSeverity;
 use Hilos\Notification\NotificationSignalName;
 use Hilos\Pages\Communications\AbstractHilosCommunicationsDeliveriesPage;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
+use Hilos\Push\DTO\PushRemoveActionDTO;
+use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -151,11 +153,14 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * that directory need not be on this library's node.
      * {@see HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT} is absent: it is the receipt this
      * library sends back, and the backup agent declares it.
+     * The fourth comes from a push delivery shard: it reports endpoints the transport found
+     * gone, and this library marks the rows because it owns the subscription table.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
         HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
         HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
+        HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
     ];
 
     /**
@@ -177,10 +182,11 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         NotificationPreferenceAction::CHANNEL_SET => NotificationChannelPreferenceActionDTO::class,
         PushSubscriptionAction::SUBSCRIBE => PushSubscribeActionDTO::class,
         PushSubscriptionAction::UNSUBSCRIBE => PushUnsubscribeActionDTO::class,
+        PushSubscriptionAction::REMOVE => PushRemoveActionDTO::class,
     ];
 
     /**
-     * All five, because all five are about somebody's own notifications.
+     * All six, because all six are about somebody's own notifications.
      *
      * The pages they came off were closed by {@see PageAccessLevel::AUTHENTICATED}, which
      * gated their actions along with the subscription. An agent action carries no page level,
@@ -194,6 +200,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         NotificationPreferenceAction::CHANNEL_SET,
         PushSubscriptionAction::SUBSCRIBE,
         PushSubscriptionAction::UNSUBSCRIBE,
+        PushSubscriptionAction::REMOVE,
     ];
 
     /**
@@ -327,6 +334,18 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                     );
                 }
                 $this->retryDelivery($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE:
+                if (!$data->data instanceof PushSubscriptionsGoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        PushSubscriptionsGoneSignalData::class,
+                        $data->data,
+                    );
+                }
+                Hilos::$db->pushSubscriptions->actions->markGone($data->data->endpoints);
 
                 return;
 
@@ -521,7 +540,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs one of the five owned controls and answers the surface that submitted it.
+     * Runs one of the six owned controls and answers the surface that submitted it.
      *
      * None of them answers with a reply: each writes a row and either fans the change to the
      * person's own devices or leaves the browser to read its own state back, exactly as it
@@ -582,6 +601,14 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, PushUnsubscribeActionDTO::class, $dto);
                 }
                 $this->unsubscribePush($acceptKey, $dto);
+
+                break;
+
+            case PushSubscriptionAction::REMOVE:
+                if (!$dto instanceof PushRemoveActionDTO) {
+                    throw new InvalidActionPayloadException($action, PushRemoveActionDTO::class, $dto);
+                }
+                $this->removePush($acceptKey, $dto);
 
                 break;
 
@@ -826,9 +853,31 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
             throw new ValidationException('Push subscription endpoint is required');
         }
 
-        $this->requireUserId($acceptKey);
+        Hilos::$db->pushSubscriptions->actions->unsubscribeOwned(
+            $this->requireUserId($acceptKey),
+            $dto->endpoint,
+        );
+    }
 
-        Hilos::$db->pushSubscriptions->actions->unsubscribe($dto->endpoint);
+    /**
+     * Removes another or expired device row owned by the acting user.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @param PushRemoveActionDTO $dto Subscription row to remove
+     * @throws ValidationException When the row is absent or belongs to another user
+     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
+     * @throws DatabaseException When the subscription lookup or delete fails
+     */
+    private function removePush(string $acceptKey, PushRemoveActionDTO $dto): void
+    {
+        if (!Hilos::$db->pushSubscriptions->actions->removeOwned(
+            $this->requireUserId($acceptKey),
+            $dto->subscriptionId,
+        )) {
+            throw new ValidationException('This device is already gone');
+        }
+
+        $this->setActionSuccessMessage('Device removed');
     }
 
     /**

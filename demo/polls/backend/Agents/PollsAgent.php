@@ -143,10 +143,19 @@ final class PollsAgent extends AbstractAgent
     {
         $connection = Hilos::$rt->connections[$acceptKey] ?? null;
         if ($connection === null) {
-            Hilos::$rt->connections->actions->register($acceptKey, $frame->userId, $frame->sessionToken);
+            Hilos::$rt->connections->actions->register(
+                $acceptKey,
+                $frame->userId,
+                $frame->sessionToken,
+                $frame->sessionId,
+            );
         } else {
-            if ($connection->sessionToken !== $frame->sessionToken) {
-                Hilos::$rt->connections->actions->repointSessionToken($acceptKey, $frame->sessionToken);
+            if ($connection->sessionToken !== $frame->sessionToken || $connection->sessionId !== $frame->sessionId) {
+                Hilos::$rt->connections->actions->repointSessionToken(
+                    $acceptKey,
+                    $frame->sessionToken,
+                    $frame->sessionId,
+                );
             }
             if ($connection->userId !== $frame->userId) {
                 $connection->actions->bindUser($frame->userId);

@@ -23,6 +23,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @param ?string $emitter Identity of the process that sent this fact, or null when unstamped
+     * @param array<string, mixed> $previous Previous values of the changed columns
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -31,6 +32,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
         public readonly ?string $origin = null,
         public readonly ?string $originRequestId = null,
         public readonly ?string $emitter = null,
+        public readonly array $previous = [],
     ) {
     }
 
@@ -49,6 +51,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             origin: $this->origin,
             originRequestId: $this->originRequestId,
             emitter: $emitter,
+            previous: $this->previous,
         );
     }
 
@@ -63,6 +66,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
             SyncSignalDataKey::ID_STRING => $this->idString,
             SyncSignalDataKey::ROW => $this->row,
+            SyncSignalDataKey::PREVIOUS => $this->previous,
             SyncSignalDataKey::ORIGIN => $this->origin,
             SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
             SyncSignalDataKey::EMITTER => $this->emitter,
@@ -74,7 +78,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no collection key, no row id or no row
+     * @throws InvalidFormatException When the payload carries no collection key, row id, row or previous values
      */
     public static function fromArray(array $data): static
     {
@@ -85,6 +89,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
             originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
             emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
+            previous: self::requireArray($data, SyncSignalDataKey::PREVIOUS),
         );
     }
 }

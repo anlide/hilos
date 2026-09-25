@@ -26,7 +26,6 @@ use Hilos\Runtime\View\Item\HilosSessionConnection;
  *
  * @extends HilosSessionConnection<StateConnection>
  *
- * @property-read int $connectedAt Unix timestamp when connected
  * @property-read string $outboundModerationPhase Current moderation phase
  * @property-read ?string $outboundModerationMessage Submitted message text, or null when none is
  * @property-read ?string $outboundModerationReason Rejection or unavailable reason, or null
@@ -76,7 +75,6 @@ final class Connection extends HilosSessionConnection
     public function __get(string $name): mixed
     {
         return match ($name) {
-            StateConnection::connectedAt => $this->_state->connectedAt,
             StateConnection::outboundModerationPhase => $this->_state->outboundModerationPhase,
             StateConnection::outboundModerationMessage => $this->_state->outboundModerationMessage,
             StateConnection::outboundModerationReason => $this->_state->outboundModerationReason,

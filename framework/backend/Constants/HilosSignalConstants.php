@@ -89,6 +89,10 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos current-user profile page. */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE = 'subscription_page_hilos_profile';
 
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_SESSIONS = 'subscription_page_hilos_profile_sessions';
+
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_DEVICES = 'subscription_page_hilos_profile_devices';
+
     /** Subscription signal for the profile's security page - the second factor (HIL-494). */
     public const string SUBSCRIPTION_PAGE_HILOS_PROFILE_SECURITY = 'subscription_page_hilos_profile_security';
 
@@ -708,6 +712,12 @@ final class HilosSignalConstants
      * the action is - a project that kept its own would be naming a door it no longer holds.
      */
     public const string HILOS_LOGOUT = 'hilos_logout';
+
+    /** Client → sessions library: end one other session owned by the acting user. */
+    public const string HILOS_SESSION_END = 'hilos_session_end';
+
+    /** Client → sessions library: end every other non-impersonating session of the acting user. */
+    public const string HILOS_SESSIONS_END_OTHERS = 'hilos_sessions_end_others';
 
     /**
      * Client → sessions library: erase everything this browser holds and end its session (HIL-839).
@@ -1579,6 +1589,9 @@ final class HilosSignalConstants
      * no raw-send intake, so this is the channel's only signal.
      */
     public const string HILOS_PUSH_DELIVER = 'hilos_push_deliver';
+
+    /** Push delivery agent → notifications library: endpoints reported gone by the service. */
+    public const string HILOS_PUSH_SUBSCRIPTIONS_GONE = 'hilos_push_subscriptions_gone';
 
     // ── Hilos logs admin: the node that owns the files → the cluster log aggregator (agent signal) ──
     /**

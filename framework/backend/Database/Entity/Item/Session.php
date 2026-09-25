@@ -65,6 +65,7 @@ final class Session extends Entity
     public const string pending_second_factor_until = 'pending_second_factor_until';
     public const string pending_second_factor_attempts = 'pending_second_factor_attempts';
     public const string pending_second_factor_ack = 'pending_second_factor_ack';
+    public const string device_name = 'device_name';
 
     public const string _table = 'hilos_session';
     public const string _primary = self::id;
@@ -84,6 +85,7 @@ final class Session extends Entity
         self::pending_second_factor_until,
         self::pending_second_factor_attempts,
         self::pending_second_factor_ack,
+        self::device_name,
     ];
 
     public const array _types = [
@@ -102,6 +104,7 @@ final class Session extends Entity
         self::pending_second_factor_until => PhpType::DATETIME->value,
         self::pending_second_factor_attempts => PhpType::INTEGER->value,
         self::pending_second_factor_ack => PhpType::STRING->value,
+        self::device_name => PhpType::STRING->value,
     ];
 
     public const array _indexes = [
@@ -143,4 +146,5 @@ final class Session extends Entity
     public ?string $pending_second_factor_until = null;
     public int $pending_second_factor_attempts = 0;
     public ?string $pending_second_factor_ack = null;
+    public ?string $device_name = null;
 }

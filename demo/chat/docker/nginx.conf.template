@@ -91,6 +91,12 @@ http {
         location = /profile {
             try_files /index.html =404;
         }
+        location = /profile/sessions {
+            try_files /index.html =404;
+        }
+        location = /profile/devices {
+            try_files /index.html =404;
+        }
         location = /profile/security {
             try_files /index.html =404;
         }

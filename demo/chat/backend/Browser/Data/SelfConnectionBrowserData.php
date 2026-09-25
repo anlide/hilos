@@ -44,8 +44,10 @@ final class SelfConnectionBrowserData
                     Connection::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 ],
                 BrowserDataFieldKey::FIELDS => [
+                    Connection::acceptKey => SelfConnectionSignalData::acceptKey,
                     Connection::userId => SelfConnectionSignalData::userId,
                     Connection::connectedAt => SelfConnectionSignalData::connectedAt,
+                    Connection::sessionId => SelfConnectionSignalData::sessionId,
                     Connection::outboundModerationPhase,
                     Connection::outboundModerationMessage,
                     Connection::outboundModerationReason,
@@ -65,6 +67,7 @@ final class SelfConnectionBrowserData
                 BrowserDataFieldKey::TRIGGERS => [
                     Connection::userId,
                     Connection::connectedAt,
+                    Connection::sessionId,
                     Connection::outboundModerationPhase,
                     Connection::outboundModerationMessage,
                     Connection::outboundModerationReason,

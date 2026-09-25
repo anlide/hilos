@@ -34,6 +34,9 @@ final class PushSubscription extends Entity
     public const string p256dh = 'p256dh';
     public const string auth = 'auth';
     public const string user_agent = 'user_agent';
+    public const string device_name = 'device_name';
+    public const string endpoint_hash = 'endpoint_hash';
+    public const string gone_at = 'gone_at';
     public const string created_at = 'created_at';
     public const string last_seen_at = 'last_seen_at';
 
@@ -46,6 +49,9 @@ final class PushSubscription extends Entity
         self::p256dh,
         self::auth,
         self::user_agent,
+        self::device_name,
+        self::endpoint_hash,
+        self::gone_at,
         self::created_at,
         self::last_seen_at,
     ];
@@ -57,6 +63,9 @@ final class PushSubscription extends Entity
         self::p256dh => PhpType::STRING->value,
         self::auth => PhpType::STRING->value,
         self::user_agent => PhpType::STRING->value,
+        self::device_name => PhpType::STRING->value,
+        self::endpoint_hash => PhpType::STRING->value,
+        self::gone_at => PhpType::DATETIME->value,
         self::created_at => PhpType::DATETIME->value,
         self::last_seen_at => PhpType::DATETIME->value,
     ];
@@ -82,6 +91,9 @@ final class PushSubscription extends Entity
     public string $p256dh = '';
     public string $auth = '';
     public ?string $user_agent = null;
+    public ?string $device_name = null;
+    public string $endpoint_hash;
+    public ?string $gone_at = null;
     public string $created_at;
     public ?string $last_seen_at = null;
 }

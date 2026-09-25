@@ -18,6 +18,12 @@ final class HilosPageConstants
     /** @var string Hilos current-user profile page */
     public const string HILOS_PROFILE = 'hilos_profile';
 
+    /** @var string Current-user browser sessions */
+    public const string HILOS_PROFILE_SESSIONS = 'hilos_profile_sessions';
+
+    /** @var string Current-user push devices */
+    public const string HILOS_PROFILE_DEVICES = 'hilos_profile_devices';
+
     /** @var string Hilos profile security page - the second factor (HIL-494) */
     public const string HILOS_PROFILE_SECURITY = 'hilos_profile_security';
 

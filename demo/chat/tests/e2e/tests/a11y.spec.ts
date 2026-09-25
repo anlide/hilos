@@ -148,3 +148,27 @@ test('the profile page carries its refusal voice before any refusal', async ({
   await expect(dialogLive).toHaveAttribute('role', 'alert')
   await expect(dialogLive).toHaveText('')
 })
+
+test('the profile session and device pages expose one named surface', async ({
+  page,
+}) => {
+  await signUp(page)
+
+  await gotoPage(page, '/profile/sessions')
+  await expect(page.getByTestId('profile-sessions-heading')).toHaveText(
+    'Sessions',
+  )
+  await expect(page.getByTestId('profile-sessions')).toHaveAttribute(
+    'aria-label',
+    'Sessions',
+  )
+
+  await gotoPage(page, '/profile/devices')
+  await expect(page.getByTestId('profile-devices-heading')).toHaveText(
+    'Devices',
+  )
+  await expect(page.getByTestId('profile-devices')).toHaveAttribute(
+    'aria-label',
+    'Devices',
+  )
+})

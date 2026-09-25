@@ -34,6 +34,7 @@ use Hilos\HilosException;
  * @property-read ?string $pendingSecondFactorUntil Moment the wait runs out, or null when none waits
  * @property-read int $pendingSecondFactorAttempts Wrong codes the wait has taken so far
  * @property-read ?string $pendingSecondFactorAck Success ack to show once the step passes, or null when none is owed
+ * @property-read ?string $deviceName Browser and platform label, or null when unrecognized
  * @property-read SessionActions $actions Actions for write operations on this session
  */
 final class Session extends DbItem
@@ -65,6 +66,7 @@ final class Session extends DbItem
             ObjectSession::pendingSecondFactorUntil => $this->_object->pendingSecondFactorUntil,
             ObjectSession::pendingSecondFactorAttempts => $this->_object->pendingSecondFactorAttempts,
             ObjectSession::pendingSecondFactorAck => $this->_object->pendingSecondFactorAck,
+            ObjectSession::deviceName => $this->_object->deviceName,
             default => parent::__get($name),
         };
     }

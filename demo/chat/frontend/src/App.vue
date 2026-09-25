@@ -54,6 +54,8 @@ import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import Profile from './views/Profile/Profile.vue'
+import ProfileDevices from './views/ProfileDevices/ProfileDevices.vue'
+import ProfileSessions from './views/ProfileSessions/ProfileSessions.vue'
 import ProfileSecurity from './views/Profile/ProfileSecurity.vue'
 import Terms from './views/Terms/Terms.vue'
 import User from './views/User/User.vue'
@@ -100,6 +102,8 @@ const pages: Record<string, Component> = {
   [PAGE_ADMIN_USERS]: AdminUsers,
   ...hilosAdminViews(),
   [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_SESSIONS]: ProfileSessions,
+  [HilosPages.PROFILE_DEVICES]: ProfileDevices,
   [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,

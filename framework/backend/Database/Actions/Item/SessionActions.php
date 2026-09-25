@@ -376,6 +376,28 @@ final class SessionActions extends DbActions
     }
 
     /**
+     * Stores the best device label known for this browser session.
+     *
+     * @param ?string $deviceName Browser and platform label, or null when unrecognized
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function setDeviceName(?string $deviceName): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for setDeviceName (id is null)');
+        }
+        if ($this->object->deviceName === $deviceName) {
+            return;
+        }
+
+        $this->object->deviceName = $deviceName;
+        $this->object->sync();
+    }
+
+    /**
      * Removes this session row and its in-memory object.
      *
      * @throws ItemNotFoundForDeleteException When the session is not persisted (id is null)
@@ -396,7 +418,7 @@ final class SessionActions extends DbActions
         $idString = $this->object->getIdString();
         $this->object->delete();
         unset($objectCollection[$idString]);
-    }
+     }
 
     /**
      * Ages this session's expiry into the past so the next resolution reads it as expired.

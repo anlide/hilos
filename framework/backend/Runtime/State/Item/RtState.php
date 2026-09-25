@@ -142,6 +142,7 @@ abstract class RtState
         if ($diff === []) {
             return;
         }
+        $previous = array_intersect_key($this->rtSyncBaseline, $diff);
 
         $collectionKey = static::getRtCollectionKey();
         if ($collectionKey !== '' && Hilos::$sr !== null) {
@@ -154,6 +155,7 @@ abstract class RtState
                     $diff,
                     ExecutionContext::currentAcceptKey(),
                     ExecutionContext::currentRequestId(),
+                    previous: $previous,
                 ),
             );
         }

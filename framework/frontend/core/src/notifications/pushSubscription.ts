@@ -120,6 +120,10 @@ export interface HilosPushSubscriptionStore {
   readonly permission: ReadonlySignal<HilosPushPermission>
   /** Whether this device currently holds a push subscription (reflects the browser). */
   readonly subscribed: ReadonlySignal<boolean>
+  /** SHA-256 hex fingerprint of this browser's endpoint, or null when unsubscribed. */
+  readonly endpointHash: ReadonlySignal<string | null>
+  /** Whether the browser's subscription has been read at least once. */
+  readonly refreshed: ReadonlySignal<boolean>
   /** Whether an opt-in/out is mid-flight, so the toggle shows a loader and disables. */
   readonly busy: ReadonlySignal<boolean>
   /**
@@ -174,30 +178,44 @@ export function createHilosPushSubscriptionStore(
   const permission: WritableSignal<HilosPushPermission> =
     createSignal<HilosPushPermission>('default')
   const subscribed = createSignal(false)
+  const endpointHash = createSignal<string | null>(null)
+  const refreshed = createSignal(false)
   const busy = createSignal(false)
 
   return {
     supported,
     permission,
     subscribed,
+    endpointHash,
+    refreshed,
     busy,
     async refresh() {
+      refreshed.set(false)
       if (!environment.isSupported()) {
         supported.set(false)
         permission.set('unsupported')
         subscribed.set(false)
+        endpointHash.set(null)
+        refreshed.set(true)
 
         return
       }
       supported.set(true)
       permission.set(environment.permission())
       try {
-        subscribed.set((await environment.getSubscription()) !== null)
+        const current = await environment.getSubscription()
+        subscribed.set(current !== null)
+        endpointHash.set(
+          current === null ? null : await pushEndpointHash(current.endpoint),
+        )
       } catch {
         // The browser's getSubscription() rejected (the push service is unreachable);
         // report not-subscribed rather than leaking an unhandled rejection, and let a
         // later refresh reconcile.
         subscribed.set(false)
+        endpointHash.set(null)
+      } finally {
+        refreshed.set(true)
       }
     },
     async enable(connection, vapidPublicKey) {
@@ -227,10 +245,12 @@ export function createHilosPushSubscriptionStore(
         if (!sent) {
           await environment.unsubscribe()
           subscribed.set(false)
+          endpointHash.set(null)
 
           return false
         }
         subscribed.set(true)
+        endpointHash.set(await pushEndpointHash(snapshot.endpoint))
 
         return true
       } catch {
@@ -239,6 +259,7 @@ export function createHilosPushSubscriptionStore(
         // refused. Leave the device unsubscribed and report failure instead of surfacing
         // an unhandled rejection; a later refresh reconciles the real browser state.
         subscribed.set(false)
+        endpointHash.set(null)
 
         return false
       } finally {
@@ -254,6 +275,7 @@ export function createHilosPushSubscriptionStore(
         const current = await environment.getSubscription()
         await environment.unsubscribe()
         subscribed.set(false)
+        endpointHash.set(null)
         if (current !== null) {
           connection.sendAction(PUSH_ACTION_UNSUBSCRIBE, {
             endpoint: current.endpoint,
@@ -274,9 +296,28 @@ export function createHilosPushSubscriptionStore(
       supported.set(false)
       permission.set('default')
       subscribed.set(false)
+      endpointHash.set(null)
+      refreshed.set(false)
       busy.set(false)
     },
   }
+}
+
+/**
+ * Fingerprint a push endpoint without exposing it to page data.
+ *
+ * @param endpoint Browser push endpoint URL.
+ * @returns Lowercase SHA-256 hexadecimal fingerprint.
+ */
+async function pushEndpointHash(endpoint: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(endpoint),
+  )
+
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
 }
 
 /** Default service-worker path the browser environment registers and scopes at `/`. */

@@ -6,7 +6,9 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Http\DeviceName;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PushSubscriptions as EntityPushSubscriptions;
@@ -22,8 +24,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * Persistence primitives for browser push subscriptions, keyed by the device
  * `endpoint` (UNIQUE). {@see subscribe()} is the opt-in write — it upserts the row
  * for an endpoint (rotated keys or a new owner replace it in place);
- * {@see unsubscribe()} removes it (device opt-out, or a stale endpoint the push
- * transport reported gone, 404/410). {@see forUser()} lists a recipient's endpoints
+ * {@see unsubscribeOwned()} removes the acting device, while {@see markGone()} keeps a
+ * transport-expired endpoint visible to its owner. {@see forUser()} lists live endpoints
  * for the push delivery channel to send to; {@see deleteForUser()} clears a user's
  * rows on account deletion (best-effort, soft ref).
  *
@@ -77,6 +79,9 @@ final class PushSubscriptions extends Objects
         $subscription->p256dh = $p256dh;
         $subscription->auth = $auth;
         $subscription->userAgent = $userAgent;
+        $subscription->deviceName = DeviceName::fromUserAgent($userAgent);
+        $subscription->endpointHash = hash('sha256', $endpoint);
+        $subscription->goneAt = null;
         $subscription->lastSeenAt = $now;
         $subscription->sync();
 
@@ -86,32 +91,80 @@ final class PushSubscriptions extends Objects
     }
 
     /**
-     * Removes the subscription of an endpoint (device opt-out or stale endpoint).
+     * Marks transport-expired endpoints while keeping their device rows visible.
      *
-     * Idempotent: an unknown endpoint is a no-op. Also the prune path for an endpoint
-     * the push transport reports gone (404/410).
+     * @param list<string> $endpoints Endpoints reported gone by the push service
+     * @return int Rows newly marked gone
+     * @throws DatabaseException When a lookup or write query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     */
+    public function markGone(array $endpoints): int
+    {
+        $marked = 0;
+        $goneAt = TimeHelper::getSqlDateTime();
+        foreach (array_unique($endpoints) as $endpoint) {
+            if ($endpoint === '') {
+                continue;
+            }
+            $subscription = $this->find($endpoint);
+            if ($subscription === null || $subscription->goneAt !== null) {
+                continue;
+            }
+            $subscription->goneAt = $goneAt;
+            $subscription->sync();
+            $marked++;
+        }
+
+        return $marked;
+    }
+
+    /**
+     * Removes one subscription only when it belongs to the acting user.
      *
+     * @param int $userId Acting user id
+     * @param int $id Subscription row id
+     * @return bool Whether an owned row was removed
+     * @throws DatabaseException When the lookup or delete query fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws LogicException When the object collection cannot resolve its entity metadata
+     */
+    public function removeOwned(int $userId, int $id): bool
+    {
+        $subscription = $this->get($id);
+        if ($subscription === null || $subscription->userId !== $userId) {
+            return false;
+        }
+
+        $subscription->delete();
+        unset($this[$id]);
+
+        return true;
+    }
+
+    /**
+     * Removes the acting user's subscription for one endpoint.
+     *
+     * @param int $userId Acting user id
      * @param string $endpoint Browser push endpoint URL
      * @throws DatabaseException When the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      */
-    public function unsubscribe(string $endpoint): void
+    public function unsubscribeOwned(int $userId, string $endpoint): void
     {
         if ($endpoint === '') {
             return;
         }
 
         $subscription = $this->find($endpoint);
-        if ($subscription === null) {
+        if ($subscription === null || $subscription->userId !== $userId || $subscription->id === null) {
             return;
         }
 
         $id = $subscription->id;
         $subscription->delete();
-        if ($id !== null) {
-            unset($this[$id]);
-        }
+        unset($this[$id]);
     }
 
     /**
@@ -138,6 +191,9 @@ final class PushSubscriptions extends Objects
 
         $subscriptions = [];
         foreach ($entities as $entity) {
+            if ($entity->gone_at !== null) {
+                continue;
+            }
             $id = $entity->id;
             if ($id === null) {
                 continue;

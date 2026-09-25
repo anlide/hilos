@@ -22,7 +22,8 @@ use Hilos\Runtime\View\Item\HilosSessionConnection;
  * Write API for the connections runtime collection — the session stage (HIL-509).
  *
  * Two writes differ from {@see HilosConnectionsActions}: the row a socket opens with also
- * names the session it belongs to, and a row can be moved onto a renamed session (HIL-582).
+ * names the session it belongs to by token and row id, and a row can be moved onto a renamed
+ * session (HIL-582).
  * A third used to mark the row with the ack its surface owed the person (HIL-422). That mark
  * moved to the session row in HIL-875, because what it announces is about the account and a
  * socket is the wrong lifetime for it: the socket dies under a person who has not read it,
@@ -42,6 +43,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @param string $acceptKey WebSocket accept key (connection id)
      * @param ?int $userId Authenticated user id, or null for an anonymous session
      * @param ?string $sessionToken Session cookie token this socket belongs to, or null when it belongs to none
+     * @param ?int $sessionId Database session row id, or null when this socket belongs to no session
      * @return HilosConnection View item for the new connection
      *
      * @throws RtActionsCallbackNotSetException When the runtime item factory callback is not configured
@@ -52,18 +54,23 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
-    public function register(string $acceptKey, ?int $userId, ?string $sessionToken = null): HilosConnection
+    public function register(
+        string $acceptKey,
+        ?int $userId,
+        ?string $sessionToken = null,
+        ?int $sessionId = null,
+    ): HilosConnection
     {
         /** @var class-string<StateHilosSessionConnection> $stateClass */
         $stateClass = $this->connectionStateClass(StateHilosSessionConnection::class);
-        $state = $stateClass::create($acceptKey, $userId, $sessionToken);
+        $state = $stateClass::create($acceptKey, $userId, $sessionToken, $sessionId);
         $this->addStateToCollection($state);
 
         return $this->createRtItemFromState($state);
     }
 
     /**
-     * Moves one live connection onto the token its session was renamed to (HIL-582).
+     * Moves one live connection onto the token and row id its session now carries (HIL-582).
      *
      * The narrow companion to the rule the row states: a socket that changes session is
      * a new row, and that has not changed. What this covers is the other case — the
@@ -81,6 +88,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      *
      * @param string $acceptKey Accept key of the connection to re-point
      * @param string $newToken Session token the row now belongs to
+     * @param ?int $sessionId Database session row id the connection now belongs to
      *
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
@@ -88,7 +96,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws HilosException Whatever the project's read of its own connection fields raises
      */
-    public function repointSessionToken(string $acceptKey, string $newToken): void
+    public function repointSessionToken(string $acceptKey, string $newToken, ?int $sessionId): void
     {
         $this->ensureCanWrite();
 
@@ -97,6 +105,9 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
             return;
         }
 
-        $this->applyDiffToState($state, [StateHilosSessionConnection::sessionToken => $newToken]);
+        $this->applyDiffToState($state, [
+            StateHilosSessionConnection::sessionToken => $newToken,
+            StateHilosSessionConnection::sessionId => $sessionId,
+        ]);
     }
 }

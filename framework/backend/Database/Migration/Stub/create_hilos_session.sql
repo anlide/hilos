@@ -61,6 +61,11 @@
 -- pair above: a reload, a second tab and a restarted daemon all come back to the step.
 -- The person's column carries an index for the reverse lookup - switching the second
 -- factor off lets every browser waiting on it go.
+--
+-- `device_name` is the browser and platform label derived from the User-Agent at
+-- handshake time. It is display-only and may be NULL when the header is absent or
+-- unrecognized. The table is purged as a whole by the framework anonymization verdict,
+-- so the new personal label needs no per-column strategy of its own.
 
 CREATE TABLE `hilos_session` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -78,6 +83,7 @@ CREATE TABLE `hilos_session` (
     `pending_second_factor_until` TIMESTAMP NULL DEFAULT NULL,
     `pending_second_factor_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `pending_second_factor_ack` VARCHAR(64) DEFAULT NULL,
+    `device_name` VARCHAR(64) DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_session_token` (`token`),
     KEY `idx_session_user` (`user_id`),

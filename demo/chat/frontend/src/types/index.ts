@@ -17,6 +17,18 @@ export {
   passkeyCredentialFromFields,
   PasskeyCredentials,
 } from './PasskeyCredential'
+export {
+  type Session,
+  SESSION_TYPE,
+  sessionFromFields,
+  Sessions,
+} from './Session.js'
+export {
+  type PushSubscription,
+  PUSH_SUBSCRIPTION_TYPE,
+  pushSubscriptionFromFields,
+  PushSubscriptions,
+} from './PushSubscription.js'
 export { type Bot, BOT_TYPE, botFromFields, Bots } from './Bot'
 export {
   type ModeratorPiece,

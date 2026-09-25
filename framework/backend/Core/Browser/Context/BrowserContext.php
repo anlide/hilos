@@ -20,6 +20,7 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
@@ -1097,12 +1098,17 @@ abstract class BrowserContext
             ? $next->row
             : array_replace($current->row, $next->row);
 
+        $mutationType = $this->mergeMutationType($current->mutationType, $next->mutationType);
+
         return new SourceChange(
             kind: $current->kind,
             sourceKey: $current->sourceKey,
             sourceId: $current->sourceId,
-            mutationType: $this->mergeMutationType($current->mutationType, $next->mutationType),
+            mutationType: $mutationType,
             row: $row,
+            previous: $mutationType === TableMutationType::Update
+                ? array_replace($next->previous, $current->previous)
+                : [],
             origin: $next->origin,
             originRequestId: $next->originRequestId,
         );
@@ -1423,27 +1429,38 @@ abstract class BrowserContext
             }
 
             $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
-            $rowKey = $this->rowKeyForChange($browserConfig, $change, $browserParams);
-            if ($rowKey === null) {
-                continue;
-            }
-
-            $row = $this->buildBrowserRow(
-                browserKey: $browserKey,
-                browserConfig: $browserConfig,
-                rowKey: $rowKey,
-                acceptKey: $acceptKey,
-                pageParams: $pageParams,
-                browserParams: $browserParams,
-                joinedItems: [],
+            $rowKeys = $this->rowKeysForChange($browserConfig, $change, $browserParams);
+            $anchorRowKey = $this->selfAnchoredListRowKey(
+                $browserConfig,
+                $acceptKey,
+                $pageParams,
+                $browserParams,
             );
-
-            if ($row === null) {
-                $this->addBrowserDelete($signalTables, $acceptKey, $page, $browserKey, $rowKey);
+            if ($anchorRowKey !== null) {
+                $rowKeys = in_array($anchorRowKey, $rowKeys, true) ? [$anchorRowKey] : [];
+            }
+            if ($rowKeys === []) {
                 continue;
             }
 
-            $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
+            foreach ($rowKeys as $rowKey) {
+                $row = $this->buildBrowserRow(
+                    browserKey: $browserKey,
+                    browserConfig: $browserConfig,
+                    rowKey: $rowKey,
+                    acceptKey: $acceptKey,
+                    pageParams: $pageParams,
+                    browserParams: $browserParams,
+                    joinedItems: [],
+                );
+
+                if ($row === null) {
+                    $this->addBrowserDelete($signalTables, $acceptKey, $page, $browserKey, $rowKey);
+                    continue;
+                }
+
+                $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
+            }
         }
     }
 
@@ -1639,7 +1656,7 @@ abstract class BrowserContext
                 continue;
             }
 
-            $rowKey = $this->rowKeyValue($rowConfig, $address, $browserParams);
+            $rowKey = $this->rowKeyValue($rowConfig, $address, $browserParams, $address->row);
             if ($rowKey !== null) {
                 return $rowKey;
             }
@@ -2084,27 +2101,95 @@ abstract class BrowserContext
     }
 
     /**
-     * Resolves the logical browser row key affected by a source change.
+     * Resolves the only row key a live self-anchored list may send to one subscriber.
+     *
+     * @param BrowserSourceConfig $browserConfig Browser source config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $browserParams Resolved table params
+     * @return int|string|null Anchor row key, or null when this is not a live self-anchored list
+     * @throws PageInternalErrorException When the anchor source declaration is malformed
+     * @throws DbCollectionNotReadableException When the database anchor is not readable here
+     * @throws RtCollectionNotReadableException When the runtime anchor is not readable here
+     * @throws DatabaseException When the anchor collection or item cannot be read
+     */
+    private function selfAnchoredListRowKey(
+        BrowserSourceConfig $browserConfig,
+        string $acceptKey,
+        array $pageParams,
+        array $browserParams,
+    ): int|string|null {
+        $anchorConfig = $this->rowConfigs($browserConfig)[0] ?? null;
+        if (!is_array($anchorConfig) || ($anchorConfig[BrowserFieldKey::MANY] ?? false) === true) {
+            return null;
+        }
+
+        $where = $anchorConfig[BrowserFieldKey::WHERE] ?? [];
+        if (!is_array($where)) {
+            return null;
+        }
+
+        $isScopedToSubscriber = false;
+        foreach ($where as $field => $expected) {
+            if (
+                $field === BrowserRuntimeParam::ACCEPT_KEY
+                && is_array($expected)
+                && ($expected[BrowserRefKey::TYPE] ?? null) === BrowserRefType::TABLE_PARAM
+                && ($expected[BrowserRefKey::KEY] ?? null) === BrowserRuntimeParam::ACCEPT_KEY
+            ) {
+                $isScopedToSubscriber = true;
+                break;
+            }
+        }
+        if (!$isScopedToSubscriber) {
+            return null;
+        }
+
+        $source = $anchorConfig[BrowserFieldKey::SOURCE] ?? [];
+        if (!is_array($source)) {
+            return null;
+        }
+
+        $sourceItem = $this->sourceItemById($source, $acceptKey);
+        if (
+            $sourceItem === null
+            || !$this->sourceItemMatchesWhere($anchorConfig, $sourceItem, $acceptKey, $pageParams, $browserParams)
+        ) {
+            return null;
+        }
+
+        return $this->rowKeyForSourceItem($anchorConfig, $sourceItem, $acceptKey, $pageParams, $browserParams);
+    }
+
+    /**
+     * Resolves the logical browser row keys affected by a source change.
      *
      * @param BrowserSourceConfig $browserConfig Browser source config
      * @param SourceChange $change Grouped DB/RT source change
      * @param array<string, mixed> $browserParams Resolved table params
-     * @return int|string|null Browser row key, or null when no matching row source can resolve it
+     * @return list<int|string> Distinct current and previous browser row keys
      */
-    private function rowKeyForChange(BrowserSourceConfig $browserConfig, SourceChange $change, array $browserParams): int|string|null
+    private function rowKeysForChange(BrowserSourceConfig $browserConfig, SourceChange $change, array $browserParams): array
     {
+        $rowKeys = [];
         foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
             if (!$this->rowConfigMatchesChange($rowConfig, $change)) {
                 continue;
             }
 
-            $rowKey = $this->rowKeyValue($rowConfig, $change, $browserParams);
-            if ($rowKey !== null) {
-                return $rowKey;
+            $sourceValueSets = [$change->row];
+            if ($change->previous !== []) {
+                $sourceValueSets[] = $change->previous;
+            }
+            foreach ($sourceValueSets as $sourceValues) {
+                $rowKey = $this->rowKeyValue($rowConfig, $change, $browserParams, $sourceValues);
+                if ($rowKey !== null && !in_array($rowKey, $rowKeys, true)) {
+                    $rowKeys[] = $rowKey;
+                }
             }
         }
 
-        return null;
+        return $rowKeys;
     }
 
     /**
@@ -2113,9 +2198,15 @@ abstract class BrowserContext
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param SourceChange $change Grouped DB/RT source change
      * @param array<string, mixed> $browserParams Resolved table params
+     * @param array<string, mixed> $sourceValues Current or previous changed field values
      * @return int|string|null Browser row key
      */
-    private function rowKeyValue(array $rowConfig, SourceChange $change, array $browserParams): int|string|null
+    private function rowKeyValue(
+        array $rowConfig,
+        SourceChange $change,
+        array $browserParams,
+        array $sourceValues,
+    ): int|string|null
     {
         $rowKey = $rowConfig[BrowserListFieldKey::ITEM_KEY] ?? $rowConfig[BrowserTableFieldKey::ROW_KEY] ?? null;
         if (is_array($rowKey)) {
@@ -2126,8 +2217,8 @@ abstract class BrowserContext
             return $this->normalizeKey($change->sourceId);
         }
 
-        if (array_key_exists($rowKey, $change->row)) {
-            return $this->normalizeKey($change->row[$rowKey]);
+        if (array_key_exists($rowKey, $sourceValues)) {
+            return $this->normalizeKey($sourceValues[$rowKey]);
         }
 
         $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];

@@ -33,6 +33,11 @@ import {
 import { hilosAuthContext } from '../../auth/hilosAuthContext'
 import { connection } from '../../bootstrap/connection'
 import { currentUserId } from '../../bootstrap/session'
+import { bindNotificationPreferences } from '../../profile/notificationPreferences.js'
+import {
+  profileDeviceCount,
+  profileSessionCount,
+} from '../../profile/profileLists.js'
 import {
   clearRenameError,
   clearSetPasswordError,
@@ -50,7 +55,6 @@ import {
 } from './profileActions'
 import {
   availableProviders,
-  bindNotificationPreferences,
   committedName,
   passwordSection,
   profileDetail,
@@ -59,6 +63,9 @@ import {
 import { type IdentityItem } from './types/lists/IdentityItem'
 import { useEmailChange } from './useEmailChange'
 import { PASSWORD_MODE_ADDED } from '../../auth/passwordSignals'
+
+const sessionsCount = useSignal(profileSessionCount)
+const devicesCount = useSignal(profileDeviceCount)
 
 defineOptions({ name: 'ProfilePage' })
 
@@ -1018,6 +1025,38 @@ function mergeBoth(): void {
     A toggle is tracked, never optimistic — the switch turns only when the server
     fans the changed signal back to every one of the user's tabs. -->
     <HilosNotificationPreferences class="mt-4" :connection="connection" />
+
+    <section class="mt-4" aria-labelledby="profile-sections-heading">
+      <h2 id="profile-sections-heading" class="h6 mb-2">Sections</h2>
+      <div class="list-group">
+        <div class="list-group-item d-flex align-items-center gap-3">
+          <i class="bi bi-window-stack fs-5" aria-hidden="true"></i>
+          <span class="flex-grow-1">
+            Sessions · {{ sessionsCount }} active sign-ins
+          </span>
+          <HilosLink
+            :to="HILOS_PAGE_ROUTES[HilosPages.PROFILE_SESSIONS]"
+            class="btn btn-sm btn-outline-secondary"
+            data-id="profile-sessions-open"
+          >
+            Open
+          </HilosLink>
+        </div>
+        <div class="list-group-item d-flex align-items-center gap-3">
+          <i class="bi bi-bell fs-5" aria-hidden="true"></i>
+          <span class="flex-grow-1">
+            Devices · {{ devicesCount }} subscribed to push
+          </span>
+          <HilosLink
+            :to="HILOS_PAGE_ROUTES[HilosPages.PROFILE_DEVICES]"
+            class="btn btn-sm btn-outline-secondary"
+            data-id="profile-devices-open"
+          >
+            Open
+          </HilosLink>
+        </div>
+      </div>
+    </section>
 
     <HilosModal v-model="editing" :confirm-on-close="dirty">
       <template #header>

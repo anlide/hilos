@@ -27,6 +27,7 @@ use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
  *
  * @property-read string $acceptKey WebSocket accept key
  * @property-read ?int $userId Authenticated user id, or null while anonymous
+ * @property-read int $connectedAt Unix timestamp when the socket row was created
  * @property-read HilosConnectionActions $actions Write operations for this connection
  */
 abstract class HilosConnection extends RtItem
@@ -44,6 +45,7 @@ abstract class HilosConnection extends RtItem
         return match ($name) {
             StateHilosConnection::acceptKey => $this->_state->acceptKey,
             StateHilosConnection::userId => $this->_state->userId,
+            StateHilosConnection::connectedAt => $this->_state->connectedAt,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

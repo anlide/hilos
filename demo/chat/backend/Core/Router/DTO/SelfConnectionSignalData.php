@@ -12,8 +12,10 @@ use Hilos\BaseDTO;
 final class SelfConnectionSignalData extends BaseDTO
 {
     public const string selfConnection = 'selfConnection';
+    public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
+    public const string sessionId = 'sessionId';
     public const string messageRateLimitSecondsRemaining = 'messageRateLimitSecondsRemaining';
     public const string outboundModerationState = 'outboundModerationState';
     public const string fileUploadState = 'fileUploadState';

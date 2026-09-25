@@ -57,6 +57,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatDbContext::identities,
         ChatDbContext::notificationPreferences,
         ChatDbContext::pushSubscriptions,
+        ChatDbContext::sessions,
     ];
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;

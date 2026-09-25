@@ -123,6 +123,13 @@ fan-out:
 - `mutationType` — `TableMutationType` (`Create`, `Update`, `Delete`, `Clear`);
 - `row` — full row on create, diff on update, previous row on delete when
   available, empty on clear.
+- `previous` — previous values of the fields carried by an update, empty for
+  other mutation types.
+
+An update can move a joined item from one logical browser row to another. Fan-out
+rebuilds both the current and previous row keys, while a list anchored to the
+subscribing connection considers only its anchor key and emits neither rows nor
+deletes for another subscriber's key.
 
 `Clear` is collection-scoped, not row-scoped: it carries the `sourceKey` with an
 empty `sourceId`/`row` and means "every row in this collection was removed". It

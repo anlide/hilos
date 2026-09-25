@@ -24,8 +24,6 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
  */
 final class Connection extends HilosSessionConnection
 {
-    public const string connectedAt = 'connectedAt';
-
     public const string outboundModerationPhase = 'outboundModerationPhase';
     public const string outboundModerationMessage = 'outboundModerationMessage';
     public const string outboundModerationReason = 'outboundModerationReason';
@@ -55,9 +53,6 @@ final class Connection extends HilosSessionConnection
     public const string fileProgressTotalBytes = 'fileProgressTotalBytes';
 
     public const string uploadProgressLastSentAt = 'uploadProgressLastSentAt';
-
-    /** Unix time when the socket was registered. */
-    private(set) int $connectedAt = 0;
 
     /** Moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
     public string $outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
@@ -134,13 +129,8 @@ final class Connection extends HilosSessionConnection
     /** Last upload-progress browser notify time for throttle (microtime). */
     public float $uploadProgressLastSentAt = 0.0;
 
-    /**
-     * Stamps the moment the socket was registered; every other chat field opens
-     * on the value its declaration already carries.
-     */
     protected function initOwn(): void
     {
-        $this->connectedAt = time();
     }
 
     /**
@@ -159,7 +149,6 @@ final class Connection extends HilosSessionConnection
      */
     protected function hydrateOwn(array $row): void
     {
-        $this->connectedAt = self::requireInt($row, self::connectedAt);
         $this->outboundModerationPhase = self::requireString($row, self::outboundModerationPhase);
         $this->outboundModerationMessage = self::optionalString($row, self::outboundModerationMessage);
         $this->outboundModerationReason = self::optionalString($row, self::outboundModerationReason);
@@ -205,7 +194,6 @@ final class Connection extends HilosSessionConnection
      */
     protected function applyOwnDiff(array $diff): void
     {
-        $this->connectedAt = self::patchInt($diff, self::connectedAt, $this->connectedAt);
         $this->outboundModerationPhase = self::patchString($diff, self::outboundModerationPhase, $this->outboundModerationPhase);
         $this->outboundModerationMessage = self::patchOptionalString($diff, self::outboundModerationMessage, $this->outboundModerationMessage);
         $this->outboundModerationReason = self::patchOptionalString($diff, self::outboundModerationReason, $this->outboundModerationReason);
@@ -246,7 +234,6 @@ final class Connection extends HilosSessionConnection
     protected function ownToArray(): array
     {
         return [
-            self::connectedAt => $this->connectedAt,
             self::outboundModerationPhase => $this->outboundModerationPhase,
             self::outboundModerationMessage => $this->outboundModerationMessage,
             self::outboundModerationReason => $this->outboundModerationReason,

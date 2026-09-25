@@ -11,7 +11,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnecti
 /**
  * Read-only runtime item for one connection row — the session stage (HIL-509).
  *
- * The view twin of {@see StateHilosSessionConnection}: one field on top of the
+ * The view twin of {@see StateHilosSessionConnection}: the session reference on top of the
  * presence stage, read the same way the two below it are. The stages are mirrored
  * on both layers so that "which stage is this project on" has a single answer.
  *
@@ -19,6 +19,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnecti
  * @extends HilosConnection<TState>
  *
  * @property-read ?string $sessionToken Session cookie token this connection belongs to
+ * @property-read ?int $sessionId Database session row id, or null when none is attached
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
@@ -34,6 +35,7 @@ abstract class HilosSessionConnection extends HilosConnection
     {
         return match ($name) {
             StateHilosSessionConnection::sessionToken => $this->_state->sessionToken,
+            StateHilosSessionConnection::sessionId => $this->_state->sessionId,
             default => parent::__get($name),
         };
     }

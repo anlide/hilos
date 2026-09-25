@@ -38,6 +38,25 @@ final class SyncSignalDataContractTest extends TestCase
     /** Collection key used by every payload built here. */
     private const string COLLECTION_KEY = 'events';
 
+    public function testUpdatedPayloadsRoundtripPreviousValues(): void
+    {
+        $dbPayload = new DbSyncUpdatedSignalData(
+            self::COLLECTION_KEY,
+            '1',
+            ['name' => 'Grace'],
+            previous: ['name' => 'Ada'],
+        );
+        $rtPayload = new RtSyncUpdatedSignalData(
+            self::COLLECTION_KEY,
+            'ak-1',
+            ['presence' => 'online'],
+            previous: ['presence' => 'away'],
+        );
+
+        $this->assertEquals($dbPayload, DbSyncUpdatedSignalData::fromArray($dbPayload->toArray()));
+        $this->assertEquals($rtPayload, RtSyncUpdatedSignalData::fromArray($rtPayload->toArray()));
+    }
+
     public function testRowScopedDbPayloadsImplementTheDbInterface(): void
     {
         foreach ([

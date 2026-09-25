@@ -26,6 +26,9 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $p256dh
  * @property string $auth
  * @property ?string $userAgent
+ * @property ?string $deviceName
+ * @property string $endpointHash
+ * @property ?string $goneAt
  * @property string $createdAt
  * @property ?string $lastSeenAt
  */
@@ -38,6 +41,9 @@ final class PushSubscription extends Object_
     public const string p256dh = 'p256dh';
     public const string auth = 'auth';
     public const string userAgent = 'userAgent';
+    public const string deviceName = 'deviceName';
+    public const string endpointHash = 'endpointHash';
+    public const string goneAt = 'goneAt';
     public const string createdAt = 'createdAt';
     public const string lastSeenAt = 'lastSeenAt';
 
@@ -67,6 +73,9 @@ final class PushSubscription extends Object_
             self::p256dh => $this->entity->p256dh,
             self::auth => $this->entity->auth,
             self::userAgent => $this->entity->user_agent,
+            self::deviceName => $this->entity->device_name,
+            self::endpointHash => $this->entity->endpoint_hash,
+            self::goneAt => $this->entity->gone_at,
             self::createdAt => $this->entity->created_at,
             self::lastSeenAt => $this->entity->last_seen_at,
             default => parent::__get($property),
@@ -88,6 +97,9 @@ final class PushSubscription extends Object_
             self::p256dh => $this->entity->p256dh = (string)$value,
             self::auth => $this->entity->auth = (string)$value,
             self::userAgent => $this->entity->user_agent = $value === null ? null : (string)$value,
+            self::deviceName => $this->entity->device_name = $value === null ? null : (string)$value,
+            self::endpointHash => $this->entity->endpoint_hash = (string)$value,
+            self::goneAt => $this->entity->gone_at = $value === null ? null : (string)$value,
             self::createdAt => $this->entity->created_at = (string)$value,
             self::lastSeenAt => $this->entity->last_seen_at = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
@@ -108,6 +120,9 @@ final class PushSubscription extends Object_
             self::p256dh => $this->entity->p256dh,
             self::auth => $this->entity->auth,
             self::userAgent => $this->entity->user_agent,
+            self::deviceName => $this->entity->device_name,
+            self::endpointHash => $this->entity->endpoint_hash,
+            self::goneAt => $this->entity->gone_at,
             self::createdAt => $this->entity->created_at,
             self::lastSeenAt => $this->entity->last_seen_at,
         ];

@@ -10,11 +10,14 @@ use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -41,6 +44,7 @@ final class ObjectUpdateAnnouncementTest extends TestCase
         parent::setUp();
 
         SourceChangeBus::reset();
+        Hilos::$sr = new SignalRouter();
         TruthSourceRegistry::register(UpdateAnnouncementObject::COLLECTION_KEY, TruthSourceKeys::all(), self::AGENT);
     }
 
@@ -48,6 +52,7 @@ final class ObjectUpdateAnnouncementTest extends TestCase
     {
         TruthSourceRegistry::unregister(UpdateAnnouncementObject::COLLECTION_KEY, self::AGENT);
         SourceChangeBus::reset();
+        Hilos::$sr = null;
 
         parent::tearDown();
     }
@@ -66,7 +71,13 @@ final class ObjectUpdateAnnouncementTest extends TestCase
         $this->assertSame('7', $seen[0][0]->sourceId);
         $this->assertSame(TableMutationType::Update, $seen[0][0]->mutationType);
         $this->assertSame(['value' => 'after'], $seen[0][0]->row);
+        $this->assertSame(['value' => 'before'], $seen[0][0]->previous);
         $this->assertSame(SourceChangeProvenance::LocalWrite, $seen[0][1]);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $signal->data);
+        $this->assertSame(['value' => 'before'], $signal->data->previous);
     }
 
     /**
