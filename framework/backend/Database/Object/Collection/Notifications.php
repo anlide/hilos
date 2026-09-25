@@ -185,7 +185,7 @@ final class Notifications extends Objects
      * @return int Number of rows marked read
      * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the update query fails
-     * @throws WriteNotAllowedException When no truth source in this process may update rows across the whole collection
+     * @throws WriteNotAllowedException When no truth source in this process may update every row of the recipient's set
      */
     public function markAllReadForUser(int $userId): int
     {
@@ -193,7 +193,7 @@ final class Notifications extends Objects
 
         $now = TimeHelper::getSqlDateTime();
 
-        DbWriteGuard::guardCollectionWrite(static::COLLECTION_KEY, TruthSourceOperation::Update);
+        DbWriteGuard::guardSetWrite(static::COLLECTION_KEY, (string)$userId, TruthSourceOperation::Update);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($now));

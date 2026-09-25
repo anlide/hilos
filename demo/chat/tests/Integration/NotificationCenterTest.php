@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -51,6 +53,9 @@ final class NotificationCenterTest extends IntegrationTestCase
     /** Consumer the read-guard case declares its interest under, standing in for a channel agent. */
     private const string READER_CONSUMER = 'notification_center_test_reader';
 
+    /** Agent holding the recipient's set alone, standing in for the agent of one person. */
+    private const string SET_OWNER_AGENT = 'notification_center_test_set_owner';
+
     /** @var ?NotificationsLibraryAgent Owner of the notification set, built on first use */
     private ?NotificationsLibraryAgent $library = null;
 
@@ -63,6 +68,8 @@ final class NotificationCenterTest extends IntegrationTestCase
 
     protected function tearDown(): void
     {
+        ExecutionContext::setCurrentAgentId(null);
+        TruthSourceRegistry::unregisterAgent(self::SET_OWNER_AGENT);
         $this->deleteRecipientRows();
         parent::tearDown();
     }
@@ -141,6 +148,51 @@ final class NotificationCenterTest extends IntegrationTestCase
         self::assertSame(3, $collection->countUnreadForUser(self::RECIPIENT_ID));
         self::assertSame(3, $collection->markAllReadForUser(self::RECIPIENT_ID));
         self::assertSame(0, $collection->countUnreadForUser(self::RECIPIENT_ID));
+        self::assertSame(1, $collection->countUnreadForUser(self::OTHER_RECIPIENT_ID));
+    }
+
+    /**
+     * Mark-all-read asks for the recipient's set, not for the whole table (HIL-1113).
+     *
+     * The writer here holds the recipient's set and nothing else, as the agent of one person
+     * will: the one statement over its own set goes through, and the same statement over
+     * another recipient's set is refused before it touches a row.
+     */
+    public function testMarkAllReadIsAllowedToTheOwnerOfTheRecipientsSetAlone(): void
+    {
+        foreach (['first', 'second'] as $title) {
+            $this->library()->emit(new NotificationDraft(
+                userId: self::RECIPIENT_ID,
+                type: 'demo.chat.test',
+                title: $title,
+            ));
+        }
+        $this->library()->emit(new NotificationDraft(
+            userId: self::OTHER_RECIPIENT_ID,
+            type: 'demo.chat.test',
+            title: 'someone else',
+        ));
+        TruthSourceRegistry::register(
+            HilosDbContext::notifications,
+            TruthSourceKeys::set((string)self::RECIPIENT_ID),
+            self::SET_OWNER_AGENT,
+        );
+        ExecutionContext::setCurrentAgentId(self::SET_OWNER_AGENT);
+
+        $collection = $this->collection();
+
+        self::assertSame(2, $collection->markAllReadForUser(self::RECIPIENT_ID));
+        self::assertSame(0, $collection->countUnreadForUser(self::RECIPIENT_ID));
+
+        $refused = null;
+        try {
+            $collection->markAllReadForUser(self::OTHER_RECIPIENT_ID);
+        } catch (WriteNotAllowedException $exception) {
+            $refused = $exception;
+        }
+
+        self::assertInstanceOf(WriteNotAllowedException::class, $refused);
+        self::assertStringContainsString("it holds set '" . self::RECIPIENT_ID . "'.", $refused->getMessage());
         self::assertSame(1, $collection->countUnreadForUser(self::OTHER_RECIPIENT_ID));
     }
 

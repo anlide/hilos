@@ -63,7 +63,7 @@ final class SecondFactorTrustsActions extends DbActions
      */
     public function deleteForUser(int $userId): void
     {
-        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
 
         $this->objectCollection->deleteForUser($userId);
     }

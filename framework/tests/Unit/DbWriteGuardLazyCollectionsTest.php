@@ -32,6 +32,8 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
 {
     private const string COLLECTION = 'unit_guard_lazy';
     private const string AGENT = 'unit_guard_agent';
+    private const string OWN_SET = '42';
+    private const string FOREIGN_SET = '7';
 
     protected function tearDown(): void
     {
@@ -155,6 +157,42 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
         $actions->writePublic();
     }
 
+    /**
+     * @param int $strategy Lazy-loading strategy the collection is registered with
+     */
+    #[DataProvider('lazyStrategies')]
+    public function testSetDoorLetsTheSetOwnerWriteItsSetAndRefusesAnother(int $strategy): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, $strategy);
+        TruthSourceRegistry::register(self::COLLECTION, TruthSourceKeys::set(self::OWN_SET), self::AGENT);
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $actions->writeSetPublic(self::OWN_SET);
+        $actions->removeSetPublic(self::OWN_SET);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("set '7': it holds set '42'.");
+        $actions->removeSetPublic(self::FOREIGN_SET);
+    }
+
+    public function testSetDoorAsksForTheOperationItWasNamed(): void
+    {
+        $actions = $this->actionsFor(GuardedObjects::class, Objects::LAZY_STRATEGY_KEY);
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::set(self::OWN_SET),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Remove),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+
+        $actions->removeSetPublic(self::OWN_SET);
+
+        $this->expectException(WriteNotAllowedException::class);
+        $this->expectExceptionMessage("may not update rows of set '42'");
+        $actions->writeSetPublic(self::OWN_SET);
+    }
+
     public function testManualCollectionWithNoKeyIsNotJudged(): void
     {
         $actions = $this->actionsFor(UnkeyedObjects::class, Objects::LAZY_STRATEGY_KEY);
@@ -162,6 +200,7 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
 
         $actions->writePublic();
         $actions->createPublic();
+        $actions->writeSetPublic(self::OWN_SET);
 
         $this->assertFalse(TruthSourceRegistry::hasTruthSource(''));
     }
@@ -242,6 +281,28 @@ final class GuardedDbActions extends DbActions
     public function removePublic(): void
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
+    }
+
+    /**
+     * Asks the set door for a bulk edit of one set.
+     *
+     * @param string $setKey Set the edit is cut by
+     * @throws WriteNotAllowedException When the truth source rejects the edit of that set
+     */
+    public function writeSetPublic(string $setKey): void
+    {
+        $this->ensureCanWriteSet($setKey, TruthSourceOperation::Update);
+    }
+
+    /**
+     * Asks the set door for a delete of one set.
+     *
+     * @param string $setKey Set the delete is cut by
+     * @throws WriteNotAllowedException When the truth source rejects the delete of that set
+     */
+    public function removeSetPublic(string $setKey): void
+    {
+        $this->ensureCanWriteSet($setKey, TruthSourceOperation::Remove);
     }
 
     public function createPublic(): void

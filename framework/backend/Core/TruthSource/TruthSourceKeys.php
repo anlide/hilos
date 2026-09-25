@@ -145,6 +145,21 @@ final readonly class TruthSourceKeys
     }
 
     /**
+     * Whether the claim covers one statement over every row of one set.
+     *
+     * The whole collection covers every set, the empty key of nobody's set included, and a set
+     * covers its own. Named rows cover no set: the statement touches rows the claim does not name,
+     * among them rows born after the claim was laid, and nothing short of a query says which.
+     *
+     * @param string $setKey Value of the set column the statement cuts the table by, empty for nobody's set
+     * @return bool True when this claim covers every row of that set
+     */
+    public function coversEveryRowOfSet(string $setKey): bool
+    {
+        return $this->everyKey || $this->setKey === $setKey;
+    }
+
+    /**
      * @return list<string> Rows named one by one, empty when the claim runs over the whole collection or over a set
      */
     public function listedKeys(): array

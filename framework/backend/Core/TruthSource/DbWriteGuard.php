@@ -10,10 +10,10 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 /**
  * The one door every database write asks before it touches a row.
  *
- * {@see TruthSourceRegistry} answers who owns a collection; this class is where the four
- * write paths - the table doors, the object save and delete, the collection-wide truncate
- * and the targeted raw UPDATEs - ask it, so the right stops depending on which of them a
- * caller happened to take.
+ * {@see TruthSourceRegistry} answers who owns a collection; this class is where the five
+ * write paths - the table doors, the object save and delete, the collection-wide truncate,
+ * the targeted raw UPDATEs and one statement over the rows of one set - ask it, so the right
+ * stops depending on which of them a caller happened to take.
  *
  * The right used to be asked inside a switch over the lazy-loading strategy, which answers a
  * different question - how much of a table has to be in memory - and so was only ever asked
@@ -56,6 +56,28 @@ class DbWriteGuard
         }
 
         TruthSourceRegistry::checkCanWrite($collection, $operation);
+    }
+
+    /**
+     * Judges one statement over every row of one set.
+     *
+     * The table is cut by the set column its entity declares, and the door is handed only the
+     * value the statement cuts by: the writer does not pick the column. A statement that rewrites
+     * the set column itself writes into two sets and asks {@see guardCollectionWrite()} instead -
+     * only the owner of the whole table moves rows between sets.
+     *
+     * @param string $collection Collection key, empty for a manual collection nobody owns
+     * @param string $setKey Value of the set column the statement cuts the table by, empty for nobody's set
+     * @param TruthSourceOperation $operation Operation the caller is about to perform on every row of the set
+     * @throws WriteNotAllowedException When no grant in this process covers every row of that set with that operation
+     */
+    public static function guardSetWrite(string $collection, string $setKey, TruthSourceOperation $operation): void
+    {
+        if ($collection === '') {
+            return;
+        }
+
+        TruthSourceRegistry::checkCanWriteSet($collection, $setKey, $operation);
     }
 
     /**

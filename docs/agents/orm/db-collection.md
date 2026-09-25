@@ -124,6 +124,9 @@ shortcut, should call `ensureCanCreate()` or `ensureCanWrite()` when mutating,
 and should keep the in-memory object collection synchronized after DB changes.
 `ensureCanWrite()` takes the operation the action performs
 (`TruthSourceOperation::Add`, `::Update` or `::Remove`) and has no default.
+A bulk write cut by one set — the rows of one person — calls
+`ensureCanWriteSet($setKey, $operation)` instead, which asks for that set and
+not for the whole table, with the operation named the same way.
 
 Do not put update/delete operations for one known collection item behind a
 collection action that accepts the item's key:

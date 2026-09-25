@@ -188,7 +188,7 @@ abstract class DbActions
      *
      * The right is asked before the strategy is looked at, because the two answer different
      * questions: who may write this table, and how much of it has to be in memory first. The
-     * switch below is left with the second one only.
+     * load that follows is left with the second one only.
      *
      * The operation has no default: this door is shared by actions that mint rows, edit them in
      * bulk and delete them, and no one value is right for all of them.
@@ -202,25 +202,32 @@ abstract class DbActions
      */
     protected function ensureCanWrite(TruthSourceOperation $operation): void
     {
-        $objectCollection = $this->objectCollection;
+        DbWriteGuard::guardCollectionWrite($this->objectCollection->getCollectionKey(), $operation);
 
-        DbWriteGuard::guardCollectionWrite($objectCollection->getCollectionKey(), $operation);
+        $this->loadForWrite();
+    }
 
-        switch ($objectCollection->getLazyStrategy()) {
-            case Objects::LAZY_STRATEGY_NONE:
-                if (!$objectCollection->isAllLoaded()) {
-                    $objectCollection->loadAllFromDB();
-                }
-                break;
+    /**
+     * Ensure a write over every row of one set is allowed and data is loaded if needed
+     * Asks the write guard for the right over that set, then loads data based on lazy loading strategy
+     *
+     * The door for a bulk write cut by one set - the rows of one person, say - where
+     * ensureCanWrite() would ask for the whole table. The set column is the entity's own, so only its value is
+     * named here, and the delete or edit that follows has to cut the table by that column alone.
+     *
+     * @param string $setKey Value of the set column the write cuts the table by
+     * @param TruthSourceOperation $operation Operation the caller performs on every row of the set: Update for a bulk
+     *     edit, Remove for a delete
+     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws WriteNotAllowedException If the write over that set is not allowed
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException On connection or load error
+     */
+    protected function ensureCanWriteSet(string $setKey, TruthSourceOperation $operation): void
+    {
+        DbWriteGuard::guardSetWrite($this->objectCollection->getCollectionKey(), $setKey, $operation);
 
-            case Objects::LAZY_STRATEGY_KEY:
-            case Objects::LAZY_STRATEGY_BATCH:
-            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
-                break;
-
-            default:
-                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for write check");
-        }
+        $this->loadForWrite();
     }
 
     /**
@@ -314,5 +321,36 @@ abstract class DbActions
         $this->objectCollection->deleteAll();
 
         $this->clearCollectionCache();
+    }
+
+    /**
+     * Loads as much of the table as the lazy loading strategy asks a write to hold in memory.
+     *
+     * Shared by the collection door and the set door: each asks its own right first, and this
+     * answers only how much of the table has to be loaded before the write.
+     *
+     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException On connection or load error
+     */
+    private function loadForWrite(): void
+    {
+        $objectCollection = $this->objectCollection;
+
+        switch ($objectCollection->getLazyStrategy()) {
+            case Objects::LAZY_STRATEGY_NONE:
+                if (!$objectCollection->isAllLoaded()) {
+                    $objectCollection->loadAllFromDB();
+                }
+                break;
+
+            case Objects::LAZY_STRATEGY_KEY:
+            case Objects::LAZY_STRATEGY_BATCH:
+            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
+                break;
+
+            default:
+                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for write check");
+        }
     }
 }

@@ -286,6 +286,20 @@ the set keys. A row born after the agent's start is covered by
 construction, because the grant keeps a set key and not a list of rows collected
 at the start.
 
+**One statement over one set asks for that set whole.** An UPDATE or DELETE cut
+by one value of the set column — every notification of one recipient, every
+backup code of one person — names no row, so the row door has nothing to ask,
+and the collection door would demand the whole table. It asks
+`DbWriteGuard::guardSetWrite()` instead, and the grant answers
+`TruthSourceKeys::coversEveryRowOfSet()`: the whole table covers every set,
+nobody's empty key included; a set covers its own; named rows cover none, since
+the statement touches rows the claim does not name, born after it included. The
+column comes from the Entity; the door is handed only its value. A statement
+across the table, and one moving rows between sets, still asks the collection
+door, which keeps its one width. The living callers are
+`Notifications::markAllReadForUser()` and the three `deleteForUser()` of the
+second factor, through `DbActions::ensureCanWriteSet()`.
+
 **The set tree is walked upward, by default and to any depth.** A set hangs on a
 row that is itself in a set: a passkey credential is cut by `identity_id` and
 the identity by `user_id`, so a credential is two steps from its person. The
@@ -328,7 +342,7 @@ the agent does not.
 | the declaration on the agent, the three exclusive maps, both floors of refusal, the borrowed set claim | HIL-1110 |
 | the walk up the set tree, and the short path a row declares | HIL-1111 |
 | what the creation door asks under this width | HIL-1112 — open, and not answered here |
-| how one statement over many rows asks within one set | HIL-1113 — open, and not answered here |
+| how one statement over many rows asks within one set | HIL-1113 |
 | two owners of one set refused, and the receipt for a pair the project lives with | HIL-1114 |
 | the runtime half | HIL-1115 |
 | the width holding while its owners sit on different nodes | HIL-1116 |
@@ -678,9 +692,11 @@ exclusive maps, the empty set key and the borrowed wait
 (`DeclaredSetOwnershipTest`), the one call that lays every map
 (`DeclaredClaimAllTest`), the operation axis and the guards on it
 (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
-`DbWriteGuardLazyCollectionsTest`), the third width answered by the row's set
-column at the value, the registry and the door, a row born after the declared
-start included (`TruthSourceSetWidthTest`), the set claimed on a table cut by
+`DbWriteGuardLazyCollectionsTest`, the set door beside the collection door
+there), the third width answered by the row's set column at the value, the
+registry and the door, a row born after the declared start included, and one
+statement over one set asked at the value and the registry
+(`TruthSourceSetWidthTest`), the set claimed on a table cut by
 no column and the reads that repeat a claim (`TopologyValidatorTest`), the
 grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
