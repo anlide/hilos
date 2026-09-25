@@ -736,6 +736,36 @@ describe('bindTableViewport', () => {
     })
   })
 
+  it('narrows removal reasons and keeps the legacy fallback', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    for (const [rowKey, reason] of [
+      ['moved', 'moved_out'],
+      ['left', 'left_set'],
+      ['missing', undefined],
+      ['future', 'future_reason'],
+    ] as const) {
+      connection.emitDelta({
+        page: 'main',
+        tableKey: 'settings',
+        kind: 'row_removed',
+        rowKey,
+        reason,
+      })
+    }
+
+    expect(sink.deltas).toMatchObject([
+      { reason: 'moved_out' },
+      { reason: 'left_set' },
+      { reason: 'deleted' },
+      { reason: 'deleted' },
+    ])
+  })
+
   it('carries the body a removal brings the tab holding the row in focus', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()

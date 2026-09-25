@@ -659,6 +659,7 @@ describe('TableViewportController', () => {
         row: { rowKey: 'a', slots: {} },
         placeholder: false,
         pending: null,
+        removal: null,
         highlighted: false,
         selected: false,
         expanded: false,
@@ -1021,12 +1022,218 @@ describe('TableViewportController', () => {
       row: null,
       placeholder: true,
       pending: null,
+      removal: 'deleted',
       highlighted: false,
       selected: false,
       expanded: false,
       staleSources: [],
     })
     expect(rows[1]?.placeholder).toBe(false)
+  })
+
+  it('keeps each removal reason on the waiting row and its placeholder', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'deleted', slots: {} },
+        { rowKey: 'moved', slots: {} },
+        { rowKey: 'left', slots: {} },
+      ],
+      3,
+      true,
+      null,
+      null,
+    )
+
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'deleted',
+      reason: 'deleted',
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'moved',
+      reason: 'moved_out',
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'left',
+      reason: 'left_set',
+    })
+
+    expect(controller.rows.get().map((row) => row.removal)).toEqual([
+      'deleted',
+      'moved_out',
+      'left_set',
+    ])
+
+    controller.apply()
+
+    expect(controller.rows.get().map((row) => row.removal)).toEqual([
+      'deleted',
+      'moved_out',
+      'left_set',
+    ])
+    expect(controller.rows.get().every((row) => row.placeholder)).toBe(true)
+  })
+
+  it('empties a window whose last live row leaves an empty set on Apply', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestCount(0, true)
+
+    controller.apply()
+
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.frame.body.get()).toBe('empty')
+  })
+
+  it('shows filtered emptiness when a searched window converges', () => {
+    const { controller, open } = makeController()
+    controller.setSearch('nightly')
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'left_set',
+    })
+    controller.ingestCount(0, true)
+
+    controller.apply()
+
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.frame.body.get()).toBe('empty_filtered')
+  })
+
+  it('converges when a zero count arrives after Apply', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+
+    controller.ingestCount(0, true)
+
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.frame.body.get()).toBe('empty')
+  })
+
+  it('keeps a window of placeholders while the set still has rows', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 3, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'moved_out',
+    })
+
+    controller.apply()
+
+    expect(controller.rows.get()[0]).toMatchObject({
+      placeholder: true,
+      removal: 'moved_out',
+    })
+    expect(controller.frame.body.get()).toBe('rows')
+  })
+
+  it('keeps work and its report while convergence clears window marks', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      frame: {
+        columns: [],
+        bulkActions: [
+          {
+            key: 'delete',
+            label: 'Delete',
+            run: () => {
+              throw new Error('not called')
+            },
+          },
+        ],
+      },
+    })
+    controller.ingestSubscriptionWindow(
+      [{ rowKey: 'a', slots: {} }],
+      1,
+      true,
+      { id: 1 },
+      { id: 1 },
+      10,
+      undefined,
+      [],
+      5,
+    )
+    controller.selectAllByFilter()
+    controller.expandRow('a', true)
+    controller.ingestProgress({
+      scope: 'table',
+      progressKey: 'nightly',
+      current: 1,
+      total: 2,
+    })
+    controller.ingestBulkReport({
+      progressKey: 'delete-1',
+      touched: 1,
+      untouched: [],
+      untouchedOmitted: 0,
+    })
+    controller.ingestAnnounce('b', 'above', 2, true)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestCount(0, true)
+
+    controller.apply()
+
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.rowsBefore.get()).toBe(0)
+    expect(controller.selection.target.get()).toBeNull()
+    expect(controller.announced.get().total).toBe(0)
+    expect(controller.progress.table.get()?.progressKey).toBe('nightly')
+    expect(controller.bulk.report.get()?.progressKey).toBe('delete-1')
+  })
+
+  it('keeps an unknown window place unknown when it converges', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestCount(0, true)
+    controller.apply()
+
+    expect(controller.rowsBefore.get()).toBeNull()
+  })
+
+  it('does not bring old placeholders back with a tail append after convergence', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestCount(0, true)
+    controller.apply()
+
+    controller.ingestAppend({ rowKey: 'b', slots: {} }, 1, true)
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['b'])
+    expect(controller.rows.get()[0]?.placeholder).toBe(false)
   })
 
   it('applies a live count update at once without pending', () => {
@@ -1148,7 +1355,7 @@ describe('TableViewportController', () => {
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
-      reason: 'gone',
+      reason: 'deleted',
     })
     controller.ingestAnnounce('b', 'above', 26, true)
     const before = sent.length
@@ -1360,7 +1567,7 @@ describe('TableViewportController', () => {
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
-      reason: 'deleted',
+      reason: 'left_set',
       own: true,
     })
 
@@ -1370,6 +1577,7 @@ describe('TableViewportController', () => {
       row: null,
       placeholder: true,
       pending: null,
+      removal: 'left_set',
       highlighted: false,
       selected: false,
       expanded: false,

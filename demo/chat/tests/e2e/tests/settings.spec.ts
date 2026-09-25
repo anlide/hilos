@@ -540,13 +540,13 @@ test('deletes an orphan setting through the confirm modal', async ({
   await expect(deleteButton).toBeVisible()
 
   // Confirm-modal delete removes the DB row. The initiating tab applies its own
-  // change at once (no pending Apply gate); a removed row collapses in place to a
-  // "Removed" placeholder rather than pulling the layout up, and its delete
-  // affordance is gone with the row slot — from the card as well as from the row.
+  // change at once (no pending Apply gate); this is the last row under the search,
+  // so the window converges to the filtered empty state without a reload.
   await deleteButton.click()
   await page.getByTestId('hilos-settings-delete-confirm').click()
-  const row = page.getByTestId(`hilos-table-row-${orphanKey}`)
-  await expect(row.getByTestId('hilos-table-placeholder')).toBeVisible()
+  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+  await expect(page.getByTestId(`hilos-table-row-${orphanKey}`)).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
   await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
   await expect(
     page.getByTestId(`hilos-settings-delete-${orphanKey}`),

@@ -40,6 +40,14 @@ to learn the truth**: a reload shows exactly what the screen already showed, and
 what the reader has not asked for stays announced rather than applied. Waiting
 and reloading arrive at the same place.
 
+What a reload keeps is the **content**: which records stand on the screen, with
+which values, and the numbers the table shows about the set — the total and the
+counts beside filter options. The marks of a change — a placeholder, the *will
+move* / *will leave* badges, a highlight — are the trace of what just happened,
+not content, and a reload lawfully drops them. A screen with a placeholder
+already says what F5 says: the record is not there. Dropping a mark does not
+breach the rule; F5 changing content does (HIL-1089 is one such breach).
+
 Everything below — the Apply gate, the announcement bar, the taxonomy — is
 derived from this one rule.
 
@@ -236,7 +244,9 @@ on a narrow screen is a fourth and has its own section below:
   tells the reader the set is gone beside a footer counting it, and offering to
   create a row answers a question nobody asked; what it offers instead is the
   way back to the rows, which is `prevPage()` — the same thing Back does
-  (HIL-1093).
+  (HIL-1093). A window that converged after its last live row left is not such a
+  page: with a count of zero it is `empty` or `empty_filtered`, as the same empty
+  window would be after a reload.
   `unavailable` is the sixth: the server refused this table's window — a
   `table_window_refused` frame, or the `refusedWindows` section of the page
   answer. The body draws the "List unavailable" tile; the way out is the next
@@ -627,7 +637,14 @@ Apply resolves exactly those two, on the rows already shown:
 - a **removal** leaves a **placeholder** in the row's slot. The layout does not
   collapse, nothing is pulled up from the next page, and the window does not
   move. Otherwise Apply becomes a jump of the list and the reader loses the row
-  they were looking at. The placeholder stays until the window changes.
+  they were looking at. The placeholder names why the row left: `deleted` says
+  "Removed", `moved_out` says "Moved to another page", and `left_set` says "No
+  longer in this list"; its icon is the same one the waiting mark used before
+  Apply. It stays until the window changes, or until no live row is left over a
+  set whose count is zero. Then the window empties into the one a reload would
+  bring, and the body shows its empty state. The same holds for the reader's own
+  removal and for a count that arrives after Apply. A window of placeholders
+  over a set that still has rows elsewhere keeps them.
 
 **Apply never brings a row in.** An announced row arrives through Show, which is
 a window change and not an Apply; a row that qualified for the tail was live from
@@ -1059,6 +1076,10 @@ source still sorts**: the header button and the Order menu item remain live and
 carry a snowflake with a hidden warning saying what the order is worth
 (`sortWarning`). The other orders a table refuses, and what it answers, are in
 [table-sort-orders.md](table-sort-orders.md).
+
+The table mockup still draws one removed-row placeholder and lets a window made
+only of placeholders stand over an empty set; design debt `D-124` records that
+the three reasons and the converged empty state belong there instead.
 
 ## Headless table state machine
 

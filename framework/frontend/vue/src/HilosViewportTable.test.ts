@@ -1059,7 +1059,35 @@ describe('HilosViewportTable drawing a row as a card', () => {
     ).not.toContain('text-end')
   })
 
-  it('keeps a removed row as a card of one line, in its place', async () => {
+  it('draws every placeholder reason in the row and card', async () => {
+    for (const [reason, text, icon] of [
+      ['deleted', 'Removed', 'bi-dash-circle'],
+      ['moved_out', 'Moved to another page', 'bi-arrows-move'],
+      ['left_set', 'No longer in this list', 'bi-box-arrow-right'],
+    ] as const) {
+      const { controller } = makeController(CARD_FRAME)
+      window(controller)
+      controller.ingestDelta({ kind: 'row_removed', rowKey: 'a', reason })
+      controller.apply()
+      const wrapper = mountCards(controller)
+      await wrapper.vm.$nextTick()
+
+      const row = wrapper.find(
+        '[data-id="hilos-table-row-a"] [data-id="hilos-table-placeholder"]',
+      )
+      const card = wrapper.find(
+        '[data-id="hilos-table-card-a"] [data-id="hilos-table-placeholder"]',
+      )
+      expect(row.text()).toBe(text)
+      expect(row.find('i').classes()).toContain(icon)
+      expect(card.text()).toBe(text)
+      expect(card.find('i').classes()).toContain(icon)
+      expect(wrapper.findAll('[data-id^="hilos-table-card-"]')).toHaveLength(2)
+      wrapper.unmount()
+    }
+  })
+
+  it('draws the empty tile instead of placeholders after convergence', () => {
     const { controller } = makeController(CARD_FRAME)
     window(controller)
     controller.ingestDelta({
@@ -1067,17 +1095,19 @@ describe('HilosViewportTable drawing a row as a card', () => {
       rowKey: 'a',
       reason: 'deleted',
     })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'left_set',
+    })
+    controller.ingestCount(0, true)
     controller.apply()
     const wrapper = mountCards(controller)
-    await wrapper.vm.$nextTick()
 
-    const card = wrapper.find('[data-id="hilos-table-card-a"]')
-    expect(card.find('[data-id="hilos-table-placeholder"]').text()).toBe(
-      'Removed',
+    expect(wrapper.findAll('[data-id="hilos-table-placeholder"]')).toHaveLength(
+      0,
     )
-    expect(card.findAll('dt')).toHaveLength(0)
-    expect(card.find('.restore').exists()).toBe(false)
-    expect(wrapper.findAll('[data-id^="hilos-table-card-"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-id="hilos-table-empty"]')).toHaveLength(2)
   })
 
   it('tints a card amber while a change waits and green after one landed', () => {

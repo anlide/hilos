@@ -550,6 +550,22 @@ describe('TableViewportController frame body', () => {
     expect(controller.frame.body.get()).toBe('empty_page')
   })
 
+  it('calls a window emptied from placeholders an empty set, not a page', () => {
+    const { controller, open } = makeController(backupsFrame)
+    open([{ rowKey: 'a', slots: {} }], 1, true, { id: 1 }, { id: 1 })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.ingestCount(0, true)
+
+    controller.apply()
+
+    expect(controller.rows.get()).toEqual([])
+    expect(controller.frame.body.get()).toBe('empty')
+  })
+
   it('calls a refused window unavailable', () => {
     const { controller } = makeController(backupsFrame)
     controller.ingestRefusal('internal_error')

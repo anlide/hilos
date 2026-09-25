@@ -119,6 +119,12 @@ export {
   hilosTableLive,
 } from './table/tableLive.js'
 export {
+  TABLE_PLACEHOLDER_COPY,
+  hilosTablePlaceholder,
+  hilosTableRemovalReason,
+  type TableRemovalReason,
+} from './table/tablePlaceholder.js'
+export {
   TABLE_STALENESS_COPY,
   hilosTableStaleColumns,
   hilosTableStaleLabel,

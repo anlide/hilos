@@ -18,6 +18,7 @@ function makeRow(
     row: placeholder ? null : {},
     placeholder,
     pending: null,
+    removal: placeholder ? 'deleted' : null,
     highlighted: false,
     selected: false,
     expanded: false,

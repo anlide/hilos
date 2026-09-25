@@ -10,8 +10,9 @@
 // seconds, while a move (row_moved) and a removal (row_removed) accumulate as
 // PENDING so the table never rearranges under the user's hands. The user resolves
 // those with apply() — a moved row takes the slot the server named and a removed one
-// becomes a placeholder in its slot (the layout never collapses, no row is pulled
-// from the next page). Two live signals bypass the pending gate
+// becomes a placeholder in its slot, carrying why it left (the layout never collapses,
+// no row is pulled from the next page). A window with no live rows over an empty set
+// converges to the empty window a reload would bring. Two live signals bypass the pending gate
 // because they disrupt nothing: table_viewport_count updates the total/page count
 // (navigation metadata), and table_viewport_append adds a row at the tail when the
 // window is the last page with room. A third accumulates without waiting on
@@ -57,6 +58,7 @@ import {
   type HilosTableFrameState,
 } from './tableFrame.js'
 import { hilosTableLive, type HilosTableLive } from './tableLive.js'
+import { type TableRemovalReason } from './tablePlaceholder.js'
 import {
   type HilosTableProgress,
   type HilosTableProgressFrame,
@@ -217,7 +219,7 @@ export type TableViewportDelta =
   | {
       readonly kind: 'row_removed'
       readonly rowKey: string
-      readonly reason: string
+      readonly reason: TableRemovalReason
       /**
        * The row as it stands now — present only for the receiver holding the row in focus
        * ({@link TableViewportController.focusRow}), and only while the row is alive.
@@ -267,6 +269,8 @@ export interface TableViewportRow<R> {
   readonly placeholder: boolean
   /** The kind of unapplied pending change waiting on this row, or null when none. */
   readonly pending: 'move' | 'remove' | null
+  /** Why this row is waiting to leave or stands as a placeholder; null otherwise. */
+  readonly removal: TableRemovalReason | null
   /** True for the couple of seconds after the row took a new value or its new slot. */
   readonly highlighted: boolean
   /**
@@ -510,9 +514,9 @@ export class TableViewportController<R> implements TableWindowSink {
   /** The refusal code the table is standing in, or null while a window holds. */
   private readonly refusalSignal = createSignal<string | null>(null)
 
-  private readonly placeholderKeysSignal = createSignal<ReadonlySet<string>>(
-    new Set(),
-  )
+  private readonly placeholdersSignal = createSignal<
+    ReadonlyMap<string, TableRemovalReason>
+  >(new Map())
 
   /**
    * The row keys the reader marked, held RAW — keys that left the window are not
@@ -623,7 +627,7 @@ export class TableViewportController<R> implements TableWindowSink {
   >()
 
   /** Pending removals by row key (value is the reason) — become placeholders on apply(). */
-  private readonly pendingRemoved = new Map<string, string>()
+  private readonly pendingRemoved = new Map<string, TableRemovalReason>()
 
   /**
    * The key of the row an open dialog holds in focus, or null while none does.
@@ -656,6 +660,11 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Per-row pending kind ('move' | 'remove') driving the row marking; rebuilt on every pending change. */
   private readonly pendingKindSignal = createSignal<
     ReadonlyMap<string, 'move' | 'remove'>
+  >(new Map())
+
+  /** Per-row reason for a removal still waiting behind Apply. */
+  private readonly pendingRemovalSignal = createSignal<
+    ReadonlyMap<string, TableRemovalReason>
   >(new Map())
 
   /** Row keys marked as just changed; the views paint them and the timers below clear them. */
@@ -812,21 +821,31 @@ export class TableViewportController<R> implements TableWindowSink {
       return typeof value === 'string' ? value : ''
     })
     this.rows = computedSignal(() => {
-      const placeholders = this.placeholderKeysSignal.get()
+      const placeholders = this.placeholdersSignal.get()
       const pendingKinds = this.pendingKindSignal.get()
+      const pendingRemovals = this.pendingRemovalSignal.get()
       const highlighted = this.highlightedKeysSignal.get()
       const selectedKeys = this.selectedKeysSignal.get()
       const expandedKeys = this.expandedKeysSignal.get()
       const allByFilter = this.allByFilterSignal.get()
 
       return this.windowSignal.get().map((raw) => {
-        const placeholder = placeholders.has(raw.rowKey)
+        const placeholderRemoval = placeholders.get(raw.rowKey)
+        const placeholder = placeholderRemoval !== undefined
+        const pending = placeholder
+          ? null
+          : (pendingKinds.get(raw.rowKey) ?? null)
 
         return {
           rowKey: raw.rowKey,
           row: placeholder ? null : options.resolve(raw),
           placeholder,
-          pending: placeholder ? null : (pendingKinds.get(raw.rowKey) ?? null),
+          pending,
+          removal:
+            placeholderRemoval ??
+            (pending === 'remove'
+              ? (pendingRemovals.get(raw.rowKey) ?? null)
+              : null),
           highlighted: !placeholder && highlighted.has(raw.rowKey),
           selected:
             !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
@@ -1483,7 +1502,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.firstAnchor = null
     this.lastAnchor = null
     this.rowsBeforeSignal.set(null)
-    this.placeholderKeysSignal.set(new Set())
+    this.placeholdersSignal.set(new Map())
     this.loadedSignal.set(true)
     this.clearWindowPending()
     this.clearHighlights()
@@ -1535,7 +1554,7 @@ export class TableViewportController<R> implements TableWindowSink {
       rowsBefore === null ? null : Math.max(0, rowsBefore),
     )
     this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
-    this.placeholderKeysSignal.set(new Set())
+    this.placeholdersSignal.set(new Map())
     this.loadedSignal.set(true)
     this.clearWindowPending()
     this.clearHighlights()
@@ -1695,6 +1714,7 @@ export class TableViewportController<R> implements TableWindowSink {
     }
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.totalExactSignal.set(totalExact)
+    this.settleEmptyWindow()
   }
 
   /**
@@ -1915,7 +1935,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.totalExactSignal.set(totalExact)
     this.takeFocusBody(row)
 
-    const placeholders = new Set(this.placeholderKeysSignal.get())
+    const placeholders = new Map(this.placeholdersSignal.get())
     // The mark and the open panel go with everything else held under these keys, and
     // for the same reason: the row pushed past the edge is gone, and a key coming back
     // as a fresh row must not arrive already marked or already open — nobody touched
@@ -1929,7 +1949,7 @@ export class TableViewportController<R> implements TableWindowSink {
       selected.delete(gone.rowKey)
       expanded.delete(gone.rowKey)
     }
-    this.placeholderKeysSignal.set(placeholders)
+    this.placeholdersSignal.set(placeholders)
     this.selectedKeysSignal.set(selected)
     this.expandedKeysSignal.set(expanded)
     this.refreshPendingSignals()
@@ -2095,7 +2115,7 @@ export class TableViewportController<R> implements TableWindowSink {
     }
     this.pendingMoves.delete(delta.rowKey)
     this.pendingRemoved.delete(delta.rowKey)
-    const placeholders = new Set(this.placeholderKeysSignal.get())
+    const placeholders = new Map(this.placeholdersSignal.get())
     if (delta.kind === 'row_updated' || delta.kind === 'row_moved') {
       this.windowSignal.set(
         this.placedWindow(delta.rowKey, delta.row, this.slotOf(delta)),
@@ -2103,17 +2123,20 @@ export class TableViewportController<R> implements TableWindowSink {
       this.highlight(delta.rowKey)
       placeholders.delete(delta.rowKey)
     } else {
-      placeholders.add(delta.rowKey)
+      placeholders.set(delta.rowKey, delta.reason)
     }
-    this.placeholderKeysSignal.set(placeholders)
+    this.placeholdersSignal.set(placeholders)
     this.refreshPendingSignals()
+    this.settleEmptyWindow()
   }
 
   /**
    * Apply accumulated pending changes to the displayed rows in place: updates
    * replace their row and removals become placeholders in their slot (the layout
    * is not collapsed and no row is pulled from another page). The window itself
-   * does not move; the count is already live and not part of pending.
+   * does not move; the count is already live and not part of pending. When every
+   * row became a placeholder and that live count is zero, the window converges
+   * to the empty window a reload would bring.
    */
   apply(): void {
     if (this.pendingCountSignal.get() === 0) {
@@ -2121,11 +2144,11 @@ export class TableViewportController<R> implements TableWindowSink {
     }
 
     if (this.pendingRemoved.size > 0) {
-      const placeholders = new Set(this.placeholderKeysSignal.get())
-      for (const rowKey of this.pendingRemoved.keys()) {
-        placeholders.add(rowKey)
+      const placeholders = new Map(this.placeholdersSignal.get())
+      for (const [rowKey, reason] of this.pendingRemoved) {
+        placeholders.set(rowKey, reason)
       }
-      this.placeholderKeysSignal.set(placeholders)
+      this.placeholdersSignal.set(placeholders)
     }
 
     // Slots first, movement after: the placeholders of this same press are still standing
@@ -2143,6 +2166,7 @@ export class TableViewportController<R> implements TableWindowSink {
     }
 
     this.clearPending()
+    this.settleEmptyWindow()
   }
 
   /**
@@ -2214,7 +2238,7 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private freshRow(rowKey: string): TableRow | null {
     this.apply()
-    if (this.placeholderKeysSignal.get().has(rowKey)) {
+    if (this.placeholdersSignal.get().has(rowKey)) {
       return null
     }
 
@@ -2439,14 +2463,12 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Whether the key is a row of the window that is still standing — not a placeholder. */
   private isLiveRow(rowKey: string): boolean {
-    return (
-      this.isInWindow(rowKey) && !this.placeholderKeysSignal.get().has(rowKey)
-    )
+    return this.isInWindow(rowKey) && !this.placeholdersSignal.get().has(rowKey)
   }
 
   /** The keys of the window's live rows, in window order. */
   private liveRowKeys(): readonly string[] {
-    const placeholders = this.placeholderKeysSignal.get()
+    const placeholders = this.placeholdersSignal.get()
 
     return this.windowSignal
       .get()
@@ -2567,7 +2589,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * drawn and comes back with its row.
    */
   private changeWindow(): void {
-    this.placeholderKeysSignal.set(new Set())
+    this.placeholdersSignal.set(new Map())
     this.clearHighlights()
     this.clearPending()
     this.clearAnnounced()
@@ -2655,6 +2677,39 @@ export class TableViewportController<R> implements TableWindowSink {
     this.refreshPendingSignals()
   }
 
+  /**
+   * Empty a window that has no live rows over a set whose count is zero.
+   *
+   * The window is emptied rather than merely hidden behind its empty state: a
+   * later tail append must not bring old placeholders back beside the new row.
+   * Change marks, selection (including the all-by-filter condition), announced
+   * rows and open panels go with the empty set. Work bars and their finished
+   * report, the active query, facet counts, loading/refusal state and own-create
+   * correlation do not belong to this convergence and stay where they are.
+   */
+  private settleEmptyWindow(): void {
+    if (
+      this.windowSignal.get().length === 0 ||
+      this.liveRowKeys().length > 0 ||
+      this.totalCountSignal.get() > 0
+    ) {
+      return
+    }
+
+    this.windowSignal.set([])
+    this.placeholdersSignal.set(new Map())
+    this.firstAnchor = null
+    this.lastAnchor = null
+    if (this.rowsBeforeSignal.get() !== null) {
+      this.rowsBeforeSignal.set(0)
+    }
+    this.clearHighlights()
+    this.clearPending()
+    this.clearAnnounced()
+    this.clearSelection()
+    this.clearExpanded()
+  }
+
   private refreshPendingSignals(): void {
     this.pendingCountSignal.set(
       this.pendingMoves.size + this.pendingRemoved.size,
@@ -2667,6 +2722,7 @@ export class TableViewportController<R> implements TableWindowSink {
       pendingKinds.set(rowKey, 'remove')
     }
     this.pendingKindSignal.set(pendingKinds)
+    this.pendingRemovalSignal.set(new Map(this.pendingRemoved))
   }
 
   /**

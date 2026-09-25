@@ -96,7 +96,7 @@ async function createBackup(
   return newestArchiveKey(page)
 }
 
-/** Delete one archive by its row key and wait for the row to become a placeholder. */
+/** Delete one archive by its row key and wait for its actions to disappear. */
 async function deleteBackup(
   page: import('@playwright/test').Page,
   rowKey: string,
@@ -106,9 +106,11 @@ async function deleteBackup(
     .locator(`[data-id="${rowKey}"] [data-id^="hilos-backup-delete-"]`)
     .click()
   await page.getByTestId('hilos-backup-delete-confirm').click()
-  await expect(page.locator(`[data-id="${rowKey}"]`)).toContainText('Removed', {
-    timeout: 20_000,
-  })
+  await expect(
+    page.locator(
+      `[data-id="${rowKey}"] [data-id^="hilos-backup-delete-"]`,
+    ),
+  ).toHaveCount(0, { timeout: 20_000 })
 }
 
 /** The card a finished run raises, naming the archive it made. */
@@ -355,14 +357,13 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   await row.locator('[data-id^="hilos-backup-delete-"]').click()
   await page.getByTestId('hilos-backup-delete-confirm').click()
   await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
-  // The row does not vanish: a removal leaves a placeholder in its slot, so the
-  // window never collapses under the reader (table-subscription.md). What must be
-  // gone is the backup itself — the row stops offering its actions.
+  // The row leaves either a placeholder or, when it was the last archive on this
+  // shared stand, an empty table. What must be gone is the backup itself — it
+  // stops offering its actions in both cases.
   const deleted = page.locator(`[data-id="${createdKey}"]`)
-  await expect(deleted).toContainText('Removed', { timeout: 15_000 })
   await expect(
     deleted.locator('[data-id^="hilos-backup-delete-"]'),
-  ).toHaveCount(0)
+  ).toHaveCount(0, { timeout: 15_000 })
 })
 
 // HIL-1089: a live backup creation and deletion move the option numbers in an open
@@ -557,13 +558,13 @@ test('agrees between two tabs about the card a finished backup raised', async ({
   const createdKey = await created.getAttribute('data-id')
   await created.locator('[data-id^="hilos-backup-delete-"]').click()
   await tabA.getByTestId('hilos-backup-delete-confirm').click()
-  // A removal leaves a placeholder in the row's slot rather than collapsing the
-  // window under the reader (table-subscription.md); what must be gone is the
-  // backup, which stops offering its actions.
-  await expect(tabA.locator(`[data-id="${createdKey}"]`)).toContainText(
-    'Removed',
-    { timeout: 20_000 },
-  )
+  // A removal leaves either a placeholder or an empty table when this was the
+  // last archive; in both cases the deleted backup stops offering its actions.
+  await expect(
+    tabA.locator(
+      `[data-id="${createdKey}"] [data-id^="hilos-backup-delete-"]`,
+    ),
+  ).toHaveCount(0, { timeout: 20_000 })
 })
 
 // HIL-803 acceptance. A created row that belongs ABOVE a window is neither shown

@@ -1,8 +1,8 @@
 // HilosViewportTable — the thin React view over the SERVER-WINDOWED
 // TableViewportController. Search, sort, and paging change the viewport
 // descriptor and are sent to the backend (NO local filtering); live changes
-// arrive as pending and are resolved with the Apply button. A removed row
-// renders as a placeholder in its slot — the layout never collapses. It holds
+// arrive as pending and are resolved with the Apply button. A removed row renders
+// as a placeholder in its slot while the set still has rows elsewhere. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the page — one renderer per declared
 // column (`cells`) for a table whose page declared a frame, the whole row (`row`)
@@ -36,6 +36,7 @@ import {
   TABLE_STALENESS_COPY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
+  hilosTablePlaceholder,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
@@ -103,8 +104,6 @@ export interface HilosViewportTableProps<R> {
    * emptyText when the page declared no empty state.
    */
   empty?: ReactNode
-  /** Label shown in a removed row's placeholder slot. */
-  placeholderText?: string
   /**
    * The `data-id` the table's root carries, for a page that draws more than one of them:
    * the default is the shared handle, and a second table on the same page names itself so
@@ -136,7 +135,8 @@ type ProgressCell = { span: number; covered: boolean }
 /**
  * The framework-owned table chrome over a headless {@link TableViewportController}.
  *
- * @param props The controller, columns, cell or row renderers, label / search / empty / placeholder config, and the project's places beside running work.
+ * @param props The controller, columns, cell or row renderers, label / search /
+ *   empty config, and the project's places beside running work.
  */
 export function HilosViewportTable<R>({
   controller,
@@ -150,7 +150,6 @@ export function HilosViewportTable<R>({
   autofocusSearch = false,
   emptyText = 'No rows.',
   empty,
-  placeholderText = 'Removed',
   dataId = 'hilos-viewport-table',
   tableProgress,
   tableProgressAction,
@@ -841,6 +840,7 @@ export function HilosViewportTable<R>({
                   ) : null
                 const bar = rowBar(view.rowKey)
                 const record = view.row
+                const placeholder = hilosTablePlaceholder(view.removal)
 
                 return (
                   <Fragment key={view.rowKey}>
@@ -863,7 +863,11 @@ export function HilosViewportTable<R>({
                           className="text-center text-muted fst-italic"
                           data-id="hilos-table-placeholder"
                         >
-                          {placeholderText}
+                          <i
+                            className={`bi ${placeholder.icon} me-1`}
+                            aria-hidden="true"
+                          />
+                          {placeholder.text}
                         </td>
                       ) : declaration ? (
                         declaredCells(view.row, view.rowKey)
@@ -1033,6 +1037,7 @@ export function HilosViewportTable<R>({
             <div role="list" aria-labelledby={nameId}>
               {rows.map((view) => {
                 const tint = cardClass(view)
+                const placeholder = hilosTablePlaceholder(view.removal)
 
                 return (
                   <div
@@ -1044,14 +1049,18 @@ export function HilosViewportTable<R>({
                     data-id={`hilos-table-card-${view.rowKey}`}
                   >
                     {/* A removed row keeps its place as a card of one line,
-                        exactly as it keeps it as a row of one cell: the set
-                        never closes up under the reader (Flow F4). */}
+                        exactly as it keeps it as a row of one cell, until an
+                        empty set makes the whole window converge (Flow F4). */}
                     {view.placeholder || view.row === null ? (
                       <div
                         className="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
                         data-id="hilos-table-placeholder"
                       >
-                        {placeholderText}
+                        <i
+                          className={`bi ${placeholder.icon} me-1`}
+                          aria-hidden="true"
+                        />
+                        {placeholder.text}
                       </div>
                     ) : (
                       cardBody(card, view, view.row)

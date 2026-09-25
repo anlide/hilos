@@ -492,6 +492,44 @@ test('a value edited in another tab lands in place, highlighted and with no gate
   await deleteBot(page, key)
 })
 
+test('a bot deleted in another tab, the last under a search, leaves Nothing found after Apply', async ({
+  page,
+}) => {
+  const name = nameBeforeAll(Date.now())
+
+  await signUpAdmin(page)
+  await openBots(page)
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  // A narrows its set to the one bot this test owns. B opens its own socket and
+  // narrows to the same row before deleting it, so A receives a foreign removal
+  // behind Apply rather than the author's immediate path.
+  await typeInto(page.getByTestId('hilos-table-search'), name)
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+  const tabB = await page.context().newPage()
+  await openBots(tabB)
+  await typeInto(tabB.getByTestId('hilos-table-search'), name)
+  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+
+  await deleteBot(tabB, key)
+
+  await expect(
+    page.getByTestId(`hilos-table-pending-remove-${key}`),
+  ).toBeVisible()
+  const apply = page.getByTestId('hilos-table-apply')
+  await expect(apply).toBeVisible()
+  await expect(apply).toBeEnabled()
+  await apply.click()
+
+  // The set count is zero and no live row remains. Apply empties the window into
+  // the same filtered empty state a reload would bring, without reloading.
+  await expect(page.getByTestId('hilos-table-no-matches')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
+  await tabB.close()
+})
+
 // HIL-1051: the edit and the delete dialogs merge against the live row through
 // the shared row-edit helper. Two tabs of one context over a bot A creates first
 // in the window; every value B writes keeps the row there, so A's dialogs keep

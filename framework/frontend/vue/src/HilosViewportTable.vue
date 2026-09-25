@@ -2,7 +2,7 @@
 TableViewportController. Search, sort, and paging change the viewport descriptor
 and are sent to the backend (NO local filtering); live changes arrive as pending
 and are resolved with the Apply button. A removed row renders as a placeholder in
-its slot — the layout never collapses. It holds NO table logic
+its slot while the set still has rows elsewhere. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
 Body cells come from a `#cell-<key>` slot per declared column — the page gives
 the content, the framework writes the cell — or from the one `#row` slot while a
@@ -45,6 +45,7 @@ import {
   TABLE_STALENESS_COPY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
+  hilosTablePlaceholder,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
@@ -87,8 +88,6 @@ const props = withDefaults(
     autofocusSearch?: boolean
     /** Message shown when there are no rows. */
     emptyText?: string
-    /** Label shown in a removed row's placeholder slot. */
-    placeholderText?: string
     /**
      * The `data-id` the table's root carries, for a page that draws more than one of
      * them: the default is the shared handle, and a second table on the same page names
@@ -103,7 +102,6 @@ const props = withDefaults(
     searchPlaceholder: 'Search…',
     autofocusSearch: false,
     emptyText: 'No rows.',
-    placeholderText: 'Removed',
     dataId: 'hilos-viewport-table',
   },
 )
@@ -665,7 +663,11 @@ function onSelectPage(event: Event): void {
                 class="text-center text-muted fst-italic"
                 data-id="hilos-table-placeholder"
               >
-                {{ placeholderText }}
+                <i
+                  :class="`bi ${hilosTablePlaceholder(view.removal).icon} me-1`"
+                  aria-hidden="true"
+                ></i>
+                {{ hilosTablePlaceholder(view.removal).text }}
               </td>
               <!-- What stands where a row's values do, one shape per epoch of
               the frame. A DECLARED table hands the page one slot per column and
@@ -891,14 +893,18 @@ function onSelectPage(event: Event): void {
           :data-id="`hilos-table-card-${view.rowKey}`"
         >
           <!-- A removed row keeps its place as a card of one line, exactly as
-          it keeps it as a row of one cell: the set never closes up under the
-          reader (Flow F4). -->
+          it keeps it as a row of one cell, until an empty set makes the whole
+          window converge (Flow F4). -->
           <div
             v-if="view.placeholder || view.row === null"
             class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
             data-id="hilos-table-placeholder"
           >
-            {{ placeholderText }}
+            <i
+              :class="`bi ${hilosTablePlaceholder(view.removal).icon} me-1`"
+              aria-hidden="true"
+            ></i>
+            {{ hilosTablePlaceholder(view.removal).text }}
           </div>
           <div v-else class="card-body py-2 px-3">
             <div class="d-flex align-items-start gap-2 mb-1">

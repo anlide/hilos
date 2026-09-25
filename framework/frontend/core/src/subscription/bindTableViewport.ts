@@ -29,6 +29,7 @@ import {
   type TableWindowSink,
 } from '../table/TableViewportController.js'
 import { type HilosTableProgressFrame } from '../table/tableProgress.js'
+import { hilosTableRemovalReason } from '../table/tablePlaceholder.js'
 
 /** A table's address on the wire: the page it belongs to and its table key. */
 export interface TableViewportAddress {
@@ -403,7 +404,7 @@ function toViewportDelta(
       return {
         kind: 'row_removed',
         rowKey: String(data.rowKey),
-        reason: data.reason ?? '',
+        reason: hilosTableRemovalReason(data.reason),
         row:
           data.row === undefined
             ? undefined

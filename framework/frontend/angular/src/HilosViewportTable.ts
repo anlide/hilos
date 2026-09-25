@@ -1,8 +1,8 @@
 // HilosViewportTable — the thin Angular view over the SERVER-WINDOWED
 // TableViewportController. Search, sort, and paging change the viewport
 // descriptor and are sent to the backend (NO local filtering); live changes
-// arrive as pending and are resolved with the Apply button. A removed row
-// renders as a placeholder in its slot — the layout never collapses. It holds
+// arrive as pending and are resolved with the Apply button. A removed row renders
+// as a placeholder in its slot while the set still has rows elsewhere. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the page — one
 // `<ng-template hilosTableCell="<column key>">` per declared column for a table whose
@@ -51,6 +51,7 @@ import {
   TABLE_STALENESS_COPY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
+  hilosTablePlaceholder,
   hilosTableSortPositionLabel,
   hilosTableStaleColumns,
   hilosTableStaleSources,
@@ -65,6 +66,7 @@ import type {
   ReadonlySignal,
   TableSort,
   TableSortOrder,
+  TableRemovalReason,
   TableViewportController,
   TableViewportRow,
 } from '@hilos/core'
@@ -351,7 +353,11 @@ export interface BulkUntouchedContext {
                       class="text-center text-muted fst-italic"
                       data-id="hilos-table-placeholder"
                     >
-                      {{ placeholderText() }}
+                      <i
+                        class="bi {{ placeholder(view.removal).icon }} me-1"
+                        aria-hidden="true"
+                      ></i>
+                      {{ placeholder(view.removal).text }}
                     </td>
                   } @else if (declaration()) {
                     <!-- What stands where a row's values do, one shape per epoch of
@@ -586,14 +592,18 @@ export interface BulkUntouchedContext {
                   [attr.data-id]="'hilos-table-card-' + view.rowKey"
                 >
                   <!-- A removed row keeps its place as a card of one line,
-                  exactly as it keeps it as a row of one cell: the set never
-                  closes up under the reader (Flow F4). -->
+                  exactly as it keeps it as a row of one cell, until an empty
+                  set makes the whole window converge (Flow F4). -->
                   @if (view.placeholder) {
                     <div
                       class="card-body py-2 px-3 text-center text-body-secondary fst-italic small"
                       data-id="hilos-table-placeholder"
                     >
-                      {{ placeholderText() }}
+                      <i
+                        class="bi {{ placeholder(view.removal).icon }} me-1"
+                        aria-hidden="true"
+                      ></i>
+                      {{ placeholder(view.removal).text }}
                     </div>
                   } @else {
                     <div class="card-body py-2 px-3">
@@ -943,14 +953,20 @@ export class HilosViewportTable<R> {
   readonly autofocusSearch = input(false)
   /** Message shown when there are no rows and the page declared no empty state. */
   readonly emptyText = input('No rows.')
-  /** Label shown in a removed row's placeholder slot. */
-  readonly placeholderText = input('Removed')
   /**
    * The `data-id` the table's root carries, for a page that draws more than one of them:
    * the default is the shared handle, and a second table on the same page names itself so
    * the two can be told apart from outside.
    */
   readonly dataId = input('hilos-viewport-table')
+
+  /** The icon and words for a removed-row placeholder. */
+  protected placeholder(removal: TableRemovalReason | null): {
+    readonly icon: string
+    readonly text: string
+  } {
+    return hilosTablePlaceholder(removal)
+  }
 
   /**
    * The cells of one row of a table whose page declared no frame:

@@ -1219,7 +1219,37 @@ describe('HilosViewportTable drawing a row as a card', () => {
     ).toBe(false)
   })
 
-  it('keeps a removed row as a card of one line, in its place', () => {
+  it('draws every placeholder reason in the row and card', () => {
+    for (const [reason, text, icon] of [
+      ['deleted', 'Removed', 'bi-dash-circle'],
+      ['moved_out', 'Moved to another page', 'bi-arrows-move'],
+      ['left_set', 'No longer in this list', 'bi-box-arrow-right'],
+    ] as const) {
+      const controller = makeController(CARD_FRAME)
+      window(controller)
+      controller.ingestDelta({ kind: 'row_removed', rowKey: 'a', reason })
+      controller.apply()
+      const fixture = mountCards(controller)
+
+      const row = query(
+        fixture,
+        '[data-id="hilos-table-row-a"] [data-id="hilos-table-placeholder"]',
+      )
+      const card = cardOf(fixture, 'a').querySelector(
+        '[data-id="hilos-table-placeholder"]',
+      )
+      expect(row?.textContent?.trim()).toBe(text)
+      expect(row?.querySelector('i')?.classList.contains(icon)).toBe(true)
+      expect(card?.textContent?.trim()).toBe(text)
+      expect(card?.querySelector('i')?.classList.contains(icon)).toBe(true)
+      expect(
+        root(fixture).querySelectorAll('[data-id^="hilos-table-card-"]'),
+      ).toHaveLength(2)
+      fixture.destroy()
+    }
+  })
+
+  it('draws the empty tile instead of placeholders after convergence', () => {
     const controller = makeController(CARD_FRAME)
     window(controller)
     controller.ingestDelta({
@@ -1227,19 +1257,20 @@ describe('HilosViewportTable drawing a row as a card', () => {
       rowKey: 'a',
       reason: 'deleted',
     })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'left_set',
+    })
+    controller.ingestCount(0, true)
     controller.apply()
     const fixture = mountCards(controller)
 
-    const card = cardOf(fixture, 'a')
     expect(
-      card
-        .querySelector('[data-id="hilos-table-placeholder"]')
-        ?.textContent?.trim(),
-    ).toBe('Removed')
-    expect(card.querySelectorAll('dt')).toHaveLength(0)
-    expect(card.querySelector('.restore')).toBeNull()
+      root(fixture).querySelectorAll('[data-id="hilos-table-placeholder"]'),
+    ).toHaveLength(0)
     expect(
-      root(fixture).querySelectorAll('[data-id^="hilos-table-card-"]'),
+      root(fixture).querySelectorAll('[data-id="hilos-table-empty"]'),
     ).toHaveLength(2)
   })
 
