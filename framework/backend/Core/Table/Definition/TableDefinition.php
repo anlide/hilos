@@ -298,6 +298,12 @@ abstract class TableDefinition implements ArrayAccess
      * order is declared with the same directions. The primary key is not part of a declaration —
      * the query boundary settles the order with it.
      *
+     * Every declared order is served both ways: as declared and as its mirror, every direction
+     * turned. The mirror is not declared — the index under an order serves it by being read
+     * backwards, which is what a window going back asks of that index already — and the menu
+     * offers it right after its original. An order that is not the exact mirror of a declared
+     * one is a declaration of its own, with an index of its own.
+     *
      * The key is the order's own slug, which is what the frontend builds the
      * `hilos-table-order-<orderKey>` selector out of; it stays on this side of the wire, the
      * chosen order itself being what travels.

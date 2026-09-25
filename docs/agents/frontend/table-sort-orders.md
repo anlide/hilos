@@ -20,13 +20,18 @@ on a column header asks for. `TableDefinition::sortOrders()` declares the orders
 of more than one column, one per key: the key is the order's own slug, the one the
 frontend builds its `hilos-table-order-<orderKey>` selector out of, and it stays
 on this side of the wire — a client picks an order and echoes the order itself
-back. The frontend declares the same orders a second time, for the menu that offers
-them — `declaredOrders` on the `TableViewportController`, every entry carrying
-the very key `sortOrders()` gave it, because the wire is what the two sides meet
-on and a key derived on the frontend would name the same order twice. The words
-of a menu item are not declared anywhere: the core builds them out of the labels
-of the declared columns, so a renamed column renames every item it appears in
-and no second text of an order exists to fall out of step.
+back. Every declared order is offered in both directions, as declared and as its
+mirror — every direction turned — and the mirror is declared on neither side:
+the backend takes it in `holdComposite()` as it takes the order itself, and the
+core puts it right after its original under the key `<orderKey>-mirror`
+(`hilosTableOfferedOrders()`). The frontend declares the same orders a second
+time, for the menu that offers them — `declaredOrders` on the
+`TableViewportController`, every entry carrying the very key `sortOrders()` gave
+it, because the wire is what the two sides meet on and a key derived on the
+frontend would name the same order twice. The words of a menu item are not
+declared anywhere: the core builds them out of the labels of the declared
+columns, so a renamed column renames every item it appears in and no second
+text of an order exists to fall out of step.
 `TableSortWhitelist` holds every query path to both: `holdComposite()` asks
 whether an order of more than one column was offered at all, `resolve()` turns
 each of its components into a column, and either refusal costs the window its
@@ -67,6 +72,7 @@ whoever asked, keeping the three parts.
 | Rule | Why | What to answer when asked for something else |
 |---|---|---|
 | **Under every declared order lies an index that matches it in both columns and directions.** | Otherwise the database sorts the whole filtered set on every show of the window. | "There is no such order. For it to exist we need an index `(channel, created_at, id)` — we add it, or we take one of the declared orders." |
+| **Every declared order is also served as its mirror, and the mirror is not declared.** The mirror is the same columns in the same sequence with every direction turned; the backend gate takes it, and the menu offers it right after its original. An order with only some of its directions turned is not a mirror. | The index under an order serves its mirror by reading it backwards — a window going back already asks for exactly that order (`TableWindowPlan::inverted()`) — so a second declaration would promise nothing. | "You don't declare the reverse: the menu offers it next to yours. An order that is not the exact reverse of a declared one is a declaration of its own, with its own index." |
 | **The last component of every order is the primary key.** The query boundary settles it, so a declaration does not carry it: `Objects::queryPage()` appends the primary-key columns in the direction of the order's last component (HIL-786, HIL-789). | Without it the order is not total: on a column with repeats two adjacent pages show one row twice and another not at all, and the server cannot say where an arriving row falls relative to the window. | "I am adding the primary key at the end — without it the window drifts." |
 | **A computed field is not part of an order a query serves.** The sign is a property, not a list: the value is not a column of the entity whose page the query takes — it is merged in from a runtime source and has no column, as `presence` is in a user row (`AbstractHilosUserTableRow`). The rule ends where the query does: the last row of this table is the other half, and the users table itself lives there — it is filtered in memory, and it declares `presence` and `onlineSessionCount` sortable (`AbstractHilosUsersTable::sortableFields()`). | Presence, a session count, a value from another source cannot be given to an index, and a query is ordered by an index. Where there is no query there is no index to miss. | "A query cannot sort by this field: it is not in the database, it is computed on the fly. Either we materialize it as a column, we take another field, or — if the set is filtered in memory — we sort by it there, where nothing has to match an index." |
 | **Directions may be mixed inside an order, where the index under it is declared with the same directions.** The database has never been the obstacle: MariaDB 11.4 keeps a descending index and serves a mixed order from it (measured 2026-09-05 on `mariadb:11.4.12` — `KEY ix (a, b DESC, id)` is stored, and a mixed `ORDER BY` over it reads 20 rows `Using index` where the mismatched direction reads 5000 rows `Using filesort`). What was missing is now there: an index declaration carries the direction of every column (`Entity::INDEX_COLUMN` / `Entity::INDEX_DIRECTION`), and the schema audit holds it against the live index's `COLLATION` the same way it holds columns and uniqueness (`EntitySchemaIndexAudit`). | An index serves an order only when it matches it in both columns and directions; a mixed order over an index turned the other way is not wrong, it is a full sort of the filtered set on every show of the window. And the price is paid at the end of the order: the primary key is appended in the direction of the **last** component, so `channel` up and `created_at` down needs `(channel, created_at DESC, id DESC)` and not `(channel, created_at DESC, id)`. | "Mixing is possible, but that order needs an index of its own — `(channel, created_at DESC, id DESC)`. We add it together with the order in one change, or we turn both columns the same way." |

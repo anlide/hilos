@@ -399,12 +399,20 @@ describe('HilosTableBar', () => {
     expect(byId(fixture, 'hilos-table-order')).toBeNull()
   })
 
-  it('offers the way home first and every declared order after it', () => {
+  it('offers the way home first, then every declared order with its mirror right after it', () => {
     const { controller } = makeOrdered()
     const fixture = mountBar(controller)
 
+    // The mirror is the framework's: the same columns with every direction turned,
+    // offered right after the order it mirrors, and declared by no table (HIL-1095).
     expect(orderItems(fixture).map((item) => item.textContent?.trim())).toEqual(
-      ['Date ↓', 'Kind ↑, then Date ↓', 'Date ↑, then Kind ↑'],
+      [
+        'Date ↓',
+        'Kind ↑, then Date ↓',
+        'Kind ↓, then Date ↑',
+        'Date ↑, then Kind ↑',
+        'Date ↓, then Kind ↓',
+      ],
     )
     expect(
       byId(fixture, `hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}`),

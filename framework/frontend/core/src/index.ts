@@ -131,10 +131,12 @@ export {
   hilosTableStaleSources,
 } from './table/tableStaleness.js'
 export {
+  HILOS_TABLE_MIRROR_ORDER_SUFFIX,
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
   type HilosTableOrderView,
   type HilosTableSortOrder,
+  hilosTableOfferedOrders,
   hilosTableOrderLabel,
   hilosTableOrderPosition,
   hilosTableOrderViews,

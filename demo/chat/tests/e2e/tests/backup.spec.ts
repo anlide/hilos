@@ -880,6 +880,9 @@ test('switches the declared orders from the Order menu and goes back through its
     .getByTestId('hilos-dropdown-toggle')
   const opening = page.getByTestId('hilos-table-order-opening')
   const scopeThenDate = page.getByTestId('hilos-table-order-scope_created')
+  const scopeThenDateMirror = page.getByTestId(
+    'hilos-table-order-scope_created-mirror',
+  )
   const statusThenDate = page.getByTestId('hilos-table-order-status_created')
   const dateHeader = page.locator(
     'th:has([data-id="hilos-table-sort-createdAt"])',
@@ -904,6 +907,16 @@ test('switches the declared orders from the Order menu and goes back through its
   await toggle.click()
   await expect(scopeThenDate).toHaveAttribute('aria-selected', 'true')
   await expect(opening).toHaveAttribute('aria-selected', 'false')
+
+  // Right after a declared order stands its mirror, which nobody declared: the same
+  // columns with every direction turned (HIL-1095), and the item lights up on its own.
+  await scopeThenDateMirror.click()
+  await expect(scopeHeader).toHaveAttribute('aria-sort', 'descending')
+  await expect(dateHeader).toHaveAttribute('aria-sort', 'ascending')
+  await expect(statusHeader).toHaveAttribute('aria-sort', 'none')
+  await toggle.click()
+  await expect(scopeThenDateMirror).toHaveAttribute('aria-selected', 'true')
+  await expect(scopeThenDate).toHaveAttribute('aria-selected', 'false')
 
   // One declared order gives way to the other whole, rather than to a mix of the two.
   await statusThenDate.click()

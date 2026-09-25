@@ -1115,7 +1115,9 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   because both copies stand in the document at once: `hilos-table-filter-<filterKey>-modal`,
   its `-modal-from`, `-modal-to`, `-modal-clear`, and
   `hilos-table-facet-<filterKey>-<value>-modal`. `hilos-table-order`,
-  `hilos-table-order-<orderKey>`, `hilos-table-sort-<key>`. The "Order" menu's
+  `hilos-table-order-<orderKey>`, `hilos-table-order-<orderKey>-mirror` — the
+  mirror of a declared order, every direction turned, standing right after its
+  original and declared by no table, `hilos-table-sort-<key>`. The "Order" menu's
   first item is the way back to the order the table opened in, and it answers to
   the one key no table declares: `hilos-table-order-opening`;
 - **rows:** `hilos-table-row-<rowKey>`, `hilos-table-cards` — the container of

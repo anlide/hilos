@@ -341,15 +341,23 @@ describe('HilosTableBar', () => {
     expect(wrapper.find('[data-id="hilos-table-order"]').exists()).toBe(false)
   })
 
-  it('offers the way home first and every declared order after it', () => {
+  it('offers the way home first, then every declared order with its mirror right after it', () => {
     const { controller } = makeOrdered()
     const wrapper = mountBar(controller)
 
+    // The mirror is the framework's: the same columns with every direction turned,
+    // offered right after the order it mirrors, and declared by no table (HIL-1095).
     expect(
       wrapper
         .findAll('[data-id^="hilos-table-order-"]')
         .map((item) => item.text()),
-    ).toEqual(['Date ↓', 'Kind ↑, then Date ↓', 'Date ↑, then Kind ↑'])
+    ).toEqual([
+      'Date ↓',
+      'Kind ↑, then Date ↓',
+      'Kind ↓, then Date ↑',
+      'Date ↑, then Kind ↑',
+      'Date ↓, then Kind ↓',
+    ])
     expect(
       wrapper
         .find(`[data-id="hilos-table-order-${HILOS_TABLE_OPENING_ORDER_KEY}"]`)

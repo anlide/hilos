@@ -318,11 +318,12 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     }
 
     /**
-     * Declares the two orders of more than one column the backup list offers in its menu.
+     * Declares the two orders of more than one column the backup list offers in its menu, each together with its mirror.
      *
      * No index stands under either of them, and none is owed: the whole index is walked in memory
      * on every window, where an order costs nothing (`docs/agents/frontend/table-sort-orders.md`).
-     * Both end on the newest copy first, which is the order the list opens in.
+     * Both end on the newest copy first, which is the order the list opens in; the mirrors the
+     * menu offers beside them are not declared here, the framework serves them on both sides.
      *
      * @return array<string, TableSortOrderDTO> Order key => order it stands for
      */

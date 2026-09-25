@@ -22,6 +22,16 @@ import { isSameOrder, type TableSortOrder } from './TableViewportController.js'
 export const HILOS_TABLE_OPENING_ORDER_KEY = 'opening'
 
 /**
+ * What the key of a mirror item ends in: the key of its original plus this.
+ *
+ * The backend declares no key for a mirror — it holds a composite order against the
+ * declared orders and their mirrors alike, and the order itself is what travels — so
+ * the item's key is derived here, from the one name the order already has. One order,
+ * one name, on both sides of the wire; the suffix only tells the two items apart.
+ */
+export const HILOS_TABLE_MIRROR_ORDER_SUFFIX = '-mirror'
+
+/**
  * One composite order a table declares: the key it is picked by, and the components
  * it runs in.
  *
@@ -106,8 +116,43 @@ export function hilosTableOrderLabel(
 }
 
 /**
- * The items of the "Order" menu: the way home first, then the declared orders in the
- * sequence the table declared them.
+ * The orders the menu offers: every declared order, each followed by its mirror.
+ *
+ * The mirror runs by the same fields in the same sequence with every direction turned
+ * — the declared order read backwards — and it is offered because it costs nothing on
+ * either side: the backend's index under an order serves its mirror by being read
+ * backwards, which a window going back asks of it already, and the backend's gate takes
+ * the mirror of a declared order as it takes the order itself. So no table declares a
+ * mirror; the one rule "one key, both directions" that a header click gives a single
+ * column holds for a composite order too. A mirror the table declared itself is not
+ * offered a second time — it already stands where the table put it, and a menu naming
+ * one order twice would be the framework's doing.
+ *
+ * @param declared The composite orders the table declares, in menu sequence.
+ * @returns The declared orders with a mirror after each, or an empty list for none.
+ */
+export function hilosTableOfferedOrders(
+  declared: readonly HilosTableSortOrder[],
+): readonly HilosTableSortOrder[] {
+  return declared.flatMap((order) => {
+    const mirror: HilosTableSortOrder = {
+      key: `${order.key}${HILOS_TABLE_MIRROR_ORDER_SUFFIX}`,
+      components: order.components.map(({ field, direction }) => ({
+        field,
+        direction: direction === 'asc' ? 'desc' : 'asc',
+      })),
+    }
+    const declaredItself = declared.some(({ components }) =>
+      isSameOrder(components, mirror.components),
+    )
+
+    return declaredItself ? [order] : [order, mirror]
+  })
+}
+
+/**
+ * The items of the "Order" menu: the way home first, then the offered orders in the
+ * sequence they are offered — each declared order followed by its mirror.
  *
  * A table that declared no composite order gets no items at all — a menu offering only
  * "the way it opened" offers no choice, and the bar draws nothing where there is
@@ -120,7 +165,8 @@ export function hilosTableOrderLabel(
  * that order is a state of the table which the menu does not offer, and lighting up the
  * nearest item would say the rows lie in an order they do not.
  *
- * @param declared The composite orders the table declares, in menu sequence.
+ * @param declared The orders the menu offers after the way home — each declared order
+ *   followed by its mirror, as {@link hilosTableOfferedOrders} lists them.
  * @param opening The order the table opened in, or undefined when it opened in none.
  * @param current The order the window runs in, or undefined when it runs in none.
  * @param columns The columns as the page declared them.

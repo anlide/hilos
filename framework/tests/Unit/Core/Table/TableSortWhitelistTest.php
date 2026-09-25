@@ -11,14 +11,15 @@ use Hilos\Core\Table\TableSortWhitelist;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the sort gate both table boundaries run on (HIL-561, HIL-789, HIL-917).
+ * Unit tests for the sort gate both table boundaries run on (HIL-561, HIL-789, HIL-917, HIL-1095).
  *
  * The gate answers two questions with two methods. The map is what a boundary allows, so the
  * tests of {@see TableSortWhitelist::resolve()} are about what leaves it: an allowed field comes
  * back carrying the column it may order by, an unknown one takes its whole order down with it
  * plus a logged refusal, and a boundary that declares nothing does not get to be a filter by
  * accident. The tests of {@see TableSortWhitelist::holdComposite()} are about what was offered:
- * an order of more than one column exists only because a table declared it.
+ * an order of more than one column exists only because a table declared it — or because it is
+ * the mirror of one the table declared, every direction turned.
  */
 final class TableSortWhitelistTest extends TestCase
 {
@@ -179,6 +180,77 @@ final class TableSortWhitelistTest extends TestCase
         );
 
         self::assertSame($order, $held);
+    }
+
+    public function testTheMirrorOfADeclaredOrderIsServed(): void
+    {
+        $asked = TableSortOrderDTO::of(
+            new TableSortDTO('section', TableConstants::ORDER_DESC),
+            new TableSortDTO('promptPiece', TableConstants::ORDER_ASC),
+        );
+
+        ob_start();
+        $held = TableSortWhitelist::holdComposite(
+            $asked,
+            ['sectionThenPiece' => TableSortOrderDTO::of(
+                new TableSortDTO('section', TableConstants::ORDER_ASC),
+                new TableSortDTO('promptPiece', TableConstants::ORDER_DESC),
+            )],
+            self::ALLOWED,
+            self::CONTEXT,
+        );
+        $logged = (string) ob_get_clean();
+
+        // The same fields in the same sequence with every direction turned is the declared
+        // order read backwards: the index under it serves both, so nothing is declared twice
+        // and nothing is logged.
+        self::assertSame($asked, $held);
+        self::assertSame('', $logged);
+    }
+
+    public function testAnOrderWithOnlySomeDirectionsTurnedIsRejectedWholeAndLogged(): void
+    {
+        ob_start();
+        $held = TableSortWhitelist::holdComposite(
+            TableSortOrderDTO::of(
+                new TableSortDTO('section', TableConstants::ORDER_DESC),
+                new TableSortDTO('promptPiece', TableConstants::ORDER_DESC),
+            ),
+            ['sectionThenPiece' => TableSortOrderDTO::of(
+                new TableSortDTO('section', TableConstants::ORDER_ASC),
+                new TableSortDTO('promptPiece', TableConstants::ORDER_DESC),
+            )],
+            self::ALLOWED,
+            self::CONTEXT,
+        );
+        $logged = (string) ob_get_clean();
+
+        // Half a mirror runs over a different index than the declared order does, so it is an
+        // order nobody declared, and it is refused as one.
+        self::assertNull($held);
+        self::assertStringContainsString('Table sort order rejected', $logged);
+        self::assertStringContainsString('section:desc, promptPiece:desc', $logged);
+    }
+
+    public function testTheMirrorOfADeclarationNamingAFieldOutsideTheMapIsRejected(): void
+    {
+        ob_start();
+        $held = TableSortWhitelist::holdComposite(
+            TableSortOrderDTO::of(
+                new TableSortDTO('section', TableConstants::ORDER_DESC),
+                new TableSortDTO('elsewhere', TableConstants::ORDER_DESC),
+            ),
+            ['unknown' => TableSortOrderDTO::of(new TableSortDTO('section'), new TableSortDTO('elsewhere'))],
+            self::ALLOWED,
+            self::CONTEXT,
+        );
+        $logged = (string) ob_get_clean();
+
+        // A declaration passed over as unusable takes its mirror with it: the mirror is served
+        // by the index under the declaration, and there is none to read backwards.
+        self::assertNull($held);
+        self::assertStringContainsString('Table sort order declaration ignored', $logged);
+        self::assertStringContainsString('Table sort order rejected', $logged);
     }
 
     public function testACompositeOrderNobodyDeclaredIsRejectedWholeAndLogged(): void

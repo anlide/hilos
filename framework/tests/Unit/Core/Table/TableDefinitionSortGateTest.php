@@ -16,13 +16,13 @@ use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the sort gate {@see TableDefinition::getPage()} runs (HIL-561, HIL-789, HIL-917).
+ * Unit tests for the sort gate {@see TableDefinition::getPage()} runs (HIL-561, HIL-789, HIL-917, HIL-1095).
  *
  * The gate is placed where every table's row source is reached from, so what the tests
  * inspect is the query the concrete table is handed: a declared field arrives with the
  * column it may order by, a field the table does not sort by does not arrive at all, an
- * order of more than one column arrives only if the table offered that very order, and
- * everything else about the window is passed on untouched.
+ * order of more than one column arrives only if the table offered that very order or its
+ * mirror, and everything else about the window is passed on untouched.
  */
 final class TableDefinitionSortGateTest extends TestCase
 {
@@ -102,6 +102,37 @@ final class TableDefinitionSortGateTest extends TestCase
         self::assertNotNull($order);
         self::assertSame([SortGateUnitRow::CHANNEL, SortGateUnitRow::LABEL], array_map(
             static fn(TableSortDTO $component): string => $component->field,
+            $order->components,
+        ));
+        self::assertSame(['row_channel', 'row_label'], array_map(
+            static fn(TableSortDTO $component): ?string => $component->column,
+            $order->components,
+        ));
+    }
+
+    public function testTheMirrorOfADeclaredOrderReachesTheQueryWithAColumnUnderEveryComponent(): void
+    {
+        $table = new SortGateUnitTable(
+            [SortGateUnitRow::LABEL => 'row_label', SortGateUnitRow::CHANNEL => 'row_channel'],
+            ['channelThenLabel' => self::channelThenLabel()],
+        );
+
+        $table->getPage(new TableQueryDTO(sort: TableSortOrderDTO::of(
+            new TableSortDTO(SortGateUnitRow::CHANNEL, TableConstants::ORDER_ASC),
+            new TableSortDTO(SortGateUnitRow::LABEL, TableConstants::ORDER_ASC),
+        )));
+
+        // The declared order with every direction turned is the same index read backwards,
+        // so it reaches the query as the declared one does: every component under its column,
+        // the directions as asked.
+        $order = $table->received?->sort;
+        self::assertNotNull($order);
+        self::assertSame([SortGateUnitRow::CHANNEL, SortGateUnitRow::LABEL], array_map(
+            static fn(TableSortDTO $component): string => $component->field,
+            $order->components,
+        ));
+        self::assertSame([TableConstants::ORDER_ASC, TableConstants::ORDER_ASC], array_map(
+            static fn(TableSortDTO $component): string => $component->direction,
             $order->components,
         ));
         self::assertSame(['row_channel', 'row_label'], array_map(

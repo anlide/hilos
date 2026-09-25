@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { type HilosTableColumn } from '../../src/table/hilosTableColumn.js'
 import { type TableSortOrder } from '../../src/table/TableViewportController.js'
 import {
+  HILOS_TABLE_MIRROR_ORDER_SUFFIX,
   HILOS_TABLE_OPENING_ORDER_KEY,
+  hilosTableOfferedOrders,
   hilosTableOrderLabel,
   hilosTableOrderPosition,
   hilosTableOrderViews,
@@ -55,6 +57,49 @@ describe('hilosTableOrderLabel', () => {
     expect(hilosTableOrderLabel(undefined, columns)).toBe(
       TABLE_ORDER_COPY.defaultOrder,
     )
+  })
+})
+
+const byChannelMirror: TableSortOrder = [
+  { field: 'channel', direction: 'desc' },
+  { field: 'createdAt', direction: 'asc' },
+]
+
+describe('hilosTableOfferedOrders', () => {
+  it('puts the mirror of every declared order right after it, every direction turned', () => {
+    const offered = hilosTableOfferedOrders(declared)
+
+    expect(offered.map(({ key }) => key)).toEqual([
+      'by_channel',
+      `by_channel${HILOS_TABLE_MIRROR_ORDER_SUFFIX}`,
+      'by_state',
+      `by_state${HILOS_TABLE_MIRROR_ORDER_SUFFIX}`,
+    ])
+    expect(offered[0]).toBe(declared[0])
+    expect(offered[1]?.key).toBe('by_channel-mirror')
+    expect(offered[1]?.components).toEqual(byChannelMirror)
+    expect(offered[3]?.components).toEqual([
+      { field: 'state', direction: 'desc' },
+      { field: 'createdAt', direction: 'asc' },
+    ])
+  })
+
+  it('does not offer a mirror the table declared itself a second time', () => {
+    // The declared mirror stands where the table put it: a menu naming one order
+    // twice would be the framework's doing, not the table's.
+    const offered = hilosTableOfferedOrders([
+      { key: 'by_channel', components: byChannel },
+      { key: 'by_channel_back', components: byChannelMirror },
+    ])
+
+    expect(offered.map(({ key }) => key)).toEqual([
+      'by_channel',
+      'by_channel_back',
+    ])
+  })
+
+  it('offers nothing to a table that declared nothing', () => {
+    expect(hilosTableOfferedOrders([])).toEqual([])
   })
 })
 
@@ -111,6 +156,23 @@ describe('hilosTableOrderViews', () => {
     expect(views.filter(({ active }) => active).map(({ key }) => key)).toEqual([
       'by_channel',
     ])
+  })
+
+  it('marks the mirror item while the window runs in it, and words it the other way round', () => {
+    const views = hilosTableOrderViews(
+      hilosTableOfferedOrders(declared),
+      byDate,
+      byChannelMirror,
+      columns,
+      emptyStale,
+    )
+
+    expect(views.filter(({ active }) => active).map(({ key }) => key)).toEqual([
+      'by_channel-mirror',
+    ])
+    expect(views.find(({ key }) => key === 'by_channel-mirror')?.label).toBe(
+      'Kind ↓, then Date ↑',
+    )
   })
 
   it('marks nothing while the window runs in an order that came from a header click', () => {

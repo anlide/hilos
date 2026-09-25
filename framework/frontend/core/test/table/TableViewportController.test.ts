@@ -487,7 +487,7 @@ describe('TableViewportController', () => {
     })
   })
 
-  it('reports the orders the table declares in the sequence a menu offers them', () => {
+  it('reports the orders a menu offers — each declared order followed by its mirror', () => {
     const declaredOrders = [
       {
         key: 'by_channel',
@@ -503,7 +503,54 @@ describe('TableViewportController', () => {
       declaredOrders,
     })
 
-    expect(controller.orders).toEqual(declaredOrders)
+    // The table declares one order and the menu offers two: the mirror is the
+    // framework's, derived once from the declaration, never declared by a page.
+    expect(controller.orders).toEqual([
+      declaredOrders[0],
+      {
+        key: 'by_channel-mirror',
+        components: [
+          { field: 'channel', direction: 'asc' },
+          { field: 'created', direction: 'asc' },
+        ],
+      },
+    ])
+  })
+
+  it('a pick of the mirror lights up the mirror item and nothing else', () => {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      declaredOrders: [
+        {
+          key: 'by_channel',
+          components: [
+            { field: 'channel', direction: 'desc' },
+            { field: 'created', direction: 'desc' },
+          ],
+        },
+      ],
+      frame: {
+        title: 'Messages',
+        columns: [
+          { key: 'channel', label: 'Kind', sortable: true },
+          { key: 'created', label: 'Date', sortable: true },
+        ],
+      },
+    })
+
+    controller.setOrder([
+      { field: 'channel', direction: 'asc' },
+      { field: 'created', direction: 'asc' },
+    ])
+
+    expect(
+      controller.frame.orders
+        .get()
+        .filter(({ active }) => active)
+        .map(({ key }) => key),
+    ).toEqual(['by_channel-mirror'])
+    expect(controller.frame.orderLabel.get()).toBe('Kind ↑, then Date ↑')
   })
 
   it('the menu follows every way the order changes — a pick, a header click, a way home', () => {

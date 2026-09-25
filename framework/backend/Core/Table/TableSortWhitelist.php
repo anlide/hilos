@@ -30,7 +30,9 @@ use Hilos\Utils\Logger;
  * a table that declares nothing is still not a way through to a raw identifier.
  * {@see holdComposite()} asks whether an order of more than one column was offered at all, and
  * runs on the table boundary only: the ORM knows the columns of its entity and no declarations,
- * and declarations are what a composite order is held against.
+ * and declarations are what a composite order is held against. Offered means declared or the
+ * mirror of a declared order — every direction turned — because the index under an order serves
+ * its mirror by being read backwards, which is what a window going back asks of it already.
  */
 final class TableSortWhitelist
 {
@@ -100,25 +102,30 @@ final class TableSortWhitelist
     }
 
     /**
-     * Holds an order of more than one column against the orders a table declared.
+     * Holds an order of more than one column against the orders a table declared and their mirrors.
      *
      * A composite order is a declared capability, not something a client assembles: under every
      * declared one lies an index matching it in both its columns and their directions, and a
      * combination nobody indexed means the database sorts the whole filtered set on every show
      * of the window. So the match is exact — the same fields, the same directions, in the same
-     * sequence — and anything else costs the window its ordering, the same as an unknown field
-     * does. An order of one component goes past untouched: which single columns a table serves
-     * is what its field map already says.
+     * sequence — or the exact mirror of a declared order, every direction turned, and anything
+     * else costs the window its ordering, the same as an unknown field does. The mirror is served
+     * because it costs nothing: the index under an order serves its mirror by being read
+     * backwards, and a window going back builds exactly that query today
+     * ({@see TableWindowPlan::inverted()}). A partial mirror, some directions turned and others
+     * not, is an order nobody indexed. An order of one component goes past untouched: which
+     * single columns a table serves is what its field map already says.
      *
      * A declaration the table cannot honour is skipped as though it were not there, and says so
      * once per window rather than being repaired: a field outside the map has no column to
      * reach, so honouring such a declaration would promise an index that nothing stands behind.
+     * Its mirror is skipped with it, for the same reason.
      *
      * @param ?TableSortOrderDTO $order Order the window asked for, or null when it asked for none
      * @param array<string, TableSortOrderDTO> $declared Orders the table offers, by the key it declared each under
      * @param array<string, string> $allowed Allowed `wire name => column` map of the same table
      * @param string $context Table that owns the declarations, named in the warnings
-     * @return ?TableSortOrderDTO The order when it was offered or names one column, null otherwise
+     * @return ?TableSortOrderDTO The order when it was offered, mirrors an offered one or names one column, null otherwise
      */
     public static function holdComposite(
         ?TableSortOrderDTO $order,
@@ -142,7 +149,7 @@ final class TableSortWhitelist
                 continue;
             }
 
-            if (self::isSameOrder($order, $candidate)) {
+            if (self::isSameOrder($order, $candidate) || self::isMirroredOrder($order, $candidate)) {
                 return $order;
             }
         }
@@ -189,6 +196,36 @@ final class TableSortWhitelist
         foreach ($asked->components as $index => $component) {
             $against = $declared->components[$index];
             if ($component->field !== $against->field || $component->direction !== $against->direction) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Tells whether one order is the mirror of the other: the same fields in the same sequence, every direction turned.
+     *
+     * Every component has to be turned, not some: an order with only part of its directions
+     * turned runs over a different index than the declared one, so it is an order nobody
+     * declared, and it is refused as one.
+     *
+     * @param TableSortOrderDTO $asked Order the window asked for
+     * @param TableSortOrderDTO $declared Order the table declared
+     * @return bool Whether the window asked for exactly that declared order read backwards
+     */
+    private static function isMirroredOrder(TableSortOrderDTO $asked, TableSortOrderDTO $declared): bool
+    {
+        if (count($asked->components) !== count($declared->components)) {
+            return false;
+        }
+
+        foreach ($asked->components as $index => $component) {
+            $against = $declared->components[$index];
+            $turned = $against->direction === TableConstants::ORDER_DESC
+                ? TableConstants::ORDER_ASC
+                : TableConstants::ORDER_DESC;
+            if ($component->field !== $against->field || $component->direction !== $turned) {
                 return false;
             }
         }

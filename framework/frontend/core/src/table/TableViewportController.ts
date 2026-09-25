@@ -71,6 +71,7 @@ import {
   type HilosTableSelectionTarget,
 } from './tableSelection.js'
 import {
+  hilosTableOfferedOrders,
   hilosTableOrderLabel,
   hilosTableOrderViews,
   type HilosTableOrderView,
@@ -427,8 +428,11 @@ export interface TableViewportControllerOptions<R> {
   /**
    * Orders of more than one column this table declares, in the sequence the
    * "Order" menu offers them. The backend holds a composite order against the
-   * very same list, so an order absent from here is one no window will be
-   * served in.
+   * very same list and the mirror of every entry — every direction turned — so
+   * an order absent from here, and not the mirror of one, is one no window will
+   * be served in. A mirror is never declared: the menu offers it after its
+   * original by itself, under the original's key plus
+   * `HILOS_TABLE_MIRROR_ORDER_SUFFIX`.
    *
    * Every order carries the key it is picked by — the same slug the backend
    * declares it under, and the one the menu item's `data-id` is built from.
@@ -810,7 +814,15 @@ export class TableViewportController<R> implements TableWindowSink {
   /** The readable bulk state: the report signal above, under the name a view reads. */
   private readonly bulkState: HilosTableBulkState
 
+  /**
+   * The orders the menu offers after the way home — each declared order followed by its
+   * mirror. Settled once here: the declaration is a constant of the table, and a view
+   * answers every pick by looking the key up in this very list.
+   */
+  private readonly offeredOrders: readonly HilosTableSortOrder[]
+
   constructor(private readonly options: TableViewportControllerOptions<R>) {
+    this.offeredOrders = hilosTableOfferedOrders(options.declaredOrders ?? [])
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
     })
@@ -1117,13 +1129,13 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * The orders of more than one column this table declares, in menu sequence —
-   * each with the key it is picked by. What the menu DRAWS is
-   * {@link frameState}'s `orders`; this is the declaration itself, which a view
-   * reads to answer a pick with the components behind the key.
+   * The orders the menu offers after the way home — each declared order followed
+   * by its mirror — each with the key it is picked by. What the menu DRAWS is
+   * {@link frameState}'s `orders`; this is the list behind it, which a view reads
+   * to answer a pick with the components behind the key.
    */
   get orders(): readonly HilosTableSortOrder[] {
-    return this.options.declaredOrders ?? []
+    return this.offeredOrders
   }
 
   /**
