@@ -389,7 +389,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
           @if (hasFailureDetail(row)) {
             <button
               type="button"
-              class="btn btn-sm btn-outline-secondary me-1"
+              class="btn btn-sm btn-outline-secondary"
               title="Show failure reason"
               aria-label="Show failure reason"
               [attr.data-id]="'hilos-backup-details-' + row.id"
@@ -403,7 +403,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
               @if (restoreBlockedReason(row) !== null) {
                 <button
                   type="button"
-                  class="btn btn-sm btn-outline-secondary me-1"
+                  class="btn btn-sm btn-outline-secondary"
                   title="Why this backup cannot be restored"
                   aria-label="Why this backup cannot be restored"
                   [attr.data-id]="'hilos-backup-blocked-why-' + row.id"
@@ -414,7 +414,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
               }
               <button
                 type="button"
-                class="btn btn-sm btn-outline-warning me-1"
+                class="btn btn-sm btn-outline-warning"
                 [disabled]="restoreBlockedReason(row) !== null"
                 title="Restore this backup"
                 aria-label="Restore this backup"
@@ -426,7 +426,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosBackupCircleRow>[] = [
             } @else {
               <button
                 type="button"
-                class="btn btn-sm btn-outline-secondary me-1"
+                class="btn btn-sm btn-outline-secondary"
                 title="How to restore this backup"
                 aria-label="How to restore this backup"
                 [attr.data-id]="'hilos-backup-restore-cli-' + row.id"

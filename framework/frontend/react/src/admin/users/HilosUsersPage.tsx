@@ -111,7 +111,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
               {row.id === currentUid ? null : (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary me-2"
+                  className="btn btn-sm btn-outline-secondary"
                   title="Impersonate"
                   aria-label="Impersonate"
                   data-id={`hilos-users-impersonate-${row.id}`}

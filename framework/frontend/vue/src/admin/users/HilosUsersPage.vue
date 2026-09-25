@@ -108,7 +108,7 @@ async function submitImpersonate(): Promise<void> {
         <button
           v-if="row.id !== currentUid"
           type="button"
-          class="btn btn-sm btn-outline-secondary me-2"
+          class="btn btn-sm btn-outline-secondary"
           title="Impersonate"
           aria-label="Impersonate"
           :data-id="`hilos-users-impersonate-${row.id}`"

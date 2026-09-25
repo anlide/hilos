@@ -177,32 +177,30 @@ async function submitEdit(): Promise<void> {
           </span>
         </template>
         <template #cell-actions="{ row }">
-          <div class="d-flex gap-1 justify-content-end">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary"
-              :title="row.secret ? 'Replace' : 'Edit'"
-              :aria-label="`${row.secret ? 'Replace' : 'Edit'} ${row.label}`"
-              :data-id="`hilos-oauth-field-edit-${row.field}`"
-              @click="openEdit(row)"
-            >
-              <i
-                :class="row.secret ? 'bi bi-key' : 'bi bi-pencil'"
-                aria-hidden="true"
-              ></i>
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              :title="`Reset ${row.label} to env/default`"
-              :aria-label="`Reset ${row.label} to env/default`"
-              :disabled="row.source !== 'db' || resetAction.busy.value"
-              :data-id="`hilos-oauth-field-reset-${row.field}`"
-              @click="resetField(row)"
-            >
-              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-            </button>
-          </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            :title="row.secret ? 'Replace' : 'Edit'"
+            :aria-label="`${row.secret ? 'Replace' : 'Edit'} ${row.label}`"
+            :data-id="`hilos-oauth-field-edit-${row.field}`"
+            @click="openEdit(row)"
+          >
+            <i
+              :class="row.secret ? 'bi bi-key' : 'bi bi-pencil'"
+              aria-hidden="true"
+            ></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :title="`Reset ${row.label} to env/default`"
+            :aria-label="`Reset ${row.label} to env/default`"
+            :disabled="row.source !== 'db' || resetAction.busy.value"
+            :data-id="`hilos-oauth-field-reset-${row.field}`"
+            @click="resetField(row)"
+          >
+            <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+          </button>
         </template>
       </HilosViewportTable>
 

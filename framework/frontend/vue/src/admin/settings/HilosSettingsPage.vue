@@ -296,44 +296,42 @@ async function submitDelete(): Promise<void> {
         </div>
       </template>
       <template #cell-actions="{ row }">
-        <div class="d-flex gap-1 justify-content-end">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-primary"
-            :title="
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          :title="
+            hasCustomValue(row) || isOrphanSetting(row)
+              ? 'Edit'
+              : 'Set custom value'
+          "
+          :aria-label="
+            hasCustomValue(row) || isOrphanSetting(row)
+              ? 'Edit'
+              : 'Set custom value'
+          "
+          :data-id="`hilos-settings-edit-${row.key}`"
+          @click="openEdit(row)"
+        >
+          <i
+            :class="
               hasCustomValue(row) || isOrphanSetting(row)
-                ? 'Edit'
-                : 'Set custom value'
+                ? 'bi bi-pencil'
+                : 'bi bi-plus-lg'
             "
-            :aria-label="
-              hasCustomValue(row) || isOrphanSetting(row)
-                ? 'Edit'
-                : 'Set custom value'
-            "
-            :data-id="`hilos-settings-edit-${row.key}`"
-            @click="openEdit(row)"
-          >
-            <i
-              :class="
-                hasCustomValue(row) || isOrphanSetting(row)
-                  ? 'bi bi-pencil'
-                  : 'bi bi-plus-lg'
-              "
-              aria-hidden="true"
-            ></i>
-          </button>
-          <button
-            v-if="isOrphanSetting(row)"
-            type="button"
-            class="btn btn-sm btn-outline-danger"
-            title="Delete orphan setting"
-            aria-label="Delete orphan setting"
-            :data-id="`hilos-settings-delete-${row.key}`"
-            @click="openDelete(row)"
-          >
-            <i class="bi bi-trash" aria-hidden="true"></i>
-          </button>
-        </div>
+            aria-hidden="true"
+          ></i>
+        </button>
+        <button
+          v-if="isOrphanSetting(row)"
+          type="button"
+          class="btn btn-sm btn-outline-danger"
+          title="Delete orphan setting"
+          aria-label="Delete orphan setting"
+          :data-id="`hilos-settings-delete-${row.key}`"
+          @click="openDelete(row)"
+        >
+          <i class="bi bi-trash" aria-hidden="true"></i>
+        </button>
       </template>
     </HilosViewportTable>
 
@@ -410,6 +408,7 @@ async function submitDelete(): Promise<void> {
         <button
           type="button"
           class="btn btn-secondary"
+          data-id="hilos-settings-edit-cancel"
           :disabled="editBusy"
           @click="requestClose"
         >

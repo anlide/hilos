@@ -194,7 +194,7 @@ export function HilosSecurityOauthProviderPage({
                 </span>
               ),
               [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-                <div className="d-flex gap-1 justify-content-end">
+                <>
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-primary"
@@ -222,7 +222,7 @@ export function HilosSecurityOauthProviderPage({
                       aria-hidden="true"
                     />
                   </button>
-                </div>
+                </>
               ),
             }}
           />

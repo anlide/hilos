@@ -179,29 +179,27 @@ function noticeText(
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
           @if (row.editable) {
-            <div class="d-flex gap-1 justify-content-end">
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-primary"
-                title="Edit"
-                aria-label="Edit"
-                [attr.data-id]="'hilos-channel-field-edit-' + row.field"
-                (click)="openEdit(row)"
-              >
-                <i class="bi bi-pencil" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary"
-                title="Reset to env/default"
-                aria-label="Reset to env/default"
-                [disabled]="row.valueSource !== 'settings' || reset.busy()"
-                [attr.data-id]="'hilos-channel-field-reset-' + row.field"
-                (click)="resetField(row)"
-              >
-                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-              </button>
-            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              title="Edit"
+              aria-label="Edit"
+              [attr.data-id]="'hilos-channel-field-edit-' + row.field"
+              (click)="openEdit(row)"
+            >
+              <i class="bi bi-pencil" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              title="Reset to env/default"
+              aria-label="Reset to env/default"
+              [disabled]="row.valueSource !== 'settings' || reset.busy()"
+              [attr.data-id]="'hilos-channel-field-reset-' + row.field"
+              (click)="resetField(row)"
+            >
+              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+            </button>
           }
         </ng-template>
       </hilos-viewport-table>

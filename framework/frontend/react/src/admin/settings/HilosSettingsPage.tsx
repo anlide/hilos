@@ -280,7 +280,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             </div>
           ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-            <div className="d-flex gap-1 justify-content-end">
+            <>
               <button
                 type="button"
                 className="btn btn-sm btn-outline-primary"
@@ -318,7 +318,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
                   <i className="bi bi-trash" aria-hidden="true" />
                 </button>
               ) : null}
-            </div>
+            </>
           ),
         }}
       />
@@ -333,6 +333,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
             <button
               type="button"
               className="btn btn-secondary"
+              data-id="hilos-settings-edit-cancel"
               disabled={edit.busy}
               onClick={requestClose}
             >

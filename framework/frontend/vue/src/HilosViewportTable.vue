@@ -43,6 +43,7 @@ import { computed, inject, useId, useSlots } from 'vue'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
+  HILOS_TABLE_ACTIONS_KEY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
@@ -686,7 +687,18 @@ function onSelectPage(event: Event): void {
                   :key="column.key"
                   :class="column.cellClass"
                 >
+                  <span
+                    v-if="column.key === HILOS_TABLE_ACTIONS_KEY"
+                    class="d-inline-flex align-items-center gap-1"
+                  >
+                    <slot
+                      :name="`cell-${column.key}`"
+                      :row="view.row"
+                      :row-key="view.rowKey"
+                    />
+                  </span>
                   <slot
+                    v-else
                     :name="`cell-${column.key}`"
                     :row="view.row"
                     :row-key="view.rowKey"
@@ -1054,10 +1066,14 @@ function onSelectPage(event: Event): void {
               </dl>
             </div>
 
-            <!-- The controls of the row, full width at the foot of the card.
-            Which of them comes first is the markup the page hands over, and the
-            framework neither reorders them nor takes one away (Flow F2). -->
-            <div v-if="hasCell(card.actions)" class="d-grid gap-2">
+            <!-- The controls of the row, one row at the foot of the card,
+            sharing it equally. Which of them comes first is the markup the page
+            hands over, and the framework neither reorders them nor takes one
+            away (Flow F2). -->
+            <div
+              v-if="hasCell(card.actions)"
+              class="d-flex gap-2 hilos-button-row"
+            >
               <slot
                 :name="`cell-${card.actions!.key}`"
                 :row="view.row"

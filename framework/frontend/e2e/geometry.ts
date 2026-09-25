@@ -154,6 +154,40 @@ export async function overlapSpot(
   }
 }
 
+/**
+ * Assert that elements sit in one row with equal width and equal top edge.
+ *
+ * One read each, no polling: wait in the spec for the state that puts both on
+ * screen. A tolerance of 1px is allowed for subpixel rounding.
+ *
+ * @param elements The locators expected to share a row and divide width equally.
+ */
+export async function shareOneRow(...elements: Locator[]): Promise<void> {
+  if (elements.length < 2) {
+    return
+  }
+  const boxes = await Promise.all(
+    elements.map(async (element) => ({
+      element,
+      box: await readBox(element, `${element.toString()} box`),
+    })),
+  )
+  const first = boxes[0]
+  for (let i = 1; i < boxes.length; i++) {
+    const current = boxes[i]
+    const topDiff = Math.abs(current.box.y - first.box.y)
+    const widthDiff = Math.abs(current.box.width - first.box.width)
+    if (topDiff > SLACK_PX || widthDiff > SLACK_PX) {
+      throw new Error(
+        `Elements do not share one row: ${first.element.toString()} has ` +
+          `top ${first.box.y}, width ${first.box.width}; ` +
+          `${current.element.toString()} has ` +
+          `top ${current.box.y}, width ${current.box.width}`,
+      )
+    }
+  }
+}
+
 /** Read a box field, refusing an absent box on both the first and later reads. */
 async function measureBox(
   element: Locator,

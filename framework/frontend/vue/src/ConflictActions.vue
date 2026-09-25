@@ -1,6 +1,7 @@
-<!-- ConflictActions — the action row for an edit modal with 3-way-merge conflict
-resolution. Renders a Save button (override the #save-button slot to supply a
-LoadingButton, which receives the computed `disabled` and an `onSave` handler)
+<!-- ConflictActions — the action group for an edit modal with 3-way-merge
+conflict resolution, whose buttons stand in the footer's row alongside Cancel on
+a narrow screen. Renders a Save button (override the #save-button slot to supply
+a LoadingButton, which receives the computed `disabled` and an `onSave` handler)
 and, only while a conflict is unresolved, the three resolution choices: keep
 mine, take theirs, or merge. Save stays disabled until the conflict is resolved.
 Emits the choice; the parent form applies it against the core threeWayMerge
@@ -37,7 +38,7 @@ function onSave(): void {
 </script>
 
 <template>
-  <div class="d-flex align-items-center gap-2 flex-wrap">
+  <div class="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap">
     <slot
       name="save-button"
       :disabled="disableSave || conflict"
@@ -56,7 +57,7 @@ function onSave(): void {
     <template v-if="conflict">
       <button
         type="button"
-        class="btn btn-outline-secondary btn-sm"
+        class="btn btn-outline-secondary"
         data-id="conflict-accept-mine"
         @click="emit('accept-mine')"
       >
@@ -64,7 +65,7 @@ function onSave(): void {
       </button>
       <button
         type="button"
-        class="btn btn-outline-secondary btn-sm"
+        class="btn btn-outline-secondary"
         data-id="conflict-accept-theirs"
         @click="emit('accept-theirs')"
       >
@@ -73,7 +74,7 @@ function onSave(): void {
       <button
         v-if="mergeable"
         type="button"
-        class="btn btn-outline-secondary btn-sm"
+        class="btn btn-outline-secondary"
         data-id="conflict-merge"
         @click="emit('merge')"
       >

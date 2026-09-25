@@ -314,7 +314,7 @@ async function submitEdit(): Promise<void> {
         </span>
       </template>
       <template #cell-actions="{ row }">
-        <div v-if="row.editable" class="d-flex gap-1 justify-content-end">
+        <template v-if="row.editable">
           <button
             type="button"
             class="btn btn-sm btn-outline-primary"
@@ -336,7 +336,7 @@ async function submitEdit(): Promise<void> {
           >
             <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
           </button>
-        </div>
+        </template>
       </template>
     </HilosViewportTable>
 

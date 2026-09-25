@@ -740,7 +740,7 @@ function openOutcome(row: HilosBackupRow): void {
         <button
           v-if="hasBackupFailureDetail(row)"
           type="button"
-          class="btn btn-sm btn-outline-secondary me-1"
+          class="btn btn-sm btn-outline-secondary"
           title="Show failure reason"
           aria-label="Show failure reason"
           :data-id="`hilos-backup-details-${row.id}`"
@@ -753,7 +753,7 @@ function openOutcome(row: HilosBackupRow): void {
             <button
               v-if="restoreBlockedReason(row) !== null"
               type="button"
-              class="btn btn-sm btn-outline-secondary me-1"
+              class="btn btn-sm btn-outline-secondary"
               title="Why this backup cannot be restored"
               aria-label="Why this backup cannot be restored"
               :data-id="`hilos-backup-blocked-why-${row.id}`"
@@ -763,7 +763,7 @@ function openOutcome(row: HilosBackupRow): void {
             </button>
             <button
               type="button"
-              class="btn btn-sm btn-outline-warning me-1"
+              class="btn btn-sm btn-outline-warning"
               :disabled="restoreBlockedReason(row) !== null"
               title="Restore this backup"
               aria-label="Restore this backup"
@@ -776,7 +776,7 @@ function openOutcome(row: HilosBackupRow): void {
           <button
             v-else
             type="button"
-            class="btn btn-sm btn-outline-secondary me-1"
+            class="btn btn-sm btn-outline-secondary"
             title="How to restore this backup"
             aria-label="How to restore this backup"
             :data-id="`hilos-backup-restore-cli-${row.id}`"

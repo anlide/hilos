@@ -224,6 +224,24 @@ describe('HilosModal', () => {
     expect(footer?.querySelector('[data-id="only-one"]')).not.toBeNull()
   })
 
+  it('shapes both footers with hilos-button-row and no column reverse', () => {
+    render(
+      <HilosModal
+        open
+        confirmOnClose
+        actions={() => <button type="button">Save</button>}
+      />,
+    )
+    fireEvent.click(byId('modal-close') as Element)
+
+    const footers = document.querySelectorAll('.modal-footer')
+    expect(footers).toHaveLength(2)
+    footers.forEach((footer) => {
+      expect(footer.classList.contains('hilos-button-row')).toBe(true)
+      expect(footer.classList.contains('flex-column-reverse')).toBe(false)
+    })
+  })
+
   it('calls onClose from the close button when not guarding', () => {
     let closes = 0
     render(

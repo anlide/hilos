@@ -114,34 +114,32 @@ const SOURCE_LABEL: Record<OAuthValueSource, string> = {
             </span>
           </ng-template>
           <ng-template hilosTableCell="actions" let-row>
-            <div class="d-flex gap-1 justify-content-end">
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-primary"
-                [title]="row.secret ? 'Replace' : 'Edit'"
-                [attr.aria-label]="
-                  (row.secret ? 'Replace' : 'Edit') + ' ' + row.label
-                "
-                [attr.data-id]="'hilos-oauth-field-edit-' + row.field"
-                (click)="openEdit(row)"
-              >
-                <i
-                  [class]="row.secret ? 'bi bi-key' : 'bi bi-pencil'"
-                  aria-hidden="true"
-                ></i>
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary"
-                [title]="'Reset ' + row.label + ' to env/default'"
-                [attr.aria-label]="'Reset ' + row.label + ' to env/default'"
-                [disabled]="row.source !== 'db' || reset.busy()"
-                [attr.data-id]="'hilos-oauth-field-reset-' + row.field"
-                (click)="resetField(row)"
-              >
-                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-              </button>
-            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              [title]="row.secret ? 'Replace' : 'Edit'"
+              [attr.aria-label]="
+                (row.secret ? 'Replace' : 'Edit') + ' ' + row.label
+              "
+              [attr.data-id]="'hilos-oauth-field-edit-' + row.field"
+              (click)="openEdit(row)"
+            >
+              <i
+                [class]="row.secret ? 'bi bi-key' : 'bi bi-pencil'"
+                aria-hidden="true"
+              ></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              [title]="'Reset ' + row.label + ' to env/default'"
+              [attr.aria-label]="'Reset ' + row.label + ' to env/default'"
+              [disabled]="row.source !== 'db' || reset.busy()"
+              [attr.data-id]="'hilos-oauth-field-reset-' + row.field"
+              (click)="resetField(row)"
+            >
+              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+            </button>
           </ng-template>
         </hilos-viewport-table>
 

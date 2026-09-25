@@ -126,41 +126,39 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
           </div>
         </ng-template>
         <ng-template hilosTableCell="actions" let-row>
-          <div class="d-flex gap-1 justify-content-end">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            [title]="
+              hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
+            "
+            [attr.aria-label]="
+              hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
+            "
+            [attr.data-id]="'hilos-settings-edit-' + row.key"
+            (click)="openEdit(row)"
+          >
+            <i
+              [class]="
+                hasCustom(row) || isOrphan(row)
+                  ? 'bi bi-pencil'
+                  : 'bi bi-plus-lg'
+              "
+              aria-hidden="true"
+            ></i>
+          </button>
+          @if (isOrphan(row)) {
             <button
               type="button"
-              class="btn btn-sm btn-outline-primary"
-              [title]="
-                hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
-              "
-              [attr.aria-label]="
-                hasCustom(row) || isOrphan(row) ? 'Edit' : 'Set custom value'
-              "
-              [attr.data-id]="'hilos-settings-edit-' + row.key"
-              (click)="openEdit(row)"
+              class="btn btn-sm btn-outline-danger"
+              title="Delete orphan setting"
+              aria-label="Delete orphan setting"
+              [attr.data-id]="'hilos-settings-delete-' + row.key"
+              (click)="openDelete(row)"
             >
-              <i
-                [class]="
-                  hasCustom(row) || isOrphan(row)
-                    ? 'bi bi-pencil'
-                    : 'bi bi-plus-lg'
-                "
-                aria-hidden="true"
-              ></i>
+              <i class="bi bi-trash" aria-hidden="true"></i>
             </button>
-            @if (isOrphan(row)) {
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-danger"
-                title="Delete orphan setting"
-                aria-label="Delete orphan setting"
-                [attr.data-id]="'hilos-settings-delete-' + row.key"
-                (click)="openDelete(row)"
-              >
-                <i class="bi bi-trash" aria-hidden="true"></i>
-              </button>
-            }
-          </div>
+          }
         </ng-template>
       </hilos-viewport-table>
 
@@ -253,6 +251,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
           <button
             type="button"
             class="btn btn-secondary"
+            data-id="hilos-settings-edit-cancel"
             [disabled]="edit.busy()"
             (click)="requestClose()"
           >

@@ -49,6 +49,7 @@ import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
+  HILOS_TABLE_ACTIONS_KEY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
@@ -368,7 +369,19 @@ export interface BulkUntouchedContext {
                   (Flow F3). -->
                     @for (column of rowColumns(); track column.key) {
                       <td [class]="column.cellClass ?? ''">
-                        @if (cellTemplate(column.key); as cell) {
+                        @if (column.key === actionsKey) {
+                          <span class="d-inline-flex align-items-center gap-1">
+                            @if (cellTemplate(column.key); as cell) {
+                              <ng-container
+                                [ngTemplateOutlet]="cell"
+                                [ngTemplateOutletContext]="{
+                                  $implicit: view.row,
+                                  rowKey: view.rowKey,
+                                }"
+                              />
+                            }
+                          </span>
+                        } @else if (cellTemplate(column.key); as cell) {
                           <ng-container
                             [ngTemplateOutlet]="cell"
                             [ngTemplateOutletContext]="{
@@ -797,12 +810,12 @@ export interface BulkUntouchedContext {
                         </div>
                       }
 
-                      <!-- The controls of the row, full width at the foot of the
-                      card. Which of them comes first is the markup the page hands
-                      over, and the framework neither reorders them nor takes one
-                      away (Flow F2). -->
+                      <!-- The controls of the row, one row at the foot of the
+                      card, sharing it equally. Which of them comes first is the
+                      markup the page hands over, and the framework neither
+                      reorders them nor takes one away (Flow F2). -->
                       @if (cellFor(layout.actions); as actions) {
-                        <div class="d-grid gap-2">
+                        <div class="d-flex gap-2 hilos-button-row">
                           <ng-container
                             [ngTemplateOutlet]="actions"
                             [ngTemplateOutletContext]="{
@@ -1064,6 +1077,7 @@ export class HilosViewportTable<R> {
   )
   // The words of the control and of an empty field — the core's, for the template.
   protected readonly detailCopy = TABLE_DETAIL_COPY
+  protected readonly actionsKey = HILOS_TABLE_ACTIONS_KEY
   // Which declared column takes which place of the card a row is drawn as on a
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view

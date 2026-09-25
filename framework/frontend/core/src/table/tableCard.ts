@@ -24,7 +24,7 @@ export interface HilosTableCard {
   readonly badge: HilosTableColumn | null
   /** The labelled lines of the card body, in declaration order. */
   readonly fields: readonly HilosTableColumn[]
-  /** The row controls, drawn full width at the foot of the card. */
+  /** The row controls, drawn in one row at the foot of the card, sharing it equally. */
   readonly actions: HilosTableColumn | null
 }
 

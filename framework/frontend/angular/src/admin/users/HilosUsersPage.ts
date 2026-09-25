@@ -79,7 +79,7 @@ export interface UsersRowActionsContext {
           @if (row.id !== currentUserId()) {
             <button
               type="button"
-              class="btn btn-sm btn-outline-secondary me-2"
+              class="btn btn-sm btn-outline-secondary"
               title="Impersonate"
               aria-label="Impersonate"
               [attr.data-id]="'hilos-users-impersonate-' + row.id"

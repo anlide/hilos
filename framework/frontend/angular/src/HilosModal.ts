@@ -9,8 +9,9 @@
 // The body is what scrolls, always: the dialog is never taller than the window
 // (modal-dialog-scrollable), the header and the footer stay put, and a short
 // dialog is not changed by it at all. On a narrow screen the dialog becomes a
-// sheet at the bottom edge and its buttons a full-width column, main action on
-// top — inside the modal, so no surface that opens one is touched.
+// sheet at the bottom edge and its buttons one row sharing it equally, the main
+// action last, on the right — inside the modal, so no surface that opens one is
+// touched.
 // The dialog stays narrow by default; `size='wide'` applies Bootstrap's modal-lg
 // when the opening surface knows its content is a table or an analysis
 // (mockups/components/modal, the Sizes node).
@@ -137,11 +138,9 @@ export interface ModalActionsContext {
             </div>
             <div class="modal-body"><ng-content /></div>
             @if (actions() || showCopy()) {
-              <div
-                class="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center"
-              >
-                <!-- Copy comes first in the markup so the reversed column on a
-                narrow screen puts it under Close, the main action on top. -->
+              <div class="modal-footer hilos-button-row">
+                <!-- Copy comes first in the markup so the main action stands on
+                the right, last in the row. -->
                 @if (showCopy()) {
                   <button
                     type="button"
@@ -186,9 +185,7 @@ export interface ModalActionsContext {
               <div class="modal-body">
                 <p class="mb-0">{{ confirmMessage() }}</p>
               </div>
-              <div
-                class="modal-footer flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center"
-              >
+              <div class="modal-footer hilos-button-row">
                 <button
                   type="button"
                   class="btn btn-secondary"

@@ -84,4 +84,21 @@ describe('ConflictActions', () => {
     ).not.toBeNull()
     expect(container.querySelector('[data-id="conflict-merge"]')).toBeNull()
   })
+
+  it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
+    const { container } = render(<ConflictActions conflict />)
+    const root = container.firstElementChild as HTMLElement
+    expect(root.classList.contains('hilos-button-group')).toBe(true)
+    expect(root.classList.contains('d-md-flex')).toBe(true)
+
+    const buttons = [
+      container.querySelector('[data-id="conflict-accept-mine"]'),
+      container.querySelector('[data-id="conflict-accept-theirs"]'),
+      container.querySelector('[data-id="conflict-merge"]'),
+    ]
+    for (const btn of buttons) {
+      expect(btn?.classList.contains('btn-sm')).toBe(false)
+      expect(btn?.classList.contains('btn')).toBe(true)
+    }
+  })
 })

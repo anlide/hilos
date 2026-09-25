@@ -215,6 +215,45 @@ body.modal-open .toast-container > * {
   }
 }
 
+// WHY: Bootstrap has no utility that makes the children of a row share it
+// equally: .d-grid stacks them, .flex-fill shares by the length of each label,
+// and .col is a class every button would have to carry — while the buttons of
+// a dialog footer and of a table card's actions are the page's own markup. The
+// stock .modal-footer also centers its items, so two labels of different length
+// would stand at different heights.
+// WHAT: below md, the buttons of a dialog footer and of a table card's actions
+// stand in one row and share it equally; a label that does not fit wraps inside
+// its button, and a button moves to the next row only when even that does not
+// fit (mockups/components/modal and components/table, debts D-119 and D-120).
+.hilos-button-row {
+  // 767.98px: the phone of .hilos-modal-sheet and of the card branch (d-md-none).
+  @media (max-width: 767.98px) {
+    flex-wrap: wrap;
+    align-items: stretch;
+    > *,
+    > .hilos-button-group > * {
+      flex: 1 1 0;
+    }
+  }
+}
+
+// WHY: Bootstrap has no display: contents utility, and a component that owns a
+// part of a dialog's buttons — ConflictActions: Save and the choices of a
+// conflict — needs a root element of its own (in Angular, its host), while on a
+// narrow screen its buttons must share the footer's row with Cancel as equals.
+// WHAT: that root — one item of the footer from md up, where the element's own
+// d-md-flex (!important) wins; dissolved into the footer's row below md, its
+// buttons spaced as the stock .modal-footer spaces its own children.
+.hilos-button-group {
+  display: contents;
+}
+
+.modal-footer > .hilos-button-group > * {
+  @media (max-width: 767.98px) {
+    margin: calc(var(--bs-modal-footer-gap) * 0.5);
+  }
+}
+
 // WHY: Bootstrap's progress bar takes its width from an inline style, and a width
 // computed from the server's own two numbers has no class to be expressed as — the
 // custom property is the one legal channel (styling-rules.md, "A computed value").

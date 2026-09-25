@@ -331,7 +331,7 @@ export function HilosCommunicationsChannelPage({
           ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) =>
             row.editable ? (
-              <div className="d-flex gap-1 justify-content-end">
+              <>
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-primary"
@@ -356,7 +356,7 @@ export function HilosCommunicationsChannelPage({
                     aria-hidden="true"
                   />
                 </button>
-              </div>
+              </>
             ) : null,
         }}
       />

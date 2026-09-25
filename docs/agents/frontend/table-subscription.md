@@ -338,7 +338,14 @@ cell short is a row narrower than its header — while the card leaves that plac
 out entirely, a label with nothing under it reading as a value lost rather than
 as an empty field. A column may carry `cellClass` for the classes its `<td>`
 needs, e.g. `text-end` under a numeric header; the card does not read it, a line
-of a description list not being a cell of a table.
+of a description list not being a cell of a table. The actions row is laid out by
+the framework in both projections: in the row, buttons of their own width with a
+.25rem gap according to the column's `cellClass`; in the card, one row shared
+equally (Sass `hilos-button-row`, owner decision on HIL-1092, debt D-120).
+Therefore, the actions cell content is only the buttons and links themselves,
+without a wrapper and without spacing utilities (`me-*`, `ms-*`): a wrapper in
+the card becomes a single row item, and an outer margin eats away the width share
+of every button but the last.
 
 The contract is one in all three views — one piece of content per column, keyed
 by the column, content only — and only the way a view takes a piece of content

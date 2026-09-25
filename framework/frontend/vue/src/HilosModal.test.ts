@@ -205,6 +205,26 @@ describe('HilosModal', () => {
     expect(footer?.querySelector('[data-id="only-one"]')).not.toBeNull()
   })
 
+  it('shapes both footers with hilos-button-row and no column reverse', async () => {
+    const wrapper = mount(HilosModal, {
+      props: { modelValue: true, confirmOnClose: true },
+      slots: {
+        actions: '<button type="button">Save</button>',
+      },
+    })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await wrapper.vm.$nextTick()
+
+    const footers = document.querySelectorAll('.modal-footer')
+    expect(footers).toHaveLength(2)
+    footers.forEach((footer) => {
+      expect(footer.classList.contains('hilos-button-row')).toBe(true)
+      expect(footer.classList.contains('flex-column-reverse')).toBe(false)
+    })
+  })
+
   it('closes via the close button when not guarding', async () => {
     const wrapper = mount(HilosModal, { props: { modelValue: true } })
     document

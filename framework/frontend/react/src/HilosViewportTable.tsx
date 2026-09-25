@@ -34,6 +34,7 @@ import type { ReactNode } from 'react'
 import {
   TABLE_DETAIL_COPY,
   TABLE_STALENESS_COPY,
+  HILOS_TABLE_ACTIONS_KEY,
   hilosTableDetailFields,
   hilosTableOrderPosition,
   hilosTablePlaceholder,
@@ -369,7 +370,13 @@ export function HilosViewportTable<R>({
   function declaredCells(record: R, rowKey: string): ReactNode {
     return rowColumns.map((column) => (
       <td key={column.key} className={column.cellClass}>
-        {cells?.[column.key]?.(record, rowKey)}
+        {column.key === HILOS_TABLE_ACTIONS_KEY ? (
+          <span className="d-inline-flex align-items-center gap-1">
+            {cells?.[column.key]?.(record, rowKey)}
+          </span>
+        ) : (
+          cells?.[column.key]?.(record, rowKey)
+        )}
       </td>
     ))
   }
@@ -527,11 +534,12 @@ export function HilosViewportTable<R>({
           </div>
         ) : null}
 
-        {/* The controls of the row, full width at the foot of the card. Which of
-            them comes first is the markup the page hands over, and the framework
-            neither reorders them nor takes one away (Flow F2). */}
+        {/* The controls of the row, one row at the foot of the card, sharing
+            it equally. Which of them comes first is the markup the page hands
+            over, and the framework neither reorders them nor takes one away
+            (Flow F2). */}
         {hasCell(layout.actions) ? (
-          <div className="d-grid gap-2">
+          <div className="d-flex gap-2 hilos-button-row">
             {cells?.[layout.actions.key]?.(record, rowKey)}
           </div>
         ) : null}

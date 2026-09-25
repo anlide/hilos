@@ -1,10 +1,11 @@
-// ConflictActions — the action row for an edit modal with 3-way-merge conflict
-// resolution. Renders a Save button (pass `saveButton` to supply a custom one,
-// e.g. a LoadingButton; it receives the computed `disabled` and an `onSave`
-// handler) and, only while a conflict is unresolved, the three resolution
-// choices: keep mine, take theirs, or merge. Save stays disabled until the
-// conflict is resolved. The handlers fire the choice; the parent form applies it
-// against the core threeWayMerge result. Bootstrap classes only.
+// ConflictActions — the action group for an edit modal with 3-way-merge
+// conflict resolution, whose buttons stand in the footer's row alongside Cancel
+// on a narrow screen. Renders a Save button (pass `saveButton` to supply a
+// custom one, e.g. a LoadingButton; it receives the computed `disabled` and an
+// `onSave` handler) and, only while a conflict is unresolved, the three
+// resolution choices: keep mine, take theirs, or merge. Save stays disabled
+// until the conflict is resolved. The handlers fire the choice; the parent form
+// applies it against the core threeWayMerge result. Bootstrap classes only.
 import type { ReactNode } from 'react'
 
 /** Props for {@link ConflictActions}. */
@@ -34,7 +35,7 @@ export interface ConflictActionsProps {
 }
 
 /**
- * The Save-plus-resolutions action row for a conflict-aware edit modal.
+ * The Save-plus-resolutions action group for a conflict-aware edit modal.
  *
  * @param props The conflict state, labels, choice handlers, and optional custom
  *   Save button.
@@ -54,7 +55,7 @@ export function ConflictActions({
   const handleSave = (): void => onSave?.()
 
   return (
-    <div className="d-flex align-items-center gap-2 flex-wrap">
+    <div className="hilos-button-group d-md-flex align-items-center gap-2 flex-wrap">
       {saveButton ? (
         saveButton({ disabled, onSave: handleSave })
       ) : (
@@ -72,7 +73,7 @@ export function ConflictActions({
         <>
           <button
             type="button"
-            className="btn btn-outline-secondary btn-sm"
+            className="btn btn-outline-secondary"
             data-id="conflict-accept-mine"
             onClick={() => onAcceptMine?.()}
           >
@@ -80,7 +81,7 @@ export function ConflictActions({
           </button>
           <button
             type="button"
-            className="btn btn-outline-secondary btn-sm"
+            className="btn btn-outline-secondary"
             data-id="conflict-accept-theirs"
             onClick={() => onAcceptTheirs?.()}
           >
@@ -89,7 +90,7 @@ export function ConflictActions({
           {mergeable ? (
             <button
               type="button"
-              className="btn btn-outline-secondary btn-sm"
+              className="btn btn-outline-secondary"
               data-id="conflict-merge"
               onClick={() => onMerge?.()}
             >

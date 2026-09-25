@@ -41,4 +41,20 @@ describe('ConflictActions', () => {
     expect(wrapper.find('[data-id="conflict-accept-mine"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="conflict-merge"]').exists()).toBe(false)
   })
+
+  it('shapes the root as a button group and renders resolution buttons without btn-sm', () => {
+    const wrapper = mount(ConflictActions, { props: { conflict: true } })
+    const root = wrapper.element as HTMLElement
+    expect(root.classList.contains('hilos-button-group')).toBe(true)
+    expect(root.classList.contains('d-md-flex')).toBe(true)
+
+    const mine = wrapper.find('[data-id="conflict-accept-mine"]')
+    const theirs = wrapper.find('[data-id="conflict-accept-theirs"]')
+    const merge = wrapper.find('[data-id="conflict-merge"]')
+
+    for (const btn of [mine, theirs, merge]) {
+      expect(btn.classes()).not.toContain('btn-sm')
+      expect(btn.classes()).toContain('btn')
+    }
+  })
 })

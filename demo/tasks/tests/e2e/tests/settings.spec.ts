@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
+  shareOneRow,
   shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -144,6 +145,16 @@ test('a narrow window draws the settings as cards and never scrolls sideways', a
   await expect(card).toBeVisible()
   await expect(row).toBeHidden()
   expect(await sidewaysOverflow(page)).toEqual([0, 0])
+
+  // Open the setting's edit modal from inside the card; its Cancel and Save
+  // buttons share one row and divide its width equally on a narrow screen.
+  const cancel = page.getByTestId('hilos-settings-edit-cancel')
+  const save = page.getByTestId('hilos-settings-edit-save')
+  await card.getByTestId(`hilos-settings-edit-${key}`).click()
+  await expect(cancel).toBeVisible()
+  await shareOneRow(cancel, save)
+  await cancel.click()
+  await expect(cancel).toBeHidden()
 
   // Back on a wide screen it is the table again, and the cards are gone from sight:
   // both branches were drawn from the same window, so the row is there to show.

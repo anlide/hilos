@@ -1173,7 +1173,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
       ),
     ).toEqual(['Kind'])
     expect(card.querySelector('dd .kind')).not.toBeNull()
-    expect(card.querySelector('.d-grid .restore')).not.toBeNull()
+    expect(card.querySelector('.hilos-button-row .restore')).not.toBeNull()
     // A column the page kept out of the card is nowhere in it, though it still
     // stands in the row.
     expect(card.querySelector('.secret')).toBeNull()
@@ -1202,7 +1202,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
       root(fixture).querySelectorAll('[data-id="hilos-table-row-a"] td'),
     ).toHaveLength(CARD_COLUMNS.length)
     expect(cardOf(fixture, 'a').querySelectorAll('dt')).toHaveLength(0)
-    expect(cardOf(fixture, 'a').querySelector('.d-grid')).toBeNull()
+    expect(cardOf(fixture, 'a').querySelector('.hilos-button-row')).toBeNull()
   })
 
   it('puts the declared cell class on the row cell and not on the card line', () => {
@@ -1217,6 +1217,24 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(
       cardOf(fixture, 'a').querySelector('dd')?.classList.contains('text-end'),
     ).toBe(false)
+  })
+
+  it('wraps actions cell content in an inline-flex gap-1 container on wide rows', () => {
+    const controller = makeController(CARD_FRAME)
+    window(controller)
+    const fixture = mountCards(controller)
+
+    const row = query(fixture, '[data-id="hilos-table-row-a"]')
+    const cells = row?.querySelectorAll('td')
+    const actionsCell = cells?.[CARD_COLUMNS.length - 1]
+    const wrapperSpan = actionsCell?.querySelector(
+      'span.d-inline-flex.align-items-center.gap-1',
+    )
+    expect(wrapperSpan).not.toBeNull()
+    expect(wrapperSpan?.querySelector('.restore')).not.toBeNull()
+
+    const nameCell = cells?.[0]
+    expect(nameCell?.querySelector('span.d-inline-flex')).toBeNull()
   })
 
   it('draws every placeholder reason in the row and card', () => {
@@ -2070,7 +2088,7 @@ describe('HilosViewportTable expanding a card', () => {
     )
     expect(blocks[1]?.tagName).toBe('DL')
     expect(blocks[2]?.getAttribute('data-id')).toBe('hilos-table-row-detail-a')
-    expect(blocks[3]?.classList.contains('d-grid')).toBe(true)
+    expect(blocks[3]?.classList.contains('hilos-button-row')).toBe(true)
   })
 
   it('gives the card panel an id of its own, apart from the row panel', () => {

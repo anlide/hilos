@@ -793,7 +793,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               {hasBackupFailureDetail(row) ? (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary me-1"
+                  className="btn btn-sm btn-outline-secondary"
                   title="Show failure reason"
                   aria-label="Show failure reason"
                   data-id={`hilos-backup-details-${row.id}`}
@@ -807,7 +807,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                   {restoreBlockedReason(row) !== null ? (
                     <button
                       type="button"
-                      className="btn btn-sm btn-outline-secondary me-1"
+                      className="btn btn-sm btn-outline-secondary"
                       title="Why this backup cannot be restored"
                       aria-label="Why this backup cannot be restored"
                       data-id={`hilos-backup-blocked-why-${row.id}`}
@@ -818,7 +818,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                   ) : null}
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline-warning me-1"
+                    className="btn btn-sm btn-outline-warning"
                     disabled={restoreBlockedReason(row) !== null}
                     title="Restore this backup"
                     aria-label="Restore this backup"
@@ -835,7 +835,7 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               {offersBackupRestore(row) && !restoreGate.uiEnabled ? (
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-secondary me-1"
+                  className="btn btn-sm btn-outline-secondary"
                   title="How to restore this backup"
                   aria-label="How to restore this backup"
                   data-id={`hilos-backup-restore-cli-${row.id}`}
