@@ -1,9 +1,10 @@
 <!-- HilosTableBar — the strip above a table, drawn from what the page DECLARED
 (HilosTableFrame) and never from props of its own: the title and subtitle, the
 search box, the declared filters, and the one main action pinned right. Under the
-title it shows EITHER those controls OR the selection panel, never both: actions
-over one record and over twenty standing side by side is the confusion the panel
-exists against (mockups/components/table section 6). It holds
+title it holds the bar's controls and the selection panel in one room stacked in
+one cell (.hilos-stack), sized to the taller of the two so that marking rows never
+moves the table below (Design D2). Under the title it shows EITHER those controls
+OR the selection panel, the inactive one invisible (Flow F1). It holds
 NO table logic — the controller owns the descriptor, and every control here is a
 call into it (multiframework-core.md). Internal to the Vue view layer on purpose:
 it is not exported from index.ts, because a bar has no meaning away from the
@@ -106,38 +107,14 @@ function filterKey(view: HilosTableFilterView): string {
 }
 
 // A table has marks exactly when its page declared bulk operations, and that never
-// changes over its life — so the panel is MOUNTED on that sign and only shows itself
-// on the three below. What it carries is a dialog, and only an open dialog holds
-// the page's scroll lock (HIL-985), so mounting it on the sign costs markup and
-// nothing more. The filters dialog below is gated the same way.
+// changes over its life — so the stack slot and panel are MOUNTED on that sign.
+// The panel shows itself whenever anything is marked.
 const selectionEnabled = props.controller.selection.enabled
 
 const selectionTarget = useSignal(props.controller.selection.target)
-const bulkProgress = useSignal(props.controller.progress.bulk)
-const bulkReport = useSignal(props.controller.bulk.report)
 
-// Which run's report the reader has dismissed. It is state of the VIEW and kept
-// against the key of the run: the core holds its report until the next run
-// replaces it, on purpose, and a new run brings a new key and is shown again
-// (Flow F12).
-const dismissedReport = ref<string | null>(null)
-const shownReport = computed(() =>
-  bulkReport.value !== null &&
-  bulkReport.value.progressKey !== dismissedReport.value
-    ? bulkReport.value
-    : null,
-)
-
-// What stands in the strip: the selection panel while ANY of its three counts
-// holds — something marked, a run going, or a report on screen — and the ordinary
-// controls otherwise. Worked out once and read by both, so the two can never
-// stand at the same time (Flow F4).
-const selectionPanel = computed(
-  () =>
-    selectionTarget.value !== null ||
-    bulkProgress.value !== null ||
-    shownReport.value !== null,
-)
+// The selection panel stands while rows are marked; the ordinary controls stand otherwise.
+const selectionPanel = computed(() => selectionTarget.value !== null)
 
 // Narrow screens put the filters in a modal rather than an offcanvas of the
 // SDK's own: the SDK ships Bootstrap's CSS and not its JS, so an offcanvas would
@@ -168,11 +145,163 @@ function onSearchInput(event: Event): void {
     </div>
 
     <div
-      v-if="
-        !selectionPanel &&
-        (searchBox || filters.length > 0 || mainAction || orders.length > 0)
+      v-if="selectionEnabled"
+      class="hilos-stack align-items-center mb-3"
+      data-id="hilos-table-bar-slot"
+    >
+      <div
+        v-if="
+          searchBox || filters.length > 0 || mainAction || orders.length > 0
+        "
+        class="d-flex flex-wrap align-items-center gap-2"
+        :class="{ invisible: selectionPanel }"
+        :aria-hidden="selectionPanel ? 'true' : undefined"
+        data-id="hilos-table-controls"
+      >
+        <div
+          v-if="searchBox"
+          class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
+        >
+          <span class="input-group-text">
+            <i class="bi bi-search" aria-hidden="true"></i>
+          </span>
+          <input
+            type="search"
+            class="form-control"
+            :placeholder="searchPlaceholder"
+            :aria-label="searchPlaceholder"
+            :value="search"
+            :data-autofocus="autofocusSearch ? '' : undefined"
+            data-id="hilos-table-search"
+            @input="onSearchInput"
+          />
+          <button
+            v-if="search !== ''"
+            type="button"
+            class="btn btn-outline-secondary"
+            aria-label="Clear search"
+            data-id="hilos-table-search-clear"
+            @click="controller.setSearch('')"
+          >
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Below md the controls leave the bar for the modal below, and the
+        button that opens it takes their place. The search does not go with them:
+        it is the main way to narrow a set, and hiding it behind a button would
+        hide exactly what the table was opened for. -->
+        <div
+          v-if="filters.length > 0"
+          class="d-none d-md-flex flex-wrap align-items-center gap-2"
+        >
+          <HilosTableFilterControl
+            v-for="view in filters"
+            :key="filterKey(view)"
+            :view="view"
+            :controller="controller"
+            placement="bar"
+          />
+        </div>
+
+        <span
+          v-if="activeFilterCount > 0"
+          class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+          data-id="hilos-table-filter-badge"
+        >
+          {{ filterCountLabel }}
+          <button
+            type="button"
+            class="btn-close ms-1"
+            aria-label="Reset filters"
+            data-id="hilos-table-filter-reset"
+            @click="controller.resetFilters()"
+          ></button>
+        </span>
+
+        <!-- Outside the row that leaves the bar below md: the menu is the only way
+        to change the order on a narrow screen, where the header of a column is out
+        of reach, so hiding it behind the Filters button would remove it. -->
+        <div
+          v-if="orders.length > 0"
+          class="w-auto"
+          data-id="hilos-table-order"
+        >
+          <HilosDropdown
+            :model-value="activeOrderKey"
+            :options="orderOptions"
+            :menu-aria-label="TABLE_ORDER_COPY.menu"
+            @update:model-value="onOrder"
+          >
+            <template #toggle>
+              <span class="text-truncate"
+                >{{ TABLE_ORDER_COPY.menu }}: {{ orderLabel }}</span
+              >
+            </template>
+            <template #option="{ option, selected, select }">
+              <button
+                type="button"
+                class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+                :class="{ active: selected }"
+                role="option"
+                :aria-selected="selected"
+                :data-id="`hilos-table-order-${option.value}`"
+                @click="select()"
+              >
+                <span class="text-truncate">{{ option.label }}</span>
+                <template v-if="staleOrderKeys.has(option.value)">
+                  <i
+                    class="bi bi-snow"
+                    :data-id="`hilos-table-order-stale-${option.value}`"
+                    aria-hidden="true"
+                  ></i>
+                  <span class="visually-hidden">{{
+                    TABLE_STALENESS_COPY.sortWarning
+                  }}</span>
+                </template>
+                <i
+                  v-if="selected"
+                  class="bi bi-check2 flex-shrink-0"
+                  aria-hidden="true"
+                ></i>
+              </button>
+            </template>
+          </HilosDropdown>
+        </div>
+
+        <!-- The button says only its word: the number of filters holding a value is
+        said once, on the badge above, which stays on a narrow screen because the
+        reset lives nowhere else. -->
+        <button
+          v-if="filters.length > 0"
+          type="button"
+          class="btn btn-sm btn-outline-secondary d-md-none"
+          data-id="hilos-table-filters-open"
+          @click="filtersOpen = true"
+        >
+          Filters
+        </button>
+
+        <button
+          v-if="mainAction"
+          type="button"
+          class="btn btn-sm btn-primary ms-auto"
+          data-id="hilos-table-main-action"
+          @click="mainAction.press()"
+        >
+          {{ mainAction.label }}
+        </button>
+      </div>
+
+      <HilosTableSelection :controller="controller" :shown="selectionPanel" />
+    </div>
+
+    <div
+      v-else-if="
+        searchBox || filters.length > 0 || mainAction || orders.length > 0
       "
       class="d-flex flex-wrap align-items-center gap-2 mb-3"
+      data-id="hilos-table-controls"
     >
       <div
         v-if="searchBox"
@@ -304,18 +433,6 @@ function onSearchInput(event: Event): void {
         {{ mainAction.label }}
       </button>
     </div>
-
-    <HilosTableSelection
-      v-if="selectionEnabled"
-      :controller="controller"
-      :shown="selectionPanel"
-      :report="shownReport"
-      @dismiss="dismissedReport = $event"
-    >
-      <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
-        <slot name="bulk-untouched" v-bind="untouched" />
-      </template>
-    </HilosTableSelection>
 
     <!-- Under the same condition as the button that opens it: a table with no
     filters has nothing to show here, and a dialog no button can reach is markup

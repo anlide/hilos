@@ -136,6 +136,7 @@ export {
 export {
   type HilosTableBulkAccepted,
   type HilosTableBulkReport,
+  type HilosTableBulkStarted,
   type HilosTableBulkState,
   type HilosTableBulkUntouched,
 } from './table/tableBulk.js'

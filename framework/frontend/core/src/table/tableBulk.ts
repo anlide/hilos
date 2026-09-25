@@ -69,13 +69,27 @@ export interface HilosTableBulkAccepted {
 }
 
 /**
+ * The run the reader started from this table, remembered so the live message can
+ * name the operation while that run is live.
+ */
+export interface HilosTableBulkStarted {
+  /** Key of the run the reader started from this table. */
+  readonly progressKey: string
+  /** Label of the declared operation that started it. */
+  readonly label: string
+}
+
+/**
  * The readable state of a table's bulk work — what a view draws the outcome from.
  *
- * The report stands until the next run on this table replaces it, and changing
- * the page, the filter or the order leaves it alone, for the reason the bars are
- * left alone: it is about the work, not about the window.
+ * The report stands until the next run on this table replaces it or the reader
+ * dismisses it, and changing the page, the filter or the order leaves it alone,
+ * for the reason the bars are left alone: it is about the work, not about the
+ * window.
  */
 export interface HilosTableBulkState {
   /** The outcome of the last run on this table, or null while none has ended. */
   readonly report: ReadonlySignal<HilosTableBulkReport | null>
+  /** The run the reader started from this table, or null while none is running. */
+  readonly started: ReadonlySignal<HilosTableBulkStarted | null>
 }

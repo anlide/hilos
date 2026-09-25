@@ -2,11 +2,20 @@
 // Vue reference and the React port run.
 import { Component } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
-import { describe, expect, it } from 'vitest'
-import { TableViewportController } from '@hilos/core'
-import type { HilosTableColumn } from '@hilos/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import { TableViewportController, createSignal } from '@hilos/core'
+import type {
+  ActionHandle,
+  HilosTableBulkAccepted,
+  HilosTableBulkAction,
+  HilosTableColumn,
+} from '@hilos/core'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
+
+afterEach(() => {
+  document.body.classList.remove('modal-open')
+})
 
 interface Row {
   name: string
@@ -66,6 +75,23 @@ function liveThree(controller: TableViewportController<Row>): void {
   })
 }
 
+function accepted(progressKey: string): ActionHandle<HilosTableBulkAccepted> {
+  return {
+    requestId: 'req-1',
+    loading: createSignal(false),
+    done: Promise.resolve({ reply: { progressKey, total: 2 } }),
+  }
+}
+
+function deleteAction(label = 'Delete'): HilosTableBulkAction {
+  return {
+    key: 'delete',
+    label,
+    danger: true,
+    run: () => accepted('run-1'),
+  }
+}
+
 /** A host handing the room the project's words and control beside the track. */
 @Component({
   selector: 'test-table-live-progress-host',
@@ -92,6 +118,24 @@ class TableLiveProgressHost {
   columns = COLUMNS
 }
 
+/** A host handing the room the template for untouched rows in bulk details. */
+@Component({
+  selector: 'test-table-live-named-host',
+  imports: [HilosTableLive],
+  template: `
+    <hilos-table-live
+      [controller]="controller"
+      [columns]="columns"
+      [bulkUntouched]="untouched"
+    />
+    <ng-template #untouched let-rowKey>27.08 03:00 ({{ rowKey }})</ng-template>
+  `,
+})
+class TableLiveNamedHost {
+  controller!: TableViewportController<Row>
+  columns = COLUMNS
+}
+
 function mountLive(
   controller: TableViewportController<Row>,
 ): ComponentFixture<HilosTableLive<Row>> {
@@ -108,6 +152,11 @@ function query(
   selector: string,
 ): HTMLElement | null {
   return (fixture.nativeElement as HTMLElement).querySelector(selector)
+}
+
+function click(fixture: ComponentFixture<unknown>, selector: string): void {
+  ;(query(fixture, selector) as HTMLElement | null)?.click()
+  fixture.detectChanges()
 }
 
 function all(fixture: ComponentFixture<unknown>, selector: string): Element[] {
@@ -277,5 +326,150 @@ describe('HilosTableLive', () => {
     expect(Array.from(host.classList)).toEqual(
       expect.arrayContaining(['position-absolute', 'bottom-0', 'w-100']),
     )
+  })
+
+  it('names the running bulk operation on its own bar and stays neutral on another', async () => {
+    const controller = makeController()
+    controller.runBulk(deleteAction(), { kind: 'rows', rowKeys: ['a'] })
+    await Promise.resolve()
+
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'run-1',
+      current: 12,
+      total: 40,
+    })
+    const fixture = mountLive(controller)
+
+    const line = query(
+      fixture,
+      '[data-id="hilos-table-progress-bulk"]',
+    ) as HTMLElement
+    expect(line.textContent).toContain('Delete: 12 of 40')
+    const track = line.querySelector('[role="progressbar"]') as HTMLElement
+    expect(track.getAttribute('aria-label')).toBe('Working on the marked rows')
+    const host = line.querySelector('hilos-table-progress') as HTMLElement
+    expect(Array.from(host.classList)).toEqual(
+      expect.arrayContaining(['position-absolute', 'bottom-0', 'w-100']),
+    )
+
+    // Work under another key: neutral caption
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'someone-else',
+      current: 3,
+      total: 9,
+    })
+    fixture.detectChanges()
+    expect(
+      query(fixture, '[data-id="hilos-table-progress-bulk"]')?.textContent,
+    ).toContain('Working on the marked rows')
+  })
+
+  it('drops the total from the bulk caption of work that named none', async () => {
+    const controller = makeController()
+    controller.runBulk(deleteAction(), { kind: 'rows', rowKeys: ['a'] })
+    await Promise.resolve()
+
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'run-1',
+      current: 12,
+    })
+    const fixture = mountLive(controller)
+
+    expect(
+      query(fixture, '[data-id="hilos-table-progress-bulk"]')?.textContent,
+    ).toContain('Delete')
+  })
+
+  it('reads the outcome out of the report, calmly when nothing was left alone', () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [],
+      untouchedOmitted: 0,
+    })
+    const fixture = mountLive(controller)
+
+    const plate = query(
+      fixture,
+      '[data-id="hilos-table-bulk-report"]',
+    ) as HTMLElement
+    expect(plate.textContent).toContain('Changed 39 rows')
+    expect(plate.textContent).not.toContain('untouched')
+    expect(plate.classList.contains('alert-success')).toBe(true)
+    expect(
+      query(fixture, '[data-id="hilos-table-bulk-report-details"]'),
+    ).toBeNull()
+    expect(
+      query(fixture, '[data-id="hilos-table-bulk-report-close"]'),
+    ).not.toBeNull()
+  })
+
+  it('names every untouched row and counts the names that did not fit in details modal', () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [{ rowKey: 'r7', reason: 'Someone deleted it first' }],
+      untouchedOmitted: 4128,
+    })
+    const fixture = mountLive(controller)
+
+    const plate = query(
+      fixture,
+      '[data-id="hilos-table-bulk-report"]',
+    ) as HTMLElement
+    expect(plate.classList.contains('alert-warning')).toBe(true)
+    expect(plate.textContent).toContain('Changed 39 rows, 4129 untouched')
+
+    click(fixture, '[data-id="hilos-table-bulk-report-details"]')
+
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    const list = document.querySelector(
+      '[data-id="hilos-table-bulk-report-list"]',
+    )
+    expect(list?.textContent).toContain('r7')
+    expect(list?.textContent).toContain('Someone deleted it first')
+    expect(list?.textContent).toContain('and 4128 more')
+  })
+
+  it('prints the human name a page gave the untouched row in details modal', () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [{ rowKey: 'r7', reason: 'Already gone' }],
+      untouchedOmitted: 0,
+    })
+    const fixture = TestBed.createComponent(TableLiveNamedHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    click(fixture, '[data-id="hilos-table-bulk-report-details"]')
+
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    const list = document.querySelector(
+      '[data-id="hilos-table-bulk-report-list"]',
+    )
+    expect(list?.textContent).toContain('27.08 03:00 (r7)')
+  })
+
+  it('dismisses the report through the controller', () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [],
+      untouchedOmitted: 0,
+    })
+    const fixture = mountLive(controller)
+
+    click(fixture, '[data-id="hilos-table-bulk-report-close"]')
+
+    expect(controller.bulk.report.get()).toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-bulk-report"]')).toBeNull()
   })
 })

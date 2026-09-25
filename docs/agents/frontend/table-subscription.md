@@ -858,17 +858,21 @@ a **bar**, and there are exactly three:
    `table-progress-action` beside it in Vue; `tableProgress` and
    `tableProgressAction` render props in React; `#tableProgress` and
    `#tableProgressAction` templates in Angular), each receiving the whole bar,
-   `detail` and all. The bar is one of the four live messages that share the one room above
-   the table, and the most junior of them: while changes wait for Apply, rows wait
-   to be shown, or a source is behind, the line is theirs and the bar stands
-   beside it as an icon (`tableLive.ts`, and
+   `detail` and all. The bar is one of the six live messages that share the one room above
+   the table, and the most junior of them: while a bulk report or bulk work stands,
+   changes wait for Apply, rows wait to be shown, or a source is behind, the line is
+   theirs and the bar stands beside it as an icon in order of precedence:
+   `report` → `bulk` → `pending` → `announce` → `stale` → `progress` (`tableLive.ts`, and
    [styling-rules.md](styling-rules.md), "The room a live message takes"). It reads no key out of
    `detail` itself: `detail` is the project's arbitrary payload, so a view
    reading keys from it would invent a naming contract nobody declared and oblige
    every other view layer to repeat it letter for letter.
-3. **The bulk-action bar** — lives inside the selection panel and belongs to the
-   framework entirely. Deleting forty records takes time, and a button that says
-   nothing for that long is not acceptable. The table bar must not be borrowed
+3. **The bulk-action bar** — is a live message of that same room above the table
+   (`bulk`), with its own caption from the framework (`label: current of total`, or
+   `Working on the marked rows`), drawn with a thin progress line along the bottom edge
+   of the message row. It belongs to the framework entirely and does not take the
+   project's `table-progress` slots. Deleting forty records takes time, and a button
+   that says nothing for that long is not acceptable. The table bar must not be borrowed
    for this: it is the project's.
 
 Common to all three: **a progress bar takes no part in the live-change rules, is
@@ -887,9 +891,11 @@ the bar does not belong to the window.
 
 ## Selection and bulk actions
 
-While nothing is selected the table shows its ordinary bar; from the first
-selected row it is replaced by the **selection panel**, so that actions over one
-record and over twenty never stand side by side.
+While nothing is selected the table shows its ordinary bar; while rows are marked
+it shows the **selection panel**, the two stacked in one shared grid cell
+(`.hilos-stack`) sized to the taller of the two so that marking rows never shifts
+the table below, and actions over one record and over twenty never stand side by
+side.
 
 - **Selection lives inside the window.** Paging, changing a filter, or
   re-sorting clears it. An action over rows that are not visible is "all matching
@@ -922,24 +928,25 @@ record and over twenty never stand side by side.
   changes how the button reads and nothing else. Irreversible work over twenty
   records from a single click is the one outcome the confirmation exists against,
   and two behaviors on one place would be a flag the frame does not carry.
-- **The panel stands on any of three counts** — something is marked, **or** a
-  bulk bar is running, **or** a report is on screen — and the ordinary controls
-  of the bar come back only when none of the three holds. Rows a run deletes drop
-  out of the selection by themselves, so "the panel while something is marked"
-  would take the running bar and the not-yet-arrived report off the screen in the
-  very case the panel is there for.
-- **The report is dismissed by the reader**, and that is its only exit short of
-  the next run: the core holds it until a run replaces it, and the dismissal is
-  state of the view, kept against the `progressKey` it dismissed. Paging,
-  filtering and re-sorting leave it standing, for the reason they leave a bar
-  standing — it is about the work, not about the window.
+- **The panel stands while rows are marked**, and the ordinary controls of the
+  bar stand otherwise. The two share the one stacked cell (`.hilos-stack`), the
+  inactive one invisible and taking no focus. Rows a run deletes drop out of the
+  selection by themselves; when no marks remain, the controls return without
+  moving the table.
+- **The report is dismissed by the reader** through its close button calling
+  `dismissBulkReport(progressKey)`, and that is state of the CORE, not of the
+  view: the core holds it until a run replaces it or the reader dismisses it.
+  Paging, filtering and re-sorting leave it standing, for the reason they leave
+  a bar standing — it is about the work, not about the window. It is drawn as
+  the `report` live message above the table; clicking Details opens a modal
+  showing untouched row names and reasons.
 - **A silent partial success is forbidden.** The server judges each row
   separately, and the report names the untouched rows one by one. "39 of 40
   deleted" without names is a message after which the reader has to go looking.
   The report carries a `rowKey` and a reason, and the human name of that row is
-  the page's: the framework hands the place over as a **slot** (`bulk-untouched`
-  in Vue, the `bulkUntouched` render prop in React, an
-  `<ng-template #bulkUntouched>` in Angular — each given the `rowKey` and the
+  the page's in the Details dialog: the framework hands the place over as a
+  **slot** (`bulk-untouched` in Vue, the `bulkUntouched` render prop in React,
+  an `<ng-template #bulkUntouched>` in Angular — each given the `rowKey` and the
   `reason`) and prints the key where the page filled nothing. It cannot do
   better — the row has left the window by then.
 - A table may declare **no** bulk actions, and then it has no selection column at
@@ -1040,7 +1047,10 @@ internal naming, and a test that selects `hilos-table` is stale.
 
 Everything inside the root keeps the `hilos-table-*` prefix:
 
-- **frame:** `hilos-table-title`, `hilos-table-main-action`,
+- **frame:** `hilos-table-bar-slot` — the stacked container holding the bar's
+  controls and the selection panel (only when the table declared bulk operations),
+  `hilos-table-controls` — the strip of controls in the bar (present on every
+  table with a frame declaration), `hilos-table-title`, `hilos-table-main-action`,
   `hilos-table-search`, `hilos-table-filters`,
   `hilos-table-filter-<filterKey>`, `hilos-table-facet-<filterKey>-<value>` — the
   number beside one option of a dropdown filter, keyed by `String(value)`,
@@ -1072,9 +1082,10 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-live-idle` — the invisible twin holding it,
   `hilos-table-live-rest` — the icons of the messages the line yielded,
   `hilos-table-live-status` — the hidden region that speaks them. The line
-  carries the handle of the message holding it: `hilos-table-pending-row`,
-  `hilos-table-announce`, `hilos-table-stale` or `hilos-table-progress` — so a
-  message that yielded the line has no handle of its own until it gets it back;
+  carries the handle of the message holding it: `hilos-table-bulk-report`,
+  `hilos-table-progress-bulk`, `hilos-table-pending-row`, `hilos-table-announce`,
+  `hilos-table-stale` or `hilos-table-progress` — so a message that yielded the
+  line has no handle of its own until it gets it back;
 - **waiting and announcing:** `hilos-table-pending`,
   `hilos-table-pending-move-<rowKey>`, `hilos-table-pending-remove-<rowKey>`,
   `hilos-table-apply`, `hilos-table-announce`, `hilos-table-announce-show`;
@@ -1084,6 +1095,8 @@ Everything inside the root keeps the `hilos-table-*` prefix:
   `hilos-table-bulk-<actionKey>` — the button of one declared operation,
   `hilos-table-bulk-confirm` — the button that confirms it,
   `hilos-table-bulk-report` — the report the run ended with,
+  `hilos-table-bulk-report-details` — the button that opens the details dialog,
+  `hilos-table-bulk-report-list` — the list of untouched rows in the details dialog,
   `hilos-table-bulk-report-close` — the cross that dismisses it;
 - **work:** `hilos-table-progress`, `hilos-table-progress-row-<rowKey>`,
   `hilos-table-progress-bulk`;
@@ -1192,5 +1205,5 @@ an address does not:
 | the one room a table's live messages share | `framework/frontend/{vue,react,angular}/src/HilosTableLive.*` |
 | the two worded states of the body — "nothing here yet" and "Nothing found" | `framework/frontend/{vue,react,angular}/src/HilosTableEmptyState.*` |
 | the bar a running job is drawn as | `framework/frontend/{vue,react,angular}/src/HilosTableProgress.*` |
-| the selection panel and the bulk bar | `framework/frontend/{vue,react,angular}/src/HilosTableSelection.*` |
+| the selection panel | `framework/frontend/{vue,react,angular}/src/HilosTableSelection.*` |
 | the edge the selection column sits on | `framework/frontend/{vue,react,angular}/src/hilosTableSelectionEdge.ts` |

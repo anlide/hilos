@@ -29,6 +29,7 @@ import {
   type TableAnchorDirection,
   type TableViewportDescriptor,
 } from '../connection/HilosConnection.js'
+import { type ActionHandle } from '../connection/actionLifecycle.js'
 import { type TableRow } from '../state/TableRowsStore.js'
 import {
   computedSignal,
@@ -38,13 +39,16 @@ import {
   type WritableSignal,
 } from '../state/signal.js'
 import {
+  type HilosTableBulkAccepted,
   type HilosTableBulkReport,
+  type HilosTableBulkStarted,
   type HilosTableBulkState,
 } from './tableBulk.js'
 import { hilosTableCard } from './tableCard.js'
 import {
   HILOS_TABLE_FACET_OPTION_LIMIT,
   type HilosTableBody,
+  type HilosTableBulkAction,
   type HilosTableFacetCount,
   type HilosTableFacets,
   type HilosTableFilterView,
@@ -575,6 +579,10 @@ export class TableViewportController<R> implements TableWindowSink {
     null,
   )
 
+  /** The run the reader started from this table, or null while none is running. */
+  private readonly bulkStartedSignal =
+    createSignal<HilosTableBulkStarted | null>(null)
+
   /** Request id of the last own-create ingested, or null when it was not tracked. */
   private readonly ownCreateRequestIdSignal = createSignal<string | null>(null)
 
@@ -767,10 +775,11 @@ export class TableViewportController<R> implements TableWindowSink {
   /**
    * The live messages over the table and which of them holds the room above the rows.
    *
-   * Nothing new is counted here: the four facts are the pending count, the rows announced
-   * above the window, a frozen source anywhere in the window, and the table bar — each
-   * already read by the view on its own. What is added is the precedence, so the one room
-   * is filled the same way by every view.
+   * Nothing new is counted here: the six facts are the bulk report, the bulk progress,
+   * the pending count, the rows announced above the window, a frozen source anywhere
+   * in the window, and the table bar — each already read by the view on its own. What
+   * is added is the precedence, so the one room of live messages never changes height
+   * and never shows two messages side by side.
    */
   readonly live: ReadonlySignal<HilosTableLive>
 
@@ -1048,9 +1057,14 @@ export class TableViewportController<R> implements TableWindowSink {
       bulk: this.bulkProgressSignal,
       rows: this.rowProgressSignal,
     }
-    this.bulkState = { report: this.bulkReportSignal }
+    this.bulkState = {
+      report: this.bulkReportSignal,
+      started: this.bulkStartedSignal,
+    }
     this.live = computedSignal(() =>
       hilosTableLive({
+        report: this.bulkReportSignal.get() !== null,
+        bulk: this.bulkProgressSignal.get() !== null,
         pending: this.pendingCount.get() > 0,
         announce: this.announced.get().above > 0,
         stale: hilosTableStaleSources(this.rows.get()).size > 0,
@@ -1142,10 +1156,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * Like a bar, it does not belong to the window: paging, filtering and re-sorting
    * leave it standing, because it is about the work and not about what is on screen.
    * It stands until the next run on this table begins, which is the one thing that
-   * clears it.
+   * clears it, or the reader dismisses it through {@link dismissBulkReport}.
    *
-   * SCAFFOLD: the Vue selection panel reads it; React and Angular follow in
-   * HIL-813.
+   * SCAFFOLD: the room of live messages reads it.
    */
   get bulk(): HilosTableBulkState {
     return this.bulkState
@@ -1814,7 +1827,7 @@ export class TableViewportController<R> implements TableWindowSink {
    *
    * It replaces whatever report was standing, because one table shows the outcome of
    * the run that just ended and not a history of them. It is NOT matched against the
-   * bar: the report arrives BEFORE the bar comes down, deliberately, so that the panel
+   * bar: the report arrives BEFORE the bar comes down, deliberately, so that the room
    * is never left with neither, and a report checked against a bar that is still up
    * would be the same ordering read backwards.
    *
@@ -2359,6 +2372,51 @@ export class TableViewportController<R> implements TableWindowSink {
   clearSelection(): void {
     this.allByFilterSignal.set(false)
     this.selectedKeysSignal.set(new Set())
+  }
+
+  /**
+   * Run a bulk action over the selected rows or matching filter condition.
+   *
+   * Starts the action and, on acceptance, remembers the started run under its
+   * progressKey so the live message can display the declared operation's label.
+   * A refusal is caught in its own promise branch and left to the view's tracked
+   * action to handle.
+   *
+   * @param action The declared bulk operation to run.
+   * @param target The selected keys or filter condition to pass to it.
+   */
+  runBulk(
+    action: HilosTableBulkAction,
+    target: HilosTableSelectionTarget,
+  ): ActionHandle<HilosTableBulkAccepted> {
+    const handle = action.run(target)
+    handle.done.then(
+      (result) => {
+        if (result?.reply !== undefined) {
+          this.bulkStartedSignal.set({
+            progressKey: result.reply.progressKey,
+            label: action.label,
+          })
+        }
+      },
+      () => undefined,
+    )
+
+    return handle
+  }
+
+  /**
+   * Dismiss the report of a finished bulk run.
+   *
+   * Clears the standing report if its progressKey matches, leaving a fresher
+   * report untouched if another run finished in the meantime.
+   *
+   * @param progressKey The key of the run whose report is being dismissed.
+   */
+  dismissBulkReport(progressKey: string): void {
+    if (this.bulkReportSignal.get()?.progressKey === progressKey) {
+      this.bulkReportSignal.set(null)
+    }
   }
 
   /**

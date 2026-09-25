@@ -1607,7 +1607,7 @@ describe('HilosViewportTable drawing work in progress', () => {
     )
   })
 
-  it('draws nothing for a bulk frame, whose place is the selection panel', () => {
+  it('draws a bulk frame in the live room, not under table progress', () => {
     const { controller } = makeController()
     window(controller)
     controller.ingestProgress({
@@ -1622,7 +1622,7 @@ describe('HilosViewportTable drawing work in progress', () => {
       false,
     )
     expect(wrapper.find('[data-id="hilos-table-progress-bulk"]').exists()).toBe(
-      false,
+      true,
     )
   })
 })

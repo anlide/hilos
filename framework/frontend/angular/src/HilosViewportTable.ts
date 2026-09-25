@@ -136,7 +136,6 @@ export interface BulkUntouchedContext {
           [controller]="controller()"
           [titleId]="titleId"
           [autofocusSearch]="autofocusSearch()"
-          [bulkUntouched]="bulkUntouched()"
         />
       }
 
@@ -167,6 +166,7 @@ export interface BulkUntouchedContext {
         [columns]="frameColumns()"
         [tableProgress]="tableProgress()"
         [tableProgressAction]="tableProgressAction()"
+        [bulkUntouched]="bulkUntouched()"
       />
 
       <!-- A DECLARED table is a table on a wide screen and a list of cards on a
@@ -1185,10 +1185,8 @@ export class HilosViewportTable<R> {
   protected readonly skeletonCellIndexes = computed(() =>
     Array.from({ length: this.bodyColspan() }, (_unused, index) => index),
   )
-  // The row bars this view draws itself. The table bar is drawn by the room of live
-  // messages above the rows (HilosTableLive), and the bulk bar lives inside the
-  // selection panel and is drawn by the bar above the table — anywhere else it would
-  // take the room the table bar gives to the project.
+  // The row bars this view draws itself. The table bar and the bulk bar are drawn by
+  // the room of live messages above the rows (HilosTableLive).
   protected readonly rowProgressBars = signal<
     ReadonlyMap<string, HilosTableProgressState>
   >(new Map())

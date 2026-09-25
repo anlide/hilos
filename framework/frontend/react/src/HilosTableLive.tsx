@@ -1,16 +1,18 @@
 // HilosTableLive — the one room above a table for everything live it has to say:
 // changes waiting for Apply, rows created above the window, a source that stopped
-// being kept up to date, and work running on the set. The room is exactly one line
-// tall at every table and never changes height (styling-rules.md, "The room a live
-// message takes"): an invisible twin of the very same row stands in the flow at all
-// times and holds it, and the message is laid over that twin — over its OWN
-// reserve, the way LoadingButton lays its spinner over its own text, and never over
-// a row of the table. The twin stays in the flow rather than taking turns with the
-// message, because the four rows are not one height: the freshness row has no
-// button, and a room swapping to it would sit down.
+// being kept up to date, and work running on the set, plus bulk action progress
+// and outcome report (Design D3). The room is exactly one line tall at every table
+// and never changes height (styling-rules.md, "The room a live message takes"): an
+// invisible twin of the very same row stands in the flow at all times and holds it,
+// and the message is laid over that twin — over its OWN reserve, the way LoadingButton
+// lays its spinner over its own text, and never over a row of the table. The twin
+// stays in the flow rather than taking turns with the message under conditional
+// rendering, because the rows are not one height: some rows have buttons, and a
+// room swapping to a buttonless row would sit down.
 // When several are live, the core decides which holds the line (tableLive.ts) and
-// the others stand beside its text as their icons alone; a fifth kind of message
-// arrives into this same room rather than a room of its own.
+// the others stand beside its text as their icons alone. Details of an untouched bulk
+// report open in a dialog (HilosModal) mounted outside the live strip so that
+// messages cycling underneath do not dismiss it.
 // What a screen reader hears is one hidden region that stands before there is
 // anything to say, never the row itself: the track of running work lives in the row
 // and moves every second, and a region on the row would read it out each time.
@@ -18,13 +20,15 @@
 // for the reason the bar and the footer are not — outside a table it means nothing.
 // The React port of the Vue reference (vue/src/HilosTableLive.vue), under the same
 // names and words.
+import { useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   hilosTableStaleColumns,
   hilosTableStaleLabel,
   hilosTableStaleSources,
 } from '@hilos/core'
-import type { ReactNode } from 'react'
 import type {
+  HilosTableBulkReport,
   HilosTableColumn,
   HilosTableLiveKind,
   // Aliased because the component drawing one of these carries the same name.
@@ -32,6 +36,7 @@ import type {
   TableViewportController,
 } from '@hilos/core'
 
+import { HilosModal } from './HilosModal.js'
 import { HilosTableProgress } from './HilosTableProgress.js'
 import { useSignal } from './useSignal.js'
 
@@ -48,6 +53,11 @@ export interface HilosTableLiveProps<R> {
   tableProgress?: (progress: TableProgressBar) => ReactNode
   /** The project's own control for that work, standing where a button stands. */
   tableProgressAction?: (progress: TableProgressBar) => ReactNode
+  /**
+   * The human name of one row a run left untouched; the key is printed where the
+   * page fills nothing, because the row itself has left the window by then.
+   */
+  bulkUntouched?: (rowKey: string, reason: string) => ReactNode
 }
 
 /**
@@ -60,8 +70,9 @@ export interface HilosTableLiveProps<R> {
 const ROW_CLASS =
   'alert py-2 px-3 mb-0 d-flex flex-nowrap align-items-center gap-2'
 
-/** The color each kind of message is drawn in. */
-const VARIANT: Record<HilosTableLiveKind, string> = {
+/** The color each kind of message is drawn in (report is computed separately). */
+const VARIANT: Record<Exclude<HilosTableLiveKind, 'report'>, string> = {
+  bulk: 'alert-secondary',
   pending: 'alert-warning',
   announce: 'alert-secondary',
   stale: 'alert-info',
@@ -70,6 +81,8 @@ const VARIANT: Record<HilosTableLiveKind, string> = {
 
 /** The icon each kind is drawn with — on the line when it holds it, and beside it when not. */
 const ICON: Record<HilosTableLiveKind, string> = {
+  report: 'bi-clipboard-check',
+  bulk: 'bi-check2-square',
   pending: 'bi-pause-circle',
   announce: 'bi-arrow-down-circle',
   stale: 'bi-snow',
@@ -78,6 +91,8 @@ const ICON: Record<HilosTableLiveKind, string> = {
 
 /** The data-id of the row while that kind holds it — the handles e2e reads each message by. */
 const ROW_ID: Record<HilosTableLiveKind, string> = {
+  report: 'hilos-table-bulk-report',
+  bulk: 'hilos-table-progress-bulk',
   pending: 'hilos-table-pending-row',
   announce: 'hilos-table-announce',
   stale: 'hilos-table-stale',
@@ -86,11 +101,16 @@ const ROW_ID: Record<HilosTableLiveKind, string> = {
 
 /** How each kind is named when it is listed after the one holding the line. */
 const REST_WORDS: Record<HilosTableLiveKind, string> = {
+  report: 'a bulk report',
+  bulk: 'work on the marked rows',
   pending: 'pending changes',
   announce: 'new rows above the window',
   stale: 'a source is behind',
   progress: 'work running',
 }
+
+/** The accessible name of the track, and the caption of a bar we did not start. */
+const BULK_BAR_NAME = 'Working on the marked rows'
 
 /**
  * The room of live messages above one table.
@@ -102,12 +122,50 @@ export function HilosTableLive<R>({
   columns,
   tableProgress,
   tableProgressAction,
+  bulkUntouched,
 }: HilosTableLiveProps<R>) {
   const live = useSignal(controller.live)
   const rows = useSignal(controller.rows)
   const pendingCount = useSignal(controller.pendingCount)
   const announced = useSignal(controller.announced)
   const tableBar = useSignal(controller.progress.table)
+  const bulkProgress = useSignal(controller.progress.bulk)
+  const bulkStarted = useSignal(controller.bulk.started)
+  const bulkReport = useSignal(controller.bulk.report)
+
+  let bulkBarCaption = ''
+  if (bulkProgress !== null) {
+    if (
+      bulkStarted === null ||
+      bulkStarted.progressKey !== bulkProgress.progressKey
+    ) {
+      bulkBarCaption = BULK_BAR_NAME
+    } else {
+      bulkBarCaption =
+        bulkProgress.total === null
+          ? bulkStarted.label
+          : `${bulkStarted.label}: ${bulkProgress.current} of ${bulkProgress.total}`
+    }
+  }
+
+  const untouchedCount =
+    bulkReport === null
+      ? 0
+      : bulkReport.untouched.length + bulkReport.untouchedOmitted
+
+  let reportTitle = ''
+  if (bulkReport !== null) {
+    const changed = `Changed ${bulkReport.touched} ${bulkReport.touched === 1 ? 'row' : 'rows'}`
+    reportTitle =
+      untouchedCount === 0 ? changed : `${changed}, ${untouchedCount} untouched`
+  }
+
+  function variantFor(kind: HilosTableLiveKind): string {
+    if (kind === 'report') {
+      return untouchedCount > 0 ? 'alert-warning' : 'alert-success'
+    }
+    return VARIANT[kind]
+  }
 
   // The sentence about the columns that went quiet, read out of the very list the
   // table is drawn from.
@@ -135,6 +193,8 @@ export function HilosTableLive<R>({
   // What the hidden region says: the sentence of the message on the line, then the
   // others by name. The track of running work is not in it — it moves every second.
   const sentences: Record<HilosTableLiveKind, string> = {
+    report: `${reportTitle}.`,
+    bulk: `${bulkBarCaption}.`,
     pending: `${pendingCount} ${pendingSuffix}.`,
     announce: `${announceLabel}.`,
     stale: staleLabel ?? '',
@@ -147,6 +207,26 @@ export function HilosTableLive<R>({
       : restWords.length === 0
         ? sentences[top]
         : `${sentences[top]} Also: ${restWords.join(', ')}.`
+
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [detailsReport, setDetailsReport] =
+    useState<HilosTableBulkReport | null>(null)
+
+  function titleForReport(report: HilosTableBulkReport | null): string {
+    if (report === null) {
+      return ''
+    }
+    const count = report.untouched.length + report.untouchedOmitted
+    const changed = `Changed ${report.touched} ${report.touched === 1 ? 'row' : 'rows'}`
+    return count === 0 ? changed : `${changed}, ${count} untouched`
+  }
+
+  function openDetails(): void {
+    if (bulkReport !== null) {
+      setDetailsReport(bulkReport)
+      setDetailsOpen(true)
+    }
+  }
 
   return (
     <div className="position-relative mb-2" data-id="hilos-table-live-slot">
@@ -165,11 +245,13 @@ export function HilosTableLive<R>({
 
       {top !== null ? (
         <div
-          className={`${ROW_CLASS} ${VARIANT[top]} position-absolute top-0 start-0 w-100`}
+          className={`${ROW_CLASS} ${variantFor(top)} position-absolute top-0 start-0 w-100`}
           data-id={ROW_ID[top]}
         >
           <i className={`bi flex-shrink-0 ${ICON[top]}`} aria-hidden="true" />
           <span className="small flex-grow-1 text-truncate">
+            {top === 'report' ? reportTitle : null}
+            {top === 'bulk' ? bulkBarCaption : null}
             {top === 'pending' ? (
               <>
                 <span data-id="hilos-table-pending">{pendingCount}</span>{' '}
@@ -195,6 +277,29 @@ export function HilosTableLive<R>({
                 />
               ))}
             </span>
+          ) : null}
+          {top === 'report' && bulkReport !== null ? (
+            <>
+              {untouchedCount > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary flex-shrink-0"
+                  data-id="hilos-table-bulk-report-details"
+                  onClick={openDetails}
+                >
+                  Details
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn-close flex-shrink-0"
+                aria-label="Dismiss"
+                data-id="hilos-table-bulk-report-close"
+                onClick={() =>
+                  controller.dismissBulkReport(bulkReport.progressKey)
+                }
+              />
+            </>
           ) : null}
           {top === 'pending' ? (
             <button
@@ -229,8 +334,50 @@ export function HilosTableLive<R>({
               />
             </>
           ) : null}
+          {top === 'bulk' && bulkProgress !== null ? (
+            <HilosTableProgress
+              className="position-absolute bottom-0 start-0 w-100 rounded-0"
+              progress={bulkProgress}
+              label="Working on the marked rows"
+            />
+          ) : null}
         </div>
       ) : null}
+
+      <HilosModal
+        open={detailsOpen}
+        title={titleForReport(detailsReport)}
+        initialFocus="dialog"
+        onClose={() => setDetailsOpen(false)}
+        actions={({ requestClose }) => (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={requestClose}
+          >
+            Close
+          </button>
+        )}
+      >
+        {detailsReport !== null ? (
+          <ul
+            className="list-unstyled mb-0"
+            data-id="hilos-table-bulk-report-list"
+          >
+            {detailsReport.untouched.map((row) => (
+              <li key={row.rowKey}>
+                <strong>
+                  {bulkUntouched?.(row.rowKey, row.reason) ?? row.rowKey}
+                </strong>{' '}
+                — {row.reason}
+              </li>
+            ))}
+            {detailsReport.untouchedOmitted > 0 ? (
+              <li>and {detailsReport.untouchedOmitted} more</li>
+            ) : null}
+          </ul>
+        ) : null}
+      </HilosModal>
 
       <span
         className="visually-hidden"

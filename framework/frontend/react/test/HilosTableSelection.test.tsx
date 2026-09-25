@@ -5,12 +5,10 @@ import type {
   ActionHandle,
   HilosTableBulkAccepted,
   HilosTableBulkAction,
-  HilosTableBulkReport,
   HilosTableFrame,
   HilosTableSelectionTarget,
   TableViewportDescriptor,
 } from '@hilos/core'
-import type { ReactNode } from 'react'
 
 import { HilosTableSelection } from '../src/HilosTableSelection.js'
 
@@ -101,25 +99,17 @@ function makeController(
 }
 
 interface PanelOptions {
-  report?: HilosTableBulkReport | null
   shown?: boolean
-  dismissed?: string[]
-  bulkUntouched?: (rowKey: string, reason: string) => ReactNode
 }
 
 function panel(
   controller: TableViewportController<unknown>,
   options: PanelOptions = {},
 ) {
-  const dismissed = options.dismissed ?? []
-
   return (
     <HilosTableSelection
       controller={controller}
       shown={options.shown ?? true}
-      report={options.report ?? null}
-      onDismiss={(progressKey) => dismissed.push(progressKey)}
-      bulkUntouched={options.bulkUntouched}
     />
   )
 }
@@ -129,23 +119,6 @@ function renderPanel(
   options: PanelOptions = {},
 ) {
   return render(panel(controller, options))
-}
-
-/**
- * A finished run's outcome.
- *
- * @param overrides What this run ended with, over the ordinary shape.
- */
-function report(
-  overrides: Partial<HilosTableBulkReport> = {},
-): HilosTableBulkReport {
-  return {
-    progressKey: 'run-1',
-    touched: 39,
-    untouched: [],
-    untouchedOmitted: 0,
-    ...overrides,
-  }
 }
 
 /** Press a button and wait out the promises the send settles through. */
@@ -247,111 +220,6 @@ describe('HilosTableSelection', () => {
     expect(document.body.textContent).toContain('The node is frozen')
   })
 
-  it('names the running operation on its own bar and stays neutral on another', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
-    await press('hilos-table-bulk-confirm')
-
-    act(() =>
-      controller.ingestProgress({
-        scope: 'bulk',
-        progressKey: 'run-1',
-        current: 12,
-        total: 40,
-      }),
-    )
-    expect(byId('hilos-table-progress-bulk')?.textContent).toBe(
-      'Delete: 12 of 40',
-    )
-
-    // Work under a key this panel never asked for: it knows nothing about what it
-    // is, so it says only that something is running over the marked rows.
-    act(() =>
-      controller.ingestProgress({
-        scope: 'bulk',
-        progressKey: 'someone-else',
-        current: 3,
-        total: 9,
-      }),
-    )
-    expect(byId('hilos-table-progress-bulk')?.textContent).toBe(
-      'Working on the marked rows',
-    )
-  })
-
-  it('drops the total from the caption of work that named none', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    renderPanel(controller)
-
-    fireEvent.click(byId('hilos-table-bulk-delete') as HTMLElement)
-    await press('hilos-table-bulk-confirm')
-
-    act(() =>
-      controller.ingestProgress({
-        scope: 'bulk',
-        progressKey: 'run-1',
-        current: 12,
-      }),
-    )
-
-    expect(byId('hilos-table-progress-bulk')?.textContent).toBe('Delete')
-  })
-
-  it('reads the outcome out of the report, calmly when nothing was left alone', () => {
-    const controller = makeController([deleteAction([])])
-    renderPanel(controller, { report: report() })
-
-    const plate = byId('hilos-table-bulk-report')
-    expect(plate?.textContent).toContain('Changed 39 rows')
-    expect(plate?.textContent).not.toContain('untouched')
-    expect(plate?.classList.contains('alert-success')).toBe(true)
-  })
-
-  it('names every untouched row and counts the names that did not fit', () => {
-    const controller = makeController([deleteAction([])])
-    renderPanel(controller, {
-      report: report({
-        untouched: [{ rowKey: 'r7', reason: 'Someone deleted it first' }],
-        untouchedOmitted: 4128,
-      }),
-    })
-
-    const plate = byId('hilos-table-bulk-report')
-    expect(plate?.classList.contains('alert-warning')).toBe(true)
-    expect(plate?.textContent).toContain('Changed 39 rows, 4129 untouched')
-    expect(plate?.textContent).toContain('r7')
-    expect(plate?.textContent).toContain('Someone deleted it first')
-    expect(plate?.textContent).toContain('and 4128 more')
-  })
-
-  it('prints the human name a page gave the untouched row', () => {
-    const controller = makeController([deleteAction([])])
-    renderPanel(controller, {
-      report: report({ untouched: [{ rowKey: 'r7', reason: 'Already gone' }] }),
-      bulkUntouched: (rowKey) => `27.08 03:00 (${rowKey})`,
-    })
-
-    expect(byId('hilos-table-bulk-report')?.textContent).toContain(
-      '27.08 03:00 (r7)',
-    )
-  })
-
-  it('tells the bar above which run the reader dismissed', () => {
-    const controller = makeController([deleteAction([])])
-    const dismissed: string[] = []
-    renderPanel(controller, { report: report(), dismissed })
-
-    fireEvent.click(byId('hilos-table-bulk-report-close') as HTMLElement)
-
-    expect(dismissed).toEqual(['run-1'])
-  })
-
   it('keeps an open confirmation when the panel stops standing', () => {
     const controller = makeController([deleteAction([])])
     controller.selectRow('a', true)
@@ -365,7 +233,9 @@ describe('HilosTableSelection', () => {
     // which is the strip's to hand back on its way out.
     view.rerender(panel(controller, { shown: false }))
 
-    expect(byId('hilos-table-selection')).toBeNull()
+    const panelEl = byId('hilos-table-selection')
+    expect(panelEl?.classList.contains('invisible')).toBe(true)
+    expect(panelEl?.getAttribute('aria-hidden')).toBe('true')
     expect(byId('modal')).not.toBeNull()
   })
 

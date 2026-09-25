@@ -177,10 +177,8 @@ export function HilosViewportTable<R>({
   // not jump while the next one is on its way; a window that had none — a reset out
   // of "Nothing found" — is waiting for a full one (Flow F2).
   const skeletonRows = rows.length > 0 ? rows.length : pageSize
-  // The row bars this view draws itself. The table bar is drawn by the room of live
-  // messages above the rows (HilosTableLive), and the bulk bar lives inside the
-  // selection panel and is drawn by the bar above the table — anywhere else it would
-  // take the room the table bar gives to the project.
+  // The row bars this view draws itself. The table bar and the bulk bar are drawn by
+  // the room of live messages above the rows (HilosTableLive).
   const rowProgressBars = useSignal(controller.progress.rows)
   // The marks, and the one sign that this table has them: a page that declared bulk
   // operations. There is no second sign — a table drawing its frame from props has
@@ -656,7 +654,6 @@ export function HilosViewportTable<R>({
           controller={controller}
           titleId={titleId}
           autofocusSearch={autofocusSearch}
-          bulkUntouched={bulkUntouched}
         />
       ) : null}
 
@@ -687,6 +684,7 @@ export function HilosViewportTable<R>({
         columns={frameColumns}
         tableProgress={tableProgress}
         tableProgressAction={tableProgressAction}
+        bulkUntouched={bulkUntouched}
       />
 
       {/* A DECLARED table is a table on a wide screen and a list of cards on a

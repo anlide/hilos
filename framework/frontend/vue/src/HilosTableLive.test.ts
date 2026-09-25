@@ -1,10 +1,21 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { h } from 'vue'
-import { TableViewportController } from '@hilos/core'
-import type { HilosTableColumn, HilosTableProgress } from '@hilos/core'
+import { TableViewportController, createSignal } from '@hilos/core'
+import type {
+  ActionHandle,
+  HilosTableBulkAccepted,
+  HilosTableBulkAction,
+  HilosTableColumn,
+  HilosTableProgress,
+} from '@hilos/core'
 
 import HilosTableLive from './HilosTableLive.vue'
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  document.body.classList.remove('modal-open')
+})
 
 const COLUMNS: HilosTableColumn[] = [
   { key: 'name', label: 'Name' },
@@ -62,8 +73,31 @@ function liveThree(controller: TableViewportController<unknown>): void {
   })
 }
 
-function mountLive(controller: TableViewportController<unknown>) {
-  return mount(HilosTableLive, { props: { controller, columns: COLUMNS } })
+function mountLive(
+  controller: TableViewportController<unknown>,
+  slots: Record<string, unknown> = {},
+) {
+  return mount(HilosTableLive, {
+    props: { controller, columns: COLUMNS },
+    slots,
+  })
+}
+
+function accepted(progressKey: string): ActionHandle<HilosTableBulkAccepted> {
+  return {
+    requestId: 'req-1',
+    loading: createSignal(false),
+    done: Promise.resolve({ reply: { progressKey, total: 2 } }),
+  }
+}
+
+function deleteAction(label = 'Delete'): HilosTableBulkAction {
+  return {
+    key: 'delete',
+    label,
+    danger: true,
+    run: () => accepted('run-1'),
+  }
 }
 
 describe('HilosTableLive', () => {
@@ -218,6 +252,153 @@ describe('HilosTableLive', () => {
     expect(track.attributes('aria-valuenow')).toBe('28')
     expect(track.classes()).toEqual(
       expect.arrayContaining(['position-absolute', 'bottom-0', 'w-100']),
+    )
+  })
+
+  it('names the running bulk operation on its own bar and stays neutral on another', async () => {
+    const controller = makeController()
+    controller.runBulk(deleteAction(), { kind: 'rows', rowKeys: ['a'] })
+    await Promise.resolve()
+
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'run-1',
+      current: 12,
+      total: 40,
+    })
+    const wrapper = mountLive(controller)
+
+    const line = wrapper.get('[data-id="hilos-table-progress-bulk"]')
+    expect(line.text()).toContain('Delete: 12 of 40')
+    const track = line.get('[role="progressbar"]')
+    expect(track.attributes('aria-label')).toBe('Working on the marked rows')
+    expect(track.classes()).toEqual(
+      expect.arrayContaining(['position-absolute', 'bottom-0', 'w-100']),
+    )
+
+    // Work under another key: neutral caption
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'someone-else',
+      current: 3,
+      total: 9,
+    })
+    await wrapper.vm.$nextTick()
+    expect(
+      wrapper.get('[data-id="hilos-table-progress-bulk"]').text(),
+    ).toContain('Working on the marked rows')
+  })
+
+  it('drops the total from the bulk caption of work that named none', async () => {
+    const controller = makeController()
+    controller.runBulk(deleteAction(), { kind: 'rows', rowKeys: ['a'] })
+    await Promise.resolve()
+
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'run-1',
+      current: 12,
+    })
+    const wrapper = mountLive(controller)
+
+    expect(
+      wrapper.get('[data-id="hilos-table-progress-bulk"]').text(),
+    ).toContain('Delete')
+  })
+
+  it('reads the outcome out of the report, calmly when nothing was left alone', () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [],
+      untouchedOmitted: 0,
+    })
+    const wrapper = mountLive(controller)
+
+    const plate = wrapper.get('[data-id="hilos-table-bulk-report"]')
+    expect(plate.text()).toContain('Changed 39 rows')
+    expect(plate.text()).not.toContain('untouched')
+    expect(plate.classes()).toContain('alert-success')
+    expect(
+      wrapper.find('[data-id="hilos-table-bulk-report-details"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.find('[data-id="hilos-table-bulk-report-close"]').exists(),
+    ).toBe(true)
+  })
+
+  it('names every untouched row and counts the names that did not fit in details modal', async () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [{ rowKey: 'r7', reason: 'Someone deleted it first' }],
+      untouchedOmitted: 4128,
+    })
+    const wrapper = mountLive(controller)
+
+    const plate = wrapper.get('[data-id="hilos-table-bulk-report"]')
+    expect(plate.classes()).toContain('alert-warning')
+    expect(plate.text()).toContain('Changed 39 rows, 4129 untouched')
+
+    const detailsBtn = wrapper.find(
+      '[data-id="hilos-table-bulk-report-details"]',
+    )
+    expect(detailsBtn.exists()).toBe(true)
+    await detailsBtn.trigger('click')
+
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    const list = document.querySelector(
+      '[data-id="hilos-table-bulk-report-list"]',
+    )
+    expect(list?.textContent).toContain('r7')
+    expect(list?.textContent).toContain('Someone deleted it first')
+    expect(list?.textContent).toContain('and 4128 more')
+  })
+
+  it('prints the human name a page gave the untouched row in details modal', async () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [{ rowKey: 'r7', reason: 'Already gone' }],
+      untouchedOmitted: 0,
+    })
+    const wrapper = mountLive(controller, {
+      'bulk-untouched': (props: { rowKey: string; reason: string }) =>
+        `27.08 03:00 (${props.rowKey})`,
+    })
+
+    await wrapper
+      .find('[data-id="hilos-table-bulk-report-details"]')
+      .trigger('click')
+
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    const list = document.querySelector(
+      '[data-id="hilos-table-bulk-report-list"]',
+    )
+    expect(list?.textContent).toContain('27.08 03:00 (r7)')
+  })
+
+  it('dismisses the report through the controller', async () => {
+    const controller = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 39,
+      untouched: [],
+      untouchedOmitted: 0,
+    })
+    const wrapper = mountLive(controller)
+
+    await wrapper
+      .find('[data-id="hilos-table-bulk-report-close"]')
+      .trigger('click')
+
+    expect(controller.bulk.report.get()).toBeNull()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-id="hilos-table-bulk-report"]').exists()).toBe(
+      false,
     )
   })
 })

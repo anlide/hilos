@@ -5,7 +5,6 @@ import type {
   ActionHandle,
   HilosTableBulkAccepted,
   HilosTableBulkAction,
-  HilosTableBulkReport,
   HilosTableFrame,
   HilosTableSelectionTarget,
   TableViewportDescriptor,
@@ -97,30 +96,11 @@ function makeController(
 
 function mountPanel(
   controller: TableViewportController<unknown>,
-  report: HilosTableBulkReport | null = null,
-  slots: Record<string, unknown> = {},
+  shown = true,
 ) {
   return mount(HilosTableSelection, {
-    props: { controller, report, shown: true },
-    slots,
+    props: { controller, shown },
   })
-}
-
-/**
- * A finished run's outcome.
- *
- * @param overrides What this run ended with, over the ordinary shape.
- */
-function report(
-  overrides: Partial<HilosTableBulkReport> = {},
-): HilosTableBulkReport {
-  return {
-    progressKey: 'run-1',
-    touched: 39,
-    untouched: [],
-    untouchedOmitted: 0,
-    ...overrides,
-  }
 }
 
 describe('HilosTableSelection', () => {
@@ -229,122 +209,6 @@ describe('HilosTableSelection', () => {
     expect(document.body.textContent).toContain('The node is frozen')
   })
 
-  it('names the running operation on its own bar and stays neutral on another', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    const wrapper = mountPanel(controller)
-
-    await wrapper.find('[data-id="hilos-table-bulk-delete"]').trigger('click')
-    document
-      .querySelector<HTMLElement>('[data-id="hilos-table-bulk-confirm"]')
-      ?.click()
-    await flushPromises()
-
-    controller.ingestProgress({
-      scope: 'bulk',
-      progressKey: 'run-1',
-      current: 12,
-      total: 40,
-    })
-    await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-id="hilos-table-progress-bulk"]').text()).toBe(
-      'Delete: 12 of 40',
-    )
-
-    // Work under a key this panel never asked for: it knows nothing about what it
-    // is, so it says only that something is running over the marked rows.
-    controller.ingestProgress({
-      scope: 'bulk',
-      progressKey: 'someone-else',
-      current: 3,
-      total: 9,
-    })
-    await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-id="hilos-table-progress-bulk"]').text()).toBe(
-      'Working on the marked rows',
-    )
-  })
-
-  it('drops the total from the caption of work that named none', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    const wrapper = mountPanel(controller)
-
-    await wrapper.find('[data-id="hilos-table-bulk-delete"]').trigger('click')
-    document
-      .querySelector<HTMLElement>('[data-id="hilos-table-bulk-confirm"]')
-      ?.click()
-    await flushPromises()
-
-    controller.ingestProgress({
-      scope: 'bulk',
-      progressKey: 'run-1',
-      current: 12,
-    })
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.find('[data-id="hilos-table-progress-bulk"]').text()).toBe(
-      'Delete',
-    )
-  })
-
-  it('reads the outcome out of the report, calmly when nothing was left alone', () => {
-    const controller = makeController([deleteAction([])])
-    const wrapper = mountPanel(controller, report())
-
-    const plate = wrapper.find('[data-id="hilos-table-bulk-report"]')
-    expect(plate.text()).toContain('Changed 39 rows')
-    expect(plate.text()).not.toContain('untouched')
-    expect(plate.classes()).toContain('alert-success')
-  })
-
-  it('names every untouched row and counts the names that did not fit', () => {
-    const controller = makeController([deleteAction([])])
-    const wrapper = mountPanel(
-      controller,
-      report({
-        untouched: [{ rowKey: 'r7', reason: 'Someone deleted it first' }],
-        untouchedOmitted: 4128,
-      }),
-    )
-
-    const plate = wrapper.find('[data-id="hilos-table-bulk-report"]')
-    expect(plate.classes()).toContain('alert-warning')
-    expect(plate.text()).toContain('Changed 39 rows, 4129 untouched')
-    expect(plate.text()).toContain('r7')
-    expect(plate.text()).toContain('Someone deleted it first')
-    expect(plate.text()).toContain('and 4128 more')
-  })
-
-  it('prints the human name a page gave the untouched row', () => {
-    const controller = makeController([deleteAction([])])
-    const wrapper = mountPanel(
-      controller,
-      report({ untouched: [{ rowKey: 'r7', reason: 'Already gone' }] }),
-      {
-        'bulk-untouched': (props: { rowKey: string; reason: string }) =>
-          `27.08 03:00 (${props.rowKey})`,
-      },
-    )
-
-    expect(
-      wrapper.find('[data-id="hilos-table-bulk-report"]').text(),
-    ).toContain('27.08 03:00 (r7)')
-  })
-
-  it('tells the bar above which run the reader dismissed', async () => {
-    const controller = makeController([deleteAction([])])
-    const wrapper = mountPanel(controller, report())
-
-    await wrapper
-      .find('[data-id="hilos-table-bulk-report-close"]')
-      .trigger('click')
-
-    expect(wrapper.emitted('dismiss')).toEqual([['run-1']])
-  })
-
   it('keeps an open confirmation when the panel stops standing', async () => {
     const controller = makeController([deleteAction([])])
     controller.selectRow('a', true)
@@ -353,14 +217,11 @@ describe('HilosTableSelection', () => {
     await wrapper.find('[data-id="hilos-table-bulk-delete"]').trigger('click')
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
 
-    // The strip goes when the marks do — a window can arrive with none of them
-    // left — and the dialog holds the focus and the page's scroll lock, neither of
-    // which is the strip's to hand back on its way out.
     await wrapper.setProps({ shown: false })
 
-    expect(wrapper.find('[data-id="hilos-table-selection"]').exists()).toBe(
-      false,
-    )
+    const panel = wrapper.find('[data-id="hilos-table-selection"]')
+    expect(panel.classes()).toContain('invisible')
+    expect(panel.attributes('aria-hidden')).toBe('true')
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
   })
 

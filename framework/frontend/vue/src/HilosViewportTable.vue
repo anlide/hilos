@@ -194,10 +194,8 @@ const skeletonRows = computed(() =>
   rows.value.length > 0 ? rows.value.length : pageSize.value,
 )
 
-// The row bars this view draws itself. The table bar is drawn by the room of live
-// messages above the rows (HilosTableLive), and the bulk bar lives inside the
-// selection panel and is drawn by the bar above the table — anywhere else it would
-// take the room the table bar gives to the project.
+// The row bars this view draws itself. The table bar and the bulk bar are drawn by
+// the room of live messages above the rows (HilosTableLive).
 const rowProgress = useSignal(props.controller.progress.rows)
 
 // признак считает ядро
@@ -447,11 +445,7 @@ function onSelectPage(event: Event): void {
       :controller="controller"
       :title-id="titleId"
       :autofocus-search="autofocusSearch"
-    >
-      <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
-        <slot name="bulk-untouched" v-bind="untouched" />
-      </template>
-    </HilosTableBar>
+    />
 
     <!-- The bar a table draws from props, kept while a page still passes them —
     the framework's log pages do. It goes with the props themselves. -->
@@ -481,6 +475,9 @@ function onSelectPage(event: Event): void {
       </template>
       <template #table-progress-action="progressProps">
         <slot name="table-progress-action" v-bind="progressProps" />
+      </template>
+      <template v-if="$slots['bulk-untouched']" #bulk-untouched="untouched">
+        <slot name="bulk-untouched" v-bind="untouched" />
       </template>
     </HilosTableLive>
 

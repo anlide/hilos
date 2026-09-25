@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { type ActionHandle } from '../../src/connection/actionLifecycle.js'
 import {
   type TableAnchor,
   type TableViewportDescriptor,
 } from '../../src/connection/HilosConnection.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
+import { type HilosTableBulkAccepted } from '../../src/table/tableBulk.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../src/table/hilosTableColumn.js'
+import { type HilosTableBulkAction } from '../../src/table/tableFrame.js'
 import { type HilosTableProgressFrame } from '../../src/table/tableProgress.js'
+import { createSignal } from '../../src/state/signal.js'
 import {
   type TableSortOrder,
   TableViewportController,
@@ -1744,7 +1748,7 @@ describe('TableViewportController', () => {
     expect(controller.progress.bulk.get()?.progressKey).toBe('delete-40')
   })
 
-  it('recomputes the live room whenever any of its four sources changes', () => {
+  it('recomputes the live room whenever any of its six sources changes', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: { name: 'old' } }], 1, true, null, null)
     expect(controller.live.get()).toEqual({ top: null, rest: [] })
@@ -1783,6 +1787,34 @@ describe('TableViewportController', () => {
       rest: ['announce', 'stale', 'progress'],
     })
 
+    controller.ingestProgress({
+      scope: 'bulk',
+      progressKey: 'delete-40',
+      current: 12,
+      total: 40,
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'bulk',
+      rest: ['pending', 'announce', 'stale', 'progress'],
+    })
+
+    controller.ingestBulkReport({
+      progressKey: 'delete-40',
+      touched: 38,
+      untouched: [{ rowKey: 'x', reason: 'locked' }],
+      untouchedOmitted: 0,
+    })
+    expect(controller.live.get()).toEqual({
+      top: 'report',
+      rest: ['bulk', 'pending', 'announce', 'stale', 'progress'],
+    })
+
+    controller.dismissBulkReport('delete-40')
+    expect(controller.live.get()).toEqual({
+      top: 'bulk',
+      rest: ['pending', 'announce', 'stale', 'progress'],
+    })
+
     // Taking a source away takes its kind out of the room, and the next one moves up.
     controller.ingestProgress({
       scope: 'table',
@@ -1792,9 +1824,91 @@ describe('TableViewportController', () => {
       ended: true,
     })
     expect(controller.live.get()).toEqual({
-      top: 'pending',
-      rest: ['announce', 'stale'],
+      top: 'bulk',
+      rest: ['pending', 'announce', 'stale'],
     })
+  })
+
+  it('runBulk sets bulk.started on acceptance and ignores refusal without unhandled rejection', async () => {
+    const { controller } = makeController()
+    expect(controller.bulk.started.get()).toBeNull()
+
+    // 1. Success case
+    let resolveSuccess!: (result: { reply: HilosTableBulkAccepted }) => void
+    const successHandle: ActionHandle<HilosTableBulkAccepted> = {
+      requestId: 'req-1',
+      loading: createSignal(false),
+      done: new Promise<{ reply: HilosTableBulkAccepted }>((res) => {
+        resolveSuccess = res
+      }),
+    }
+    const successAction: HilosTableBulkAction = {
+      key: 'delete',
+      label: 'Delete rows',
+      run: vi.fn(() => successHandle),
+    }
+
+    const retHandle = controller.runBulk(successAction, {
+      kind: 'rows',
+      rowKeys: ['a'],
+    })
+    expect(retHandle).toBe(successHandle)
+    expect(controller.bulk.started.get()).toBeNull()
+
+    resolveSuccess({ reply: { progressKey: 'del-1', total: 1 } })
+    await successHandle.done
+    await Promise.resolve()
+
+    expect(controller.bulk.started.get()).toEqual({
+      progressKey: 'del-1',
+      label: 'Delete rows',
+    })
+
+    // 2. Refusal case
+    let rejectFail!: (err: Error) => void
+    const failHandle: ActionHandle<HilosTableBulkAccepted> = {
+      requestId: 'req-2',
+      loading: createSignal(false),
+      done: new Promise<never>((_, rej) => {
+        rejectFail = rej
+      }),
+    }
+    const failAction: HilosTableBulkAction = {
+      key: 'delete',
+      label: 'Delete rows',
+      run: vi.fn(() => failHandle),
+    }
+
+    controller.runBulk(failAction, {
+      kind: 'rows',
+      rowKeys: ['b'],
+    })
+    rejectFail(new Error('Refused'))
+
+    await failHandle.done.catch(() => undefined)
+    await Promise.resolve()
+
+    expect(controller.bulk.started.get()).toEqual({
+      progressKey: 'del-1',
+      label: 'Delete rows',
+    })
+  })
+
+  it('dismissBulkReport clears report matching progressKey and leaves fresher report untouched', () => {
+    const { controller } = makeController()
+    controller.ingestBulkReport({
+      progressKey: 'run-1',
+      touched: 5,
+      untouched: [],
+      untouchedOmitted: 0,
+    })
+    expect(controller.bulk.report.get()?.progressKey).toBe('run-1')
+
+    controller.dismissBulkReport('run-2')
+    expect(controller.bulk.report.get()?.progressKey).toBe('run-1')
+
+    controller.dismissBulkReport('run-1')
+    expect(controller.bulk.report.get()).toBeNull()
   })
 
   it('computes the fraction, clamps it, and leaves it out where there is no total', () => {

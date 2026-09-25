@@ -570,21 +570,56 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
   }
 
   /** What the bar shows right now, and that the title never leaves with it. */
-  function strips(): { controls: boolean; panel: boolean } {
+  function strips(): {
+    controlsVisible: boolean
+    panelVisible: boolean
+  } {
     const title = byId('hilos-table-title')
     expect(title?.textContent).toBe('Backups')
     expect(title?.id).toBe('table-title')
 
+    const controls = byId('hilos-table-controls')
+    const panel = byId('hilos-table-selection')
+
     return {
-      controls: byId('hilos-table-search') !== null,
-      panel: byId('hilos-table-selection') !== null,
+      controlsVisible:
+        controls !== null &&
+        !controls.classList.contains('invisible') &&
+        controls.getAttribute('aria-hidden') === null,
+      panelVisible:
+        panel !== null &&
+        !panel.classList.contains('invisible') &&
+        panel.getAttribute('aria-hidden') === null,
     }
   }
 
-  it('keeps the ordinary controls while nothing is marked', () => {
+  it('stacks the controls and panel, keeping the controls visible while nothing is marked', () => {
     renderBar(windowed())
 
-    expect(strips()).toEqual({ controls: true, panel: false })
+    expect(byId('hilos-table-bar-slot')).not.toBeNull()
+    expect(strips()).toEqual({ controlsVisible: true, panelVisible: false })
+
+    const controls = byId('hilos-table-controls')
+    const panel = byId('hilos-table-selection')
+    expect(controls?.classList.contains('invisible')).toBe(false)
+    expect(controls?.getAttribute('aria-hidden')).toBeNull()
+    expect(panel?.classList.contains('invisible')).toBe(true)
+    expect(panel?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('a table declaring no bulk actions has no stack slot', () => {
+    const noBulk: HilosTableFrame = {
+      title: 'Backups',
+      search: {},
+      columns: COLUMNS,
+    }
+    const { controller } = makeController(noBulk)
+    renderBar(controller)
+
+    expect(byId('hilos-table-bar-slot')).toBeNull()
+    expect(byId('hilos-table-controls')).not.toBeNull()
+    expect(byId('hilos-table-controls')?.classList.contains('mb-3')).toBe(true)
+    expect(byId('hilos-table-selection')).toBeNull()
   })
 
   it('holds an open confirmation when the marks go and the strip with them', () => {
@@ -597,10 +632,7 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
 
     act(() => controller.clearSelection())
 
-    // The strip goes, the dialog stays: it holds the focus and the page's scroll
-    // lock, and a window arriving with none of the marked rows left is not a
-    // reason to take a dialog the reader is standing in off the screen.
-    expect(strips()).toEqual({ controls: true, panel: false })
+    expect(strips()).toEqual({ controlsVisible: true, panelVisible: false })
     expect(byId('modal')).not.toBeNull()
   })
 
@@ -610,16 +642,19 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
 
     act(() => controller.selectRow('a', true))
 
-    expect(strips()).toEqual({ controls: false, panel: true })
+    expect(strips()).toEqual({ controlsVisible: false, panelVisible: true })
+    const controls = byId('hilos-table-controls')
+    const panel = byId('hilos-table-selection')
+    expect(controls?.classList.contains('invisible')).toBe(true)
+    expect(controls?.getAttribute('aria-hidden')).toBe('true')
+    expect(panel?.classList.contains('invisible')).toBe(false)
+    expect(panel?.getAttribute('aria-hidden')).toBeNull()
   })
 
-  it('holds the panel on a running bar with nothing marked', () => {
+  it('marks alone hold the panel: bulk progress and report leave controls visible when nothing is marked', () => {
     const controller = windowed()
     renderBar(controller)
 
-    // Which is the case the rule exists for: a run deletes the rows it was given,
-    // they drop out of the selection by themselves, and the bar of the work must
-    // not leave with them.
     act(() =>
       controller.ingestProgress({
         scope: 'bulk',
@@ -630,12 +665,7 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
     )
 
     expect(controller.selection.count.get()).toBe(0)
-    expect(strips()).toEqual({ controls: false, panel: true })
-  })
-
-  it('holds the panel on a report with nothing marked, and lets it go when dismissed', () => {
-    const controller = windowed()
-    renderBar(controller)
+    expect(strips()).toEqual({ controlsVisible: true, panelVisible: false })
 
     act(() =>
       controller.ingestBulkReport({
@@ -645,43 +675,7 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
         untouchedOmitted: 0,
       }),
     )
-    expect(strips()).toEqual({ controls: false, panel: true })
 
-    fireEvent.click(byId('hilos-table-bulk-report-close') as HTMLElement)
-
-    // The core still holds the report — it is cleared by the next run and by
-    // nothing else — and the panel goes all the same, because what the reader
-    // dismissed is off their screen.
-    expect(controller.bulk.report.get()).not.toBeNull()
-    expect(strips()).toEqual({ controls: true, panel: false })
-  })
-
-  it('shows the report of the next run after the previous one was dismissed', () => {
-    const controller = windowed()
-    renderBar(controller)
-
-    act(() =>
-      controller.ingestBulkReport({
-        progressKey: 'run-1',
-        touched: 1,
-        untouched: [],
-        untouchedOmitted: 0,
-      }),
-    )
-    fireEvent.click(byId('hilos-table-bulk-report-close') as HTMLElement)
-
-    act(() =>
-      controller.ingestBulkReport({
-        progressKey: 'run-2',
-        touched: 2,
-        untouched: [],
-        untouchedOmitted: 0,
-      }),
-    )
-
-    expect(strips()).toEqual({ controls: false, panel: true })
-    expect(byId('hilos-table-bulk-report')?.textContent).toContain(
-      'Changed 2 rows',
-    )
+    expect(strips()).toEqual({ controlsVisible: true, panelVisible: false })
   })
 })

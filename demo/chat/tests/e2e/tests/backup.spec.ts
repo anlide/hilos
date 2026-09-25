@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   dismissToasts,
   shownByTestId,
+  watchFirstRowTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../helpers/adminGrant'
 import { clickSubmit, signUp } from '../helpers/session'
@@ -158,18 +159,28 @@ async function watchForBulkBar(page: Page): Promise<void> {
       const flags = window as unknown as Record<string, boolean>
       flags[mark] = document.querySelector(selector) !== null
       new MutationObserver((records, observer) => {
-        const drawn = records.some((record) =>
-          Array.from(record.addedNodes).some(
-            (node) =>
-              node instanceof Element &&
-              (node.matches(selector) || node.querySelector(selector) !== null),
-          ),
+        const drawn = records.some(
+          (record) =>
+            (record.type === 'attributes' &&
+              record.target instanceof Element &&
+              record.target.matches(selector)) ||
+            Array.from(record.addedNodes).some(
+              (node) =>
+                node instanceof Element &&
+                (node.matches(selector) ||
+                  node.querySelector(selector) !== null),
+            ),
         )
         if (drawn) {
           flags[mark] = true
           observer.disconnect()
         }
-      }).observe(document.body, { childList: true, subtree: true })
+      }).observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-id'],
+      })
     },
     { mark: BULK_BAR_SEEN, selector: '[data-id="hilos-table-progress-bulk"]' },
   )
@@ -775,6 +786,17 @@ test('deletes marked backups in bulk and names the one that was gone before its 
     goneFirstRow.getByTestId(`hilos-table-pending-remove-${goneFirst}`),
   ).toBeVisible()
 
+  const firstRowTop = await watchFirstRowTop(tabA)
+
+  // Mark and unmark one row: neither marking nor clearing shifts the table.
+  await deletedInBulkRow
+    .getByTestId(`hilos-table-select-${deletedInBulk}`)
+    .check()
+  await deletedInBulkRow
+    .getByTestId(`hilos-table-select-${deletedInBulk}`)
+    .uncheck()
+  await firstRowTop.unchanged()
+
   // Both are marked through their rows — the table's copy of each checkbox, this being
   // a wide screen.
   await goneFirstRow.getByTestId(`hilos-table-select-${goneFirst}`).check()
@@ -784,6 +806,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   await expect(tabA.getByTestId('hilos-table-selection-count')).toHaveText(
     /2 marked/,
   )
+  await firstRowTop.unchanged()
 
   // Delete from the panel. The dialog closes on the reply, and the reply answers that
   // the run was accepted, nothing more: the work is watched through the bar and ends in
@@ -795,23 +818,39 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   await clickSubmit(confirm)
   await expect(confirm).toHaveCount(0)
 
+  // The bar stood while the run went, and a run that reported has taken it down.
+  expect(await bulkBarWasDrawn(tabA)).toBe(true)
+  await firstRowTop.unchanged()
+
   // The report comes to the tab that started the run. It counts the changed rows and
-  // names the untouched one with its reason; the archive the run did delete is not named,
-  // its removal having already traveled as a delta of its own.
+  // names the untouched one with its reason in the Details modal; the archive the run did
+  // delete is not named, its removal having already traveled as a delta of its own.
   const report = tabA.getByTestId('hilos-table-bulk-report')
   await expect(report).toBeVisible({ timeout: 30_000 })
   await expect(report).toContainText(/Changed 1 rows?, 1 untouched/)
-  await expect(report).toContainText(goneFirst)
-  await expect(report).toContainText('The row was gone by the time its turn came')
-  await expect(report).not.toContainText(deletedInBulk)
+  await firstRowTop.unchanged()
 
-  // The bar stood while the run went, and a run that reported has taken it down.
-  expect(await bulkBarWasDrawn(tabA)).toBe(true)
+  await tabA.getByTestId('hilos-table-bulk-report-details').click()
+  const list = tabA.getByTestId('hilos-table-bulk-report-list')
+  await expect(list).toBeVisible()
+  await expect(list).toContainText(goneFirst)
+  await expect(list).toContainText('The row was gone by the time its turn came')
+  await expect(list).not.toContainText(deletedInBulk)
+
+  await tabA.locator('.modal-footer').getByRole('button', { name: 'Close' }).click()
+  await expect(list).toHaveCount(0)
+  await expect(report).toBeVisible()
+
   await expect(tabA.getByTestId('hilos-table-progress-bulk')).toHaveCount(0)
 
-  // The report stays until the reader dismisses it.
+  // The report stays until the reader dismisses it. Once dismissed, the waiting
+  // pending row with its Apply button takes the line, proving precedence.
   await tabA.getByTestId('hilos-table-bulk-report-close').click()
   await expect(report).toHaveCount(0)
+  await firstRowTop.unchanged()
+
+  await expect(tabA.getByTestId('hilos-table-pending-row')).toBeVisible()
+  await expect(tabA.getByTestId('hilos-table-apply')).toBeVisible()
 
   // And the store agrees: a fresh page holds neither archive, so nothing is left for a
   // cleanup to do.

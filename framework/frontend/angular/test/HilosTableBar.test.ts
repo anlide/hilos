@@ -614,24 +614,61 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
 
   /** What the bar shows right now, and that the title never leaves with it. */
   function strips(fixture: ComponentFixture<BarHost>): {
-    controls: boolean
-    panel: boolean
+    controlsVisible: boolean
+    panelVisible: boolean
   } {
     fixture.detectChanges()
     const title = byId(fixture, 'hilos-table-title')
     expect(title?.textContent?.trim()).toBe('Backups')
     expect(title?.id).toBe('table-title')
 
+    const controls = byId(fixture, 'hilos-table-controls')
+    const panel = byId(fixture, 'hilos-table-selection')
+
     return {
-      controls: byId(fixture, 'hilos-table-search') !== null,
-      panel: byId(fixture, 'hilos-table-selection') !== null,
+      controlsVisible:
+        controls !== null &&
+        !controls.classList.contains('invisible') &&
+        controls.getAttribute('aria-hidden') === null,
+      panelVisible:
+        panel !== null &&
+        !panel.classList.contains('invisible') &&
+        panel.getAttribute('aria-hidden') === null,
     }
   }
 
-  it('keeps the ordinary controls while nothing is marked', () => {
+  it('stacks the controls and panel, keeping the controls visible while nothing is marked', () => {
     const fixture = mountBar(windowed())
 
-    expect(strips(fixture)).toEqual({ controls: true, panel: false })
+    expect(byId(fixture, 'hilos-table-bar-slot')).not.toBeNull()
+    expect(strips(fixture)).toEqual({
+      controlsVisible: true,
+      panelVisible: false,
+    })
+
+    const controls = byId(fixture, 'hilos-table-controls')
+    const panel = byId(fixture, 'hilos-table-selection')
+    expect(controls?.classList.contains('invisible')).toBe(false)
+    expect(controls?.getAttribute('aria-hidden')).toBeNull()
+    expect(panel?.classList.contains('invisible')).toBe(true)
+    expect(panel?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('a table declaring no bulk actions has no stack slot', () => {
+    const noBulk: HilosTableFrame = {
+      title: 'Backups',
+      search: {},
+      columns: COLUMNS,
+    }
+    const { controller } = makeController(noBulk)
+    const fixture = mountBar(controller)
+
+    expect(byId(fixture, 'hilos-table-bar-slot')).toBeNull()
+    expect(byId(fixture, 'hilos-table-controls')).not.toBeNull()
+    expect(
+      byId(fixture, 'hilos-table-controls')?.classList.contains('mb-3'),
+    ).toBe(true)
+    expect(byId(fixture, 'hilos-table-selection')).toBeNull()
   })
 
   it('holds an open confirmation when the marks go and the strip with them', () => {
@@ -645,10 +682,10 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
 
     controller.clearSelection()
 
-    // The strip goes, the dialog stays: it holds the focus and the page's scroll
-    // lock, and a window arriving with none of the marked rows left is not a
-    // reason to take a dialog the reader is standing in off the screen.
-    expect(strips(fixture)).toEqual({ controls: true, panel: false })
+    expect(strips(fixture)).toEqual({
+      controlsVisible: true,
+      panelVisible: false,
+    })
     expect(byId(fixture, 'modal')).not.toBeNull()
   })
 
@@ -658,16 +695,22 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
 
     controller.selectRow('a', true)
 
-    expect(strips(fixture)).toEqual({ controls: false, panel: true })
+    expect(strips(fixture)).toEqual({
+      controlsVisible: false,
+      panelVisible: true,
+    })
+    const controls = byId(fixture, 'hilos-table-controls')
+    const panel = byId(fixture, 'hilos-table-selection')
+    expect(controls?.classList.contains('invisible')).toBe(true)
+    expect(controls?.getAttribute('aria-hidden')).toBe('true')
+    expect(panel?.classList.contains('invisible')).toBe(false)
+    expect(panel?.getAttribute('aria-hidden')).toBeNull()
   })
 
-  it('holds the panel on a running bar with nothing marked', () => {
+  it('marks alone hold the panel: bulk progress and report leave controls visible when nothing is marked', () => {
     const controller = windowed()
     const fixture = mountBar(controller)
 
-    // Which is the case the rule exists for: a run deletes the rows it was given,
-    // they drop out of the selection by themselves, and the bar of the work must
-    // not leave with them.
     controller.ingestProgress({
       scope: 'bulk',
       progressKey: 'run-1',
@@ -676,12 +719,10 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
     })
 
     expect(controller.selection.count.get()).toBe(0)
-    expect(strips(fixture)).toEqual({ controls: false, panel: true })
-  })
-
-  it('holds the panel on a report with nothing marked, and lets it go when dismissed', () => {
-    const controller = windowed()
-    const fixture = mountBar(controller)
+    expect(strips(fixture)).toEqual({
+      controlsVisible: true,
+      panelVisible: false,
+    })
 
     controller.ingestBulkReport({
       progressKey: 'run-1',
@@ -689,40 +730,10 @@ describe('HilosTableBar showing the selection panel instead of its controls', ()
       untouched: [],
       untouchedOmitted: 0,
     })
-    expect(strips(fixture)).toEqual({ controls: false, panel: true })
 
-    click(fixture, 'hilos-table-bulk-report-close')
-
-    // The core still holds the report — it is cleared by the next run and by
-    // nothing else — and the panel goes all the same, because what the reader
-    // dismissed is off their screen.
-    expect(controller.bulk.report.get()).not.toBeNull()
-    expect(strips(fixture)).toEqual({ controls: true, panel: false })
-  })
-
-  it('shows the report of the next run after the previous one was dismissed', () => {
-    const controller = windowed()
-    const fixture = mountBar(controller)
-
-    controller.ingestBulkReport({
-      progressKey: 'run-1',
-      touched: 1,
-      untouched: [],
-      untouchedOmitted: 0,
+    expect(strips(fixture)).toEqual({
+      controlsVisible: true,
+      panelVisible: false,
     })
-    fixture.detectChanges()
-    click(fixture, 'hilos-table-bulk-report-close')
-
-    controller.ingestBulkReport({
-      progressKey: 'run-2',
-      touched: 2,
-      untouched: [],
-      untouchedOmitted: 0,
-    })
-
-    expect(strips(fixture)).toEqual({ controls: false, panel: true })
-    expect(byId(fixture, 'hilos-table-bulk-report')?.textContent).toContain(
-      'Changed 2 rows',
-    )
   })
 })

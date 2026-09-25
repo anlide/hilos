@@ -9,7 +9,6 @@ import type {
   ActionHandle,
   HilosTableBulkAccepted,
   HilosTableBulkAction,
-  HilosTableBulkReport,
   HilosTableFrame,
   HilosTableSelectionTarget,
   TableViewportDescriptor,
@@ -17,42 +16,19 @@ import type {
 
 import { HilosTableSelection } from '../src/HilosTableSelection.js'
 
-/** A host binding the panel's inputs and recording what it dismisses. */
+/** A host binding the panel's inputs. */
 @Component({
   selector: 'test-table-selection-host',
   imports: [HilosTableSelection],
   template: `<hilos-table-selection
     [controller]="controller"
     [shown]="shown()"
-    [report]="report"
-    (dismiss)="dismissed.push($event)"
   />`,
 })
 class SelectionHost {
   controller!: TableViewportController<unknown>
   // A signal, so that taking the panel down reaches an OnPush child.
   readonly shown = signal(true)
-  report: HilosTableBulkReport | null = null
-  dismissed: string[] = []
-}
-
-/** The same host with the page's template for the name of an untouched row. */
-@Component({
-  selector: 'test-table-selection-named-host',
-  imports: [HilosTableSelection],
-  template: `
-    <hilos-table-selection
-      [controller]="controller"
-      [shown]="true"
-      [report]="report"
-      [bulkUntouched]="untouched"
-    />
-    <ng-template #untouched let-rowKey>27.08 03:00 ({{ rowKey }})</ng-template>
-  `,
-})
-class NamedSelectionHost {
-  controller!: TableViewportController<unknown>
-  report: HilosTableBulkReport | null = null
 }
 
 afterEach(() => {
@@ -134,31 +110,12 @@ function makeController(
 
 function mountPanel(
   controller: TableViewportController<unknown>,
-  report: HilosTableBulkReport | null = null,
 ): ComponentFixture<SelectionHost> {
   const fixture = TestBed.createComponent(SelectionHost)
   fixture.componentInstance.controller = controller
-  fixture.componentInstance.report = report
   fixture.detectChanges()
 
   return fixture
-}
-
-/**
- * A finished run's outcome.
- *
- * @param overrides What this run ended with, over the ordinary shape.
- */
-function report(
-  overrides: Partial<HilosTableBulkReport> = {},
-): HilosTableBulkReport {
-  return {
-    progressKey: 'run-1',
-    touched: 39,
-    untouched: [],
-    untouchedOmitted: 0,
-    ...overrides,
-  }
 }
 
 function byId(
@@ -279,109 +236,6 @@ describe('HilosTableSelection', () => {
     expect(fixture.nativeElement.textContent).toContain('The node is frozen')
   })
 
-  it('names the running operation on its own bar and stays neutral on another', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    const fixture = mountPanel(controller)
-
-    click(fixture, 'hilos-table-bulk-delete')
-    await press(fixture, 'hilos-table-bulk-confirm')
-
-    controller.ingestProgress({
-      scope: 'bulk',
-      progressKey: 'run-1',
-      current: 12,
-      total: 40,
-    })
-    fixture.detectChanges()
-    expect(text(fixture, 'hilos-table-progress-bulk')).toBe('Delete: 12 of 40')
-
-    // Work under a key this panel never asked for: it knows nothing about what it
-    // is, so it says only that something is running over the marked rows.
-    controller.ingestProgress({
-      scope: 'bulk',
-      progressKey: 'someone-else',
-      current: 3,
-      total: 9,
-    })
-    fixture.detectChanges()
-    expect(text(fixture, 'hilos-table-progress-bulk')).toBe(
-      'Working on the marked rows',
-    )
-  })
-
-  it('drops the total from the caption of work that named none', async () => {
-    const asked: HilosTableSelectionTarget[] = []
-    const controller = makeController([deleteAction(asked)])
-    controller.selectRow('a', true)
-    const fixture = mountPanel(controller)
-
-    click(fixture, 'hilos-table-bulk-delete')
-    await press(fixture, 'hilos-table-bulk-confirm')
-
-    controller.ingestProgress({
-      scope: 'bulk',
-      progressKey: 'run-1',
-      current: 12,
-    })
-    fixture.detectChanges()
-
-    expect(text(fixture, 'hilos-table-progress-bulk')).toBe('Delete')
-  })
-
-  it('reads the outcome out of the report, calmly when nothing was left alone', () => {
-    const controller = makeController([deleteAction([])])
-    const fixture = mountPanel(controller, report())
-
-    const plate = byId(fixture, 'hilos-table-bulk-report')
-    expect(plate?.textContent).toContain('Changed 39 rows')
-    expect(plate?.textContent).not.toContain('untouched')
-    expect(plate?.classList.contains('alert-success')).toBe(true)
-  })
-
-  it('names every untouched row and counts the names that did not fit', () => {
-    const controller = makeController([deleteAction([])])
-    const fixture = mountPanel(
-      controller,
-      report({
-        untouched: [{ rowKey: 'r7', reason: 'Someone deleted it first' }],
-        untouchedOmitted: 4128,
-      }),
-    )
-
-    const plate = byId(fixture, 'hilos-table-bulk-report')
-    expect(plate?.classList.contains('alert-warning')).toBe(true)
-    const words = text(fixture, 'hilos-table-bulk-report')
-    expect(words).toContain('Changed 39 rows, 4129 untouched')
-    expect(words).toContain('r7')
-    expect(words).toContain('Someone deleted it first')
-    expect(words).toContain('and 4128 more')
-  })
-
-  it('prints the human name a page gave the untouched row', () => {
-    const controller = makeController([deleteAction([])])
-    const fixture = TestBed.createComponent(NamedSelectionHost)
-    fixture.componentInstance.controller = controller
-    fixture.componentInstance.report = report({
-      untouched: [{ rowKey: 'r7', reason: 'Already gone' }],
-    })
-    fixture.detectChanges()
-
-    expect(text(fixture, 'hilos-table-bulk-report')).toContain(
-      '27.08 03:00 (r7)',
-    )
-  })
-
-  it('tells the bar above which run the reader dismissed', () => {
-    const controller = makeController([deleteAction([])])
-    const fixture = mountPanel(controller, report())
-
-    click(fixture, 'hilos-table-bulk-report-close')
-
-    expect(fixture.componentInstance.dismissed).toEqual(['run-1'])
-  })
-
   it('keeps an open confirmation when the panel stops standing', () => {
     const controller = makeController([deleteAction([])])
     controller.selectRow('a', true)
@@ -396,7 +250,9 @@ describe('HilosTableSelection', () => {
     fixture.componentInstance.shown.set(false)
     fixture.detectChanges()
 
-    expect(byId(fixture, 'hilos-table-selection')).toBeNull()
+    const panel = byId(fixture, 'hilos-table-selection')
+    expect(panel?.classList.contains('invisible')).toBe(true)
+    expect(panel?.getAttribute('aria-hidden')).toBe('true')
     expect(byId(fixture, 'modal')).not.toBeNull()
   })
 

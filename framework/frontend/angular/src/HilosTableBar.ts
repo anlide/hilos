@@ -1,14 +1,15 @@
 // HilosTableBar — the strip above a table, drawn from what the page DECLARED
 // (HilosTableFrame) and never from inputs of its own: the title and subtitle, the
 // search box, the declared filters, and the one main action pinned right. Under the
-// title it shows EITHER those controls OR the selection panel, never both: actions
-// over one record and over twenty standing side by side is the confusion the panel
-// exists against (mockups/components/table section 6). It holds NO table logic —
-// the controller owns the descriptor, and every control here is a call into it
-// (multiframework-core.md). Internal to the Angular view layer on purpose: it is
-// not exported from index.ts, because a bar has no meaning away from the table it
-// sits on (mockups/components/table section 7). The Angular port of the Vue
-// reference (vue/src/HilosTableBar.vue), under the same names and words.
+// title it holds the bar's controls and the selection panel in one room stacked in
+// one cell (.hilos-stack), sized to the taller of the two so that marking rows never
+// moves the table below (Design D2). Under the title it shows EITHER those controls
+// OR the selection panel, the inactive one invisible (Flow F1). It holds
+// NO table logic — the controller owns the descriptor, and every control here is a
+// call into it (multiframework-core.md). Internal to the Angular view layer on
+// purpose: it is not exported from index.ts, because a bar has no meaning away from
+// the table it sits on (mockups/components/table section 7). The Angular port of the
+// Vue reference (vue/src/HilosTableBar.vue), under the same names and words.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -17,7 +18,7 @@ import {
   input,
   signal,
 } from '@angular/core'
-import type { TemplateRef, WritableSignal } from '@angular/core'
+import type { WritableSignal } from '@angular/core'
 import {
   HILOS_TABLE_OPENING_ORDER_KEY,
   TABLE_ORDER_COPY,
@@ -25,10 +26,8 @@ import {
   subscribeSignal,
 } from '@hilos/core'
 import type {
-  HilosTableBulkReport,
   HilosTableFilterView,
   HilosTableOrderView,
-  HilosTableProgress,
   HilosTableSelectionTarget,
   ReadonlySignal,
   TableViewportController,
@@ -38,7 +37,6 @@ import { HilosDropdown } from './HilosDropdown.js'
 import { HilosModal } from './HilosModal.js'
 import { HilosTableFilterControl } from './HilosTableFilterControl.js'
 import { HilosTableSelection } from './HilosTableSelection.js'
-import type { BulkUntouchedContext } from './HilosViewportTable.js'
 import type { HilosDropdownOption } from './hilosDropdownOption.js'
 
 /** The declared strip above a table. */
@@ -71,14 +69,185 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
         </div>
       }
 
-      @if (
-        !selectionPanel() &&
-        (searchBox() ||
-          filters().length > 0 ||
-          mainAction() ||
-          orders().length > 0)
+      @if (selectionEnabled()) {
+        <div
+          class="hilos-stack align-items-center mb-3"
+          data-id="hilos-table-bar-slot"
+        >
+          @if (
+            searchBox() ||
+            filters().length > 0 ||
+            mainAction() ||
+            orders().length > 0
+          ) {
+            <div
+              class="d-flex flex-wrap align-items-center gap-2"
+              [class.invisible]="selectionPanel()"
+              [attr.aria-hidden]="selectionPanel() ? 'true' : null"
+              data-id="hilos-table-controls"
+            >
+              @if (searchBox()) {
+                <div
+                  class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
+                >
+                  <span class="input-group-text">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                  </span>
+                  <input
+                    type="search"
+                    class="form-control"
+                    [placeholder]="searchPlaceholder()"
+                    [attr.aria-label]="searchPlaceholder()"
+                    [value]="search()"
+                    [attr.data-autofocus]="autofocusSearch() ? '' : null"
+                    data-id="hilos-table-search"
+                    (input)="onSearchInput($event)"
+                  />
+                  @if (search() !== '') {
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      aria-label="Clear search"
+                      data-id="hilos-table-search-clear"
+                      (click)="controller().setSearch('')"
+                    >
+                      <i class="bi bi-x-lg" aria-hidden="true"></i>
+                    </button>
+                  }
+                </div>
+              }
+
+              <!-- Below md the controls leave the bar for the modal below, and the
+              button that opens it takes their place. The search does not go with
+              them: it is the main way to narrow a set, and hiding it behind a button
+              would hide exactly what the table was opened for. -->
+              @if (filters().length > 0) {
+                <div
+                  class="d-none d-md-flex flex-wrap align-items-center gap-2"
+                >
+                  @for (view of filters(); track filterKey(view)) {
+                    <hilos-table-filter-control
+                      [view]="view"
+                      [controller]="controller()"
+                      placement="bar"
+                    />
+                  }
+                </div>
+              }
+
+              @if (activeFilterCount() > 0) {
+                <span
+                  class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+                  data-id="hilos-table-filter-badge"
+                >
+                  {{ filterCountLabel() }}
+                  <button
+                    type="button"
+                    class="btn-close ms-1"
+                    aria-label="Reset filters"
+                    data-id="hilos-table-filter-reset"
+                    (click)="controller().resetFilters()"
+                  ></button>
+                </span>
+              }
+
+              <!-- Outside the row that leaves the bar below md: the menu is the only
+              way to change the order on a narrow screen, where the header of a column
+              is out of reach, so hiding it behind the Filters button would remove
+              it. -->
+              @if (orders().length > 0) {
+                <div class="w-auto" data-id="hilos-table-order">
+                  <hilos-dropdown
+                    [options]="orderOptions()"
+                    [value]="activeOrderKey()"
+                    [menuAriaLabel]="orderMenuLabel"
+                    (valueChange)="onOrder($event)"
+                  >
+                    <ng-template #toggle>
+                      <span class="text-truncate"
+                        >{{ orderMenuLabel }}: {{ orderLabel() }}</span
+                      >
+                    </ng-template>
+                    <ng-template
+                      #option
+                      let-option
+                      let-selected="selected"
+                      let-select="select"
+                    >
+                      <button
+                        type="button"
+                        class="dropdown-item d-flex align-items-center justify-content-between gap-2"
+                        [class.active]="selected"
+                        role="option"
+                        [attr.aria-selected]="selected"
+                        [attr.data-id]="'hilos-table-order-' + option.value"
+                        (click)="select()"
+                      >
+                        <span class="text-truncate">{{ option.label }}</span>
+                        @if (staleOrderKeys().has(option.value)) {
+                          <i
+                            class="bi bi-snow"
+                            [attr.data-id]="
+                              'hilos-table-order-stale-' + option.value
+                            "
+                            aria-hidden="true"
+                          ></i>
+                          <span class="visually-hidden">{{ sortWarning }}</span>
+                        }
+                        @if (selected) {
+                          <i
+                            class="bi bi-check2 flex-shrink-0"
+                            aria-hidden="true"
+                          ></i>
+                        }
+                      </button>
+                    </ng-template>
+                  </hilos-dropdown>
+                </div>
+              }
+
+              <!-- The button says only its word: the number of filters holding a
+              value is said once, on the badge above, which stays on a narrow screen
+              because the reset lives nowhere else. -->
+              @if (filters().length > 0) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary d-md-none"
+                  data-id="hilos-table-filters-open"
+                  (click)="filtersOpen.set(true)"
+                >
+                  Filters
+                </button>
+              }
+
+              @if (mainAction(); as mainAction) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-primary ms-auto"
+                  data-id="hilos-table-main-action"
+                  (click)="mainAction.press()"
+                >
+                  {{ mainAction.label }}
+                </button>
+              }
+            </div>
+          }
+
+          <hilos-table-selection
+            [controller]="controller()"
+            [shown]="selectionPanel()"
+          />
+        </div>
+      } @else if (
+        searchBox() ||
+        filters().length > 0 ||
+        mainAction() ||
+        orders().length > 0
       ) {
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div
+          class="d-flex flex-wrap align-items-center gap-2 mb-3"
+          data-id="hilos-table-controls"
+        >
           @if (searchBox()) {
             <div
               class="input-group input-group-sm w-auto flex-grow-1 flex-md-grow-0"
@@ -224,16 +393,6 @@ import type { HilosDropdownOption } from './hilosDropdownOption.js'
         </div>
       }
 
-      @if (selectionEnabled()) {
-        <hilos-table-selection
-          [controller]="controller()"
-          [shown]="selectionPanel()"
-          [report]="shownReport()"
-          [bulkUntouched]="bulkUntouched()"
-          (dismiss)="dismissedReport.set($event)"
-        />
-      }
-
       <!-- Under the same condition as the button that opens it: a table with no
       filters has nothing to show here, and a dialog no button can reach is markup
       for nobody. -->
@@ -279,14 +438,6 @@ export class HilosTableBar<R> {
   readonly titleId = input.required<string>()
   /** Whether the declared search field owns focus when its containing modal opens. */
   readonly autofocusSearch = input(false)
-  /**
-   * The human name of one row a bulk run left untouched, handed down to the
-   * selection panel; the bar only passes it on.
-   */
-  readonly bulkUntouched = input<
-    TemplateRef<BulkUntouchedContext> | undefined
-  >()
-
   // The declaration does not change over the life of a table, so its parts are
   // read off it rather than mirrored as signals (tableFrame.ts,
   // HilosTableFrameState); they follow only the controller input itself.
@@ -362,31 +513,12 @@ export class HilosTableBar<R> {
   private readonly selectionTarget = signal<HilosTableSelectionTarget | null>(
     null,
   )
-  private readonly bulkProgress = signal<HilosTableProgress | null>(null)
-  private readonly bulkReport = signal<HilosTableBulkReport | null>(null)
 
-  // Which run's report the reader has dismissed. It is state of the VIEW and kept
-  // against the key of the run: the core holds its report until the next run
-  // replaces it, on purpose, and a new run brings a new key and is shown again
-  // (Flow F12).
-  protected readonly dismissedReport = signal<string | null>(null)
-  protected readonly shownReport = computed(() => {
-    const report = this.bulkReport()
-
-    return report !== null && report.progressKey !== this.dismissedReport()
-      ? report
-      : null
-  })
-
-  // What stands in the strip: the selection panel while ANY of its three counts
-  // holds — something marked, a run going, or a report on screen — and the ordinary
-  // controls otherwise. Worked out once and read by both, so the two can never
-  // stand at the same time (Flow F4).
+  // What stands in the strip: the selection panel while something is marked,
+  // and the ordinary controls otherwise. Worked out once and read by both, so the
+  // two can never stand at the same time (Flow F4).
   protected readonly selectionPanel = computed(
-    () =>
-      this.selectionTarget() !== null ||
-      this.bulkProgress() !== null ||
-      this.shownReport() !== null,
+    () => this.selectionTarget() !== null,
   )
 
   constructor() {
@@ -410,8 +542,6 @@ export class HilosTableBar<R> {
         bind(controller.frame.orders, this.orders),
         bind(controller.frame.orderLabel, this.orderLabel),
         bind(controller.selection.target, this.selectionTarget),
-        bind(controller.progress.bulk, this.bulkProgress),
-        bind(controller.bulk.report, this.bulkReport),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {
