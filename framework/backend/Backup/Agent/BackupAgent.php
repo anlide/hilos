@@ -1201,7 +1201,11 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * `protected-mode:open`, or the operator may have refrozen the node. All three re-checks are the
      * ones {@see ProtectedModeOperatorTrait} makes for the command channel - the row stands in the
      * verification window, this very agent is the initiator the row names, and no operator close is
-     * in flight - because an accepted close wins over a reopen in both arrival orders (HIL-1058).
+     * in flight - because the lever pulled is literally the same one.
+     *
+     * An accepted close wins over a reopen in both arrival orders (HIL-1058): a reopen parked before
+     * the close is dropped by that close ({@see self::withdrawProtectedModeRelease()}), and one that
+     * arrives while the close is in flight is ignored ({@see self::isProtectedModeCloseInFlight()}).
      *
      * A refusal ends in the log and nowhere else. The browser has its ack already, and the only
      * honest report of an open that did not happen is that the system did not open: every tab

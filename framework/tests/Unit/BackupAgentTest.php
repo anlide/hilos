@@ -577,9 +577,8 @@ final class BackupAgentTest extends TestCase
      * Mounts the freeze row as if placed by a restore or operator command.
      *
      * @param string $phase Freeze phase to mount
-     * @param list<string> $passHashes Pass hashes the window is holding
      */
-    private function freeze(string $phase, array $passHashes = []): void
+    private function freeze(string $phase): void
     {
         Hilos::$rt = new BackupAgentTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
@@ -587,7 +586,7 @@ final class BackupAgentTest extends TestCase
             StateProtectedModeRuntime::operation => 'restore',
             StateProtectedModeRuntime::initiatorAgentType => BackupAgent::AGENT_TYPE,
             StateProtectedModeRuntime::initiatorAgentIndex => null,
-            StateProtectedModeRuntime::passHashes => $passHashes,
+            StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
