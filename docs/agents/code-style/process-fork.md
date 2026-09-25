@@ -21,9 +21,11 @@ A fork creates a child process that inherits everything this process holds — t
 live PHPUnit run, the daemon sockets, the database connection, and event loops.
 
 In a test suite, an unhandled child runs the remaining tests concurrently or hangs
-the run. A fork in `AsyncHttpClientTest.php` (HIL-732, resolved in HIL-929)
-inherited the live PHPUnit run and caused persistent flakes; P-207 documents the
-orphan deadline of 10 seconds and 50 ms sleep per run when children linger.
+the run. A fork in `AsyncHttpClientTest.php` (HIL-732, removed in HIL-929) kept a
+child that inherited the live PHPUnit run and stayed clean only by exiting before
+any assertion; a parent that failed left it waiting out its 10-second deadline, and
+the test paid 50 ms of sleep on every run (P-207). The fork itself was
+deterministic — eight runs clean — so the cost was the inheritance, not flakes.
 
 In a daemon, an inherited socket or database connection corrupts the state of both
 processes because both read and write to the same connection without synchronization.
