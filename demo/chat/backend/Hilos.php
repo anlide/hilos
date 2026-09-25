@@ -114,6 +114,7 @@ use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsDashboardPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
@@ -303,6 +304,7 @@ final class Hilos extends HilosFacade
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BackupPage::PAGE => BackupPage::class,
+        MaintenancePage::PAGE => MaintenancePage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -612,6 +614,9 @@ final class Hilos extends HilosFacade
         ],
         BackupPage::PAGE => [
             ChatTableContext::hilosBackups => [],
+            ChatTableContext::hilosVerifierCircle => [],
+        ],
+        MaintenancePage::PAGE => [
             ChatTableContext::hilosVerifierCircle => [],
         ],
         CommunicationsPage::PAGE => [

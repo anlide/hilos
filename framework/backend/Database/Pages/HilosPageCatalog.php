@@ -327,6 +327,13 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-safe2',
         ],
+        HilosPageConstants::HILOS_MAINTENANCE => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Maintenance',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation: its state, the verifier circle, '
+                . 'and the way out of the window.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-tools',
+        ],
 
         // — Automation & intelligence —
         HilosPageConstants::HILOS_ANALYTICS => [
@@ -418,6 +425,7 @@ final class HilosPageCatalog
                 HilosPageConstants::HILOS_LOGS,
                 HilosPageConstants::HILOS_CHANGE_LOG,
                 HilosPageConstants::HILOS_BACKUP,
+                HilosPageConstants::HILOS_MAINTENANCE,
             ],
         ],
         [

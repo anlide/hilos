@@ -171,7 +171,8 @@ also registers those. Generate, in any order:
    installation that can freeze carries it, backup or not — a copy of the stub
    `create_hilos_verifier_circle.sql` among the project's migrations, as with
    settings, which the project's own topology unit test asks for — and its
-   surface is a section of its own (not in the code yet — HIL-1119).
+   surface is a section of its own, `hilos_maintenance` (see *a framework-owned
+   section with no feature switch* below).
 2. A backup catalog — `final class … implements
    Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
    `BACKUP_CATALOG` constant on the project `Hilos` facade (the framework default
@@ -513,9 +514,23 @@ project-bound contract. Pick the recipe by which one it is:
   thin page + mount);
 - a framework-owned section with no feature switch → activation is registering
   its page and table in the topology, and there is nothing to declare in
-  `FEATURES` ([admin-features.md](admin-features.md), Mode 1); the first one is
-  `hilos_maintenance`, and its recipe arrives with its code
-  (not in the code yet — HIL-1119).
+  `FEATURES` ([admin-features.md](admin-features.md), Mode 1). The first one is
+  `hilos_maintenance`, and its recipe is:
+  - a thin page `final class MaintenancePage extends
+    Hilos\Pages\Maintenance\AbstractHilosMaintenancePage` whose
+    `SUBSCRIPTION_AGENT_TYPE` is the project's hilos index agent — the agent
+    that owns the verifier circle;
+  - `PAGES` — the page key → that class;
+  - `TABLES` — `HilosVerifierCircleTable::TABLE` under the project's
+    `TableContext` key, bound to `HilosVerifierCircleTable`;
+  - `PAGE_TABLES` — the page → the circle table;
+  - the mount — `@hilos/vue`'s `HilosMaintenancePage` with the project's
+    `{ connection, scopes }` context under `HilosPages.MAINTENANCE` (the React
+    and Angular twins are not in the code yet — HIL-1123);
+  - no line in `FEATURES`, and nothing more to migrate: the circle's table is
+    already required of every installation that can freeze (HIL-1118).
+  A project that registers no page for the section answers its address with a
+  404 (HIL-1090), and the dashboard draws no card for it.
 
 If none fits — there is no framework base yet — the feature is not ready to
 scaffold; it must first be built or graduated per [admin-features.md](admin-features.md).

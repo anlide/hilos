@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-scaffold
-description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, or a future one like roles — in a Hilos project. Use when wiring settings, hilos-users, or backup into a project, generating the project-side binding a framework admin feature requires (catalog, user entity, presence source, table subclass, thin page, SDK view mount; for backup, the backup catalog, env values, agent/CLI registration, and RT-index binding), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
+description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, the maintenance section, or a future one like roles — in a Hilos project. Use when wiring settings, hilos-users, backup, or the maintenance section into a project, generating the project-side binding a framework admin feature requires (catalog, user entity, presence source, table subclass, thin page, SDK view mount; for backup, the backup catalog, env values, agent/CLI registration, and RT-index binding), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
 ---
 
 # Hilos Admin Scaffold
@@ -33,7 +33,10 @@ the recipe before generating code.
    agent (backup — a catalog carrying the reference and PII registries, env
    values, and agent/CLI/RT-index binding; the verifier circle's table is not
    backup's to activate — it belongs to the freeze, and the recipe says where it
-   comes from). Read the base class; generate what it leaves abstract.
+   comes from), or a framework section with no feature switch (the maintenance
+   section — activation is registering its thin page and the verifier circle
+   table in the topology and mounting its SDK view, with no line in `FEATURES`).
+   Read the base class; generate what it leaves abstract.
 2. Generate against the framework base classes and their extension points, never
    by copying another project. The engine — table merge, page subscribe, action
    lifecycle — stays in the framework base.

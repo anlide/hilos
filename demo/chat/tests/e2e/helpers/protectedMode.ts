@@ -1,4 +1,4 @@
-import type { BrowserContext } from '@playwright/test'
+import { expect, type BrowserContext, type Page } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { reAskProtectedMode } from '../../../../../framework/frontend/scripts/protectedModeReAsk.mjs'
@@ -33,6 +33,12 @@ const OPEN_COMMAND = 'test:protected-mode:open'
 const CLOSE_COMMAND = 'test:protected-mode:close'
 const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'protected-mode:inspect'
+
+// How many rows the circle is emptied of before the attempt is called broken. Every
+// removal takes one row out, so the count is what ends that loop; this only makes a
+// removal surface that stopped removing fail where it broke instead of hanging until
+// the test times out.
+const CIRCLE_CLEAR_LIMIT = 25
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -341,4 +347,89 @@ function protectedModeReAskError(
   return new Error(
     `${command} was not answered; the node reads '${snapshot.phase}', so the command was not taken`,
   )
+}
+
+// The verifier circle is named and emptied through the block the backup page carries -
+// its add and remove modals live there until HIL-1120 and HIL-1121 bring them to the
+// maintenance section - so these steps expect the operator's page on /hilos/backup.
+
+/**
+ * Drives the confirmation of a removal modal that is already open.
+ *
+ * Its own step because two callers open that modal - a case taking one named person out,
+ * and the clearing every circle case starts with - and a second copy of these five lines
+ * would be a second place for the dialog's contract to be remembered wrongly.
+ *
+ * @param page The operator's page, with the removal modal open.
+ */
+export async function confirmCircleRemoval(page: Page): Promise<void> {
+  const submit = page.getByTestId('hilos-backup-circle-remove-confirm')
+  await expect(submit).toBeVisible()
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+  // The modal closes on the ack and stays open on a refusal, so waiting for the button
+  // to go is waiting for the removal to have landed rather than for a fixed moment.
+  await expect(submit).toHaveCount(0)
+}
+
+/**
+ * Empties the verifier circle through the page's own removal modal.
+ *
+ * Every case that counts the circle starts here, because the circle is a durable list in
+ * a database that outlives a single case: a neighbour that failed before its own cleanup
+ * line leaves its member named, and somebody else's member is still a member when the
+ * freeze photographs the hall. A case asserting a number has to own the list that number
+ * is about - without this, `circleAdmitted` read 1 in a case that had named nobody who
+ * was online.
+ *
+ * The first window is waited for rather than assumed: a circle that is empty and one
+ * whose rows have not arrived look exactly alike, and clearing the second clears nothing.
+ *
+ * The search is scoped to the circle table so the modal's own confirm button, which
+ * shares the removal prefix, cannot be taken for a row's.
+ *
+ * @param page The operator's page, already on the backup surface.
+ */
+export async function clearCircle(page: Page): Promise<void> {
+  const table = page.getByTestId('hilos-backup-circle-table')
+  await expect(table).toBeVisible()
+  await expect(table.getByTestId('hilos-table-loading')).toHaveCount(0)
+
+  const removals = table.getByTestId(/^hilos-backup-circle-remove-/)
+  for (let guard = 0; guard < CIRCLE_CLEAR_LIMIT; guard++) {
+    if ((await removals.count()) === 0) {
+      break
+    }
+    await removals.first().click()
+    await confirmCircleRemoval(page)
+  }
+
+  await expect(removals).toHaveCount(0)
+}
+
+/**
+ * Names one address to the verifier circle through the page's own modal.
+ *
+ * @param page The operator's page, already on the backup surface.
+ * @param identifier The address to name.
+ */
+export async function addToCircle(page: Page, identifier: string): Promise<void> {
+  await page.getByTestId('hilos-backup-circle-add').click()
+
+  const field = page.getByTestId('hilos-backup-circle-add-field')
+  await expect(field).toBeVisible()
+  await field.fill('')
+  await field.pressSequentially(identifier, { delay: 10 })
+
+  const submit = page.getByTestId('hilos-backup-circle-add-confirm')
+  await submit.scrollIntoViewIfNeeded()
+  await expect(submit).toBeVisible()
+  await expect(submit).toBeEnabled()
+  await submit.focus()
+  await submit.click()
+  // The modal closes on the ack and stays open on a refusal, so waiting for the field
+  // to go is waiting for the write to have landed rather than for a fixed moment.
+  await expect(field).toHaveCount(0)
 }

@@ -5,12 +5,13 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings / backup, communications hub / channel and the three
-// log pages that read live data are intentionally absent: they are real framework
-// pages (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage /
-// HilosCommunicationsPage / HilosCommunicationsChannelPage / HilosLogsKeysPage /
-// HilosLogsRotationsPage / HilosLogsViewPage) that require a project-supplied
-// context, so a project mounts them directly rather than through this default map.
+// The users / user / settings / backup / maintenance, communications hub / channel
+// and the three log pages that read live data are intentionally absent: they are
+// real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
+// HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
+// HilosCommunicationsChannelPage / HilosLogsKeysPage / HilosLogsRotationsPage /
+// HilosLogsViewPage) that require a project-supplied context, so a project mounts
+// them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core

@@ -55,8 +55,9 @@ A framework-owned section may have no on-switch at all: the mechanism under it
 is unconditional, and a feature case for it is banned
 ([protected-mode.md](protected-mode.md), *Anti-Patterns*). The project activates
 such a section by registering its page and table in the topology, with no line
-in `FEATURES`; the first one is `hilos_maintenance`, where the verifier circle
-is named (not in the code yet — HIL-1119).
+in `FEATURES`; the first one is `hilos_maintenance`
+(`Hilos\Pages\Maintenance\AbstractHilosMaintenancePage`), which shows the
+verifier circle through the framework's `HilosVerifierCircleTable`.
 
 The project must NOT copy the table query, the catalog-merge, the value-source
 logic, or the action routing. Those are framework-owned.

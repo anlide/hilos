@@ -431,12 +431,26 @@ no fourth way in.
 **The third door opens on a photograph rather than on a presentation
 (HIL-643).** The other two are earned at the door — the initiator by having
 asked for the freeze, a verifier by producing a code. The circle is decided
-before the door exists: an operator names people in the Maintenance section of
-the admin surface (not in the code yet — HIL-1119) — the backup page only points
-there (not in the code yet — HIL-1122) — and at the moment the node freezes
+before the door exists: an operator names people to the circle, which the
+Maintenance section of the admin surface (`hilos_maintenance`) shows — the names
+are still added and removed through the block the backup page carries (not in
+the section yet — HIL-1120, HIL-1121), and the backup page only points there
+(not in the code yet — HIL-1122) — and at the moment the node freezes
 `VerifierCircleSnapshot::capture()` reads that list against the live connections
 and writes the session hashes of the members who were online onto the row.
 Nothing is presented afterwards; the tab that was already open walks in.
+
+**The section's signed-in mark is live, and it is not the photograph (HIL-1119).**
+Beside each named address the section says whether that person holds a live
+connection right now: `HilosVerifierCircleTable` hears the project's collection
+of live session connections, and a named person's tab opening or closing
+re-draws that person's row without a reload. The mark only helps an operator
+see, before an operation, who would be let in; what decides is still the
+photograph above. Two limits come from how live tables work: a person named by
+two addresses has only one of the two rows re-drawn live (one source change
+gives a table one row mutation — the other catches up on the next draw), and
+signing out without closing the tab leaves the mark on until the tab closes,
+because the change carries only the new, empty binding and cannot name who left.
 
 The order matters and is not an implementation detail. The photograph is taken
 under the freeze, because for any freeze that is the first moment the answer is
@@ -480,8 +494,10 @@ failure there fails the operation itself, which is reported — so the row then
 carries `circleNamedCount = 0`.
 
 Without `HilosFeature::BACKUP` the circle loses nothing: the freeze alone admits
-its member, people are named in the same section (not in the code yet —
-HIL-1119), and empty means nobody was named.
+its member, and the Maintenance section shows it the same way. Naming somebody
+there is the one thing still missing — until the section's own add and remove
+arrive (not in the code yet — HIL-1120, HIL-1121) the only surface that names
+people is the backup page — and empty means nobody was named.
 
 **Both presented doors are gated on `PHASE_VERIFYING`, and for one reason: that is the
 first phase with anything behind them.** Under `PHASE_ACTIVATING` and

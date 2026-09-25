@@ -167,6 +167,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos backup page. */
     public const string SUBSCRIPTION_PAGE_HILOS_BACKUP = 'subscription_page_hilos_backup';
 
+    /** Subscription signal for the Hilos maintenance section. */
+    public const string SUBSCRIPTION_PAGE_HILOS_MAINTENANCE = 'subscription_page_hilos_maintenance';
+
     /** Subscription signal for Hilos daemon dashboard. */
     public const string SUBSCRIPTION_PAGE_HILOS_DAEMON = 'subscription_page_hilos_daemon';
 

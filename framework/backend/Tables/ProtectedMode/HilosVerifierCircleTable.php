@@ -12,6 +12,7 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
@@ -30,21 +31,35 @@ use Hilos\Database\Object\Item\VerifierCircleMember as ObjectVerifierCircleMembe
 use Hilos\Database\View\Item\VerifierCircleMember as ViewVerifierCircleMember;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
+use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\State\Item\RtState;
 
 /**
- * Table definition for the verifier circle: who an operator named to check a restore (HIL-643).
+ * Table definition for the verifier circle: who an administrator named to check the system after
+ * a freeze (HIL-643).
  *
- * A framework table over a framework DB collection, in the shape the settings table established.
- * It delivers its own snapshot because one of its four fields is not in the database at all:
- * `online` is asked of the live connections while a row is built, so a plain source projection
- * would hand the browser a row with a hole in it.
+ * The circle belongs to the freeze and not to backup: it serves every freeze, whatever operation
+ * raised it (HIL-1022, HIL-1118). A framework table over a framework DB collection, in the shape
+ * the settings table established. It delivers its own snapshot because one of its four fields is
+ * not in the database at all: `online` is asked of the live connections while a row is built, so
+ * a plain source projection would hand the browser a row with a hole in it.
  *
- * **The online mark is a photograph, not a subscription.** It refreshes when the row does - a
- * membership added, removed, or re-drawn on subscribe - and no connection event moves it. That is
- * the honest shape rather than a saving: the mark answers "was this person here just now", and the
- * question that decides anything is asked once, by the freeze
- * ({@see VerifierCircleSnapshot::capture()}). A mark tracking every socket would look like a
- * promise the circle does not make.
+ * **The online mark is live (HIL-1119).** Besides the circle's own changes, the table hears the
+ * project's collection of live session connections, found by the name the runtime context mounts
+ * it under: a connection of a named person opening, closing or signing in re-draws that person's
+ * row, so an administrator sees who has a tab open right now without reloading. The mark is only
+ * the view: who is let in is still decided once, by the photograph the freeze takes
+ * ({@see VerifierCircleSnapshot::capture()}).
+ *
+ * Two limits come from the way live tables work rather than from this one:
+ *
+ * - a person named by two addresses has only one of the two rows re-drawn live, because one
+ *   source change gives a table exactly one row mutation ({@see TableContext::buildMutationSignalsForSourceEvent()});
+ *   the other row catches up the next time it is drawn;
+ * - signing out without closing the tab clears the binding in place, and the change carries only
+ *   the new, empty binding ({@see RtState::sync()}), so it cannot name who left - that person's
+ *   mark stays on until the tab closes or the page is opened again. The users table's presence
+ *   has the same gap.
  */
 final class HilosVerifierCircleTable extends TableDefinition implements SelfSnapshotTable
 {
@@ -97,9 +112,9 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
     }
 
     /**
-     * Builds a circle row mutation from a circle DB source change.
+     * Builds a circle row mutation from a circle DB change or from a change of a live connection.
      *
-     * @param SourceChange $change Circle source change
+     * @param SourceChange $change Source change that may affect this table
      * @return ?TableRowMutationDTO Circle row mutation, or null when the change does not affect this table
      * @throws DatabaseException When the circle or identity lookup fails
      * @throws LogicException When a collection's class constants are not configured
@@ -107,24 +122,18 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey !== HilosDbContext::verifierCircle) {
-            return null;
+        if ($change->sourceKey === HilosDbContext::verifierCircle) {
+            return $this->mutationForMember($change);
         }
 
-        $memberId = (int)$change->sourceId;
-        if ($memberId <= 0) {
-            return null;
+        // The connections collection is the project's, so its name is asked of the context
+        // rather than written here; the process holds it without this table declaring it.
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections !== null && $change->isRt() && $change->sourceKey === $connections->getCollectionName()) {
+            return $this->mutationForConnection($change);
         }
 
-        if ($change->mutationType === TableMutationType::Delete) {
-            return $this->mutation(TableMutationType::Delete, $memberId);
-        }
-
-        $member = Hilos::$db->verifierCircle[$memberId] ?? null;
-
-        return $member === null
-            ? $this->mutation(TableMutationType::Delete, $memberId)
-            : $this->mutation($change->mutationType, $memberId, $this->rowFromMember($member));
+        return null;
     }
 
     /**
@@ -213,6 +222,72 @@ final class HilosVerifierCircleTable extends TableDefinition implements SelfSnap
     protected function init(): void
     {
         $this->setRowClass(HilosVerifierCircleTableRow::class);
+    }
+
+    /**
+     * Builds a circle row mutation from a circle DB source change.
+     *
+     * @param SourceChange $change Circle source change
+     * @return ?TableRowMutationDTO Circle row mutation, or null when the change names no membership
+     * @throws DatabaseException When the circle or identity lookup fails
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a loaded object type does not match its collection
+     */
+    private function mutationForMember(SourceChange $change): ?TableRowMutationDTO
+    {
+        $memberId = (int)$change->sourceId;
+        if ($memberId <= 0) {
+            return null;
+        }
+
+        if ($change->mutationType === TableMutationType::Delete) {
+            return $this->mutation(TableMutationType::Delete, $memberId);
+        }
+
+        $member = Hilos::$db->verifierCircle[$memberId] ?? null;
+
+        return $member === null
+            ? $this->mutation(TableMutationType::Delete, $memberId)
+            : $this->mutation($change->mutationType, $memberId, $this->rowFromMember($member));
+    }
+
+    /**
+     * Re-draws the row of the named person whose live connection changed.
+     *
+     * The person is read off the change: a removal carries the row the connection held, a creation
+     * the whole new row, and an update the fields that moved. An update that leaves the binding
+     * alone cannot change whether anybody holds a connection, so it re-draws nothing - a project
+     * connection moves its own fields often (a file upload counts every chunk), and each of those
+     * would otherwise cost the identity and circle lookups and a frame to every open window, for
+     * a mark that cannot have changed. A connection change never adds or removes a row: the mark
+     * is recomputed by {@see self::rowFromMember()} over the connections as they are after the
+     * change, so closing one of two tabs keeps the person signed in.
+     *
+     * The person's addresses are walked in the order their identities were stored, and the first
+     * one the circle names is the row re-drawn: one change yields one row mutation.
+     *
+     * @param SourceChange $change Change of the live connections collection
+     * @return ?TableRowMutationDTO Update of the person's circle row, or null when the change binds
+     *     nobody or its person is not named in the circle
+     * @throws DatabaseException When the circle or identity lookup fails
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a loaded object type does not match its collection
+     */
+    private function mutationForConnection(SourceChange $change): ?TableRowMutationDTO
+    {
+        $userId = $change->row[HilosConnection::userId] ?? null;
+        if (!is_int($userId) || $userId <= 0) {
+            return null;
+        }
+
+        foreach (Hilos::$db->identities->listByUser($userId) as $identity) {
+            $member = Hilos::$db->verifierCircle->findByIdentity($identity->type, $identity->identifier);
+            if ($member !== null) {
+                return $this->mutation(TableMutationType::Update, (int)$member->id, $this->rowFromMember($member));
+            }
+        }
+
+        return null;
     }
 
     /**

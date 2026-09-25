@@ -75,6 +75,7 @@ export { default as HilosSecondFactorCancelPage } from './auth/HilosSecondFactor
 export { default as HilosOAuthCallbackPage } from './auth/HilosOAuthCallbackPage.vue'
 export { hilosAuthGateKey } from './auth/hilosAuthGateKey.js'
 export { default as HilosBackupPage } from './admin/backup/HilosBackupPage.vue'
+export { default as HilosMaintenancePage } from './admin/maintenance/HilosMaintenancePage.vue'
 export { default as HilosCommunicationsPage } from './admin/communications/HilosCommunicationsPage.vue'
 export { default as HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.vue'
 export { default as HilosSecurityOauthPage } from './admin/security/HilosSecurityOauthPage.vue'

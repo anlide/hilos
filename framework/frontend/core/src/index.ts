@@ -861,6 +861,16 @@ export {
   type HilosBackupProgressClock,
 } from './admin/backup/hilosBackups.js'
 export {
+  resolveHilosMaintenanceCircleRow,
+  createHilosMaintenanceCircleTable,
+  HILOS_MAINTENANCE_CIRCLE_COPY,
+  MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
+  MAINTENANCE_CIRCLE_ONLINE_FIELD,
+  type HilosMaintenanceCircleRow,
+  type HilosMaintenanceCircleTable,
+  type HilosMaintenanceContext,
+} from './admin/maintenance/hilosMaintenance.js'
+export {
   resolveHilosChannelRow,
   resolveHilosChannelFieldRow,
   createHilosChannelsTable,

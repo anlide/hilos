@@ -46,9 +46,10 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * there is no other process that brings a provider row into being or edits one. Every
      * other process reads them process-wide ({@see HilosDbContext::processWideReadCollections()}).
      *
-     * The circle is written by the actions of a page this agent serves too - the backup page
-     * today, the maintenance section tomorrow (HIL-1119) - and it is claimed here rather than
-     * by each project because its table is in every installation that can freeze (HIL-1118):
+     * The circle is written by the actions of a page this agent serves too - the backup page's
+     * for now, while the maintenance section, which this agent serves as well, shows the circle
+     * and gains its own add and remove later (HIL-1120, HIL-1121) - and it is claimed here rather
+     * than by each project because its table is in every installation that can freeze (HIL-1118):
      * a project that builds a runtime context is refused by its own unit test without the
      * migration, so there is nothing left to ask it before the claim is legal.
      *

@@ -65,6 +65,7 @@ import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
 import HilosBackup from './views/Hilos/Backup/Backup.vue'
+import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 import HilosCommunications from './views/Hilos/Communications/Communications.vue'
 import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
 import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
@@ -108,6 +109,7 @@ const pages: Record<string, Component> = {
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
   [HilosPages.BACKUP]: HilosBackup,
+  [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.COMMUNICATIONS]: HilosCommunications,
   [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
   [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
