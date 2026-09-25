@@ -6,8 +6,8 @@
 //  (1) Unknown icon name: every bi-* name in source text must exist in the
 //      installed font/bootstrap-icons.json map.
 //  (2) Declared version below installed: the declared floor in package.json
-//      must match the version installed on disk (1.13.1), keeping the range
-//      from silently falling back to a version missing needed glyphs.
+//      must match the version installed on disk, keeping the range from
+//      silently falling back to a version missing needed glyphs.
 import { existsSync, readdirSync, readFileSync, type Dirent } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
