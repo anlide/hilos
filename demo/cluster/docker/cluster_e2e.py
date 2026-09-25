@@ -65,6 +65,7 @@ import re
 import subprocess
 import sys
 import time
+from collections import namedtuple
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -260,7 +261,9 @@ def node_log_path(node):
 def node_log(node, offset=0):
     """The daemon log a node wrote from a byte offset on: its text, or '' when there is no
     file. Read from the host - the files inside the mount are root-owned but world-readable,
-    so no sudo and no docker exec are needed."""
+    so no sudo and no docker exec are needed. An offset names a byte of ONE file, so it holds
+    only while the node does not start between measuring and reading; a node that does is
+    read by node_log_mark() instead."""
     try:
         with open(node_log_path(node), "rb") as f:
             f.seek(offset)
@@ -270,11 +273,46 @@ def node_log(node, offset=0):
 
 
 def node_log_size(node):
-    """Byte length of a node's daemon log, or 0 when there is no file yet."""
+    """Byte length of a node's daemon log, or 0 when there is no file yet - an offset into that
+    one file, good while the node does not start before it is read; otherwise node_log_mark()."""
     try:
         return node_log_path(node).stat().st_size
     except FileNotFoundError:
         return 0
+
+
+LogMark = namedtuple("LogMark", "inode size")
+
+
+def node_log_mark(node):
+    """Which file a node's daemon log is right now and how long it is: the mark to read a node
+    that STARTS between measuring and reading. An offset cannot do that - starting a container
+    starts its watcher, and the watcher moves every *.log of the node to staging/<time>/
+    before the daemon writes its first line (DockerManager::rotateLogs()), so the daemon opens
+    a fresh file and an offset of the old one reads the new one past whatever it wrote first.
+    LogMark(None, 0) when there is no file yet."""
+    try:
+        st = node_log_path(node).stat()
+    except FileNotFoundError:
+        return LogMark(None, 0)
+    return LogMark(st.st_ino, st.st_size)
+
+
+def node_log_since(node, mark):
+    """What a node's daemon log gained after its mark: the tail past the marked size while the
+    file is still the marked one, the whole file once it is another. Before the start rotates
+    the log that tail is empty, so a line a previous run left is never read as this run's.
+    The inode is compared off the OPEN descriptor, not a second stat of the path, so a
+    rotation between the two cannot compare one file and read the other. What it cannot see:
+    lines the node added to the OLD file between the mark and its restart stay in staging -
+    no scenario needs them. '' when there is no file."""
+    try:
+        with open(node_log_path(node), "rb") as f:
+            same_file = os.fstat(f.fileno()).st_ino == mark.inode
+            f.seek(mark.size if same_file else 0)
+            return f.read().decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        return ""
 
 
 def container_id(node):
@@ -1441,15 +1479,22 @@ def scenario_17_foreign_certificate_refused():
     node presents; the node it dialed names it with the stranger's address, because in TLS 1.3
     the accepting side is the one that learns a dialer was refused. Then nobody may list the
     stranger, and the five still form one cluster under one leader.
+
+    Both ends are read by a file mark (node_log_mark), not an offset. The stranger starts
+    inside this scenario, and starting its container moves its log to staging before the
+    daemon's first line, so the daemon writes a fresh file. An offset of the old file read the
+    new one past the refusal the stranger writes in its first moments, and the scenario went
+    red on every run after the first one that left a log behind (HIL-1068). m1 does not
+    restart; it is marked the same way so both ends are read alike.
     """
     wait_converge(ALL_NODES)
-    offsets = {n: node_log_size(n) for n in ("m1", STRANGER)}
+    marks = {n: node_log_mark(n) for n in ("m1", STRANGER)}
     print(f"    starting {STRANGER}, certified by an authority the cluster does not trust")
     ctl("intruder", "up")
     try:
         def refused_on_both_ends(_views):
-            return (f"{TLS_REFUSAL_LINE}: {STRANGER_IP}" in node_log("m1", offsets["m1"])
-                    and TLS_REFUSAL_LINE in node_log(STRANGER, offsets[STRANGER]))
+            return (f"{TLS_REFUSAL_LINE}: {STRANGER_IP}" in node_log_since("m1", marks["m1"])
+                    and TLS_REFUSAL_LINE in node_log_since(STRANGER, marks[STRANGER]))
 
         views = wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
                            f"a refused TLS handshake named in the logs of m1 and {STRANGER}")
@@ -1463,7 +1508,10 @@ def scenario_17_foreign_certificate_refused():
     finally:
         ctl("intruder", "down")
 
-    return f"{STRANGER} refused on both ends of the link; nobody lists it; the five still converge"
+    previous = (f"over a previous log of {marks[STRANGER].size} bytes"
+                if marks[STRANGER].inode is not None else "with no previous log")
+    return (f"{STRANGER} started {previous} and was refused on both ends of the link; nobody "
+            f"lists it; the five still converge")
 
 
 # Numbered by when they were written, ORDERED by what they need. The three RT scenarios and
@@ -1654,14 +1702,6 @@ FLAKY_SKIP = {
     # fleet host, and a partitioned fleet host has its members re-placed onto its neighbour,
     # so the rows it is judged by must be the ones it does NOT own.
     "13 rt partition converges": "P-169: an owner with no claim hands over nothing",
-    # Since HIL-1034 landed this one times out on both attempts, the clean base included: m1
-    # names the refused handshake every time, x1's log never shows it to the wait. The lead
-    # is the offset - it is taken from x1's log before x1 starts, and the start moves that
-    # log to staging and opens a fresh one, so the read begins past the refusal x1 writes
-    # first. It is not proven, and reading from zero instead could catch the line a previous
-    # run left before the rotation moves it, so it is parked rather than guessed at. Until
-    # then no scenario shows a node of a foreign authority refused.
-    "17 foreign certificate refused": "HIL-1068: the stranger's log is read past its own start",
 }
 
 
