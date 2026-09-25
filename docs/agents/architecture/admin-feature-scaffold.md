@@ -261,7 +261,7 @@ also registers those. Generate, in any order:
    empty or unparseable destination leaves the subsystem behaving exactly as it
    does without one, and the admin list says so in its Copy column. The
    destination root itself has to exist on the receiving side — rsync creates the
-   per-scope directory under it and nothing above that.    The copy leaves
+   per-scope directory under it and nothing above that. The copy leaves
    *after* the run, in the agent's own second process slot, so a broken link never
    turns a valid archive into an error row. The receiver loses only what was
    deleted here, and only by name: a local delete of a shipped backup leaves an
