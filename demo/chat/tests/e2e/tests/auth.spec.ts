@@ -24,7 +24,7 @@ import {
   setTelegramReachable,
   waitForTelegramCode,
 } from '../../../../../framework/frontend/scripts/standTelegram.mjs'
-import { setAdmin } from '../helpers/adminGrant'
+import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import {
   mailsTo,
   readMagicLinkCode,
@@ -514,6 +514,75 @@ test('keeps the main button still while the field answers, on a narrow screen', 
     'No account yet — this creates one.',
   )
   await submitTop.unchanged()
+})
+
+test('keeps the password screen still while the way past the password comes and goes', async ({
+  page,
+  browser,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/security/sign-in-methods')
+  const magicLinkToggle = page
+    .getByTestId('hilos-table-row-magic_link')
+    .getByTestId('hilos-sign-in-method-enabled-magic_link')
+  await expect(magicLinkToggle).toBeChecked()
+
+  const guestContext = await browser.newContext({
+    viewport: { width: 375, height: 800 },
+  })
+  try {
+    const guestPage = await guestContext.newPage()
+    const email = uniqueEmail()
+    await gotoPage(guestPage, '/profile')
+    await submitRegistration(guestPage, email)
+    const code = await readRegisterCode(email)
+    await submitRegistrationCode(guestPage, code)
+
+    await expect(
+      guestPage.getByTestId('auth-complete-passwordless'),
+    ).toBeVisible()
+    await expect(guestPage.getByTestId('auth-set-password-lead')).toHaveText(
+      'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    const submitTop = await watchTop(guestPage.getByTestId('auth-submit'))
+    const cancelTop = await watchTop(
+      guestPage.getByTestId('auth-cancel-registration'),
+    )
+
+    // Admin clicks the switch to disable magic link (not uncheck(): the switch
+    // is not optimistic and updates on live server state).
+    await magicLinkToggle.click()
+    await expect(magicLinkToggle).not.toBeChecked()
+
+    await expect(
+      guestPage.getByTestId('auth-complete-passwordless'),
+    ).toHaveCount(0)
+    await expect(guestPage.getByTestId('auth-set-password-lead')).toHaveText(
+      'Your address is confirmed. Choose a password — your account is created when you save it.',
+    )
+    await submitTop.unchanged()
+    await cancelTop.unchanged()
+
+    // Restore magic link
+    await magicLinkToggle.click()
+    await expect(magicLinkToggle).toBeChecked()
+
+    await expect(
+      guestPage.getByTestId('auth-complete-passwordless'),
+    ).toBeVisible()
+    await expect(guestPage.getByTestId('auth-set-password-lead')).toHaveText(
+      'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    await submitTop.unchanged()
+    await cancelTop.unchanged()
+  } finally {
+    if (!(await magicLinkToggle.isChecked())) {
+      await magicLinkToggle.click()
+      await expect(magicLinkToggle).toBeChecked()
+    }
+    await guestContext.close()
+  }
 })
 
 /**

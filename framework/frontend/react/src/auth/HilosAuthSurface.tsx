@@ -212,6 +212,8 @@ const SET_PASSWORD_LEAD_WITH_EXIT =
   'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
 const SET_PASSWORD_LEAD_PLAIN =
   'Your address is confirmed. Choose a password — your account is created when you save it.'
+const SET_PASSWORD_LEAD_RECOVERY =
+  'The code was accepted. Choose a new password.'
 const TWO_STEP_LEAD_APP =
   'Open your authenticator app and enter the code it shows.'
 const TWO_STEP_LEAD_BACKUP =
@@ -612,13 +614,23 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
    */
   function setPasswordLeadOf(): string {
     if (state.intent !== 'register') {
-      return 'The code was accepted. Choose a new password.'
+      return SET_PASSWORD_LEAD_RECOVERY
     }
 
     return showFinishWithoutPassword
       ? SET_PASSWORD_LEAD_WITH_EXIT
       : SET_PASSWORD_LEAD_PLAIN
   }
+
+  // The twin that holds the lead's height (HIL-1101, styling-rules.md "The room
+  // a live message takes"). For a registration the twin says the longer of the
+  // two sentences so neither arrival nor loss of the exit moves the fields under
+  // it; for a recovery the exit is never offered, so the twin says the recovery
+  // sentence itself.
+  const setPasswordLeadIdle =
+    state.intent === 'register'
+      ? SET_PASSWORD_LEAD_WITH_EXIT
+      : SET_PASSWORD_LEAD_RECOVERY
 
   const newPasswordLabel =
     state.intent === 'register' ? 'Password' : 'New password'
@@ -2205,9 +2217,24 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
           either way — what the accepted code left on this session names it. */}
             {state.step === 'set_password' ? (
               <form className="d-flex flex-column" noValidate onSubmit={submit}>
-                <p className="text-body-secondary small mb-3">
-                  {setPasswordLead}
-                </p>
+                <div
+                  className="position-relative mb-3"
+                  data-id="auth-set-password-lead-slot"
+                >
+                  <p
+                    className="text-body-secondary small mb-0 invisible"
+                    aria-hidden="true"
+                    data-id="auth-set-password-lead-idle"
+                  >
+                    {setPasswordLeadIdle}
+                  </p>
+                  <p
+                    className="text-body-secondary small mb-0 position-absolute top-0 start-0 w-100"
+                    data-id="auth-set-password-lead"
+                  >
+                    {setPasswordLead}
+                  </p>
+                </div>
 
                 {/* The address, for the password manager and for nobody else: a saved
               entry with no login against it is an entry its owner cannot use.
@@ -2266,7 +2293,9 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                     {/* Two ways to FINISH the registration, then the way to drop
                   it, and the order carries that meaning (HIL-1008).
                   Unemphasized rather than a second primary: choosing a password
-                  is still the road this screen is named after. */}
+                  is still the road this screen is named after. The slot holds its
+                  room in both states so neither arrival nor loss of the exit
+                  moves the cancel button (HIL-1101). */}
                     {showFinishWithoutPassword ? (
                       <button
                         type="button"
@@ -2277,6 +2306,14 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                       >
                         Create it without a password
                       </button>
+                    ) : state.intent === 'register' ? (
+                      <span
+                        className="btn btn-link btn-sm w-100 invisible"
+                        aria-hidden="true"
+                        data-id="auth-complete-passwordless-idle"
+                      >
+                        Create it without a password
+                      </span>
                     ) : null}
 
                     {/* The same way out the code screen carries, for the same

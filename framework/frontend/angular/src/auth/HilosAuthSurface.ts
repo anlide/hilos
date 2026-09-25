@@ -334,6 +334,8 @@ const SET_PASSWORD_LEAD_WITH_EXIT =
   'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
 const SET_PASSWORD_LEAD_PLAIN =
   'Your address is confirmed. Choose a password — your account is created when you save it.'
+const SET_PASSWORD_LEAD_RECOVERY =
+  'The code was accepted. Choose a new password.'
 const TWO_STEP_LEAD_APP =
   'Open your authenticator app and enter the code it shows.'
 const TWO_STEP_LEAD_BACKUP =
@@ -1337,9 +1339,24 @@ const ERROR_DETAILS_TWIN_CLASS =
               novalidate
               (submit)="submit($event)"
             >
-              <p class="text-body-secondary small mb-3">
-                {{ setPasswordLead() }}
-              </p>
+              <div
+                class="position-relative mb-3"
+                data-id="auth-set-password-lead-slot"
+              >
+                <p
+                  class="text-body-secondary small mb-0 invisible"
+                  aria-hidden="true"
+                  data-id="auth-set-password-lead-idle"
+                >
+                  {{ setPasswordLeadIdle() }}
+                </p>
+                <p
+                  class="text-body-secondary small mb-0 position-absolute top-0 start-0 w-100"
+                  data-id="auth-set-password-lead"
+                >
+                  {{ setPasswordLead() }}
+                </p>
+              </div>
 
               <!-- The address, for the password manager and for nobody else: a saved
           entry with no login against it is an entry its owner cannot use. Hidden
@@ -1400,7 +1417,9 @@ const ERROR_DETAILS_TWIN_CLASS =
                     <!-- Two ways to FINISH the registration, then the way to drop
                 it, and the order carries that meaning (HIL-1008). Unemphasized
                 rather than a second primary: choosing a password is still the
-                road this screen is named after. -->
+                road this screen is named after. The slot holds its room in both
+                states so neither arrival nor loss of the exit moves the cancel
+                button (HIL-1101). -->
                     @if (showFinishWithoutPassword()) {
                       <button
                         type="button"
@@ -1411,6 +1430,14 @@ const ERROR_DETAILS_TWIN_CLASS =
                       >
                         Create it without a password
                       </button>
+                    } @else if (state().intent === 'register') {
+                      <span
+                        class="btn btn-link btn-sm w-100 invisible"
+                        aria-hidden="true"
+                        data-id="auth-complete-passwordless-idle"
+                      >
+                        Create it without a password
+                      </span>
                     }
 
                     <!-- The same way out the code screen carries, for the same
@@ -2145,13 +2172,24 @@ export class HilosAuthSurface {
   // and promising it where the exit is not offered would be a lie.
   protected readonly setPasswordLead = computed<string>(() => {
     if (this.state().intent !== 'register') {
-      return 'The code was accepted. Choose a new password.'
+      return SET_PASSWORD_LEAD_RECOVERY
     }
 
     return this.showFinishWithoutPassword()
       ? SET_PASSWORD_LEAD_WITH_EXIT
       : SET_PASSWORD_LEAD_PLAIN
   })
+
+  // The twin that holds the lead's height (HIL-1101, styling-rules.md "The room
+  // a live message takes"). For a registration the twin says the longer of the
+  // two sentences so neither arrival nor loss of the exit moves the fields under
+  // it; for a recovery the exit is never offered, so the twin says the recovery
+  // sentence itself.
+  protected readonly setPasswordLeadIdle = computed<string>(() =>
+    this.state().intent === 'register'
+      ? SET_PASSWORD_LEAD_WITH_EXIT
+      : SET_PASSWORD_LEAD_RECOVERY,
+  )
 
   protected readonly newPasswordLabel = computed(() =>
     this.state().intent === 'register' ? 'Password' : 'New password',

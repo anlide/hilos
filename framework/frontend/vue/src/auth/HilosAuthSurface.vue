@@ -220,6 +220,8 @@ const SET_PASSWORD_LEAD_WITH_EXIT =
   'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
 const SET_PASSWORD_LEAD_PLAIN =
   'Your address is confirmed. Choose a password — your account is created when you save it.'
+const SET_PASSWORD_LEAD_RECOVERY =
+  'The code was accepted. Choose a new password.'
 const TWO_STEP_LEAD_APP =
   'Open your authenticator app and enter the code it shows.'
 const TWO_STEP_LEAD_BACKUP =
@@ -411,13 +413,24 @@ const showFinishWithoutPassword = computed(
 // and promising it where the exit is not offered would be a lie.
 const setPasswordLead = computed(() => {
   if (state.value.intent !== 'register') {
-    return 'The code was accepted. Choose a new password.'
+    return SET_PASSWORD_LEAD_RECOVERY
   }
 
   return showFinishWithoutPassword.value
     ? SET_PASSWORD_LEAD_WITH_EXIT
     : SET_PASSWORD_LEAD_PLAIN
 })
+
+// The twin that holds the lead's height (HIL-1101, styling-rules.md "The room
+// a live message takes"). For a registration the twin says the longer of the
+// two sentences so neither arrival nor loss of the exit moves the fields under
+// it; for a recovery the exit is never offered, so the twin says the recovery
+// sentence itself.
+const setPasswordLeadIdle = computed(() =>
+  state.value.intent === 'register'
+    ? SET_PASSWORD_LEAD_WITH_EXIT
+    : SET_PASSWORD_LEAD_RECOVERY,
+)
 
 const newPasswordLabel = computed(() =>
   state.value.intent === 'register' ? 'Password' : 'New password',
@@ -2145,9 +2158,24 @@ onUnmounted(() => {
           novalidate
           @submit.prevent="submit()"
         >
-          <p class="text-body-secondary small mb-3">
-            {{ setPasswordLead }}
-          </p>
+          <div
+            class="position-relative mb-3"
+            data-id="auth-set-password-lead-slot"
+          >
+            <p
+              class="text-body-secondary small mb-0 invisible"
+              aria-hidden="true"
+              data-id="auth-set-password-lead-idle"
+            >
+              {{ setPasswordLeadIdle }}
+            </p>
+            <p
+              class="text-body-secondary small mb-0 position-absolute top-0 start-0 w-100"
+              data-id="auth-set-password-lead"
+            >
+              {{ setPasswordLead }}
+            </p>
+          </div>
 
           <!-- The address, for the password manager and for nobody else: a saved
       entry with no login against it is an entry its owner cannot use. Hidden
@@ -2197,7 +2225,8 @@ onUnmounted(() => {
               <!-- Two ways to FINISH the registration, then the way to drop it, and
           the order carries that meaning (HIL-1008). Unemphasized rather than a
           second primary: choosing a password is still the road this screen is
-          named after. -->
+          named after. The slot holds its room in both states so neither arrival
+          nor loss of the exit moves the cancel button (HIL-1101). -->
               <button
                 v-if="showFinishWithoutPassword"
                 type="button"
@@ -2208,6 +2237,13 @@ onUnmounted(() => {
               >
                 Create it without a password
               </button>
+              <span
+                v-else-if="state.intent === 'register'"
+                class="btn btn-link btn-sm w-100 invisible"
+                aria-hidden="true"
+                data-id="auth-complete-passwordless-idle"
+                >Create it without a password</span
+              >
 
               <!-- The same way out the code screen carries, for the same reason:
           this screen has no address field and no step behind it, so whoever

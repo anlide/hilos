@@ -9,6 +9,7 @@
 // line's room: the same four cases, under the same names, as in Vue and React.
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_SURFACE_HEADING_ID,
   bindCodeSendProgress,
@@ -66,6 +67,9 @@ const PENDING_ACK_SLOT = 'pendingAck'
 
 // The session slot carrying the authentication step this session stands on (sessionScope.ts).
 const PENDING_AUTH_STEP_SLOT = 'pendingAuthStep'
+
+// The session slot the surface reads the delivery answer from (sessionScope.ts).
+const CODE_DELIVERY_SLOT = 'codeDelivery'
 
 /**
  * A surface's world: the context it draws, a gate that records dismiss, and a
@@ -134,12 +138,15 @@ function surfaceWorld(): {
  *
  * @returns The context to mount with and a gate that does nothing.
  */
-function magicLinkWorld(): { context: HilosAuthContext; gate: AuthGate } {
+function magicLinkWorld(
+  dispatched?: Array<{ action: string; payload: Record<string, unknown> }>,
+): { context: HilosAuthContext; gate: AuthGate } {
   const connection = {
     on: (): (() => void) => () => undefined,
   } as unknown as HilosConnection
   const actions = {
     dispatch: (action: string, payload: Record<string, unknown>) => {
+      dispatched?.push({ action, payload })
       const identifier = String(payload['identifier'] ?? '')
       const reply =
         action === AUTH_ACTION_DETECT_IDENTIFIER
@@ -1069,5 +1076,181 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
       'form .bg-body-tertiary',
     )
     expect(plaque?.querySelector('i')?.className).toContain('bi-envelope')
+  })
+
+  it('offers the way past the password where a link can be mailed, and says so', async () => {
+    const dispatched: Array<{
+      action: string
+      payload: Record<string, unknown>
+    }> = []
+    const world = magicLinkWorld(dispatched)
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-new-password')).not.toBeNull()
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    const exit = byId(fixture, 'auth-complete-passwordless')
+    expect(exit).not.toBeNull()
+    expect(byId(fixture, 'auth-complete-passwordless-idle')).toBeNull()
+    exit?.click()
+    await flush(fixture)
+
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
+    ])
+    expect(dispatched[0]?.payload).toEqual({})
+  })
+
+  it('keeps the way past the password off a registry that mounted no link', async () => {
+    const world = surfaceWorld()
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-new-password')).not.toBeNull()
+    expect(byId(fixture, 'auth-complete-passwordless')).toBeNull()
+    const idleExit = byId(fixture, 'auth-complete-passwordless-idle')
+    expect(idleExit).not.toBeNull()
+    expect(idleExit?.tagName.toLowerCase()).toBe('span')
+    expect(idleExit?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleExit?.classList.contains('invisible')).toBe(true)
+
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain('Choose a password — your account is created when you save it.')
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('keeps it off an installation that cannot mail the link it would rely on', async () => {
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    world.context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: true,
+    })
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passwordless')).toBeNull()
+    const idleExit = byId(fixture, 'auth-complete-passwordless-idle')
+    expect(idleExit).not.toBeNull()
+    expect(idleExit?.tagName.toLowerCase()).toBe('span')
+    expect(idleExit?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleExit?.classList.contains('invisible')).toBe(true)
+
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain('Choose a password — your account is created when you save it.')
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('swaps the exit button with its idle twin as sign-in methods change live', async () => {
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passwordless')).not.toBeNull()
+    expect(byId(fixture, 'auth-complete-passwordless-idle')).toBeNull()
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    world.context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+    ])
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passwordless')).toBeNull()
+    const idleExit = byId(fixture, 'auth-complete-passwordless-idle')
+    expect(idleExit).not.toBeNull()
+    expect(idleExit?.tagName.toLowerCase()).toBe('span')
+    expect(idleExit?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleExit?.classList.contains('invisible')).toBe(true)
+
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain('Choose a password — your account is created when you save it.')
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    world.context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+      { key: 'magic_link', name: null },
+    ])
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passwordless')).not.toBeNull()
+    expect(byId(fixture, 'auth-complete-passwordless-idle')).toBeNull()
+    expect(
+      byId(fixture, 'auth-set-password-lead')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('omits the exit and twin during recovery while keeping the recovery lead in both lines', async () => {
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-complete-passwordless')).toBeNull()
+    expect(byId(fixture, 'auth-complete-passwordless-idle')).toBeNull()
+    expect(byId(fixture, 'auth-set-password-lead')?.textContent?.trim()).toBe(
+      'The code was accepted. Choose a new password.',
+    )
+    expect(
+      byId(fixture, 'auth-set-password-lead-idle')?.textContent?.trim(),
+    ).toBe('The code was accepted. Choose a new password.')
   })
 })

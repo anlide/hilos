@@ -14,6 +14,7 @@ import {
   ActionError,
   ActionLifecycle,
   AUTH_ACTION_CANCEL_REGISTRATION,
+  AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
   AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE,
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_LOGIN,
@@ -1820,5 +1821,175 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(byId('auth-delivered-channel')).toBeNull()
     const plaque = document.querySelector('form .bg-body-tertiary')
     expect(plaque?.querySelector('i')?.className).toContain('bi-envelope')
+  })
+
+  it('offers the way past the password where a link can be mailed, and says so', async () => {
+    const { context, dispatched } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-new-password')).not.toBeNull()
+    expect(byId('auth-set-password-lead')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    const exit = byId('auth-complete-passwordless')
+    expect(exit).not.toBeNull()
+    expect(byId('auth-complete-passwordless-idle')).toBeNull()
+    fireEvent.click(exit!)
+    await flush()
+
+    expect(dispatched.map((call) => call.action)).toEqual([
+      AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
+    ])
+    expect(dispatched[0]?.payload).toEqual({})
+  })
+
+  it('keeps the way past the password off a registry that mounted no link', async () => {
+    const { context } = contextAnswering([PASSWORD_METHOD_KEY])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-new-password')).not.toBeNull()
+    expect(byId('auth-complete-passwordless')).toBeNull()
+    const idleExit = byId('auth-complete-passwordless-idle')
+    expect(idleExit).not.toBeNull()
+    expect(idleExit?.tagName.toLowerCase()).toBe('span')
+    expect(idleExit?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleExit?.classList.contains('invisible')).toBe(true)
+
+    expect(byId('auth-set-password-lead')?.textContent).toContain(
+      'Choose a password — your account is created when you save it.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('keeps it off an installation that cannot mail the link it would rely on', async () => {
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    context.scopes.session.data.set(CODE_DELIVERY_SLOT, {
+      email: false,
+      phone: true,
+    })
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-complete-passwordless')).toBeNull()
+    const idleExit = byId('auth-complete-passwordless-idle')
+    expect(idleExit).not.toBeNull()
+    expect(idleExit?.tagName.toLowerCase()).toBe('span')
+    expect(idleExit?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleExit?.classList.contains('invisible')).toBe(true)
+
+    expect(byId('auth-set-password-lead')?.textContent).toContain(
+      'Choose a password — your account is created when you save it.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('swaps the exit button with its idle twin as sign-in methods change live', async () => {
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-complete-passwordless')).not.toBeNull()
+    expect(byId('auth-complete-passwordless-idle')).toBeNull()
+    expect(byId('auth-set-password-lead')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    act(() => {
+      context.scopes.session.data.set('authMethods', [
+        { key: 'password', name: null },
+      ])
+    })
+    await flush()
+
+    expect(byId('auth-complete-passwordless')).toBeNull()
+    const idleExit = byId('auth-complete-passwordless-idle')
+    expect(idleExit).not.toBeNull()
+    expect(idleExit?.tagName.toLowerCase()).toBe('span')
+    expect(idleExit?.getAttribute('aria-hidden')).toBe('true')
+    expect(idleExit?.classList.contains('invisible')).toBe(true)
+
+    expect(byId('auth-set-password-lead')?.textContent).toContain(
+      'Choose a password — your account is created when you save it.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    act(() => {
+      context.scopes.session.data.set('authMethods', [
+        { key: 'password', name: null },
+        { key: 'magic_link', name: null },
+      ])
+    })
+    await flush()
+
+    expect(byId('auth-complete-passwordless')).not.toBeNull()
+    expect(byId('auth-complete-passwordless-idle')).toBeNull()
+    expect(byId('auth-set-password-lead')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('omits the exit and twin during recovery while keeping the recovery lead in both lines', async () => {
+    const { context } = contextAnswering([
+      PASSWORD_METHOD_KEY,
+      MAGIC_LINK_METHOD_KEY,
+    ])
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    render(<HilosAuthSurface context={context} />)
+    await flush()
+
+    expect(byId('auth-complete-passwordless')).toBeNull()
+    expect(byId('auth-complete-passwordless-idle')).toBeNull()
+    expect(byId('auth-set-password-lead')?.textContent).toBe(
+      'The code was accepted. Choose a new password.',
+    )
+    expect(byId('auth-set-password-lead-idle')?.textContent).toBe(
+      'The code was accepted. Choose a new password.',
+    )
   })
 })

@@ -1402,12 +1402,20 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-new-password"]').exists()).toBe(true)
     // The sentence is the only place the second road is explained, so it changes
     // with the control rather than standing on its own.
-    expect(wrapper.text()).toContain(
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(
+      wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
+    ).toContain(
       'Choose a password, or create the account without one and sign in by a mailed link instead.',
     )
 
     const exit = wrapper.find('[data-id="auth-complete-passwordless"]')
     expect(exit.exists()).toBe(true)
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless-idle"]').exists(),
+    ).toBe(false)
     await exit.trigger('click')
     await flush(wrapper)
 
@@ -1432,8 +1440,19 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
     ).toBe(false)
-    expect(wrapper.text()).toContain(
+    const idleExit = wrapper.find('[data-id="auth-complete-passwordless-idle"]')
+    expect(idleExit.exists()).toBe(true)
+    expect(idleExit.element.tagName.toLowerCase()).toBe('span')
+    expect(idleExit.attributes('aria-hidden')).toBe('true')
+    expect(idleExit.classes()).toContain('invisible')
+
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
       'Choose a password — your account is created when you save it.',
+    )
+    expect(
+      wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
     )
   })
 
@@ -1456,8 +1475,111 @@ describe('HilosAuthSurface', () => {
     expect(
       wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
     ).toBe(false)
-    expect(wrapper.text()).toContain(
+    const idleExit = wrapper.find('[data-id="auth-complete-passwordless-idle"]')
+    expect(idleExit.exists()).toBe(true)
+    expect(idleExit.element.tagName.toLowerCase()).toBe('span')
+    expect(idleExit.attributes('aria-hidden')).toBe('true')
+    expect(idleExit.classes()).toContain('invisible')
+
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
       'Choose a password — your account is created when you save it.',
+    )
+    expect(
+      wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('swaps the exit button with its idle twin as sign-in methods change live', async () => {
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless-idle"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(
+      wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+    ])
+    await flush(wrapper)
+
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
+    ).toBe(false)
+    const idleExit = wrapper.find('[data-id="auth-complete-passwordless-idle"]')
+    expect(idleExit.exists()).toBe(true)
+    expect(idleExit.element.tagName.toLowerCase()).toBe('span')
+    expect(idleExit.attributes('aria-hidden')).toBe('true')
+    expect(idleExit.classes()).toContain('invisible')
+
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password — your account is created when you save it.',
+    )
+    expect(
+      wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+
+    context.scopes.session.data.set('authMethods', [
+      { key: 'password', name: null },
+      { key: 'magic_link', name: null },
+    ])
+    await flush(wrapper)
+
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless-idle"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+    expect(
+      wrapper.find('[data-id="auth-set-password-lead-idle"]').text(),
+    ).toContain(
+      'Choose a password, or create the account without one and sign in by a mailed link instead.',
+    )
+  })
+
+  it('omits the exit and twin during recovery while keeping the recovery lead in both lines', async () => {
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, {
+      ...PROVED_REGISTRATION_STEP,
+      intent: 'recovery',
+    })
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper.find('[data-id="auth-complete-passwordless-idle"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('[data-id="auth-set-password-lead"]').text()).toBe(
+      'The code was accepted. Choose a new password.',
+    )
+    expect(wrapper.find('[data-id="auth-set-password-lead-idle"]').text()).toBe(
+      'The code was accepted. Choose a new password.',
     )
   })
 
