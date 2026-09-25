@@ -214,14 +214,14 @@ to a reader.
 
 **The sets of one table are a partition.** Every row reaches exactly one top of
 its set tree, so every row stands in exactly one set, and whether two claims
-meet is answered by comparing two set keys — no query, no look at the rows. Two owners of different
-sets of one table are therefore lawful, and are the width doing its work: the
-agent of each instance holding the rows of its own. Two owners holding one set
-in full — every operation, the word as *What The Start Refuses* uses it — are
-the contradiction two full owners of a collection are, and are refused as one
-(not in the code yet — HIL-1114). Under the form turned down this would not be
-decidable without the database: two agents cutting one table by different
-columns hold sets that overlap.
+meet is answered by comparing two set keys — no query, no look at the rows. Two
+owners of different sets of one table are therefore lawful, and are the width
+doing its work: the agent of each instance holding the rows of its own. Two
+owners holding one set in full — every operation, the word as *What The Start
+Refuses* uses it — are the contradiction two full owners of a collection are,
+and are refused as one (not in the code yet — HIL-1114). Under the form turned
+down this would not be decidable without the database: two agents cutting one
+table by different columns hold sets that overlap.
 
 **The claim is written in two halves, like the narrow one.** WHICH collection is
 held by a set is a constant on the class, `OWNS_DB_SET`, of the form
@@ -276,19 +276,19 @@ says nothing about whose set it is in, so `TruthSourceKeys::covers()` has no
 answer at this width: the guard is asked with the key at the top of the row's
 set tree, reached from the value in its `_setVia` column, and compares it with
 the set key of the grant. That value is already in hand at the door —
-`DbActions::ensureCanWrite()` holds the object it is about to write, not only its
-id, and so does every door that writes one row. Beside the id, the door hands the
-guard the set keys the write touches as a closure (`$this->touchedSetKeys(...)`):
-the top the row is stored under and the top an unsaved edit moves it to, each
-once. The registry calls it only when a claim over a set decides, at most once:
-reaching the top may read a parent that the owner of the whole table never reads.
-A claim over a set covers the write only when every key is its own. A row moved
-under another top is therefore not the write of a set's owner — it writes into
-two sets, and only the owner of the whole table moves it — and a row whose set
-column is empty is in nobody's set and covered by no set claim. The two older widths do not look at
-the set keys. A row born after the agent's start is covered by
-construction, because the grant keeps a set key and not a list of rows collected
-at the start.
+`DbActions::ensureCanWrite()` holds the object it is about to write, not only
+its id, and so does every door that writes one row. Beside the id, the door
+hands the guard the set keys the write touches as a closure
+(`$this->touchedSetKeys(...)`): the top the row is stored under and the top an
+unsaved edit moves it to, each once. The registry calls it only when a claim
+over a set decides, at most once: reaching the top may read a parent that the
+owner of the whole table never reads. A claim over a set covers the write only
+when every key is its own. A row moved under another top is therefore not the
+write of a set's owner — it writes into two sets, and only the owner of the
+whole table moves it — and a row whose set column is empty is in nobody's set
+and covered by no set claim. The two older widths do not look at the set keys. A
+row born after the agent's start is covered by construction, because the grant
+keeps a set key and not a list of rows collected at the start.
 
 **One statement over one set asks for that set whole.** An UPDATE or DELETE cut
 by one value of the set column — every notification of one recipient, every
@@ -299,10 +299,10 @@ and the collection door would demand the whole table. It asks
 nobody's empty key included; a set covers its own; named rows cover none, since
 the statement touches rows the claim does not name, born after it included. The
 column comes from the Entity; the door is handed only its value, and beside it
-the climb of that value (`SetTree::climb()`), which a claim over a set alone asks
-for: it holds the statement when the value reaches its key at the top of the tree. A statement
-across the table, and one moving rows between sets, still asks the collection
-door, which keeps its one width. The living callers are
+the climb of that value (`SetTree::climb()`), which a claim over a set alone
+asks for: it holds the statement when the value reaches its key at the top of
+the tree. A statement across the table, and one moving rows between sets, still
+asks the collection door, which keeps its one width. The living callers are
 `Notifications::markAllReadForUser()` and the three `deleteForUser()` of the
 second factor, through `DbActions::ensureCanWriteSet()`.
 

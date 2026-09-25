@@ -418,7 +418,7 @@ final class SessionActions extends DbActions
         $idString = $this->object->getIdString();
         $this->object->delete();
         unset($objectCollection[$idString]);
-     }
+    }
 
     /**
      * Ages this session's expiry into the past so the next resolution reads it as expired.

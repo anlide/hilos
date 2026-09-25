@@ -598,9 +598,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The session-row sweep joins the rotations and toast stacks before the sign-in gate: every
      * project carrying this library has sessions. Everything else is behind the sign-in surface,
      * because those rows are made by that surface. A project without one reaches this method just
-     * as often, and the later walks would be over a
-     * collection that was never mounted, which raises rather than answering empty. That is
-     * the runtime collections doing their job: an unmounted collection is not an empty one.
+     * as often, and the later walks would be over a collection that was never mounted, which
+     * raises rather than answering empty. That is the runtime collections doing their job: an
+     * unmounted collection is not an empty one.
      *
      * @throws HilosException On database or runtime failure
      * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
