@@ -2474,7 +2474,8 @@ abstract class DaemonManager extends BaseManager implements
                             // takes longer than the old six seconds is still a placement, and a
                             // missing leader is waited out by asking again. The wait becomes a
                             // start-under-way wait the moment the agent turns up starting here.
-                            $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
+                            // Held BEFORE the ask: on the leader the verdict of its own ask comes
+                            // back in the same call stack, and it answers only frames already held.
                             $this->parkUntilAgentUp(
                                 $signal,
                                 $this->agentManagerDaemon->buildAgentId(
@@ -2483,6 +2484,7 @@ abstract class DaemonManager extends BaseManager implements
                                 ),
                                 true,
                             );
+                            $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
                             break;
                         case AgentDeliveryOutcome::StartRefused:
                             // The agent belongs here and did not come up; the node already wrote
@@ -5718,6 +5720,8 @@ abstract class DaemonManager extends BaseManager implements
         $released = $this->releasedAgentSignals;
         $this->releasedAgentSignals = [];
         $stillParked = [];
+        /** @var array<string, AgentId> Agents whose held frames wait on a verdict, keyed by agent id */
+        $placementAsks = [];
         foreach ($this->parkedAgentSignals as $parked) {
             $agent = AgentId::fromId($parked->agentId);
             $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($agent->type, $agent->index));
@@ -5742,15 +5746,21 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             if ($parked->awaitingPlacement) {
-                $this->requireOnDemandPlacement($agent->type, $agent->index);
-                $stillParked[] = $parked;
-                continue;
+                $placementAsks[$parked->agentId] = $agent;
             }
 
             $stillParked[] = $parked;
         }
 
         $this->parkedAgentSignals = $stillParked;
+
+        // Asked only now, with the holds written back: on the leader a not-placed verdict answers
+        // the held frames from inside the ask and rewrites the holds, and an ask made inside the
+        // loop above would have that answer overwritten by $stillParked - the frame answered and
+        // still held, to be answered again on every pass.
+        foreach ($placementAsks as $agent) {
+            $this->requireOnDemandPlacement($agent->type, $agent->index);
+        }
 
         foreach ($released as $parked) {
             $signal = $parked->signal;
@@ -5787,8 +5797,9 @@ abstract class DaemonManager extends BaseManager implements
                     // A stop that took the agent off this node leaves no address yet, and that is
                     // not a refusal: the next placement names a host, or the verdict says nobody
                     // could. Answering here was the leftover of the six-second clock (HIL-1041).
-                    $this->requireOnDemandPlacement($agent->type, $agent->index);
+                    // Held before the ask, as in the walk: the leader's verdict answers in place.
                     $this->parkUntilAgentUp($signal, $parked->agentId, true, $parked->localOnly);
+                    $this->requireOnDemandPlacement($agent->type, $agent->index);
                     break;
                 case AgentDeliveryOutcome::StartRefused:
                     $this->answerStartRefusedSubscription($signal);

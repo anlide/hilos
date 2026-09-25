@@ -365,7 +365,9 @@ final class ClusterPlacement implements WorkerPlacement
      * met no leader is not silent forever.
      *
      * The frame that provoked this is held by its caller until the agent is up - here, or on the
-     * node the placement names - and answered as undelivered if it is not up in time (HIL-629).
+     * node the placement names - and answered by the placement verdict when nobody could host it
+     * (HIL-1041); there is no clock. On the leader that verdict comes back inside this very call,
+     * so the caller holds the frame before it asks.
      *
      * @param string $agentType Agent type that was addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent

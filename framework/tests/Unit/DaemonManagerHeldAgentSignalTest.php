@@ -577,6 +577,65 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
+     * On the leader the verdict of its own ask comes back inside the ask (HIL-1041). The walk holds
+     * the frame before asking, so the verdict finds it there: answered once, nothing left held.
+     */
+    public function testALeaderVerdictInsideTheWalksAskAnswersTheFrameOnce(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->leaderVerdict = 'unplaced: no capable node';
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
+
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->pageErrorFrames());
+    }
+
+    /**
+     * The same verdict inside a release pass: the pass asks only once the holds are written back,
+     * so the frame the verdict answers is not put back to be answered again on every pass.
+     */
+    public function testALeaderVerdictInsideTheReleaseAskAnswersTheFrameOnce(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->heldFrames());
+
+        $manager->leaderVerdict = 'unplaced: no capable node';
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
+
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->pageErrorFrames());
+    }
+
+    /**
+     * A frame a stop let go that meets no address again is held before its ask as well, so the
+     * leader's verdict answers it in place rather than leaving it held behind the answer.
+     */
+    public function testALeaderVerdictAfterAStopAnswersTheReleasedFrameOnce(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::COLD_PAGE);
+        $manager->drainQueue();
+
+        $manager->reportStopped(HeldAgentSignalTestRouter::COLD_AGENT);
+        $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
+        $manager->leaderVerdict = 'unplaced: no capable node';
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->pageErrorFrames());
+        $this->assertSame([], $manager->heldFrames());
+
+        $manager->drainQueue();
+        $this->assertCount(1, $manager->pageErrorFrames());
+    }
+
+    /**
      * A command held for a starting agent outlives its caller now that the hold has no clock, so
      * the caller leaving has to be a fact of its own - and it drops the frame without a word,
      * because the one who would read the refusal is exactly who has gone.
@@ -917,6 +976,9 @@ final class HeldAgentSignalTestManager extends DaemonManager
     /** @var int Placement asks the release repeated while a frame waited on a verdict */
     public int $placementAsks = 0;
 
+    /** @var ?string Not-placed reason an ask answers in place, as the leader's own does; null answers nothing */
+    public ?string $leaderVerdict = null;
+
     public function __construct()
     {
         parent::__construct();
@@ -956,16 +1018,21 @@ final class HeldAgentSignalTestManager extends DaemonManager
     }
 
     /**
-     * Counts every ask the release repeats while a frame waits on a verdict.
+     * Counts every ask the release repeats while a frame waits on a verdict, and answers it in place
+     * when the case stands on the leader, whose own ask brings its verdict back in the same stack.
      *
      * @param string $agentType Agent type that could not be addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws CoreInvalidArgumentException When a refusal answering a page or a command cannot be named
      */
     protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex): void
     {
         $this->placementAsks++;
         parent::requireOnDemandPlacement($agentType, $agentIndex);
+        if ($this->leaderVerdict !== null) {
+            $this->onAgentNotPlaced($agentType, $agentIndex, $this->leaderVerdict);
+        }
     }
 
     /**
