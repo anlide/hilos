@@ -183,18 +183,43 @@ the same thing any instance agent does today.
 
 ## When a worker dies
 
-A worker that dies takes its agents with it, and none of them gets to report a stop. The master forgets them at once (`AgentManagerDaemon::forgetAgentsOfWorker()`), answers the frames held for them without redelivering one, tells the agent declaring `hilos_agents_gone`, and then the project (`DaemonManager::onAgentsLostWithWorker()`). What brings a lost agent back depends on how it was started, and each kind has one way:
+A worker that dies takes its agents with it, and none of them gets to report a
+stop. The master forgets them at once
+(`AgentManagerDaemon::forgetAgentsOfWorker()`), answers the frames held for them
+without redelivering one, tells the agent declaring `hilos_agents_gone`, and
+then the project (`DaemonManager::onAgentsLostWithWorker()`). What brings a lost
+agent back depends on how it was started, and each kind has one way:
 
-- **An addressed agent** comes back with the next frame meant for it — an action, a page subscribe, an agent-to-agent signal, a daemon cron tick — because starting is what addressing does.
-- **A node replica** (`AgentScope::NODE`) comes back at once: the worker server re-runs its per-node start when a registered worker's link goes.
-- **A policy-placed singleton** (`AgentPlacement::POLICY`, not indexed) comes back through the leader's placement pass, which retries every few seconds.
-- **An agent the leader's bootstrap started** — the bootstrap list, and whatever the project's `onBecameSingletonHost()` starts, such as a bot or a delivery shard — comes back on the leader's next tick: the loss re-arms the once-per-term start, and `onBecameSingletonHost()` runs again (HIL-502). It already had to be idempotent, because a promotion runs it again too.
+- **An addressed agent** comes back with the next frame meant for it — an
+  action, a page subscribe, an agent-to-agent signal, a daemon cron tick —
+  because starting is what addressing does.
+- **A node replica** (`AgentScope::NODE`) comes back at once: the worker server
+  re-runs its per-node start when a registered worker's link goes.
+- **A policy-placed singleton** (`AgentPlacement::POLICY`, not indexed) comes
+  back through the leader's placement pass, which retries every few seconds.
+- **An agent the leader's bootstrap started** — the bootstrap list, and whatever
+  the project's `onBecameSingletonHost()` starts, such as a bot or a delivery
+  shard — comes back on the leader's next tick: the loss re-arms the
+  once-per-term start, and `onBecameSingletonHost()` runs again (HIL-502). It
+  already had to be idempotent, because a promotion runs it again too.
 
-Nothing is brought back while the node is leaving. A freeze decides through its own start gate: what it holds stays down until the lift brings it back.
+Nothing is brought back while the node is leaving. A freeze decides through its
+own start gate: what it holds stays down until the lift brings it back.
 
-What comes back is the agent, not its work. Whatever it held only in memory died with the process, and it re-reads its own state in `onStart()` like any agent that was stopped.
+What comes back is the agent, not its work. Whatever it held only in memory died
+with the process, and it re-reads its own state in `onStart()` like any agent
+that was stopped.
 
-**There is no guard against a loop.** An agent whose start takes its process down is started again after every death, by whichever of the four ways it has, until the code is fixed. On a monopolistic worker it takes down only itself; on a shared one its neighbours go with it every round. A guard was weighed and refused (HIL-502): the only fact it could stand on — the worker died while this agent's start was under way — cannot tell the culprit from a neighbour that happened to be starting on the same worker, and a wrong guard keeps an innocent agent down in exactly the silence this section exists to end. Every death is loud instead: the journal line `Worker #N died hosting ...` names the agents each time.
+**There is no guard against a loop.** An agent whose start takes its process
+down is started again after every death, by whichever of the four ways it has,
+until the code is fixed. On a monopolistic worker it takes down only itself; on
+a shared one its neighbours go with it every round. A guard was weighed and
+refused (HIL-502): the only fact it could stand on — the worker died while this
+agent's start was under way — cannot tell the culprit from a neighbour that
+happened to be starting on the same worker, and a wrong guard keeps an innocent
+agent down in exactly the silence this section exists to end. Every death is
+loud instead: the journal line `Worker #N died hosting ...` names the agents
+each time.
 
 ## Registration
 

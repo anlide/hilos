@@ -474,10 +474,10 @@ may cross it. The circle is three database queries, which the master is forbidde
 (`antipatterns/heavy-work-in-master.md`), while the freeze row is the master's to
 write. So the worker that hosts the initiator photographs it on the ready relay
 and sends the result under the initiator's name on the `PROTECTED_MODE_CIRCLE`
-frame — the twin of `PROTECTED_MODE_PASS`, whole rather than one entry at a
-time, because there is exactly one moment when the list is knowable. No agent
-sends the circle itself. Only hashes and a count travel; no address of anybody
-named reaches the master. In a cluster the photograph stays on the row of the node that
+frame — the twin of `PROTECTED_MODE_PASS`, whole rather than one entry at a time,
+because there is exactly one moment when the list is knowable. No agent sends the
+circle itself. Only hashes and a count travel; no address of anybody named
+reaches the master. In a cluster the photograph stays on the row of the node that
 froze and is fanned nowhere, exactly as the initiator's own session hash is: a
 browser is attached to the node it connected to, and a member who reached another
 node meets the stub there.
