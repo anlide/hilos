@@ -196,7 +196,9 @@ const skeletonRows = computed(() =>
 // the room of live messages above the rows (HilosTableLive).
 const rowProgress = useSignal(props.controller.progress.rows)
 
-// признак считает ядро
+// A table whose count stopped at its ceiling has no page count to compare against, and
+// the footer is what such a table still needs: it is the only place saying there is more.
+// The flag is the core's (controller.paginated, HIL-1087); this view only reads it.
 const paginated = useSignal(props.controller.paginated)
 
 // The fields that wait in a panel instead of taking a column of their own, and the

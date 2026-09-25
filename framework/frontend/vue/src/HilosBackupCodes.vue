@@ -1,5 +1,5 @@
 <!-- HilosBackupCodes — a set of backup codes of the second factor shown once,
-the way the design asks (HIL-494, Design п.6): the list, a download of it as a
+the way the design asks (HIL-494, Design item 6): the list, a download of it as a
 text file, a copy of it, and "I have saved these codes", which the screen under
 it waits for. The codes are the only instant way back in when the app is lost, so
 the screen pushes the person to keep them rather than flash them past. -->
