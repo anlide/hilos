@@ -280,6 +280,15 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::TABLE_TEST_LAG) {
+                // Test-only: put an artificial lag on this node's table windows and facet counts
+                // (HIL-1020). Answered here rather than parked, because the lag is a row of the
+                // master's own runtime state and no agent owns it.
+                $reply = $this->answerTableLag($request);
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);
@@ -328,6 +337,51 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
+        ]);
+    }
+
+    /**
+     * Writes the test-only table lag this request names and answers with the row as written (HIL-1020).
+     *
+     * Every request names the whole state: a lag it leaves out is a lag it wants off, so a bare
+     * request takes both off. Each value is refused unless it is a whole number of milliseconds -
+     * a negative or fractional lag has no meaning to the queue that reads it. The reply is read
+     * back from the row rather than echoed from the request, so what the caller is told is what
+     * the workers of this node will read.
+     *
+     * @param CommandRequestDTO $request Lag request naming the window and facet lags in milliseconds
+     * @return CommandReplyDTO Reply carrying both lags after the write, or the error to answer instead
+     */
+    private function answerTableLag(CommandRequestDTO $request): CommandReplyDTO
+    {
+        $lags = [];
+        foreach ([CommandConstants::FIELD_WINDOW_MS, CommandConstants::FIELD_FACETS_MS] as $field) {
+            // external-boundary: a test harness's command line, checked on the very next line
+            $lag = $request->payload[$field] ?? 0;
+            if (!is_int($lag) || $lag < 0) {
+                return CommandReplyDTO::error(
+                    $request->correlationId,
+                    "{$field} must be a whole number of milliseconds, 0 or more",
+                );
+            }
+
+            $lags[$field] = $lag;
+        }
+
+        $row = Hilos::$rt?->hilosTableLagRuntime;
+        if ($row === null) {
+            return CommandReplyDTO::error($request->correlationId, 'This node holds no runtime state for a table lag');
+        }
+
+        try {
+            $row->actions->set($lags[CommandConstants::FIELD_WINDOW_MS], $lags[CommandConstants::FIELD_FACETS_MS]);
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [
+            CommandConstants::FIELD_WINDOW_MS => $row->windowMs,
+            CommandConstants::FIELD_FACETS_MS => $row->facetsMs,
         ]);
     }
 

@@ -47,6 +47,12 @@ final class CommandConstants
     /** @var string Payload key: reply flag telling whether a live connection was found and dropped */
     public const string FIELD_DROPPED = 'dropped';
 
+    /** @var string Payload key: milliseconds a changed table window is held back by the test-only table lag */
+    public const string FIELD_WINDOW_MS = 'windowMs';
+
+    /** @var string Payload key: milliseconds a facet count is held back by the test-only table lag */
+    public const string FIELD_FACETS_MS = 'facetsMs';
+
     /** @var string Reply status: command handled successfully */
     public const string STATUS_OK = 'ok';
 

@@ -1671,6 +1671,7 @@ abstract class WorkerManager extends BaseManager
                         // held frames would otherwise sit out their deadline and then be
                         // dispatched at a socket nobody is listening on.
                         ($this->pageSignalRouters[$agentId] ?? null)?->dropPendingFrames($signalData->acceptKey);
+                        Hilos::$browser?->dropHeldFacetCounts($signalData->acceptKey);
                         $this->dropParkedFrames(SourceConsumer::page($signalData->acceptKey));
                         $this->agentIdleTracker->dropSubscriber($agentId, $signalData->acceptKey, microtime(true));
                     }
@@ -2199,18 +2200,23 @@ abstract class WorkerManager extends BaseManager
     /**
      * Sweeps everything one agent's page router is holding until something else happens.
      *
-     * Three pools, one visit: actions that never got their throttle verdict, frames waiting to
-     * learn who is behind their connection, and mass operations being walked a handful of rows
-     * at a time. All three are driven on the tick because all three wait on an answer from
-     * another process, and this worker must keep serving every other connection while they do.
+     * Four pools, one visit: actions that never got their throttle verdict, frames waiting to
+     * learn who is behind their connection, mass operations being walked a handful of rows
+     * at a time, and facet counts the test-only table lag is holding back (HIL-1020). The first
+     * three are driven on the tick because they wait on an answer from another process, the
+     * fourth because it waits on time, and this worker must keep serving every other connection
+     * while they do.
      *
      * Only a router that already exists is asked. A router is built the first time its agent
      * routes something, so building one here - on every tick, for every agent - would stand
      * up a page factory for agents that route nothing at all, to sweep pools that cannot
-     * have anything in them.
+     * have anything in them. The held counts live in the browser context rather than in the
+     * router, because every count leaves through it; they are released under this agent because
+     * this is the agent they were asked from.
      *
-     * @param string $agentId Agent whose page router to sweep
+     * @param string $agentId Agent whose page router and held facet counts to sweep
      * @throws FramePopOrderException When a resumed frame leaves the execution stack imbalanced
+     * @throws InvalidArgumentException When a released facet-counts signal cannot be named
      */
     private function releaseDeferredWork(string $agentId): void
     {
@@ -2218,6 +2224,7 @@ abstract class WorkerManager extends BaseManager
         $router?->releaseExpiredDeferredActions();
         $router?->releasePendingFrames();
         $router?->advanceBulkRuns();
+        Hilos::$browser?->releaseHeldFacetCounts($agentId);
     }
 
     /**

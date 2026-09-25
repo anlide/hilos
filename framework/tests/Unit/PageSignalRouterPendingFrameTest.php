@@ -29,6 +29,8 @@ use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
@@ -37,6 +39,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -63,15 +67,37 @@ final class PageSignalRouterPendingFrameTest extends TestCase
     /** Options the fixture table's view declared, three filters so a recount can leave one out. */
     private const array FACETS = ['channel' => ['email', 'sms'], 'status' => ['failed', 'sent'], 'node' => ['node-1']];
 
+    /** A table lag no test waits out: whatever it releases, the test released by taking it off. */
+    private const int HELD_FOR_GOOD_MS = 60_000;
+
+    /** A table lag a test does wait out, longer than the identity wait so the two can be told apart. */
+    private const int LAG_PAST_THE_IDENTITY_WAIT_MS = 600;
+
+    /** Real time that outlasts {@see self::LAG_PAST_THE_IDENTITY_WAIT_MS} but not the lag plus the identity wait. */
+    private const int PAST_THAT_LAG_MICROSECONDS = 650_000;
+
+    private ?RtContext $previousRt = null;
+
+    private string $logFile = '';
+
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
+        $this->previousRt = Hilos::$rt;
     }
 
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(StateTableLagRuntime::RT_ITEM);
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = null;
         Hilos::resetBrowser();
+        if ($this->logFile !== '') {
+            Logger::resetLogFile();
+            if (is_file($this->logFile)) {
+                unlink($this->logFile);
+            }
+        }
 
         parent::tearDown();
     }
@@ -223,6 +249,145 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $router->releasePendingFrames();
 
         $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+    }
+
+    public function testATableLagHoldsAViewportFrameEvenOnceItsIdentityAndSubscriptionAreThere(): void
+    {
+        $this->mountTableLag(self::HELD_FOR_GOOD_MS);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+        $router->releasePendingFrames();
+
+        // Everything the frame is judged against is here; only the lag stands between it and
+        // the window, which is the late answer the row skeleton exists for (HIL-1020).
+        $this->assertSame([], $browser->windows);
+    }
+
+    public function testTakingTheTableLagOffLetsTheHeldViewportGoAtTheNextSweep(): void
+    {
+        $this->mountTableLag(self::HELD_FOR_GOOD_MS);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        // The lag is read on every sweep rather than stamped on the frame: a test does not have
+        // to wait out the minute it asked for to see the window arrive.
+        $this->setTableLag(0);
+        $router->releasePendingFrames();
+
+        $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+    }
+
+    public function testATableLagOfZeroHoldsNothing(): void
+    {
+        $this->mountTableLag(0);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+    }
+
+    public function testATableLagHoldsNoDoorButTheViewport(): void
+    {
+        $this->mountTableLag(self::HELD_FOR_GOOD_MS);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $router = $this->router($factory);
+        Hilos::$sr?->setTableViewport(self::ACCEPT_KEY, new TableViewportSubscription(tableKey: PendingFrameTestPage::TABLE_KEY));
+
+        $router->dispatchTableFacets(
+            new WebSocketTableFacetsSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::PAGE, PendingFrameTestPage::TABLE_KEY, self::FACETS),
+            SignalSource::WEBSOCKET,
+            PendingFrameTestPage::PAGE,
+        );
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::ACTION),
+            SignalSource::WEBSOCKET,
+        );
+
+        $this->assertSame([[PendingFrameTestPage::TABLE_KEY, null]], $browser->facetCounts);
+        $this->assertSame(['action'], $this->page($factory)->handled);
+    }
+
+    public function testAnActionBehindAHeldViewportWaitsForIt(): void
+    {
+        $this->mountTableLag(self::HELD_FOR_GOOD_MS);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $factory = new PendingFrameTestPageFactory(new PendingFrameTestAgent());
+        $router = $this->router($factory);
+
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::ACTION),
+            SignalSource::WEBSOCKET,
+        );
+        $router->releasePendingFrames();
+
+        // The connection's queue is the same FIFO it always was: the action came after the
+        // window it may depend on, and it does not overtake it because the window is late.
+        $this->assertSame([], $this->page($factory)->handled);
+
+        $this->setTableLag(0);
+        $router->releasePendingFrames();
+
+        $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+        $this->assertSame(['action'], $this->page($factory)->handled);
+    }
+
+    public function testATableLagTakenOffPastTheIdentityWaitIsNotReportedAsATimeout(): void
+    {
+        $this->captureLog();
+        $this->mountTableLag(self::HELD_FOR_GOOD_MS);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        // Real time: the frame's own identity deadline passes while the lag holds it. What the
+        // e2e does - hold, look, take the lag off - must not read as a lost identity afterwards.
+        usleep(PendingFrameTestPage::PAST_THE_DEADLINE_MICROSECONDS);
+        $router->releasePendingFrames();
+        $this->assertSame([], $browser->windows);
+
+        $this->setTableLag(0);
+        $router->releasePendingFrames();
+
+        $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+        $this->assertStringNotContainsString('Frame wait timed out', (string) file_get_contents($this->logFile));
+    }
+
+    public function testATableLagThatRunsOutPastTheIdentityWaitIsNotReportedAsATimeout(): void
+    {
+        $this->captureLog();
+        $this->mountTableLag(self::LAG_PAST_THE_IDENTITY_WAIT_MS);
+        $browser = $this->mountBrowser();
+        $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $this->registerSubscription([]);
+        $router = $this->router(new PendingFrameTestPageFactory(new PendingFrameTestAgent()));
+        $router->dispatchTableViewport($this->viewportFrame([]), SignalSource::WEBSOCKET, PendingFrameTestPage::PAGE);
+
+        // No sweep in between: the lag runs out on its own, and the identity wait is counted
+        // from its end rather than from the frame's arrival, so the frame is not late.
+        usleep(self::PAST_THAT_LAG_MICROSECONDS);
+        $router->releasePendingFrames();
+
+        $this->assertSame([PendingFrameTestPage::TABLE_KEY], $browser->windows);
+        $this->assertStringNotContainsString('Frame wait timed out', (string) file_get_contents($this->logFile));
     }
 
     public function testAnUpdateFromAnUnidentifiedConnectionIsHeldInsteadOfRefused(): void
@@ -651,6 +816,44 @@ final class PageSignalRouterPendingFrameTest extends TestCase
     }
 
     /**
+     * Mounts the framework's runtime state, with this process as the master that writes the lag.
+     *
+     * @param int $windowMs Window lag to start with, in milliseconds
+     */
+    private function mountTableLag(int $windowMs): void
+    {
+        Hilos::$rt = new PendingFrameTestRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(StateTableLagRuntime::RT_ITEM);
+        $this->setTableLag($windowMs);
+    }
+
+    /**
+     * Writes the window lag as the master does in answer to test:table:lag.
+     *
+     * The write goes on the sync wire like any other; the RT sync frame it queues is drained
+     * here so the assertions read only what the router sent.
+     *
+     * @param int $windowMs Window lag, in milliseconds
+     */
+    private function setTableLag(int $windowMs): void
+    {
+        Hilos::$rt?->hilosTableLagRuntime?->actions->set($windowMs, 0);
+        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
+            continue;
+        }
+    }
+
+    /**
+     * Sends the log to a file of this test's own, so a line it must not write can be looked for.
+     */
+    private function captureLog(): void
+    {
+        $this->logFile = (string) tempnam(sys_get_temp_dir(), 'hilos-table-lag-log');
+        Logger::setLogFile($this->logFile);
+    }
+
+    /**
      * Mounts the browser context fixture whose identity the test drives.
      *
      * @return PendingFrameTestBrowser Mounted browser context fixture
@@ -938,5 +1141,18 @@ final class PendingFrameTestAgent implements PageAgentInterface
     public function getAgentSignalSource(): SignalSourceInterface
     {
         return new SignalSource(SignalSource::AGENT, 'pending_frame_agent');
+    }
+}
+
+/**
+ * Runtime context of a project that mounts nothing of its own.
+ *
+ * The table lag row is framework-owned and mounted for every project, so the router finds it
+ * here exactly as it does in a real worker.
+ */
+final class PendingFrameTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
     }
 }

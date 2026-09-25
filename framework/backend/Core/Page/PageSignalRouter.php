@@ -14,6 +14,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Agent\AbstractAgent;
@@ -150,6 +151,17 @@ class PageSignalRouter
      * only have been traded for another.
      */
     private array $pendingFrames = [];
+
+    /**
+     * @var array<string, float> When the test-only table lag last held each connection's queue, by accept key (HIL-1020)
+     *
+     * The identity wait of a queue the lag held is counted from the moment the lag let it go, and
+     * the lag is read live, so that moment is only known by watching it: a test that takes the lag
+     * off ends it early, and a frame judged by its own deadline would then be called late the very
+     * sweep it is released. Absent for a queue the lag never held, which is every queue while no
+     * lag is set.
+     */
+    private array $tableLagHeldAt = [];
 
     /**
      * Creates page signal router with factory and action routes.
@@ -1690,6 +1702,11 @@ class PageSignalRouter
      * it belongs to. A project that resolves identity synchronously - or does not resolve
      * it at all, which is the framework default - never reaches the queue.
      *
+     * The same queue holds a viewport frame for a third reason, a test-only one: the table lag
+     * a test put on this node (HIL-1020) keeps it until that long after it arrived, so a slow
+     * window can be seen on a machine where every window is fast. The name stays, because the
+     * lag is one more condition of the same readiness rather than a queue of its own.
+     *
      * @param PendingFrameKind $kind Which door the frame arrived at
      * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|WebSocketActionSignalDTO
      *     |WebSocketTableViewportSignalDTO|WebSocketTableFacetsSignalDTO|WebSocketTableRenderedSignalDTO
@@ -1711,7 +1728,8 @@ class PageSignalRouter
             return false;
         }
 
-        if (($this->pendingFrames[$acceptKey] ?? []) === [] && $this->frameIsReady($kind, $acceptKey, $name)) {
+        $arrivedAt = microtime(true);
+        if (($this->pendingFrames[$acceptKey] ?? []) === [] && $this->frameIsReady($kind, $acceptKey, $name, $arrivedAt)) {
             return false;
         }
 
@@ -1721,7 +1739,8 @@ class PageSignalRouter
             data: $data,
             source: $source,
             name: $name,
-            deadline: microtime(true) + self::IDENTITY_WAIT_TIMEOUT_MS / 1000,
+            arrivedAt: $arrivedAt,
+            deadline: $arrivedAt + self::IDENTITY_WAIT_TIMEOUT_MS / TimeConstants::MS_PER_SECOND,
         );
 
         return true;
@@ -1739,18 +1758,48 @@ class PageSignalRouter
      * judged without it they judge an empty param set, which is a different question from
      * the one the client asked.
      *
+     * The viewport door alone also waits out the test-only table lag (HIL-1020), counted from
+     * the frame's arrival and read afresh on every check ({@see self::tableLagSeconds()}).
+     *
      * @param PendingFrameKind $kind Door the frame arrived at
      * @param string $acceptKey Accept key of the connection that sent it
      * @param string $name Signal name the frame was dispatched with (page name for the viewport door)
+     * @param float $arrivedAt Unix seconds, with microseconds, when the frame arrived
      * @return bool Whether the frame may be judged now
      */
-    private function frameIsReady(PendingFrameKind $kind, string $acceptKey, string $name): bool
+    private function frameIsReady(PendingFrameKind $kind, string $acceptKey, string $name, float $arrivedAt): bool
     {
         if (Hilos::$browser?->connectionIdentity($acceptKey)->pending === true) {
             return false;
         }
 
+        $lagSeconds = self::tableLagSeconds($kind);
+        if ($lagSeconds > 0.0 && microtime(true) < $arrivedAt + $lagSeconds) {
+            return false;
+        }
+
         return !$kind->waitsForPageSubscription() || $this->subscribedToPage($acceptKey, $name);
+    }
+
+    /**
+     * How long the test-only table lag holds a frame of this door, in seconds (HIL-1020).
+     *
+     * Only a viewport change is held: it is the frame whose late answer stands the row skeleton
+     * up, and every other door stays as fast as it is. The lag is read from the node's runtime
+     * row on every call and never stamped onto the frame, so a test that takes the lag off lets
+     * a held frame go at the next sweep instead of waiting out the lag it arrived under. A
+     * process without runtime state has no lag to read and holds nothing.
+     *
+     * @param PendingFrameKind $kind Door the frame arrived at
+     * @return float Seconds a frame of this door is held after it arrives; 0 when it is not held
+     */
+    private static function tableLagSeconds(PendingFrameKind $kind): float
+    {
+        if ($kind !== PendingFrameKind::TableViewport) {
+            return 0.0;
+        }
+
+        return (Hilos::$rt?->hilosTableLagRuntime?->windowMs ?? 0) / TimeConstants::MS_PER_SECOND;
     }
 
     /**
@@ -1808,6 +1857,12 @@ class PageSignalRouter
      * arrives is this server's failure, and answering the client late with today's verdict
      * is the one behavior guaranteed to be no worse than before.
      *
+     * A frame held by the test-only table lag (HIL-1020) is the exception to that deadline: it
+     * stands until the lag is over, however long that is, and the wait for the identity of its
+     * connection's queue is counted from the end of the lag - the lag running out, or a test
+     * taking it off, whichever came. A lag longer than the wait would otherwise release the frame
+     * by timeout - early, and with an error line about an identity nobody lost.
+     *
      * @throws FramePopOrderException When the execution frame is unwound out of order
      */
     public function releasePendingFrames(): void
@@ -1819,8 +1874,14 @@ class PageSignalRouter
         $now = microtime(true);
         foreach (array_keys($this->pendingFrames) as $acceptKey) {
             while (($frame = $this->pendingFrames[$acceptKey][0] ?? null) !== null) {
-                $expired = $frame->deadline <= $now;
-                if (!$expired && !$this->frameIsReady($frame->kind, $acceptKey, $frame->name)) {
+                $lagSeconds = self::tableLagSeconds($frame->kind);
+                if ($lagSeconds > 0.0 && $now < $frame->arrivedAt + $lagSeconds) {
+                    $this->tableLagHeldAt[$acceptKey] = $now;
+                    break;
+                }
+
+                $expired = $frame->deadline + $lagSeconds <= $now && $this->identityWaitOverSinceTableLag($acceptKey, $now);
+                if (!$expired && !$this->frameIsReady($frame->kind, $acceptKey, $frame->name, $frame->arrivedAt)) {
                     break;
                 }
 
@@ -1843,9 +1904,26 @@ class PageSignalRouter
             }
 
             if (($this->pendingFrames[$acceptKey] ?? null) === []) {
-                unset($this->pendingFrames[$acceptKey]);
+                unset($this->pendingFrames[$acceptKey], $this->tableLagHeldAt[$acceptKey]);
             }
         }
+    }
+
+    /**
+     * Whether a connection's queue has had its full identity wait since the table lag last held it.
+     *
+     * Always yes for a queue the lag never held, so without a lag a frame is judged by its own
+     * deadline alone, exactly as before the lag existed (HIL-1020).
+     *
+     * @param string $acceptKey Accept key of the connection whose queue is swept
+     * @param float $now Unix seconds, with microseconds, of the sweep
+     * @return bool Whether the identity wait after the lag's hold is over
+     */
+    private function identityWaitOverSinceTableLag(string $acceptKey, float $now): bool
+    {
+        $heldAt = $this->tableLagHeldAt[$acceptKey] ?? null;
+
+        return $heldAt === null || $heldAt + self::IDENTITY_WAIT_TIMEOUT_MS / TimeConstants::MS_PER_SECOND <= $now;
     }
 
     /**
@@ -1859,7 +1937,7 @@ class PageSignalRouter
      */
     public function dropPendingFrames(string $acceptKey): void
     {
-        unset($this->pendingFrames[$acceptKey]);
+        unset($this->pendingFrames[$acceptKey], $this->tableLagHeldAt[$acceptKey]);
     }
 
     /**

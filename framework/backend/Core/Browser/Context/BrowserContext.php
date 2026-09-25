@@ -9,6 +9,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
@@ -43,6 +44,8 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageServiceUnavailableException;
@@ -157,6 +160,13 @@ abstract class BrowserContext
      * @var array<string, array<string, string>>
      */
     private array $facetRecounts = [];
+
+    /**
+     * Facet counts the test-only table lag is holding back, in the order they were asked for (HIL-1020).
+     *
+     * @var list<HeldFacetCounts>
+     */
+    private array $heldFacetCounts = [];
 
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
     private string $hilosClass = Hilos::class;
@@ -573,6 +583,13 @@ abstract class BrowserContext
      * the log: the window these numbers follow is already on its way and whole, and a number beside
      * an option is not worth it.
      *
+     * Under the test-only table lag (HIL-1020) the count is not made here at all: the request is
+     * held and counted later by {@see self::releaseHeldFacetCounts()}, over the window the connection
+     * holds by then. Being the one door every count passes through, this is the one place that can
+     * hold them all - the answer to table_facets, the recount after a new window and the counts that
+     * follow a page response alike. A request made outside any agent is counted at once, because no
+     * agent tick would ever come round to release it.
+     *
      * @param string $page Page the table belongs to
      * @param string $acceptKey Connection the counts are for
      * @param TableViewportSubscription $viewport Window whose search and filters describe the set
@@ -581,6 +598,41 @@ abstract class BrowserContext
      */
     public function sendTableFacetCounts(string $page, string $acceptKey, TableViewportSubscription $viewport, ?array $only = null): void
     {
+        $agentId = ExecutionContext::currentAgentId();
+        if ($agentId !== null && (Hilos::$rt?->hilosTableLagRuntime?->facetsMs ?? 0) > 0) {
+            $this->heldFacetCounts[] = new HeldFacetCounts(
+                agentId: $agentId,
+                page: $page,
+                acceptKey: $acceptKey,
+                tableKey: $viewport->tableKey,
+                only: $only,
+                heldAt: microtime(true),
+            );
+
+            return;
+        }
+
+        $this->countAndSendTableFacets($page, $acceptKey, $viewport, $only);
+    }
+
+    /**
+     * Counts the options of one table's filters over a connection's window and sends the counts.
+     *
+     * The body {@see self::sendTableFacetCounts()} runs when nothing holds it back, and the one
+     * {@see self::releaseHeldFacetCounts()} runs once the test-only lag lets a held count go.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Connection the counts are for
+     * @param TableViewportSubscription $viewport Window whose search and filters describe the set
+     * @param ?list<string> $only Filters to count again, or null for every filter the connection declared
+     * @throws InvalidArgumentException When the facet-counts signal cannot be named
+     */
+    private function countAndSendTableFacets(
+        string $page,
+        string $acceptKey,
+        TableViewportSubscription $viewport,
+        ?array $only = null,
+    ): void {
         if (Hilos::$sr === null) {
             return;
         }
@@ -629,6 +681,76 @@ abstract class BrowserContext
             new TableFacetCountsSignalData($page, $viewport->tableKey, new TableFacetsDTO($facets)),
             $acceptKey,
         );
+    }
+
+    /**
+     * Counts and sends every facet count one agent asked for whose test-only lag is over (HIL-1020).
+     *
+     * Called on the worker tick under that agent, so a held count leaves from the agent it was
+     * asked from and no other agent's tick releases it. The lag is read from the node's runtime row
+     * on every call rather than taken from the moment the count was held, so a test that takes the
+     * lag off gets every held count at the next tick.
+     *
+     * Each count is made over the window the connection holds NOW, not the one it held when the
+     * count was asked for: numbers counted then would arrive next to a newer window as the numbers
+     * of an older filter. A connection that no longer holds a window for the table - it closed, or
+     * the table was dropped - has nothing to count beside, and its count is thrown away without a
+     * frame. Held counts go out one by one in the order they were asked for, never merged: a second
+     * frame carrying the same numbers costs nothing, and merging would have to decide which `$only`
+     * wins.
+     *
+     * @param string $agentId Agent whose held counts to release
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     * @throws InvalidArgumentException When the facet-counts signal cannot be named
+     */
+    public function releaseHeldFacetCounts(string $agentId): void
+    {
+        if ($this->heldFacetCounts === []) {
+            return;
+        }
+
+        $lagSeconds = (Hilos::$rt?->hilosTableLagRuntime?->facetsMs ?? 0) / TimeConstants::MS_PER_SECOND;
+        $now = microtime(true);
+        $due = [];
+        $still = [];
+        foreach ($this->heldFacetCounts as $held) {
+            if ($held->agentId === $agentId && $now >= $held->heldAt + $lagSeconds) {
+                $due[] = $held;
+            } else {
+                $still[] = $held;
+            }
+        }
+
+        // Off the list BEFORE they are counted, so a count that throws below is not handed out a
+        // second time on the next tick.
+        $this->heldFacetCounts = $still;
+        foreach ($due as $held) {
+            $viewport = Hilos::$sr?->getTableViewport($held->acceptKey, $held->tableKey);
+            if ($viewport === null) {
+                continue;
+            }
+
+            ExecutionContext::withOrigin($held->acceptKey, null, function () use ($held, $viewport): void {
+                $this->countAndSendTableFacets($held->page, $held->acceptKey, $viewport, $held->only);
+            });
+        }
+    }
+
+    /**
+     * Throws away every facet count a closed connection was waiting for (HIL-1020).
+     *
+     * Nobody is left to read the numbers. Without this the held counts would be released onto a
+     * connection that holds no window any more and be thrown away then - the same end, one lag
+     * later, with the records sitting in memory until it came.
+     *
+     * @param string $acceptKey Accept key of the closed connection
+     */
+    public function dropHeldFacetCounts(string $acceptKey): void
+    {
+        $this->heldFacetCounts = array_values(array_filter(
+            $this->heldFacetCounts,
+            static fn(HeldFacetCounts $held): bool => $held->acceptKey !== $acceptKey,
+        ));
     }
 
     /**

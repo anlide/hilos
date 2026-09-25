@@ -18,6 +18,7 @@ use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
@@ -42,7 +43,10 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableFacetTally;
 use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -55,8 +59,29 @@ use PHPUnit\Framework\TestCase;
  */
 final class BrowserContextTableWindowTest extends TestCase
 {
+    /** Agent the fixture counts are asked from under the facet lag. */
+    private const string AGENT = 'table-window-unit:1';
+
+    /** A second agent of the same worker, whose held counts the first one's tick must not touch. */
+    private const string OTHER_AGENT = 'table-window-unit:2';
+
+    /** A facet lag no test waits out: whatever it releases, the test released by taking it off. */
+    private const int HELD_FOR_GOOD_MS = 60_000;
+
+    private ?RtContext $previousRt = null;
+
+    public function setUp(): void
+    {
+        parent::setUp();
+
+        $this->previousRt = Hilos::$rt;
+    }
+
     public function tearDown(): void
     {
+        ExecutionContext::setCurrentAgentId(null);
+        RtTruthSourceRegistry::unregisterDaemon(StateTableLagRuntime::RT_ITEM);
+        Hilos::$rt = $this->previousRt;
         Hilos::$sr = null;
         Hilos::$table = null;
 
@@ -402,6 +427,137 @@ final class BrowserContextTableWindowTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testUnderAFacetLagTheCountIsHeldAndNoFrameGoesOut(): void
+    {
+        $browser = $this->holdLabelCounts();
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        // Read on every tick: while the lag stands the tick releases nothing.
+        $browser->releaseHeldFacetCounts(self::AGENT);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testAReleasedCountIsMadeOverTheWindowTheConnectionHoldsThen(): void
+    {
+        $browser = $this->holdLabelCounts();
+
+        // The filter changed between the ask and the release. The numbers that go out are the
+        // new filter's - a count made at the ask would land beside the new window with the old
+        // filter's numbers, which is a screen nothing but the lag could ever produce.
+        Hilos::$sr->setTableViewport('ak-1', new TableViewportSubscription(
+            tableKey: TableWindowUnitTable::TABLE,
+            filter: [TableWindowUnitTable::FILTER_KEY => 'a'],
+            limit: 1,
+        ));
+        $this->setFacetLag(0);
+        $browser->releaseHeldFacetCounts(self::AGENT);
+
+        $data = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(WebSocketSignalData::class, $data);
+        $this->assertSame('ak-1', $data->targetAcceptKey);
+        $this->assertInstanceOf(TableFacetCountsSignalData::class, $data->data);
+        $label = $data->data->facets->filters[TableWindowUnitTable::FILTER_LABEL];
+        $this->assertSame(1, $label[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(1, $label[TableConstants::FACET_KEY_OPTIONS]['Alpha']->count);
+        $this->assertSame(0, $label[TableConstants::FACET_KEY_OPTIONS]['Beta']->count);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testAHeldCountWhoseWindowIsGoneIsThrownAwayWithoutAFrame(): void
+    {
+        $browser = $this->holdLabelCounts();
+
+        $this->setFacetLag(0);
+        $browser->releaseHeldFacetCounts(self::AGENT);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        // Thrown away, not kept for later: a window that turns up afterwards gets no count it
+        // did not ask for.
+        Hilos::$sr->setTableViewport('ak-1', new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1));
+        $browser->releaseHeldFacetCounts(self::AGENT);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testReleasingOneAgentLeavesTheCountsAnotherAgentAskedFor(): void
+    {
+        $browser = $this->holdLabelCounts();
+        ExecutionContext::setCurrentAgentId(self::OTHER_AGENT);
+        $browser->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1),
+        );
+        Hilos::$sr->setTableViewport('ak-1', new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1));
+        $this->setFacetLag(0);
+
+        $browser->releaseHeldFacetCounts(self::AGENT);
+        $this->assertNotNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        $browser->releaseHeldFacetCounts(self::OTHER_AGENT);
+        $this->assertNotNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testAClosedConnectionTakesItsHeldCountsWithIt(): void
+    {
+        $browser = $this->holdLabelCounts();
+        $browser->dropHeldFacetCounts('ak-1');
+
+        Hilos::$sr->setTableViewport('ak-1', new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1));
+        $this->setFacetLag(0);
+        $browser->releaseHeldFacetCounts(self::AGENT);
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * Mounts the labelled rows under a facet lag and asks for the label counts from {@see self::AGENT}.
+     *
+     * @return TableWindowUnitBrowserContext Browser context now holding one count
+     */
+    private function holdLabelCounts(): TableWindowUnitBrowserContext
+    {
+        $this->mountLabelledRows();
+        Hilos::$sr->setTableFacets('ak-1', TableWindowUnitTable::TABLE, [
+            TableWindowUnitTable::FILTER_LABEL => ['Alpha', 'Beta'],
+        ]);
+        Hilos::$rt = new TableWindowUnitRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(StateTableLagRuntime::RT_ITEM);
+        $this->setFacetLag(self::HELD_FOR_GOOD_MS);
+
+        $browser = new TableWindowUnitBrowserContext();
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+        $browser->sendTableFacetCounts(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1),
+        );
+
+        return $browser;
+    }
+
+    /**
+     * Writes the facet lag as the master does in answer to test:table:lag.
+     *
+     * Written outside any agent, as the master writes it, and the RT sync frame the write queues
+     * is drained so the assertions read only what the browser context sent.
+     *
+     * @param int $facetsMs Facet lag, in milliseconds
+     */
+    private function setFacetLag(int $facetsMs): void
+    {
+        $agentId = ExecutionContext::currentAgentId();
+        ExecutionContext::setCurrentAgentId(null);
+        Hilos::$rt?->hilosTableLagRuntime?->actions->set(0, $facetsMs);
+        ExecutionContext::setCurrentAgentId($agentId);
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            continue;
+        }
+    }
+
     /**
      * Mounts a router and the fixture tables over three rows, two of which share a label.
      */
@@ -420,6 +576,16 @@ final class BrowserContextTableWindowTest extends TestCase
 final class TableWindowUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'table_window_unit_page';
+}
+
+/**
+ * Runtime context of a project that mounts nothing of its own; the table lag row comes with the framework.
+ */
+final class TableWindowUnitRtContext extends RtContext
+{
+    public function configure(): void
+    {
+    }
 }
 
 final class TableWindowBrokenDeclarationBrowserContext extends BrowserContext
@@ -510,6 +676,9 @@ final class TableWindowUnitTable extends TableDefinition implements SelfSnapshot
     /** Filter key the fixture refuses to count by, standing in for a count that fails. */
     public const string FILTER_REFUSED = 'refused';
 
+    /** Filter key narrowing the counted set to one row, so a count can tell which window it was made over. */
+    public const string FILTER_KEY = 'key';
+
     /**
      * @param list<TableWindowUnitRow> $rows Snapshot rows the table owns
      */
@@ -566,8 +735,9 @@ final class TableWindowUnitTable extends TableDefinition implements SelfSnapshot
             fn(TableQueryDTO $set): TableFacetCountDTO => new TableFacetCountDTO(
                 count(array_filter(
                     $this->rows,
-                    static fn(TableWindowUnitRow $row): bool => !array_key_exists(self::FILTER_LABEL, $set->filter)
-                        || $set->filter[self::FILTER_LABEL] === $row->label,
+                    static fn(TableWindowUnitRow $row): bool => (!array_key_exists(self::FILTER_LABEL, $set->filter)
+                        || $set->filter[self::FILTER_LABEL] === $row->label)
+                        && (!array_key_exists(self::FILTER_KEY, $set->filter) || $set->filter[self::FILTER_KEY] === $row->key),
                 )),
                 true,
             ),

@@ -21,6 +21,11 @@ use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
  * held here instead and dispatched again once the answer lands, or once the deadline says
  * it will not ({@see PageSignalRouter::releasePendingFrames}).
  *
+ * A table viewport frame is also held here by the test-only table lag (HIL-1020), which
+ * keeps it until that many milliseconds have passed since it arrived. The frame carries
+ * when it arrived rather than when it may go, because the lag is read live: taking it off
+ * lets the frame go at the next sweep instead of when the lag it came in under runs out.
+ *
  * A record and not a closure, for the same reason as {@see DeferredAction}: only the raw
  * frame is kept, so the resumed dispatch walks the very same steps as one that never
  * waited, and nothing downstream can tell the two apart.
@@ -35,6 +40,7 @@ final class PendingFrame
      *     |WebSocketTableRowFocusSignalDTO $data Frame as it arrived
      * @param string $source Signal source the frame was dispatched with
      * @param string $name Signal name the frame was dispatched with (page name for the page doors)
+     * @param float $arrivedAt Unix seconds, with microseconds, when the frame arrived and was held
      * @param float $deadline Unix seconds after which the frame is judged whether or not the identity arrived
      */
     public function __construct(
@@ -45,6 +51,7 @@ final class PendingFrame
             |WebSocketTableRenderedSignalDTO|WebSocketTableRowFocusSignalDTO $data,
         public readonly string $source,
         public readonly string $name,
+        public readonly float $arrivedAt,
         public readonly float $deadline,
     ) {
     }

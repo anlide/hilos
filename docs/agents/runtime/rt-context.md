@@ -132,15 +132,16 @@ owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 
 ### Framework-Owned Singleton Aliases
 
-Two aliases exist on every `RtContext` without any project registration:
+Three aliases exist on every `RtContext` without any project registration:
 
 | Alias | View item | Backing state |
 |---|---|---|
 | `hilosBackupRuntime` | `Runtime/View/Item/BackupRuntime` | `Runtime/State/Item/BackupRuntime` |
 | `hilosProtectedModeRuntime` | `Runtime/View/Item/ProtectedModeRuntime` | `Runtime/State/Item/ProtectedModeRuntime` |
+| `hilosTableLagRuntime` | `Runtime/View/Item/TableLagRuntime` | `Runtime/State/Item/TableLagRuntime` |
 
 The framework declares their representation in the base `RtContext` constructor,
-because it owns both rows and every caller that reads them; the project decides
+because it owns these rows and every caller that reads them; the project decides
 only whether the backing row is mounted. Read them as literal properties —
 `Hilos::$rt?->hilosBackupRuntime?->isRunning($backupId) ?? false` — so the
 `@property-read` declarations on `RtContext` type the result. An alias whose row
@@ -168,6 +169,12 @@ and the line to delete.
 declared or not: freezing a node before a destructive operation is a
 data-integrity guarantee, not an opt-in surface. A `null` there means "this
 process has no runtime context", never "the feature is off".
+
+`hilosTableLagRuntime` is mounted for every project the same way (HIL-1020): it
+is the test lever `test:table:lag` pulls to hold a browser table's changed window
+and its facet counts back, and the tables it slows are the framework's own. On
+production it is inert — only the master writes it, and the command socket
+refuses every `test:` command there — so it stays at zero for good.
 
 ## Backing-State Boundary
 
@@ -415,14 +422,17 @@ inside its scope that the owner does not send is a row that no longer exists.
 
 **What travels is what an agent owns.** The node announces a write only for the
 collections its own agents registered, so a project's collection is replicated
-by having an owner, and nothing else has to be declared. Two framework
-collections stand outside that rule, because the daemon master registers them
-on every node and no agent stands behind them:
+by having an owner, and nothing else has to be declared. Three framework
+keys stand outside that rule, because the daemon master registers them on every
+node and no agent stands behind them:
 
 - **`hilosProtectedModeRuntime` is node-local and never travels.** Each master
   writes its own node's freeze row — the leader by decision, the followers in
   reaction to the peer frames carrying it — so a replica of it would be one
   node's freeze overwriting another's.
+- **`hilosTableLagRuntime` is node-local and never travels either.** The master
+  answering `test:table:lag` writes its own node's lag, and the lag holds only
+  on that node: a test slows the tables of the node it talks to.
 - **`hilosSessionRotations` travels both ways.** One cluster-wide store with a
   second writer by act: the agent owning the session seam announces a rotation
   from a worker, and whichever master receives the handshake that spends the
@@ -431,8 +441,8 @@ on every node and no agent stands behind them:
   as a split — or the spent ticket would survive there and buy a second
   handshake inside its lifetime.
 
-Both are framework-owned and both are named in `DaemonManager`; an application
-collection has no such case, and adding one is not a knob that exists.
+All three are framework-owned and all three are named in `DaemonManager`; an
+application collection has no such case, and adding one is not a knob that exists.
 
 **Ownership is claimed on two axes: which rows, and which operations.** A claim
 naming keys is ownership of THOSE ENTITIES and is meant to be used that way

@@ -73,6 +73,7 @@ use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestPassCommand;
 use Hilos\Core\CLI\Commands\SessionTestExpireCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
+use Hilos\Core\CLI\Commands\TableTestLagCommand;
 use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
@@ -179,6 +180,7 @@ class CliManager
         $this->commands[CliCommands::BACKUP_TEST_SHIP] = new BackupTestShipCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
         $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
+        $this->commands[CliCommands::TABLE_TEST_LAG] = new TableTestLagCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_ENTER] = new ProtectedModeTestEnterCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_LEAVE] = new ProtectedModeTestLeaveCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_OPEN] = new ProtectedModeTestOpenCommand();

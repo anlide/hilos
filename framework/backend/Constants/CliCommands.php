@@ -143,6 +143,9 @@ final class CliCommands
     /** @var string Command: Force-close a live WebSocket connection by acceptKey (test-only) */
     public const string CONNECTION_TEST_DROP = 'test:connection:drop';
 
+    /** @var string Command: Hold table windows and facet counts back by an artificial lag (test-only) */
+    public const string TABLE_TEST_LAG = 'test:table:lag';
+
     /** @var string Command: Resolve an LLM profile and optionally probe its endpoint */
     public const string LLM_PING = 'llm:ping';
 
