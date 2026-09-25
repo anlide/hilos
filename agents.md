@@ -11,9 +11,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
   commit text over — the owner decides what becomes history.
 - **Every commit message you compose ends with an authorship block** naming
   everyone whose work the commit carries, each with the step it ran at, and the
-  exact model ids under them — see `skills/hilos-commit-text/SKILL.md`. The commit
-  author stays `Claude agent`: that is a fixed git setting, while the co-authors
-  change with the commit.
+  exact model ids under them — see `skills/hilos-commit-text/SKILL.md`.
 
 Exactly two things lift the commit ban, and nothing else does:
 
