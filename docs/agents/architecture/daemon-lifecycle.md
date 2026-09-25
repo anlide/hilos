@@ -711,26 +711,25 @@ alone, so a fleet of equal free agents does not pile onto one node.
   new registry scan. It is symmetric (slave, master↔master, master↔slave), a busy link
   never pings, and the same timeout bounds a stalled half-open handshake.
 - **Failover re-placement (leader).** `onNodeLeft` arms a failover for each placed agent the
-  lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs
-  the `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node
+  lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs the
+  `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node
   (capability gate only). A node back before its grace cancels its own failover: only the
   leader's own handshake can put a node back online, the registry reports that return every
-  time, and `noteNodeOnline()` calls the failover off and logs `Failover of <n> agent(s) on
-  '<node>' called off` (HIL-1059; a slave's self-fence against its placing leader the same
-  way). The deadline
-  carries the node whose loss armed it, and firing it re-places only an agent the registry
-  still puts there: inside one grace period the fleet's own supervisor may restart the agent
-  on a neighbour, and a deadline outliving that move would start a second copy on the node it
-  names — which that re-check against the registry is what stops (HIL-719). The HIL-696 guard
-  does not: since HIL-913 a claim whose agent id matches the holder reads as the agent having
-  MOVED, the older incarnation is evicted from the leader's map, and a report from a node that
-  has left the mesh is not folded at all. A second copy of a PLACED agent on a node that stayed
-  linked is named by placement itself (HIL-976): a node that takes a `peer_placement_view`
-  giving one of its agents to another node sends `peer_placement_report` at once, and the
-  leader answers `peer_stop_agent` with the "already placed on" line. That reading is for
-  placed agents only. An agent
-  declared `AgentScope::NODE` is never placed, so it never moves; the leader keeps the entry of
-  every node holding it, and a second whole owner of what it owns is still refused for good.
+  time, and `noteNodeOnline()` calls the failover off and logs
+  `Failover of <n> agent(s) on '<node>' called off` (HIL-1059; a slave's self-fence against
+  its placing leader the same way). The deadline carries the node whose loss armed it, and
+  firing it re-places only an agent the registry still puts there: inside one grace period the
+  fleet's own supervisor may restart the agent on a neighbour, and a deadline outliving that
+  move would start a second copy on the node it names — which that re-check against the
+  registry is what stops (HIL-719). The HIL-696 guard does not: since HIL-913 a claim whose
+  agent id matches the holder reads as the agent having MOVED, the older incarnation is
+  evicted from the leader's map, and a report from a node that has left the mesh is not folded
+  at all. A second copy of a PLACED agent on a node that stayed linked is named by placement
+  itself (HIL-976): a node that takes a `peer_placement_view` giving one of its agents to
+  another node sends `peer_placement_report` at once, and the leader answers `peer_stop_agent`
+  with the "already placed on" line. That reading is for placed agents only. An agent declared
+  `AgentScope::NODE` is never placed, so it never moves; the leader keeps the entry of every
+  node holding it, and a second whole owner of what it owns is still refused for good.
 - **Placement-ack timeout (leader, HIL-930).** A record left `Placing` waits for a status that
   may never come — the target node can be recreated before it answers, and a rejoin inside the
   failover grace clears the failover deadline without anyone judging the `Placing`. So the wait

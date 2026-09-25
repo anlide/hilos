@@ -137,11 +137,12 @@ say both "nothing may be done here" and "the set was never written".
 
 A right has two axes. The width of the claim says which rows are yours — the
 whole collection, or keys named one by one; a third width, the rows of the set
-its owner holds, is the next section's. The operations say what may be done with them: `TruthSourceOperation::Add`,
-`TruthSourceOperation::Update`, `TruthSourceOperation::Remove`. The two sit in
-one grant rather than in two stores keyed by the same pair, because they are
-always answered together: a refusal names both, and the guard that refuses a
-write says which operation it refused along with the ones the source does hold.
+its owner holds, is the next section's. The operations say what may be done with
+them: `TruthSourceOperation::Add`, `TruthSourceOperation::Update`,
+`TruthSourceOperation::Remove`. The two sit in one grant rather than in two
+stores keyed by the same pair, because they are always answered together: a
+refusal names both, and the guard that refuses a write says which operation it
+refused along with the ones the source does hold.
 
 A claim that names no operations gets `TruthSourceOperation::ALL`. Where that
 default comes from is decided once per kind of agent, in
@@ -227,23 +228,20 @@ held by a set is a constant on the class, `OWNS_DB_SET`, of the form
 `OWNS_DB_ROWS` beside it has — a map from collection key to operations,
 `TruthSourceOperation::BY_KIND` included — and on `AbstractAgent` rather than on
 `TruthSourceOwner` for the reason the narrow width is: a command and the
-application class have no instance to ask.
-WHICH set is a seam on the live instance,
-`ownedDbSetKey(string $collection): string`, asked once, at the beat
-`ownedDbRowKeys()` is asked. One key and not a
-list, on purpose: the table is cut by one column, so an instance holds one set
-of it, and a plural seam would quietly bring back the predicate that was turned
-down.
+application class have no instance to ask. WHICH set is a seam on the live
+instance, `ownedDbSetKey(string $collection): string`, asked once, at the beat
+`ownedDbRowKeys()` is asked. One key and not a list, on purpose: the table is
+cut by one column, so an instance holds one set of it, and a plural seam would
+quietly bring back the predicate that was turned down.
 
-**A collection stands in exactly one of the three maps of its half.**
-`OWNS_DB`, `OWNS_DB_ROWS` and `OWNS_DB_SET` are three widths of one claim, and a
-collection named by more than one of them refuses the agent's start with
+**A collection stands in exactly one of the three maps of its half.** `OWNS_DB`,
+`OWNS_DB_ROWS` and `OWNS_DB_SET` are three widths of one claim, and a collection
+named by more than one of them refuses the agent's start with
 `ClaimWidthConflictException`, as one named by both of the two older maps does.
-An empty set key refuses it too, with
-`ClaimedSetKeyMissingException` — the twin of `ClaimedRowKeysMissingException`,
-and for its reason: a width of no rows is already the right to create, so a set
-registered under no key would be a claim over nothing that says so only at the
-first foreign write.
+An empty set key refuses it too, with `ClaimedSetKeyMissingException` — the twin
+of `ClaimedRowKeysMissingException`, and for its reason: a width of no rows is
+already the right to create, so a set registered under no key would be a claim
+over nothing that says so only at the first foreign write.
 
 **Two floors refuse a set claim declared wrong.** The two refusals above belong
 to the start of the agent, in `OwnershipDeclaration`, because they are what a
@@ -252,15 +250,15 @@ Entity and belongs to the topology: a set claimed in a collection whose Entity
 declares `Entity::SET_STANDALONE`, a table cut by no column and so with no set
 to claim — and so does a claim whose set tree climbs through a table that is not
 mounted or that the claimant neither reads nor claims. It is judged in
-`TopologyValidator::validateReferences()`: that half
-runs once the collections are mounted and can walk from a mounted collection to
-its Entity, which is why `validateBrowserJoinColumns()` is judged there. `SetOwnershipGuard` is not the judge and gets no second subject. It
-answers whether a *table* declared its set, and — where `_foreign` names the
-parent — whether that parent declared itself a root, whether a declared
-`_setShortPath` is another column of a table in a set, and whether the chain of
-parents ends rather than returning to itself; a claim is an agent's
-statement, the guard reads no agents, and the width does not repeat its
-cross-check.
+`TopologyValidator::validateReferences()`: that half runs once the collections
+are mounted and can walk from a mounted collection to its Entity, which is why
+`validateBrowserJoinColumns()` is judged there. `SetOwnershipGuard` is not the
+judge and gets no second subject. It answers whether a *table* declared its set,
+and — where `_foreign` names the parent — whether that parent declared itself a
+root, whether a declared `_setShortPath` is another column of a table in a set,
+and whether the chain of parents ends rather than returning to itself; a claim
+is an agent's statement, the guard reads no agents, and the width does not
+repeat its cross-check.
 
 **The width is a third named state of `TruthSourceKeys`.** Beside `all()` and
 `listed()` stands the factory `TruthSourceKeys::set(string $setKey)`, with the
@@ -333,10 +331,9 @@ Such a claim carries no `Add`, and the test that exists already calls it
 borrowed — `OwnershipDeclaration::isBorrowedClaim()` reads the absence of `Add`
 off the folded operations and asks nothing about the width — so its holder waits
 for the state at the start, beside its reads. The mechanism does not change with
-the width. Only a claim by named keys is
-never borrowed, because the rows it names are its own. Whether a person's agent
-is such a holder is not decided here — applying the width to a person is epic
-HIL-1039.
+the width. Only a claim by named keys is never borrowed, because the rows it
+names are its own. Whether a person's agent is such a holder is not decided here
+— applying the width to a person is epic HIL-1039.
 
 **The runtime half is symmetric.** `OWNS_RT_SET` and
 `ownedRtSetKey(string $collection): string` are declared, asked and refused as
@@ -699,12 +696,11 @@ half never moved, and a declared claim is taken back the same way.
 `composer run test:framework:unit` — ownership read off the class and merged up
 the chain, over each half (`DeclaredDbOwnershipTest`,
 `DeclaredRtOwnershipTest`), over a claimant that is not an agent
-(`DeclaredCommandOwnershipTest`) and over the narrow width with its two
-refusals (`DeclaredRowOwnershipTest`), over the set width with the three
-exclusive maps, the empty set key and the borrowed wait
-(`DeclaredSetOwnershipTest`), the one call that lays every map
-(`DeclaredClaimAllTest`), the operation axis and the guards on it
-(`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
+(`DeclaredCommandOwnershipTest`) and over the narrow width with its two refusals
+(`DeclaredRowOwnershipTest`), over the set width with the three exclusive maps,
+the empty set key and the borrowed wait (`DeclaredSetOwnershipTest`), the one
+call that lays every map (`DeclaredClaimAllTest`), the operation axis and the
+guards on it (`TruthSourceRegistryTest`, `AgentTruthSourceOperationsTest`,
 `DbWriteGuardLazyCollectionsTest`, the set door beside the collection door
 there), the third width answered by the row's set column at the value, the
 registry and the door, a row born after the declared start included, and one
@@ -712,10 +708,9 @@ statement over one set asked at the value and the registry
 (`TruthSourceSetWidthTest`, with the set keys asked lazily and once), the walk
 up the set tree, the short path, the parent that is gone and the statement over
 a set below the top (`SetTreeTest`), the short path and the chain of parents the
-startup gate refuses (`SetOwnershipGuardTest`), the set claimed on a table cut by
-no column, through a table the claimant cannot reach, and the reads that repeat a
-claim (`TopologyValidatorTest`), the
-grants a stop takes back
+startup gate refuses (`SetOwnershipGuardTest`), the set claimed on a table cut
+by no column, through a table the claimant cannot reach, and the reads that
+repeat a claim (`TopologyValidatorTest`), the grants a stop takes back
 (`WorkerManagerStopCleanupTest`), the node-level map of runtime owners
 (`RtNodeSourceMapTest`), and the markdown rules that keep this file's links
 intact (`AgentDocGuardTest`, `DOC-LINK`). The guard that refuses the call itself

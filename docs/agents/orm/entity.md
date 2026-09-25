@@ -227,9 +227,10 @@ opened a page.
 
 The declaration is not a fact of the schema alone. The right to write is cut by it: the
 set an agent may claim is the one declared here — the rows whose set tree ends at the
-agent's set key — and the agent does not choose the cut. So think of the owner when naming the column: a table
-that has to be owned along another one changes its `_setVia`, for every reader at once,
-and a table that declares `SET_STANDALONE` leaves no set to claim. The width itself:
+agent's set key — and the agent does not choose the cut. So think of the owner when
+naming the column: a table that has to be owned along another one changes its `_setVia`,
+for every reader at once, and a table that declares `SET_STANDALONE` leaves no set to
+claim. The width itself:
 [../architecture/truth-source.md](../architecture/truth-source.md), *A Claim Over A Set*.
 
 ## Settings Entity (special case)
