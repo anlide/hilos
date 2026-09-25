@@ -7,6 +7,7 @@ import {
   waitForProviderWindow,
   watchHeight,
   watchTop,
+  watchTopWithin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { dictateGatewayBehavior } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import {
@@ -513,6 +514,74 @@ test('keeps the main button still while the field answers, on a narrow screen', 
     'No account yet — this creates one.',
   )
   await submitTop.unchanged()
+})
+
+/**
+ * Walk a registration from the address to the finished panel, and prove that the
+ * main button of every step stands where the first one stood (HIL-1107).
+ *
+ * The button is read through the block of actions of the live step and never
+ * by its own data-id: the id changes with the step (auth-submit, then
+ * auth-continue), and the twins of the steps that hold the card's room carry no
+ * data-id at all, so the locator resolves to the one live button every time.
+ * And it is read against the card, not the screen: the last step signs the
+ * session in, and on a narrow screen the shell's navigation grows a row for the
+ * name and the way out — the card moves down with it, the button inside it does
+ * not.
+ *
+ * @param page The page to register on, with its viewport already set.
+ */
+async function registerWithTheMainButtonStill(page: Page): Promise<void> {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await typeInto(page.getByTestId('auth-identifier'), email)
+  await expect(page.getByTestId('auth-heading')).toHaveText(
+    'Create your account',
+  )
+  const main = await watchTopWithin(
+    page.getByTestId('auth-step-actions').locator('.btn-primary'),
+    page.getByTestId('auth-surface'),
+  )
+
+  // The terms: a local move, and the shortest step of the path.
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-consent-accept')).toBeVisible()
+  await main.unchanged()
+
+  // The code: the address plaque, the send line and the field — the tallest
+  // step of the path, and the one the card's room is measured on.
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  await main.unchanged()
+
+  // The password, with its two-line lead and the way past it under the button.
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await expect(page.getByTestId('auth-new-password')).toBeVisible()
+  await main.unchanged()
+
+  // The finished panel: one button, standing where the main one stood.
+  await submitFirstPassword(page, PASSWORD)
+  await expect(page.getByTestId('auth-continue')).toBeVisible()
+  await main.unchanged()
+}
+
+test('keeps the main button at one height through a registration', async ({
+  page,
+}) => {
+  await registerWithTheMainButtonStill(page)
+})
+
+test('keeps the main button at one height through a registration, on a narrow screen', async ({
+  page,
+}) => {
+  // 375 is the narrowest screen the frontend is built for: the leads wrap
+  // differently here, and the twins of the steps have to wrap with them.
+  await page.setViewportSize({ width: 375, height: 800 })
+
+  await registerWithTheMainButtonStill(page)
 })
 
 test('gates sending behind the surface, and returns the identity line to anonymous on logout', async ({

@@ -130,6 +130,55 @@ surface of its own in the corner of the shell and moves nothing
 about it, and has a rule of its own
 ([table-subscription.md](table-subscription.md)).
 
+## The room a step takes
+
+A surface that walks somebody through steps in one frame — today that is the
+sign-in surface, `HilosAuthSurface` in its three shells — swaps its whole
+content at every step, and every step is a different height. Left to the flow,
+the frame grows and shrinks with each one, the main button lands somewhere new
+each time, and in a centered dialog both edges and the title move with it. So
+such a surface **holds the main button where it is**: the frame takes the room
+of the tallest step of the ordinary path, the actions of every step — the main
+button and the tail under it — stand at the bottom of that room, and the tail
+holds the room of the tallest tail. Live content above the button — a line
+about a code's lifetime, a hint about a mailed link — no longer moves it while
+the step fits the room.
+
+The room is held the way the live message's is: by **invisible twins of the
+steps, stacked with the live step into one grid cell** (`.hilos-stack` in the
+Sass layer — every child of the grid sits in the one cell, so the cell is as
+tall as its tallest child), never by a height of our own. The reasons are the
+ones above: the tallest step depends on this width, this font, this language
+and on what the server answered, and a number written by us is right on one
+machine.
+
+A twin of a step obeys a rule of its own, because a twin of a whole step is
+markup a locator, a focus trap and a screen reader would otherwise find:
+
+- **no `data-id` anywhere inside** — a strict `getByTestId` and a
+  `count() > 0` wait would land on the twin;
+- **no `form`, no `input` / `select` / `textarea`, no `button`** — a field is a
+  `div.form-control` holding `&nbsp;`, a button is a `span.btn …`;
+- **no `data-autofocus`** — the focus trap takes the first one it finds;
+- the container of the twins is `invisible`, `aria-hidden="true"` and `inert`;
+- static text that wraps over lines carries **the same text** — the wrapping is
+  the height; a one-line value that changes (an address, a line of progress)
+  is `&nbsp;`.
+
+The **ordinary path** is every step whose content is a set of controls. A step
+whose content is data of a length nobody controls — a QR code with its secret,
+a list of backup codes, a document — grows the frame, and the button moves on
+it: that is the named exception, and the frame returns to its room on the next
+ordinary step. Only the steps that can turn out tallest need a twin; a step
+that is shorter than one of them on every width needs none.
+
+Two prices are accepted: the empty space between a short step's content and
+its button, and no animation at a step change — the frame stands, and the
+change reads as a change of page.
+
+The sign-in surface is the one example in the tree; read it before building
+the second.
+
 ## Where Bootstrap lives — the SDK ships it
 
 Bootstrap is **not** a per-project dependency. The framework **view layers**

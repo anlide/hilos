@@ -57,6 +57,58 @@ export async function watchTop(element: Locator): Promise<Watched> {
   return take(what, () => measureBox(element, 'y', what))
 }
 
+/**
+ * Take a bookmark of how far below the top edge of `frame` the element's top
+ * edge stands.
+ *
+ * Read against the frame rather than against the screen, for the reason
+ * {@link watchFirstRowTop} gives: what stands above the frame moves. On a narrow
+ * screen the shell's navigation wraps onto a second row the moment a session
+ * signs in, and a button that stood still inside its card read as moved by that
+ * row (HIL-1107). Both edges are read in one pass, so no scroll or reflow can
+ * fall between them.
+ *
+ * @param element The element whose place inside the frame is watched.
+ * @param frame The frame it stands in, such as the sign-in card.
+ * @returns A bookmark of the element's distance from the frame's top edge.
+ */
+export async function watchTopWithin(
+  element: Locator,
+  frame: Locator,
+): Promise<Watched> {
+  const what = `${element.toString()} top within ${frame.toString()}`
+
+  return take(what, async () => {
+    const root = await frame.elementHandle()
+    if (root === null) {
+      throw new Error(
+        `${what}: the frame is not on screen and cannot be measured`,
+      )
+    }
+    try {
+      return await element.evaluate(
+        (node, { root, what }) => {
+          if (
+            !node.checkVisibility({ visibilityProperty: true }) ||
+            !root.checkVisibility({ visibilityProperty: true })
+          ) {
+            throw new Error(
+              `${what}: the element is not on screen and cannot be measured`,
+            )
+          }
+
+          return (
+            node.getBoundingClientRect().top - root.getBoundingClientRect().top
+          )
+        },
+        { root, what },
+      )
+    } finally {
+      await root.dispose()
+    }
+  })
+}
+
 /** Take a bookmark of the room the element occupies vertically. */
 export async function watchHeight(element: Locator): Promise<Watched> {
   const what = `${element.toString()} height`

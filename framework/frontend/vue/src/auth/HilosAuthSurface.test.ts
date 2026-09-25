@@ -43,6 +43,7 @@ import {
   SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_PAGE_RESPONSE,
+  SMS_CODE_CHANNEL,
   type ActionHandle,
   type AuthGate,
   type AuthMethodEntry,
@@ -1936,5 +1937,206 @@ describe('HilosAuthSurface on a sign-in held on its second factor (HIL-494)', ()
       'JBSWY3DPEHPK3PXP',
     )
     wrapper.unmount()
+  })
+})
+
+/**
+ * The pending step of a sign-in by phone whose code went out by SMS: the code
+ * screen, with the channel on it — the one place the surface names a channel.
+ */
+const PHONE_CODE_STEP = {
+  identifier: '+15550100',
+  kind: 'phone',
+  intent: 'login',
+  step: 'code',
+  channel: 'sms',
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
+/**
+ * A context that can reach a number by SMS, with a dispatch that accepts
+ * everything and answers nothing: the screen under test is restored from the
+ * session slot, and nothing on it is sent.
+ *
+ * @returns The context to mount with.
+ */
+function smsContext(): HilosAuthContext {
+  const connection = {
+    on: vi.fn().mockReturnValue(() => undefined),
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: () =>
+      ({
+        requestId: 'req-sms',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply: undefined }),
+      }) as unknown as ActionHandle,
+  } as unknown as ActionLifecycle
+
+  return createHilosAuthContext({
+    connection,
+    scopes: scopesWith([{ key: 'password', name: null }]),
+    actions,
+    channels: [SMS_CODE_CHANNEL],
+    termsPath: '/terms',
+    privacyPath: '/privacy',
+  })
+}
+
+describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * What the actions of every step look like: the block at the bottom of the
+   * room holds the main button, and under it the room of the tail — the live
+   * tail first, its invisible twin second, and the twin names nothing.
+   *
+   * @param wrapper The mounted surface, standing on the step.
+   * @param main The data-id of the step's main button.
+   */
+  function expectActionsAtTheBottom(wrapper: VueWrapper, main: string): void {
+    const actions = wrapper.find('[data-id="auth-step-actions"]')
+    expect(actions.classes()).toContain('mt-auto')
+    expect(actions.find(`[data-id="${main}"]`).exists()).toBe(true)
+
+    const tail = actions.find('[data-id="auth-step-tail"]')
+    expect(tail.classes()).toContain('hilos-stack')
+    expect(tail.element.children).toHaveLength(2)
+    const twin = tail.element.children.item(1)
+    expect(twin?.getAttribute('aria-hidden')).toBe('true')
+    expect(twin?.classList.contains('invisible')).toBe(true)
+    expect(twin?.querySelector('[data-id], button, input')).toBeNull()
+  }
+
+  it('stacks the live step over twins that no locator, focus trap or reader can find', () => {
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    const room = wrapper.find('[data-id="auth-step-room"]')
+    expect(room.classes()).toContain('hilos-stack')
+    const idle = room.find('[data-id="auth-step-room-idle"]')
+    expect(idle.classes()).toContain('hilos-stack')
+    expect(idle.classes()).toContain('invisible')
+    expect(idle.attributes('aria-hidden')).toBe('true')
+    expect(idle.attributes('inert')).toBeDefined()
+    // Four steps can turn out tallest: the identifier, the code, the password
+    // and the second factor. The rest of the ordinary path is shorter than one
+    // of them on every width, and the steps that grow the card have no twin.
+    expect(idle.element.children).toHaveLength(4)
+    // The rule of a twin: nothing inside that a strict locator, a count() > 0
+    // wait, the focus trap or a form would find.
+    expect(idle.find('[data-id]').exists()).toBe(false)
+    expect(idle.find('form, input, select, textarea, button').exists()).toBe(
+      false,
+    )
+    expect(idle.find('[data-autofocus]').exists()).toBe(false)
+    // The live step stands beside the twins in the same cell, not inside them.
+    expect(room.element.children).toHaveLength(2)
+    expect(wrapper.find('form').element.parentElement).toBe(room.element)
+  })
+
+  it('stands the actions of the identifier step at the bottom once there is a main button', async () => {
+    vi.useFakeTimers()
+    const { context } = passwordOnlyContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    // An empty field has no main button and therefore no block of actions.
+    expect(wrapper.find('[data-id="auth-step-actions"]').exists()).toBe(false)
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('someone@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+
+    expectActionsAtTheBottom(wrapper, 'auth-submit')
+  })
+
+  it('stands the actions of the terms step at the bottom', async () => {
+    vi.useFakeTimers()
+    const context = registrableIdentifierContext()
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+
+    await wrapper
+      .find('[data-id="auth-identifier"]')
+      .setValue('newcomer@example.com')
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(wrapper)
+    // A local move to the terms screen — this dispatches nothing.
+    await wrapper.find('form').trigger('submit')
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-consent-accept"]').exists()).toBe(true)
+    expectActionsAtTheBottom(wrapper, 'auth-submit')
+  })
+
+  it('stands the actions of the code step at the bottom', async () => {
+    const wrapper = await openLetterCodeScreen()
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expectActionsAtTheBottom(wrapper, 'auth-submit')
+  })
+
+  it('stands the actions of the password step at the bottom', async () => {
+    const { context } = magicLinkContext()
+    context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-new-password"]').exists()).toBe(true)
+    expectActionsAtTheBottom(wrapper, 'auth-submit')
+  })
+
+  it('stands the one button of the finished panel where a main button stands', async () => {
+    const { context } = passwordOnlyContext()
+    const { gate } = gateDouble()
+    const wrapper = mount(HilosAuthSurface, {
+      props: { context },
+      global: { provide: { [hilosAuthGateKey as symbol]: gate } },
+    })
+
+    context.scopes.session.data.set(PENDING_ACK_SLOT, SESSION_ACK_REGISTERED)
+    await flush(wrapper)
+
+    expectActionsAtTheBottom(wrapper, 'auth-continue')
+  })
+
+  it('names the channel of a delivered code by the plaque glyph and a line for the reader only', async () => {
+    const context = smsContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, PHONE_CODE_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    // The same words the screen used to print under the plaque, now inside it
+    // and for the ear only: the e2e specs read them by this data-id still.
+    const channel = wrapper.find('[data-id="auth-delivered-channel"]')
+    expect(channel.classes()).toContain('visually-hidden')
+    expect(channel.text()).toBe('Sent via SMS.')
+    // The plaque draws the channel and not an envelope: this number was not
+    // mailed, and the glyph is now where the channel is named for the eye.
+    const glyph = channel.element.parentElement?.querySelector('i')
+    expect(glyph?.className).toContain('bi-chat-dots')
+    expect(glyph?.className).not.toContain('bi-envelope')
+  })
+
+  it('keeps the envelope on a mailbox and says nothing about its channel', async () => {
+    const { context } = passwordOnlyContext()
+    context.scopes.session.data.set(PENDING_AUTH_STEP_SLOT, RESUMED_CODE_STEP)
+    const wrapper = mount(HilosAuthSurface, { props: { context } })
+    await flush(wrapper)
+
+    expect(wrapper.find('[data-id="auth-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-delivered-channel"]').exists()).toBe(
+      false,
+    )
+    const plaque = wrapper.find('form .bg-body-tertiary')
+    expect(plaque.find('i').classes()).toContain('bi-envelope')
   })
 })

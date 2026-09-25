@@ -24,6 +24,7 @@ export {
   watchFirstRowTop,
   watchHeight,
   watchTop,
+  watchTopWithin,
   Watched,
 } from './geometry.js'
 export { dismissToasts } from './toasts.js'

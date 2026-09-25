@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-typescript
-description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, the room a live message takes, and where a unit-test file lives. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating or moving the test file of a module, or when a surface gains a message that appears and disappears. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
+description: Apply Hilos code style to frontend TypeScript — relative import paths and the `.js` extension, row-payload key ownership, cross-layer field names, the zero-warning bar and TSDoc, American spelling, scaffold markers, the room a live message or a step takes, and where a unit-test file lives. Use when writing, reviewing, or refactoring a `.ts`/`.tsx` file under `framework/frontend/**` or `demo/*/frontend/**`, whatever the view framework, or when creating or moving the test file of a module, or when a surface gains a message that appears and disappears. Vue, React, and Angular add their own wrapper on top of this one; for backend code use `$hilos-code-style-php`.
 ---
 
 # Hilos Code Style — TypeScript
@@ -28,7 +28,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/spelling.md` | writing an English identifier, string key, route, UI copy, comment, or TSDoc |
 | `docs/agents/code-style/scaffold-markers.md` | leaving code wired but intentionally uncalled |
 | `docs/agents/frontend/testing-strategy.md` | creating the first test file of a module, or moving one — the section "Where a unit test file lives" |
-| `docs/agents/frontend/styling-rules.md` | adding a message that appears and disappears on a surface — a refusal, a strip about work, a bar about new rows — the section "The room a live message takes" |
+| `docs/agents/frontend/styling-rules.md` | adding a message that appears and disappears on a surface — a refusal, a strip about work, a bar about new rows — the section "The room a live message takes"; or building a surface that steps through screens in one frame — the section "The room a step takes" |
 
 ## Hard Rules
 

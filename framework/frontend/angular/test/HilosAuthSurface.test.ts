@@ -33,6 +33,7 @@ import {
   SIGNAL_CODE_SEND_PROGRESS,
   SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_PAGE_RESPONSE,
+  SMS_CODE_CHANNEL,
   type ActionHandle,
   type ActionLifecycle,
   type AuthGate,
@@ -776,5 +777,297 @@ describe('HilosAuthSurface in a browser that refuses cookies', () => {
     expect(byId(fixture, 'auth-identifier')).toBeNull()
     expect(byId(fixture, 'cookies-refused-link-kept')).toBeNull()
     expect(dispatch).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * What a session that is simply unfinished comes back to: the code screen it was
+ * standing on all along, with no reason on it, because nobody moved it.
+ */
+const RESUMED_CODE_STEP = {
+  identifier: 'someone@example.com',
+  kind: 'email',
+  intent: 'register',
+  step: 'code',
+  channel: null,
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
+/**
+ * What a session that proved its address and owes a password comes back to: the
+ * password screen of a registration (HIL-1008).
+ */
+const PROVED_REGISTRATION_STEP = {
+  identifier: 'newcomer@example.com',
+  kind: 'email',
+  intent: 'register',
+  step: 'set_password',
+  channel: null,
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
+/**
+ * The pending step of a sign-in by phone whose code went out by SMS: the code
+ * screen, with the channel on it — the one place the surface names a channel.
+ */
+const PHONE_CODE_STEP = {
+  identifier: '+15550100',
+  kind: 'phone',
+  intent: 'login',
+  step: 'code',
+  channel: 'sms',
+  expiresAt: Date.now() + 600000,
+  code: null,
+}
+
+/**
+ * A world whose lookup answers a free address this deployment will register: the
+ * reply that turns the one screen into a registration, whose submit is the local
+ * move to the terms.
+ *
+ * @returns The context to mount with and a gate that does nothing.
+ */
+function registrableWorld(): { context: HilosAuthContext; gate: AuthGate } {
+  const connection = {
+    on: (): (() => void) => () => undefined,
+  } as unknown as HilosConnection
+  const actions = {
+    dispatch: (action: string, payload: Record<string, unknown>) => {
+      const identifier = String(payload['identifier'] ?? '')
+      const reply =
+        action === AUTH_ACTION_DETECT_IDENTIFIER
+          ? {
+              identifier,
+              normalized: identifier,
+              kind: 'email',
+              status: 'none',
+              methods: [],
+              registerable: [PASSWORD_METHOD_KEY],
+              registrationBlock: null,
+              signInBlock: null,
+            }
+          : undefined
+
+      return {
+        requestId: 'req-free',
+        loading: createSignal(false),
+        done: Promise.resolve({ reply }),
+      } as unknown as ActionHandle
+    },
+  } as unknown as ActionLifecycle
+
+  return {
+    gate: {
+      modalOpen: createSignal(false),
+      requireAuth: vi.fn(),
+      dismiss: vi.fn(),
+    },
+    context: createHilosAuthContext({
+      connection,
+      scopes: scopesWith([{ key: 'password', name: null }]),
+      actions,
+      channels: [],
+      termsPath: '/terms',
+      privacyPath: '/privacy',
+    }),
+  }
+}
+
+/**
+ * A world that can reach a number by SMS, with a dispatch that accepts everything
+ * and answers nothing: the screen under test is restored from the session slot,
+ * and nothing on it is sent.
+ *
+ * @returns The context to mount with and a gate that does nothing.
+ */
+function smsWorld(): { context: HilosAuthContext; gate: AuthGate } {
+  const world = surfaceWorld()
+
+  return {
+    gate: world.gate,
+    context: createHilosAuthContext({
+      ...world.context,
+      channels: [SMS_CODE_CHANNEL],
+    }),
+  }
+}
+
+describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * What the actions of every step look like: the block at the bottom of the
+   * room holds the main button, and under it the room of the tail — the live
+   * tail first, its invisible twin second, and the twin names nothing.
+   *
+   * @param fixture The mounted surface, standing on the step.
+   * @param main The data-id of the step's main button.
+   */
+  function expectActionsAtTheBottom(
+    fixture: ComponentFixture<HilosAuthSurface>,
+    main: string,
+  ): void {
+    const actions = byId(fixture, 'auth-step-actions')
+    expect(actions?.classList.contains('mt-auto')).toBe(true)
+    expect(actions?.querySelector(`[data-id="${main}"]`)).not.toBeNull()
+
+    const tail = actions?.querySelector('[data-id="auth-step-tail"]')
+    expect(tail?.classList.contains('hilos-stack')).toBe(true)
+    // Angular leaves a comment node for the outlet; the elements are what count.
+    expect(tail?.children).toHaveLength(2)
+    const twin = tail?.children.item(1)
+    expect(twin?.getAttribute('aria-hidden')).toBe('true')
+    expect(twin?.classList.contains('invisible')).toBe(true)
+    expect(twin?.querySelector('[data-id], button, input')).toBeNull()
+  }
+
+  /**
+   * Type into the identifier field the way a person does, and let the lookup
+   * answer.
+   *
+   * @param fixture The mounted surface.
+   * @param value The address to type.
+   */
+  async function typeIdentifier(
+    fixture: ComponentFixture<HilosAuthSurface>,
+    value: string,
+  ): Promise<void> {
+    const field = byId(fixture, 'auth-identifier') as HTMLInputElement
+    field.value = value
+    field.dispatchEvent(new Event('input'))
+    await vi.advanceTimersByTimeAsync(DEFAULT_DETECT_DEBOUNCE_MS + 1)
+    await flush(fixture)
+  }
+
+  it('stacks the live step over twins that no locator, focus trap or reader can find', () => {
+    const fixture = mountSurface(surfaceWorld())
+
+    const room = byId(fixture, 'auth-step-room')
+    expect(room?.classList.contains('hilos-stack')).toBe(true)
+    const idle = byId(fixture, 'auth-step-room-idle')
+    expect(idle?.classList.contains('hilos-stack')).toBe(true)
+    expect(idle?.classList.contains('invisible')).toBe(true)
+    expect(idle?.getAttribute('aria-hidden')).toBe('true')
+    expect(idle?.hasAttribute('inert')).toBe(true)
+    // Four steps can turn out tallest: the identifier, the code, the password
+    // and the second factor. The rest of the ordinary path is shorter than one
+    // of them on every width, and the steps that grow the card have no twin.
+    expect(idle?.children).toHaveLength(4)
+    // The rule of a twin: nothing inside that a strict locator, a count() > 0
+    // wait, the focus trap or a form would find.
+    expect(idle?.querySelector('[data-id]')).toBeNull()
+    expect(
+      idle?.querySelector('form, input, select, textarea, button'),
+    ).toBeNull()
+    expect(idle?.querySelector('[data-autofocus]')).toBeNull()
+    // The live step stands beside the twins in the same cell, not inside them.
+    expect(room?.children).toHaveLength(2)
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('form')
+        ?.parentElement,
+    ).toBe(room)
+  })
+
+  it('stands the actions of the identifier step at the bottom once there is a main button', async () => {
+    vi.useFakeTimers()
+    const fixture = mountSurface(magicLinkWorld())
+
+    // An empty field has no main button and therefore no block of actions.
+    expect(byId(fixture, 'auth-step-actions')).toBeNull()
+
+    await typeIdentifier(fixture, 'someone@example.com')
+
+    expectActionsAtTheBottom(fixture, 'auth-submit')
+  })
+
+  it('stands the actions of the terms step at the bottom', async () => {
+    vi.useFakeTimers()
+    const fixture = mountSurface(registrableWorld())
+
+    await typeIdentifier(fixture, 'newcomer@example.com')
+    // A local move to the terms screen — this dispatches nothing.
+    ;(fixture.nativeElement as HTMLElement)
+      .querySelector('form')
+      ?.dispatchEvent(new Event('submit'))
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-consent-accept')).not.toBeNull()
+    expectActionsAtTheBottom(fixture, 'auth-submit')
+  })
+
+  it('stands the actions of the code step at the bottom', async () => {
+    const fixture = await openLetterCodeScreen()
+
+    expect(byId(fixture, 'auth-code')).not.toBeNull()
+    expectActionsAtTheBottom(fixture, 'auth-submit')
+  })
+
+  it('stands the actions of the password step at the bottom', async () => {
+    const world = magicLinkWorld()
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PROVED_REGISTRATION_STEP,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-new-password')).not.toBeNull()
+    expectActionsAtTheBottom(fixture, 'auth-submit')
+  })
+
+  it('stands the one button of the finished panel where a main button stands', async () => {
+    const world = surfaceWorld()
+    const fixture = mountSurface(world)
+
+    world.context.scopes.session.data.set(
+      PENDING_ACK_SLOT,
+      SESSION_ACK_REGISTERED,
+    )
+    await flush(fixture)
+
+    expectActionsAtTheBottom(fixture, 'auth-continue')
+  })
+
+  it('names the channel of a delivered code by the plaque glyph and a line for the reader only', async () => {
+    const world = smsWorld()
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      PHONE_CODE_STEP,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-code')).not.toBeNull()
+    // The same words the screen used to print under the plaque, now inside it
+    // and for the ear only: the e2e specs read them by this data-id still.
+    const channel = byId(fixture, 'auth-delivered-channel')
+    expect(channel?.classList.contains('visually-hidden')).toBe(true)
+    expect(channel?.textContent?.trim()).toBe('Sent via SMS.')
+    // The plaque draws the channel and not an envelope: this number was not
+    // mailed, and the glyph is now where the channel is named for the eye.
+    const glyph = channel?.parentElement?.querySelector('i')
+    expect(glyph?.className).toContain('bi-chat-dots')
+    expect(glyph?.className).not.toContain('bi-envelope')
+  })
+
+  it('keeps the envelope on a mailbox and says nothing about its channel', async () => {
+    const world = surfaceWorld()
+    world.context.scopes.session.data.set(
+      PENDING_AUTH_STEP_SLOT,
+      RESUMED_CODE_STEP,
+    )
+    const fixture = mountSurface(world)
+    await flush(fixture)
+
+    expect(byId(fixture, 'auth-code')).not.toBeNull()
+    expect(byId(fixture, 'auth-delivered-channel')).toBeNull()
+    const plaque = (fixture.nativeElement as HTMLElement).querySelector(
+      'form .bg-body-tertiary',
+    )
+    expect(plaque?.querySelector('i')?.className).toContain('bi-envelope')
   })
 })

@@ -77,6 +77,7 @@ import HilosModal from '../HilosModal.vue'
 import HilosQrCode from '../HilosQrCode.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
+import HilosAuthStepTail from './HilosAuthStepTail.vue'
 import HilosCookiesRefused from './HilosCookiesRefused.vue'
 import { hilosAuthGateKey } from './hilosAuthGateKey.js'
 
@@ -210,6 +211,21 @@ const LINK_SENT_TAIL = 'Open it to continue.'
 const CODE_EXPIRED_MESSAGE = 'That code has expired.'
 
 /**
+ * The leads of the password and second-factor screens that wrap over lines. They
+ * live here because the twins of those steps say the same words: the wrapping is
+ * the height, and a twin that wrapped other words would hold the wrong room
+ * (styling-rules.md, "The room a step takes").
+ */
+const SET_PASSWORD_LEAD_WITH_EXIT =
+  'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
+const SET_PASSWORD_LEAD_PLAIN =
+  'Your address is confirmed. Choose a password — your account is created when you save it.'
+const TWO_STEP_LEAD_APP =
+  'Open your authenticator app and enter the code it shows.'
+const TWO_STEP_LEAD_BACKUP =
+  'Enter one of the backup codes you saved when you set up two-step verification.'
+
+/**
  * How the code screen says where the code has got to (HIL-826). The states
  * travel as stable keys and the copy lives here, the way the outcome reasons
  * already work; only the provider's refusal sentence comes off the wire as
@@ -255,6 +271,17 @@ const SEND_PROGRESS_ROW_CLASS = 'd-flex align-items-center gap-2 small mb-3'
 
 /** The details button and the inert copy of it the twin holds the room for. */
 const SEND_PROGRESS_DETAILS_CLASS = 'btn btn-link btn-sm p-0 lh-1 flex-shrink-0'
+
+/**
+ * The refusal row of HilosFormError, as the twins of the steps hold its room: the
+ * same classes to the character, and no component — the component's own twin
+ * carries a data-id, and a twin of a step carries none (styling-rules.md, "The
+ * room a step takes").
+ */
+const ERROR_ROW_TWIN_CLASS =
+  'alert alert-danger small py-1 px-2 my-2 d-flex align-items-center gap-2'
+const ERROR_DETAILS_TWIN_CLASS =
+  'btn btn-link btn-sm p-0 lh-1 flex-shrink-0 text-decoration-none text-nowrap'
 
 // The set is the installation's, live from the session scope (HIL-427): an
 // administrator switching a method off reshapes this surface on the frame.
@@ -388,8 +415,8 @@ const setPasswordLead = computed(() => {
   }
 
   return showFinishWithoutPassword.value
-    ? 'Your address is confirmed. Choose a password, or create the account without one and sign in by a mailed link instead.'
-    : 'Your address is confirmed. Choose a password — your account is created when you save it.'
+    ? SET_PASSWORD_LEAD_WITH_EXIT
+    : SET_PASSWORD_LEAD_PLAIN
 })
 
 const newPasswordLabel = computed(() =>
@@ -671,6 +698,18 @@ const deliveredChannel = computed(() => {
   }
 
   return context.channels.find((channel) => channel.key === key)?.label ?? key
+})
+
+/**
+ * The glyph on the address plaque of the code screens: the channel a delivered
+ * code went over, or the envelope of a mailbox. The plaque is where the channel
+ * is named — the line under it that used to say so is gone, and a number under
+ * an envelope said the wrong thing.
+ */
+const plaqueIcon = computed(() => {
+  const key = state.value.channelKey
+
+  return key === null ? 'bi bi-envelope' : channelIcon(key)
 })
 
 const resendIn = computed(() =>
@@ -1304,55 +1343,239 @@ onUnmounted(() => {
         {{ notice }}
       </div>
 
-      <!-- The single identifier field: one screen, whatever it turns out to be.
+      <div class="hilos-stack" data-id="auth-step-room">
+        <!-- The room the steps take (styling-rules.md, "The room a step takes").
+      The live step and the invisible twins of the steps that can turn out
+      tallest share one grid cell, so the card is as tall as the tallest of them
+      on every step of the ordinary path, and the actions of the live step —
+      the main button and its tail — stand at the bottom of that room. A twin
+      carries no data-id, no form control and no autofocus: a strict locator,
+      the focus trap and the reader all pass it by; what a live step draws as a
+      control the twin draws as a div or a span of the same classes, and a
+      sentence that wraps is carried word for word, because the wrapping is the
+      height. A step whose content is data of a length nobody controls — the QR
+      code, the backup codes — has no twin and grows the card: the named
+      exception. -->
+        <div
+          class="hilos-stack invisible"
+          aria-hidden="true"
+          inert
+          data-id="auth-step-room-idle"
+        >
+          <!-- The identifier step at its tallest: the icon row of an empty field
+        (one icon is enough — the row is a flex of equally tall things), the
+        divider, the field with the reveal under it, the refusal row, the main
+        button and the tail. -->
+          <div class="d-flex flex-column">
+            <div class="d-flex justify-content-center gap-2">
+              <span class="btn position-relative btn-outline-secondary">
+                <span><i class="bi bi-envelope" aria-hidden="true" /></span>
+              </span>
+            </div>
+            <div class="d-flex align-items-center gap-2 my-3">
+              <hr class="flex-grow-1 my-0" />
+              <span class="small text-body-secondary">or</span>
+              <hr class="flex-grow-1 my-0" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Email or phone</label>
+              <div class="form-control">&nbsp;</div>
+              <div>
+                <label class="form-label small fw-semibold">Password</label>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-control">&nbsp;</div>
+                  <span class="btn position-relative btn-outline-secondary">
+                    <span><i class="bi bi-envelope" aria-hidden="true" /></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div :class="ERROR_ROW_TWIN_CLASS">
+              <i
+                class="bi bi-exclamation-circle flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span :class="ERROR_DETAILS_TWIN_CLASS">
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </span>
+            </div>
+            <div class="d-flex flex-column mt-auto">
+              <span class="btn position-relative btn-primary w-100">
+                <span>&nbsp;</span>
+              </span>
+              <HilosAuthStepTail />
+            </div>
+          </div>
+
+          <!-- The code step at its tallest: the address plaque, the send line,
+        the plaque about a mailed link, the field with the line about its
+        lifetime, the refusal row, the main button and the tail. -->
+          <div class="d-flex flex-column">
+            <div
+              class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+            >
+              <i
+                class="bi bi-envelope text-body-secondary"
+                aria-hidden="true"
+              />
+              <span class="small fw-semibold flex-grow-1">&nbsp;</span>
+            </div>
+            <div :class="SEND_PROGRESS_ROW_CLASS">
+              <i
+                class="bi bi-hourglass-split flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span :class="SEND_PROGRESS_DETAILS_CLASS">
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </span>
+            </div>
+            <div class="alert alert-success small py-2">
+              <i class="bi bi-envelope-check me-1" aria-hidden="true" />
+              {{ LINK_SENT_LEAD }} <strong>&nbsp;</strong>. {{ LINK_SENT_TAIL }}
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Code</label>
+              <div class="form-control">&nbsp;</div>
+              <div class="form-text">
+                <i class="bi bi-clock me-1" aria-hidden="true" />
+                Expires in &nbsp;.
+              </div>
+            </div>
+            <div :class="ERROR_ROW_TWIN_CLASS">
+              <i
+                class="bi bi-exclamation-circle flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span :class="ERROR_DETAILS_TWIN_CLASS">
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </span>
+            </div>
+            <div class="d-flex flex-column mt-auto">
+              <span class="btn position-relative btn-primary w-100">
+                <span>&nbsp;</span>
+              </span>
+              <HilosAuthStepTail />
+            </div>
+          </div>
+
+          <!-- The password step at its tallest: the longer of its two leads, the
+        field with its hint, the refusal row, the main button and the tail. -->
+          <div class="d-flex flex-column">
+            <p class="text-body-secondary small mb-3">
+              {{ SET_PASSWORD_LEAD_WITH_EXIT }}
+            </p>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Password</label>
+              <div class="form-control">&nbsp;</div>
+              <div class="form-text">&nbsp;</div>
+            </div>
+            <div :class="ERROR_ROW_TWIN_CLASS">
+              <i
+                class="bi bi-exclamation-circle flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span :class="ERROR_DETAILS_TWIN_CLASS">
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </span>
+            </div>
+            <div class="d-flex flex-column mt-auto">
+              <span class="btn position-relative btn-primary w-100">
+                <span>&nbsp;</span>
+              </span>
+              <HilosAuthStepTail />
+            </div>
+          </div>
+
+          <!-- The second-factor step at its tallest: the longer of its two leads,
+        the field, the trusted-browser checkbox, the refusal row, the main
+        button and the tail. -->
+          <div class="d-flex flex-column">
+            <p class="text-body-secondary small mb-3">
+              {{ TWO_STEP_LEAD_BACKUP }}
+            </p>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Backup code</label>
+              <div class="form-control">&nbsp;</div>
+            </div>
+            <div class="form-check mb-3">
+              <span class="form-check-input"></span>
+              <label class="form-check-label small"
+                >Don't ask again on this device for &nbsp; days</label
+              >
+            </div>
+            <div :class="ERROR_ROW_TWIN_CLASS">
+              <i
+                class="bi bi-exclamation-circle flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span :class="ERROR_DETAILS_TWIN_CLASS">
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </span>
+            </div>
+            <div class="d-flex flex-column mt-auto">
+              <span class="btn position-relative btn-primary w-100">
+                <span>&nbsp;</span>
+              </span>
+              <HilosAuthStepTail />
+            </div>
+          </div>
+        </div>
+
+        <!-- The single identifier field: one screen, whatever it turns out to be.
     The icon row stands FIRST because a device key and a provider are the short
     road and the field is the long one; both live only on an empty field. -->
-      <form
-        v-if="state.step === 'identifier'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <template v-if="rowIcons.length > 0">
-          <div class="d-flex justify-content-center gap-2">
-            <LoadingButton
-              v-for="method in rowIcons"
-              :key="method.key"
-              type="button"
-              class="btn-outline-secondary"
-              :loading="pending && state.methodKey === method.key"
-              :disabled="pending"
-              :aria-label="method.label"
-              :title="method.label"
-              :data-id="methodDataId(method.key)"
-              @click="chooseMethod(method.key)"
-            >
-              <i :class="methodIcon(method.key)" aria-hidden="true" />
-            </LoadingButton>
-          </div>
-          <div class="d-flex align-items-center gap-2 my-3">
-            <hr class="flex-grow-1 my-0" />
-            <span class="small text-body-secondary">or</span>
-            <hr class="flex-grow-1 my-0" />
-          </div>
-        </template>
+        <form
+          v-if="state.step === 'identifier'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
+        >
+          <template v-if="rowIcons.length > 0">
+            <div class="d-flex justify-content-center gap-2">
+              <LoadingButton
+                v-for="method in rowIcons"
+                :key="method.key"
+                type="button"
+                class="btn-outline-secondary"
+                :loading="pending && state.methodKey === method.key"
+                :disabled="pending"
+                :aria-label="method.label"
+                :title="method.label"
+                :data-id="methodDataId(method.key)"
+                @click="chooseMethod(method.key)"
+              >
+                <i :class="methodIcon(method.key)" aria-hidden="true" />
+              </LoadingButton>
+            </div>
+            <div class="d-flex align-items-center gap-2 my-3">
+              <hr class="flex-grow-1 my-0" />
+              <span class="small text-body-secondary">or</span>
+              <hr class="flex-grow-1 my-0" />
+            </div>
+          </template>
 
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" for="auth-identifier">
-            Email or phone
-          </label>
-          <input
-            id="auth-identifier"
-            ref="identifierInput"
-            type="text"
-            class="form-control"
-            autocomplete="username"
-            placeholder="you@example.com"
-            data-autofocus
-            data-id="auth-identifier"
-            :value="form.identifier"
-            @input="updateIdentifier($event)"
-          />
-          <!-- One room under the field for the whole conversation with it: the
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="auth-identifier">
+              Email or phone
+            </label>
+            <input
+              id="auth-identifier"
+              ref="identifierInput"
+              type="text"
+              class="form-control"
+              autocomplete="username"
+              placeholder="you@example.com"
+              data-autofocus
+              data-id="auth-identifier"
+              :value="form.identifier"
+              @input="updateIdentifier($event)"
+            />
+            <!-- One room under the field for the whole conversation with it: the
         reveal when the reply is an account that signs in with a password, the
         grey line otherwise, and nothing while the first lookup runs. The reveal
         is the tallest of the three, so an invisible twin of it holds the room
@@ -1362,84 +1585,88 @@ onUnmounted(() => {
         (mockup node `new_email`). A found account has one because the envelope
         and the key walk past the FIELD standing beside them — with no field
         there is nothing for them to walk past. -->
-          <div class="position-relative" data-id="auth-reveal-slot">
-            <template v-if="showPassword">
-              <label class="form-label small fw-semibold" for="auth-password">
-                Password
-              </label>
-              <div class="d-flex align-items-center gap-2">
-                <input
-                  id="auth-password"
-                  type="password"
-                  class="form-control"
-                  autocomplete="current-password"
-                  data-id="auth-password"
-                  :value="form.password"
-                  @input="updatePassword($event)"
-                />
-                <LoadingButton
-                  v-for="method in adjacentIcons"
-                  :key="method.key"
-                  type="button"
-                  class="btn-outline-secondary"
-                  :loading="pending && state.methodKey === method.key"
-                  :disabled="pending"
-                  :aria-label="method.label"
-                  :title="method.label"
-                  :data-id="methodDataId(method.key)"
-                  @click="chooseMethod(method.key)"
+            <div class="position-relative" data-id="auth-reveal-slot">
+              <template v-if="showPassword">
+                <label class="form-label small fw-semibold" for="auth-password">
+                  Password
+                </label>
+                <div class="d-flex align-items-center gap-2">
+                  <input
+                    id="auth-password"
+                    type="password"
+                    class="form-control"
+                    autocomplete="current-password"
+                    data-id="auth-password"
+                    :value="form.password"
+                    @input="updatePassword($event)"
+                  />
+                  <LoadingButton
+                    v-for="method in adjacentIcons"
+                    :key="method.key"
+                    type="button"
+                    class="btn-outline-secondary"
+                    :loading="pending && state.methodKey === method.key"
+                    :disabled="pending"
+                    :aria-label="method.label"
+                    :title="method.label"
+                    :data-id="methodDataId(method.key)"
+                    @click="chooseMethod(method.key)"
+                  >
+                    <i :class="methodIcon(method.key)" aria-hidden="true" />
+                  </LoadingButton>
+                  <button
+                    v-if="showRecovery"
+                    type="button"
+                    class="btn btn-outline-secondary"
+                    aria-label="Forgot your password?"
+                    title="Forgot your password?"
+                    data-id="auth-recovery"
+                    @click="startRecovery()"
+                  >
+                    <i class="bi bi-key" aria-hidden="true" />
+                  </button>
+                </div>
+              </template>
+              <template v-else>
+                <div
+                  v-if="roomHeld"
+                  class="invisible"
+                  aria-hidden="true"
+                  data-id="auth-reveal-idle"
                 >
-                  <i :class="methodIcon(method.key)" aria-hidden="true" />
-                </LoadingButton>
-                <button
-                  v-if="showRecovery"
-                  type="button"
-                  class="btn btn-outline-secondary"
-                  aria-label="Forgot your password?"
-                  title="Forgot your password?"
-                  data-id="auth-recovery"
-                  @click="startRecovery()"
-                >
-                  <i class="bi bi-key" aria-hidden="true" />
-                </button>
-              </div>
-            </template>
-            <template v-else>
-              <div
-                v-if="roomHeld"
-                class="invisible"
-                aria-hidden="true"
-                data-id="auth-reveal-idle"
-              >
-                <!-- Spans and divs where the real row has a control: the twin holds
+                  <!-- Spans and divs where the real row has a control: the twin holds
               room, it does not take focus or name anything. The label stays a
               `label` because Bootstrap's reboot makes that one inline-block, and
               a div in its place is two pixels shorter — which is a jump, since
               this is what the room is measured by. One icon is enough: the row is
               a flex of equally tall things, so their number is not its height. -->
-                <label class="form-label small fw-semibold">Password</label>
-                <div class="d-flex align-items-center gap-2">
-                  <div class="form-control">&nbsp;</div>
-                  <span class="btn position-relative btn-outline-secondary">
-                    <span><i class="bi bi-envelope" aria-hidden="true" /></span>
-                  </span>
+                  <label class="form-label small fw-semibold">Password</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="form-control">&nbsp;</div>
+                    <span class="btn position-relative btn-outline-secondary">
+                      <span
+                        ><i class="bi bi-envelope" aria-hidden="true"
+                      /></span>
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div
-                v-if="identifierHint"
-                class="form-text"
-                :class="roomHeld ? 'position-absolute top-0 start-0 w-100' : ''"
-                data-id="auth-identifier-hint"
-              >
-                {{ identifierHint }}
-              </div>
-            </template>
+                <div
+                  v-if="identifierHint"
+                  class="form-text"
+                  :class="
+                    roomHeld ? 'position-absolute top-0 start-0 w-100' : ''
+                  "
+                  data-id="auth-identifier-hint"
+                >
+                  {{ identifierHint }}
+                </div>
+              </template>
+            </div>
           </div>
-        </div>
 
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
 
-        <!-- The main control is whatever the machine says it is: the submit, a
+          <!-- The main control is whatever the machine says it is: the submit, a
       passwordless method promoted to the button, or a code channel — for a phone
       the channel choice IS the send, so there is no separate button. Both resume
       controls act on the reply the reveal is drawn from, and that reply is HELD
@@ -1448,867 +1675,954 @@ onUnmounted(() => {
       and not `loading`: `pending` is set on the keystroke, before the debounce,
       and the spinner delay equals that debounce, so a spinner would blink on
       every pause in typing. -->
-        <LoadingButton
-          v-if="primaryAction?.kind === 'submit'"
-          type="submit"
-          class="btn-primary w-100"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-
-        <LoadingButton
-          v-else-if="primaryAction?.kind === 'resume_code'"
-          type="button"
-          class="btn-primary w-100"
-          :disabled="detection.status !== 'resolved'"
-          data-id="auth-resume-code"
-          @click="resumeHeldRegistration()"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-
-        <LoadingButton
-          v-else-if="primaryAction?.kind === 'resume_password'"
-          type="button"
-          class="btn-primary w-100"
-          :disabled="detection.status !== 'resolved'"
-          data-id="auth-resume-password"
-          @click="resumeProvenRegistration()"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-
-        <LoadingButton
-          v-else-if="primaryMethod"
-          type="button"
-          class="btn-primary w-100"
-          :loading="pending"
-          :disabled="pending"
-          :data-id="methodDataId(primaryMethod.key)"
-          @click="chooseMethod(primaryMethod.key)"
-        >
-          <i
-            :class="methodIcon(primaryMethod.key)"
-            class="me-2"
-            aria-hidden="true"
-          />
-          {{ primaryMethod.label }}
-        </LoadingButton>
-
-        <template v-else-if="primaryChannel">
-          <LoadingButton
-            type="button"
-            class="btn-primary w-100"
-            :loading="pending"
-            :disabled="pending || unavailableChannels.has(primaryChannel.key)"
-            :data-id="channelDataId(primaryChannel.key)"
-            @click="chooseChannel(primaryChannel.key)"
+          <div
+            v-if="primaryAction !== null"
+            class="d-flex flex-column mt-auto"
+            data-id="auth-step-actions"
           >
-            Send a code by {{ primaryChannel.label }}
-          </LoadingButton>
-
-          <template v-if="otherChannels.length > 0">
-            <div class="d-flex align-items-center gap-2 my-3">
-              <hr class="flex-grow-1 my-0" />
-              <span class="small text-body-secondary">or send it to</span>
-              <hr class="flex-grow-1 my-0" />
-            </div>
-            <div class="d-flex justify-content-center gap-2">
-              <LoadingButton
-                v-for="channel in otherChannels"
-                :key="channel.key"
-                type="button"
-                class="btn-outline-secondary"
-                :loading="pending && state.channelKey === channel.key"
-                :disabled="pending || unavailableChannels.has(channel.key)"
-                :aria-label="`Send the code via ${channel.label}`"
-                :title="`Send the code via ${channel.label}`"
-                :data-id="channelDataId(channel.key)"
-                @click="chooseChannel(channel.key)"
-              >
-                <i :class="channelIcon(channel.key)" aria-hidden="true" />
-              </LoadingButton>
-            </div>
-            <div
-              v-if="channelUnavailableLines.length > 0"
-              class="small text-body-secondary mt-2"
-              data-id="auth-channel-unavailable"
+            <LoadingButton
+              v-if="primaryAction.kind === 'submit'"
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
             >
-              <div
-                v-for="line in channelUnavailableLines"
-                :key="line.key"
-                :data-id="`auth-channel-unavailable-${line.key}`"
-              >
-                {{ line.text }}
-              </div>
-            </div>
-          </template>
-        </template>
-      </form>
+              {{ submitLabel }}
+            </LoadingButton>
 
-      <!-- The terms screen. Registration is unreachable without it: the machine's
+            <LoadingButton
+              v-else-if="primaryAction.kind === 'resume_code'"
+              type="button"
+              class="btn-primary w-100"
+              :disabled="detection.status !== 'resolved'"
+              data-id="auth-resume-code"
+              @click="resumeHeldRegistration()"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+
+            <LoadingButton
+              v-else-if="primaryAction.kind === 'resume_password'"
+              type="button"
+              class="btn-primary w-100"
+              :disabled="detection.status !== 'resolved'"
+              data-id="auth-resume-password"
+              @click="resumeProvenRegistration()"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+
+            <LoadingButton
+              v-else-if="primaryMethod"
+              type="button"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="pending"
+              :data-id="methodDataId(primaryMethod.key)"
+              @click="chooseMethod(primaryMethod.key)"
+            >
+              <i
+                :class="methodIcon(primaryMethod.key)"
+                class="me-2"
+                aria-hidden="true"
+              />
+              {{ primaryMethod.label }}
+            </LoadingButton>
+
+            <LoadingButton
+              v-else-if="primaryChannel"
+              type="button"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="pending || unavailableChannels.has(primaryChannel.key)"
+              :data-id="channelDataId(primaryChannel.key)"
+              @click="chooseChannel(primaryChannel.key)"
+            >
+              Send a code by {{ primaryChannel.label }}
+            </LoadingButton>
+
+            <!-- The other channels of a number stand under the send button. A
+        channel that refused the number says so under the row, and that line is
+        not part of the room the tail holds: it is a rare refusal, and the
+        button above it may rise by its height. -->
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <template v-if="primaryChannel && otherChannels.length > 0">
+                <div class="d-flex align-items-center gap-2 my-3">
+                  <hr class="flex-grow-1 my-0" />
+                  <span class="small text-body-secondary">or send it to</span>
+                  <hr class="flex-grow-1 my-0" />
+                </div>
+                <div class="d-flex justify-content-center gap-2">
+                  <LoadingButton
+                    v-for="channel in otherChannels"
+                    :key="channel.key"
+                    type="button"
+                    class="btn-outline-secondary"
+                    :loading="pending && state.channelKey === channel.key"
+                    :disabled="pending || unavailableChannels.has(channel.key)"
+                    :aria-label="`Send the code via ${channel.label}`"
+                    :title="`Send the code via ${channel.label}`"
+                    :data-id="channelDataId(channel.key)"
+                    @click="chooseChannel(channel.key)"
+                  >
+                    <i :class="channelIcon(channel.key)" aria-hidden="true" />
+                  </LoadingButton>
+                </div>
+                <div
+                  v-if="channelUnavailableLines.length > 0"
+                  class="small text-body-secondary mt-2"
+                  data-id="auth-channel-unavailable"
+                >
+                  <div
+                    v-for="line in channelUnavailableLines"
+                    :key="line.key"
+                    :data-id="`auth-channel-unavailable-${line.key}`"
+                  >
+                    {{ line.text }}
+                  </div>
+                </div>
+              </template>
+            </HilosAuthStepTail>
+          </div>
+        </form>
+
+        <!-- The terms screen. Registration is unreachable without it: the machine's
     submit on the identifier step moves here, and the dispatch that creates
     anything happens from this button.
 
     STOPGAP (HIL-499 in epic HIL-496 replaces it): one never-pre-ticked checkbox
     covering both documents, links to their full texts, and NO acceptance record
     of any kind — a record names a revision, and revisions do not exist yet. -->
-      <form
-        v-else-if="state.step === 'consent'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <p class="text-body-secondary small mb-3">
-          This project runs on the standard Hilos terms.
-        </p>
+        <form
+          v-else-if="state.step === 'consent'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
+        >
+          <p class="text-body-secondary small mb-3">
+            This project runs on the standard Hilos terms.
+          </p>
 
-        <div class="form-check mb-3">
-          <input
-            id="auth-consent-accept"
-            ref="consentInput"
-            class="form-check-input"
-            type="checkbox"
-            data-id="auth-consent-accept"
-            :checked="form.consentAccepted"
-            @change="updateConsent($event)"
-          />
-          <label class="form-check-label small" for="auth-consent-accept">
-            I agree to the
-            <a :href="context.termsPath" target="_blank" rel="noopener"
-              >Terms</a
+          <div class="form-check mb-3">
+            <input
+              id="auth-consent-accept"
+              ref="consentInput"
+              class="form-check-input"
+              type="checkbox"
+              data-id="auth-consent-accept"
+              :checked="form.consentAccepted"
+              @change="updateConsent($event)"
+            />
+            <label class="form-check-label small" for="auth-consent-accept">
+              I agree to the
+              <a :href="context.termsPath" target="_blank" rel="noopener"
+                >Terms</a
+              >
+              and the
+              <a :href="context.privacyPath" target="_blank" rel="noopener">
+                Privacy Policy </a
+              >.
+            </label>
+          </div>
+
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
             >
-            and the
-            <a :href="context.privacyPath" target="_blank" rel="noopener">
-              Privacy Policy </a
-            >.
-          </label>
-        </div>
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                @click="backToIdentifier()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
+        </form>
 
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
-
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100 mb-2"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-
-        <button
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-restart"
-          @click="backToIdentifier()"
-        >
-          Back
-        </button>
-      </form>
-
-      <!-- The one code screen, whichever code it is: confirming an address,
+        <!-- The one code screen, whichever code it is: confirming an address,
     signing a number in, proving a mailbox for a reset, or typing the digits that
     came in a sign-in letter (HIL-606). What differs is the heading, the line
     naming where the code went, and the way out. -->
-      <form
-        v-else-if="state.step === 'code'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <div
-          class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+        <form
+          v-else-if="state.step === 'code'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
         >
-          <i class="bi bi-envelope text-body-secondary" aria-hidden="true" />
-          <span class="small fw-semibold flex-grow-1">{{
-            form.identifier
-          }}</span>
-        </div>
+          <!-- The plaque names the channel by its glyph: an envelope for a
+      mailbox, the channel's own icon for a number. The reader hears the channel
+      as a hidden line inside the plaque — the same words the screen used to
+      print under it, now for the ear only. -->
+          <div
+            class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+          >
+            <i
+              :class="plaqueIcon"
+              class="text-body-secondary"
+              aria-hidden="true"
+            />
+            <span class="small fw-semibold flex-grow-1">{{
+              form.identifier
+            }}</span>
+            <span
+              v-if="deliveredChannel"
+              class="visually-hidden"
+              data-id="auth-delivered-channel"
+              >Sent via {{ deliveredChannel }}.</span
+            >
+          </div>
 
-        <p
-          v-if="deliveredChannel"
-          class="text-body-secondary small mb-3"
-          data-id="auth-delivered-channel"
-        >
-          Sent via {{ deliveredChannel }}.
-        </p>
-
-        <!-- The send line holds its room from the moment the code screen opens
+          <!-- The send line holds its room from the moment the code screen opens
       (HIL-977, styling-rules.md "The room a live message takes"): the slot
       always holds exactly one row, the line itself or its invisible twin of the
       very same markup, so neither the line's arrival nor a provider's long
       sentence moves the code field. The text is truncated to one line and the
       whole of it sits behind the details button, in every state. -->
-        <div data-id="auth-send-progress-slot">
-          <div
-            v-if="sendProgress"
-            :class="[SEND_PROGRESS_ROW_CLASS, sendProgress.tone]"
-            data-id="auth-send-progress"
-          >
-            <i
-              class="bi flex-shrink-0"
-              :class="sendProgress.icon"
+          <div data-id="auth-send-progress-slot">
+            <div
+              v-if="sendProgress"
+              :class="[SEND_PROGRESS_ROW_CLASS, sendProgress.tone]"
+              data-id="auth-send-progress"
+            >
+              <i
+                class="bi flex-shrink-0"
+                :class="sendProgress.icon"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">{{
+                sendProgress.text
+              }}</span>
+              <button
+                type="button"
+                :class="SEND_PROGRESS_DETAILS_CLASS"
+                aria-label="Show the full message"
+                title="Show the full message"
+                data-id="auth-send-progress-details"
+                @click="sendDetailOpen = true"
+              >
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              v-else
+              :class="[SEND_PROGRESS_ROW_CLASS, 'invisible']"
               aria-hidden="true"
-            />
-            <span class="flex-grow-1 text-truncate">{{
-              sendProgress.text
-            }}</span>
-            <button
-              type="button"
-              :class="SEND_PROGRESS_DETAILS_CLASS"
-              aria-label="Show the full message"
-              title="Show the full message"
-              data-id="auth-send-progress-details"
-              @click="sendDetailOpen = true"
+              data-id="auth-send-progress-idle"
             >
-              <i class="bi bi-info-circle" aria-hidden="true" />
-            </button>
+              <i
+                class="bi bi-hourglass-split flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <!-- A span, not a button: the twin holds room, it does not take focus. -->
+              <span :class="SEND_PROGRESS_DETAILS_CLASS">
+                <i class="bi bi-info-circle" aria-hidden="true" />
+              </span>
+            </div>
           </div>
-          <div
-            v-else
-            :class="[SEND_PROGRESS_ROW_CLASS, 'invisible']"
-            aria-hidden="true"
-            data-id="auth-send-progress-idle"
+          <HilosModal
+            v-model="sendDetailOpen"
+            title="Send details"
+            initial-focus="dialog"
           >
-            <i class="bi bi-hourglass-split flex-shrink-0" aria-hidden="true" />
-            <span class="flex-grow-1 text-truncate">&nbsp;</span>
-            <!-- A span, not a button: the twin holds room, it does not take focus. -->
-            <span :class="SEND_PROGRESS_DETAILS_CLASS">
-              <i class="bi bi-info-circle" aria-hidden="true" />
-            </span>
-          </div>
-        </div>
-        <HilosModal
-          v-model="sendDetailOpen"
-          title="Send details"
-          initial-focus="dialog"
-        >
-          <HilosLongText
-            kind="prose"
-            :text="sendProgress?.text ?? ''"
-            data-id="auth-send-progress-full"
-          />
-          <template #actions="{ requestClose }">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              data-id="auth-send-progress-close"
-              @click="requestClose"
-            >
-              Close
-            </button>
-          </template>
-        </HilosModal>
+            <HilosLongText
+              kind="prose"
+              :text="sendProgress?.text ?? ''"
+              data-id="auth-send-progress-full"
+            />
+            <template #actions="{ requestClose }">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-id="auth-send-progress-close"
+                @click="requestClose"
+              >
+                Close
+              </button>
+            </template>
+          </HilosModal>
 
-        <!-- The letter went out with two ways back in it, so the screen says so
+          <!-- The letter went out with two ways back in it, so the screen says so
       before it asks for one: the link is still the shorter road for whoever can
       click it, and the field below is for whoever cannot. -->
-        <div
-          v-if="screenKey === 'check_inbox'"
-          class="alert alert-success small py-2"
-          data-id="auth-link-sent"
-        >
-          <i class="bi bi-envelope-check me-1" aria-hidden="true" />
-          {{ LINK_SENT_LEAD }} <strong>{{ form.identifier }}</strong
-          >. {{ LINK_SENT_TAIL }}
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" for="auth-code"
-            >Code</label
+          <div
+            v-if="screenKey === 'check_inbox'"
+            class="alert alert-success small py-2"
+            data-id="auth-link-sent"
           >
-          <input
-            id="auth-code"
-            ref="codeInput"
-            type="text"
-            inputmode="numeric"
-            class="form-control"
-            autocomplete="one-time-code"
-            data-id="auth-code"
-            :value="form.code"
-            @input="updateCode($event)"
-          />
-          <div v-if="expiresIn" class="form-text" data-id="auth-expires-in">
-            <i class="bi bi-clock me-1" aria-hidden="true" />
-            Expires in {{ expiresIn }}.
+            <i class="bi bi-envelope-check me-1" aria-hidden="true" />
+            {{ LINK_SENT_LEAD }} <strong>{{ form.identifier }}</strong
+            >. {{ LINK_SENT_TAIL }}
           </div>
-        </div>
 
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="auth-code"
+              >Code</label
+            >
+            <input
+              id="auth-code"
+              ref="codeInput"
+              type="text"
+              inputmode="numeric"
+              class="form-control"
+              autocomplete="one-time-code"
+              data-id="auth-code"
+              :value="form.code"
+              @input="updateCode($event)"
+            />
+            <div v-if="expiresIn" class="form-text" data-id="auth-expires-in">
+              <i class="bi bi-clock me-1" aria-hidden="true" />
+              Expires in {{ expiresIn }}.
+            </div>
+          </div>
 
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100 mb-2"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
 
-        <!-- The gate is the backend's (the address owns the cooldown, not this
-      tab): while it holds, the button is a countdown instead. -->
-        <div
-          v-if="resendIn"
-          class="small text-body-secondary text-center"
-          data-id="auth-resend-in"
-        >
-          <i class="bi bi-clock me-1" aria-hidden="true" />
-          Send a new code in {{ resendIn }}
-        </div>
-        <button
-          v-else
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          :disabled="pending"
-          data-id="auth-resend"
-          @click="resend()"
-        >
-          <i class="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-          Send a new code
-        </button>
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
 
-        <!-- The way out, and the last thing on the card because it is the answer
-      to "not this, then": a registration says so out loud and in red, and what
-      it cancels is freed - the same address typed again starts over. A sign-in
-      or a recovery has nothing to give back, so it says Back and wears the word
-      the consent step already uses for the same move (HIL-829). -->
-        <button
-          v-if="state.intent === 'register'"
-          type="button"
-          class="btn btn-link btn-sm w-100 text-danger"
-          data-id="auth-cancel-registration"
-          @click="cancelRegistration()"
-        >
-          Cancel registration
-        </button>
-        <button
-          v-else
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-restart"
-          @click="cancelRegistration()"
-        >
-          Back
-        </button>
-      </form>
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <!-- The gate is the backend's (the address owns the cooldown, not
+          this tab): while it holds, the button is a countdown instead. -->
+              <div
+                v-if="resendIn"
+                class="small text-body-secondary text-center"
+                data-id="auth-resend-in"
+              >
+                <i class="bi bi-clock me-1" aria-hidden="true" />
+                Send a new code in {{ resendIn }}
+              </div>
+              <button
+                v-else
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                :disabled="pending"
+                data-id="auth-resend"
+                @click="resend()"
+              >
+                <i class="bi bi-arrow-clockwise me-1" aria-hidden="true" />
+                Send a new code
+              </button>
 
-      <!-- The same screen after its countdown ran out (HIL-828). The heading and
+              <!-- The way out, and the last thing on the card because it is the
+          answer to "not this, then": a registration says so out loud and in
+          red, and what it cancels is freed - the same address typed again
+          starts over. A sign-in or a recovery has nothing to give back, so it
+          says Back and wears the word the consent step already uses for the
+          same move (HIL-829). -->
+              <button
+                v-if="state.intent === 'register'"
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                data-id="auth-cancel-registration"
+                @click="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
+              <button
+                v-else
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                @click="cancelRegistration()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
+        </form>
+
+        <!-- The same screen after its countdown ran out (HIL-828). The heading and
     the address block above do not move - the person is still doing the thing
     they came to do - and what changes is everything under them: no field, no
     Confirm, one line saying the code is dead and one button offering a new one.
     Not a form: there is nothing here to submit. -->
-      <div v-else-if="state.step === 'code_expired'">
         <div
-          class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+          v-else-if="state.step === 'code_expired'"
+          class="d-flex flex-column"
         >
-          <i class="bi bi-envelope text-body-secondary" aria-hidden="true" />
-          <span class="small fw-semibold flex-grow-1">{{
-            form.identifier
-          }}</span>
+          <div
+            class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+          >
+            <i
+              :class="plaqueIcon"
+              class="text-body-secondary"
+              aria-hidden="true"
+            />
+            <span class="small fw-semibold flex-grow-1">{{
+              form.identifier
+            }}</span>
+          </div>
+
+          <div
+            class="alert alert-warning small py-2 mb-3"
+            data-id="auth-code-expired"
+          >
+            <i class="bi bi-clock-history me-1" aria-hidden="true" />
+            {{ CODE_EXPIRED_MESSAGE }}
+          </div>
+
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <!-- The gate outlives the code it was armed for: it belongs to the
+        address, so a person cannot spend a code, watch it expire and re-take
+        the address inside the cooldown the gate exists to hold. -->
+            <div
+              v-if="resendIn"
+              class="small text-body-secondary text-center"
+              data-id="auth-resend-in"
+            >
+              <i class="bi bi-clock me-1" aria-hidden="true" />
+              Send a new code in {{ resendIn }}
+            </div>
+            <LoadingButton
+              v-else
+              type="button"
+              class="btn-primary w-100"
+              :loading="pending"
+              data-id="auth-code-renew"
+              @click="renewCode()"
+            >
+              <i class="bi bi-arrow-clockwise me-1" aria-hidden="true" />
+              Send a new code
+            </LoadingButton>
+
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <!-- The way out, and the last thing on the card because it is the
+          answer to "not this, then": a registration says so out loud and in
+          red, and what it cancels is freed - the same address typed again
+          starts over. A sign-in or a recovery has nothing to give back, so it
+          says Back and wears the word the consent step already uses for the
+          same move (HIL-829). -->
+              <button
+                v-if="state.intent === 'register'"
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                data-id="auth-cancel-registration"
+                @click="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
+              <button
+                v-else
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                @click="cancelRegistration()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
         </div>
 
-        <div
-          class="alert alert-warning small py-2 mb-3"
-          data-id="auth-code-expired"
-        >
-          <i class="bi bi-clock-history me-1" aria-hidden="true" />
-          {{ CODE_EXPIRED_MESSAGE }}
-        </div>
-
-        <!-- The gate outlives the code it was armed for: it belongs to the
-      address, so a person cannot spend a code, watch it expire and re-take the
-      address inside the cooldown the gate exists to hold. -->
-        <div
-          v-if="resendIn"
-          class="small text-body-secondary text-center"
-          data-id="auth-resend-in"
-        >
-          <i class="bi bi-clock me-1" aria-hidden="true" />
-          Send a new code in {{ resendIn }}
-        </div>
-        <LoadingButton
-          v-else
-          type="button"
-          class="btn-primary w-100 mb-2"
-          :loading="pending"
-          data-id="auth-code-renew"
-          @click="renewCode()"
-        >
-          <i class="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-          Send a new code
-        </LoadingButton>
-
-        <!-- The way out, and the last thing on the card because it is the answer
-      to "not this, then": a registration says so out loud and in red, and what
-      it cancels is freed - the same address typed again starts over. A sign-in
-      or a recovery has nothing to give back, so it says Back and wears the word
-      the consent step already uses for the same move (HIL-829). -->
-        <button
-          v-if="state.intent === 'register'"
-          type="button"
-          class="btn btn-link btn-sm w-100 text-danger"
-          data-id="auth-cancel-registration"
-          @click="cancelRegistration()"
-        >
-          Cancel registration
-        </button>
-        <button
-          v-else
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-restart"
-          @click="cancelRegistration()"
-        >
-          Back
-        </button>
-      </div>
-
-      <!-- One screen for two endings (HIL-825): a recovery writes the new password
+        <!-- One screen for two endings (HIL-825): a recovery writes the new password
     of an account that exists, a registration CREATES the account on the address
     it just proved. The address is not asked for again either way — what the
     accepted code left on this session is what names it. -->
-      <form
-        v-else-if="state.step === 'set_password'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <p class="text-body-secondary small mb-3">
-          {{ setPasswordLead }}
-        </p>
+        <form
+          v-else-if="state.step === 'set_password'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
+        >
+          <p class="text-body-secondary small mb-3">
+            {{ setPasswordLead }}
+          </p>
 
-        <!-- The address, for the password manager and for nobody else: a saved
+          <!-- The address, for the password manager and for nobody else: a saved
       entry with no login against it is an entry its owner cannot use. Hidden
       rather than absent, because what the manager files the password under is
       the field beside it. -->
-        <input
-          type="text"
-          hidden
-          autocomplete="username"
-          data-id="auth-username"
-          :value="form.identifier"
-        />
-
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" for="auth-new-password">
-            {{ newPasswordLabel }}
-          </label>
           <input
-            id="auth-new-password"
-            ref="newPasswordInput"
-            type="password"
-            class="form-control"
-            autocomplete="new-password"
-            data-id="auth-new-password"
-            :value="form.newPassword"
-            @input="updateNewPassword($event)"
+            type="text"
+            hidden
+            autocomplete="username"
+            data-id="auth-username"
+            :value="form.identifier"
           />
-          <div class="form-text">
-            At least {{ PASSWORD_MIN_LENGTH }} characters.
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="auth-new-password">
+              {{ newPasswordLabel }}
+            </label>
+            <input
+              id="auth-new-password"
+              ref="newPasswordInput"
+              type="password"
+              class="form-control"
+              autocomplete="new-password"
+              data-id="auth-new-password"
+              :value="form.newPassword"
+              @input="updateNewPassword($event)"
+            />
+            <div class="form-text">
+              At least {{ PASSWORD_MIN_LENGTH }} characters.
+            </div>
           </div>
-        </div>
 
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
 
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100 mb-2"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
 
-        <!-- Two ways to FINISH the registration, then the way to drop it, and the
-      order carries that meaning (HIL-1008). Unemphasized rather than a second
-      primary: choosing a password is still the road this screen is named after. -->
-        <button
-          v-if="showFinishWithoutPassword"
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          :disabled="pending"
-          data-id="auth-complete-passwordless"
-          @click="completeWithoutPassword()"
-        >
-          Create it without a password
-        </button>
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <!-- Two ways to FINISH the registration, then the way to drop it, and
+          the order carries that meaning (HIL-1008). Unemphasized rather than a
+          second primary: choosing a password is still the road this screen is
+          named after. -->
+              <button
+                v-if="showFinishWithoutPassword"
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                :disabled="pending"
+                data-id="auth-complete-passwordless"
+                @click="completeWithoutPassword()"
+              >
+                Create it without a password
+              </button>
 
-        <!-- The same way out the code screen carries, for the same reason: this
-      screen has no address field and no step behind it, so whoever changed their
-      mind here would otherwise be shut in (HIL-825). The hold is alive and
-      proved at this point, so on a registration the cancel is the one that
-      really gives the address back. -->
-        <button
-          v-if="state.intent === 'register'"
-          type="button"
-          class="btn btn-link btn-sm w-100 text-danger"
-          data-id="auth-cancel-registration"
-          @click="cancelRegistration()"
-        >
-          Cancel registration
-        </button>
-        <button
-          v-else
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-restart"
-          @click="cancelRegistration()"
-        >
-          Back
-        </button>
-      </form>
+              <!-- The same way out the code screen carries, for the same reason:
+          this screen has no address field and no step behind it, so whoever
+          changed their mind here would otherwise be shut in (HIL-825). The hold
+          is alive and proved at this point, so on a registration the cancel is
+          the one that really gives the address back. -->
+              <button
+                v-if="state.intent === 'register'"
+                type="button"
+                class="btn btn-link btn-sm w-100 text-danger"
+                data-id="auth-cancel-registration"
+                @click="cancelRegistration()"
+              >
+                Cancel registration
+              </button>
+              <button
+                v-else
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                @click="cancelRegistration()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
+        </form>
 
-      <!-- The code of a sign-in held on its second factor (HIL-494): from the
+        <!-- The code of a sign-in held on its second factor (HIL-494): from the
     app, or one of the backup codes — the person says which, and the field says
     it back. The way off it for somebody with neither is the delayed removal,
     which the step names instead once it is asked. -->
-      <form
-        v-else-if="state.step === 'second_factor'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <p class="text-body-secondary small mb-3" data-id="auth-two-step-lead">
-          {{
-            form.usingBackupCode
-              ? 'Enter one of the backup codes you saved when you set up two-step verification.'
-              : 'Open your authenticator app and enter the code it shows.'
-          }}
-        </p>
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" for="auth-code">{{
-            form.usingBackupCode ? 'Backup code' : 'Code'
-          }}</label>
-          <input
-            id="auth-code"
-            ref="codeInput"
-            type="text"
-            :inputmode="form.usingBackupCode ? 'text' : 'numeric'"
-            class="form-control"
-            autocomplete="one-time-code"
-            data-id="auth-code"
-            :value="form.code"
-            @input="updateCode($event)"
-          />
-        </div>
-        <div v-if="trustDeviceDays !== null" class="form-check mb-3">
-          <input
-            id="auth-trust-device"
-            class="form-check-input"
-            type="checkbox"
-            data-id="auth-trust-device"
-            :checked="form.trustDevice"
-            @change="updateTrustDevice($event)"
-          />
-          <label class="form-check-label small" for="auth-trust-device"
-            >Don't ask again on this device for
-            {{ trustDeviceDays }} days</label
-          >
-        </div>
-
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
-
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100 mb-2"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
+        <form
+          v-else-if="state.step === 'second_factor'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
         >
-          {{ submitLabel }}
-        </LoadingButton>
-        <button
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-backup-toggle"
-          @click="toggleBackupCode()"
-        >
-          {{ form.usingBackupCode ? 'Use the app code' : 'Use a backup code' }}
-        </button>
-        <p
-          v-if="resetDate !== null"
-          class="small text-body-secondary text-center my-2"
-          data-id="auth-reset-pending"
-        >
-          Removal requested, takes effect on {{ resetDate }}.
-        </p>
-        <button
-          v-else
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-reset-start"
-          @click="startSecondFactorReset()"
-        >
-          I can't use the app or any backup code
-        </button>
-        <button
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-restart"
-          @click="backToIdentifier()"
-        >
-          Back
-        </button>
-      </form>
-
-      <!-- Asking the delayed removal from the sign-in (HIL-494): what happens,
-    and that every message about it lets the owner cancel. -->
-      <form
-        v-else-if="state.step === 'second_factor_reset'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <p class="small mb-2">
-          If you can use neither your authenticator app nor any backup code,
-          two-step verification can be removed from your account after a waiting
-          period.
-        </p>
-        <p class="text-body-secondary small mb-3">
-          We tell you at once and then every day, on every channel you have —
-          email, text message, push and the bell in the app — and each message
-          lets you cancel. Until then a code from your app or a backup code
-          still signs you in.
-        </p>
-
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
-
-        <LoadingButton
-          type="submit"
-          class="btn-danger w-100 mb-2"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-        <button
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-reset-back"
-          @click="backToSecondFactor()"
-        >
-          Back
-        </button>
-      </form>
-
-      <!-- The removal is asked, and the held sign-in let go with it: the date,
-    and the way back to the field. -->
-      <form
-        v-else-if="state.step === 'second_factor_reset_requested'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <div
-          class="alert alert-warning small py-2"
-          data-id="auth-reset-requested"
-        >
-          Two-step verification will be removed on
-          <strong>{{ resetDate }}</strong
-          >.
-        </div>
-        <p class="text-body-secondary small mb-3">
-          We sent a notice to every channel you have. If this was not you,
-          follow the link in it to cancel.
-        </p>
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-      </form>
-
-      <!-- The enrolment an administrator requires on the way in (HIL-494): the
-    QR code and its key as text, a name for the app, and its first code. -->
-      <form
-        v-else-if="state.step === 'second_factor_setup'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <p class="small mb-3" data-id="auth-setup-lead">
-          Your administrator requires two-step verification. Scan this code with
-          an authenticator app, then enter the code the app shows.
-        </p>
-        <template v-if="setup !== null">
-          <HilosQrCode
-            :text="setup.otpauthUri"
-            label="QR code for your authenticator app"
-            class="mb-2"
-          />
-          <p class="small text-body-secondary text-center mb-1">
-            Can't scan it? Enter this key in the app:
-          </p>
           <p
-            class="font-monospace small text-center text-break mb-3"
-            data-id="auth-setup-secret"
+            class="text-body-secondary small mb-3"
+            data-id="auth-two-step-lead"
           >
-            {{ setup.secret }}
+            {{
+              form.usingBackupCode ? TWO_STEP_LEAD_BACKUP : TWO_STEP_LEAD_APP
+            }}
           </p>
-        </template>
-        <button
-          v-else
-          type="button"
-          class="btn btn-outline-secondary w-100 mb-3"
-          :disabled="pending"
-          data-id="auth-setup-load"
-          @click="loadSetup()"
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="auth-code">{{
+              form.usingBackupCode ? 'Backup code' : 'Code'
+            }}</label>
+            <input
+              id="auth-code"
+              ref="codeInput"
+              type="text"
+              :inputmode="form.usingBackupCode ? 'text' : 'numeric'"
+              class="form-control"
+              autocomplete="one-time-code"
+              data-id="auth-code"
+              :value="form.code"
+              @input="updateCode($event)"
+            />
+          </div>
+          <div v-if="trustDeviceDays !== null" class="form-check mb-3">
+            <input
+              id="auth-trust-device"
+              class="form-check-input"
+              type="checkbox"
+              data-id="auth-trust-device"
+              :checked="form.trustDevice"
+              @change="updateTrustDevice($event)"
+            />
+            <label class="form-check-label small" for="auth-trust-device"
+              >Don't ask again on this device for
+              {{ trustDeviceDays }} days</label
+            >
+          </div>
+
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-backup-toggle"
+                @click="toggleBackupCode()"
+              >
+                {{
+                  form.usingBackupCode
+                    ? 'Use the app code'
+                    : 'Use a backup code'
+                }}
+              </button>
+              <p
+                v-if="resetDate !== null"
+                class="small text-body-secondary text-center my-2"
+                data-id="auth-reset-pending"
+              >
+                Removal requested, takes effect on {{ resetDate }}.
+              </p>
+              <button
+                v-else
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-reset-start"
+                @click="startSecondFactorReset()"
+              >
+                I can't use the app or any backup code
+              </button>
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                @click="backToIdentifier()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
+        </form>
+
+        <!-- Asking the delayed removal from the sign-in (HIL-494): what happens,
+    and that every message about it lets the owner cancel. -->
+        <form
+          v-else-if="state.step === 'second_factor_reset'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
         >
-          Show the code to scan
-        </button>
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" for="auth-setup-label"
-            >Name of this app</label
+          <p class="small mb-2">
+            If you can use neither your authenticator app nor any backup code,
+            two-step verification can be removed from your account after a
+            waiting period.
+          </p>
+          <p class="text-body-secondary small mb-3">
+            We tell you at once and then every day, on every channel you have —
+            email, text message, push and the bell in the app — and each message
+            lets you cancel. Until then a code from your app or a backup code
+            still signs you in.
+          </p>
+
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-danger w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-reset-back"
+                @click="backToSecondFactor()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
+        </form>
+
+        <!-- The removal is asked, and the held sign-in let go with it: the date,
+    and the way back to the field. -->
+        <form
+          v-else-if="state.step === 'second_factor_reset_requested'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
+        >
+          <div
+            class="alert alert-warning small py-2"
+            data-id="auth-reset-requested"
           >
-          <input
-            id="auth-setup-label"
-            type="text"
-            class="form-control"
-            maxlength="64"
-            placeholder="Authenticator app"
-            data-id="auth-setup-label"
-            :value="form.secondFactorLabel"
-            @input="updateSecondFactorLabel($event)"
-          />
-        </div>
-        <div class="mb-3">
-          <label class="form-label small fw-semibold" for="auth-code"
-            >Code</label
+            Two-step verification will be removed on
+            <strong>{{ resetDate }}</strong
+            >.
+          </div>
+          <p class="text-body-secondary small mb-3">
+            We sent a notice to every channel you have. If this was not you,
+            follow the link in it to cancel.
+          </p>
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail" />
+          </div>
+        </form>
+
+        <!-- The enrolment an administrator requires on the way in (HIL-494): the
+    QR code and its key as text, a name for the app, and its first code. -->
+        <form
+          v-else-if="state.step === 'second_factor_setup'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
+        >
+          <p class="small mb-3" data-id="auth-setup-lead">
+            Your administrator requires two-step verification. Scan this code
+            with an authenticator app, then enter the code the app shows.
+          </p>
+          <template v-if="setup !== null">
+            <HilosQrCode
+              :text="setup.otpauthUri"
+              label="QR code for your authenticator app"
+              class="mb-2"
+            />
+            <p class="small text-body-secondary text-center mb-1">
+              Can't scan it? Enter this key in the app:
+            </p>
+            <p
+              class="font-monospace small text-center text-break mb-3"
+              data-id="auth-setup-secret"
+            >
+              {{ setup.secret }}
+            </p>
+          </template>
+          <button
+            v-else
+            type="button"
+            class="btn btn-outline-secondary w-100 mb-3"
+            :disabled="pending"
+            data-id="auth-setup-load"
+            @click="loadSetup()"
           >
-          <input
-            id="auth-code"
-            ref="codeInput"
-            type="text"
-            inputmode="numeric"
-            class="form-control"
-            autocomplete="one-time-code"
-            data-id="auth-code"
-            :value="form.code"
-            @input="updateCode($event)"
-          />
-        </div>
+            Show the code to scan
+          </button>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="auth-setup-label"
+              >Name of this app</label
+            >
+            <input
+              id="auth-setup-label"
+              type="text"
+              class="form-control"
+              maxlength="64"
+              placeholder="Authenticator app"
+              data-id="auth-setup-label"
+              :value="form.secondFactorLabel"
+              @input="updateSecondFactorLabel($event)"
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="auth-code"
+              >Code</label
+            >
+            <input
+              id="auth-code"
+              ref="codeInput"
+              type="text"
+              inputmode="numeric"
+              class="form-control"
+              autocomplete="one-time-code"
+              data-id="auth-code"
+              :value="form.code"
+              @input="updateCode($event)"
+            />
+          </div>
 
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
 
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100 mb-2"
-          :loading="pending"
-          :disabled="!submittable || setup === null"
-          data-id="auth-submit"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
-        <button
-          type="button"
-          class="btn btn-link btn-sm w-100"
-          data-id="auth-restart"
-          @click="backToIdentifier()"
-        >
-          Back
-        </button>
-      </form>
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable || setup === null"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail">
+              <button
+                type="button"
+                class="btn btn-link btn-sm w-100"
+                data-id="auth-restart"
+                @click="backToIdentifier()"
+              >
+                Back
+              </button>
+            </HilosAuthStepTail>
+          </div>
+        </form>
 
-      <!-- The backup codes of that enrolment, shown once: Continue lets the
+        <!-- The backup codes of that enrolment, shown once: Continue lets the
     person in, and waits for "I have saved these codes". -->
-      <form
-        v-else-if="state.step === 'second_factor_codes'"
-        novalidate
-        @submit.prevent="submit()"
-      >
-        <p class="small mb-3">
-          Keep these codes somewhere safe. Each one signs you in once if you
-          lose your authenticator app.
-        </p>
-        <HilosBackupCodes
-          :codes="backupCodes"
-          :saved="form.backupCodesSaved"
-          @update:saved="updateBackupCodesSaved"
-        />
-
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
-
-        <LoadingButton
-          type="submit"
-          class="btn-primary w-100"
-          :loading="pending"
-          :disabled="!submittable"
-          data-id="auth-submit"
+        <form
+          v-else-if="state.step === 'second_factor_codes'"
+          class="d-flex flex-column"
+          novalidate
+          @submit.prevent="submit()"
         >
-          {{ submitLabel }}
-        </LoadingButton>
-      </form>
+          <p class="small mb-3">
+            Keep these codes somewhere safe. Each one signs you in once if you
+            lose your authenticator app.
+          </p>
+          <HilosBackupCodes
+            :codes="backupCodes"
+            :saved="form.backupCodesSaved"
+            @update:saved="updateBackupCodesSaved"
+          />
 
-      <!-- Parked on a ceremony. A link waits on the inbox, everything else waits on
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="submit"
+              class="btn-primary w-100"
+              :loading="pending"
+              :disabled="!submittable"
+              data-id="auth-submit"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail" />
+          </div>
+        </form>
+
+        <!-- Parked on a ceremony. A link waits on the inbox, everything else waits on
     the device; both are the same step and both can be taken back — cancelling
     ends the ceremony itself rather than merely forgetting its outcome. -->
-      <template v-else-if="state.step === 'external'">
-        <div
-          v-if="screenKey === 'check_inbox'"
-          class="alert alert-success small py-2"
-        >
-          <i class="bi bi-envelope-check me-1" aria-hidden="true" />
-          {{ LINK_SENT_LEAD }} <strong>{{ form.identifier }}</strong
-          >. {{ LINK_SENT_TAIL }}
+        <div v-else-if="state.step === 'external'" class="d-flex flex-column">
+          <div
+            v-if="screenKey === 'check_inbox'"
+            class="alert alert-success small py-2"
+          >
+            <i class="bi bi-envelope-check me-1" aria-hidden="true" />
+            {{ LINK_SENT_LEAD }} <strong>{{ form.identifier }}</strong
+            >. {{ LINK_SENT_TAIL }}
+          </div>
+
+          <div v-else class="text-center py-4">
+            <div class="spinner-border text-primary mb-3" role="status">
+              <span class="visually-hidden">Waiting</span>
+            </div>
+            <div v-if="trip" class="fw-semibold mb-1">
+              {{ oauthTripTitle(trip) }}
+            </div>
+            <div class="small text-body-secondary">
+              {{ trip ? oauthTripMessage(trip) : 'Waiting for your device…' }}
+            </div>
+          </div>
+
+          <HilosFormError :message="errorMessage" data-id="auth-error" />
+
+          <!-- The one button of a parked ceremony stands where a main button
+      stands, so the card reads the same as on every other step. -->
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <button
+              v-if="trip === null || trip.phase === 'authorizing'"
+              type="button"
+              class="btn btn-outline-secondary w-100"
+              data-id="auth-cancel"
+              @click="cancelMethod()"
+            >
+              Cancel
+            </button>
+            <HilosAuthStepTail data-id="auth-step-tail" />
+          </div>
         </div>
 
-        <div v-else class="text-center py-4">
-          <div class="spinner-border text-primary mb-3" role="status">
-            <span class="visually-hidden">Waiting</span>
-          </div>
-          <div v-if="trip" class="fw-semibold mb-1">
-            {{ oauthTripTitle(trip) }}
-          </div>
-          <div class="small text-body-secondary">
-            {{ trip ? oauthTripMessage(trip) : 'Waiting for your device…' }}
-          </div>
-        </div>
-
-        <HilosFormError :message="errorMessage" data-id="auth-error" />
-
-        <button
-          v-if="trip === null || trip.phase === 'authorizing'"
-          type="button"
-          class="btn btn-outline-secondary w-100"
-          data-id="auth-cancel"
-          @click="cancelMethod()"
-        >
-          Cancel
-        </button>
-      </template>
-
-      <!-- The end of a flow is a screen with a button, not a fading toast: what was
+        <!-- The end of a flow is a screen with a button, not a fading toast: what was
     achieved is said once, and Continue is what closes it and lets the page
     through. -->
-      <div v-else-if="state.step === 'done'" class="text-center py-3">
-        <i
-          class="bi bi-check-circle-fill text-success mb-3 fs-1"
-          aria-hidden="true"
-        />
-        <p class="text-body-secondary small mb-4">
-          <template v-if="screenKey === 'done_registered'">
-            Your address is confirmed and you are signed in.
-          </template>
-          <template v-else-if="screenKey === 'done_password_changed'">
-            Your new password is saved. Codes left on other devices no longer
-            work.
-          </template>
-          <template v-else> You are signed in. </template>
-        </p>
+        <div v-else-if="state.step === 'done'" class="d-flex flex-column">
+          <div class="text-center py-3">
+            <i
+              class="bi bi-check-circle-fill text-success mb-3 fs-1"
+              aria-hidden="true"
+            />
+            <p class="text-body-secondary small mb-4">
+              <template v-if="screenKey === 'done_registered'">
+                Your address is confirmed and you are signed in.
+              </template>
+              <template v-else-if="screenKey === 'done_password_changed'">
+                Your new password is saved. Codes left on other devices no
+                longer work.
+              </template>
+              <template v-else> You are signed in. </template>
+            </p>
+          </div>
 
-        <LoadingButton
-          type="button"
-          class="btn-primary w-100"
-          :loading="pending"
-          data-id="auth-continue"
-          @click="continueFromDone()"
-        >
-          {{ submitLabel }}
-        </LoadingButton>
+          <div class="d-flex flex-column mt-auto" data-id="auth-step-actions">
+            <LoadingButton
+              type="button"
+              class="btn-primary w-100"
+              :loading="pending"
+              data-id="auth-continue"
+              @click="continueFromDone()"
+            >
+              {{ submitLabel }}
+            </LoadingButton>
+            <HilosAuthStepTail data-id="auth-step-tail" />
+          </div>
+        </div>
       </div>
     </template>
   </section>

@@ -237,3 +237,18 @@ body.modal-open .toast-container > * {
 .hilos-table-selection-cell {
   width: 2.5rem;
 }
+
+// WHY: Bootstrap has no utility that puts several children into one grid cell, and
+// a surface that steps through screens holds the room of its tallest step by
+// stacking invisible twins of its steps under the live one (styling-rules.md, "The
+// room a step takes").
+// WHAT: a grid whose every child sits in the one cell, so the cell is as tall as
+// its tallest child.
+.hilos-stack {
+  display: grid;
+}
+
+.hilos-stack > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}

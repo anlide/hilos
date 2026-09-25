@@ -317,6 +317,11 @@ Topic documents are referenced by filename; several are still being authored.
   start a third copy of the refusal row either. The row carries no role of its
   own; the surface announces from its own permanent live region. See
   [accessibility.md](accessibility.md).
+- **A step change never moves the main button.** A surface that walks somebody
+  through steps in one frame holds the room of its tallest ordinary step with
+  invisible twins of the steps stacked under the live one, and stands every
+  step's actions at the bottom of that room — the section "The room a step
+  takes" in [styling-rules.md](styling-rules.md).
 - **A disabled control explains itself with visible content, never with a
   title.** A disabled element gets no mouse events, so its title never shows,
   and no phone or screen reader reaches it. The reason stands in the row as a
